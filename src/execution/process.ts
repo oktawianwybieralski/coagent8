@@ -26,6 +26,12 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { resolveCliCommand } from '../backends/cli-resolver.js';
 import { createLineDecoder, truncateToByteLength } from './stream.js';
+import {
+  parseProcessSnapshot,
+  selectOwnedTree,
+  type KnownIdentity,
+  type ProcessRow,
+} from './process-tree.js';
 import type { ExecutionError, TerminalStatus } from '../types/conversation.types.js';
 import { ERROR_CODES } from '../types/conversation.types.js';
 import { redactDiagnostic } from '../redaction.js';
@@ -42,20 +48,35 @@ const activeRuns = new Map<ChildProcess, { cancel: () => void; done: Promise<Run
 const teardowns = new WeakMap<ChildProcess, Promise<void>>();
 /** Map tracking observed OS descendant PIDs for each active ChildProcess on Windows. */
 export const trackedDescendants = new Map<ChildProcess, Set<number>>();
+/** Map tracking verified OS process identities (PID + creationTime) for each active ChildProcess on Windows. */
+export const trackedIdentities = new Map<ChildProcess, Map<string, KnownIdentity>>();
 
 /**
- * Records an OS descendant PID associated with a parent process for targeted teardown.
+ * Records an OS descendant PID and optional creation time associated with a parent process for targeted teardown.
  *
  * @param proc - Parent ChildProcess instance.
  * @param pid - Descendant OS process identifier.
+ * @param created - Optional creation time in microseconds since Unix epoch.
  */
-export function recordDescendant(proc: ChildProcess, pid: number): void {
+export function recordDescendant(proc: ChildProcess, pid: number, created?: number): void {
   let set = trackedDescendants.get(proc);
   if (!set) {
     set = new Set<number>();
     trackedDescendants.set(proc, set);
   }
   set.add(pid);
+
+  if (created !== undefined) {
+    let map = trackedIdentities.get(proc);
+    if (!map) {
+      map = new Map<string, KnownIdentity>();
+      trackedIdentities.set(proc, map);
+    }
+    const key = `${pid}:${created}`;
+    if (!map.has(key)) {
+      map.set(key, { pid, created });
+    }
+  }
 }
 
 const activeQueries = new WeakMap<ChildProcess, Promise<void>>();
@@ -149,13 +170,22 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
 
   const isCancelled = () => stopped || isTerminating;
 
+  let idMap = trackedIdentities.get(proc);
+  if (!idMap) {
+    idMap = new Map<string, KnownIdentity>();
+    trackedIdentities.set(proc, idMap);
+  }
+  if (proc.pid && proc.pid > 4) {
+    idMap.set(`${proc.pid}:0`, { pid: proc.pid, created: 0 });
+  }
+
   cancelQueuedPolls.set(proc, () => {
     isTerminating = true;
     cimMutex.cancelWait(proc);
   });
 
   const poll = (): Promise<void> => {
-    if (stopped || isTerminating || inFlight || proc.killed || (proc.exitCode !== null && proc.exitCode !== undefined)) return Promise.resolve();
+    if (stopped || isTerminating || inFlight) return Promise.resolve();
     inFlight = true;
 
     const executePoll = async (): Promise<void> => {
@@ -174,21 +204,13 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
         await new Promise<void>(resolve => {
           try {
             const psScript = [
-              "$protected = '^(explorer|dwm|taskhostw|services|lsass|csrss|smss|wininit|winlogon|runtimebroker|shellexperiencehost|searchhost|startmenuexperiencehost|sihost|fontdrvhost|svchost)$';",
-              '$all = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue;',
-              '$q = [System.Collections.Generic.Queue[int]]::new();',
-              `$q.Enqueue(${proc.pid});`,
-              '$res = [System.Collections.Generic.List[int]]::new();',
-              'while ($q.Count -gt 0) {',
-              '  $curr = $q.Dequeue();',
-              '  foreach ($p in $all) {',
-              '    if ($p.ProcessId -gt 4 -and ($p.Name -replace \'\\.exe$\',\'\') -notmatch $protected -and $p.ParentProcessId -eq $curr -and !$res.Contains([int]$p.ProcessId)) {',
-              '      $res.Add([int]$p.ProcessId);',
-              '      $q.Enqueue([int]$p.ProcessId);',
-              '    }',
+              '$now = [DateTime]::UtcNow.ToFileTimeUtc();',
+              'Write-Output "# SNAPSHOT_AT $now";',
+              'Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {',
+              '  if ($_.ProcessId -gt 4 -and $_.CreationDate) {',
+              '    "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.ToFileTimeUtc())"',
               '  }',
-              '}',
-              '$res'
+              '}'
             ].join(' ');
 
             const ps = spawn('powershell.exe', [
@@ -214,9 +236,36 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
 
             ps.on('close', () => {
               if (!stopped && !isTerminating) {
-                for (const line of out.split(/\r?\n/)) {
-                  const pid = parseInt(line.trim(), 10);
-                  if (!isNaN(pid) && pid > 0) recordDescendant(proc, pid);
+                const { snapshotAt, rows } = parseProcessSnapshot(out);
+                let idMap = trackedIdentities.get(proc);
+                if (!idMap) {
+                  idMap = new Map<string, KnownIdentity>();
+                  trackedIdentities.set(proc, idMap);
+                }
+                if (proc.pid && proc.pid > 4) {
+                  const rootRow = rows.find(r => r.pid === proc.pid);
+                  if (rootRow) {
+                    idMap.delete(`${proc.pid}:0`);
+                    const rootKey = `${rootRow.pid}:${rootRow.created}`;
+                    if (!idMap.has(rootKey)) {
+                      idMap.set(rootKey, { pid: rootRow.pid, created: rootRow.created });
+                      recordDescendant(proc, rootRow.pid, rootRow.created);
+                    }
+                  }
+                }
+                const liveKey = new Set(rows.map(r => `${r.pid}:${r.created}`));
+                for (const [k, ident] of idMap.entries()) {
+                  if (ident.created > 0 && !liveKey.has(k) && ident.goneBy === undefined) {
+                    ident.goneBy = snapshotAt;
+                  }
+                }
+                const ownedRows = selectOwnedTree(rows, Array.from(idMap.values()), snapshotAt);
+                for (const row of ownedRows) {
+                  const rowKey = `${row.pid}:${row.created}`;
+                  if (!idMap.has(rowKey)) {
+                    idMap.set(rowKey, { pid: row.pid, created: row.created });
+                  }
+                  recordDescendant(proc, row.pid, row.created);
                 }
               }
               cleanup();
@@ -246,14 +295,14 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
 
   timer1 = setTimeout(() => {
     timer1 = null;
-    if (stopped || proc.killed || (proc.exitCode !== null && proc.exitCode !== undefined)) return;
+    if (stopped) return;
     void poll();
     timer2 = setTimeout(() => {
       timer2 = null;
-      if (stopped || proc.killed || (proc.exitCode !== null && proc.exitCode !== undefined)) return;
+      if (stopped) return;
       void poll();
       intervalTimer = setInterval(() => {
-        if (stopped || proc.killed || (proc.exitCode !== null && proc.exitCode !== undefined)) return;
+        if (stopped) return;
         void poll();
       }, 500);
     }, 125);
@@ -285,11 +334,111 @@ function launch(command: string, args: string[], cwd: string, env: NodeJS.Proces
     : spawn(command, args, { cwd, env, stdio: 'pipe', shell: false, windowsHide: true });
 }
 
+async function teardownWindowsDescendants(
+  proc: ChildProcess,
+  knownList: KnownIdentity[]
+): Promise<void> {
+  const rootPid = proc.pid;
+  for (let round = 0; round < 3; round++) {
+    const snapshotOut = await new Promise<string>(resolve => {
+      try {
+        const psScript = [
+          '$now = [DateTime]::UtcNow.ToFileTimeUtc();',
+          'Write-Output "# SNAPSHOT_AT $now";',
+          'Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {',
+          '  if ($_.ProcessId -gt 4 -and $_.CreationDate) {',
+          '    "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.ToFileTimeUtc())"',
+          '  }',
+          '}'
+        ].join(' ');
+
+        const ps = spawn('powershell.exe', [
+          '-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript
+        ], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+
+        let out = '';
+        const timer = setTimeout(() => {
+          try { ps.kill(); } catch {}
+          resolve(out);
+        }, 1500);
+
+        ps.stdout?.on('data', d => { out += d.toString('utf8'); });
+        ps.on('close', () => { clearTimeout(timer); resolve(out); });
+        ps.on('error', () => { clearTimeout(timer); resolve(out); });
+      } catch {
+        resolve('');
+      }
+    });
+
+    const { snapshotAt, rows } = parseProcessSnapshot(snapshotOut);
+    if (rows.length === 0) break;
+
+    for (const k of knownList) {
+      if (k.created === 0) {
+        const found = rows.find(r => r.pid === k.pid);
+        if (found) {
+          k.created = found.created;
+        }
+      }
+    }
+
+    const ownedRows = selectOwnedTree(rows, knownList, snapshotAt);
+    const liveExtra = knownList
+      .filter(k => k.created === 0 && rows.some(r => r.pid === k.pid))
+      .map(k => ({ pid: k.pid, ppid: 0, created: 0 }));
+
+    const targets = [...ownedRows.filter(r => r.pid !== rootPid), ...liveExtra];
+    if (targets.length === 0) {
+      break;
+    }
+
+    // Sort parents before children (created ascending)
+    targets.sort((a, b) => a.created - b.created);
+
+    await new Promise<void>(resolve => {
+      try {
+        const targetDefs = targets.map(t => `@{id=${t.pid};expected=${t.created}}`).join(',');
+        const killScript = [
+          `$targets = @(${targetDefs});`,
+          'foreach ($t in $targets) {',
+          '  try {',
+          '    $p = [Diagnostics.Process]::GetProcessById($t.id);',
+          '    $null = $p.Handle;',
+          '    $ft = $p.StartTime.ToFileTimeUtc();',
+          '    $us = [long](($ft - 116444736000000000) / 10);',
+          '    if ($t.expected -eq 0 -or [Math]::Abs($us - $t.expected) -le 2) {',
+          '      $p.Kill();',
+          '      $null = $p.WaitForExit(500);',
+          '    }',
+          '  } catch {}',
+          '}'
+        ].join(' ');
+
+        const killer = spawn('powershell.exe', [
+          '-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', killScript
+        ], { stdio: 'ignore', windowsHide: true });
+
+        const timer = setTimeout(() => {
+          try { killer.kill(); } catch {}
+          resolve();
+        }, 1500);
+
+        killer.on('close', () => { clearTimeout(timer); resolve(); });
+        killer.on('error', () => { clearTimeout(timer); resolve(); });
+      } catch {
+        resolve();
+      }
+    });
+  }
+}
+
 /**
  * Terminate a process and all of its spawned descendants cleanly across platforms.
  *
- * - On Windows: Invokes `taskkill.exe /PID <pid> /T /F`. If the parent exited prematurely,
- *   falls back to sweeping known and active descendant PIDs via CIM `Stop-Process`.
+ * - On Windows: Terminates the root process immediately while libuv holds its handle,
+ *   selects verified descendants via pure `(PID, creationTime)` tree analysis, and terminates
+ *   verified identities individually while re-verifying creation time. Never sweeps after a clean
+ *   exit when no descendants were observed.
  * - On POSIX: Signals the detached process group (`-proc.pid`) with `SIGTERM`, waits
  *   for the grace period, and escalates to `SIGKILL`.
  *
@@ -304,6 +453,8 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = 250, extraPid
   const task = (async () => {
     if (!proc.pid) return;
     if (process.platform === 'win32') {
+      try { proc.kill(); } catch {}
+
       const cancelQueue = cancelQueuedPolls.get(proc);
       if (cancelQueue) cancelQueue();
 
@@ -312,124 +463,47 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = 250, extraPid
         try { await pendingQuery; } catch {}
       }
 
-      const knownSet = new Set<number>();
-      if (proc.pid && proc.pid > 4) knownSet.add(proc.pid);
+      const idMap = trackedIdentities.get(proc);
+      const knownList: KnownIdentity[] = idMap ? Array.from(idMap.values()) : [];
       const tracked = trackedDescendants.get(proc);
       if (tracked) {
         for (const p of tracked) {
-          if (p > 4) knownSet.add(p);
+          if (p > 4 && !knownList.some(k => k.pid === p)) {
+            knownList.push({ pid: p, created: 0 });
+          }
         }
       }
       if (extraPids) {
         for (const p of extraPids) {
-          if (Number.isSafeInteger(p) && p > 4) knownSet.add(p);
+          if (Number.isSafeInteger(p) && p > 4 && !knownList.some(k => k.pid === p)) {
+            knownList.push({ pid: p, created: 0 });
+          }
         }
       }
+      if (proc.pid && proc.pid > 4 && !knownList.some(k => k.pid === proc.pid)) {
+        knownList.push({ pid: proc.pid, created: 0 });
+      }
 
-      await new Promise<void>(resolve => {
-        let settled = false;
-        let killerTimer: NodeJS.Timeout | null = null;
-        let fallbackExecuted = false;
+      const hasDescendantsToSweep = knownList.some(k => k.pid !== proc.pid) || Boolean(extraPids);
+      const isCleanExit = proc.exitCode === 0;
 
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          if (killerTimer) { clearTimeout(killerTimer); killerTimer = null; }
-          resolve();
-        };
+      // Never start a sweep after a clean exit when no descendant was observed
+      if (isCleanExit && !hasDescendantsToSweep) {
+        return;
+      }
 
-        const executeFallback = () => {
-          if (fallbackExecuted || settled) return;
-          fallbackExecuted = true;
-          if (killerTimer) { clearTimeout(killerTimer); killerTimer = null; }
-          try {
-            const knownArray = Array.from(knownSet).filter(pid => Number.isSafeInteger(pid) && pid > 4);
-            if (knownArray.length === 0) {
-              finish();
-              return;
-            }
-            const targetPid = Number.isSafeInteger(proc.pid) && (proc.pid as number) > 4 ? proc.pid : -1;
-            const psScript = [
-              "$protected = '^(explorer|dwm|taskhostw|services|lsass|csrss|smss|wininit|winlogon|runtimebroker|shellexperiencehost|searchhost|startmenuexperiencehost|sihost|fontdrvhost|svchost)$';",
-              '$all = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue;',
-              '$q = [System.Collections.Generic.Queue[int]]::new();',
-              `$known = @(${knownArray.join(',')});`,
-              'foreach ($k in $known) { if ($k -gt 4) { $q.Enqueue([int]$k); } }',
-              '$pids = [System.Collections.Generic.List[int]]::new();',
-              'while ($q.Count -gt 0) {',
-              '  $curr = $q.Dequeue();',
-              '  foreach ($p in $all) {',
-              '    if ($p.ProcessId -gt 4 -and ($p.Name -replace \'\\.exe$\',\'\') -notmatch $protected -and $p.ParentProcessId -eq $curr -and !$pids.Contains([int]$p.ProcessId)) {',
-              '      $pids.Add([int]$p.ProcessId);',
-              '      $q.Enqueue([int]$p.ProcessId);',
-              '    }',
-              '  }',
-              '}',
-              'foreach ($p in $all) {',
-              '  if ($p.ProcessId -gt 4 -and ($p.Name -replace \'\\.exe$\',\'\') -notmatch $protected) {',
-              '    if ($known.Contains([int]$p.ProcessId) -and !$pids.Contains([int]$p.ProcessId)) {',
-              `      if (($p.ProcessId -eq ${targetPid} -and ${targetPid} -gt 4) -or ($p.ParentProcessId -gt 4 -and $known.Contains([int]$p.ParentProcessId))) {`,
-              '        $pids.Add([int]$p.ProcessId);',
-              '      }',
-              '    }',
-              '  }',
-              '}',
-              'for ($i = $pids.Count - 1; $i -ge 0; $i--) {',
-              '  Stop-Process -Id $pids[$i] -Force -ErrorAction SilentlyContinue;',
-              '}'
-            ].join(' ');
-
-            const findChildren = spawn(
-              'powershell.exe',
-              ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', psScript],
-              { stdio: 'ignore', windowsHide: true }
-            );
-            const timer = setTimeout(() => {
-              try { findChildren.kill(); } catch {}
-              finish();
-            }, 3000);
-            findChildren.on('close', () => { clearTimeout(timer); finish(); });
-            findChildren.on('error', () => { clearTimeout(timer); finish(); });
-          } catch {
-            finish();
-          }
-        };
-
-        if (proc.pid && proc.pid > 4) {
-          const killer = spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'), ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-          killerTimer = setTimeout(() => {
-            killerTimer = null;
-            try { killer.kill(); } catch {}
-            try { proc.kill(); } catch {}
-            executeFallback();
-          }, 3000);
-
-          killer.on('error', () => {
-            if (killerTimer) { clearTimeout(killerTimer); killerTimer = null; }
-            try { proc.kill(); } catch {}
-            executeFallback();
-          });
-
-          killer.on('close', (code) => {
-            if (killerTimer) { clearTimeout(killerTimer); killerTimer = null; }
-            try { proc.kill(); } catch {}
-            if (fallbackExecuted || settled) return;
-            if (code !== 0) {
-              executeFallback();
-            } else {
-              finish();
-            }
-          });
-        } else {
-          executeFallback();
-        }
-      });
+      if (knownList.length > 0) {
+        await teardownWindowsDescendants(proc, knownList);
+      }
     } else {
       try { process.kill(-proc.pid, 'SIGTERM'); } catch { try { proc.kill('SIGTERM'); } catch {} }
       await new Promise<void>(resolve => setTimeout(resolve, graceMs));
       try { process.kill(-proc.pid, 'SIGKILL'); } catch { try { proc.kill('SIGKILL'); } catch {} }
     }
-  })().finally(() => { trackedDescendants.delete(proc); });
+  })().finally(() => {
+    trackedIdentities.delete(proc);
+    trackedDescendants.delete(proc);
+  });
   teardowns.set(proc, task);
   return task;
 }

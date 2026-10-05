@@ -264,19 +264,19 @@ Completed:
   does not cover unowned processes matched by a stale parent PID (AUD-P0-1).
 
 Process identity (AUD-P0-1, order 1):
-- [ ] Treat process identity as (PID, creation time).
+- [x] Treat process identity as (PID, creation time).
   - PowerShell emits only a snapshot (`ProcessId`, `ParentProcessId`,
     `CreationDate`).
   - A pure TypeScript function selects owned descendants, rejecting any child
-    created before its parent.
+    created before its parent (`selectOwnedTree` in `src/execution/process-tree.ts`).
   - The root identity is captured while the root is alive.
-- [ ] Never start a sweep after a clean exit when no descendant was observed.
+- [x] Never start a sweep after a clean exit when no descendant was observed.
   Kill each verified identity individually, re-checking its creation time; never
-  rely on `/T` across unverified PIDs.
-- [ ] Remove the process-name denylist. It is not a safety mechanism.
-- [ ] Apply the same supervisor to the test runner and MCP test harness.
-- [ ] Acceptance: unit tests over synthetic snapshots, including stale PPID,
-  reused root PID and live-root cases. No validation by sweeping a live desktop.
+  rely on `/T` across unverified PIDs (`teardownWindowsDescendants` in `src/execution/process.ts`).
+- [x] Remove the process-name denylist. It is not a safety mechanism.
+- [x] Apply the same supervisor to the test runner and MCP test harness.
+- [x] Acceptance: unit tests over synthetic snapshots, including stale PPID,
+  reused root PID and live-root cases (`tests/process_tree.test.js`, 9/9 passed; `tests/v1_phase1.test.js`, 21/21 passed). No validation by sweeping a live desktop.
 
 Supervision cost (AUD-P1-4, order 2):
 - [ ] Do not track descendants for short-lived commands (`--version`, `git`).
