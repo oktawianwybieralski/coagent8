@@ -12,7 +12,7 @@
 * **Strict TypeScript Strict Mode**: The codebase operates strictly under TypeScript strict mode (`tsc --noEmit` must pass with 0 compiler errors). Never suppress type errors, abuse `any`, or use arbitrary type coercions to conceal type system mismatches.
 * **Runtime Reliability**: The MCP-to-CLI bridge must support bounded headless execution and reliable cancellation. Resource leaks (dangling processes, orphaned file descriptors, uncollected timers, runaway memory buffers) are treated as critical P0 defects. This does not require a general orchestration platform.
 * **Defensive Boundary Validation**: Always validate external inputs, CLI outputs, and JSON payloads with strict schemas (`validateToolArguments`, Zod/MCP schema definitions). Never assume third-party CLIs or external callers behave well.
-* **Strict ASCII Punctuation & Character Encoding**: Never use non-ASCII typography (Unicode em dashes `—`, en dashes `–`, smart quotes `“”‘’`, non-breaking spaces). All source code, configuration manifests, test suites, and documentation must strictly use standard ASCII hyphens (`-`), ASCII straight quotes (`"`, `'`), and standard ASCII whitespace. See [06-language-and-style.md](06-language-and-style.md).
+* **Strict ASCII Punctuation & Character Encoding**: Never use non-ASCII typography (Unicode em dashes U+2014, en dashes U+2013, curly/smart quotes U+201C/U+201D/U+2018/U+2019, non-breaking spaces U+00A0). All source code, configuration manifests, test suites, and documentation must strictly use standard ASCII hyphens (`-`, U+002D), ASCII straight quotes (`"`, `'`), and standard ASCII whitespace. See [06-language-and-style.md](06-language-and-style.md).
 
 ---
 

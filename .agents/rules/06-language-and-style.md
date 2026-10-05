@@ -37,7 +37,7 @@ To prevent terminal mojibake, encoding mismatches across Windows (CP1250/CP1252)
    - Strictly **MANDATORY**: Standard ASCII hyphen-minus (`-`, U+002D) exclusively.
 
 2. **Strict ASCII Quotes & Apostrophes**:
-   - Strictly **FORBIDDEN**: Typographic/smart curly quotes and apostrophes (`“`, `”`, `‘`, `’`, `«`, `»`).
+   - Strictly **FORBIDDEN**: Typographic/smart curly quotes and apostrophes (U+201C, U+201D, U+2018, U+2019, guillemets U+00AB, U+00BB).
    - Strictly **MANDATORY**: Standard ASCII straight quotes (`"`, `'`) and backticks (`` ` ``).
 
 3. **No Fancy Unicode Punctuation**:

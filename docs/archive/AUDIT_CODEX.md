@@ -219,7 +219,7 @@ Kontrolowana zmiana locka na świeży lock żywego właściciela pomiędzy odczy
 {"injected":true,"ok":true,"freshLockPreserved":false}
 ~~~
 
-Mutex `.reclaim` serializuje reclaimerów, ale zwykli nabywcy `wx` go nie respektują. Nie stanowi więc pełnego rozwiązania wyścigu. Test nazwany „serializes competing contenders” uruchamia pojedyncze `acquireSessionTurn`, a nie konkurencyjne procesy.
+Mutex `.reclaim` serializuje reclaimerów, ale zwykli nabywcy `wx` go nie respektują. Nie stanowi więc pełnego rozwiązania wyścigu. Test nazwany „serializes competing contenders" uruchamia pojedyncze `acquireSessionTurn`, a nie konkurencyjne procesy.
 
 **Naprawa:** jeden sprawdzony protokół blokowania dla normal acquisition i reclaim, z niepowtarzalnym tokenem właściciela, ponowną weryfikacją lease i bez kasowania pliku, którego własności nie potwierdzono. Mutacje sesji i zwalnianie tury powinny sprawdzać token tury, nie tylko PID procesu MCP. Dodać rzeczywiste testy wieloprocesowe oraz deterministyczne testy interleavingów.
 
@@ -242,13 +242,13 @@ Dalsze problemy:
 
 ### 6.4. Unieważnianie i retencja providera - F12
 
-Obecne `closeSession()` usuwa tylko rekord CoAgent8. Nie usuwa natywnej rozmowy Codex ani plików historii providera. Nieistniejący uchwyt powoduje exception przez `acquireSessionTurn`, choć handler obiecuje odpowiedź „not found or already closed”. To należy uczynić idempotentnym i jasno opisać.
+Obecne `closeSession()` usuwa tylko rekord CoAgent8. Nie usuwa natywnej rozmowy Codex ani plików historii providera. Nieistniejący uchwyt powoduje exception przez `acquireSessionTurn`, choć handler obiecuje odpowiedź „not found or already closed". To należy uczynić idempotentnym i jasno opisać.
 
-Po „native session not found”, uszkodzeniu rozmowy albo nieodwracalnym błędzie resume nie ma stanu invalidated. Handlery zapisują native ID także z wyników błędnych i wciąż próbują użyć starego uchwytu. Jednocześnie błędy przejściowe, takie jak rate limit, nie powinny automatycznie niszczyć historii.
+Po „native session not found", uszkodzeniu rozmowy albo nieodwracalnym błędzie resume nie ma stanu invalidated. Handlery zapisują native ID także z wyników błędnych i wciąż próbują użyć starego uchwytu. Jednocześnie błędy przejściowe, takie jak rate limit, nie powinny automatycznie niszczyć historii.
 
 **Docelowy lifecycle:** `idle → running → idle`, dodatkowo `invalidated` i `closed`; jawny `lastErrorCode`, `nativeSessionId`, wersja CLI i profil bezpieczeństwa. Session handle pozostaje przypisany do providera, niezależnie od późniejszej decyzji `smart_quota`; wznowienie nie może zmieniać providera ani automatycznie otwierać innej rozmowy.
 
-Oddzielić wygaszenie uchwytu CoAgent8 od usunięcia historii providera. Dla Gemini używać pełnego UUID w `--resume`, bez „latest” lub indeksu. Gemini ma również własną retencję; dokumentacja opisuje domyślny `maxAge: 30d` i `minRetention: 1d`, więc 2 h TTL mostu nie oznacza skasowania danych w Gemini. [Zarządzanie sesjami Gemini](https://geminicli.com/docs/cli/session-management/).
+Oddzielić wygaszenie uchwytu CoAgent8 od usunięcia historii providera. Dla Gemini używać pełnego UUID w `--resume`, bez „latest" lub indeksu. Gemini ma również własną retencję; dokumentacja opisuje domyślny `maxAge: 30d` i `minRetention: 1d`, więc 2 h TTL mostu nie oznacza skasowania danych w Gemini. [Zarządzanie sesjami Gemini](https://geminicli.com/docs/cli/session-management/).
 
 Usuwanie natywnych sesji powinno dotyczyć wyłącznie rozmów utworzonych i śledzonych przez CoAgent8, według jawnej konfiguracji retencji. Nie kasować użytkownikowi globalnej historii CLI.
 
@@ -260,7 +260,7 @@ To propozycja kompletnego kontraktu i wdrożenia. Obecne repozytorium nie zawier
 
 Dodać Gemini równocześnie do rejestru adapterów, runtime validation, schema parametrów MCP, konfiguracji allowed/default, doctor, quota i wszystkich uniwersalnych handlerów. Obecne `BackendId` zawiera `gemini`, ale server i narzędzia go odrzucają; `setDefaultBackend('gemini')` przyjmuje wartość, której router nie obsługuje.
 
-`ResolvedBackend.adapter` już istnieje, lecz handlery nie wywołują `backend.adapter.execute()`. Po dodaniu Gemini do routera obecna gałąź „jeżeli Claude, inaczej Codex” nadal uruchamiałaby **Codex z backend.id Gemini**. To potencjalne błędne przesłanie kodu do innego providera i musi być usunięte przed włączeniem Gemini.
+`ResolvedBackend.adapter` już istnieje, lecz handlery nie wywołują `backend.adapter.execute()`. Po dodaniu Gemini do routera obecna gałąź „jeżeli Claude, inaczej Codex" nadal uruchamiałaby **Codex z backend.id Gemini**. To potencjalne błędne przesłanie kodu do innego providera i musi być usunięte przed włączeniem Gemini.
 
 Proponowany przepływ:
 
@@ -295,7 +295,7 @@ Prompt przekazywać jako UTF-8 przez stdin, a następnie zamknąć stdin; nie um
 
 Model:
 
-- Jeżeli użytkownik poda `model`, przekazać dokładny ID jako osobny argument; bez zmiany na „nowszy” albo na model innego providera.
+- Jeżeli użytkownik poda `model`, przekazać dokładny ID jako osobny argument; bez zmiany na „nowszy" albo na model innego providera.
 - Bez override zachować udokumentowaną konfigurację/domysły Gemini; raportować rzeczywiście wybrany model z `init`.
 - `availableModels` nie może oznaczać dostępności konta, gdy lista jest tylko hardkodowana. Rozdzielić `knownModels` od potwierdzonego katalogu, dodać źródło i czas odczytu.
 - Nie wymuszać `gemini-2.5-flash` / `gemini-2.5-pro` jako jedynych dopuszczalnych ID. Te nazwy w aktualnym probe nie są dynamicznym wykrywaniem.
@@ -303,7 +303,7 @@ Model:
 
 ### 7.3. Wymuszenie read-only przed spawn
 
-Gemini nie ma równoważnika `--sandbox read-only` z Codex. Nie wolno ogłosić ochrony repozytorium tylko na podstawie promptu „do not edit”. Również **`--approval-mode plan` samo w sobie nie daje gwarancji**: dokumentacja headless opisuje możliwość automatycznego wyjścia z planu do YOLO. [Plan mode: non-interactive execution](https://geminicli.com/docs/cli/plan-mode/).
+Gemini nie ma równoważnika `--sandbox read-only` z Codex. Nie wolno ogłosić ochrony repozytorium tylko na podstawie promptu „do not edit". Również **`--approval-mode plan` samo w sobie nie daje gwarancji**: dokumentacja headless opisuje możliwość automatycznego wyjścia z planu do YOLO. [Plan mode: non-interactive execution](https://geminicli.com/docs/cli/plan-mode/).
 
 Projekt profilu dla audit/consult/analyze:
 
@@ -347,7 +347,7 @@ Oficjalne typy określają m.in. `init.session_id`, `message.role/content/delta`
 | `result` | Terminalny status, błąd i usage; wymagać zgodności z exit/signal |
 | Nieznany event | Ograniczony diagnostic/version compatibility; bez crash ani publikowania całego payloadu |
 
-Wymagania parsera: poprawne granice UTF-8 i CRLF, linie JSONL dzielone w dowolnym miejscu, final line bez newline, discard całego oversized record z odzyskaniem następnej granicy, ścisły limit output/stderr, walidacja pól z `unknown`. Malformed stream bez poprawnego terminal result zwraca `PROTOCOL_ERROR`, a nie „clean output”.
+Wymagania parsera: poprawne granice UTF-8 i CRLF, linie JSONL dzielone w dowolnym miejscu, final line bez newline, discard całego oversized record z odzyskaniem następnej granicy, ścisły limit output/stderr, walidacja pól z `unknown`. Malformed stream bez poprawnego terminal result zwraca `PROTOCOL_ERROR`, a nie „clean output".
 
 Warunek sukcesu: brak abort/timeout, exit 0, poprawny terminal `result.status === 'success'` i brak niespójnego fatal statusu. Output może być pusty, ale status nie może wynikać wyłącznie z braku tekstu. Wspierać exit 1, 42 i 53 jako odrębne klasy diagnostyki, zgodnie z headless reference.
 
@@ -441,7 +441,7 @@ Probe powinien odróżniać `installed`, `executionSupported`, `authEvidence`, `
 
 Dodatkowo uruchomiono `node --import tsx --test --experimental-test-coverage`. V8 raportował 80,02% linii dla załadowanych plików łącznie z testami. **Ten agregat nie jest pokryciem całego `src/`**: pomija niezaładowane `server.ts`, `index.ts`, `tools/*` i `base.adapter.ts`, a pomiar TS dotyczy kodu po transformacji. Raport pokazał nawet 100% linii Gemini bez wykonania `execute()`. Nie należy traktować tej wartości jako dowodu kompletnego adaptera.
 
-Nie ma coverage gate, narzędzia obejmującego wszystkie pliki `src/` ani kontroli branch coverage dla krytycznych ścieżek. „100% testów” oznacza pass rate, a nie 100% pokrycia kodu.
+Nie ma coverage gate, narzędzia obejmującego wszystkie pliki `src/` ani kontroli branch coverage dla krytycznych ścieżek. „100% testów" oznacza pass rate, a nie 100% pokrycia kodu.
 
 ### 8.2. Minimalna macierz brakujących testów
 
@@ -569,7 +569,7 @@ Instalacja CoAgent8 dostarcza most i jego runtime dependencies. **Nie instaluje 
 
 **Plan dystrybucji:** ujednolicić wersję prerelease i źródło numeru wersji; ustalić wspierane wersje Node/CLI; build i test w CI z lockfile; wygenerować i zainstalować dokładnie ten sam tarball; sprawdzić bin, assety i handshake; wykonać smoke na hostach IDE; dopiero wtedy publikować tag npm i Git z zielonego zatwierdzonego PR. Publikacja nie jest częścią tego audytu.
 
-RC i Beta to nazwy różnych etapów. Dokumentacja wydania powinna wskazać jedno konkretne oznaczenie, np. `1.0.0-beta.1` albo `1.0.0-rc.1`, oraz matching dist-tag. Nie używać jednocześnie „v1.0”, „0.9.0-dev” i „RC już wydane” jako opisu tego samego artefaktu.
+RC i Beta to nazwy różnych etapów. Dokumentacja wydania powinna wskazać jedno konkretne oznaczenie, np. `1.0.0-beta.1` albo `1.0.0-rc.1`, oraz matching dist-tag. Nie używać jednocześnie „v1.0", „0.9.0-dev" i „RC już wydane" jako opisu tego samego artefaktu.
 
 ## 11. Priorytetowy plan refaktoryzacji przed Beta 1
 
