@@ -72,11 +72,11 @@ export async function handleSession(args: ToolArguments) {
     const sessions = listSessions();
     if (!sessions.length) {
       return {
-        content: [{ type: 'text' as const, text: '> CoAgent: No active sessions found.' }],
+        content: [{ type: 'text' as const, text: '> CoAgent8: No active sessions found.' }],
         structuredContent: { schemaVersion: 1, sessions: [] },
       };
     }
-    const lines = ['## Active CoAgent Sessions', ''];
+    const lines = ['## Active CoAgent8 Sessions', ''];
     for (const s of sessions) {
       lines.push(`- \`${s.sessionHandle}\`: ${s.backend} (${s.model || 'default'}) · turns: ${s.turnCount || 0} · state: ${s.state}`);
     }
@@ -110,7 +110,7 @@ export async function handleCancelSession(args: { session_handle: string; worksp
     content: [
       {
         type: 'text' as const,
-        text: `> CoAgent: ${result.message}`,
+        text: `> CoAgent8: ${result.message}`,
       },
     ],
     structuredContent: {

@@ -1,4 +1,4 @@
-# CoAgent Mock CLI Test Fixtures
+# CoAgent8 Mock CLI Test Fixtures
 
 This directory contains standalone mock executables for external coding CLI engines:
 - `claude-cli/claude.cjs` (Claude Code mock double)

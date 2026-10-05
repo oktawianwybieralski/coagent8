@@ -13,7 +13,7 @@ test('MCP stdio exposes unified schema; two fixture turns, public history, fallb
   const c=connect(dir);
   t.after(async()=>{await c.cleanup();fs.rmSync(dir,{recursive:true,force:true});});
   const init=await c.request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'fixture-client',version:'1'}});
-  assert.equal(init.result.serverInfo.title,'CoAgent');
+  assert.equal(init.result.serverInfo.title,'CoAgent8');
   const icon=init.result.serverInfo.icons[0];
   assert.equal(icon.mimeType,'image/png');assert.deepEqual(icon.sizes,['64x64']);
   assert.ok(icon.src.startsWith('data:image/png;base64,'));

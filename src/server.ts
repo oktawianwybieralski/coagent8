@@ -13,7 +13,7 @@ import { redactDiagnostic } from './redaction.js';
 import { BRAND, CANONICAL_TOOL_NAMES } from './constants/index.js';
 import { SERVER_ICON } from './generated/server-icon.js';
 import { loadConfig } from './config.js';
-import type { CoAgentConfig } from './types/config.types.js';
+import type { CoAgent8Config } from './types/config.types.js';
 import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
 import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession } from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
@@ -121,7 +121,7 @@ export function getAllCallableToolDefinitions(): Tool[] {
 /**
  * Returns advertised tool definitions according to the active toolProfile configuration.
  */
-export function createToolDefinitions(configOverride?: CoAgentConfig): Tool[] {
+export function createToolDefinitions(configOverride?: CoAgent8Config): Tool[] {
   const synConfig = configOverride || loadConfig();
   const toolProfile = synConfig.toolProfile || 'canonical';
   const tools = toolProfile === 'compact' ? getCompactTools() : getCanonicalTools();
@@ -207,7 +207,7 @@ export function createServer(): Server {
       {
         uri: 'coagent8://sessions',
         name: 'Active Sessions',
-        description: 'List of active CoAgent conversation sessions with metadata and turn state.',
+        description: 'List of active CoAgent8 conversation sessions with metadata and turn state.',
         mimeType: 'application/json',
       },
       ...sessions.map(s => ({

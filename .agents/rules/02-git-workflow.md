@@ -17,7 +17,7 @@ trunk-plus-release-branch model with squash-merged pull requests.
 
 | Branch | Purpose | Created from | Merges into | Lifetime |
 | --- | --- | --- | --- | --- |
-| `main` | Accepted final releases only (`vX.Y.Z`) | — | — | Permanent |
+| `main` | Accepted final releases only (`vX.Y.Z`) | - | - | Permanent |
 | `release/vX.Y.Z` | Integration branch for one upcoming release; carries all of its prereleases | Latest `main` | `main` (final release PR) | Until `vX.Y.Z` is released |
 | Topic branch | One change | Active release branch | Active release branch | Until merged |
 | `hotfix/vX.Y.Z` | Urgent patch to a released version | Release tag `vX.Y.(Z-1)` on `main` | `main` | Until released |
@@ -54,8 +54,8 @@ force-push a branch someone else is working on.
 
 ## 2. Commit Messages (Conventional Commits)
 
-Every commit that lands on a release branch or `main` — in practice, every
-squash-merge commit — must follow Conventional Commits 1.0.0:
+Every commit that lands on a release branch or `main` - in practice, every
+squash-merge commit - must follow Conventional Commits 1.0.0:
 
 ```text
 <type>(<scope>)!: <subject>
@@ -79,10 +79,10 @@ squash-merge commit — must follow Conventional Commits 1.0.0:
 * **body** (required unless trivial): wrapped at 72 characters; explain *why* the
   change is needed and what behavior changes, not a file list.
 * **footers** (one per line):
-  * `Fixes #123` / `Refs #123` — linked GitHub issue;
-  * `Refs: AUD-P0-1` — audit finding or roadmap item;
+  * `Fixes #123` / `Refs #123` - linked GitHub issue;
+  * `Refs: AUD-P0-1` - audit finding or roadmap item;
   * `BREAKING CHANGE: <description and migration>`;
-  * `Co-Authored-By: <name> <email>` — AI agents and co-authors.
+  * `Co-Authored-By: <name> <email>` - AI agents and co-authors.
 
 Examples:
 
@@ -120,14 +120,14 @@ must meet this section.
 * One concern per PR. Prefer under ~400 changed lines excluding generated files
   and lockfiles; split larger work into reviewable steps.
 * **Description** (English) with these sections:
-  1. **Summary** — what changes and why.
-  2. **Links** — `Fixes #…` / `Refs #…`, roadmap item and audit finding IDs.
-  3. **Changes** — notable behavior, contract or migration effects.
-  4. **Verification** — the commands run, platform and Node version, and each
+  1. **Summary** - what changes and why.
+  2. **Links** - `Fixes #…` / `Refs #…`, roadmap item and audit finding IDs.
+  3. **Changes** - notable behavior, contract or migration effects.
+  4. **Verification** - the commands run, platform and Node version, and each
      result as PASS, FAIL or NOT_RUN with a reason, selected per
      [04-quality-gate](04-quality-gate.md). Never report an unexecuted check as PASS.
-  5. **Risk and rollback** — what could break and how to revert.
-  6. **Checklist** — docs, runtime contract and roadmap status updated where
+  5. **Risk and rollback** - what could break and how to revert.
+  6. **Checklist** - docs, runtime contract and roadmap status updated where
      behavior changed; `CHANGELOG.md` "Unreleased" entry added for user-visible
      changes; no secrets, local paths or personal data in the diff.
 
@@ -185,7 +185,7 @@ must meet this section.
 3. After merge, verify CI on the resulting release-branch commit.
 4. **Tag** that exact commit with an annotated tag:
    ```bash
-   git tag -a v1.0.0-beta.N <release-branch-sha> -m "CoAgent v1.0.0-beta.N"
+   git tag -a v1.0.0-beta.N <release-branch-sha> -m "CoAgent8 v1.0.0-beta.N"
    git push origin v1.0.0-beta.N
    ```
 5. **Build** the artifacts (npm tarball, VSIX) from a clean checkout of the tag;
@@ -197,7 +197,7 @@ must meet this section.
 
 ### Final release
 
-1. **Release readiness gate** — all of:
+1. **Release readiness gate** - all of:
    * the roadmap's RC stage is accepted, with no open P0/P1 issue;
    * all six CI jobs and the full local gate
      (`npm run typecheck`, `npm run build`, `npm test`, `npm pack --dry-run`,
@@ -219,7 +219,7 @@ must meet this section.
    CI passes on it.
 5. Tag the verified `main` commit:
    ```bash
-   git tag -a v1.0.0 <verified-main-sha> -m "CoAgent v1.0.0"
+   git tag -a v1.0.0 <verified-main-sha> -m "CoAgent8 v1.0.0"
    git push origin v1.0.0
    ```
 6. Build from the tag, publish the GitHub Release (not pre-release) and npm
@@ -254,7 +254,7 @@ must meet this section.
 
 * Bugs are reported as GitHub issues. Testers should include the output of the
   `issue` tool (a sanitized, prefilled report) and of `doctor`, the OS, Node
-  version, CoAgent version and backend CLI versions.
+  version, CoAgent8 version and backend CLI versions.
 * Triage labels:
   * type: `bug`, `enhancement`, `question`, `docs`;
   * severity for bugs: `P0` (safety, data loss, tool unusable), `P1`

@@ -45,7 +45,7 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   module.exports.activate(context);
   assert.equal(providerId, require('../extensions/vscode/package.json').contributes.mcpServerDefinitionProviders[0].id);
   const definition = provider.provideMcpServerDefinitions()[0];
-  assert.equal(definition.label, 'CoAgent');
+  assert.equal(definition.label, 'CoAgent8');
   assert.equal(definition.command, 'node');
   assert.equal(definition.args.length, 1);
   assert.equal(definition.args[0], path.join(root, 'dist/index.cjs'));

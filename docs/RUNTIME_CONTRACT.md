@@ -1,7 +1,7 @@
-# CoAgent Runtime Contract (v1.0.0 Specification)
+# CoAgent8 Runtime Contract (v1.0.0 Specification)
 
 > **Status:** Authoritative Runtime Contract  
-> **Release Target:** CoAgent v1.0.0  
+> **Release Target:** CoAgent8 v1.0.0  
 > **Applicability:** All CLI adapters (`codex`, `gemini`, `claude`), shared controller, process runners, and storage services.
 
 This describes current implementation, not the proposed simplified API.
@@ -19,7 +19,7 @@ away. Local contributor verification is defined separately in the
 The central execution controller is [`src/execution/controller.ts`](../src/execution/controller.ts). Tool handlers supply a composed internal prompt and a sanitized public user message. Dynamic routing chooses an active CLI adapter; the adapter handles command arguments and native event parsing. Process execution, storage, progress telemetry, heartbeats, and Markdown rendering are completely shared.
 
 ### Dual Tool Profiles
-1. **Canonical Profile (Default)**: Advertises nine tools — six core tools plus
+1. **Canonical Profile (Default)**: Advertises nine tools - six core tools plus
    three deprecated aliases:
    * Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
      `implementation`), `review`.
@@ -131,7 +131,7 @@ from execution/ownership failures requires the planned contract migration.
 ## 5. Subprocess Execution & Supervision
 
 * `runCommand(command, args, options)` runs strictly with `shell: false`.
-* **Windows**: Child processes and descendants are tracked via CIM/WMI background polling (every 500 ms, serialized by `CimMutex`). Teardown uses `taskkill.exe /PID <pid> /T /F`, followed by a PowerShell CIM sweep when `taskkill` fails — including after every normal exit, where `taskkill` returns 128. Descendants are currently matched by parent PID only; see section 7.
+* **Windows**: Child processes and descendants are tracked via CIM/WMI background polling (every 500 ms, serialized by `CimMutex`). Teardown uses `taskkill.exe /PID <pid> /T /F`, followed by a PowerShell CIM sweep when `taskkill` fails - including after every normal exit, where `taskkill` returns 128. Descendants are currently matched by parent PID only; see section 7.
 * **POSIX**: Spawns detached process groups (`detached: true`) and terminates using `process.kill(-proc.pid, 'SIGTERM')` followed by `SIGKILL` after 250ms.
 * **Buffer Capacities**: Prompts up to 4 MiB (via stdin), diagnostics up to 512 KiB per channel, public output up to 1 MiB. StringDecoder preserves split UTF-8 code points across chunks.
 
@@ -192,7 +192,7 @@ when its fix lands with a regression test.
 | --- | --- | --- |
 | AUD-P0-1 | Teardown terminates only owned processes | Windows descendants are matched by parent PID alone; a stale parent PID can match unrelated user processes, which are then stopped with `Stop-Process -Force`. Only a fixed list of system/shell names is excluded |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
-| AUD-P0-3 | History is archival and bounded | Streamed answers are stored 50–110× their size; reaching 10 MiB per session turns a successful turn into `HISTORY_ERROR`; above 100 MiB in total, new executions fail before the CLI starts |
+| AUD-P0-3 | History is archival and bounded | Streamed answers are stored 50-110× their size; reaching 10 MiB per session turns a successful turn into `HISTORY_ERROR`; above 100 MiB in total, new executions fail before the CLI starts |
 | AUD-P1-1 | A rate limit records the provider's reset time | The controller writes a second, tiered cooldown that replaces the parsed reset (3 days becomes 45 s) |
 | AUD-P1-2 | Error codes identify the cause | Errors without a known `CODE:` prefix, including `ONBOARDING_REQUIRED` and lock timeouts, are returned as `INPUT_LIMIT` |
 | AUD-P1-3 | A completed CLI answer is returned | A session-metadata update failure after execution replaces the answer with an empty failed result |

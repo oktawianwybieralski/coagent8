@@ -17,22 +17,22 @@ export function activate(context: vscode.ExtensionContext): void {
     provideMcpServerDefinitions() {
       if (hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [])) return [];
       const command = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-      if (!command) throw new Error('CoAgent: configure coagent8.nodePath with a Node.js 20+ executable.');
+      if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 20+ executable.');
       return [new vscode.McpStdioServerDefinition(
-        'CoAgent', command, [context.asAbsolutePath('dist/index.cjs')], {}, version
+        'CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {}, version
       )];
     },
   }));
   context.subscriptions.push(vscode.commands.registerCommand('coagent8.setup', async () => {
     if (vscode.env.remoteName) {
-      await vscode.window.showWarningMessage('CoAgent external-client setup supports the local default profile. Run coagent8 setup on the intended machine.');
+      await vscode.window.showWarningMessage('CoAgent8 external-client setup supports the local default profile. Run coagent8 setup on the intended machine.');
       return;
     }
     try {
       const installed = SETUP_CLIENTS.filter(client => resolveSetupClient(client));
       const remembered = context.globalState.get<SetupClient[]>('setupClients');
       const selected = remembered ?? (await vscode.window.showQuickPick(installed.map(client => ({ label: client, client })), {
-        canPickMany: true, title: 'Select installed chats to connect to CoAgent',
+        canPickMany: true, title: 'Select installed chats to connect to CoAgent8',
       }))?.map(item => item.client);
       if (!selected?.length) return;
       const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
@@ -41,18 +41,18 @@ export function activate(context: vscode.ExtensionContext): void {
       if (folders.length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
       const results = await setupClients({ clients: selected, runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir() });
       await context.globalState.update('setupClients', selected);
-      const output = vscode.window.createOutputChannel('CoAgent Setup');
+      const output = vscode.window.createOutputChannel('CoAgent8 Setup');
       context.subscriptions.push(output);
       output.appendLine(JSON.stringify(results, null, 2));
       output.show();
     } catch (error) {
-      await vscode.window.showErrorMessage(`CoAgent setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Setup failed.')}`);
+      await vscode.window.showErrorMessage(`CoAgent8 setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Setup failed.')}`);
     }
   }));
   if (!vscode.env.remoteName && !context.globalState.get<boolean>('setupOffered')) {
     void (async () => {
       await context.globalState.update('setupOffered', true);
-      const choice = await vscode.window.showInformationMessage('CoAgent is available in VS Code. Connect standalone chat clients as well?', 'Set Up Clients');
+      const choice = await vscode.window.showInformationMessage('CoAgent8 is available in VS Code. Connect standalone chat clients as well?', 'Set Up Clients');
       if (choice === 'Set Up Clients') await vscode.commands.executeCommand('coagent8.setup');
     })();
   }

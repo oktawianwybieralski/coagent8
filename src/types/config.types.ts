@@ -10,7 +10,7 @@ export interface RoutingConfig {
   allowedBackends: ProviderId[];
 }
 
-export interface CoAgentConfig {
+export interface CoAgent8Config {
   schemaVersion: number;
   defaultBackend: BackendId | null;
   routing: RoutingConfig;

@@ -6,7 +6,7 @@
 ---
 
 ## 1. Supported CI Environment Matrix
-CoAgent is verified across a 6-job matrix:
+CoAgent8 is verified across a 6-job matrix:
 * **Operating Systems:** Ubuntu (`ubuntu-latest`), macOS (`macos-latest`), Windows (`windows-latest`).
 * **Node.js LTS Versions:** Node 20.x and Node 22.x.
 

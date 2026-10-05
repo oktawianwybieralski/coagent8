@@ -5,7 +5,7 @@ import { setupClients, SETUP_CLIENTS, type SetupClient } from './setup.js';
 export async function runSetupCli(args: string[]): Promise<boolean> {
   if (!args.length) return false;
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
-    process.stdout.write('CoAgent: no arguments starts the stdio MCP server.\nUsage: coagent8 setup|repair|status [--clients=codex,claude,agy]\n');
+    process.stdout.write('CoAgent8: no arguments starts the stdio MCP server.\nUsage: coagent8 setup|repair|status [--clients=codex,claude,agy]\n');
     return true;
   }
   if (!['setup', 'repair', 'status'].includes(args[0])) throw new Error('Usage: coagent8 setup|repair|status [--clients=codex,claude,agy]');

@@ -13,8 +13,8 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "CoAgent",
-        "shortDescription": "Consult local coding agents and run CoAgent Review through MCP.",
+        "displayName": "CoAgent8",
+        "shortDescription": "Consult local coding agents and run CoAgent8 Review through MCP.",
         "longDescription": "Connect Codex, Claude Code, and Gemini through a local MCP server with read-only execution, persistent sessions, and public conversation history.",
         "developerName": "Oktawian Wybieralski",
         "category": "Productivity",
@@ -22,9 +22,9 @@
         "composerIcon": "./assets/logo32.png",
         "logo": "./assets/logo.png",
         "defaultPrompt": [
-          "Run CoAgent Review on my uncommitted changes using an independent agent in a read-only sandbox",
-          "Consult CoAgent on an architectural design or refactoring proposal",
-          "Run CoAgent doctor to inspect CLI availability, versions, and auth status"
+          "Run CoAgent8 Review on my uncommitted changes using an independent agent in a read-only sandbox",
+          "Consult CoAgent8 on an architectural design or refactoring proposal",
+          "Run CoAgent8 doctor to inspect CLI availability, versions, and auth status"
         ]
       }
     }

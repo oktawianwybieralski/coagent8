@@ -20,10 +20,10 @@ require tests even when no TypeScript logic under src/ changed.
 
 ## 1. Context & Motivation
 
-During the stabilization of CoAgent v1.0.0-rc.1, two major systemic inefficiencies were identified:
+During the stabilization of CoAgent8 v1.0.0-rc.1, two major systemic inefficiencies were identified:
 1. **Premature Main Pollution & Premature RC Releases:**
    - Multiple intermediate commits (`e70d911`, `#7`, `#9`) were merged to `main` before the release was stabilized, polluting `main` history with noisy hotfixes.
-2. **Extreme Request Latency (30–60 minutes per turn):**
+2. **Extreme Request Latency (30-60 minutes per turn):**
    - Headless subprocesses frequently hang on unobserved prompts or get killed prematurely by wall-clock deadlines.
    - Blind adherence to heavy verification rituals (e.g., executing a full 134-test suite during git renames or documentation edits).
    - Arbitrary 120-second timeout deadlines cut reasoning models off mid-thought, causing a second multi-minute retry turn that doubled latency.
@@ -85,7 +85,7 @@ Cutting off a model at 120s when it was about to finish at 130s wastes the first
    - Track `lastActivityTimestamp = Date.now()` on every received stdout/stderr chunk.
    - Trigger a timeout **only if the process is completely silent for > 60 seconds** (indicating a true freeze, dead connection, or infinite loop).
 2. **Generous Upper Ceiling:**
-   - If the process is continuously streaming tokens or progress updates, allow it to run up to a realistic ceiling (e.g., 5–8 minutes) before intervening.
+   - If the process is continuously streaming tokens or progress updates, allow it to run up to a realistic ceiling (e.g., 5-8 minutes) before intervening.
    - Never truncate deep-reasoning models mid-sentence.
 
 ---

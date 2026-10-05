@@ -1,7 +1,7 @@
 {
   "name": "coagent8-mcp",
-  "displayName": "CoAgent MCP (Development)",
-  "description": "Connect local coding agents to VS Code through CoAgent MCP.",
+  "displayName": "CoAgent8 MCP (Development)",
+  "description": "Connect local coding agents to VS Code through CoAgent8 MCP.",
   "version": "1.0.0-beta.1",
   "publisher": "oktawianwybieralski",
   "license": "GPL-3.0-only",
@@ -18,10 +18,10 @@
     "virtualWorkspaces": { "supported": false }
   },
   "contributes": {
-    "commands": [{ "command": "coagent8.setup", "title": "CoAgent: Set Up or Repair Chat Clients" }],
-    "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent" }],
+    "commands": [{ "command": "coagent8.setup", "title": "CoAgent8: Set Up or Repair Chat Clients" }],
+    "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
     "configuration": {
-      "title": "CoAgent",
+      "title": "CoAgent8",
       "properties": {
         "coagent8.nodePath": {
           "type": "string",

@@ -1,7 +1,7 @@
 # P0: Core Invariants, Code Quality & Engineering Integrity (`00-core-invariants.md`)
 
 > **Priority Level: P0 (Supreme System & Engineering Invariant)**  
-> This document defines the non-negotiable foundation of the CoAgent engineering standard.  
+> This document defines the non-negotiable foundation of the CoAgent8 engineering standard.  
 > Violations strictly block code reviews, Pull Requests, and merges. Zero exceptions permitted.
 
 ---
@@ -12,6 +12,7 @@
 * **Strict TypeScript Strict Mode**: The codebase operates strictly under TypeScript strict mode (`tsc --noEmit` must pass with 0 compiler errors). Never suppress type errors, abuse `any`, or use arbitrary type coercions to conceal type system mismatches.
 * **Runtime Reliability**: The MCP-to-CLI bridge must support bounded headless execution and reliable cancellation. Resource leaks (dangling processes, orphaned file descriptors, uncollected timers, runaway memory buffers) are treated as critical P0 defects. This does not require a general orchestration platform.
 * **Defensive Boundary Validation**: Always validate external inputs, CLI outputs, and JSON payloads with strict schemas (`validateToolArguments`, Zod/MCP schema definitions). Never assume third-party CLIs or external callers behave well.
+* **Strict ASCII Punctuation & Character Encoding**: Never use non-ASCII typography (Unicode em dashes `—`, en dashes `–`, smart quotes `“”‘’`, non-breaking spaces). All source code, configuration manifests, test suites, and documentation must strictly use standard ASCII hyphens (`-`), ASCII straight quotes (`"`, `'`), and standard ASCII whitespace. See [06-language-and-style.md](06-language-and-style.md).
 
 ---
 
@@ -20,7 +21,7 @@
 * **Isolated Feature & Release Branches**: All development must occur on dedicated topic branches (`feat/*`, `fix/*`, `chore/*`) created from and targeting the active release branch (`release/vX.Y.Z`, currently `release/v1.0.0`); only final release and hotfix PRs target `main`. See [02-git-workflow](02-git-workflow.md).
 * **PR Squash-and-Merge**: Merging into a release branch or `main` is executed exclusively via GitHub Pull Requests with Squash and Merge (`gh pr merge --squash --delete-branch`), with a Conventional Commit title.
 * **Green Matrix Requirement**: The `main` branch must strictly remain 100% green across all continuous integration matrix jobs (Linux, macOS, Windows on Node 20 LTS and Node 22 LTS).
-* **Protected Review Gates**: No branch protection rules, required status checks, or Author–Reviewer review gates may be disabled or bypassed. Temporary bypass permissions must be revoked immediately after an authorized recovery.
+* **Protected Review Gates**: No branch protection rules, required status checks, or Author-Reviewer review gates may be disabled or bypassed. Temporary bypass permissions must be revoked immediately after an authorized recovery.
 
 ---
 
@@ -32,7 +33,7 @@
 
 ---
 
-## 4. Sovereign Author–Reviewer Verification
+## 4. Sovereign Author-Reviewer Verification
 * **Mandatory Dual-Role Separation**:
   - **Author** (Antigravity / Gemini) authors code, refactors, and implements features.
   - **Reviewer** (OpenAI Codex `gpt-6.1-sol` / Claude Code) independently audits changes in a read-only sandbox before merging.

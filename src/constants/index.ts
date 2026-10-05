@@ -1,5 +1,5 @@
 /**
- * Central branding, naming, and tool constants for CoAgent MCP Server.
+ * Central branding, naming, and tool constants for CoAgent8 MCP Server.
  *
  * @remarks
  * Prevents magic strings across tool definitions, dispatchers, handlers, and configuration.
@@ -10,7 +10,7 @@
 import { version } from '../../package.json';
 
 export const BRAND = {
-  NAME: 'CoAgent',
+  NAME: 'CoAgent8',
   TAGLINE: 'Cross-Agent CLI Bridge',
   PACKAGE_NAME: 'coagent8',
   SERVER_NAME: 'coagent8',
@@ -67,7 +67,7 @@ export const DEPRECATED_LEGACY_TOOL_NAMES = [
 ] as const;
 
 /**
- * Enumeration of all registered tool names across CoAgent v1.0 canonical profile and compact gateway.
+ * Enumeration of all registered tool names across CoAgent8 v1.0 canonical profile and compact gateway.
  */
 export const TOOL_NAMES = CANONICAL_TOOL_NAMES;
 

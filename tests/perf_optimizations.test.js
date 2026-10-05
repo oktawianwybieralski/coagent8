@@ -159,7 +159,7 @@ test('Perf Optimization Area 2: truncateToByteLength handles fast-path, emoji, a
   }
 
   // Large string truncation with custom suffix
-  const largeText = 'CoAgent High-Performance Architecture '.repeat(500);
+  const largeText = 'CoAgent8 High-Performance Architecture '.repeat(500);
   const truncated = truncateToByteLength(largeText, 200, '...[perf]');
   assert.ok(Buffer.byteLength(truncated, 'utf8') <= 200);
   assert.ok(truncated.endsWith('...[perf]'));
@@ -173,7 +173,7 @@ test('Perf Optimization Area 2: StreamReducer fast-path token streaming without 
   });
 
   // Stream 100 tokens as incremental deltas
-  const tokens = ['Hello', ' ', 'world', '!', ' ', 'This', ' ', 'is', ' ', 'CoAgent', '.'];
+  const tokens = ['Hello', ' ', 'world', '!', ' ', 'This', ' ', 'is', ' ', 'CoAgent8', '.'];
   for (let i = 0; i < 50; i++) {
     for (const tok of tokens) {
       reducer.upsertMessage('msg1', tok, { delta: true });

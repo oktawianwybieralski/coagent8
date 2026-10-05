@@ -1,15 +1,15 @@
-# P1: CoAgent Review & Independent Audit (Author–Reviewer Separation) (`03-author-reviewer.md`)
+# P1: CoAgent8 Review & Independent Audit (Author-Reviewer Separation) (`03-author-reviewer.md`)
 
 > **Priority Level: P1 (Verification & Engineering Gate)**  
-> Strict Author/Reviewer separation via CoAgent Review is mandatory before PR merge.
+> Strict Author/Reviewer separation via CoAgent8 Review is mandatory before PR merge.
 
 ---
 
 ## 1. Roles & Separation of Concerns
-CoAgent strictly enforces **CoAgent Review / Independent Audit** (Author–Reviewer separation):
-* **Author (Authoring Agent — Antigravity / Primary Assistant):**
+CoAgent8 strictly enforces **CoAgent8 Review / Independent Audit** (Author-Reviewer separation):
+* **Author (Authoring Agent - Antigravity / Primary Assistant):**
   - Primary author responsible for writing TypeScript code, modifying schemas, managing unit tests, and driving git branch lifecycle.
-* **Reviewer (Independent Auditor — Codex Sol `gpt-6.1-sol` / Claude Code via CoAgent Review):**
+* **Reviewer (Independent Auditor - Codex Sol `gpt-6.1-sol` / Claude Code via CoAgent8 Review):**
   - Independent code verification in read-only sandbox, security audits, architectural consistency checks, and edge-case probing.
 
 ---

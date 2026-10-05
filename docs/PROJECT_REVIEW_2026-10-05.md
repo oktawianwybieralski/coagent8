@@ -1,4 +1,4 @@
-# CoAgent project review — 2026-10-05
+# CoAgent8 project review - 2026-10-05
 
 This document owns source findings and their evidence, each bound to the snapshot
 it inspected. [ROADMAP.md](ROADMAP.md) owns the resulting work items, order and
@@ -15,7 +15,7 @@ its snapshot, not later trees, and a historical result is not fresh validation.
 
 **Date:** 2026-10-05. **Auditor:** Claude Code in the Reviewer role, at the owner's
 request. **Snapshot:** `c265cdf` with a clean working tree.
-**Verdict:** `BLOCKED` — 3 P0 and 11 P1 findings.
+**Verdict:** `BLOCKED` - 3 P0 and 11 P1 findings.
 
 ### Method and evidence boundaries
 
@@ -29,9 +29,9 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
   hazard is established from source plus two read-only observations: the
   `taskkill` exit code for an impossible PID, and a CIM listing of processes whose
   parent PID is dead.
-- Audit severity: **P0** — OS/process safety, data corruption or loss of the whole
-  tool; **P1** — architectural flaw, error masking or contract violation;
-  **P2** — robustness debt, duplication or over-engineering; **P3** — nits.
+- Audit severity: **P0** - OS/process safety, data corruption or loss of the whole
+  tool; **P1** - architectural flaw, error masking or contract violation;
+  **P2** - robustness debt, duplication or over-engineering; **P3** - nits.
   Audit P0 and P1 correspond to State Envelope P1 and block release candidates under
   [03-author-reviewer](../.agents/rules/03-author-reviewer.md). The roadmap's
   [release sequence](ROADMAP.md#release-sequence) makes the order-1 findings (all
@@ -73,11 +73,11 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
 | --- | --- | --- |
 | AUD-P0-1 | Windows teardown identifies descendants by parent PID only and can terminate unrelated user processes; the sweep runs after **every** child exit | `taskkill` exit 128 observed; 21 stale-parent processes on the audit machine |
 | AUD-P0-2 | Secret redaction rewrites code in public model answers | [reproduced] |
-| AUD-P0-3 | Streamed answers grow history 50–110×; a successful turn becomes `HISTORY_ERROR`; above 100 MiB every new execution fails before the CLI starts | [reproduced] |
+| AUD-P0-3 | Streamed answers grow history 50-110×; a successful turn becomes `HISTORY_ERROR`; above 100 MiB every new execution fails before the CLI starts | [reproduced] |
 | AUD-P1-1 | Rate-limit cooldown is recorded twice; a parsed 3-day reset becomes 45 s | [reproduced] |
 | AUD-P1-2 | Unknown errors are reported as `INPUT_LIMIT`; errors travel as string prefixes | source |
 | AUD-P1-3 | A session-metadata write failure discards a successful answer | source |
-| AUD-P1-4 | 3–5 extra subprocesses per call; each costs about 0.4 s of PowerShell on Windows | measured |
+| AUD-P1-4 | 3-5 extra subprocesses per call; each costs about 0.4 s of PowerShell on Windows | measured |
 | AUD-P1-5 | Any new agy event type fails every Gemini call | source |
 | AUD-P1-6 | `model` reaches CLI argv unvalidated | source |
 | AUD-P1-7 | Top-tier model consent is a flag set by the calling agent | source |
@@ -96,7 +96,7 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
    `ParentProcessId == curr` as a child.
    - Windows does not clear `ParentProcessId` when a parent exits, and PIDs are
      reused.
-   - If a CoAgent child receives the PID of a long-dead process, every orphan of
+   - If a CoAgent8 child receives the PID of a long-dead process, every orphan of
      that dead process becomes its "descendant".
    - The tracking poll records them, and the fallback sweep runs
      `Stop-Process -Force` on them ([process.ts:378](../src/execution/process.ts#L378)).
@@ -128,7 +128,7 @@ Move tree selection out of PowerShell strings into a pure, unit-testable
 TypeScript function. PowerShell only emits a snapshot.
 
 ```ts
-// before: process.ts — descendants keyed by PID; PowerShell decides what to kill
+// before: process.ts - descendants keyed by PID; PowerShell decides what to kill
 export const trackedDescendants = new Map<ChildProcess, Set<number>>();
 // PS: if ($p.ParentProcessId -eq $curr) { enqueue; later Stop-Process -Force }
 
@@ -311,8 +311,8 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 
 - **Probes on every request.** Routing probes on every call
   ([routing.ts:15](../src/backends/routing.ts#L15)).
-  - Gemini: `--version` plus `/usage` — a network call made **without**
-    `--sandbox` ([gemini.adapter.ts:119](../src/backends/gemini.adapter.ts#L119)) —
+  - Gemini: `--version` plus `/usage` - a network call made **without**
+    `--sandbox` ([gemini.adapter.ts:119](../src/backends/gemini.adapter.ts#L119)) -
     and `execute` repeats `--version`
     ([gemini.adapter.ts:209](../src/backends/gemini.adapter.ts#L209)).
   - Claude: `--version` plus `--bare --help`, and `execute` repeats
@@ -422,7 +422,7 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
   with it, or omit `-m` when the caller did not request a model and govern the
   model the CLI reports.
 
-### P2 findings — debt and over-engineering
+### P2 findings - debt and over-engineering
 
 | ID | Finding | Location | Proposed direction |
 | --- | --- | --- | --- |

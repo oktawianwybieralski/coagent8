@@ -1,13 +1,13 @@
-# CoAgent- Cross-Agent CLI Bridge for Model Context Protocol (MCP)
+# CoAgent8 - Cross-Agent CLI Bridge for Model Context Protocol (MCP)
 
 <p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="CoAgent />
+  <img src="assets/logo.svg" width="128" height="128" alt="CoAgent8" />
 </p>
 
-CoAgentexposes local coding CLIs through a stdio MCP server. An agent in a
+CoAgent8 exposes local coding CLIs through a stdio MCP server. An agent in a
 compatible MCP host can ask Codex, Claude Code or Antigravity (`agy`, the Gemini
 adapter) for help and receive public output through a read-only execution profile.
-Use **CoAgentReview** to get an independent code review from a separate agent in a read-only sandbox.
+Use **CoAgent8 Review** to get an independent code review from a separate agent in a read-only sandbox.
 
 The current package is `1.0.0-beta.1`; this version label is not release approval.
 Releases follow beta 1, beta 2, release candidates and then 1.0.0; see the
@@ -28,7 +28,7 @@ durable history is a planned change, not a current runtime option.
 ## Connect through MCP
 
 Use Node.js 20+ and at least one separately installed/authenticated backend CLI.
-The **host** runs the chat and connects to CoAgent; the **backend** CLI performs
+The **host** runs the chat and connects to CoAgent8; the **backend** CLI performs
 the requested task. Installing one does not configure or authenticate the other.
 Claude Code runs in restricted read-only print mode (`--restricted`, tools
 `Read,Glob,Grep`), works with a claude.ai subscription login or an API key, and
@@ -57,7 +57,7 @@ JSON shape is used by many hosts; follow your host's configuration format:
 ```
 
 No setup command, recognized client name or VSIX is required for this path.
-CoAgent advertises tools independently of the calling client's name. Backend
+CoAgent8 advertises tools independently of the calling client's name. Backend
 availability is checked when executing tasks or explicit diagnostics. Specify
 `backend` on a call, or configure `defaultBackend`; auto selection with multiple
 eligible backends and no configured default requires a choice.
@@ -76,12 +76,12 @@ not established by the version in this checkout.
 ### Continue
 
 Continue accepts stdio MCP definitions and exposes MCP tools in Agent mode. Its
-absence from CoAgent's setup-client list is not a server compatibility block.
+absence from CoAgent8's setup-client list is not a server compatibility block.
 For example, merge this block into the active Continue configuration:
 
 ```yaml
 mcpServers:
-  - name: CoAgent
+  - name: CoAgent8
     type: stdio
     command: node
     args:
@@ -106,7 +106,7 @@ for installation, ownership, rollback and current host-verification limits.
 | Tool | Purpose |
 | --- | --- |
 | consult | Second opinion with a plain answer; optional `task_type` (`architecture`, `debug`, `implementation`) |
-| review | CoAgent Review: Git diff review with a structured audit envelope |
+| review | CoAgent8 Review: Git diff review with a structured audit envelope |
 | doctor | Backend installation, version, quota/cooldown and authentication evidence |
 | session | List, read history or close sessions |
 | cancel | Cancel a session's active execution |
@@ -160,11 +160,11 @@ fixtures remain implementation work tracked in the roadmap.
 
 Copyright (c) 2026 Oktawian Wybieralski (oki.dev).
 
-CoAgent is licensed under the [GNU General Public License, version 3 only](LICENSE)
+CoAgent8 is licensed under the [GNU General Public License, version 3 only](LICENSE)
 (`GPL-3.0-only`). You may use, modify, and redistribute it, including commercially,
 under the terms of that license. Distributed derivative works must remain under
 GPLv3, with the corresponding source code made available as required by the license.
-CoAgent is provided without any warranty; see [LICENSE](LICENSE) for the full terms.
+CoAgent8 is provided without any warranty; see [LICENSE](LICENSE) for the full terms.
 
 Copies previously distributed under the MIT License remain available under those terms.
 

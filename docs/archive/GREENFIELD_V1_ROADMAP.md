@@ -1,15 +1,15 @@
-# CoAgent v1.0 Architecture & Greenfield Refactoring Roadmap
+# CoAgent8 v1.0 Architecture & Greenfield Refactoring Roadmap
 
 > **Status:** Approved Architecture Plan  
 > **Target Release:** v1.0.0  
 > **Auditors:** Codex Sol (`gpt-6.1-sol`), Google Antigravity (`agy 1.2.16`), Antigravity Lead Architect  
-> **Verification Gate:** 100% pass on test suite (currently 62/62), TypeScript strict mode, Author–Reviewer audit.
+> **Verification Gate:** 100% pass on test suite (currently 62/62), TypeScript strict mode, Author-Reviewer audit.
 
 ---
 
 ## 🎯 Executive Summary & Architectural Vision
 
-CoAgent serves as a high-integrity, cross-agent CLI bridge MCP server connecting orchestrator agents (Antigravity, Cursor, Claude) to local reasoning and execution CLIs (OpenAI Codex, Google Antigravity `agy`, Claude Code).
+CoAgent8 serves as a high-integrity, cross-agent CLI bridge MCP server connecting orchestrator agents (Antigravity, Cursor, Claude) to local reasoning and execution CLIs (OpenAI Codex, Google Antigravity `agy`, Claude Code).
 
 Following an extensive zero-base greenfield review by independent audit engines, the codebase will be transitioned from its transitional prototype state to a clean, minimal v1.0 architecture:
 1. **Zero Fake Metrics**: Retire "smart quota" marketing and replace it with transparent priority fallbacks and exponential backoff.
@@ -84,12 +84,12 @@ flowchart TD
 ---
 
 ## 📋 Phase 3: MCP Surface Consolidation & Token Optimization (v1.0 API)
-*Goal: Eliminate double-prefix redundancy (`coagent8 / coagent8_consult` in host UIs), reduce LLM system prompt token overhead by 65–75%, and establish a clean, unified command architecture.*
+*Goal: Eliminate double-prefix redundancy (`coagent8 / coagent8_consult` in host UIs), reduce LLM system prompt token overhead by 65-75%, and establish a clean, unified command architecture.*
 
 ### 🔍 Architectural Problem Statement
 1. **Redundant Namespacing in Host UIs**: MCP clients display tools as `<server> / <tool_name>`. Because the MCP server is named `coagent8`, prefixing tools with `coagent8_` causes stuttering in IDEs (`coagent8 / coagent8_consult`, `coagent8 / coagent8_review`).
-2. **Token Bloat in Context Window**: Currently, CoAgent exposes 23 separate tools (including triple-aliased wrappers: `coagent8_*`, `omniagent_*`, `codex_*`). All 23 JSON schemas are serialized into the LLM system prompt / tool definitions on every turn, causing severe token waste and model confusion.
-3. **Backend Binding Quirks**: Legacy `codex_*` tools are not merely aliases—they force `backend: "codex"`. Any refactoring must preserve this behavioral binding without polluting the advertised toolset.
+2. **Token Bloat in Context Window**: Currently, CoAgent8 exposes 23 separate tools (including triple-aliased wrappers: `coagent8_*`, `omniagent_*`, `codex_*`). All 23 JSON schemas are serialized into the LLM system prompt / tool definitions on every turn, causing severe token waste and model confusion.
+3. **Backend Binding Quirks**: Legacy `codex_*` tools are not merely aliases-they force `backend: "codex"`. Any refactoring must preserve this behavioral binding without polluting the advertised toolset.
 
 ### 🎯 Target Architecture & Dual-Profile Design:
 
@@ -122,53 +122,53 @@ For token-constrained environments, offer an optional gateway tool `run` where a
    - `codex_*` calls continue to strictly bind `backend: "codex"`.
 
 ### 📋 Phase 3 Implementation Tasks:
-1. **Task 3.1 – Canonical Unprefixed Tool Definitions & Schema Cleanup:**
+1. **Task 3.1 - Canonical Unprefixed Tool Definitions & Schema Cleanup:**
    - Register unprefixed core tools in `src/server.ts` and `src/tools/`.
    - Consolidate session tools (`coagent8_session_history`, `coagent8_close_session`) into unified `session` tool.
    - Implement explicit `cancel` tool with session handle termination.
-2. **Task 3.2 – Subcommand Gateway (`run` Profile) & Action Dispatcher:**
+2. **Task 3.2 - Subcommand Gateway (`run` Profile) & Action Dispatcher:**
    - Implement optional `run(action, ...)` gateway tool with per-action schema validation.
    - Configure profile selection via `config.json` (`toolProfile: "canonical" | "compact"`).
-3. **Task 3.3 – Legacy Compatibility Layer & Configuration Flag:**
+3. **Task 3.3 - Legacy Compatibility Layer & Configuration Flag:**
    - Add `compat.enableLegacyAliases` configuration toggle in `config.service.ts`.
    - Ensure legacy calls in `src/server.ts` map to canonical execution services without behavioral regressions.
-4. **Task 3.4 – Professional Tool Output & Telemetry (No-Emoji Standard):**
+4. **Task 3.4 - Professional Tool Output & Telemetry (No-Emoji Standard):**
    - Eliminate whimsical emojis (`⏱️`, `💬`, `📜`, `⚠️`) across `src/tools/common.ts` and related tools.
-   - Standardize clean, enterprise-grade demarcation between raw tool output and CoAgent execution metadata (Markdown blockquotes or monospace key-value badges).
-5. **Task 3.5 – Integration Updates & Documentation:**
+   - Standardize clean, enterprise-grade demarcation between raw tool output and CoAgent8 execution metadata (Markdown blockquotes or monospace key-value badges).
+5. **Task 3.5 - Integration Updates & Documentation:**
    - Update integration skills (`coagent8-assistant/SKILL.md`), rule definitions (`AGENTS.md`), and schemas.
 
 ---
 
 ## 📋 Phase 4: Zero-Legacy Purge & Protocol Hardening (Target: v1.0.0 Clean Release) [COMPLETED]
-*Goal: Completely eliminate prototype legacy debt (`omniagent`, dual/triple aliases, `.claims`, `.lock`), harden JSONL streaming resilience against mid-write crashes, and implement the high-ROI State Envelope contract for Author–Reviewer AI-to-AI communication.*
+*Goal: Completely eliminate prototype legacy debt (`omniagent`, dual/triple aliases, `.claims`, `.lock`), harden JSONL streaming resilience against mid-write crashes, and implement the high-ROI State Envelope contract for Author-Reviewer AI-to-AI communication.*
 
 ### 🔍 Architectural Problem & Rationale
 1. **SemVer & Public Contract**: Transitioning from `0.9.0-dev` to `1.0.0` establishes the first stable, production-grade public API contract. Maintaining dual/triple alias mappings (`coagent8_*`, `omniagent_*`, `codex_*`), dead `.claims` Lamport directory polling, and cross-version `.lock` fallback mechanisms creates technical drag, fragile test surfaces, and architectural ambiguity.
-2. **Deterministic Single Execution Path**: CoAgent v1.0 will feature strictly one canonical execution surface (8 unprefixed domain tools + 1 optional `run` subcommand gateway) with zero legacy aliases in either `tools/list` or `tools/call`.
+2. **Deterministic Single Execution Path**: CoAgent8 v1.0 will feature strictly one canonical execution surface (8 unprefixed domain tools + 1 optional `run` subcommand gateway) with zero legacy aliases in either `tools/list` or `tools/call`.
 3. **JSONL Crash Resilience**: As uncovered during the Codex Sol audit, `src/services/history.service.ts` line 99 parses JSONL line-by-line without catching corrupt trailing lines from aborted processes. Robustness against partial trailing records is required before general availability.
 4. **Token Optimization via State Envelopes**: Replace verbose conversational review essays with structured, minimal-token State Envelopes (`REVIEW / SNAPSHOT / COVERAGE / VERDICT: READY | BLOCKED / [P1/P2/P3: Problem -> Evidence -> Fix]`) with server-side gate evaluation.
 
 ### 📋 Phase 4 Implementation Tasks:
 
-#### Task 4.1 – Comprehensive Brand & CLI Purge (`omniagent`)
+#### Task 4.1 - Comprehensive Brand & CLI Purge (`omniagent`)
 - **Package & Binaries**:
   - Remove `"omniagent": "./dist/index.cjs"` binary mapping from `package.json`.
   - Remove `omniagent` runner checks from `scripts/consumer-smoke.cjs`.
 - **Constants & Type Aliases**:
   - Remove `LEGACY_DIR_NAME`, `LEGACY_ENV_*`, and `LEGACY_PREFIX` from `src/constants/index.ts`.
-  - Remove `export type OmniAgentConfig = CoAgentConfig` from `src/types/config.types.ts`.
+  - Remove `export type OmniAgentConfig = CoAgent8Config` from `src/types/config.types.ts`.
 - **Paths & Services Cleanup**:
   - Remove fallback to `process.env.OMNIAGENT_DIR` and `legacyDataFile()` from `src/services/paths.service.ts`.
   - Remove fallback to `OMNIAGENT_CONFIG` and `LEGACY_CONFIG_FILE` from `src/services/config.service.ts`.
   - Remove fallback to `OMNIAGENT_QUOTA_CACHE` and legacy quota cache files from `src/services/quota.service.ts`.
   - Remove fallback to `OMNIAGENT_SESSIONS*`, `omni_sess_*` regex handling, and `legacySessionFile()` from `src/services/session.service.ts`.
 - **Rules & Governance Documentation**:
-  - Update `.agents/rules/cross-platform.md` and `.agents/rules/author-reviewer.md` to reference strictly `CoAgent`.
+  - Update `.agents/rules/cross-platform.md` and `.agents/rules/author-reviewer.md` to reference strictly `CoAgent8`.
 
-#### Task 4.2 – Universal Tool Alias Purge & Server Streamlining
+#### Task 4.2 - Universal Tool Alias Purge & Server Streamlining
 - **Configuration & Types**:
-  - Remove `compat.enableLegacyAliases` and `compat` block from `CoAgentConfig` in `src/types/config.types.ts` and `src/services/config.service.ts`.
+  - Remove `compat.enableLegacyAliases` and `compat` block from `CoAgent8Config` in `src/types/config.types.ts` and `src/services/config.service.ts`.
 - **Tool Definitions & Constants**:
   - Delete `LEGACY_TOOL_NAMES` and remove all legacy aliases from `src/constants/index.ts`.
   - Remove all deprecated alias tool handlers and definition exports across `src/tools/` (`doctor.tool.ts`, `config.tool.ts`, `quota.tool.ts`, `issue.tool.ts`, `session.tool.ts`, `review.tool.ts`, `consult.tool.ts`, `analyze.tool.ts`, `debug.tool.ts`, `implement.tool.ts`).
@@ -177,7 +177,7 @@ For token-constrained environments, offer an optional gateway tool `run` where a
   - Purge legacy aliases from `executionNames` and `CallToolRequestSchema` handler.
   - Retain strictly the 8 canonical tools (`consult`, `review`, `analyze`, `debug`, `implement`, `doctor`, `session`, `cancel`) and compact gateway `run`.
 
-#### Task 4.3 – Dead Concurrency & Lock Mechanism Elimination
+#### Task 4.3 - Dead Concurrency & Lock Mechanism Elimination
 - **`.claims` Directory Sweeping**:
   - Remove legacy Lamport `.claims` directory iteration and deletion from `src/services/lock.service.ts` (`withFileLock`).
   - Remove `.claims` regex match and cleanup from `src/services/session.service.ts` (`sweepExpiredSessions`).
@@ -185,14 +185,14 @@ For token-constrained environments, offer an optional gateway tool `run` where a
   - Remove `.lock` checks (`file + '.lock'`, `legacy + '.lock'`) from `withSessionLock` in `src/services/session.service.ts`.
   - Remove obsolete `getBusyLockPath` helper.
 
-#### Task 4.4 – JSONL Stream Resilience & Deterministic Compression
+#### Task 4.4 - JSONL Stream Resilience & Deterministic Compression
 - **JSONL Parsing Fault-Tolerance**:
   - In `src/services/history.service.ts`, wrap line parsing in safe record validation. Ignore corrupted or incomplete trailing lines resulting from abrupt process termination.
 - **Deterministic Output Compression**:
   - Strip ANSI escape sequences and npm/npx cli update banners from subprocess outputs.
   - Default git diff generation to `--unified=1` with on-demand expansion.
 
-#### Task 4.5 – State Envelope Agent-to-Agent Protocol
+#### Task 4.5 - State Envelope Agent-to-Agent Protocol
 - **Adapter Prompt Templates**:
   - Update review and consultation system instructions for Codex, Claude, and Gemini adapters to require the structured State Envelope format:
     ```text
@@ -212,7 +212,7 @@ For token-constrained environments, offer an optional gateway tool `run` where a
 - **Server-Side Gate Validation**:
   - Ensure the execution pipeline programmatically evaluates `VERDICT` based on reported severity (`P1`/`P2` must force `BLOCKED`, response truncation sets `BLOCKED`).
 
-#### Task 4.6 – Test Suite Modernization & Verification
+#### Task 4.6 - Test Suite Modernization & Verification
 - **Test Removal & Refactoring**:
   - Remove obsolete `test/migration.test.js`.
   - Refactor `test/session_and_issue.test.js`, `test/history_and_pipeline.test.js`, and `test/v1_phase3.test.js` to assert purely on canonical behavior, atomic leases, and isolated directory configurations.
@@ -221,7 +221,7 @@ For token-constrained environments, offer an optional gateway tool `run` where a
 
 ---
 
-## 🛡️ Author–Reviewer Verification Protocol
+## 🛡️ Author-Reviewer Verification Protocol
 
 Every phase must strictly follow the repository governance:
 1. **Branch Protection**: Work must take place on dedicated feature branches (`feat/v1-phase0-hotfixes`, etc.).

@@ -1,6 +1,6 @@
 {
   "name": "coagent8",
-  "displayName": "CoAgent - Cross-Agent CLI Bridge",
+  "displayName": "CoAgent8 - Cross-Agent CLI Bridge",
   "version": "1.0.0-beta.1",
   "description": "Expose local coding CLIs through MCP with public conversation history and read-only execution profiles.",
   "main": "dist/index.cjs",

@@ -7,7 +7,7 @@ export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
     description:
-      'Run CoAgent Review: automated code review on uncommitted changes, staged index, branches, or commits using local reasoning agents in read-only sandbox mode.',
+      'Run CoAgent8 Review: automated code review on uncommitted changes, staged index, branches, or commits using local reasoning agents in read-only sandbox mode.',
     inputSchema: {
       type: 'object',
       properties: {

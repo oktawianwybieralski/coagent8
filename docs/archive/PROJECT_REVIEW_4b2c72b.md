@@ -1,4 +1,4 @@
-# CoAgent earlier project review — snapshot `4b2c72b` (archived)
+# CoAgent8 earlier project review - snapshot `4b2c72b` (archived)
 
 > **Archived historical evidence.** This review was moved verbatim from
 > [PROJECT_REVIEW_2026-10-05.md](../PROJECT_REVIEW_2026-10-05.md) during the
@@ -8,7 +8,7 @@
 > [roadmap](../ROADMAP.md) does. Its incident facts, failed-run records and
 > registration-preservation requirements remain valid historical evidence.
 
-## Earlier review — historical snapshot
+## Earlier review - historical snapshot
 
 The remaining sections retain the earlier investigation and its original evidence.
 Their test results and source inventory apply to the recorded snapshot, not the
@@ -28,11 +28,11 @@ than in another competing implementation plan. Historical plans remain archived.
 
 ## What the product actually does
 
-CoAgent is a local stdio MCP bridge. An MCP **host** asks it to run a local CLI
+CoAgent8 is a local stdio MCP bridge. An MCP **host** asks it to run a local CLI
 **backend** for consultation, review, analysis, debugging, or an implementation
 proposal. Codex, agy/Gemini, and Claude Code can be hosts and backends, but those
-are separate roles. Registering CoAgent in Codex does not install the Codex
-backend, authenticate it, or register CoAgent in VS Code.
+are separate roles. Registering CoAgent8 in Codex does not install the Codex
+backend, authenticate it, or register CoAgent8 in VS Code.
 
 The runtime starts bounded subprocesses, applies read-only execution profiles,
 normalizes their public output and errors, streams activity, and manages native
@@ -59,9 +59,9 @@ consensus engine, or autonomous editor is not needed to satisfy these requiremen
 ## MCP incident: established facts
 
 Before repair, Codex's effective user configuration contained Context7 but no
-CoAgent MCP registration. Its installed-plugin inventory also lacked CoAgent.
-VS Code had a manual CoAgent MCP registration. agy had a global definition and
-a manually installed plugin defining the same server. No stable VS Code CoAgent
+CoAgent8 MCP registration. Its installed-plugin inventory also lacked CoAgent8.
+VS Code had a manual CoAgent8 MCP registration. agy had a global definition and
+a manually installed plugin defining the same server. No stable VS Code CoAgent8
 extension installation was found in the inspected extension inventory.
 
 [The VS Code extension](../../extensions/vscode/src/extension.ts) only registers
@@ -96,7 +96,7 @@ Backups and private verification evidence are stored under
 `~/.coagent8/setup-backups/2026-10-04T22-26-46-967Z/`. Configuration contents and
 credentials must not be committed. The initial repair referenced this development
 checkout. It was then updated to the verified standalone bundle at
-`~/.coagent8/runtime/index.cjs`; checks confirmed that only CoAgent command/args
+`~/.coagent8/runtime/index.cjs`; checks confirmed that only CoAgent8 command/args
 changed, all five definitions still initialized and advertised nine tools, and
 the stable copy matched the built artifact SHA-256. Its backup/evidence subdirectory
 is `stable-runtime/`. The discovered Claude backend executable still lives inside
@@ -104,7 +104,7 @@ a versioned extension directory and needs update-aware resolution. This local
 installation does not implement the product's missing VSIX onboarding lifecycle.
 
 The ongoing Codex conversation retained its original tool catalog. An SDK client
-was therefore used to initialize and invoke the actual CoAgent MCP server.
+was therefore used to initialize and invoke the actual CoAgent8 MCP server.
 That verifies the MCP runtime, not native discovery in the existing chat UI.
 The user subsequently clarified that an agent removed the working manual MCP
 registration and tested the VSIX. This explains the missing Codex registration:
@@ -255,7 +255,7 @@ empty tags to void/no-argument functions merely to increase counts.
 
 ## Independent perspective and validation limits
 
-An actual CoAgent MCP `consult` call to Gemini completed successfully after the
+An actual CoAgent8 MCP `consult` call to Gemini completed successfully after the
 verified facts were provided inline and tool use was excluded. Its envelope was
 `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`, with checks explicitly `NOT_RUN`. It is an
 advisory second opinion, not an independent repository audit or release approval.

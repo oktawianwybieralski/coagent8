@@ -1,4 +1,4 @@
-# CoAgent roadmap to v1.0.0
+# CoAgent8 roadmap to v1.0.0
 
 **Next release:** `1.0.0-beta.1`. **Current package version:** `1.0.0-beta.1`.
 **Direction updated:** 2026-10-05. **Beta 1 readiness:** Blocked by the
@@ -27,7 +27,7 @@ contains no open P0/P1 defects.
 | --- | --- | --- | --- |
 | Beta 1 | `1.0.0-beta.1` | Invited testers | Execution order 1 complete (all audit blockers); `BETA-001` checklist |
 | Beta 2 | `1.0.0-beta.2` | Invited testers, wider circle | Execution order 2 complete; no open P0/P1 issue from beta 1 |
-| RC 1 | `1.0.0-rc.1` | Release candidate | Execution orders 3–4 complete or explicitly deferred; scope frozen; `RC-001` checklist |
+| RC 1 | `1.0.0-rc.1` | Release candidate | Execution orders 3-4 complete or explicitly deferred; scope frozen; `RC-001` checklist |
 | RC 2 | `1.0.0-rc.2` | Only if needed | Release-readiness corrections to RC 1 only |
 | Final | `1.0.0` | Public | Accepted RC; final release PR to `main` per [Git governance](../.agents/rules/02-git-workflow.md) |
 
@@ -73,13 +73,13 @@ updated before the RC scope freeze.
 
 ## Product boundary
 
-CoAgent lets an agent in a compatible MCP host ask a selected local coding CLI
+CoAgent8 lets an agent in a compatible MCP host ask a selected local coding CLI
 for help and receive its public answer, with bounded execution, read-only access,
 redaction and reliable cancellation. A host is the calling application; a backend
 is the CLI executing the request. The same brand can fill either role.
 
 ### Why MCP over direct CLI commands?
-While a human in a terminal can run `codex`, `agy`, or `claude` directly, CoAgent
+While a human in a terminal can run `codex`, `agy`, or `claude` directly, CoAgent8
 serves autonomous AI agents (in Cursor, Claude Desktop, Antigravity, VS Code, Zed):
 
 1. **Agent-to-agent delegation.** Host models lack arbitrary shell execution
@@ -99,7 +99,7 @@ serves autonomous AI agents (in Cursor, Claude Desktop, Antigravity, VS Code, Ze
    Codex to Gemini agy.
 
 Generic stdio configuration is the primary integration contract. A client does
-not need a CoAgent-specific installer adapter to discover tools. Setup commands,
+not need a CoAgent8-specific installer adapter to discover tools. Setup commands,
 VSIX/plugin packaging and branding are optional conveniences. Preserve existing
 registrations and their rollback safeguards while separating those integrations.
 
@@ -229,7 +229,7 @@ reduce responsibilities.
 
 ## 1. Audit blockers and quiet, identity-safe Windows operation
 
-### `AUDIT-001` — release blockers from the independent audit
+### `AUDIT-001` - release blockers from the independent audit
 
 **Status:** Open. This umbrella closes when every order-1 row of the
 [remediation index](#audit-remediation-index) is complete in its owning milestone.
@@ -242,7 +242,7 @@ It adds no separate work.
 - [ ] Re-run the audit probes against the candidate and record the results in the
   project review before requesting Reviewer approval.
 
-### `WINDOWS-001` — process windows, supervision and process identity
+### `WINDOWS-001` - process windows, supervision and process identity
 
 **Status:** Reopened by AUD-P0-1 (blocker) and AUD-P1-4.
 - Window suppression is implemented in source. It is absent from the committed
@@ -290,7 +290,7 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
   and the distribution cost of a helper.
 - [ ] Add a POSIX parent-death strategy for detached groups.
 
-### `REDACTION-002` — output integrity versus diagnostic redaction
+### `REDACTION-002` - output integrity versus diagnostic redaction
 
 **Status:** Open (AUD-P0-2 blocker, AUD-P2-13).
 
@@ -307,7 +307,7 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 - [ ] Update the redaction rule in [01-security-and-sandboxes](../.agents/rules/01-security-and-sandboxes.md)
   if the final scope differs from its current text.
 
-### `PACKAGE-001` — built output is not source
+### `PACKAGE-001` - built output is not source
 
 **Status:** Open (AUD-P1-10 blocker).
 
@@ -318,7 +318,7 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 - [ ] Acceptance: a fresh clone cannot run a stale bundle. The consumer smoke test
   verifies the packed bundle matches a build of the packed source.
 
-### `VERIFY-SCOPE-001` — useful verification without repeated full runs
+### `VERIFY-SCOPE-001` - useful verification without repeated full runs
 
 - [x] Consolidate local policy in the quality-gate rule: prose-only edits do not
   trigger runtime tests, builds, packaging or backend invocations. Synchronize
@@ -337,14 +337,14 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 - [ ] Replace tests that cement defects. Example: the "O(1) appends" history test
   that never measures size. Each replacement asserts the measured property.
 
-### `HANDOFF-001` — portable agent instructions and handoff templates
+### `HANDOFF-001` - portable agent instructions and handoff templates
 
 **Status:** Planned; supporting documentation work, without changing the product
 execution order.
 
 - [ ] Define one versioned Markdown handoff standard and short Author, Reviewer
   and advisory examples for Antigravity, Codex, Claude Code and Cursor. Separate
-  task role from provider identity while preserving independent CoAgent Review
+  task role from provider identity while preserving independent CoAgent8 Review
   assignments and review policy. Keep provider launch details outside
   the shared template; document permissions as explicit capabilities.
 - [ ] Specify a header with task ID, role, mode, topic branch, target branch,
@@ -355,7 +355,7 @@ execution order.
 - [ ] Require a concrete objective, allowed scope, exclusions, acceptance criteria
   and a short applicable-invariants checklist referencing the authoritative
   [rules](../.agents/rules/00-core-invariants.md). Distinguish rule priority
-  (P0/P1/P2) from finding severity (P1/P2/P3, or the audit's P0–P3 scale).
+  (P0/P1/P2) from finding severity (P1/P2/P3, or the audit's P0-P3 scale).
   Preserve read-only review, consent, redaction, branch protection and unrelated work.
 - [ ] Select verification by the [quality gate](../.agents/rules/04-quality-gate.md).
   Record commands, scope/platform, exit results and evidence references; distinguish
@@ -383,7 +383,7 @@ execution order.
 
 ## 2. Generic MCP, plain consultation and streamlined surface
 
-### `MCP-001` — interoperability independent of installer support
+### `MCP-001` - interoperability independent of installer support
 
 - [x] Document host/backend separation, generic stdio setup and the distinction
   between automatic registration support and MCP compatibility.
@@ -402,7 +402,7 @@ execution order.
   require it. Never default silently to the server's working directory
   (AUD-P2-9).
 
-### `STARTUP-001` — non-blocking MCP server initialization
+### `STARTUP-001` - non-blocking MCP server initialization
 
 **Status:** Implemented; asynchronous background session maintenance unblocked server connect.
 
@@ -414,7 +414,7 @@ execution order.
 - [x] Prevent MCP client connection timeouts on Windows caused by blocking directory
   sweeps and file lock contention during host startup, without deleting active sessions.
 
-### `SURFACE-001` — tool surface consolidation and clear profile contracts
+### `SURFACE-001` - tool surface consolidation and clear profile contracts
 
 **Status:** Implemented; canonical six-tool surface defined and legacy actions aliased to consult.
 
@@ -432,7 +432,7 @@ execution order.
   - Remove `doctor.repair` and `doctor.workspace_path` from `doctor.tool.ts` inputSchema (both are currently ignored; removing them saves context tokens for MCP clients, AUD-P2-8; tracked in `SIMPLIFY-001`).
   - Eliminate prompt token redundancy in `review` caller instructions: caller handoffs must not duplicate State Envelope rules (`VERDICT`, `[P1/P2/P3]`), because `review.tool.ts` automatically formats the required envelope protocol in the task prompt.
 
-### `CONSULT-001` — separate advice from release approval and structured verdict output
+### `CONSULT-001` - separate advice from release approval and structured verdict output
 
 **Status:** Implemented; consult decoupled from State Envelope and structured verdict exposed.
 
@@ -449,7 +449,7 @@ execution order.
 
 ## 3. Smaller execution path, robust sessions and honest routing
 
-### `EXEC-001` — pure backend resolution, bounded probes and enforceable policy
+### `EXEC-001` - pure backend resolution, bounded probes and enforceable policy
 
 - [x] Make backend resolution (`src/backends/routing.ts:resolveBackend`) strictly
   read-only: no `setDefaultBackend` mutation during `auto` resolution. Verified in
@@ -480,7 +480,7 @@ execution order.
   - govern the effective default model of every backend, including agy's;
   - never replace consent with an agent-generated assertion.
 
-### `CLAUDE-BACKEND-001` — Claude Code in restricted read-only mode
+### `CLAUDE-BACKEND-001` - Claude Code in restricted read-only mode
 
 **Status:** Implemented on `feat/claude-restricted-backend`; focused tests and a
 live MCP check passed locally on Windows; acceptance open until CI is green. Order: it does not precede the order-1 audit blockers unless the owner
@@ -543,7 +543,7 @@ without a model call.
 - [ ] `inspectQuota` latency and timeout optimization (Opus audit note): when the
   60 s quota cache expires, `smart_quota` routing can block for up to 5 s on `--version`
   plus 15 s on `/usage` without an abort signal before selecting a backend.
-  Mitigations: shorten the `/usage` timeout (e.g. 3–5 s), pass through `AbortSignal`,
+  Mitigations: shorten the `/usage` timeout (e.g. 3-5 s), pass through `AbortSignal`,
   or restrict synchronous native reads to `doctor` while routing relies strictly on
   cached or asynchronously refreshed measurements.
 - [ ] Skills for audits: decide how workspace skills reach the Reviewer. The
@@ -554,7 +554,7 @@ without a model call.
   their exclusion rests on the `--restricted` help text and the project-settings
   evidence. Built-in CLI plugins (`agents-md`, telemetry) still run.
 
-### `ROUTING-MIGRATE-001` / `QUOTA-001` — honest circuit breaker and native quota introspection
+### `ROUTING-MIGRATE-001` / `QUOTA-001` - honest circuit breaker and native quota introspection
 
 **Status:** Partially implemented; parsed reset cooldowns are broken in
 production (AUD-P1-1).
@@ -580,7 +580,7 @@ production (AUD-P1-1).
   cooldown states from native quota meters. `smart_quota` selects the first
   permitted backend without an observed cooldown; it does not score headroom.
 
-### `SESSION-001` — safe auto-resume and first-class handle exposure
+### `SESSION-001` - safe auto-resume and first-class handle exposure
 
 - [ ] Expose `sessionHandle` as a first-class machine-readable field in `structuredContent`
   (when continuation is available) so calling orchestrator models do not need to scrape Markdown blockquotes.
@@ -605,7 +605,7 @@ production (AUD-P1-1).
   are explicitly documented as an owner-wide view. The `session list` action
   follows the same rule.
 
-### `LOCKS-001` — lease integrity
+### `LOCKS-001` - lease integrity
 
 **Status:** Open (AUD-P1-9).
 
@@ -618,7 +618,7 @@ production (AUD-P1-1).
 - [ ] Acceptance: crash-between-open-and-write, reused-PID and concurrent-sweep
   regressions.
 
-### `CLI-INTERACT-001` — stream activity liveness and backend failure modes
+### `CLI-INTERACT-001` - stream activity liveness and backend failure modes
 
 - [ ] Specify an activity-aware inactivity policy for subprocess supervision in `src/execution/process.ts`:
   track stdout/stderr data events and tool progress (`lastDataAt = Date.now()`) while explicitly accommodating provider-appropriate
@@ -640,14 +640,14 @@ production (AUD-P1-1).
   do not benefit from raw binary byte packing); focus token savings on lean system instructions,
   concise diffs, and eliminating redundant State Envelope formatting from ordinary consult calls.
 
-### `HISTORY-002` — continuation versus archival storage
+### `HISTORY-002` - continuation versus archival storage
 
 **Status:** Blocker (AUD-P0-3, AUD-P1-3).
 
 - [ ] Persist streamed answers as append-only deltas. A final `assistant_message`
   replaces the deltas on load, and the `.json` snapshot is materialized once, on
   `turn_finished`. Acceptance: persisted bytes stay within a small constant factor
-  of the answer size (the audit measured 54–112×).
+  of the answer size (the audit measured 54-112×).
 - [ ] Uncouple archive failures from execution:
   - initial, periodic and final flush errors become redacted warnings with
     `historyAvailable: false`;
@@ -668,7 +668,7 @@ production (AUD-P1-1).
   altering storage. Preserve existing histories, recovery and pagination
   consistency. Do not delete user data outside the documented retention.
 
-### `INSTALL-001` / `MIGRATION-001` — optional setup and presentation
+### `INSTALL-001` / `MIGRATION-001` - optional setup and presentation
 
 Shared setup exists; its native-host acceptance remains partial as recorded below.
 Do not expand the supported-host list as a prerequisite for core MCP compatibility.
@@ -697,13 +697,13 @@ Host evidence recorded on 2026-10-05 (historical; not fresh validation):
 | Insiders | Historical repaired profile preserved. | Executable/application installation and all native UI acceptance remain unverified. |
 
 The CLI provides `setup`, `repair` and read-only `status`. VSIX first-run
-onboarding and `CoAgent: Setup or Repair Chat Clients` reuse that implementation.
+onboarding and `CoAgent8: Setup or Repair Chat Clients` reuse that implementation.
 Selected local-default clients are remembered. Immutable runtime bundles are
 published under `~/.coagent8/runtime/<sha256>/index.cjs`. The repaired manual
 `~/.coagent8/runtime/index.cjs` registrations are preserved. No user host
 configuration was removed or replaced during the real acceptance checks.
 
-### `SIMPLIFY-001` — deletions and deduplication
+### `SIMPLIFY-001` - deletions and deduplication
 
 **Status:** Open (AUD-P2-3 to AUD-P2-6, AUD-P2-8 and P3 nits). Behavior must be
 preserved or explicitly migrated; deletion is not a contract change unless stated.
@@ -762,7 +762,7 @@ These statuses summarize prior implementation; they are not fresh test results.
   failures (a 10 ms lock-queue assumption and fixture startup starvation) and
   their fixes; production deadlines were unchanged.
 
-### `TESTS-001` — consolidated test structure
+### `TESTS-001` - consolidated test structure
 
 The structural migration is implemented; final release validation remains pending.
 
@@ -782,9 +782,9 @@ The structural migration is implemented; final release validation remains pendin
 
 ## Release acceptance and deferred work
 
-### `BETA-001` — publish 1.0.0-beta.1 and 1.0.0-beta.2 to invited testers
+### `BETA-001` - publish 1.0.0-beta.1 and 1.0.0-beta.2 to invited testers
 
-**Status:** Blocked by `AUDIT-001`. Testers run CoAgent on their own desktops,
+**Status:** Blocked by `AUDIT-001`. Testers run CoAgent8 on their own desktops,
 so no beta ships while a P0 finding is open.
 
 Beta 1 gate:
@@ -820,7 +820,7 @@ Beta 2 gate:
 An independent review by the Reviewer is required for each beta's changes before merge,
 as for any PR. The hash-bound release approval applies from RC 1.
 
-### `RC-001` — freeze, validate and accept 1.0.0-rc.1 (and rc.2 if needed)
+### `RC-001` - freeze, validate and accept 1.0.0-rc.1 (and rc.2 if needed)
 
 **Status:** Blocked by `BETA-001`; the existing version label is not acceptance.
 

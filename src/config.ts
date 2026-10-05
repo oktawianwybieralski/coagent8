@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { BackendId, CoAgentConfig, RoutingStrategy, ToolProfile } from './types/config.types.js';
+import { BackendId, CoAgent8Config, RoutingStrategy, ToolProfile } from './types/config.types.js';
 import { CONFIG_CONSTANTS } from './constants/index.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
@@ -21,7 +21,7 @@ export const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'gemini', 'smart_
 export const VALID_STRATEGIES: RoutingStrategy[] = ['fixed', 'smart_quota'];
 export const VALID_TOOL_PROFILES: ToolProfile[] = ['canonical', 'compact'];
 
-export const DEFAULT_CONFIG: CoAgentConfig = {
+export const DEFAULT_CONFIG: CoAgent8Config = {
   schemaVersion: 1,
   defaultBackend: null, // null triggers onboarding if multiple backends detected
   routing: {
@@ -46,7 +46,7 @@ export function ensureConfigDir(): void {
  * @returns A normalized configuration with independent routing arrays and defaults.
  * @throws On invalid version, backend, strategy, allowed providers or tool profile.
  */
-export function validateConfig(value: unknown): CoAgentConfig {
+export function validateConfig(value: unknown): CoAgent8Config {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Configuration Error: configuration must be a valid JSON object.');
   }
@@ -105,7 +105,7 @@ export function validateConfig(value: unknown): CoAgentConfig {
     }
   }
 
-  const validated: CoAgentConfig = {
+  const validated: CoAgent8Config = {
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
     routing: {
@@ -126,11 +126,11 @@ export function validateConfig(value: unknown): CoAgentConfig {
   return validated;
 }
 
-export function loadConfig(): CoAgentConfig {
+export function loadConfig(): CoAgent8Config {
   const configFile = getConfigFile();
   const targetFile = fs.existsSync(configFile) ? configFile : null;
 
-  let cfg: CoAgentConfig;
+  let cfg: CoAgent8Config;
   if (!targetFile) {
     cfg = {
       ...DEFAULT_CONFIG,
@@ -162,7 +162,7 @@ export function loadConfig(): CoAgentConfig {
   return cfg;
 }
 
-export function saveConfig(updates: Partial<CoAgentConfig>): CoAgentConfig {
+export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
   const configFile = getConfigFile();
   ensureConfigDir();
   const current = loadConfig();
@@ -192,7 +192,7 @@ export function getDefaultBackend(): BackendId | null {
   return config.defaultBackend;
 }
 
-export function setDefaultBackend(backend: unknown): CoAgentConfig {
+export function setDefaultBackend(backend: unknown): CoAgent8Config {
   if (typeof backend !== 'string' || !VALID_BACKENDS.includes(backend.toLowerCase() as BackendId)) {
     throw new Error(
       `Validation Error: backend must be one of: ${VALID_BACKENDS.join(', ')}. Received: '${backend}'`

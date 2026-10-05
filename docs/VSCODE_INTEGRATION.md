@@ -10,7 +10,7 @@ The [roadmap](ROADMAP.md) prioritizes generic MCP behavior and quiet operation o
 expanding setup support. The functionality described below is the current
 implementation; pending acceptance is not a claim of verified host compatibility.
 
-CoAgent keeps its stdio MCP runtime independent of editor APIs. Three integration
+CoAgent8 keeps its stdio MCP runtime independent of editor APIs. Three integration
 surfaces share the same logo source:
 
 | Surface | Metadata | Asset |
@@ -47,7 +47,7 @@ For a repository-local marketplace, add an entry pointing to the built plugin:
 ```json
 {
   "name": "coagent8-local",
-  "interface": { "displayName": "CoAgent Local" },
+  "interface": { "displayName": "CoAgent8 Local" },
   "plugins": [
     {
       "name": "coagent8",
@@ -62,7 +62,7 @@ For a repository-local marketplace, add an entry pointing to the built plugin:
 Save this catalog at `.agents/plugins/marketplace.json` in your local installation
 repository and enable `coagent8@coagent8-local` in the client's plugin configuration.
 Marketplace discovery and plugin installation depend on the client version. Avoid
-configuring a second manual CoAgent MCP entry alongside the installed plugin.
+configuring a second manual CoAgent8 MCP entry alongside the installed plugin.
 
 ## Native VS Code extension
 
@@ -96,10 +96,10 @@ is published by these commands.
 ## Rendering and acceptance
 
 Each host controls its own chat UI. MCP icon metadata does not force an icon,
-grouping, or the text `Used CoAgent integration`. A data URI also needs to be
+grouping, or the text `Used CoAgent8 integration`. A data URI also needs to be
 allowed by the host's image policy.
 
-The native provider registers CoAgent in VS Code. Supported integrated Copilot
+The native provider registers CoAgent8 in VS Code. Supported integrated Copilot
 CLI and Claude agents can use VS Code's MCP bridge; see the
 [VS Code release notes](https://code.visualstudio.com/updates/v1_113). Standalone
 Codex, agy and Claude Code clients have independent registries. A provider or
@@ -107,7 +107,7 @@ plugin manifest in a checkout does not establish installation in those clients,
 and an existing chat may retain its earlier tool catalog until the host refreshes
 it or starts a new conversation.
 
-The VSIX offers **CoAgent: Set Up or Repair Chat Clients** on first local
+The VSIX offers **CoAgent8: Set Up or Repair Chat Clients** on first local
 activation and in the Command Palette. Select installed standalone Codex, Claude
 Code, and agy clients once; repair remembers the selection. The CLI uses the same
 implementation:
@@ -133,7 +133,7 @@ no concurrent editor changed them. Claude and agy updates currently remain defer
 because their native-host calls are unverified. If concurrent edits prevent rollback,
 setup reports the conflict and keeps the private backup for recovery.
 
-The provider yields to a manual CoAgent entry in the active VS Code profile or
+The provider yields to a manual CoAgent8 entry in the active VS Code profile or
 workspace, preserving the working connection and avoiding a duplicate provider
 entry. No uninstall callback edits external settings. Remove a managed registration
 through its host only after verifying a replacement; setup does not delete manual

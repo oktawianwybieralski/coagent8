@@ -26,6 +26,24 @@ To maintain international open-source maintainability, clean CI automation, and 
    - All Git commit messages must follow Conventional Commits in **English** (e.g. `feat(progress): implement safe live phase status`). The full commit, pull request and release conventions are defined in [02-git-workflow](02-git-workflow.md).
    - PR titles and descriptions must be authored in **English**.
 
+---
+
+## 🔤 Strict ASCII Punctuation & Character Encoding Standard
+
+To prevent terminal mojibake, encoding mismatches across Windows (CP1250/CP1252), Linux, and macOS, and subtle search/parsing breakages in CI, CLIs, regexes, and Markdown renderers:
+
+1. **Strict ASCII Hyphens Only (`-`, U+002D)**:
+   - Strictly **FORBIDDEN**: Unicode em dashes (`—`, U+2014), en dashes (`–`, U+2013), horizontal bars (`―`), and figure dashes (`‒`).
+   - Strictly **MANDATORY**: Standard ASCII hyphen-minus (`-`, U+002D) exclusively.
+
+2. **Strict ASCII Quotes & Apostrophes**:
+   - Strictly **FORBIDDEN**: Typographic/smart curly quotes and apostrophes (`“`, `”`, `‘`, `’`, `«`, `»`).
+   - Strictly **MANDATORY**: Standard ASCII straight quotes (`"`, `'`) and backticks (`` ` ``).
+
+3. **No Fancy Unicode Punctuation**:
+   - All source code, manifests (`package.json`, `mcp.json`, `plugin.json`), documentation (`README.md`, `docs/*.md`), tests, and rule files must adhere to strict standard ASCII punctuation.
+   - Do not use non-standard spaces (non-breaking spaces `\u00A0`, thin spaces, zero-width spaces). Use standard ASCII space (`\u0020`).
+
 ## Naming and responsibility
 
 Directory, module, class and function names define their responsibility. Behavior

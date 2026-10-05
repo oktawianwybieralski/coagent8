@@ -1,10 +1,10 @@
-# CoAgent — RC1 Execution Plan & Agent Handoff
+# CoAgent8 - RC1 Execution Plan & Agent Handoff
 
 **Date:** October 3, 2026. **Release Target:** `1.0.0-rc.1`, upon fulfilling all quality gates below. Current development version remains `0.9.0-dev` until release artifacts are finalized.
 
 **Initial Work Division:** Gemini agent owns Codex CLI adapter; Codex agent owns Gemini CLI adapter and shared integration. **Update 2026-10-03:** Primary Codex execution path, shared runner contract, live progress reporting, and trailing throttle have been implemented and verified. Message history, live progress visibility, and clean chat rendering remain in active RC1 scope.
 
-Technical foundation: [AUDIT_CODEX.md](../AUDIT_CODEX.md), findings F01–F25. This document serves as the active execution plan. [PLAN_V1.0.0.md](PLAN_V1.0.0.md) preserves historical roadmap context; checkmarks there do not constitute release sign-off.
+Technical foundation: [AUDIT_CODEX.md](../AUDIT_CODEX.md), findings F01-F25. This document serves as the active execution plan. [PLAN_V1.0.0.md](PLAN_V1.0.0.md) preserves historical roadmap context; checkmarks there do not constitute release sign-off.
 
 Implementation progress and local evidence are tracked in [RC1_STATUS.md](RC1_STATUS.md). Acceptance criteria remain binding; test suite and fixtures alone do not substitute for live smoke tests, host UI checks, or CI matrix verification.
 
@@ -53,7 +53,7 @@ Tool Call / User Message
   -> MCP client renders formatted Markdown and activity indicators
 ```
 
-CoAgent captures messages and events strictly for processes it spawns. Native CLI session IDs preserve model context; local SQLite/JSON history provides durable inspection across restarts. Both mechanisms are independently tested.
+CoAgent8 captures messages and events strictly for processes it spawns. Native CLI session IDs preserve model context; local SQLite/JSON history provides durable inspection across restarts. Both mechanisms are independently tested.
 
 Shared types in `src/types/adapter.types.ts` and `conversation.types.ts`:
 - `ProviderId = 'codex' | 'gemini' | 'claude'`; routing strategies `auto` and `smart_quota`.
@@ -85,7 +85,7 @@ Response layout:
 
 ### 3.4. History & Retention
 
-- Durable, versioned event store under CoAgent data directory with tool `coagent8_session_history(session_handle, workspace_path?, cursor?, limit?)`.
+- Durable, versioned event store under CoAgent8 data directory with tool `coagent8_session_history(session_handle, workspace_path?, cursor?, limit?)`.
 - Reads are ordered, byte-bounded, paginated, and scoped to canonical workspace.
 - Default resource boundaries: 512 KiB per diagnostic stream, 512 KiB per JSONL record, 1 MiB public response, 4 MiB composite prompt, 10 MiB per session history, 100 MiB total storage, 100 events / 240 KiB per page.
 - History retained locally for 7 days by default; configurable via `coagent8_HISTORY`. `close_session(delete_history=true)` removes local session transcripts.
@@ -98,7 +98,7 @@ Response layout:
 | RC-02 | P0 | Codex | Shared resolver and runner; F02/F05/F06/F08 | `.exe` and `.cmd` shims run via JS entrypoint; pre-abort prevents spawn; teardown cleans process tree; buffer limits enforced |
 | RC-03A | P0 | Gemini | Codex execution, review, resume, terminal status; F03/F07, F17/F18 | Valid argv, sandbox enforcement, error classification, 2-turn live resume |
 | RC-03B | P0 | Codex | Production Gemini adapter; F01/F02/F06/F08 | Real headless execution, exact UUID resume, read-only profile, typed errors |
-| RC-04 | P1 | Codex | Sessions: atomicity, async locks, ownership leases, schema, invalidation; F09–F12 | Deterministic lock race and multi-process tests pass; non-blocking event loop |
+| RC-04 | P1 | Codex | Sessions: atomicity, async locks, ownership leases, schema, invalidation; F09-F12 | Deterministic lock race and multi-process tests pass; non-blocking event loop |
 | RC-05 | P0 | Codex | Registry, routing, unified tool pipeline; F01/F15/F16 | All tools route to appropriate adapter; schema consistency; session pinning |
 | RC-06 | P0 | Shared | History, message capture, live progress, final chat renderer; F12/F20 | Full public conversation available across restarts; no duplicates; UI verified |
 | RC-07 | P1 | Codex | Redaction and model governance; F13/F14 | Secrets redacted from errors/progress/diagnostics; top-tier confirmation enforced |

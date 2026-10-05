@@ -1,10 +1,10 @@
-# CoAgent architecture
+# CoAgent8 architecture
 
 This document describes the current implementation. [ROADMAP.md](ROADMAP.md)
 owns the proposed simplification and migration sequence; [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md)
 owns tool schemas, execution guarantees and storage behavior.
 
-CoAgent is a stdio MCP bridge to local read-only CLI backends. The calling host
+CoAgent8 is a stdio MCP bridge to local read-only CLI backends. The calling host
 and executing backend are separate roles. Server tool discovery does not check
 client names. The setup command's recognized-client list belongs to optional
 registration automation, not the MCP compatibility boundary.

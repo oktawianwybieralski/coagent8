@@ -45,7 +45,7 @@ test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools withou
     clientInfo: { name: 'ThirdPartyArbitraryClient', version: '9.8.7' },
   });
 
-  assert.equal(init.result.serverInfo.title, 'CoAgent');
+  assert.equal(init.result.serverInfo.title, 'CoAgent8');
   c.proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
 
   // Tools list succeeds without invoking any backend or failing

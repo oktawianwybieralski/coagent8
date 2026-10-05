@@ -90,11 +90,11 @@ function servers(client: SetupClient, config: Record<string, unknown>): Record<s
 function registration(value: unknown): Registration {
   const entry = object(value);
   if (typeof entry.command !== 'string' || !entry.command || !Array.isArray(entry.args) || !entry.args.every(arg => typeof arg === 'string')) {
-    throw new Error('Existing CoAgent entry is not a supported stdio definition; preserve it and resolve the conflict.');
+    throw new Error('Existing CoAgent8 entry is not a supported stdio definition; preserve it and resolve the conflict.');
   }
-  if (entry.disabled === true || entry.enabled === false) throw new Error('Existing CoAgent entry is disabled; enable it in the host explicitly.');
+  if (entry.disabled === true || entry.enabled === false) throw new Error('Existing CoAgent8 entry is disabled; enable it in the host explicitly.');
   const env = entry.env === undefined ? undefined : object(entry.env);
-  if (env && !Object.values(env).every(value => typeof value === 'string')) throw new Error('Invalid CoAgent environment.');
+  if (env && !Object.values(env).every(value => typeof value === 'string')) throw new Error('Invalid CoAgent8 environment.');
   return { command: entry.command, args: entry.args, env: env as Record<string, string> | undefined };
 }
 function configPath(client: SetupClient, home: string, env: NodeJS.ProcessEnv): string {
@@ -126,10 +126,10 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
   const entries = servers(client, config);
   for (const [name, value] of Object.entries(entries)) {
     if (name === 'coagent8') continue;
-    if (/coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value))) throw new Error('Possible duplicate CoAgent definition; resolve it in the host before setup.');
+    if (/coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value))) throw new Error('Possible duplicate CoAgent8 definition; resolve it in the host before setup.');
   }
   if (config.plugins && Object.entries(object(config.plugins)).some(([name, value]) => /coagent8/i.test(name) && object(value).enabled !== false)) {
-    throw new Error('CoAgent plugin is configured; preserve native plugin ownership and verify it in the host.');
+    throw new Error('CoAgent8 plugin is configured; preserve native plugin ownership and verify it in the host.');
   }
   if (client === 'claude' && config.projects) {
     const local = object(config.projects)[cwd];
@@ -142,7 +142,7 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
       : client === 'claude' ? path.join(dir, '.mcp.json') : path.join(dir, '.agents', 'mcp_config.json');
     const content = file === globalFile ? null : read(file);
     if (content && Object.entries(servers(client, document(client, content))).some(([name, value]) => /coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value)))) {
-      throw new Error('Workspace/profile CoAgent registration conflicts with local default scope.');
+      throw new Error('Workspace/profile CoAgent8 registration conflicts with local default scope.');
     }
     if (dir === home || fs.existsSync(path.join(dir, '.git')) || path.dirname(dir) === dir) break;
   }
@@ -152,14 +152,14 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
 export async function probeRuntime(entry: Registration, env: NodeJS.ProcessEnv, cwd: string): Promise<string[]> {
   return withStdioRpc(entry.command, entry.args, async rpc => {
     const init = object(await rpc.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'coagent8-setup', version: '1' } }));
-    if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent.');
+    if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');
     rpc.notify('notifications/initialized');
     const tools = object(await rpc.request('tools/list', {})).tools;
     if (!Array.isArray(tools)) throw new Error('Invalid tool catalog.');
     const names = tools.map(tool => object(tool).name);
-    if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) throw new Error('CoAgent doctor is unavailable.');
+    if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) throw new Error('CoAgent8 doctor is unavailable.');
     const result = object(await rpc.request('tools/call', { name: 'doctor', arguments: {} }));
-    if (result.isError) throw new Error('CoAgent doctor call failed.');
+    if (result.isError) throw new Error('CoAgent8 doctor call failed.');
     return names as string[];
   }, { env: { ...env, ...entry.env }, cwd });
 }
@@ -175,7 +175,7 @@ async function probeCodex(cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string):
     const status = object(await rpc.request('mcpServerStatus/list', { threadId, serverName: 'coagent8' }));
     if (!Array.isArray(status.data)) throw new Error('Codex MCP discovery is unavailable.');
     const server = status.data.map(object).find(item => item.name === 'coagent8');
-    if (!server || !object(server.tools).doctor) throw new Error('Codex did not discover CoAgent doctor.');
+    if (!server || !object(server.tools).doctor) throw new Error('Codex did not discover CoAgent8 doctor.');
     const result = object(await rpc.request('mcpServer/tool/call', { threadId, server: 'coagent8', tool: 'doctor', arguments: {} }));
     if (result.isError) throw new Error('Codex doctor call failed.');
     return true;
@@ -233,7 +233,7 @@ async function restoreOwnedEntry(client: SetupClient, file: string, before: stri
   const current = read(file);
   if (current === null) throw new Error('Configuration was removed concurrently; backup retained.');
   const currentEntry = servers(client, document(client, current)).coagent8;
-  if (!isDeepStrictEqual(currentEntry, installed)) throw new Error('CoAgent entry changed independently; rollback preserves it and retains the private backup.');
+  if (!isDeepStrictEqual(currentEntry, installed)) throw new Error('CoAgent8 entry changed independently; rollback preserves it and retains the private backup.');
   const original = before === null ? undefined : servers(client, document(client, before)).coagent8;
   const updated = client === 'codex'
     ? await nativeCodexEdit(current, original === undefined ? null : registration(original), cli, backup, env, cwd)
@@ -310,7 +310,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
             continue;
           }
         } else if (options.statusOnly) {
-          result.action = 'missing'; result.message = 'Client installed; CoAgent is not registered.'; continue;
+          result.action = 'missing'; result.message = 'Client installed; CoAgent8 is not registered.'; continue;
         }
         if (!candidate) throw new Error('Setup runtime is unavailable.');
         const backup = path.join(root, 'setup-backups', randomUUID());
@@ -342,7 +342,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           if (entry !== undefined && !result.hostCallable) throw new Error('Replacement failed native-host acceptance.');
           const current = read(file);
           if (current === null || !isDeepStrictEqual(servers(client, document(client, current)).coagent8, servers(client, document(client, after)).coagent8)) {
-            throw new Error('CoAgent entry changed during verification; ownership was not transferred.');
+            throw new Error('CoAgent8 entry changed during verification; ownership was not transferred.');
           }
           result.registered = true;
           result.action = entry === undefined ? 'installed' : 'updated';

@@ -6,7 +6,7 @@ export interface ClaudeErrorMapping { code: ErrorCode; retryable: boolean }
 
 /**
  * Claude Code error categories, as reported in `assistant.error` and
- * `system/api_retry.error`, mapped to CoAgent error codes.
+ * `system/api_retry.error`, mapped to CoAgent8 error codes.
  * @remarks Extend this table when the CLI adds a category; unknown categories
  * map to `PROCESS_ERROR`. Observed with Claude Code 2.1.289:
  * `authentication_failed` and `model_not_found`. The remaining keys follow the

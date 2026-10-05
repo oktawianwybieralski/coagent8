@@ -8,7 +8,7 @@ import { object } from './rpc.js';
  * Detects manual definitions in the active editor profile and workspace.
  * @param storagePath - VS Code's globalStorageUri path for this extension/profile.
  * @param folders - Workspace folder paths on the current extension host.
- * @returns True when a manual definition already owns CoAgent discovery.
+ * @returns True when a manual definition already owns CoAgent8 discovery.
  * @throws When an existing MCP file is malformed or unreadable; preserve it.
  * @remarks No other editor profile or machine is read or changed.
  */

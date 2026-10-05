@@ -345,7 +345,7 @@ test('Phase 3 Task 3.4: formatExecutionResult enforces strict No-Emoji standard 
   assert.ok(!emojiRegex.test(text), `Output should not contain any emojis: ${text}`);
 
   // Verify clean blockquotes
-  assert.ok(text.includes('> CoAgent: codex (gpt-6.1-sol) · 4.5s · 3 ops'));
+  assert.ok(text.includes('> CoAgent8: codex (gpt-6.1-sol) · 4.5s · 3 ops'));
   assert.ok(text.includes('> Session: syn_sess_1234567890abcdef (turn 2 · ready)'));
 });
 

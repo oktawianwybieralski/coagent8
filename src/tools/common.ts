@@ -19,7 +19,7 @@
  * END_REVIEW
  * ```
  *
- * - **Programmatic Gate Enforcement**: In `enforceStateEnvelopeGate`, CoAgent programmatically validates
+ * - **Programmatic Gate Enforcement**: In `enforceStateEnvelopeGate`, CoAgent8 programmatically validates
  *   the review verdict. If any P1/P2 blocker is reported, if coverage is PARTIAL, if the response was truncated,
  *   or if the envelope is incomplete, `VERDICT` is automatically overridden to `BLOCKED`.
  * - **Fatal Error Reporting**: When an unrecoverable process/protocol failure occurs (`PROCESS_ERROR`,
@@ -308,7 +308,7 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   const durationSec = (meta.durationMs / 1000).toFixed(1);
   const opLabel = meta.toolCount === 1 ? 'op' : 'ops';
   const footerLines: string[] = [
-    `> CoAgent: ${provider || 'CLI'} (${res.model || 'default'}) · ${durationSec}s · ${meta.toolCount} ${opLabel}`,
+    `> CoAgent8: ${provider || 'CLI'} (${res.model || 'default'}) · ${durationSec}s · ${meta.toolCount} ${opLabel}`,
   ];
   if (sessionHandle) {
     footerLines.push(`> Session: ${sessionHandle} (turn ${meta.turn} · ${res.continuationAvailable ? 'ready' : 'finished'})`);

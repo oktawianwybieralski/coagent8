@@ -1,6 +1,6 @@
 # Code documentation
 
-CoAgent uses TSDoc comments for TypeScript declarations, ESLint to validate their
+CoAgent8 uses TSDoc comments for TypeScript declarations, ESLint to validate their
 syntax, and TypeDoc to generate a browsable source API reference. The reference
 describes exported source modules for contributors; it does not promise a stable
 public JavaScript API for the CLI package.

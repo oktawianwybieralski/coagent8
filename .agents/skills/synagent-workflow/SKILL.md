@@ -1,9 +1,9 @@
 ---
 name: coagent8-workflow
-description: Procedures for developing, testing, auditing, and releasing CoAgent MCP server.
+description: Procedures for developing, testing, auditing, and releasing CoAgent8 MCP server.
 ---
 
-# CoAgent workflow
+# CoAgent8 workflow
 
 Read [ROADMAP.md](../../../docs/ROADMAP.md) for the single active plan. Begin with
 the highest-priority incomplete item relevant to the user's request; audit

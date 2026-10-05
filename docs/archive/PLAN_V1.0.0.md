@@ -1,11 +1,11 @@
-# OmniAgent MCP — Architecture & Release Roadmap (v1.0.0 & v1.1.0)
+# OmniAgent MCP - Architecture & Release Roadmap (v1.0.0 & v1.1.0)
 
 > **Historical roadmap:** Current RC scope, agent ownership, chat/history requirements and release gates are maintained in [PLAN_RC1.md](PLAN_RC1.md). Earlier completion claims below require verification against [AUDIT_CODEX.md](../AUDIT_CODEX.md).
 
 > **Update 2026-10-03:** The package is now `coagent8@0.9.0-dev`. Codex execution has been migrated to the shared runner after a reproducible integration regression. Current local verification is 58/58 tests; real CLI safety, independent review and six CI jobs remain open. Consult [RC1_STATUS.md](RC1_STATUS.md) for evidence. The older Claude recommendation below is superseded by the current `--bare` profile; historical checkboxes and release claims are not current acceptance.
 
 > **Architectural Specification & Release Roadmap (Audited & Approved by Codex Sol)**  
-> **Status:** Steps 1–9 Complete | Step 10 (v1.0.0 Tagging & Publishing) & v1.1.0 Enhancements In Progress  
+> **Status:** Steps 1-9 Complete | Step 10 (v1.0.0 Tagging & Publishing) & v1.1.0 Enhancements In Progress  
 > **Author:** Oktawian Wybieralski  
 > **NPM Package:** `omniagent-mcp` | **MCP ID:** `omniagent`
 
@@ -102,7 +102,7 @@ CLI Process (stdout) ───► JSONL Stream Decoder ───► Event Normal
    - `item.completed`: Emits step completion.
 2. **MCP Progress Protocol Adherence:**
    - Increments an indeterminate progress counter (`observedUpdates++`) while omitting `total`.
-   - Throttles progress notifications to 2–4 updates per second to avoid UI saturations.
+   - Throttles progress notifications to 2-4 updates per second to avoid UI saturations.
    - Incorporates an idle heartbeat (`[Codex] Reasoning in progress... (15s since last action)`) when long model generation produces no interim tool events.
 3. **Response Isolation:**
    - Raw JSONL streams are kept off stdout of the MCP server.
@@ -136,7 +136,7 @@ Spawning a brand new CLI process on every MCP request causes the agent to lose c
 Users encounter errors or environment quirks and want to report bugs directly to GitHub (`nyupyu/omniagent`), but the MCP server cannot authenticate to GitHub on behalf of the user without credentials.
 
 ### Dual-Channel Architecture:
-1. **Channel A: Pre-Filled Issue URL (Zero-Auth / 1-Click Browser Workflow — Default):**
+1. **Channel A: Pre-Filled Issue URL (Zero-Auth / 1-Click Browser Workflow - Default):**
    - Constructs a standardized, pre-filled URL:
      `https://github.com/nyupyu/omniagent/issues/new?title=...&body=...`
    - Formats a comprehensive, sanitized markdown bug report:
@@ -145,7 +145,7 @@ Users encounter errors or environment quirks and want to report bugs directly to
      - Error category and sanitized stack trace.
      - **Strict Privacy Sanitization:** Strips all personal tokens (`*_API_KEY`, Bearer tokens), user home paths, and repository code.
    - User reviews the pre-filled issue in their browser and clicks "Submit new issue".
-2. **Channel B: GitHub CLI Integration (`gh issue create` — Opt-In):**
+2. **Channel B: GitHub CLI Integration (`gh issue create` - Opt-In):**
    - Asynchronously probes `gh auth status`.
    - If authenticated, prompts the user: *"Would you like OmniAgent to submit this issue directly via GitHub CLI (`gh issue create`)?"*
    - Upon explicit consent, executes `gh issue create --repo nyupyu/omniagent --title ... --body-file -` via stdin without opening external shells.
@@ -231,14 +231,14 @@ omniagent/
 ## 8. MCP Tool Catalog
 
 ### Primary Multi-Agent Tools:
-1. **`omniagent_doctor`** — Comprehensive multi-agent diagnostics (CLI availability, versions, paths, auth profiles, and non-intrusive install instructions).
-2. **`omniagent_review`** — Cross-model code review (`backend: "auto" | "codex" | "claude" | "smart_quota"`, with session continuation).
-3. **`omniagent_consult`** — Cross-model architectural consultation and second opinion.
-4. **`omniagent_analyze`** — Cross-model codebase and dependency analysis in read-only mode.
-5. **`omniagent_set_default`** — Persistently sets the default backend in `~/.omniagent/config.json`.
-6. **`omniagent_quota_status`** — Fast inspection of active rate limits and cooldown statuses.
-7. **`omniagent_report_bug`** — Generates sanitized GitHub issue report URL / submits via GitHub CLI with user consent.
-8. **`omniagent_close_session`** — Closes and clears active multi-turn session handle.
+1. **`omniagent_doctor`** - Comprehensive multi-agent diagnostics (CLI availability, versions, paths, auth profiles, and non-intrusive install instructions).
+2. **`omniagent_review`** - Cross-model code review (`backend: "auto" | "codex" | "claude" | "smart_quota"`, with session continuation).
+3. **`omniagent_consult`** - Cross-model architectural consultation and second opinion.
+4. **`omniagent_analyze`** - Cross-model codebase and dependency analysis in read-only mode.
+5. **`omniagent_set_default`** - Persistently sets the default backend in `~/.omniagent/config.json`.
+6. **`omniagent_quota_status`** - Fast inspection of active rate limits and cooldown statuses.
+7. **`omniagent_report_bug`** - Generates sanitized GitHub issue report URL / submits via GitHub CLI with user consent.
+8. **`omniagent_close_session`** - Closes and clears active multi-turn session handle.
 
 ### Legacy Codex Tools (100% Backward Compatible):
 - `codex_status` $\rightarrow$ `src/tools/doctor.tool.ts`
@@ -292,14 +292,14 @@ During live MCP consultation on October 3, 2026, **Codex Sol** (`gpt-6.1-sol`) a
 
 ---
 
-## 11. Systematic Rebranding & Purge Roadmap: OmniAgent -> CoAgent
+## 11. Systematic Rebranding & Purge Roadmap: OmniAgent -> CoAgent8
 
 Following user direction, all internal and external artifacts, handles, configuration directories, and environment variables are transitioning from the legacy `omni` prefix to `syn`:
 
 ### Action Items & Transition Status
 - [x] **Session Handle Prefixes**: Migrated default generated session handles from `omni_sess_*` to `syn_sess_*` (`src/services/session.service.ts` & `src/constants/index.ts`). Backward compatibility retained for reading/pruning legacy `omni_sess_*` session files.
-- [ ] **TypeScript Interfaces & Types**: Rename `OmniAgentConfig` -> `CoAgentConfig` in `src/types/config.types.ts` and services (maintaining a deprecated type alias for backwards compatibility).
-- [ ] **Logger & Error Prefixes**: Replace all remaining `[OmniAgent]` console log and error tags with `[CoAgent]` across adapters, services, and tool handlers.
+- [ ] **TypeScript Interfaces & Types**: Rename `OmniAgentConfig` -> `CoAgent8Config` in `src/types/config.types.ts` and services (maintaining a deprecated type alias for backwards compatibility).
+- [ ] **Logger & Error Prefixes**: Replace all remaining `[OmniAgent]` console log and error tags with `[CoAgent8]` across adapters, services, and tool handlers.
 - [ ] **Configuration & Environment Variables**: Complete transition of primary configuration paths to `~/.coagent8/config.json` and `coagent8_*` env vars, retaining `~/.omniagent` and `OMNIAGENT_*` exclusively as legacy fallbacks.
 - [ ] **Legacy Tool Aliases (`omniagent_*`)**: Mark all `omniagent_*` tool definitions with explicit `@deprecated (Use coagent8_* instead)` annotations.
 - [ ] **Documentation & Rules Cleanup**: Scrub lingering mentions of `omniagent` across `.agents/rules/*.md`, `docs/`, and `README.md` while keeping deliberate legacy compatibility documentation intact.

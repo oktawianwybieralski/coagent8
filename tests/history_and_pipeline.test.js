@@ -239,7 +239,7 @@ test('formatExecutionResult produces clean Markdown with answer at top, and hand
 
   assert.equal(formatted.isError, false);
   assert.ok(formatted.content[0].text.startsWith('# Analysis Result\nEverything looks good.'));
-  assert.ok(formatted.content[0].text.includes('> CoAgent: codex (default) · 3.5s · 2 ops'));
+  assert.ok(formatted.content[0].text.includes('> CoAgent8: codex (default) · 3.5s · 2 ops'));
   assert.ok(formatted.content[0].text.includes('> Session: syn_sess_test123 (turn 1 · ready)'));
 
   // Test handleSessionHistory across two turns

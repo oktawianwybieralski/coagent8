@@ -1,4 +1,4 @@
-# CoAgent — Agent & Contributor Guidelines (`AGENTS.md`)
+# CoAgent8 - Agent & Contributor Guidelines (`AGENTS.md`)
 
 This repository defines strict engineering practices, Git branching workflows, quality gates, and architectural conventions for all AI coding agents (Antigravity, Cursor, Codex, Claude Code) and human contributors.
 
@@ -13,7 +13,7 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 ## 🧭 Prioritized Rule Index (`.agents/rules/`)
 
-### 🔴 P0 – Critical System & Security Invariants
+### 🔴 P0 - Critical System & Security Invariants
 *Must never be bypassed under any circumstances.*
 
 0. **[P0: Core Invariants, Code Quality & Engineering Integrity (`00-core-invariants.md`)](./.agents/rules/00-core-invariants.md)**:
@@ -36,11 +36,11 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 ---
 
-### 🟡 P1 – Verification & Engineering Gates
+### 🟡 P1 - Verification & Engineering Gates
 *Mandatory quality bars that must be satisfied before PR merge.*
 
-3. **[P1: CoAgent Review & Independent Audit (`03-author-reviewer.md`)](./.agents/rules/03-author-reviewer.md)**:
-   - Strict Author/Reviewer separation: Antigravity acts as Author (writes the change); Codex Sol (`gpt-6.1-sol`) / Claude Code acts as Reviewer (independent review via CoAgent Review).
+3. **[P1: CoAgent8 Review & Independent Audit (`03-author-reviewer.md`)](./.agents/rules/03-author-reviewer.md)**:
+   - Strict Author/Reviewer separation: Antigravity acts as Author (writes the change); Codex Sol (`gpt-6.1-sol`) / Claude Code acts as Reviewer (independent review via CoAgent8 Review).
    - Independent verification via `review` in read-only sandbox before merging.
    - Release approval strictly binds to Base SHA, Candidate SHA, Tree SHA, and Artifact SHA-256.
    - Zero P1 (critical) or P2 (robustness) issues allowed. State Envelope gate must evaluate to `VERDICT: READY`.
@@ -53,7 +53,7 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 ---
 
-### 🟢 P2 – Compatibility & Code Standards
+### 🟢 P2 - Compatibility & Code Standards
 *Operational standards ensuring cross-platform stability and clean communication.*
 
 5. **[P2: Cross-Platform & CI Matrix Guardrails (`05-cross-platform.md`)](./.agents/rules/05-cross-platform.md)**:

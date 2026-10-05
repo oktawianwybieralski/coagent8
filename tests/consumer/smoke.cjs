@@ -67,7 +67,7 @@ function npmRun(args,cwd=root) {
     const {proc,request}=connection;
     try {
       const init=await request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'tarball-consumer',version:'1'}});assert.equal(init.result.serverInfo.version,installed.version);
-      assert.equal(init.result.serverInfo.title,'CoAgent');
+      assert.equal(init.result.serverInfo.title,'CoAgent8');
       assert.deepEqual(init.result.serverInfo.icons[0].sizes,['64x64']);
       assert.equal(init.result.serverInfo.icons[0].mimeType,'image/png');
       assert.deepEqual(Buffer.from(init.result.serverInfo.icons[0].src.replace(/^data:image\/png;base64,/,''),'base64'),expectedIcon);
