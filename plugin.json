@@ -1,0 +1,46 @@
+{
+  "name": "coagent8",
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "version": "1.0.0-beta.1",
+  "description": "High-integrity multi-agent orchestration bridge connecting orchestrators with local CLI coding agents (OpenAI Codex, Claude Code, Google Antigravity agy) via MCP.",
+  "author": {
+    "name": "Oktawian Wybieralski",
+    "url": "https://oki.dev"
+  },
+  "homepage": "https://oki.dev",
+  "repository": "https://github.com/oktawianwybieralski/coagent8",
+  "license": "GPL-3.0-only",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "CoAgent",
+        "shortDescription": "Consult local coding agents and run CoAgent Review through MCP.",
+        "longDescription": "Connect Codex, Claude Code, and Gemini through a local MCP server with read-only execution, persistent sessions, and public conversation history.",
+        "developerName": "Oktawian Wybieralski",
+        "category": "Productivity",
+        "websiteURL": "https://github.com/oktawianwybieralski/coagent8",
+        "composerIcon": "./assets/logo32.png",
+        "logo": "./assets/logo.png",
+        "defaultPrompt": [
+          "Run CoAgent Review on my uncommitted changes using an independent agent in a read-only sandbox",
+          "Consult CoAgent on an architectural design or refactoring proposal",
+          "Run CoAgent doctor to inspect CLI availability, versions, and auth status"
+        ]
+      }
+    }
+  },
+  "keywords": [
+    "mcp",
+    "coagent8",
+    "coagent8-review",
+    "codex",
+    "claude",
+    "gemini",
+    "antigravity",
+    "bridge",
+    "code-review",
+    "author-reviewer",
+    "doctor",
+    "consult"
+  ]
+}

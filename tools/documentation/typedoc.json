@@ -1,0 +1,10 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "CoAgent — Source API",
+  "entryPoints": ["../../src"],
+  "entryPointStrategy": "expand",
+  "tsconfig": "../../tsconfig.json",
+  "out": "../../.rc-artifacts/api-docs",
+  "readme": "../../docs/CODE_DOCUMENTATION.md",
+  "treatWarningsAsErrors": true
+}

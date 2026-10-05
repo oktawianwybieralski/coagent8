@@ -1,0 +1,8 @@
+{
+  "name": "coagent8-vscode-tooling",
+  "private": true,
+  "version": "0.0.0",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": { "package": "node package.cjs" },
+  "devDependencies": { "@vscode/vsce": "4.0.0" }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "coagent8-mcp",
+  "displayName": "CoAgent MCP (Development)",
+  "description": "Connect local coding agents to VS Code through CoAgent MCP.",
+  "version": "1.0.0-beta.1",
+  "publisher": "oktawianwybieralski",
+  "license": "GPL-3.0-only",
+  "repository": { "type": "git", "url": "https://github.com/oktawianwybieralski/coagent8.git" },
+  "engines": { "vscode": "^1.101.0" },
+  "categories": ["AI", "Chat"],
+  "extensionKind": ["workspace"],
+  "main": "./dist/extension.cjs",
+  "icon": "assets/logo.png",
+  "files": ["dist/**", "assets/**", "README.md", "LICENSE"],
+  "activationEvents": ["onMcpServerDefinitionProvider:coagent8", "onStartupFinished"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": false },
+    "virtualWorkspaces": { "supported": false }
+  },
+  "contributes": {
+    "commands": [{ "command": "coagent8.setup", "title": "CoAgent: Set Up or Repair Chat Clients" }],
+    "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent" }],
+    "configuration": {
+      "title": "CoAgent",
+      "properties": {
+        "coagent8.nodePath": {
+          "type": "string",
+          "default": "node",
+          "scope": "machine",
+          "description": "Node.js 20+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH."
+        }
+      }
+    }
+  }
+}
