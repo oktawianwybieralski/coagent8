@@ -400,7 +400,8 @@ agy 1.2.17 offers no protocol interrupt in headless mode. Checked sources:
 
 Consequences:
 - Windows: a cancellation or deadline force-stops `agy.exe` (layer 2). It is a
-  native Go binary, not Node, so commands it started may survive.
+  native Go binary, not Node, but its own children did not survive the forced
+  stop (live evidence below).
 - POSIX: the process group receives `SIGTERM`. The changelog states that a
   session shutdown cancels running commands and streaming connections, but
   250 ms before `SIGKILL` may be too short for that.
@@ -414,16 +415,32 @@ Work items:
   - Implemented as `signalGraceMs` (`AGY_SIGNAL_GRACE_MS = 2000`). The tests
     are in `tests/process.test.js` and `tests/gemini.adapter.test.js`. They are
     POSIX-only and pass on Linux (Docker `node:22`, see the evidence above).
-- [ ] Native deadline: pass `--print-timeout` slightly below the run deadline,
-  so agy ends a timed-out turn itself before the forced stop (deadlines only,
-  not user cancellation).
-  - Prerequisite: one or two live agy turns. They establish the exit code, the
-    terminal `result` event, partial output and the cleanup of running commands
-    when the limit expires. The owner authorizes the model calls.
-- [ ] Windows user cancellation has no graceful path. Request a headless
-  interrupt message for `stream-json` from the agy maintainers. Do not add a
-  workaround. If surviving agy descendants are measured, the per-run Job
-  Object helper (AUD-P2-14) applies.
+- [x] Native deadline (`--print-timeout`): rejected after live verification.
+  Do not use it.
+- [x] Windows user cancellation: no workaround needed. A forced stop leaves no
+  agy process behind (evidence below). A headless interrupt message for
+  `stream-json` remains a nice-to-have for upstream, not a defect.
+
+Live agy evidence (2026-10-06, agy 1.2.17, `gemini-3.8-flash`, effort `low`,
+`--sandbox --output-format stream-json`, Windows 11; six turns):
+- `--print-timeout 3s` on a long answer:
+  - The limit counts from the start of the turn (about 3 s after launch), not
+    from process start.
+  - At expiry agy wrote `print timeout after 3s with turn in progress; returning
+    partial output` to stderr and emitted `result` with `status: "SUCCESS"` and
+    an empty `response`. It then exited with code 0.
+  - A timeout is therefore indistinguishable from success without parsing
+    stderr text, so the flag would turn deadlines into false successes.
+- A request to run `ping -n 30 127.0.0.1`: `run_command` was auto-denied in
+  headless sandbox mode (`jetski: ... auto-denied`) and no `ping` process
+  started. In this configuration agy runs no shell commands.
+- Process tree during a turn (observation only):
+  - agy starts the user's configured MCP servers:
+    `cmd.exe /c npx.cmd -y @upstash/context7-mcp`, then `node.exe` (npx), then
+    `cmd.exe`, then `node.exe` (the server). It also starts `conhost.exe`.
+  - After `proc.kill()` on `agy.exe`, every process of that subtree was gone
+    within 2 s, checked by PID and creation time. agy contains its children
+    itself.
 
 Supervision cost (AUD-P1-4, order 2):
 - [ ] Resolved by layer 3: no descendant polling exists. Record in the project
