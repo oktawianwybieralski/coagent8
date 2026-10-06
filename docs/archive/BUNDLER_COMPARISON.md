@@ -1,602 +1,825 @@
 # Bundler Comparison: esbuild vs tsdown for the MCP Server
 
 Date: 2026-10-06. Branch: `perf/tsdown-bundle-comparison`, based on
-`fix/hermetic-test-environment` (`076b59d`). Candidates: esbuild 0.25.12 (current
-`scripts/build.cjs`) and tsdown 0.23.0 (rolldown 1.2.12).
+`fix/hermetic-test-environment` (`076b59d`). Candidates: esbuild 0.25.12 and
+tsdown 0.23.0 (rolldown 1.2.12). The first version of this report (`a36a267`)
+measured only warm start-up. It recommended staying on esbuild and is superseded
+by this version. Section 9 explains what changed.
 
-**Question.** Does building the MCP server with tsdown make the server noticeably
-faster for a user (start-up and use as a host sees them), and is the gain worth a
-new dev dependency?
+**Question.** Does building the MCP server with tsdown make the server faster for
+a user, above all on its first launch, and is that worth a new dev dependency?
 
-**Answer.** No. Keep esbuild and do not add tsdown. tsdown starts the server 7-13%
-faster to `initialize` with warm files, but this is below the 10% adoption bar in
-two of three sessions on the installed tarball. Node's compile cache alone gives
-the same gain (9-12%) with esbuild. Tool calls in a running server are unchanged.
-The one large difference in this report does not come from the bundler: Microsoft
-Defender scans esbuild's mangled identifiers slowly on the first open of a newly
-written bundle. esbuild with `minifyIdentifiers: false` removes most of that delay
-without a new dependency (section 5).
+**Answer.** Yes. The build now uses tsdown (`5ab841f`). In VS Code 1.140 on
+Windows, starting the server from a newly written bundle until VS Code has its
+tools dropped from **484 ms to 218 ms** (median of 20). Warm start improved 9% in
+VS Code and 9-12% on Linux. Most of the first-launch gain does not come from
+JavaScript execution. Microsoft Defender scans esbuild's identifier-mangled
+output about four times longer than tsdown's (section 5). The bundle no longer
+contains license comments; the notices ship in `dist/THIRD_PARTY_NOTICES.txt`
+(section 8). The largest remaining cost is the MCP SDK and its zod/ajv
+dependencies (section 6).
 
 ## 1. Environment
 
 | Item | Value |
 | --- | --- |
-| OS | Windows 11 Pro 10.0.26200 (build 26200) |
-| CPU | AMD Ryzen 5 7235HS, 8 logical cores |
-| Memory | 31.7 GiB |
-| Power | AC power (battery status 2, 95%), Windows power plan "Balanced" |
-| Node.js | 24.21.0 (Scoop `nodejs-lts`) |
-| npm | bundled with Node 24.21.0 |
-| Antivirus | Microsoft Defender, real-time and on-access protection on; engine 4.18.26080.4, signatures 1.459.576.0 |
-| esbuild | 0.25.12 |
-| tsdown / rolldown | 0.23.0 / 1.2.12 |
-| Linux | **Not measured.** The only Linux on this machine is Docker Desktop's WSL distribution. It is stopped, and starting it opens the Docker Desktop window, which the no-window requirement forbids. |
-| Node 26 | **Not measured.** It is not installed on this machine. |
+| Windows | Windows 11 Pro 10.0.26200, AMD Ryzen 5 7235HS (8 logical cores), 31.7 GiB, AC power, "Balanced" power plan |
+| Linux | Docker Desktop 29.1.3 on the same machine, kernel 6.6.87.2-microsoft-standard-WSL2, images `node:24-slim` and `node:26-slim` |
+| Node.js | 24.21.0 (Scoop `nodejs-lts`) and 26.10.0 (Scoop `nodejs`) on Windows; 24.21.0 and 26.10.0 in the containers |
+| VS Code | 1.140.0, isolated profile (`--user-data-dir`, `--extensions-dir`, `--disable-extensions`) |
+| Antivirus | Microsoft Defender, real-time and on-access protection on; platform 4.18.26080.4, engine 1.1.26080.3, signatures 1.459.576.0 |
+| Bundlers | esbuild 0.25.12, tsdown 0.23.0, rolldown 1.2.12 |
 
-Every process the benchmarks spawned used `windowsHide: true`. The server ran in
-the hermetic test environment from `tests/helpers/environment.cjs`: disposable
-profile directories, backend CLI paths pointing at `tests/fixtures`, and `PATH`
-reduced to Node, Git and the OS. No real backend CLI was started. The handshake
-(`initialize`, `notifications/initialized`, `tools/list`) calls no backend.
+Every process the scripts spawned used `windowsHide: true`, except the VS Code
+instance, which the owner asked for (one "Extension Development Host" window).
+Servers ran in the hermetic environment from `tests/helpers/environment.cjs`.
+No real backend CLI was started; the handshake calls no backend.
 
-## 2. tsdown variant and equivalence
+## 2. Candidates and equivalence
 
-The variant used tsdown's programmatic `build()` API with options checked against
-the installed type declarations (`tsdown/dist/types-*.d.mts`, rolldown
-`define-config-*.d.mts`). The script is reproduced in Appendix A.
+All candidates are built from the same source, with `keepNames`, `target: node24`,
+CJS, a source map, every dependency inlined and **no legal comments** (esbuild
+`legalComments: 'none'`; rolldown `comments: { legal: false, annotation: false,
+jsdoc: false }`). The script is in Appendix B (`candidates.cjs`).
 
-| Requirement | tsdown 0.23.0 setting |
-| --- | --- |
-| One self-contained `dist/index.cjs` | `entry: { index: 'src/index.ts' }`, `format: 'cjs'`, `fixedExtension: true`, `hash: false`, `clean: false` |
-| Inline every dependency | `deps: { alwaysBundle: [/.*/], onlyBundle: false }`. By default tsdown externalizes `dependencies`. |
-| Node 24, minified, source map | `platform: 'node'`, `target: 'node24'`, `minify: true`, `sourcemap: true` |
-| Keep names | `outputOptions: { keepNames: true }` (rolldown `OutputOptions.keepNames`) |
-| Same resolution as esbuild | `inputOptions: { resolve: { mainFields: ['module', 'main'] } }` |
-| No declarations | `dts: false` |
-| Branding, chmod | `prepareBranding()` before the build, `chmodSync(0o755)` after it |
-| No non-builtin external imports | rolldown plugin on `generateBundle` that rejects any chunk import or dynamic import for which `isBuiltin()` is false |
+| Name | Build | Size (B) | gzip -9 (B) |
+| --- | --- | --- | --- |
+| `es-mangle` | esbuild `minify: true` (the previous build, without its legal comment) | 491142 | 149689 |
+| `es-nomangle` | esbuild `minifyWhitespace` + `minifySyntax`, no identifier mangling | 707849 | 170967 |
+| `td-mangle` | tsdown `minify: true` | 493019 | 137599 |
+| `td-nomangle` | tsdown `minify: { compress: true, mangle: false, codegen: true }` | 642954 | 157186 |
+| `ceiling-raw` | 918-byte JSON-RPC responder without the SDK, same nine-tool payload shape (reference floor only) | 918 | - |
 
-The external-import check was tested negatively. When the `deps` override is
-removed, the build fails with `Bundle requires external packages:
-@modelcontextprotocol/sdk/server/stdio.js, ..., smol-toml, jsonc-parser`.
+`td-mangle` is the adopted build. `npm run build` now produces it byte-identically
+(`66690a03...`) on Node 24.21.0 and 26.10.0.
 
-Gate results with `npm run build` temporarily pointing at the tsdown script
-(Windows, Node 24.21.0):
+Gate results for the adopted build (Windows):
 
 | Check | Result |
 | --- | --- |
 | `npm run typecheck` | PASS |
-| `npm run build` | PASS |
-| `npm test` (`tests/run.cjs`) | PASS: 199 tests, 197 pass, 0 fail, 2 skipped, 42.7 s |
-| `npm pack --dry-run` | PASS: 71 files, `dist/index.cjs` 515.4 kB |
-| `npm run test:consumer` | PASS: bundled SDK, both bin aliases, initialize/list, Codex and Gemini fixture turns and history, EOF |
-
-The `require("ajv/dist/runtime/...")` strings in both bundles are code-generation
-string literals inside ajv. They are not module imports, and they are identical in
-both outputs.
+| `npm run build` | PASS, no `/*!`, `@license`, `@preserve`, `SPDX` or `Copyright` text in `dist/index.cjs` |
+| `npm test` on Node 24.21.0 | PASS: 199 tests, 197 pass, 0 fail, 2 skipped |
+| `node tests/run.cjs` on Node 26.10.0 | PASS: 199 tests, 197 pass, 0 fail, 2 skipped |
+| `npm pack --dry-run` | PASS: 72 files, `dist/index.cjs` 493.0 kB, `dist/THIRD_PARTY_NOTICES.txt` 12.6 kB |
+| `npm run test:consumer` | PASS, including the new assertions: no license comments in the installed bundle, notices cover the bundled packages, no tsdown/rolldown/esbuild in the consumer |
+| `npm run build:vscode` | PASS, `THIRD_PARTY_NOTICES.txt` copied into the VSIX `dist/` |
+| Negative checks | The previous esbuild bundle fails the new no-license assertion. A tsdown build that externalizes dependencies fails the external-import check. |
 
 ## 3. Method
 
-- **Bundles.** esbuild: the current `npm run build`. Its output is byte-identical
-  to the committed `dist/index.cjs` (`b299ce68...`). tsdown: Appendix A
-  (`af2cc77c...`). esbuild-noident: esbuild with
-  `minify: false, minifyWhitespace: true, minifySyntax: true` (`669272c8...`).
-  This variant is a diagnostic; it is not proposed in this branch (section 5).
-- **Locations.** *repo*: copies of each `dist/` under `.artifacts/bundler/repo/`
-  with `cwd` set to the repository. *tarball*: `npm pack` of each variant,
-  installed with `npm install --omit=dev` into its own directory under `%TEMP%`,
-  and run from `node_modules/coagent8/dist/index.cjs`. The esbuild-noident install
-  is a copy of the esbuild install with only `dist/` replaced.
-- **Start-up runs.** One process per run. The `initialize` request is written
-  right after `spawn`. The clock starts before `spawn` and stops when the
-  `initialize` response line arrives. Then the client sends `initialized` and
-  `tools/list`, and the clock measures from sending `tools/list` to its response.
-  RSS is the Windows working set from a hidden `tasklist` call taken after
-  `tools/list` (Node also reports the working set as RSS on Windows). Variants
-  run round-robin with a rotating start (A, B, C, ... then B, C, ..., A).
-  Five warm-up rounds are discarded, then 40 rounds are measured per variant and
-  location. Warm-up also primes the OS file cache, so "cold start" means a new
-  process with warm files.
-- **Compile cache.** Set through `NODE_COMPILE_CACHE`. *cold*: a new empty
-  directory for every run. *warm*: one persistent directory per bundle and
-  location, primed by the warm-up runs. After each run the cache directory held
-  one file, so the cache is written on the server's `process.exit(0)` path.
-- **Fresh file.** Before each run the installed bundle is copied to a new
-  directory. No warm-up. 30 runs per variant.
-- **Comparison.** The ratio of median `initialize` time to esbuild's in the same
-  session, with a 95% percentile-bootstrap interval (5000 resamples).
-- **Sessions.** Three independent start-up sessions, run at different times.
+- **Start-up time** (`startbench.cjs`). One process per run. `initialize` is
+  written right after `spawn`, and the clock stops when its response arrives.
+  `tools/list` follows. Variants run round-robin with a rotating start.
+  95% intervals are percentile bootstrap (5000 resamples) of the median ratio
+  against `es-mangle`.
+  - *warm*: the same file every run, after 5 discarded warm-up rounds.
+  - *fresh*: before every run the bundle is copied (`fs.copyFileSync`) to a new
+    directory and started immediately. Section 5 shows that this is the
+    worst case for Defender.
+- **VS Code** (`vscode-bench/`). An isolated VS Code 1.140.0 runs a helper
+  extension that registers the server through
+  `vscode.lm.registerMcpServerDefinitionProvider` (the same API as the CoAgent8
+  extension). Each run gets a new server label. In fresh mode it also gets a
+  newly copied bundle. The clock runs from
+  `workbench.mcp.startServer('*', { waitForLiveTools: true })` until VS Code has
+  the server's 9 tools. VS Code's own MCP log ("Starting server" to "Discovered 9
+  tools") is reported as a cross-check.
+- **Linux**: the same `startbench.cjs` inside `node:24-slim` and `node:26-slim`.
+  Bundles are copied into the container file system first.
+- **Defender**: `open-probe.cjs`, `write-modes.cjs`, `write-delay.cjs` and
+  `copy-delay.cjs` time only the open and read of a file in a new hidden Node
+  process, with no JavaScript executed from it.
+- **Profile**: `node --cpu-prof --cpu-prof-interval 100` on an unminified esbuild
+  bundle, with self time attributed to the original module through esbuild's
+  module comments.
+
+Round 1 showed no difference between running from the repository and from the
+installed tarball (section 9), so round 2 runs every bundle from
+`.artifacts/bundler/cand/`.
 
 ## 4. Results
 
-### 4.1 Start-up to `initialize`, `tools/list` and RSS
+### 4.1 Windows, synthetic host (40 runs per cell)
 
-Times are in milliseconds and RSS in MiB. "list" is the time from sending
-`tools/list` to its response. "total" is the time from `spawn` to the `tools/list`
-response. Ratio is median `initialize` relative to esbuild in the same session and
-location.
+`initialize` in ms. The ratio compares with `es-mangle` in the same cell.
 
-Session 1 (40 runs, 5 warm-up)
-
-| Location / variant | init median | init p95 | init IQR | init range | list median | list p95 | total median | RSS median | ratio (95% CI) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| repo / esbuild | 125.7 | 152.7 | 123.3-134.5 | 118.4-211.2 | 3.3 | 5.0 | 129.6 | 60.0 | 1 |
-| repo / tsdown | 117.4 | 139.6 | 114.0-120.4 | 109.6-272.9 | 3.2 | 4.3 | 120.5 | 58.2 | 0.934 (0.899-0.957) |
-| repo / esbuild + cache cold | 132.3 | 174.4 | 128.1-138.5 | 124.2-217.7 | 3.2 | 4.5 | 136.4 | 60.3 | 1.053 (1.019-1.083) |
-| repo / esbuild + cache warm | 114.4 | 139.1 | 111.2-122.6 | 107.0-262.2 | 3.3 | 4.7 | 118.8 | 60.5 | 0.910 (0.884-0.939) |
-| repo / tsdown + cache warm | 103.7 | 116.1 | 101.2-109.3 | 94.2-125.7 | 3.4 | 4.6 | 107.1 | 58.6 | 0.825 (0.800-0.852) |
-| tarball / esbuild | 125.0 | 147.5 | 122.7-129.9 | 118.1-277.8 | 3.2 | 4.3 | 128.1 | 60.0 | 1 |
-| tarball / tsdown | 113.8 | 131.8 | 112.2-117.1 | 108.1-215.3 | 3.1 | 3.8 | 117.0 | 58.2 | 0.911 (0.897-0.926) |
-| tarball / esbuild + cache cold | 129.4 | 149.9 | 125.9-132.3 | 122.4-153.1 | 3.2 | 4.6 | 132.5 | 60.3 | 1.035 (1.016-1.051) |
-| tarball / esbuild + cache warm | 113.4 | 129.0 | 111.5-118.3 | 108.2-183.8 | 3.1 | 4.7 | 116.5 | 60.6 | 0.907 (0.893-0.932) |
-| tarball / tsdown + cache warm | 102.9 | 119.9 | 100.5-106.2 | 96.3-130.6 | 3.1 | 3.9 | 106.3 | 58.7 | 0.823 (0.809-0.836) |
-
-Session 2 (40 runs, 5 warm-up)
-
-| Location / variant | init median | init p95 | init IQR | init range | list median | list p95 | total median | RSS median | ratio (95% CI) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| repo / esbuild | 126.3 | 139.1 | 124.3-129.6 | 120.7-188.4 | 3.2 | 4.1 | 129.8 | 59.9 | 1 |
-| repo / tsdown | 114.5 | 133.4 | 112.2-120.8 | 106.1-142.0 | 3.2 | 4.1 | 117.8 | 58.1 | 0.907 (0.887-0.928) |
-| repo / esbuild + cache cold | 130.5 | 151.8 | 126.8-139.4 | 122.4-283.6 | 3.3 | 3.8 | 133.9 | 60.3 | 1.034 (1.005-1.067) |
-| repo / esbuild + cache warm | 114.6 | 130.9 | 111.9-119.8 | 108.4-145.1 | 3.1 | 5.6 | 117.8 | 60.5 | 0.908 (0.887-0.919) |
-| repo / tsdown + cache warm | 103.4 | 119.0 | 100.4-109.5 | 96.6-123.8 | 3.4 | 4.7 | 106.8 | 58.7 | 0.818 (0.799-0.854) |
-| tarball / esbuild | 125.8 | 171.5 | 122.5-132.9 | 118.4-195.3 | 3.1 | 4.5 | 129.5 | 60.0 | 1 |
-| tarball / tsdown | 115.9 | 137.4 | 112.8-122.1 | 108.4-156.5 | 3.2 | 4.2 | 118.9 | 58.3 | 0.922 (0.888-0.957) |
-| tarball / esbuild + cache cold | 129.4 | 142.0 | 124.8-136.9 | 118.8-149.2 | 3.2 | 4.1 | 132.4 | 60.4 | 1.029 (0.992-1.072) |
-| tarball / esbuild + cache warm | 114.1 | 134.7 | 109.8-121.5 | 105.1-195.7 | 3.3 | 3.9 | 117.7 | 60.6 | 0.907 (0.871-0.939) |
-| tarball / tsdown + cache warm | 103.8 | 131.4 | 100.2-109.1 | 95.8-153.5 | 3.2 | 5.0 | 106.9 | 58.8 | 0.826 (0.796-0.850) |
-
-Session 3 (40 runs, 5 warm-up; adds esbuild-noident)
-
-| Location / variant | init median | init p95 | init IQR | init range | list median | list p95 | total median | RSS median | ratio (95% CI) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| repo / esbuild | 127.7 | 180.4 | 121.6-140.2 | 117.9-201.2 | 3.2 | 5.3 | 130.9 | 59.9 | 1 |
-| repo / tsdown | 116.0 | 144.6 | 112.4-123.4 | 106.1-164.7 | 3.2 | 4.3 | 119.1 | 58.1 | 0.909 (0.872-0.958) |
-| repo / esbuild-noident | 125.2 | 159.5 | 120.3-130.3 | 115.0-192.1 | 3.2 | 4.2 | 128.4 | 60.5 | 0.980 (0.933-1.021) |
-| repo / esbuild + cache warm | 112.7 | 150.1 | 109.0-121.1 | 104.7-375.6 | 3.4 | 5.2 | 116.2 | 60.5 | 0.882 (0.842-0.917) |
-| tarball / esbuild | 129.2 | 188.2 | 121.6-144.3 | 114.4-209.6 | 3.2 | 4.8 | 132.5 | 60.0 | 1 |
-| tarball / tsdown | 112.4 | 152.1 | 108.0-123.5 | 104.0-249.2 | 3.3 | 4.1 | 115.7 | 58.2 | 0.870 (0.850-0.921) |
-| tarball / esbuild-noident | 125.0 | 210.0 | 116.0-139.0 | 112.0-386.8 | 3.3 | 6.4 | 128.5 | 60.5 | 0.968 (0.913-1.042) |
-| tarball / esbuild + cache warm | 114.1 | 174.2 | 110.4-123.2 | 103.1-277.3 | 3.3 | 5.6 | 117.7 | 60.6 | 0.883 (0.861-0.950) |
-
-Floor for reference: an empty Node 24.21.0 process with piped stdin takes 63.5 ms
-median (IQR 61.7-65.0, p95 69.0, 40 runs) to its first stdout byte. The server
-therefore spends about 62 ms (esbuild) or 50-54 ms (tsdown) above the bare Node
-start. This is computed from the medians above, not measured directly.
-
-### 4.2 First launch of a newly written bundle
-
-Each run starts a newly written copy of the installed bundle, so the run also
-includes Defender's on-access scan of the new file. These numbers are not
-comparable with section 4.1.
-
-| Session / variant | init median | init p95 | init IQR | init range | RSS median | ratio (95% CI) |
-| --- | --- | --- | --- | --- | --- | --- |
-| A / esbuild | 442.8 | 606.6 | 415.5-516.3 | 407.6-717.1 | 60.0 | 1 |
-| A / tsdown | 186.6 | 262.6 | 177.2-206.3 | 165.5-288.7 | 58.0 | 0.421 (0.388-0.453) |
-| B / esbuild | 488.4 | 731.0 | 427.2-554.2 | 407.7-788.5 | 59.9 | 1 |
-| B / tsdown | 203.8 | 251.6 | 191.0-221.6 | 172.7-269.0 | 58.1 | 0.417 (0.370-0.469) |
-| B / esbuild-noident | 232.8 | 265.0 | 213.4-241.4 | 202.8-430.9 | 60.5 | 0.477 (0.424-0.527) |
-
-Isolation: a hidden Node process that only opens and reads a newly written copy
-of the bundle, with no JavaScript executed from it (Appendix B, `open-probe.cjs`).
-20 runs per row, and every second read of the same file is shown as "reopen".
-
-| Bundle | Size (B) | first-open median | p95 | IQR | reopen median |
+| Node / mode | Variant | median | p95 | IQR | ratio (95% CI) |
 | --- | --- | --- | --- | --- | --- |
-| esbuild (current options) | 493084 | 303.5 | 400.3 | 297.1-306.3 | 3.3 |
-| esbuild, `legalComments: 'none'` | 491142 | 303.6 | 418.7 | 295.2-361.5 | 3.3 |
-| esbuild, `keepNames: false` | 469429 | 289.7 | 391.2 | 280.6-301.5 | 3.2 |
-| esbuild, no minification | 1002635 | 108.7 | 136.1 | 106.1-118.1 | 3.4 |
-| esbuild, whitespace only | 735756 | 86.9 | 121.0 | 84.4-108.0 | 3.5 |
-| esbuild, whitespace + syntax (noident) | 709791 | 82.1 | 112.8 | 80.4-93.6 | 3.4 |
-| tsdown | 515441 | 65.4 | 79.7 | 62.1-69.0 | 3.3 |
+| 24 fresh | es-mangle | 420.9 | 547.9 | 412.1-476.3 | 1 |
+| 24 fresh | es-nomangle | 205.3 | 244.2 | 199.0-230.9 | 0.488 (0.457-0.511) |
+| 24 fresh | **td-mangle** | **176.4** | 205.0 | 173.3-182.4 | **0.419 (0.392-0.428)** |
+| 24 fresh | td-nomangle | 182.7 | 216.6 | 175.2-202.9 | 0.434 (0.405-0.449) |
+| 24 warm | es-mangle | 125.3 | 144.7 | 122.5-132.1 | 1 |
+| 24 warm | es-nomangle | 124.9 | 146.2 | 120.9-133.9 | 0.996 (0.960-1.039) |
+| 24 warm | **td-mangle** | **115.4** | 133.5 | 110.2-120.0 | **0.921 (0.886-0.942)** |
+| 24 warm | td-nomangle | 120.5 | 137.1 | 114.3-125.8 | 0.961 (0.919-0.996) |
+| 26 fresh | es-mangle | 430.7 | 552.8 | 420.5-513.0 | 1 |
+| 26 fresh | es-nomangle | 211.2 | 252.1 | 202.9-231.8 | 0.490 (0.465-0.525) |
+| 26 fresh | **td-mangle** | **190.0** | 215.4 | 178.3-201.0 | **0.441 (0.414-0.467)** |
+| 26 fresh | td-nomangle | 193.4 | 216.7 | 183.1-208.3 | 0.449 (0.419-0.472) |
+| 26 warm | es-mangle | 127.5 | 157.9 | 123.8-139.6 | 1 |
+| 26 warm | es-nomangle | 131.8 | 213.0 | 124.0-146.3 | 1.033 (0.958-1.085) |
+| 26 warm | **td-mangle** | **123.2** | 161.8 | 118.0-129.9 | **0.966 (0.907-0.992)** |
+| 26 warm | td-nomangle | 123.1 | 157.1 | 116.6-131.7 | 0.965 (0.903-0.997) |
 
-The difference is in the file read, before any JavaScript runs, and it disappears
-when the same file is opened again. It follows identifier mangling: legal comments
-and `keepNames` have no measurable effect, and turning off esbuild's identifier
-minification alone removes about 220 ms. That Defender's scanner is the component
-doing the work is an inference from on-access protection being on and from the
-first-open/reopen pattern. Defender was not disabled to confirm it, and nothing
-was measured for other antivirus products. How often Defender scans the same file
-again (for example after a signature update) was not measured.
+### 4.2 VS Code 1.140.0 as the host (Windows, Node 24.21.0)
 
-### 4.3 Tool use in a running server
+Time from `workbench.mcp.startServer` until VS Code has the 9 tools, in ms.
 
-Installed tarball, 30 processes per variant after 2 discarded rounds. Each
-process ran 20 `tools/call session {action: "list"}` calls (local file system
-only; the per-process median is taken) and one `consult` turn against the Gemini
-test fixture CLI, a Node script from `tests/fixtures`.
+| Mode | Variant | n | median | IQR | p95 | range | VS Code log median (IQR) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| fresh | es-mangle | 20 | 484 | 467-511 | 603 | 456-606 | 459 (445-490) |
+| fresh | es-nomangle | 20 | 253 | 240-278 | 305 | 231-307 | 225 (221-238) |
+| fresh | **td-mangle** | 20 | **218** | 215-236 | 263 | 204-267 | 199 (194-208) |
+| fresh | td-nomangle | 20 | 220 | 216-242 | 299 | 211-320 | 201 (196-217) |
+| fresh | ceiling-raw | 20 | 100 | 96-103 | 128 | 90-130 | 80 (78-83) |
+| warm | es-mangle | 11 | 169 | 163-184 | 274 | 157-341 | 147 (141-158) |
+| warm | es-nomangle | 11 | 168 | 161-189 | 230 | 152-259 | 145 (141-159) |
+| warm | **td-mangle** | 10 | **153** | 153-163 | 176 | 144-183 | 136 (131-141) |
+| warm | td-nomangle | 10 | 158 | 152-170 | 202 | 144-209 | 136 (131-143) |
+| warm | ceiling-raw | 10 | 96 | 93-101 | 102 | 92-102 | 78 (76-78) |
 
-| Variant | `session list` median | p95 | IQR | `consult` (fixture) median | p95 | IQR |
-| --- | --- | --- | --- | --- | --- | --- |
-| esbuild | 10.01 | 17.45 | 6.65-14.51 | 737.5 | 1348.3 | 588.3-1016.1 |
-| tsdown | 10.34 | 16.62 | 6.86-13.43 | 784.8 | 1157.1 | 587.8-913.3 |
-| esbuild-noident | 10.20 | 19.04 | 6.69-13.25 | 739.9 | 1196.6 | 595.6-930.4 |
+The warm mode has only 10-11 runs per variant. The VS Code window was closed
+after run 172 of 220. A repeat with the window in the background was discarded
+in full: in most runs VS Code did not pick up the new server definition within
+the 1.5 s gap (`newTools: 0`, no `resolveMcpServerDefinition` call). Every run in
+the table started the server and listed 9 tools.
 
-The IQRs overlap almost completely. The `consult` time is dominated by starting
-the fixture backend process.
+### 4.3 Linux containers (40 runs per cell, no antivirus)
 
-### 4.4 Size
+| Node / mode | es-mangle | es-nomangle | **td-mangle** | td-nomangle | ceiling-raw |
+| --- | --- | --- | --- | --- | --- |
+| 24 warm, median (p95) | 115.5 (128.7) | 112.6 (126.1) | **102.1 (117.9)**, ratio 0.885 (0.857-0.929) | 104.9 (117.5) | 33.8 (38.5) |
+| 24 fresh, median (p95) | 115.7 (137.4) | 117.2 (131.0) | **105.1 (121.5)**, ratio 0.908 (0.867-0.935) | 105.5 (117.1) | 34.0 (42.5) |
+| 26 warm, median (p95) | 118.3 (136.0) | 118.6 (147.1) | **105.4 (135.6)**, ratio 0.891 (0.867-0.935) | 109.5 (124.0) | 34.8 (39.6) |
+| 26 fresh, median (p95) | 117.7 (132.9) | 117.5 (134.7) | **103.9 (116.1)**, ratio 0.883 (0.867-0.902) | 107.8 (121.3) | 33.6 (38.7) |
 
-| Artifact | esbuild raw | esbuild gzip -9 | tsdown raw | tsdown gzip -9 | noident raw | noident gzip -9 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `dist/index.cjs` | 493084 | 151237 | 515441 | 139595 | 709791 | 173107 |
-| `dist/index.cjs.map` | 1888372 | 451615 | 1965247 | 455335 | 1745118 | 395382 |
-| npm tarball (`npm pack`) | 729644 | - | 723191 | - | not packed | - |
-| Unpacked package | 2822288 | - | 2921527 | - | not packed | - |
+Without an on-access scanner, fresh and warm are equal, and turning off
+identifier mangling in esbuild gives nothing. tsdown's 9-12% is a runtime gain.
+This report did not establish why rolldown's output starts faster.
 
-Of tsdown's extra 22357 bytes, 14310 come from legal comments. rolldown 1.2.12
-copies the smol-toml BSD-3-Clause header inline nine times (once per source
-module). esbuild keeps one deduplicated copy at the end of the file. rolldown only
-offers `comments.legal` / `legalComments` `none` or `inline`. It has no
-end-of-file or external mode.
+### 4.4 Other metrics
 
-### 4.5 Build time
+| Metric | esbuild (previous) | tsdown (adopted) |
+| --- | --- | --- |
+| `tools/list` after `initialize` (round 1, Windows) | 3.1-3.3 ms | 3.1-3.3 ms |
+| `tools/call session list`, running server (round 1) | 10.0 ms median | 10.3 ms median |
+| RSS after `tools/list` (round 1) | 60.0 MiB | 58.2 MiB |
+| Bundle raw / gzip | 493084 / 151237 B (with its legal comment) | 493019 / 137599 B (no comments) |
+| Source map | 1888372 B | 1962531 B |
+| Tarball (`npm pack`) | 729644 B, 71 files | 722.9 kB, 72 files (adds the notices) |
+| Build time, whole process, median of 10 (p95) | 251 ms (295) | 448 ms (467) |
+| Dev tooling Node floor | 24.0 | 24.11 (`devEngines`) |
 
-Wall time of the whole `node scripts/<build>.cjs` process, including
-`prepareBranding()`. Variants alternated, with one discarded warm-up each.
+## 5. How Defender affects the first launch
 
-| Location | esbuild median (p95, range) | tsdown median (p95, range) | Runs |
+Microsoft Defender's real-time protection is a file-system filter. When a process
+opens a file that Defender has not cleared since its last change, the open waits
+for the scan to finish. Defender caches the verdict for the unchanged file, so
+later opens take about 3 ms.
+
+Time for the first open and read of each bundle, with no JavaScript executed
+(`open-probe.cjs`, 20 runs, round 1 builds):
+
+| Bundle | Size (B) | first open, median (IQR) | reopen |
 | --- | --- | --- | --- |
-| repository | 280 ms (377, 244-425) | 451 ms (488, 415-489) | 10 each |
-| separate copy with its own `npm ci` | 275 ms (290, 257-292) | 429 ms (432, 425-432) | 2 each |
+| esbuild `minify` (previous options) | 493084 | 303.5 (297.1-306.3) | 3.3 |
+| esbuild `legalComments: 'none'` | 491142 | 303.6 (295.2-361.5) | 3.3 |
+| esbuild `keepNames: false` | 469429 | 289.7 (280.6-301.5) | 3.2 |
+| esbuild without minification | 1002635 | 108.7 (106.1-118.1) | 3.4 |
+| esbuild whitespace + syntax only | 709791 | 82.1 (80.4-93.6) | 3.4 |
+| tsdown (round 1 build) | 515441 | 65.4 (62.1-69.0) | 3.3 |
 
-### 4.6 Reproducibility
+The cost follows identifier mangling in esbuild's output, not size: the
+unminified file is twice as large and scans three times faster. Legal comments
+and `keepNames` have no effect. rolldown's mangled output does not trigger the
+slow path. That the scanner treats esbuild's short mangled identifiers as
+possible obfuscation is an inference; Defender does not report why a scan takes
+longer.
 
-Both bundles are byte-reproducible in every case tested. The source maps are not
-reproducible across line-ending conventions, with either bundler.
+**When the scan is paid.** The timing depends on how the file reached the disk
+(`write-modes.cjs`, `write-delay.cjs`, `copy-delay.cjs`, medians in ms):
 
-| Case | esbuild `index.cjs` | esbuild map | tsdown `index.cjs` | tsdown map |
-| --- | --- | --- | --- | --- |
-| 11 consecutive builds, repository | 1 hash `b299ce685560` | 1 hash | 1 hash `af2cc77c4a0f` | 1 hash |
-| Separate directory with its own `npm ci` (different absolute path) | `b299ce685560` (same) | same as repository | `af2cc77c4a0f` (same) | same as repository |
-| Working copy with CRLF (Windows `core.autocrlf=true`) | `b299ce685560` | `2728bbe35f65` | `af2cc77c4a0f` | `394dbd188e94` |
-| Same sources converted to LF (58 files), as on Linux/macOS | `b299ce685560` (same) | `5d1b8a36300b` (differs) | `af2cc77c4a0f` (same) | `6f3bf67a7074` (differs) |
-| Committed `dist/index.cjs` at `076b59d` | `b299ce685560` (same) | - | - | - |
+| How the file was written | Delay before first open | esbuild `es-mangle` | tsdown `td-mangle` |
+| --- | --- | --- | --- |
+| `fs.writeFileSync` (ordinary write, as `npm install`, `npx` and archive extraction do) | 0 ms | 271.7 | 4.9 |
+| same | 250 ms | 10.8 | 3.6 |
+| same | 500 ms to 5 s | 3.4-4.1 | 3.4-4.6 |
+| `fs.copyFileSync` (Windows `CopyFileW`) | 0 ms to 5 s | 309.3-326.1 | 69.7 (0 ms) |
 
-Notes on `PACKAGE-001`:
-- The roadmap's statement that minified identifiers change between esbuild builds
-  was **not reproduced** on this machine. Repeated builds, a different checkout
-  path and CRLF/LF sources all produced the same bundle. tsdown therefore does not
-  fix anything here, because nothing needed fixing for the bundle itself. Linux
-  and macOS builds were not run.
-- The source map is what varies. `sourcesContent` embeds the sources with the
-  checkout's line endings, so a Windows build and a Linux build of the same commit
-  give different maps with both bundlers. The esbuild map also embeds the whole
-  `package.json`, because `src/constants.ts` imports `version` from it: any
-  `package.json` edit (scripts, devDependencies) changes the map even when the
-  bundle does not change. Only `version` reaches the bundle. The tsdown map did
-  not change when `package.json` changed. If `PACKAGE-001` needs a reproducible
-  map, the fix is an LF policy in `.gitattributes`, or not embedding
-  `sourcesContent`. Changing the bundler does not fix it.
+- After an ordinary write, Defender scans in the background as soon as the file
+  is closed. A launch waits only if it opens the file before that scan ends,
+  which takes about 270 ms for the esbuild bundle. That happens when a package
+  is installed and run at once: `npx -y coagent8@<version>`, the launch path the
+  README documents, on its first run of each version, and hosts that install or
+  update a server and start it immediately.
+- After a kernel copy (`CopyFileW`), Defender defers the scan to the first open,
+  however long that is after the copy. That happens when a host or tool copies
+  an installed package directory, for example a plugin cache.
+- When `npm install` runs well before the host starts the server, the scan has
+  finished already. The first launch then costs the same as a warm start, and
+  the difference is the warm-start gain from sections 4.1-4.3.
+- Not verified: whether a Defender signature or engine update invalidates the
+  cached verdicts and makes the next launch scan again. `MpCmdRun -SignatureUpdate`
+  reported "No updates needed" during the session, so this could not be tested.
 
-### 4.7 License notices (observation)
+The "fresh" rows in sections 4.1 and 4.2 copy with `fs.copyFileSync` and start
+immediately, so they show the case in which the scan lands on the launch.
 
-The bundles inline nine third-party packages: `@modelcontextprotocol/sdk`, `ajv`,
-`ajv-formats`, `fast-deep-equal`, `json-schema-traverse`, `jsonc-parser` and
-`zod` (MIT), and `fast-uri` and `smol-toml` (BSD-3-Clause). Only smol-toml carries
-a `/*!` header, so it is the only notice that reaches either bundle. Neither bundle
-nor the npm package contains the MIT notices or the fast-uri notice. Both licenses
-require the copyright notice to accompany copies, and BSD-3-Clause clause 2 covers
-binary redistribution explicitly. Removing the remaining smol-toml header without
-shipping the notice elsewhere would therefore break its license. This applies to
-both bundlers and is unrelated to performance. It should be tracked as a separate
-packaging fix: a generated third-party notices file in the package, after which
-inline legal comments can be dropped.
+## 6. Where the remaining time goes
 
-## 5. Decision
+CPU profile of one start-up through `tools/list` (3 profiles, mean sampled time
+115.7 ms, unminified esbuild bundle, self time):
 
-Adoption criteria and results for tsdown:
-
-| Criterion | Result |
+| Item | ms |
 | --- | --- |
-| Median cold start to `initialize` improves by at least 10%, outside the measurement spread, on Windows and on the installed tarball | **Not met.** Tarball: 8.9% (CI 7.4-10.3%), 7.8% (CI 4.3-11.2%) and 13.0% (CI 7.9-15.0%). Two of three sessions are below 10%, and every interval includes values below 10%. Repository: 6.6%, 9.3% and 9.1%. |
-| No other metric gets worse in a way that matters | Met with reservations: tool calls unchanged, RSS 1.8 MiB lower, gzip size 8% smaller. Raw bundle is 4.5% larger, of which 14.3 kB is duplicated license text that rolldown cannot deduplicate. Build time is 60% longer (about 170 ms; build time only). The dev-tooling Node floor would rise to 24.11. |
-| The compile-cache control does not deliver the same gain on its own | **Not met.** esbuild with a warm compile cache gives 9.0-11.8% in the same sessions, the same as tsdown. A cold cache costs 2.9-5.3% on the run that fills it. |
+| Node internals (module loader, streams, bootstrap) | 37.8 |
+| zod (loaded by the MCP SDK) | 24.4 |
+| `(program)` (compilation and native work) | 15.9 |
+| Bundle top-level code | 10.5 |
+| Garbage collector | 4.0 |
+| ajv | 3.9 |
+| fast-uri, MCP SDK, json-schema-traverse, jsonc-parser | 3.6 |
+| CoAgent8 `src/` modules | about 2 |
 
-**Recommendation: keep esbuild unchanged. Do not add tsdown.** The bundler
-branch is not merged. This branch commits only this report.
+Ceiling experiment (Appendix B, `ceiling/`): minimal servers with the same
+nine-tool payload shape, built with esbuild `minify`, Windows, Node 24.21.0,
+30 runs:
 
-Supporting points and follow-ups for the owner. None of them is implemented here.
-1. **Compile cache: not recommended now.** The warm gain is about 11-15 ms on a
-   start that happens once per host session, and the run that fills the cache is
-   4-7 ms slower. To get the gain in production, a small wrapper entry must call
-   `module.enableCompileCache()` before it requires the bundle, because a bundle
-   cannot cache its own compilation after it has started. That wrapper writes
-   cache files to the user's temp directory by default. For a "quiet Windows"
-   product this is a visible side effect for a gain users will not notice. Every
-   figure in this point is derived from the tables above (estimate); none was
-   measured as such.
-2. **Identifier minification: worth a separate, gated change.** On this machine,
-   the first launch of a newly written esbuild bundle (a fresh install or update)
-   costs 443-488 ms instead of about 125 ms, almost all of it in the first file
-   read. `minifyIdentifiers: false` (esbuild 0.25.12, with whitespace and syntax
-   minification kept) cuts this to 233 ms. The cost is +217 kB raw / +22 kB gzip
-   for the bundle and +0.5 MiB RSS, with no measurable change to warm start
-   (ratio 0.968-0.980, CI includes 1) or tool calls. This needs the full
-   dependency/build gate, measurement on a second Windows machine, and a decision
-   on whether the result is specific to Defender's heuristics, before it is
-   adopted.
-3. **License notices** (section 4.7): separate packaging fix.
-4. **`PACKAGE-001` reproducibility** (section 4.6): the bundle is reproducible
-   here. Only the map depends on line endings and on `package.json`.
+| Server | Size (B) | warm median (IQR) | fresh median (IQR) |
+| --- | --- | --- | --- |
+| CoAgent8 (esbuild) | 493084 | 133.6 (128.6-141.5) | 435.3 (430.1-465.9) |
+| SDK `Server` + `StdioServerTransport` only | 292268 | 119.8 (112.7-128.4) | 318.1 (312.9-339.4) |
+| same, without constructing Ajv (`jsonSchemaValidator` stub) | 292268 | 117.8 (111.1-123.6) | 316.5 (310.6-331.6) |
+| No SDK (`ceiling-raw`) | 918 | 67.5 (63.6-72.7) | 67.1 (65.7-71.6) |
 
-## 6. Reproduction
+On a warm start the SDK costs about 52 ms and CoAgent8's own code about 14 ms.
+CoAgent8 uses only the SDK's low-level `Server`, `StdioServerTransport` and
+request schemas. It validates tool arguments with its own validator. The SDK
+builds hundreds of zod schemas at import time, including some for features
+CoAgent8 does not use. Skipping Ajv construction saves about 2 ms, within noise.
+In VS Code the adopted build spends 57 ms (warm) and 118 ms (fresh) above the
+no-SDK floor. How that splits between the SDK and CoAgent8's code under tsdown
+was not measured.
 
-From the repository root, on branch `perf/tsdown-bundle-comparison`, Windows,
-Node 24.21.0. Scripts are in Appendix B. Save them under `.artifacts/bundler/`,
-which `.gitignore` excludes.
+## 7. Reproducibility
+
+Both bundlers produce a byte-reproducible bundle in every case tested. The
+source map is not reproducible across line endings, with either bundler.
+
+| Case | esbuild bundle | tsdown bundle | Source map |
+| --- | --- | --- | --- |
+| 11 consecutive builds | 1 hash | 1 hash | 1 hash each |
+| Separate directory with its own `npm ci` | same | same | same |
+| Sources converted from CRLF to LF (58 files) | same | same | **differs**, both bundlers |
+| Node 24.21.0 vs 26.10.0 (adopted build) | - | same (`66690a03...`) | - |
+
+`sourcesContent` embeds the sources with the checkout's line endings (Windows
+`core.autocrlf=true` gives CRLF). The esbuild map also embedded the whole
+`package.json`, because `src/constants.ts` imports its `version`. The
+`PACKAGE-001` entry in the roadmap is updated: a reproducible map needs an LF
+policy or a map without `sourcesContent`.
+
+## 8. License notices
+
+The bundle inlines nine third-party packages: `@modelcontextprotocol/sdk`,
+`ajv`, `ajv-formats`, `fast-deep-equal`, `json-schema-traverse`, `jsonc-parser`
+and `zod` (MIT), and `fast-uri` and `smol-toml` (BSD-3-Clause). Both licenses
+require the copyright notice to accompany copies, and BSD-3-Clause clause 2
+covers binary redistribution explicitly. The previous esbuild bundle kept only
+smol-toml's header, and no file carried the other eight notices. rolldown would
+have copied smol-toml's header nine times.
+
+The adopted build removes every comment from the bundle. Instead, a rolldown
+plugin collects the packages whose modules reach the output
+(`renderedLength > 0`) and writes their `package.json` license field and
+license file to `dist/THIRD_PARTY_NOTICES.txt`. The file ships in the npm
+package and the VSIX. The build fails if a bundled package has no license
+file.
+
+## 9. Round 1 (superseded) and what changed
+
+Round 1 measured only warm start-up, from the repository and from the installed
+tarball, against Node's compile cache as a control. Three sessions of 40 runs:
+tsdown 7-13% faster to `initialize`; esbuild with a warm `NODE_COMPILE_CACHE`
+9-12% faster; a cold cache 3-5% slower. Tool calls and `tools/list` were
+unchanged, RSS 1.8 MiB lower with tsdown, and there was no difference between
+repository and tarball. Against the brief's warm-start criteria, tsdown did not
+qualify, and round 1 recommended staying on esbuild.
+
+The owner judged that incomplete: the first launch matters most, a real host
+must be measured, and 50-100 ms matters at scale. Round 2 added fresh-file
+launches, VS Code, Linux, Node 26 and the Defender analysis. The compile cache
+does not help a first launch, because a cold cache is slower than none.
+
+## 10. Decision
+
+| Criterion (brief) | Result |
+| --- | --- |
+| Median cold start to `initialize` improves at least 10%, outside the spread, on Windows | Met for a first launch of a newly written file: -58% (Node 24), -56% (Node 26), -55% in VS Code; intervals far from 10%. Warm start: -8% (Node 24), -3% (Node 26), -9% in VS Code. |
+| No other metric gets worse in a way that matters | Met: tool calls and RSS unchanged or better, gzip size 9% smaller, raw size equal. Build is about 200 ms slower, and the dev tooling needs Node 24.11. |
+| The compile-cache control does not deliver the same gain | Met for the first launch: a cold compile cache is 3-5% slower than none. |
+
+**Adopted:** tsdown 0.23.0 for `dist/index.cjs`, with no comments in the bundle
+and `dist/THIRD_PARTY_NOTICES.txt` beside it. The VS Code extension entry stays
+on esbuild, because it is not on the server start-up path. The runtime minimum
+stays Node 24.0, and the build needs Node 24.11 (`devEngines`), as recorded in
+`.agents/rules/05-cross-platform.md`.
+
+**Next, separate branch:** measure a thin, in-house MCP protocol layer that
+replaces the SDK runtime (Section 6). The SDK would stay as a dev dependency so
+that conformance tests can drive the server with the official SDK client. The
+estimated gain is 40-50 ms warm and 80-110 ms on a fresh launch in VS Code. Both
+figures are estimates from the ceiling experiment and must be measured on a
+prototype before any decision.
+
+## 11. Reproduction
+
+Windows, from the repository root, branch `perf/tsdown-bundle-comparison`.
+Scripts are in Appendix B. Save them under `.artifacts/bundler/`, which
+`.gitignore` excludes. JSON plans list `{ name, file }` variants with absolute
+paths.
 
 ```bash
-# Baseline (esbuild) and its copy outside dist/
-npm run build
-mkdir -p .artifacts/bundler/repo/esbuild/dist && cp dist/index.cjs dist/index.cjs.map .artifacts/bundler/repo/esbuild/dist/
+# Candidates (tsdown in a scratch tool directory so package.json is untouched)
+(mkdir -p .artifacts/bundler/tsdown-tool && cd .artifacts/bundler/tsdown-tool && npm init --yes && npm install --save-exact tsdown@0.23.0)
+node .artifacts/bundler/candidates.cjs
 
-# tsdown variant (Appendix A saved as scripts/build-tsdown.cjs)
-npm install --save-dev --save-exact tsdown@0.23.0
-node scripts/build-tsdown.cjs
-mkdir -p .artifacts/bundler/repo/tsdown/dist && cp dist/index.cjs dist/index.cjs.map .artifacts/bundler/repo/tsdown/dist/
+# Synthetic start-up, Windows (Node 24 and 26), warm and fresh
+node .artifacts/bundler/startbench.cjs .artifacts/bundler/m-win24-warm.json   # {"mode":"warm","runs":40,"warmup":5,...}
+node .artifacts/bundler/startbench.cjs .artifacts/bundler/m-win24-fresh.json  # {"mode":"fresh","runs":40,"warmup":0,...}
+#   add "node": "C:/Dev/scoop/apps/nodejs/current/node.exe" for Node 26
 
-# Equivalence gate with the tsdown bundle
-#   set "build": "node scripts/build-tsdown.cjs" in package.json, then:
-npm run typecheck && npm run build && npm test && npm pack --dry-run && npm run test:consumer
+# Linux
+for nv in 24 26; do MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/repo:ro" -v "$(pwd -W)/.artifacts/bundler/linux:/out" node:$nv-slim \
+  bash -c "mkdir -p /w/cand /w/ceiling/out && cp -r /repo/.artifacts/bundler/cand/* /w/cand/ && cp /repo/.artifacts/bundler/ceiling/out/raw.cjs /w/ceiling/out/ && for m in warm fresh; do node /repo/.artifacts/bundler/startbench.cjs /out/plan-\$m.json; done"; done
 
-# Tarballs: for v in esbuild tsdown, set the build script accordingly, then
-npm pack --json --pack-destination .artifacts/bundler/pack/$v > .artifacts/bundler/pack/$v/pack.json
-#   install each into its own %TEMP% directory and record the path:
-#   (cd "$DIR" && npm init --yes && npm install --omit=dev --no-audit --no-fund <tarball>)
-#   echo "$DIR" > .artifacts/bundler/pack/$v/installdir.txt
+# VS Code (opens one isolated window; leave it in the foreground until it closes itself)
+node .artifacts/bundler/vscode-bench/launch.cjs .artifacts/bundler/vscode-bench/plan-full.json  # {"modes":["fresh","warm"],"runs":20,"warmup":2,...}
 
-# esbuild-noident diagnostic variant
-node .artifacts/bundler/variants.cjs
-#   copy variants/es-minify-no-ident/* to repo/esbuild-noident/dist/ and into a copy of the esbuild install
+# Defender
+node .artifacts/bundler/open-probe.cjs 20 <bundle>...
+node .artifacts/bundler/write-modes.cjs .artifacts/bundler/cand/es-mangle/index.cjs 8
+node .artifacts/bundler/write-delay.cjs .artifacts/bundler/cand/es-mangle/index.cjs 6
+node .artifacts/bundler/copy-delay.cjs .artifacts/bundler/cand/es-mangle/index.cjs 5   # write-delay.cjs with fs.copyFileSync
 
-# Measurements
-node .artifacts/bundler/bench.cjs --runs 40 --warmup 5 --out .artifacts/bundler/results-1.json
-node .artifacts/bundler/bench.cjs --runs 40 --warmup 5 --variants 'esbuild,tsdown,esbuild-noident,esbuild+cache(warm)' --out .artifacts/bundler/results-3.json
-node .artifacts/bundler/bench.cjs --fresh --runs 30 --warmup 0 --variants 'esbuild,tsdown,esbuild-noident' --out .artifacts/bundler/results-fresh-2.json
-node .artifacts/bundler/open-probe.cjs 20 .artifacts/bundler/variants/*/index.cjs .artifacts/bundler/repo/tsdown/dist/index.cjs
-node .artifacts/bundler/usage.cjs --procs 30 --calls 20 --out .artifacts/bundler/usage-1.json
-node .artifacts/bundler/bare-node.cjs
-node .artifacts/bundler/build-bench.cjs . 10          # build time and reproducibility
-node .artifacts/bundler/build-bench.cjs <copy-dir> 2  # copy with its own npm ci at another path
+# Profile and SDK ceiling
+node .artifacts/bundler/profile.cjs <unminified bundle> .artifacts/bundler/prof   # three times
+node .artifacts/bundler/prof-analyze.cjs <unminified bundle> .artifacts/bundler/prof
+#   build ceiling/sdk.ts and ceiling/raw.ts with esbuild (bundle, cjs, node24, minify, legalComments none),
+#   then startbench with CEILING_NO_AJV=1 in the env of the "noajv" variant
 
-# Restore
-git checkout -- package.json package-lock.json dist/ && npm ci
+# Adopted build and gates
+npm run typecheck && npm run build && npm test && npm pack --dry-run && npm run test:consumer && npm run build:vscode
 ```
 
-Sizes were computed with `zlib.gzipSync(buffer, { level: 9 })`. Tarball sizes are
-from the `npm pack --json` output.
+## Appendix A: adopted build
 
-## Appendix A: tsdown build script
-
-Saved as `scripts/build-tsdown.cjs` during the measurements, then removed from the branch.
-
-### scripts/build-tsdown.cjs
-
-```js
-const fs = require('node:fs');
-const path = require('node:path');
-const { isBuiltin } = require('node:module');
-const { prepareBranding } = require('./branding.cjs');
-const start = performance.now();
-prepareBranding();
-// Mirrors scripts/build.cjs: one self-contained CJS bundle whose only imports are Node builtins.
-const externalPackages = [];
-const rejectExternalPackages = {
-  name: 'coagent8:reject-external-packages',
-  generateBundle(_options, bundle) {
-    for (const output of Object.values(bundle)) {
-      if (output.type !== 'chunk') continue;
-      externalPackages.push(...[...output.imports, ...output.dynamicImports].filter(imported => !isBuiltin(imported)));
-    }
-  },
-};
-import('tsdown').then(({ build }) => build({
-  config: false, entry: { index: 'src/index.ts' }, outDir: 'dist', clean: false,
-  format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false,
-  sourcemap: true, minify: true, dts: false, report: false, logLevel: 'warn',
-  checks: { legacyCjs: false },
-  // tsdown externalizes package.json dependencies by default; the bundle must inline them.
-  deps: { alwaysBundle: [/.*/], onlyBundle: false },
-  inputOptions: { resolve: { mainFields: ['module', 'main'] } },
-  outputOptions: { keepNames: true },
-  plugins: [rejectExternalPackages],
-})).then(() => {
-  if (externalPackages.length) {
-    throw new Error(`Bundle requires external packages: ${externalPackages.join(', ')}`);
-  }
-  fs.chmodSync(path.resolve('dist/index.cjs'), 0o755);
-  console.error(`Build complete in ${Math.round(performance.now()-start)} ms (minified bundle includes SDK dependencies).`);
-}).catch(error => { console.error(error.message); process.exitCode = 1; });
-```
+The adopted build is `scripts/build.cjs` in this repository (commit `5ab841f`).
 
 ## Appendix B: measurement scripts
 
-Scratch tooling under `.artifacts/bundler/`, not committed as runtime files.
+Scratch tooling under `.artifacts/bundler/`, not committed as runtime files. `copy-delay.cjs` is `write-delay.cjs` with `fs.copyFileSync(src, f)` in place of `fs.writeFileSync(f, data)`.
 
-### .artifacts/bundler/bench.cjs
+### .artifacts/bundler/candidates.cjs
 
 ```js
-// Startup benchmark for the CoAgent8 MCP server bundles. Scratch tooling, not committed as runtime code.
-// Usage: node .artifacts/bundler/bench.cjs [--runs N] [--warmup N] [--out file.json]
+// Builds every candidate bundle (no legal comments) into .artifacts/bundler/cand/<name>/index.cjs. Scratch tooling.
+'use strict';
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { isBuiltin } = require('node:module');
+const esbuild = require('esbuild');
+const out = name => path.join(__dirname, 'cand', name);
+const es = { entryPoints: ['src/index.ts'], bundle: true, platform: 'node', target: 'node24', format: 'cjs', sourcemap: true,
+  keepNames: true, legalComments: 'none', logLevel: 'warning', mainFields: ['module', 'main'] };
+const esbuildVariants = {
+  'es-mangle': { minify: true },
+  'es-nomangle': { minifyWhitespace: true, minifySyntax: true },
+};
+const tdMinify = { 'td-mangle': true, 'td-nomangle': { compress: true, mangle: false, codegen: true } };
+(async () => {
+  for (const [name, o] of Object.entries(esbuildVariants)) {
+    const { metafile } = await esbuild.build({ ...es, ...o, metafile: true, outfile: path.join(out(name), 'index.cjs') });
+    const ext = Object.values(metafile.outputs).flatMap(x => x.imports).filter(i => i.external && !isBuiltin(i.path));
+    if (ext.length) throw new Error(name + ' externals ' + ext.map(i => i.path));
+  }
+  const { build } = await import(pathToFileURL(path.join(__dirname, 'tsdown-tool/node_modules/tsdown/dist/index.mjs')).href);
+  for (const [name, minify] of Object.entries(tdMinify)) {
+    const externals = [];
+    await build({ config: false, entry: { index: 'src/index.ts' }, outDir: out(name), clean: false,
+      format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false, sourcemap: true, minify,
+      dts: false, report: false, logLevel: 'warn', checks: { legacyCjs: false }, deps: { alwaysBundle: [/.*/], onlyBundle: false },
+      inputOptions: { resolve: { mainFields: ['module', 'main'] } },
+      outputOptions: { keepNames: true, comments: { legal: false, annotation: false, jsdoc: false } },
+      plugins: [{ name: 'externals', generateBundle(_o, bundle) { for (const c of Object.values(bundle)) if (c.type === 'chunk') externals.push(...[...c.imports, ...c.dynamicImports].filter(i => !isBuiltin(i))); } }] });
+    if (externals.length) throw new Error(name + ' externals ' + externals);
+  }
+})().catch(e => { console.error(e); process.exitCode = 1; });
+```
+
+### .artifacts/bundler/startbench.cjs
+
+```js
+// Generic MCP start-up benchmark. Scratch tooling, not committed as runtime code.
+// Usage: node startbench.cjs <config.json>
+// config: { node?: path, runs, warmup, mode: 'warm'|'fresh', out, variants: [{ name, file, env? }] }
+// warm:  the same file every run (OS file cache and antivirus verdict already warm after warm-up).
+// fresh: a newly written copy of the file before every run, so the run includes the on-access scan of a new file.
 'use strict';
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn, spawnSync } = require('node:child_process');
-const { createTestEnvironment } = require('../../tests/helpers/environment.cjs');
+const { spawn } = require('node:child_process');
 
-const repo = path.resolve(__dirname, '../..');
-const args = process.argv.slice(2);
-const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
-const RUNS = Number(opt('--runs', 40));
-const WARMUP = Number(opt('--warmup', 5));
-const OUT = path.resolve(opt('--out', path.join(__dirname, 'results.json')));
+const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const nodeBin = config.node || process.execPath;
+const hermetic = (() => {
+  try { return require('../../tests/helpers/environment.cjs').createTestEnvironment(); } catch { return null; }
+})();
+const baseEnv = { ...(hermetic ? hermetic.env : process.env) };
+delete baseEnv.NODE_COMPILE_CACHE; delete baseEnv.NODE_OPTIONS;
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-startbench-'));
 
-const installDir = v => fs.readFileSync(path.join(__dirname, 'pack', v, 'installdir.txt'), 'utf8').trim();
-const FRESH = args.includes('--fresh');
-const freshRoot = FRESH ? fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-bench-fresh-')) : null;
-const locations = FRESH ? {
-  // A newly written copy of the installed bundle per run: the first launch also pays the antivirus scan of a new file.
-  fresh: v => {
-    const dir = fs.mkdtempSync(path.join(freshRoot, v + '-'));
-    fs.copyFileSync(path.join(installDir(v), 'node_modules', 'coagent8', 'dist', 'index.cjs'), path.join(dir, 'index.cjs'));
-    return { entry: path.join(dir, 'index.cjs'), cwd: installDir(v) };
-  },
-} : {
-  repo: v => ({ entry: path.join(__dirname, 'repo', v, 'dist', 'index.cjs'), cwd: repo }),
-  tarball: v => ({ entry: path.join(installDir(v), 'node_modules', 'coagent8', 'dist', 'index.cjs'), cwd: installDir(v) }),
-};
-// cache: null = no compile cache, 'cold' = fresh empty NODE_COMPILE_CACHE per run, 'warm' = persistent primed directory.
-const allVariants = [
-  { name: 'esbuild', bundle: 'esbuild', cache: null },
-  { name: 'tsdown', bundle: 'tsdown', cache: null },
-  { name: 'esbuild+cache(cold)', bundle: 'esbuild', cache: 'cold' },
-  { name: 'esbuild+cache(warm)', bundle: 'esbuild', cache: 'warm' },
-  { name: 'tsdown+cache(warm)', bundle: 'tsdown', cache: 'warm' },
-  // esbuild with whitespace and syntax minification but no identifier mangling.
-  { name: 'esbuild-noident', bundle: 'esbuild-noident', cache: null },
-];
-const selected = opt('--variants', FRESH ? 'esbuild,tsdown' : 'esbuild,tsdown,esbuild+cache(cold),esbuild+cache(warm),tsdown+cache(warm)').split(',');
-const variants = selected.map(name => allVariants.find(v => v.name === name) ?? (() => { throw new Error('unknown variant ' + name); })());
-
-const { env: baseEnv, root: envRoot } = createTestEnvironment();
-delete baseEnv.NODE_COMPILE_CACHE; delete baseEnv.NODE_OPTIONS; delete baseEnv.NODE_DISABLE_COMPILE_CACHE;
-const cacheRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-bench-cache-'));
-const warmCache = {};
-
-function workingSetBytes(pid) {
-  // Windows working set equals what Node reports as RSS there; tasklist is hidden and runs after timing.
-  if (process.platform !== 'win32') {
-    const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
-    return Number(/VmRSS:\s+(\d+)/.exec(status)[1]) * 1024;
-  }
-  const r = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true });
-  const field = r.stdout.trim().split('","').pop().replace(/[^\d]/g, '');
-  return Number(field) * 1024;
+function target(variant, run) {
+  if (config.mode !== 'fresh') return variant.file;
+  const dir = path.join(scratch, `${variant.name.replace(/[^\w.-]/g, '_')}-${run}`);
+  fs.mkdirSync(dir);
+  const file = path.join(dir, path.basename(variant.file));
+  fs.copyFileSync(variant.file, file);
+  return file;
 }
 
-function runOnce(variant, location) {
-  const { entry, cwd } = locations[location](variant.bundle);
-  const env = { ...baseEnv };
-  let coldDir;
-  if (variant.cache === 'cold') { coldDir = fs.mkdtempSync(path.join(cacheRoot, 'cold-')); env.NODE_COMPILE_CACHE = coldDir; }
-  if (variant.cache === 'warm') {
-    const key = `${variant.bundle}-${location}`;
-    warmCache[key] ||= fs.mkdtempSync(path.join(cacheRoot, `warm-${key}-`));
-    env.NODE_COMPILE_CACHE = warmCache[key];
-  }
+function runOnce(variant, run) {
+  const entry = target(variant, run);
+  const env = { ...baseEnv, ...(variant.env || {}) };
   return new Promise((resolve, reject) => {
     const t0 = process.hrtime.bigint();
-    const proc = spawn(process.execPath, [entry], { cwd, env, stdio: 'pipe', windowsHide: true });
     const ms = () => Number(process.hrtime.bigint() - t0) / 1e6;
-    let buffer = '', stderr = '', tInit, tListSent, tList, rss;
-    const timer = setTimeout(() => { proc.kill(); reject(new Error(`timeout: ${stderr}`)); }, 20000);
-    const send = message => proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+    const proc = spawn(nodeBin, [entry], { cwd: path.dirname(entry), env, stdio: 'pipe', windowsHide: true });
+    let buffer = '', stderr = '', tInit, tList;
+    const timer = setTimeout(() => { proc.kill(); reject(new Error(`timeout ${variant.name}: ${stderr}`)); }, 30000);
+    const send = m => proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
     proc.stderr.on('data', d => { stderr += d; });
     proc.stdout.on('data', chunk => {
-      buffer += chunk;
-      let nl;
+      buffer += chunk; let nl;
       while ((nl = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, nl); buffer = buffer.slice(nl + 1);
         if (!line.trim()) continue;
-        const message = JSON.parse(line);
-        if (message.id === 1) {
-          tInit = ms();
-          if (!message.result?.serverInfo) return reject(new Error(`bad initialize: ${line.slice(0, 200)}`));
-          send({ method: 'notifications/initialized' });
-          tListSent = ms();
-          send({ id: 2, method: 'tools/list', params: {} });
-        } else if (message.id === 2) {
-          tList = ms();
-          if (message.result?.tools?.length !== 9) return reject(new Error('bad tools/list'));
-          rss = workingSetBytes(proc.pid);
-          proc.stdin.end();
-        }
+        const m = JSON.parse(line);
+        if (m.id === 1) { tInit = ms(); send({ method: 'notifications/initialized' }); send({ id: 2, method: 'tools/list', params: {} }); }
+        else if (m.id === 2) { tList = ms(); if (!Array.isArray(m.result?.tools) || !m.result.tools.length) reject(new Error('bad tools/list')); proc.stdin.end(); }
       }
     });
     proc.once('error', reject);
     proc.once('exit', code => {
       clearTimeout(timer);
-      const cacheFiles = env.NODE_COMPILE_CACHE ? countFiles(env.NODE_COMPILE_CACHE) : null;
-      if (coldDir) fs.rmSync(coldDir, { recursive: true, force: true });
-      if (code !== 0 || tList === undefined) return reject(new Error(`exit ${code}: ${stderr}`));
-      resolve({ initMs: tInit, listMs: tList - tListSent, listTotalMs: tList, rssBytes: rss, exitMs: ms(), cacheFiles });
+      if (code !== 0 || tList === undefined) return reject(new Error(`${variant.name} exit ${code}: ${stderr}`));
+      resolve({ initMs: tInit, listTotalMs: tList });
     });
-    send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'bench', version: '1' } } });
+    send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'startbench', version: '1' } } });
   });
 }
 
-function countFiles(dir) {
-  let n = 0;
-  for (const e of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) if (e.isFile()) n++;
-  return n;
-}
-
-function quantile(sorted, q) {
-  const pos = (sorted.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
-}
-function summarize(values) {
-  const s = [...values].sort((a, b) => a - b);
-  return { n: s.length, median: quantile(s, 0.5), p25: quantile(s, 0.25), p75: quantile(s, 0.75), p95: quantile(s, 0.95), min: s[0], max: s.at(-1) };
-}
-// Percentile bootstrap of the ratio median(candidate)/median(baseline), deterministic seed.
-function bootstrapRatio(candidate, baseline, iterations = 5000) {
-  let seed = 42;
-  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
-  const med = a => { const s = [...a].sort((x, y) => x - y); return quantile(s, 0.5); };
-  const sample = a => a.map(() => a[Math.floor(rand() * a.length)]);
-  const ratios = [];
-  for (let i = 0; i < iterations; i++) ratios.push(med(sample(candidate)) / med(sample(baseline)));
-  ratios.sort((a, b) => a - b);
-  return { ratio: med(candidate) / med(baseline), ci95: [quantile(ratios, 0.025), quantile(ratios, 0.975)] };
+const quantile = (s, q) => { const p = (s.length - 1) * q, lo = Math.floor(p); return s[lo] + (s[Math.ceil(p)] - s[lo]) * (p - lo); };
+const summarize = a => { const s = [...a].sort((x, y) => x - y); return { n: s.length, median: quantile(s, .5), p25: quantile(s, .25), p75: quantile(s, .75), p95: quantile(s, .95), min: s[0], max: s.at(-1) }; };
+function bootstrapRatio(c, b, it = 5000) {
+  let seed = 42; const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const med = a => quantile([...a].sort((x, y) => x - y), .5), res = a => a.map(() => a[Math.floor(rand() * a.length)]);
+  const r = []; for (let i = 0; i < it; i++) r.push(med(res(c)) / med(res(b))); r.sort((x, y) => x - y);
+  return { ratio: med(c) / med(b), ci95: [quantile(r, .025), quantile(r, .975)] };
 }
 
 (async () => {
-  const results = {};
-  for (const location of Object.keys(locations)) {
-    for (const v of variants) results[`${location}/${v.name}`] = [];
-    // Warm-up runs prime the OS file cache and the persistent compile caches; they are discarded.
-    for (let i = 0; i < WARMUP; i++) for (const v of variants) await runOnce(v, location);
-    for (let i = 0; i < RUNS; i++) {
-      // Round-robin with a rotating start: A, B, C, ... then B, C, ..., A.
-      const order = variants.map((_, k) => variants[(k + i) % variants.length]);
-      for (const v of order) results[`${location}/${v.name}`].push(await runOnce(v, location));
-    }
-    process.stderr.write(`${location} done\n`);
+  const vs = config.variants, results = Object.fromEntries(vs.map(v => [v.name, []]));
+  let run = 0;
+  for (let i = 0; i < (config.warmup ?? 0); i++) for (const v of vs) await runOnce(v, run++);
+  for (let i = 0; i < config.runs; i++) {
+    for (let k = 0; k < vs.length; k++) { const v = vs[(k + i) % vs.length]; results[v.name].push(await runOnce(v, run++)); }
   }
-  const summary = {};
-  for (const [key, runs] of Object.entries(results)) {
-    summary[key] = {
-      initMs: summarize(runs.map(r => r.initMs)),
-      listMs: summarize(runs.map(r => r.listMs)),
-      listTotalMs: summarize(runs.map(r => r.listTotalMs)),
-      rssMiB: summarize(runs.map(r => r.rssBytes / 1048576)),
-      cacheFiles: summarize(runs.map(r => r.cacheFiles ?? 0)),
-    };
-  }
-  const comparisons = {};
-  for (const location of Object.keys(locations)) {
-    const base = results[`${location}/esbuild`].map(r => r.initMs);
-    for (const v of variants.slice(1)) comparisons[`${location}/${v.name} vs esbuild (initialize)`] = bootstrapRatio(results[`${location}/${v.name}`].map(r => r.initMs), base);
-  }
-  const meta = { node: process.version, platform: process.platform, release: os.release(), cpu: os.cpus()[0].model, cores: os.cpus().length, memGiB: os.totalmem() / 2 ** 30, runs: RUNS, warmup: WARMUP, date: new Date().toISOString() };
-  fs.writeFileSync(OUT, JSON.stringify({ meta, summary, comparisons, results }, null, 2));
+  const base = results[vs[0].name].map(r => r.initMs);
+  const summary = Object.fromEntries(Object.entries(results).map(([n, r]) => [n, {
+    sizeBytes: fs.statSync(vs.find(v => v.name === n).file).size,
+    initMs: summarize(r.map(x => x.initMs)), listTotalMs: summarize(r.map(x => x.listTotalMs)),
+    vsFirst: bootstrapRatio(r.map(x => x.initMs), base),
+  }]));
+  const meta = { node: nodeBin, platform: process.platform, release: os.release(), cpu: os.cpus()[0]?.model, mode: config.mode, runs: config.runs, warmup: config.warmup ?? 0, date: new Date().toISOString() };
+  if (config.out) fs.writeFileSync(config.out, JSON.stringify({ meta, summary, results }, null, 2));
   const f = x => x.toFixed(1);
-  for (const [key, s] of Object.entries(summary)) {
-    console.log(`${key.padEnd(30)} init med ${f(s.initMs.median)} p95 ${f(s.initMs.p95)} IQR ${f(s.initMs.p25)}-${f(s.initMs.p75)} range ${f(s.initMs.min)}-${f(s.initMs.max)} | list med ${f(s.listMs.median)} p95 ${f(s.listMs.p95)} | rss med ${f(s.rssMiB.median)} MiB | cache files ${s.cacheFiles.median}`);
-  }
-  for (const [key, c] of Object.entries(comparisons)) console.log(`${key}: ratio ${c.ratio.toFixed(3)} CI95 ${c.ci95.map(x => x.toFixed(3)).join('-')}`);
-  fs.rmSync(cacheRoot, { recursive: true, force: true });
-  if (freshRoot) fs.rmSync(freshRoot, { recursive: true, force: true });
-  fs.rmSync(envRoot, { recursive: true, force: true, maxRetries: 5 });
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  console.log(`# ${meta.platform} ${meta.release} node=${path.basename(path.dirname(nodeBin))} mode=${meta.mode} runs=${meta.runs}`);
+  for (const [n, s] of Object.entries(summary)) console.log(`${n.padEnd(26)} ${String(s.sizeBytes).padStart(7)} B  init med ${f(s.initMs.median)} p95 ${f(s.initMs.p95)} IQR ${f(s.initMs.p25)}-${f(s.initMs.p75)} | list total med ${f(s.listTotalMs.median)} | vs ${vs[0].name} ${s.vsFirst.ratio.toFixed(3)} (${s.vsFirst.ci95.map(x => x.toFixed(3)).join('-')})`);
+  fs.rmSync(scratch, { recursive: true, force: true, maxRetries: 5 });
+  if (hermetic) fs.rmSync(hermetic.root, { recursive: true, force: true, maxRetries: 5 });
+})().catch(e => { console.error(e); process.exitCode = 1; });
 ```
 
-### .artifacts/bundler/usage.cjs
+### .artifacts/bundler/vscode-bench/ext/package.json
+
+```json
+{
+  "name": "coagent8-startup-bench",
+  "displayName": "CoAgent8 start-up bench (scratch)",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": { "vscode": "^1.101.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": { "mcpServerDefinitionProviders": [{ "id": "bench", "label": "Bench" }] }
+}
+```
+
+### .artifacts/bundler/vscode-bench/ext/extension.js
+
+```js
+// Measures MCP server start-up as VS Code sees it: from workbench.mcp.startServer to live tools.
+// Reads bench-config.json next to this file, writes results, then quits VS Code. Scratch tooling.
+const vscode = require('vscode');
+const fs = require('node:fs');
+const path = require('node:path');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+exports.activate = async context => {
+  const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'bench-config.json'), 'utf8'));
+  const log = m => fs.appendFileSync(cfg.progress, `${new Date().toISOString()} ${m}\n`);
+  const emitter = new vscode.EventEmitter();
+  let current = null;
+  context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('bench', {
+    onDidChangeMcpServerDefinitions: emitter.event,
+    provideMcpServerDefinitions: () => current ? [new vscode.McpStdioServerDefinition(current.label, cfg.node, [current.file], cfg.env, '1.0.0')] : [],
+    resolveMcpServerDefinition: server => { if (current) current.resolvedAt = performance.now(); return server; },
+  }));
+  const results = [];
+  try {
+    await sleep(cfg.settleMs);
+    let run = 0;
+    const plan = [];
+    for (const mode of cfg.modes) {
+      for (let i = -cfg.warmup; i < cfg.runs; i++) {
+        for (let k = 0; k < cfg.variants.length; k++) plan.push({ mode, i, v: cfg.variants[(k + Math.max(i, 0)) % cfg.variants.length] });
+      }
+    }
+    for (const { mode, i, v } of plan) {
+      run++;
+      let file = v.file;
+      if (mode === 'fresh') {
+        const dir = path.join(cfg.scratch, `${v.name}-${run}`);
+        fs.mkdirSync(dir, { recursive: true });
+        file = path.join(dir, 'index.cjs');
+        fs.copyFileSync(v.file, file);
+      }
+      current = { label: `bench-${v.name}-${run}`, file };
+      emitter.fire();
+      await sleep(cfg.gapMs);
+      const before = new Set(vscode.lm.tools.map(t => t.name));
+      const t0 = performance.now();
+      await vscode.commands.executeCommand('workbench.mcp.startServer', '*', { waitForLiveTools: true, autoTrustChanges: true });
+      const t1 = performance.now();
+      const added = vscode.lm.tools.filter(t => !before.has(t.name)).length;
+      const r = { mode, variant: v.name, run, warmup: i < 0, startToLiveToolsMs: t1 - t0, startToSpawnMs: current.resolvedAt ? current.resolvedAt - t0 : null, newTools: added };
+      results.push(r);
+      log(JSON.stringify(r));
+      current = null;
+      emitter.fire();
+      await sleep(cfg.gapMs);
+    }
+  } catch (error) {
+    log('ERROR ' + (error && error.stack || error));
+  } finally {
+    fs.writeFileSync(cfg.out, JSON.stringify({ meta: { vscode: vscode.version, date: new Date().toISOString() }, results }, null, 2));
+    await sleep(500);
+    await vscode.commands.executeCommand('workbench.action.quit');
+  }
+};
+exports.deactivate = () => {};
+```
+
+### .artifacts/bundler/vscode-bench/launch.cjs
+
+```js
+// Launches an isolated VS Code instance with the bench extension and waits for its results. Scratch tooling.
+// Usage: node launch.cjs <plan.json>   plan: { modes, runs, warmup, variants: [{name, file}], out }
+'use strict';
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { spawn } = require('node:child_process');
+const { createTestEnvironment } = require('../../../tests/helpers/environment.cjs');
+const plan = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-vscode-bench-'));
+const dirs = Object.fromEntries(['ud', 'ext', 'ws', 'scratch'].map(d => [d, path.join(root, d)]));
+Object.values(dirs).forEach(d => fs.mkdirSync(d, { recursive: true }));
+const { env, root: envRoot } = createTestEnvironment();
+// Settings for the isolated profile: no workspace trust prompt, no telemetry, no update checks.
+fs.mkdirSync(path.join(dirs.ud, 'User'), { recursive: true });
+fs.writeFileSync(path.join(dirs.ud, 'User', 'settings.json'), JSON.stringify({ 'security.workspace.trust.enabled': false, 'telemetry.telemetryLevel': 'off', 'update.mode': 'none', 'extensions.autoUpdate': false, 'workbench.startupEditor': 'none', 'chat.mcp.autostart': 'never' }, null, 2));
+const ext = path.join(__dirname, 'ext');
+const out = path.resolve(plan.out), progress = out + '.progress.log';
+fs.rmSync(out, { force: true }); fs.rmSync(progress, { force: true });
+fs.writeFileSync(path.join(ext, 'bench-config.json'), JSON.stringify({
+  node: plan.node || process.execPath, env: Object.fromEntries(Object.entries(env).filter(([, v]) => typeof v === 'string')),
+  modes: plan.modes, runs: plan.runs, warmup: plan.warmup, variants: plan.variants, scratch: dirs.scratch,
+  settleMs: plan.settleMs ?? 8000, gapMs: plan.gapMs ?? 1500, out, progress,
+}, null, 2));
+const codeExe = plan.codeExe || 'C:/Program Files/Microsoft VS Code/Code.exe';
+const args = ['--user-data-dir', dirs.ud, '--extensions-dir', dirs.ext, '--extensionDevelopmentPath=' + ext, '--disable-extensions',
+  '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust', '--new-window', dirs.ws];
+const childEnv = { ...process.env }; delete childEnv.ELECTRON_RUN_AS_NODE; delete childEnv.VSCODE_IPC_HOOK_CLI;
+for (const k of Object.keys(childEnv)) if (k.startsWith('VSCODE_')) delete childEnv[k];
+const t0 = Date.now();
+const proc = spawn(codeExe, args, { env: childEnv, stdio: 'ignore', detached: false });
+const timer = setInterval(() => {
+  if (fs.existsSync(out)) { clearInterval(timer); finish(); }
+  else if (Date.now() - t0 > (plan.timeoutMs ?? 1800000)) { clearInterval(timer); console.error('timeout'); finish(); }
+}, 1000);
+function finish() {
+  setTimeout(() => {
+    // Collect VS Code's own MCP server logs for the timestamp cross-check before removing the profile.
+    const logs = [];
+    const walk = d => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/mcpServer.*bench/i.test(e.name)) logs.push(p); } };
+    try { walk(path.join(dirs.ud, 'logs')); } catch {}
+    const logDir = out + '.mcplogs'; fs.rmSync(logDir, { recursive: true, force: true }); fs.mkdirSync(logDir);
+    for (const l of logs) fs.copyFileSync(l, path.join(logDir, path.basename(l)));
+    console.log(fs.existsSync(out) ? fs.readFileSync(progress, 'utf8') : 'no results');
+    try { proc.kill(); } catch {}
+    setTimeout(() => {
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+      fs.rmSync(envRoot, { recursive: true, force: true, maxRetries: 5 });
+    }, 3000);
+  }, 4000);
+}
+```
+
+### .artifacts/bundler/open-probe.cjs
+
+```js
+// Times the first open+read of a freshly written copy of each given file in a new hidden process, without executing it.
+// Usage: node open-probe.cjs RUNS file...   (labels are the parent directory names)
+'use strict';
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const RUNS = Number(process.argv[2]);
+const files = process.argv.slice(3).map(f => path.resolve(f));
+const label = f => path.basename(path.dirname(f)) === 'dist' ? path.basename(path.dirname(path.dirname(f))) : path.basename(path.dirname(f));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-open-probe-'));
+const probe = 'const t=process.hrtime.bigint();require("fs").readFileSync(process.argv[1]);process.stdout.write(String(Number(process.hrtime.bigint()-t)/1e6))';
+const out = new Map(files.map(f => [f, { first: [], reopen: [] }]));
+for (let i = 0; i < RUNS; i++) for (let k = 0; k < files.length; k++) {
+  const f = files[(k + i) % files.length];
+  const file = path.join(fs.mkdtempSync(path.join(root, 'x-')), 'index.cjs');
+  fs.copyFileSync(f, file);
+  const read = () => Number(spawnSync(process.execPath, ['-e', probe, file], { encoding: 'utf8', windowsHide: true }).stdout);
+  out.get(f).first.push(read()); out.get(f).reopen.push(read());
+}
+const q = (a, p) => { const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
+for (const [f, r] of out) console.log(label(f).padEnd(20), String(fs.statSync(f).size).padStart(8), 'B  first-open median', q(r.first, .5).toFixed(1), 'p95', q(r.first, .95).toFixed(1), 'IQR', q(r.first, .25).toFixed(1) + '-' + q(r.first, .75).toFixed(1), '| reopen median', q(r.reopen, .5).toFixed(1));
+fs.rmSync(root, { recursive: true, force: true });
+```
+
+### .artifacts/bundler/write-modes.cjs
+
+```js
+// Which write path defers Defender's scan to the first open? Times the write and the first open per mode. Scratch tooling.
+'use strict';
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const src = process.argv[2], RUNS = Number(process.argv[3] || 8);
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-writemodes-'));
+const probe = 'const t=process.hrtime.bigint();require("fs").readFileSync(process.argv[1]);process.stdout.write(String(Number(process.hrtime.bigint()-t)/1e6))';
+const data = fs.readFileSync(src);
+const modes = {
+  copyFileSync: f => fs.copyFileSync(src, f),
+  writeFileSync: f => fs.writeFileSync(f, data),
+  streamChunks: f => { const fd = fs.openSync(f, 'w'); for (let i = 0; i < data.length; i += 65536) fs.writeSync(fd, data, i, Math.min(65536, data.length - i)); fs.closeSync(fd); },
+};
+const res = Object.fromEntries(Object.keys(modes).map(m => [m, { write: [], open: [] }]));
+for (let i = 0; i < RUNS; i++) for (const [m, w] of Object.entries(modes)) {
+  const f = path.join(fs.mkdtempSync(path.join(root, m + '-')), 'index.cjs');
+  const t = process.hrtime.bigint(); w(f); res[m].write.push(Number(process.hrtime.bigint() - t) / 1e6);
+  res[m].open.push(Number(spawnSync(process.execPath, ['-e', probe, f], { encoding: 'utf8', windowsHide: true }).stdout));
+}
+const med = a => { const s = [...a].sort((x, y) => x - y); return ((s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2).toFixed(1); };
+for (const [m, r] of Object.entries(res)) console.log(path.basename(path.dirname(src)).padEnd(12), m.padEnd(14), 'write median', med(r.write).padStart(6), 'ms | first open median', med(r.open).padStart(6), 'ms');
+fs.rmSync(root, { recursive: true, force: true });
+```
+
+### .artifacts/bundler/write-delay.cjs
+
+```js
+// First-open time as a function of the delay between writing a file and opening it. Scratch tooling.
+'use strict';
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const [src, runsArg] = process.argv.slice(2); const RUNS = Number(runsArg || 6);
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-writedelay-'));
+const probe = 'const t=process.hrtime.bigint();require("fs").readFileSync(process.argv[1]);process.stdout.write(String(Number(process.hrtime.bigint()-t)/1e6))';
+const data = fs.readFileSync(src);
+const delays = [0, 250, 500, 1000, 2000, 5000];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const res = Object.fromEntries(delays.map(d => [d, []]));
+  for (let i = 0; i < RUNS; i++) for (const d of delays) {
+    const f = path.join(fs.mkdtempSync(path.join(root, 'd-')), 'index.cjs');
+    fs.writeFileSync(f, data); await sleep(d);
+    res[d].push(Number(spawnSync(process.execPath, ['-e', probe, f], { encoding: 'utf8', windowsHide: true }).stdout));
+  }
+  const med = a => { const s = [...a].sort((x, y) => x - y); return ((s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2).toFixed(1); };
+  console.log(path.basename(path.dirname(src)).padEnd(12), delays.map(d => `${d}ms->${med(res[d])}`).join('  '));
+  fs.rmSync(root, { recursive: true, force: true });
+})();
+```
+
+### .artifacts/bundler/profile.cjs
+
+```js
+// CPU profile of one server start-up through initialize and tools/list. Usage: node profile.cjs <bundle> <outdir>
+const { spawn } = require('node:child_process'); const path = require('node:path');
+const { createTestEnvironment } = require('../../tests/helpers/environment.cjs');
+const { env, root } = createTestEnvironment();
+const [bundle, out] = process.argv.slice(2);
+const p = spawn(process.execPath, ['--cpu-prof', '--cpu-prof-interval', '100', '--cpu-prof-dir', path.resolve(out), bundle], { env, stdio: 'pipe', windowsHide: true });
+let buf = '';
+p.stdout.on('data', d => { buf += d; if (buf.includes('"id":1') && !buf.includes('"id":2')) { p.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n'); } if (buf.includes('"id":2')) p.stdin.end(); });
+p.stdin.write('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"prof","version":"1"}}}\n');
+p.on('exit', c => { console.log('exit', c); require('fs').rmSync(root, { recursive: true, force: true }); });
+```
+
+### .artifacts/bundler/prof-analyze.cjs
+
+```js
+// Aggregates .cpuprofile self time by original module, using esbuild's "// path" module headers in an unminified bundle.
+const fs = require('node:fs'), path = require('node:path');
+const [bundle, dir] = process.argv.slice(2);
+const lines = fs.readFileSync(bundle, 'utf8').split('\n');
+const owner = []; let cur = '(bundle prelude)';
+lines.forEach((l, i) => { const m = /^\/\/ ((?:node_modules|src)\/\S+)$/.exec(l); if (m) cur = m[1].replace(/^node_modules\//, 'nm/'); owner[i] = cur; });
+const group = m => m.startsWith('nm/') ? m.split('/').slice(0, m.startsWith('nm/@') ? 3 : 2).join('/') : m;
+const files = fs.readdirSync(dir).filter(f => f.endsWith('.cpuprofile'));
+const totals = {}; let all = 0;
+for (const f of files) {
+  const p = JSON.parse(fs.readFileSync(path.join(dir, f)));
+  const byId = new Map(p.nodes.map(n => [n.id, n]));
+  const dt = {}; p.samples.forEach((id, i) => { dt[id] = (dt[id] || 0) + (p.timeDeltas[i] || 0); });
+  for (const [id, us] of Object.entries(dt)) {
+    const n = byId.get(Number(id)), cf = n.callFrame; let key;
+    if (cf.url && cf.url.endsWith(path.basename(bundle))) key = group(owner[cf.lineNumber] || '?');
+    else if (cf.url.startsWith('node:')) key = 'node-internal:' + cf.url.slice(5).split('/')[0];
+    else key = cf.functionName || cf.url || '(unknown)';
+    totals[key] = (totals[key] || 0) + us / 1000; all += us / 1000;
+  }
+}
+const n = files.length;
+console.log('profiles', n, 'avg sampled ms', (all / n).toFixed(1));
+Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 25).forEach(([k, v]) => console.log((v / n).toFixed(1).padStart(7), k));
+```
+
+### .artifacts/bundler/ceiling/tools.ts
+
+```ts
+// Nine representative tool definitions so every ceiling server returns the same tools/list payload.
+export const tools = Array.from({ length: 9 }, (_, i) => ({
+  name: `tool${i}`, description: 'Ceiling benchmark tool '.repeat(8),
+  inputSchema: { type: 'object' as const, properties: { task: { type: 'string', description: 'x'.repeat(200) }, workspace_path: { type: 'string' } }, required: ['task'], additionalProperties: false },
+}));
+```
+
+### .artifacts/bundler/ceiling/sdk.ts
+
+```ts
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { tools } from './tools';
+const noAjv = process.env.CEILING_NO_AJV === '1';
+const server = new Server({ name: 'ceiling', version: '1.0.0' }, { capabilities: { tools: {} },
+  ...(noAjv ? { jsonSchemaValidator: { getValidator: () => (input: unknown) => ({ valid: true, data: input, errorMessage: undefined }) } } : {}) } as never);
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+server.setRequestHandler(CallToolRequestSchema, async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+void server.connect(new StdioServerTransport());
+process.stdin.once('end', () => process.exit(0));
+```
+
+### .artifacts/bundler/ceiling/raw.ts
+
+```ts
+// Minimal newline-delimited JSON-RPC MCP responder without the SDK, same payloads as sdk.ts.
+import { tools } from './tools';
+let buffer = '';
+const send = (m: object) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk: string) => {
+  buffer += chunk; let nl;
+  while ((nl = buffer.indexOf('\n')) >= 0) {
+    const line = buffer.slice(0, nl); buffer = buffer.slice(nl + 1);
+    if (!line.trim()) continue;
+    const m = JSON.parse(line);
+    if (m.method === 'initialize') send({ id: m.id, result: { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'ceiling', version: '1.0.0' } } });
+    else if (m.method === 'tools/list') send({ id: m.id, result: { tools } });
+    else if (m.id != null) send({ id: m.id, result: {} });
+  }
+});
+process.stdin.once('end', () => process.exit(0));
+```
+
+### .artifacts/bundler/usage.cjs (round 1 tool-call latency)
 
 ```js
 // Steady-state usage benchmark: tool-call latency inside a running server. Scratch tooling, not committed.
@@ -678,89 +901,4 @@ const summarize = a => ({ n: a.length, median: q(a, 0.5), p25: q(a, 0.25), p75: 
   fs.rmSync(workspace, { recursive: true, force: true, maxRetries: 5 });
   fs.rmSync(envRoot, { recursive: true, force: true, maxRetries: 5 });
 })().catch(error => { console.error(error); process.exitCode = 1; });
-```
-
-### .artifacts/bundler/open-probe.cjs
-
-```js
-// Times the first open+read of a freshly written copy of each given file in a new hidden process, without executing it.
-// Usage: node open-probe.cjs RUNS file...   (labels are the parent directory names)
-'use strict';
-const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const RUNS = Number(process.argv[2]);
-const files = process.argv.slice(3).map(f => path.resolve(f));
-const label = f => path.basename(path.dirname(f)) === 'dist' ? path.basename(path.dirname(path.dirname(f))) : path.basename(path.dirname(f));
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-open-probe-'));
-const probe = 'const t=process.hrtime.bigint();require("fs").readFileSync(process.argv[1]);process.stdout.write(String(Number(process.hrtime.bigint()-t)/1e6))';
-const out = new Map(files.map(f => [f, { first: [], reopen: [] }]));
-for (let i = 0; i < RUNS; i++) for (let k = 0; k < files.length; k++) {
-  const f = files[(k + i) % files.length];
-  const file = path.join(fs.mkdtempSync(path.join(root, 'x-')), 'index.cjs');
-  fs.copyFileSync(f, file);
-  const read = () => Number(spawnSync(process.execPath, ['-e', probe, file], { encoding: 'utf8', windowsHide: true }).stdout);
-  out.get(f).first.push(read()); out.get(f).reopen.push(read());
-}
-const q = (a, p) => { const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
-for (const [f, r] of out) console.log(label(f).padEnd(20), String(fs.statSync(f).size).padStart(8), 'B  first-open median', q(r.first, .5).toFixed(1), 'p95', q(r.first, .95).toFixed(1), 'IQR', q(r.first, .25).toFixed(1) + '-' + q(r.first, .75).toFixed(1), '| reopen median', q(r.reopen, .5).toFixed(1));
-fs.rmSync(root, { recursive: true, force: true });
-```
-
-### .artifacts/bundler/variants.cjs
-
-```js
-// Builds esbuild output variants into .artifacts/bundler/variants/ to isolate what slows the first antivirus scan.
-const esbuild = require('esbuild'); const path = require('node:path');
-const base = { entryPoints: ['src/index.ts'], bundle: true, platform: 'node', target: 'node24', format: 'cjs', sourcemap: true,
-  minify: true, keepNames: true, logLevel: 'warning', mainFields: ['module', 'main'] };
-const variants = {
-  'es-baseline': {}, 'es-legal-none': { legalComments: 'none' }, 'es-no-keepnames': { keepNames: false },
-  'es-no-minify': { minify: false }, 'es-minify-ws-only': { minify: false, minifyWhitespace: true },
-  'es-minify-no-ident': { minify: false, minifyWhitespace: true, minifySyntax: true },
-};
-(async () => { for (const [name, o] of Object.entries(variants)) await esbuild.build({ ...base, ...o, outfile: path.join(__dirname, 'variants', name, 'index.cjs') }); })();
-```
-
-### .artifacts/bundler/build-bench.cjs
-
-```js
-// Build time (whole process wall time, alternating) and reproducibility of both build scripts. Scratch tooling.
-'use strict';
-const fs = require('node:fs'), path = require('node:path'), { spawnSync } = require('node:child_process'), { createHash } = require('node:crypto');
-const cwd = path.resolve(process.argv[2] || path.join(__dirname, '../..'));
-const RUNS = Number(process.argv[3] || 10);
-const scripts = { esbuild: 'scripts/build.cjs', tsdown: 'scripts/build-tsdown.cjs' };
-const sha = f => createHash('sha256').update(fs.readFileSync(path.join(cwd, f))).digest('hex');
-const times = { esbuild: [], tsdown: [] }, hashes = { esbuild: new Set(), tsdown: new Set() }, mapHashes = { esbuild: new Set(), tsdown: new Set() };
-for (let i = -1; i < RUNS; i++) for (const v of i % 2 ? ['tsdown', 'esbuild'] : ['esbuild', 'tsdown']) {
-  const t0 = process.hrtime.bigint();
-  const r = spawnSync(process.execPath, [scripts[v]], { cwd, encoding: 'utf8', windowsHide: true });
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-  if (r.status !== 0) throw new Error(v + ': ' + r.stderr);
-  hashes[v].add(sha('dist/index.cjs')); mapHashes[v].add(sha('dist/index.cjs.map'));
-  if (i >= 0) times[v].push(ms);
-}
-const q = (a, p) => { const s = [...a].sort((x, y) => x - y), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
-for (const v of Object.keys(scripts)) console.log(v.padEnd(8), 'build ms median', q(times[v], .5).toFixed(0), 'p95', q(times[v], .95).toFixed(0), 'min', Math.min(...times[v]).toFixed(0), 'max', Math.max(...times[v]).toFixed(0), '| distinct bundle hashes', hashes[v].size, [...hashes[v]].map(h => h.slice(0, 12)).join(','), '| distinct map hashes', mapHashes[v].size, [...mapHashes[v]].map(h => h.slice(0, 12)).join(','));
-```
-
-### .artifacts/bundler/bare-node.cjs
-
-```js
-// Floor: spawn-to-first-stdout-line of an empty Node process with stdin piped, same harness shape as bench.cjs.
-const { spawn } = require('node:child_process');
-const child = 'process.stdout.write("x"); process.stdin.resume(); process.stdin.on("end", () => process.exit(0));';
-const r = [];
-(async () => {
-  for (let i = 0; i < 45; i++) {
-    const t = process.hrtime.bigint();
-    await new Promise((res, rej) => {
-      const p = spawn(process.execPath, ['-e', child], { stdio: 'pipe', windowsHide: true });
-      p.stdout.once('data', () => { r.push(Number(process.hrtime.bigint() - t) / 1e6); p.stdin.end(); });
-      p.once('error', rej); p.once('exit', res);
-    });
-  }
-  const s = r.slice(5).sort((a, b) => a - b), q = p => s[Math.round((s.length - 1) * p)];
-  console.log('bare node first line: n', s.length, 'median', q(.5).toFixed(1), 'p25', q(.25).toFixed(1), 'p75', q(.75).toFixed(1), 'p95', q(.95).toFixed(1));
-})();
 ```

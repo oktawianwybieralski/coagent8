@@ -488,10 +488,14 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 - [ ] Produce plugin/VSIX artifacts from the built tarball, not from a committed
   bundle.
 - [ ] Keep `index.js`, `mcp.json` and `bin` entries valid for installed packages.
-- [ ] The esbuild bundle is not byte-reproducible. Rebuilding unchanged source on
-  2026-10-06 (through `npm pack` `prepack`) renamed minified identifiers, for
-  example `Ay` became `Py`. Removing `dist/` from Git removes that noise from
-  diffs.
+- [ ] Make the source map reproducible. An identifier rename (`Ay` to `Py`) was
+  seen once on 2026-10-06, but measurements the same day did not reproduce it:
+  the bundle (esbuild 0.25.12 and tsdown 0.23.0) rebuilt byte-identically
+  across repeated builds, another checkout path, CRLF and LF sources, and
+  Node 24 and 26. The map is what varies, because `sourcesContent` embeds the
+  checkout's line endings ([BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md)
+  section 7). Fix with an LF policy in `.gitattributes` or without
+  `sourcesContent`. Removing `dist/` from Git also removes the noise from diffs.
 - [ ] Acceptance: a fresh clone cannot run a stale bundle. The consumer smoke test
   verifies the packed bundle matches a build of the packed source.
 
