@@ -19,8 +19,20 @@
 import os from 'os';
 import { redactDiagnostic } from '../redaction.js';
 import { truncateToByteLength } from '../execution/stream.js';
-import { BugReportOptions, BugReportResult } from '../types/issue.types.js';
 import { BRAND } from '../constants.js';
+
+export interface BugReportOptions {
+  errorMessage?: string;
+  context?: string;
+  doctorReport?: { backends?: Record<string, { name?: string; installed: boolean; version?: string }> } | null;
+}
+
+export interface BugReportResult {
+  title: string;
+  body: string;
+  issueUrl: string;
+  prompt: string;
+}
 
 export const REPO_OWNER = BRAND.GITHUB_OWNER;
 export const REPO_NAME = BRAND.GITHUB_REPO;

@@ -1,11 +1,29 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { BackendId, CoAgent8Config, RoutingStrategy, ToolProfile } from './types/config.types.js';
+import type { ProviderId } from './conversation.js';
 import { CONFIG_CONSTANTS } from './constants.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './execution/stream.js';
+
+/** Compatibility alias: config defaults may select a strategy, sessions may not. */
+export type BackendId = ProviderId | 'smart_quota';
+export type RoutingStrategy = 'fixed' | 'smart_quota';
+
+export type ToolProfile = 'canonical' | 'compact';
+
+export interface RoutingConfig {
+  strategy: RoutingStrategy;
+  allowedBackends: ProviderId[];
+}
+
+export interface CoAgent8Config {
+  schemaVersion: number;
+  defaultBackend: BackendId | null;
+  routing: RoutingConfig;
+  toolProfile?: ToolProfile;
+}
 
 export const DEFAULT_CONFIG_DIR =
   process.env[CONFIG_CONSTANTS.ENV_DIR] ||

@@ -10,7 +10,7 @@ import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { checkModelGovernance } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../../types/adapter.types.js';
+import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../types.js';
 
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';

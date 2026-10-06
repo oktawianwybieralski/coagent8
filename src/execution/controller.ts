@@ -29,8 +29,8 @@ import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession
 import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, BufferLimitError } from './stream.js';
-import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult, AdapterEvent } from '../types/adapter.types.js';
-import { ERROR_CODES, type ErrorCode } from '../types/conversation.types.js';
+import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult, AdapterEvent } from '../backends/types.js';
+import { ERROR_CODES, type ErrorCode } from '../conversation.js';
 import { formatExecutionResult } from '../tools/result.js';
 import { recordQuotaCooldown, resetQuotaCooldown, checkAndRecordRateLimit } from '../backends/availability.js';
 

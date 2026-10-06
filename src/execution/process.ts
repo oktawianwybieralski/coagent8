@@ -29,8 +29,8 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { resolveCliCommand } from './cli-resolver.js';
 import { createLineDecoder, truncateToByteLength } from './stream.js';
-import type { ExecutionError, TerminalStatus } from '../types/conversation.types.js';
-import { ERROR_CODES } from '../types/conversation.types.js';
+import type { ExecutionError, TerminalStatus } from '../conversation.js';
+import { ERROR_CODES } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
 
 /** Default buffer ceiling per output channel (stdout/stderr) in bytes (512 KiB). */

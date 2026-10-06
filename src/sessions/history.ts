@@ -30,8 +30,8 @@ import { getDataDir } from '../paths.js';
 import { canonicalPath, sanitizeHandle } from './identity.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, readBoundedFile } from '../execution/stream.js';
-import type { AdapterEvent, ConversationEvent, ProviderId } from '../types/conversation.types.js';
-import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../types/conversation.types.js';
+import type { AdapterEvent, ConversationEvent, ProviderId } from '../conversation.js';
+import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../conversation.js';
 
 /** Maximum byte capacity for a single session's history log (10 MiB). */
 const SESSION_LIMIT = 10 * 1024 * 1024;

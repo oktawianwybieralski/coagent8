@@ -1,8 +1,8 @@
 /**
  * Result returned by an adapter probe operation inspecting CLI installation and authentication state.
  */
-import type { AdapterEvent, ExecutionError, TerminalStatus } from './conversation.types.js';
-export * from './conversation.types.js';
+import type { AdapterEvent, ExecutionError, TerminalStatus } from '../conversation.js';
+export * from '../conversation.js';
 
 export interface AdapterProbeResult {
   /** Unique adapter identifier (e.g. 'codex', 'claude', 'gemini'). */
@@ -127,4 +127,30 @@ export interface CliAdapter {
    * Called by quota inspection (doctor and quota-aware routing), never by `execute`.
    */
   inspectQuota?(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']>;
+}
+
+export type QuotaStatus = 'operational' | 'uninstalled' | 'rate_limited';
+
+export interface BackendQuota {
+  installed: boolean;
+  executionSupported?: boolean;
+  status: QuotaStatus;
+  window: string;
+  usedPercent: number | null;
+  resetsAt: string | null;
+  cooldownUntil: string | null;
+  headroomPercent: number | null;
+  measured: boolean;
+  cooldownReason?: string | null;
+  cooldownLevel?: number;
+  lastCooldownAt?: string | null;
+}
+
+export interface QuotaReport {
+  [backendId: string]: BackendQuota;
+}
+
+export interface QuotaCacheRecord {
+  timestamp: number;
+  data: QuotaReport;
 }

@@ -35,7 +35,7 @@ flowchart TD
 | src/sessions/ | Workspace/provider identity, native continuation records, turn leases, locks, history and pagination |
 | src/integrations/ | Optional host setup/repair, bounded RPC probes and VS Code registration detection |
 | src/diagnostics/ | Backend evidence and sanitized issue reports |
-| Config, paths, redaction | Named shared configuration, storage and workspace paths, and privacy behavior |
+| Conversation, config, paths, redaction | Shared provider/event/error model, named configuration, storage and workspace paths, and privacy behavior |
 | extensions/vscode/ | Native MCP provider and optional shared setup UI |
 
 ## Coupling that remains

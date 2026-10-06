@@ -1,8 +1,8 @@
 /** Pure pagination of a validated, owned history snapshot. @packageDocumentation */
 import { truncateToByteLength } from '../execution/stream.js';
 import type { History } from './history.js';
-import type { ConversationEvent } from '../types/conversation.types.js';
-import { validEventIdentifier } from '../types/conversation.types.js';
+import type { ConversationEvent } from '../conversation.js';
+import { validEventIdentifier } from '../conversation.js';
 const PAGE_LIMIT = 240 * 1024;
 
 /**

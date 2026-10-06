@@ -10,7 +10,7 @@
  * @packageDocumentation
  */
 
-import type { TerminalExecutionResult } from '../types/adapter.types.js';
+import type { TerminalExecutionResult } from '../backends/types.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { issueOutputSchema } from './issue.tool.js';

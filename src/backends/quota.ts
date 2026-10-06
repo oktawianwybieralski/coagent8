@@ -1,5 +1,5 @@
 /** Provider-neutral summary of native usage windows. @packageDocumentation */
-import type { AdapterProbeResult } from '../types/adapter.types.js';
+import type { AdapterProbeResult } from './types.js';
 
 /** Measured native quota, as stored in probe results and the quota cache. */
 export type NativeQuota = NonNullable<AdapterProbeResult['quota']>;

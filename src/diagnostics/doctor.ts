@@ -1,9 +1,9 @@
 import { adapterRegistry } from '../backends/registry.js';
 import { loadConfig } from '../config.js';
-import { PROVIDERS } from '../types/conversation.types.js';
+import { PROVIDERS } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
-import type { AdapterProbeResult, ProviderId } from '../types/adapter.types.js';
-import type { QuotaReport } from '../types/quota.types.js';
+import type { AdapterProbeResult, ProviderId } from '../backends/types.js';
+import type { QuotaReport } from '../backends/types.js';
 
 export interface DoctorReport {
   status: string;

@@ -13,7 +13,7 @@ import { redactDiagnostic } from './redaction.js';
 import { BRAND, CANONICAL_TOOL_NAMES } from './constants.js';
 import { SERVER_ICON } from './generated/server-icon.js';
 import { loadConfig } from './config.js';
-import type { CoAgent8Config } from './types/config.types.js';
+import type { CoAgent8Config } from './config.js';
 import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
 import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession } from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
@@ -24,7 +24,7 @@ import { getCanonicalImplementToolDefinition, handleImplement } from './tools/im
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { executionOutputSchema, runOutputSchema, formatExecutionResult } from './tools/result.js';
-import { ERROR_CODES } from './types/conversation.types.js';
+import { ERROR_CODES } from './conversation.js';
 import { sanitizeHandle, listSessions } from './sessions/session.js';
 import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation } from './execution/controller.js';
