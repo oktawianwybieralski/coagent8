@@ -6,6 +6,5 @@ yarn-error.log*
 *.log
 .env
 .env.local
-.rc-tools/
 .artifacts/
 *.tgz

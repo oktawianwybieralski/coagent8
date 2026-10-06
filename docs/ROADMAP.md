@@ -934,18 +934,19 @@ These statuses summarize prior implementation; they are not fresh test results.
   (AUD-P2-7).
 - [ ] `DOCS-001`: expand compressed logic and document meaningful exported contracts.
 - [ ] `VERIFY-001`: record repeatable validation without retroactively assigning
-  the historical unexplained 133/134 failure to a later discovered race. Retained
-  logs under ignored `tests/artifacts/verification/` record two reproduced
-  failures (a 10 ms lock-queue assumption and fixture startup starvation) and
-  their fixes; production deadlines were unchanged.
+  the historical unexplained 133/134 failure to a later discovered race. Two
+  reproduced failures (a 10 ms lock-queue assumption and fixture startup
+  starvation) were fixed without changing production deadlines. Their local logs,
+  formerly under ignored `tests/artifacts/verification/`, were deleted on
+  2026-10-06 during the repository layout cleanup and no longer exist.
 
 ### `TESTS-001` - consolidated test structure
 
 The structural migration is implemented; final release validation remains pending.
 
-- [x] Test files, fixtures, helpers, runner, consumer smoke and generated test
-  evidence live under tests/. Production, documentation and VSIX tooling remain
-  outside that directory. Temporary consumer installs are isolated and cleaned up.
+- [x] Test files, fixtures, helpers, runner and consumer smoke live under
+  tests/, mirroring the src/ layout. Generated evidence is written outside it, to
+  the ignored `.artifacts/` directory. Temporary consumer installs are isolated and cleaned up.
 - [x] One recursive portable discovery helper excludes fixtures/helpers/artifacts,
   preserves the inventory, supports nested tests and rejects empty discovery.
 - [x] MCP requests are bounded; teardown awaits owned processes before deleting
@@ -953,7 +954,8 @@ The structural migration is implemented; final release validation remains pendin
 - [x] Package checks reject test/development artifacts while preserving required
   runtime assets, bundled loading and supplied-tarball consumer verification.
 - [x] Imports/configuration follow the migration and the unused Node 20 polyfill
-  was removed. Test evidence and API/VSIX artifacts have separate locations.
+  was removed. Test evidence (`.artifacts/coverage`, `.artifacts/consumer`) and API/VSIX
+  output (`.artifacts/api-docs`, `.artifacts/vscode`) use separate subdirectories.
 - [ ] Verify the exact package, coverage thresholds and supported OS/Node matrix
   at release acceptance; complete independent review of the resulting snapshot.
 
