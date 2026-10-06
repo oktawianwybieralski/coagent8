@@ -82,7 +82,12 @@ squash-merge commit - must follow Conventional Commits 1.0.0:
   * `Fixes #123` / `Refs #123` - linked GitHub issue;
   * `Refs: AUD-P0-1` - audit finding or roadmap item;
   * `BREAKING CHANGE: <description and migration>`;
-  * `Co-Authored-By: <name> <email>` - AI agents and co-authors.
+* **No AI attribution (forbidden):** commits, pull requests, changelogs and
+  release notes never credit an AI tool as author or co-author. Do not add a
+  `Co-Authored-By` trailer for an AI (Claude, Codex, Gemini, Antigravity or any
+  other), a "Generated with" line or a similar note. AI tools are tools paid for
+  by the owner, who is the sole author and copyright holder. The Reviewer
+  rejects a commit or PR that contains AI attribution.
 
 Examples:
 
@@ -149,7 +154,8 @@ must meet this section.
   gh pr merge <number> --squash --delete-branch
   ```
   Before confirming, edit the squash message so that it complies with section 2
-  (keep footers such as `Fixes #…`, `BREAKING CHANGE:` and `Co-Authored-By:`).
+  (keep footers such as `Fixes #…` and `BREAKING CHANGE:`; remove any AI
+  attribution).
 
 ---
 

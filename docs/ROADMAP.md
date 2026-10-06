@@ -1054,8 +1054,8 @@ Work items:
   and 6 and `AGENTS.md`.
 - [x] Splitting a squash commit's body into one entry per listed commit
   (`split_commits`) was tried and rejected. With git-cliff 2.14.2 a prose line
-  containing a colon inherited the PR title as a duplicate entry, and a
-  `Co-authored-by:` trailer became an entry. Each PR is one entry instead.
+  containing a colon inherited the PR title as a duplicate entry, and a commit
+  trailer line became an entry. Each PR is one entry instead.
 - [x] GitHub release notes in the layout of the PrestaShop release pages (owner
   request, 2026-10-06; for example PrestaShop 9.2.0).
   - Configuration: `cliff.release-notes.toml` and `npm run release-notes -- --tag vX`.

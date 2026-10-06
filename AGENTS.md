@@ -33,6 +33,7 @@ MCP use. Historical plans and RFCs do not override this direction.
    - Merge exclusively via **Pull Requests with Squash and Merge** (`gh pr merge --squash --delete-branch`); commits and PR titles follow Conventional Commits; versions follow SemVer; `CHANGELOG.md` is generated from the history in release commits.
    - `main` receives only finalized, audited release snapshots; must strictly remain 100% green across all 6 CI matrix jobs.
    - History recovery is strictly an emergency owner procedure with atomic force-with-lease.
+   - **No AI attribution (forbidden)**: never add a `Co-Authored-By` trailer for an AI tool, a "Generated with" line or similar to commits, PRs, changelogs or release notes. The owner is the sole author.
 
 ---
 

@@ -77,7 +77,7 @@ postprocessors = [
 conventional_commits = true
 filter_unconventional = true
 # One entry per squash-merged PR: the PR title. Splitting the squash body into
-# entries was rejected: prose lines and trailers such as Co-authored-by are
+# entries was rejected: prose lines and commit trailers are
 # misparsed (checked with git-cliff 2.14.2).
 split_commits = false
 protect_breaking_commits = true
