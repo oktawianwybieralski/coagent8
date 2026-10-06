@@ -47,4 +47,16 @@ guarantees for window suppression.
 3. **Memory Limits & Stream Safety:**
    - Always enforce strict `maxBufferBytes` (512 KiB in `runCommand`, 4 MiB in `runGit`) and `StringDecoder` to prevent split UTF-8 corruption and memory exhaustion.
 4. **Node 24 Build Compatibility:**
-   - The standalone and VSIX builds use esbuild targeting Node 24. No polyfill or preload is required.
+   - The MCP server bundle (`dist/index.cjs`, shared by the npm package and the VSIX) is built
+     with tsdown targeting Node 24. The VS Code extension entry (`extension.cjs`) stays on
+     esbuild because it is not on the server start-up path. No polyfill or preload is required.
+   - Runtime minimum stays Node 24.0 (`engines`). The build tooling minimum is Node 24.11
+     (`devEngines`), because tsdown 0.23.0 declares `^22.18.0 || ^24.11.0 || >=26.0.0`. CI
+     uses the latest 24.x and 26.x, which satisfy both.
+   - The bundle carries no comments, including license comments. License notices of the
+     bundled packages ship in `dist/THIRD_PARTY_NOTICES.txt`, generated from the modules that
+     reach the bundle; the build fails if a bundled package has no license file.
+   - The bundler was chosen on measured first-launch time on Windows with Microsoft Defender:
+     identifier-mangled esbuild output was scanned about 4 times longer. See
+     [BUNDLER_COMPARISON](../../docs/archive/BUNDLER_COMPARISON.md) before changing bundler or
+     minification options.

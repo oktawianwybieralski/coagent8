@@ -68,7 +68,9 @@ configuring a second manual CoAgent8 MCP entry alongside the installed plugin.
 
 From the repository root:
 
-The MCP runtime, the extension and the VSIX packaging tooling require Node.js 24+.
+The MCP runtime and the extension require Node.js 24+. Building the server
+bundle requires Node.js 24.11+ because tsdown 0.23.0 supports no older Node 24
+release; `devEngines` in `package.json` enforces this for repository commands.
 
 ```bash
 npm ci

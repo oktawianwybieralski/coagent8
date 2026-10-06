@@ -23,7 +23,7 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/index.cjs.map','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.startsWith('assets/design/')),'Design assets must not ship in runtime package');
@@ -41,6 +41,11 @@ function npmRun(args,cwd=root) {
       assert.ok(asset.startsWith('./assets/'));
       assert.ok(fs.existsSync(path.join(pkg,asset)),`Plugin ${key} must resolve in installed package`);
     }
+    // License notices ship beside the bundle; the bundle itself carries no license comments.
+    const bundle=await fsp.readFile(path.join(pkg,'dist','index.cjs'),'utf8');
+    assert.ok(!/\/\*!|@license|@preserve|SPDX-License-Identifier/.test(bundle),'Bundle must not embed license comments');
+    const notices=await fsp.readFile(path.join(pkg,'dist','THIRD_PARTY_NOTICES.txt'),'utf8');
+    for(const bundled of ['@modelcontextprotocol/sdk','jsonc-parser','smol-toml','zod'])assert.ok(notices.includes(`\n${bundled} `),`Notices must cover ${bundled}`);
     const mcp=JSON.parse(await fsp.readFile(path.join(pkg,'mcp.json'),'utf8'));
     assert.equal(mcp.mcpServers.coagent8.type,'stdio');
     assert.equal(mcp.mcpServers.coagent8.command,'node');
@@ -61,7 +66,7 @@ function npmRun(args,cwd=root) {
     await fsp.rename(sdk,sdk+'-unused');
     for(const dependency of ['jsonc-parser','smol-toml']) await fsp.rename(path.join(dir,'node_modules',dependency),path.join(dir,'node_modules',dependency+'-unused'));
     assert.ok(!fs.existsSync(sdk),'SDK must be unavailable during runtime smoke');
-    assert.ok(!fs.existsSync(path.join(dir,'node_modules','tsx')));assert.ok(!fs.existsSync(path.join(dir,'node_modules','esbuild')));
+    assert.ok(!fs.existsSync(path.join(dir,'node_modules','tsx')));for(const tool of ['esbuild','tsdown','rolldown'])assert.ok(!fs.existsSync(path.join(dir,'node_modules',tool)),tool);
     for(const [binIndex,command] of commands.entries()) {
     const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.join(root,'tests','fixtures','gemini-cli','gemini.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:''}});
     const {proc,request}=connection;
