@@ -784,16 +784,18 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
               currentFileBytes = headerBytes;
               headerWritten = true;
             } catch (appendErr) {
-              await withFileLock(capLockFile, async () => {
-                const metaFile = path.join(dir, '.capacity.meta');
-                try {
-                  const raw = await readBoundedFile(metaFile, 1024);
-                  const parsed = JSON.parse(raw);
-                  if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-                    await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - headerBytes) }));
-                  }
-                } catch {}
-              });
+              try {
+                await withFileLock(capLockFile, async () => {
+                  const metaFile = path.join(dir, '.capacity.meta');
+                  try {
+                    const raw = await readBoundedFile(metaFile, 1024);
+                    const parsed = JSON.parse(raw);
+                    if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
+                      await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - headerBytes) }));
+                    }
+                  } catch {}
+                });
+              } catch {}
               throw appendErr;
             }
           }
@@ -871,16 +873,18 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
           await fs.appendFile(logFile, appendLines, 'utf8');
           currentFileBytes += appendBytes;
         } catch (appendErr) {
-          await withFileLock(capLockFile, async () => {
-            const metaFile = path.join(dir, '.capacity.meta');
-            try {
-              const raw = await readBoundedFile(metaFile, 1024);
-              const parsed = JSON.parse(raw);
-              if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-                await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - appendBytes) }));
-              }
-            } catch {}
-          });
+          try {
+            await withFileLock(capLockFile, async () => {
+              const metaFile = path.join(dir, '.capacity.meta');
+              try {
+                const raw = await readBoundedFile(metaFile, 1024);
+                const parsed = JSON.parse(raw);
+                if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
+                  await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - appendBytes) }));
+                }
+              } catch {}
+            });
+          } catch {}
           throw appendErr;
         }
 
