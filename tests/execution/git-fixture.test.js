@@ -42,3 +42,27 @@ test('F21: isolated Git fixture covers staged/uncommitted/SHA/branch/range, untr
     }
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('snapshotId names the reviewed snapshot for every scope, including a repository without commits', async () => {
+  const { snapshotId } = require('../../src/execution/git.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-snapshot-'));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    fs.writeFileSync(path.join(root, 'a.txt'), 'one\n');
+    assert.equal(await snapshotId(await collectGitScope('uncommitted', root), root), 'no-commit');
+    git('add', '.'); git('commit', '-qm', 'base'); git('branch', 'base');
+    const base = git('rev-parse', '--short', 'HEAD');
+    fs.writeFileSync(path.join(root, 'a.txt'), 'two\n'); git('commit', '-qam', 'second');
+    const head = git('rev-parse', '--short', 'HEAD'), full = git('rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(root, 'a.txt'), 'three\n');
+    assert.equal(await snapshotId(await collectGitScope('uncommitted', root), root), `${head}+uncommitted`);
+    assert.equal(await snapshotId(await collectGitScope('staged', root), root), `${head}+staged`);
+    assert.equal(await snapshotId(await collectGitScope(full, root), root), head);
+    assert.equal(await snapshotId(await collectGitScope('HEAD~1', root), root), base);
+    assert.equal(await snapshotId(await collectGitScope('base', root), root), `base...${head}`);
+    assert.equal(await snapshotId(await collectGitScope('base..HEAD', root), root), 'base..HEAD');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

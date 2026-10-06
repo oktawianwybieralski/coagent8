@@ -65,6 +65,8 @@ export async function handleConsult(
 
   const prompt = [
     header,
+    // The answer is read in the caller's context and saved to a file by agy above about 4 KB.
+    'Answer with the conclusion first, concisely, without preamble.',
     'PROPOSAL / SPECIFICATION:',
     args.proposal,
     'QUESTIONS / FOCUS:',

@@ -1,7 +1,7 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
 import { executeTask } from '../execution/controller.js';
-import { collectGitScope } from '../execution/git.js';
+import { collectGitScope, snapshotId } from '../execution/git.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
 export function getCanonicalReviewToolDefinition() {
@@ -31,32 +31,23 @@ export async function handleReview(
   const effectiveScope = args.scope || args.target;
   const scopeInfo = await collectGitScope(effectiveScope, workspaceCwd, abortSignal);
   const instructions = args.instructions || 'Review correctness, security, edge cases and architecture.';
+  const snapshot = await snapshotId(scopeInfo, workspaceCwd, abortSignal);
+  // The answer is read in the caller's context: findings only, each as short as its evidence allows.
   const prompt = [
-    '[TASK: CODE REVIEW & AUDIT]',
-    'Scope: ' + scopeInfo.label,
-    'Guidelines & Instructions:',
-    '- Evaluate the provided diff directly. Do not initiate exploratory file traversal or searches across unrelated repository folders unless strictly necessary to verify direct imports or call sites.',
-    '- Provide concise, actionable findings formatted strictly in the State Envelope protocol:',
-    '',
+    `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
+    'Focus: ' + instructions,
+    'Answer with exactly this envelope and nothing before it:',
     'REVIEW: <turn>',
-    'SNAPSHOT: <hash>',
+    `SNAPSHOT: ${snapshot}`,
     'COVERAGE: COMPLETE | PARTIAL',
     'VERDICT: READY | BLOCKED',
-    '',
-    '[P1/P2/P3] <file>:<line>',
-    'Problem: <concise statement>',
-    'Evidence: <reproducible detail>',
-    'Fix: <actionable remedy>',
-    '',
-    'CHECKS: typecheck=<PASS|FAIL>; tests=<PASS|FAIL|NOT_RUN>',
+    '[P1|P2|P3] <file>:<line>',
+    'Problem: <one sentence>',
+    'Evidence: <at most two sentences, citing file:line>',
+    'Fix: <one sentence>',
+    'CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>',
     'END_REVIEW',
-    '',
-    'Severity definitions:',
-    '  * P1 (Blocker): Critical defects, security vulnerabilities, breaking changes, or crashes. Forces VERDICT: BLOCKED.',
-    '  * P2 (Important): Logic bugs, performance regressions, missing error handling, or edge cases. Forces VERDICT: BLOCKED.',
-    '  * P3 (Nit/Polish): Code style, documentation, minor cleanups, or non-critical suggestions.',
-    '- If no P1 or P2 issues are found, set VERDICT: READY.',
-    'Focus: ' + instructions,
+    'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix.',
     'DIFF:',
     scopeInfo.diff || '[No changes in this scope]',
   ].join('\n');

@@ -8,6 +8,8 @@ export interface GitScopeInfo {
   label: string;
   diff: string;
   nativeArgs: string[] | null;
+  /** The reviewed revision or range for commit, range and branch scopes. */
+  revision?: string;
 }
 
 export const GIT_DIFF_PATHSPEC_EXCLUSIONS: readonly string[] = [
@@ -160,6 +162,7 @@ export async function collectGitScope(
       label: `Revision range (${cleanRange})`,
       diff: boundedSnapshot(diff),
       nativeArgs: null,
+      revision: cleanRange,
     };
   }
 
@@ -173,6 +176,7 @@ export async function collectGitScope(
       label: `Commit ${sha}`,
       diff: boundedSnapshot(diff),
       nativeArgs: ['--commit', sha],
+      revision: sha,
     };
   }
 
@@ -185,6 +189,7 @@ export async function collectGitScope(
       label: `Revision ${rev}`,
       diff: boundedSnapshot(diff),
       nativeArgs: null,
+      revision: rev,
     };
   }
 
@@ -197,5 +202,26 @@ export async function collectGitScope(
     label: `Branch comparison against ${branchName} (${branchName}...HEAD)`,
     diff: boundedSnapshot(diff),
     nativeArgs: null,
+    revision: branchName,
   };
+}
+
+/**
+ * Names the reviewed snapshot for the State Envelope `SNAPSHOT` line, so the reviewer need not look it up.
+ * @returns The short commit: HEAD with `+uncommitted` or `+staged` for working changes, the
+ * reviewed commit, `<range>` for a range, `<base>...<HEAD>` for a branch, or `no-commit`.
+ */
+export async function snapshotId(scope: GitScopeInfo, workspaceCwd = process.cwd(), abortSignal: AbortSignal | null = null): Promise<string> {
+  if (scope.type === 'range') return scope.revision as string;
+  const short = async (rev: string) => (await runGit(['rev-parse', '--short', rev], workspaceCwd, abortSignal)).trim();
+  if (scope.type === 'commit') return short(scope.revision as string);
+  let head: string;
+  try {
+    head = await short('HEAD');
+  } catch (err) {
+    // A repository without commits has no HEAD; any other failure is real.
+    if ((await runCommand('git', ['rev-parse', '--git-dir'], { cwd: workspaceCwd, abortSignal, timeoutMs: 15000 })).status === 'completed') return 'no-commit';
+    throw err;
+  }
+  return scope.type === 'branch' ? `${scope.revision}...${head}` : `${head}+${scope.type}`;
 }

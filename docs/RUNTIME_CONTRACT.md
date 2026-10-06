@@ -126,18 +126,28 @@ Envelope**. `consult` and its aliases return a plain answer with
 
 ```text
 REVIEW: <turn>
-SNAPSHOT: <git_commit_sha>
+SNAPSHOT: <snapshot>
 COVERAGE: COMPLETE | PARTIAL
 VERDICT: READY | BLOCKED
-
-[P1/P2/P3] <file>:<line>
-Problem: <concise statement>
-Evidence: <reproducible detail>
-Fix: <actionable remedy>
-
-CHECKS: typecheck=<PASS|FAIL>; tests=<PASS|FAIL|NOT_RUN>
+[P1|P2|P3] <file>:<line>
+Problem: <one sentence>
+Evidence: <at most two sentences, citing file:line>
+Fix: <one sentence>
+CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
 END_REVIEW
 ```
+
+The server fills in `SNAPSHOT`:
+* the short HEAD with `+uncommitted` or `+staged`;
+* the reviewed commit;
+* the range;
+* `<base>...<HEAD>`;
+* `no-commit`.
+
+P3 findings take one line without Evidence and Fix. The answer starts with the
+envelope, without a preamble. A file marked `-diff` in `.gitattributes` (for
+example a generated `CHANGELOG.md`) appears in the diff only as `Binary files ...
+differ`, which keeps generated content out of the review prompt.
 
 ### Server-Side Gate Evaluation
 In `formatExecutionResult` / `enforceStateEnvelopeGate`:

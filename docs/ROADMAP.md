@@ -749,16 +749,21 @@ Plan:
   of an empty model list. Every backend validates a reported identifier with the
   shared governance check. Verified in the Claude, Codex and agy adapter and
   collector tests.
-- [ ] **Backend prompts:**
+- [x] **Backend prompts:**
   - review: Evidence at most two sentences with `file:line`, Fix one sentence, P3
     one line, no preamble and no restated diff. Estimated saving about 45%,
-    bringing more reviews under the agy threshold. The envelope format and its
-    gate stay unchanged;
+    bringing more reviews under the agy threshold; to be measured on real
+    reviews. The envelope format and its gate stay unchanged;
+  - the server fills in `SNAPSHOT`, so the reviewer no longer looks it up;
   - consult: conclusion first, concise;
-  - shorter State Envelope instructions, from about 1.3 KB to about 0.6 KB;
-  - configurable extra diff exclusions (for example a generated `CHANGELOG.md`).
-    The current diff already uses `--unified=1` and excludes build output, maps
-    and lockfiles.
+  - shorter review instructions: 1,041 to 677 characters;
+  - extra diff exclusions use Git's own `-diff` attribute in `.gitattributes`
+    (documented in the README and runtime contract) instead of a new setting.
+    The diff already uses `--unified=1` and excludes build output, maps and
+    lockfiles.
+
+  Verified in `tests/tools/review.test.js` and
+  `tests/execution/git-fixture.test.js`.
 - [x] **`doctor`:**
   - `detail: "summary"` (default; prototype 316 B, budget 1 KB) or `"full"`;
   - `backend` filter;
