@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+    branches: [main, 'release/**']
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} (Node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [20.x, 22.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            tools/documentation/package-lock.json
+            tools/vscode/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install documentation dependencies
+        run: npm ci --prefix tools/documentation
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate TSDoc comments
+        run: npm run lint:docs
+
+      - name: Generate source API documentation
+        run: npm run docs
+
+      - name: Build bundle
+        run: npm run build
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Verify package bundle integrity
+        run: npm pack --dry-run
+
+      - name: Install exact tarball and verify consumer MCP
+        run: npm run test:consumer
+
+      - name: Install VSIX packaging dependencies (Node 22)
+        if: matrix.node-version == '22.x'
+        run: npm ci --prefix tools/vscode
+
+      - name: Package VS Code development extension (Node 22)
+        if: matrix.node-version == '22.x'
+        run: npm run package:vscode
+
+      # Development regression floor: statements/lines/branches >=70%, functions >=75%.
+      # All src modules are included; no source exclusions. This is not the RC safety-branch acceptance gate.
+      - name: Source coverage (all modules; enforce documented regression floor)
+        run: npm run test:coverage
+
+      - name: Upload consumer and coverage evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-${{ matrix.os }}-node-${{ matrix.node-version }}
+          path: |
+            tests/artifacts/
+            .rc-artifacts/
