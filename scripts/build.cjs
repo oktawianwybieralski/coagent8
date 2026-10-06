@@ -21,9 +21,11 @@ function writeNotices(packageDirs) {
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
     const licenseFile = fs.readdirSync(dir).filter(name => /^(licen[sc]e|copying)(\.(md|txt))?$/i.test(name)).sort()[0];
     if (!licenseFile) throw new Error(`Bundled package ${manifest.name} has no license file.`);
-    return { name: manifest.name, version: manifest.version, license: manifest.license,
+    const license = typeof manifest.license === 'string' ? manifest.license : manifest.license?.type ?? 'see license text';
+    return { name: manifest.name, version: manifest.version, license,
       text: fs.readFileSync(path.join(dir, licenseFile), 'utf8').replace(/\r\n/g, '\n').trim() };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  // Code-point order keeps the file byte-identical regardless of the build machine's locale.
+  }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const rule = '='.repeat(80);
   const body = entries.map(entry => `${rule}\n${entry.name} ${entry.version} (${entry.license})\n${rule}\n\n${entry.text}\n`).join('\n');
   fs.writeFileSync(path.join(dist, 'THIRD_PARTY_NOTICES.txt'),
