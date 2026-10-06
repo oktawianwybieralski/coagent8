@@ -24,6 +24,7 @@ guarantees for window suppression.
 
 1. **No Shell Glob Assumptions:**
    - `tests/helpers/discovery.cjs` selects only `*.test.js` recursively under `tests/`, excluding fixtures, helpers, consumer tooling and artifacts. Both tests and coverage invoke `tests/run.cjs`, which passes each discovered path as an individual argument to tsx. Empty discovery fails. Never pass shell globs to Node's test runner.
+   - **Hermetic test environment:** `tests/run.cjs` runs the whole suite in the environment from `tests/helpers/environment.cjs`: backend CLIs point to the fixtures, profile and configuration roots point to a disposable directory, and `PATH` keeps only Node.js, Git and the operating system. Tests never start a real Claude, Codex or agy installation (which would load the user's MCP servers and shells, open windows and spend quota). `tests/environment.test.js` fails when the suite runs outside `tests/run.cjs` or a real CLI is reachable. A test that needs another CLI uses a fixture under `tests/fixtures/`.
 2. **Process Teardown (safety invariant):**
    - Terminate only what this process owns: a spawned `ChildProcess` through its
      handle (`proc.kill()`; on Windows `TerminateProcess` on the handle held since
