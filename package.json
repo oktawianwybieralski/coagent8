@@ -1,0 +1,81 @@
+{
+  "name": "coagent8",
+  "displayName": "CoAgent - Cross-Agent CLI Bridge",
+  "version": "1.0.0-beta.1",
+  "description": "Expose local coding CLIs through MCP with public conversation history and read-only execution profiles.",
+  "main": "dist/index.cjs",
+  "bin": {
+    "coagent8": "./dist/index.cjs",
+    "coagent8-mcp": "./dist/index.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oktawianwybieralski/coagent8.git"
+  },
+  "author": {
+    "name": "Oktawian Wybieralski",
+    "url": "https://oki.dev"
+  },
+  "homepage": "https://oki.dev",
+  "license": "GPL-3.0-only",
+  "type": "commonjs",
+  "files": [
+    "dist/",
+    "index.js",
+    "src/",
+    "assets/logo.svg",
+    "assets/logo.png",
+    "assets/logo32.png",
+    "assets/logo64.png",
+    "assets/logo256.png",
+    "plugin.json",
+    "mcp.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bugs": {
+    "url": "https://github.com/oktawianwybieralski/coagent8/issues"
+  },
+  "scripts": {
+    "lint:docs": "node tools/documentation/node_modules/eslint/bin/eslint.js --config tools/documentation/eslint.config.cjs src --max-warnings 0",
+    "docs": "npm --prefix tools/documentation run build",
+    "build": "node scripts/build.cjs",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p extensions/vscode/tsconfig.json",
+    "build:vscode": "npm run build && node scripts/build-vscode.cjs",
+    "package:vscode": "npm run build:vscode && npm --prefix tools/vscode run package",
+    "start": "node dist/index.cjs",
+    "test": "node tests/run.cjs",
+    "prepack": "npm run build",
+    "test:coverage": "c8 --all --include=src/**/*.ts --check-coverage --statements=70 --lines=70 --branches=70 --functions=75 --reporter=text --reporter=json-summary --reports-dir=tests/artifacts/coverage node tests/run.cjs",
+    "test:consumer": "node tests/consumer/smoke.cjs"
+  },
+  "keywords": [
+    "cli",
+    "codex",
+    "claude",
+    "claude-code",
+    "gemini",
+    "gemini-cli",
+    "mcp",
+    "agent",
+    "bridge",
+    "code-review",
+    "multi-agent"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "jsonc-parser": "3.3.1",
+    "smol-toml": "1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.0",
+    "@types/vscode": "1.101.0",
+    "c8": "10.1.3",
+    "esbuild": "0.25.12",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
