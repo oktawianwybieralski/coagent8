@@ -17,7 +17,7 @@ JavaScript execution. Microsoft Defender scans esbuild's identifier-mangled
 output about four times longer than tsdown's (section 5). The bundle no longer
 contains license comments; the notices ship in `dist/THIRD_PARTY_NOTICES.txt`
 (section 8). The largest remaining cost is the MCP SDK and its zod/ajv
-dependencies (section 6).
+dependencies (section 6). The project keeps the official SDK (section 10).
 
 ## 1. Environment
 
@@ -260,8 +260,30 @@ request schemas. It validates tool arguments with its own validator. The SDK
 builds hundreds of zod schemas at import time, including some for features
 CoAgent8 does not use. Skipping Ajv construction saves about 2 ms, within noise.
 In VS Code the adopted build spends 57 ms (warm) and 118 ms (fresh) above the
-no-SDK floor. How that splits between the SDK and CoAgent8's code under tsdown
-was not measured.
+no-SDK floor.
+
+The same ceiling servers built with tsdown, together with SDK v2
+(`@modelcontextprotocol/server` 2.3.1, the split package that the official MCP
+Apps SDK `@modelcontextprotocol/ext-apps` 2.0.3 builds on). Windows, Node
+24.21.0, 30 runs:
+
+| Server (tsdown) | Size (B) | warm median (IQR) | fresh median (IQR) |
+| --- | --- | --- | --- |
+| SDK v1 1.32.0 (current) | 290125 | 105.7 (103.8-108.7) | 163.4 (160.4-177.1) |
+| SDK v2 2.3.1 | 405952 | 119.1 (116.5-120.8) | 183.6 (178.8-200.7) |
+| CoAgent8 (adopted build, SDK v1) | 493019 | 118.0 (115.9-121.1) | 185.8 (179.1-202.3) |
+| No SDK | 918 | 64.0 (63.1-65.6) | 68.7 (66.6-74.0) |
+
+With tsdown, SDK v1 costs about 42 ms warm and 95 ms fresh, and CoAgent8's own
+code about 12-22 ms. SDK v2 starts 13 ms (warm) and 20 ms (fresh) slower than
+v1: its `core` package carries zod schemas for the whole specification,
+including OAuth. Ajv is optional in v2.
+
+Composition of the bundle, from the esbuild metafile of the previous build
+(491107 B without its legal comment): CoAgent8 `src/` 169096 B (34.4%), ajv
+111187 B (22.6%), zod 105760 B (21.5%), MCP SDK 43535 B (8.9%), jsonc-parser
+18367 B, fast-uri 18066 B, smol-toml 11627 B, ajv-formats 10591 B, others
+2200 B.
 
 ## 7. Reproducibility
 
@@ -327,12 +349,14 @@ on esbuild, because it is not on the server start-up path. The runtime minimum
 stays Node 24.0, and the build needs Node 24.11 (`devEngines`), as recorded in
 `.agents/rules/05-cross-platform.md`.
 
-**Next, separate branch:** measure a thin, in-house MCP protocol layer that
-replaces the SDK runtime (Section 6). The SDK would stay as a dev dependency so
-that conformance tests can drive the server with the official SDK client. The
-estimated gain is 40-50 ms warm and 80-110 ms on a fresh launch in VS Code. Both
-figures are estimates from the ceiling experiment and must be measured on a
-prototype before any decision.
+**Not pursued: an in-house MCP protocol layer.** Replacing the SDK runtime
+would save at most about 42 ms warm and 95 ms fresh (section 6) and shrink the
+bundle to an estimated 210 kB. The owner decided on 2026-10-06 to keep the
+official SDK. Planned interactive UI in chat hosts (MCP Apps, elicitation) needs
+the parts of the protocol that change fastest, and the official SDK tracks
+them. The server stays on SDK v1, which starts faster than v2. Revisit v1
+versus v2 when the UI work needs `@modelcontextprotocol/ext-apps`, which
+depends on the v2 packages.
 
 ## 11. Reproduction
 
@@ -901,4 +925,32 @@ const summarize = a => ({ n: a.length, median: q(a, 0.5), p25: q(a, 0.25), p75: 
   fs.rmSync(workspace, { recursive: true, force: true, maxRetries: 5 });
   fs.rmSync(envRoot, { recursive: true, force: true, maxRetries: 5 });
 })().catch(error => { console.error(error); process.exitCode = 1; });
+```
+
+### .artifacts/bundler/ceiling-td.cjs
+
+```js
+// Builds the SDK v1 and v2 ceiling servers with tsdown (the adopted bundler). Scratch tooling.
+const path = require('node:path'); const { pathToFileURL } = require('node:url');
+(async () => {
+  const { build } = await import(pathToFileURL(path.join(__dirname, 'tsdown-tool/node_modules/tsdown/dist/index.mjs')).href);
+  const common = { config: false, format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false, clean: false,
+    minify: true, dts: false, report: false, logLevel: 'warn', checks: { legacyCjs: false }, deps: { alwaysBundle: [/.*/], onlyBundle: false },
+    inputOptions: { resolve: { mainFields: ['module', 'main'] } }, outputOptions: { keepNames: true, comments: false } };
+  await build({ ...common, cwd: path.resolve(__dirname, '../..'), entry: { 'sdk-v1': path.join(__dirname, 'ceiling/sdk.ts') }, outDir: path.join(__dirname, 'ceiling/td') });
+  await build({ ...common, cwd: path.join(__dirname, 'sdk-v2'), entry: { 'sdk-v2': path.join(__dirname, 'sdk-v2/v2.ts') }, outDir: path.join(__dirname, 'ceiling/td') });
+})().catch(e => { console.error(e); process.exitCode = 1; });
+```
+
+### .artifacts/bundler/sdk-v2/v2.ts
+
+```ts
+import { Server } from '@modelcontextprotocol/server';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import { tools } from './tools';
+const server = new Server({ name: 'ceiling', version: '1.0.0' }, { capabilities: { tools: {} } });
+server.setRequestHandler('tools/list', async () => ({ tools }));
+server.setRequestHandler('tools/call', async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+void server.connect(new StdioServerTransport());
+process.stdin.once('end', () => process.exit(0));
 ```

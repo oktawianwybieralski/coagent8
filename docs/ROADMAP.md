@@ -1190,8 +1190,12 @@ Work items:
   and check `npm view coagent8 dist-tags`. The placeholder is needed only when beta 2
   is not published before the deadline.
 - [ ] Publish the history to GitHub through pull requests.
-- [ ] Ship third-party license notices for the bundled dependencies
-  (`THIRD_PARTY_NOTICES`) from beta 2.
+- [x] Ship third-party license notices for the bundled dependencies
+  (`THIRD_PARTY_NOTICES`) from beta 2. The build writes
+  `dist/THIRD_PARTY_NOTICES.txt` from the packages that reach the bundle and
+  fails without a license file; the bundle carries no license comments; the
+  consumer smoke test asserts both (`5ab841f`,
+  [BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md) section 8).
 
 ### `RC-001` - freeze, validate and accept 1.0.0-rc.1 (and rc.2 if needed)
 

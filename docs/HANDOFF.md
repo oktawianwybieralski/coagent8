@@ -24,7 +24,7 @@ regression test derived from the audit reproduction:
 | Finding | Milestone | Done when | Status |
 | --- | --- | --- | --- |
 | AUD-P0-1 | `WINDOWS-001` | Layered teardown: protocol interrupt (Claude, Codex), then the owned root handle or POSIX group; no PID, PPID, snapshot or polling anywhere; see the decision record in `WINDOWS-001` | Implemented on `fix/windows-process-identity`, not yet merged |
-| AUD-P0-2 | `REDACTION-002` | Ordinary code in answers round-trips unchanged; credential formats are still redacted | Open |
+| AUD-P0-2 | `REDACTION-002` | Ordinary code in answers round-trips unchanged; credential formats are still redacted | Implemented on `fix/redaction-output-integrity` (`8555d0c`), not yet merged |
 | AUD-P0-3 | `HISTORY-002` | Streamed answers persist within a small constant factor of their size; archive failures are warnings; a full archive never blocks a CLI launch | Open |
 | AUD-P1-3 | `HISTORY-002` | Bookkeeping failures never discard a successful answer | Open |
 | AUD-P1-1 | `ROUTING-MIGRATE-001` | One cooldown write per rate-limited turn, verified through the controller sequence | Open |
@@ -70,6 +70,17 @@ Evidence is recorded in the roadmap under `WINDOWS-001` and `CHANGELOG-001`:
 - Not verified: a live Codex turn and `turn/interrupt`, macOS, and the GitHub
   API path of the release notes.
 
+Later topic branches are stacked linearly on it, each from the previous one. None
+is pushed:
+
+| Branch | Commits | Change |
+| --- | --- | --- |
+| `fix/redaction-output-integrity` | `82bdc9a`..`8555d0c` | `REDACTION-002`: credential-format redaction split from diagnostic redaction |
+| `chore/source-layout` | `6ccfd91`..`b99782d` | Source and test layout per module, `tooling/`, `.artifacts/`, dead code removed |
+| `build/node-24-minimum` | `c0c030f` | Node.js 24 minimum; CI on Node 24.x and 26.x |
+| `fix/hermetic-test-environment` | `076b59d` | `tests/run.cjs` runs the suite in a hermetic environment without real backend CLIs |
+| `perf/tsdown-bundle-comparison` | `a36a267`..`991b7e4` | Server bundle built with tsdown; no comments in the bundle; `dist/THIRD_PARTY_NOTICES.txt`; build tooling needs Node 24.11 (`devEngines`). Evidence: [BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md) |
+
 ## Verification
 
 Select checks with the [quality gate](../.agents/rules/04-quality-gate.md):
@@ -93,8 +104,9 @@ results in the project review before requesting an independent review by the Rev
      (`AUDIT-001`).
 3. Remaining execution order 1 blockers. Each is a separate topic branch and
    PR, with a regression test from the audit reproduction:
-   - `REDACTION-002` (AUD-P0-2);
-   - `HISTORY-002` (AUD-P0-3, AUD-P1-3);
+   - `REDACTION-002` (AUD-P0-2), implemented on `fix/redaction-output-integrity`;
+   - `HISTORY-002` (AUD-P0-3, AUD-P1-3), next: topic branch
+     `fix/history-archive-integrity` from `perf/tsdown-bundle-comparison`;
    - `ROUTING-MIGRATE-001` (AUD-P1-1);
    - `ERRORS-001` (AUD-P1-2);
    - `PACKAGE-001` (AUD-P1-10; it also removes the non-reproducible `dist/`
