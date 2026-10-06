@@ -40,7 +40,7 @@ flowchart TD
 
 ## Coupling that remains
 
-The [independent audit at ad59f05](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05)
+The [independent audit at c265cdf](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
 found boundary defects in the current implementation. The
 [roadmap](ROADMAP.md#audit-remediation-index) tracks their removal.
 

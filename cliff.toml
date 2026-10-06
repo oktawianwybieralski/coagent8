@@ -36,11 +36,11 @@ body = """
 {% endfor -%}
 {% endfor %}
 """
-# The 1.0.0-beta.1 development line was squashed into one commit (67d28ce) with a
-# one-line subject. Its curated description is kept here as the oldest entry;
-# `npm run changelog` generates everything after it.
+# 1.0.0-beta.1 is the first commit of the history (tag v1.0.0-beta.1), a release
+# commit that the type filter omits. Its curated description is kept here as the
+# oldest entry; `npm run changelog` generates everything after the tag.
 footer = """
-## Baseline: 1.0.0-beta.1 development line ([`67d28ce`](https://github.com/oktawianwybieralski/coagent8/commit/67d28ce343c5b9bec81bedbb9f942f86e884ee54))
+## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
 ### Added
 - Canonical tool surface: `consult` (with `task_type`), `review`, `doctor`,
@@ -51,6 +51,8 @@ footer = """
   without invoking a backend.
 - Optional `setup`, `repair` and `status` commands for Codex, Claude Code and agy
   host registration, reused by the VS Code extension.
+- Claude Code backend in restricted read-only mode with streaming and resume.
+- Claude Code subscription quota read from `/usage` before routing.
 - Native Gemini (`agy`) quota inspection in `doctor`.
 - Focused test file selection in `tests/run.cjs`.
 
@@ -59,6 +61,7 @@ footer = """
 - Backend resolution no longer writes the default backend to the configuration.
 - Hidden PowerShell windows for Windows process supervision and tests.
 - License changed to GPL-3.0-only.
+- Product and npm package renamed to CoAgent8 (`coagent8`).
 
 ### Deprecated
 - Tools `analyze`, `debug` and `implement`; use `consult` with `task_type`.
@@ -66,7 +69,11 @@ footer = """
 
 ### Fixed
 - Gemini sandbox-denial handling no longer reports valid results as duplicates.
-- Escaped and structured Windows home paths are redacted in diagnostics."""
+- Escaped and structured Windows home paths are redacted in diagnostics.
+- Claude Code events require `init`, `inspectQuota` is version-gated and
+  sessions are hardened.
+- Adapter startup errors keep their diagnostics; billing failures map to
+  authentication errors."""
 trim = false
 # One blank line between blocks.
 postprocessors = [

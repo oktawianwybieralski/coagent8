@@ -10,20 +10,21 @@ compatible MCP host can ask Codex, Claude Code or Antigravity (`agy`, the Gemini
 adapter) for help and receive public output through a read-only execution profile.
 Use **CoAgent8 Review** to get an independent code review from a separate agent in a read-only sandbox.
 
-The current package is `1.0.0-beta.1`; this version label is not release approval.
-Releases follow beta 1, beta 2, release candidates and then 1.0.0; see the
+The npm package `1.0.0-beta.1` only reserves the package name; the first release
+for testers is `1.0.0-beta.2`. Releases follow beta 2, beta 3, release candidates
+and then 1.0.0; see the
 [release sequence](docs/ROADMAP.md#release-sequence).
 The [roadmap](docs/ROADMAP.md) prioritizes quiet Windows operation, ordinary MCP
 use and a smaller execution path. `consult` returns plain answers; optional
 durable history is a planned change, not a current runtime option.
 
-> **Known issues.** An [independent audit](docs/PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05)
-> of `ad59f05` found release blockers:
+> **Known issues.** An [independent audit](docs/PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
+> of `c265cdf` found release blockers:
 > - Windows process teardown can match unrelated processes through stale parent PIDs.
 > - Secret redaction rewrites ordinary code in answers.
 > - Long streamed answers can fill the history archive and block executions.
 >
-> See the [runtime contract's known deviations](docs/RUNTIME_CONTRACT.md#7-known-deviations-audit-at-ad59f05)
+> See the [runtime contract's known deviations](docs/RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf)
 > and the [roadmap](docs/ROADMAP.md#audit-remediation-index).
 
 ## Connect through MCP

@@ -5,20 +5,20 @@ it inspected. [ROADMAP.md](ROADMAP.md) owns the resulting work items, order and
 acceptance; it references the `AUD-*` finding IDs defined here. A finding describes
 its snapshot, not later trees, and a historical result is not fresh validation.
 
-Commit SHAs in this document were updated on 2026-10-06, when AI co-author
-trailers were removed from the commit messages; the trees are unchanged (the
-audit snapshot `ad59f05` was `c265cdf`, `7368cf5` was `ab04a59`).
+The snapshots in this document predate `v1.0.0-beta.1`, the first commit of the
+repository history. Their commits are kept in the owner's offline archive of the
+earlier development history, not in this repository.
 
 | Section | Snapshot | Status |
 | --- | --- | --- |
-| [Independent audit](#independent-audit-at-ad59f05) | `ad59f05` on `feat/routing-migrate-quota` | Current; verdict `BLOCKED` |
+| [Independent audit](#independent-audit-at-c265cdf) | `c265cdf` on `feat/routing-migrate-quota` | Current; verdict `BLOCKED` |
 | [Product reassessment](#product-reassessment-at-2e87bc4) | `2e87bc4` | Superseded where the audit disagrees |
 | [Earlier review](archive/PROJECT_REVIEW_4b2c72b.md) | `4b2c72b` | Archived historical evidence |
 
-## Independent audit at ad59f05
+## Independent audit at c265cdf
 
 **Date:** 2026-10-05. **Auditor:** Claude Code in the Reviewer role, at the owner's
-request. **Snapshot:** `ad59f05` with a clean working tree.
+request. **Snapshot:** `c265cdf` with a clean working tree.
 **Verdict:** `BLOCKED` - 3 P0 and 11 P1 findings.
 
 ### Method and evidence boundaries
@@ -114,7 +114,7 @@ request. **Snapshot:** `ad59f05` with a clean working tree.
    was dead, including `nextcloud.exe`, `Focusrite Notifier.exe`,
    `RtkAudUService64.exe` and `SecurityHealthSystray.exe` (all with PPID 10224).
    None is on the name denylist. `explorer.exe` is the textbook stale-parent orphan
-   because its parent, `userinit.exe`, exits at logon. Commit `7368cf5` starts its
+   because its parent, `userinit.exe`, exits at logon. Commit `ab04a59` starts its
    denylist with `explorer`, which is consistent with this mechanism.
 4. **The name denylist treats the symptom**
    ([process.ts:177](../src/execution/process.ts#L177),
@@ -508,7 +508,7 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 
 ### Documentation claims corrected by this audit
 
-| Claim | Location before consolidation | Reality at `ad59f05` |
+| Claim | Location before consolidation | Reality at `c265cdf` |
 | --- | --- | --- |
 | Teardown sweeps "never target system processes or desktop shell under any circumstances" | `HANDOFF.md` | Only listed names are protected; identity is never validated (AUD-P0-1) |
 | `smart_quota` "combines proactive headroom scoring (Gemini)" | `HANDOFF.md` | Headroom is ignored; a test asserts the opposite (AUD-P1-4) |
@@ -536,7 +536,7 @@ calls, desktop reproduction or performance measurements in this reassessment.
 The user subsequently requested integration of these conclusions into the plan
 and consolidation of documentation. [ROADMAP.md](ROADMAP.md) owns the resulting
 priorities and acceptance criteria. Where this section disagrees with the
-[independent audit](#independent-audit-at-ad59f05), the audit supersedes it.
+[independent audit](#independent-audit-at-c265cdf), the audit supersedes it.
 
 The core is a useful MCP-to-CLI bridge. The avoidable complexity is the mandatory
 path through advisory audit formatting, archival storage and repeated probes,

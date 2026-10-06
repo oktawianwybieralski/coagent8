@@ -1,8 +1,9 @@
 # CoAgent8 roadmap to v1.0.0
 
-**Next release:** `1.0.0-beta.1`. **Current package version:** `1.0.0-beta.1`.
-**Direction updated:** 2026-10-05. **Beta 1 readiness:** Blocked by the
-[independent audit at `ad59f05`](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05)
+**Next release:** `1.0.0-beta.2`, the first release for testers. **Current package
+version:** `1.0.0-beta.1`, the npm name placeholder (`REPO-001`).
+**Direction updated:** 2026-10-06. **Beta 2 readiness:** Blocked by the
+[independent audit at `c265cdf`](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
 (3 P0 and 11 P1 findings).
 
 This is the single active implementation and acceptance plan for the 1.0.0
@@ -18,29 +19,32 @@ installation-first sequence in the earlier review and handoff.
 
 ## Release sequence
 
-1.0.0 ships through two betas and up to two release candidates. Betas go to
+After the `1.0.0-beta.1` name placeholder, 1.0.0 ships through two betas for
+testers (`beta.2`, `beta.3`) and up to two release candidates. Betas go to
 invited testers, who report problems as GitHub issues (the `issue` tool prepares
 a sanitized, prefilled report). Release candidates follow only when beta feedback
 contains no open P0/P1 defects.
 
 | Stage | Version | Audience | Entry gate |
 | --- | --- | --- | --- |
-| Beta 1 | `1.0.0-beta.1` | Invited testers | Execution order 1 complete (all audit blockers); `BETA-001` checklist |
-| Beta 2 | `1.0.0-beta.2` | Invited testers, wider circle | Execution order 2 complete; no open P0/P1 issue from beta 1 |
+| Beta 1 | `1.0.0-beta.1` | None: npm name placeholder (2026-10-05), first commit of the history | - (`REPO-001`) |
+| Beta 2 | `1.0.0-beta.2` | Invited testers | Execution order 1 complete (all audit blockers); `BETA-001` checklist |
+| Beta 3 | `1.0.0-beta.3` | Invited testers, wider circle | Execution order 2 complete; no open P0/P1 issue from beta 2 |
 | RC 1 | `1.0.0-rc.1` | Release candidate | Execution orders 3-4 complete or explicitly deferred; scope frozen; `RC-001` checklist |
 | RC 2 | `1.0.0-rc.2` | Only if needed | Release-readiness corrections to RC 1 only |
 | Final | `1.0.0` | Public | Accepted RC; final release PR to `main` per [Git governance](../.agents/rules/02-git-workflow.md) |
 
 All 1.0.0 work lands on the release branch `release/v1.0.0` through
 squash-merged pull requests from topic branches. Each prerelease stage is an
-annotated tag on that branch (`v1.0.0-beta.1`, `v1.0.0-beta.2`, `v1.0.0-rc.1`);
+annotated tag on that branch (`v1.0.0-beta.2`, `v1.0.0-beta.3`, `v1.0.0-rc.1`);
 the final release is a PR from `release/v1.0.0` to `main`, tagged `v1.0.0`.
 Branching, commit, pull request, versioning, changelog and release procedures
 are defined in [Git governance](../.agents/rules/02-git-workflow.md).
 
 Every stage publishes the exact artifact that passed its gate:
 - prerelease versions are published as GitHub prereleases and, optionally, under
-  the npm dist-tag `next`, never `latest`;
+  the npm dist-tag `next`, never `latest`, which holds the `0.0.1` name
+  placeholder until 1.0.0;
 - a content change after a gate passes produces the next version number, not a
   replacement artifact under the same version.
 
@@ -179,7 +183,7 @@ evidence that measures the claim; source inspection alone is not runtime evidenc
 ## Audit remediation index
 
 Every P0/P1 finding from the
-[independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05) has
+[independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf) has
 exactly one owning milestone below. P2 findings are owned as listed; P3 nits are
 folded into `SIMPLIFY-001`.
 
@@ -214,9 +218,9 @@ folded into `SIMPLIFY-001`.
 | Order | Work | Acceptance |
 | --- | --- | --- |
 | Done | `WINDOWS-001` (window suppression), `VERIFY-SCOPE-001` (runner selection), `STARTUP-001`, `SURFACE-001`, `CONSULT-001` | Recorded below; window suppression is in source but not in the committed bundle until `PACKAGE-001` |
-| 1 (gates beta 1) | `AUDIT-001` blockers: `WINDOWS-001` process identity, `REDACTION-002`, `HISTORY-002` archive isolation, `ROUTING-MIGRATE-001` cooldown fix, `ERRORS-001` typed errors, `PACKAGE-001`; `CHANGELOG-001` | No teardown without verified identity; answers unaltered except credential formats; archive failures never fail or block a turn; parsed resets survive; no unknown error reported as `INPUT_LIMIT`; no build output in Git. Each with a regression test derived from the audit reproduction |
-| 2 (gates beta 2), owner may reorder | `CLAUDE-BACKEND-001`: Claude Code in restricted read-only mode with streaming and resume | Subscription authentication; per-run read-only check; typed failures from stream-json; adapter tests green in CI |
-| 2 (gates beta 2) | Remaining audit P1: `EXEC-001` probes, argv and consent; `CLI-INTERACT-001` forward compatibility; `SESSION-001` resource isolation; `LOCKS-001`; `WINDOWS-001` supervision cost | One cached probe per backend and no probe in `execute`; validated model identifiers; consent not assertable by the caller; unknown agy events tolerated; resources honor workspace ownership; no permanent lease |
+| 1 (gates beta 2) | `AUDIT-001` blockers: `WINDOWS-001` process identity, `REDACTION-002`, `HISTORY-002` archive isolation, `ROUTING-MIGRATE-001` cooldown fix, `ERRORS-001` typed errors, `PACKAGE-001`; `CHANGELOG-001` | No teardown without verified identity; answers unaltered except credential formats; archive failures never fail or block a turn; parsed resets survive; no unknown error reported as `INPUT_LIMIT`; no build output in Git. Each with a regression test derived from the audit reproduction |
+| 2 (gates beta 3), owner may reorder | `CLAUDE-BACKEND-001`: Claude Code in restricted read-only mode with streaming and resume | Subscription authentication; per-run read-only check; typed failures from stream-json; adapter tests green in CI |
+| 2 (gates beta 3) | Remaining audit P1: `EXEC-001` probes, argv and consent; `CLI-INTERACT-001` forward compatibility; `SESSION-001` resource isolation; `LOCKS-001`; `WINDOWS-001` supervision cost | One cached probe per backend and no probe in `execute`; validated model identifiers; consent not assertable by the caller; unknown agy events tolerated; resources honor workspace ownership; no permanent lease |
 | 3 (gates RC 1) | `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002` remainder, `SIMPLIFY-001`, audit P2 items | Safe auto-resume; activity liveness; deletions and deduplication with behavior preserved |
 | 4 (gates RC 1) | `INSTALL-001`, optional integrations | Setup/repair isolated from core and bundled separately; VSIX and host presentation verified only where supported |
 | 5 (RC and final) | Remaining correctness, documentation and `RC-001`: candidate acceptance | Concrete milestone evidence; frozen scope; exact package passes full CI matrix and independent Reviewer approval |
@@ -366,7 +370,7 @@ Work items:
   - Claude and Codex adapter fixtures speak the new protocols;
   - no PowerShell or CIM helper is launched by a consult.
 
-  Evidence (2026-10-06, Windows 11, Node 22.20, commit `6a83824` on
+  Evidence (2026-10-06, Windows 11, Node 22.20, commit `ca8cf88` on
   `fix/windows-process-identity`):
   - `tests/process.test.js` covers each property above. The "no helper" property
     is asserted statically: no source file references CIM, `taskkill`,
@@ -383,11 +387,11 @@ Work items:
   - Linux (Docker `node:22`, Node 22.23.3, WSL2 kernel 6.6): the process,
     Claude, Codex and Gemini suites pass, including the POSIX-only grace tests.
     The exception is the Codex `probe` test, which fails identically on the
-    pre-branch revision `43378c2~1`. Without Codex credentials it reports
+    pre-branch revision `0c11032~1`. Without Codex credentials it reports
     `unauthenticated`, which the assertion does not allow. macOS is covered by
     the CI matrix only.
 - [ ] Open acceptance: one live Codex app-server turn, resume and
-  `turn/interrupt` before beta 1. The owner authorizes the model calls.
+  `turn/interrupt` before beta 2. The owner authorizes the model calls.
 
 Gemini backend (agy) termination:
 
@@ -952,12 +956,13 @@ The structural migration is implemented; final release validation remains pendin
 
 ## Release acceptance and deferred work
 
-### `BETA-001` - publish 1.0.0-beta.1 and 1.0.0-beta.2 to invited testers
+### `BETA-001` - publish 1.0.0-beta.2 and 1.0.0-beta.3 to invited testers
 
 **Status:** Blocked by `AUDIT-001`. Testers run CoAgent8 on their own desktops,
-so no beta ships while a P0 finding is open.
+so no beta ships while a P0 finding is open. `1.0.0-beta.1` is the npm name
+placeholder, not a release for testers (`REPO-001`).
 
-Beta 1 gate:
+Beta 2 gate (first release for testers):
 - [ ] Execution order 1 is complete: every audit blocker is closed in its owning
   milestone with a regression test, and the audit reproductions pass against the
   candidate.
@@ -969,9 +974,9 @@ Beta 1 gate:
   - a GitHub bug-report issue template that asks for the `issue` tool output,
     `doctor` output, OS, Node version and backend CLI versions;
   - a short tester guide in the README (install, register in a host, report a bug).
-- [ ] Write the beta 1 GitHub release notes with known issues and security
+- [ ] Write the beta 2 GitHub release notes with known issues and security
   notes. These come from the open audit findings in
-  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-deviations-audit-at-ad59f05);
+  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf);
   the changelog does not carry them (`CHANGELOG-001`).
 - [x] Create `CHANGELOG.md` (Keep a Changelog) with an Unreleased section.
 - [x] `CHANGELOG.md` is generated from the commit history (`CHANGELOG-001`).
@@ -981,16 +986,16 @@ Beta 1 gate:
 - [ ] Release with the prerelease procedure in
   [Git governance](../.agents/rules/02-git-workflow.md#prerelease-beta-or-release-candidate):
   - release PR;
-  - annotated tag `v1.0.0-beta.1` on `release/v1.0.0`;
+  - annotated tag `v1.0.0-beta.2` on `release/v1.0.0`;
   - artifacts built from the tag, with SHA-256 digests;
   - GitHub pre-release;
-  - optional npm `next`.
+  - npm dist-tag `next` (never `latest`).
 
-Beta 2 gate:
+Beta 3 gate:
 - [ ] Execution order 2 is complete.
-- [ ] Every beta 1 issue is triaged. No open P0/P1 issue remains; deferred issues
+- [ ] Every beta 2 issue is triaged. No open P0/P1 issue remains; deferred issues
   have a recorded decision.
-- [ ] Same verification and publication steps as beta 1.
+- [ ] Same verification and publication steps as beta 2.
 
 An independent review by the Reviewer is required for each beta's changes before merge,
 as for any PR. The hash-bound release approval applies from RC 1.
@@ -998,7 +1003,7 @@ as for any PR. The hash-bound release approval applies from RC 1.
 ### `CHANGELOG-001` - changelog generated from the commit history
 
 **Status:** Done on `fix/windows-process-identity` (2026-10-06). The first
-release commit (beta 1) is the first real generation.
+release commit (beta 2) is the first real generation.
 
 Rationale:
 - Squash-merged PR titles and bodies on `release/v1.0.0` are Conventional
@@ -1040,15 +1045,15 @@ Decision:
 
 Work items:
 - [x] Add git-cliff 2.14.2 (exact pin) and `cliff.toml`. `npm run changelog`
-  runs `git-cliff ... 67d28ce..HEAD`. In a release PR, `-- --tag vX` places the
+  runs `git-cliff ... v1.0.0-beta.1..HEAD`. In a release PR, `-- --tag vX` places the
   commits since the previous tag under that version.
 - [x] Migrate the hand-written `[Unreleased]` section.
-  - The squashed development line `67d28ce` keeps its curated text as the
-    baseline at the end of the file (`cliff.toml` footer).
+  - The 1.0.0-beta.1 release (tag `v1.0.0-beta.1`) keeps its curated text as
+    the oldest entry at the end of the file (`cliff.toml` footer).
   - The hand-written entries for later commits were dropped. Those commits are
     on topic branches; their SHAs disappear when the branch is squash-merged, so
     their entries come from the squash commit in the release commit.
-  - The known-issues and security note moves to the beta 1 release notes
+  - The known-issues and security note moves to the beta 2 release notes
     (`BETA-001`).
 - [x] Update [Git governance](../.agents/rules/02-git-workflow.md) sections 3, 5
   and 6 and `AGENTS.md`.
@@ -1069,7 +1074,7 @@ Work items:
   contributors list) on the first real release PR. It needs PRs that exist on
   GitHub.
 - [x] Acceptance:
-  - On this branch, `git-cliff ... 67d28ce..67d28ce` (the state of
+  - On this branch, `git-cliff ... ca600a1..ca600a1` (the state of
     `release/v1.0.0`) reproduces the committed `CHANGELOG.md` without a diff.
   - In a scratch clone of `release/v1.0.0`, a simulated squash commit and
     `--tag v1.0.0-beta.1` produced a `## [1.0.0-beta.1] - <date>` section whose
@@ -1077,9 +1082,53 @@ Work items:
   - `git diff --check` passes. The output has single blank lines and one
     trailing newline.
   - Release notes in the same scratch clone, offline:
-    - beta 1 (range `67d28ce..HEAD`) listed only the simulated PRs #6-#9;
+    - beta 1 (range `ca600a1..HEAD`) listed only the simulated PRs #6-#9;
     - after a `v1.0.0-beta.1` tag, beta 2 listed only #11 with the compare link
       `v1.0.0-beta.1...v1.0.0-beta.2`.
+  - These checks predate `REPO-001`: their SHAs belong to the earlier history.
+    Re-check on 2026-10-06: `npm run changelog` reproduces the committed file;
+    for a range without commits, git-cliff adds an empty `[Unreleased]` heading,
+    which the release commit replaces with `--tag`.
+
+### `REPO-001` - history from beta 1, npm name placeholder
+
+**Status:** History rewritten locally (2026-10-06). The npm steps are due before
+the unpublish window closes on 2026-10-08 22:59 UTC.
+
+Decisions (owner, 2026-10-06):
+- The license stays GPL-3.0-only. Developers may use CoAgent8 freely, including
+  at work; nobody may close the code and sell it as their own product.
+- The repository history starts at `v1.0.0-beta.1`, the exact source of the npm
+  package `coagent8@1.0.0-beta.1`. Earlier development is kept only in the
+  owner's offline archive and is never pushed again. Its first days
+  (2026-10-02 to 2026-10-04, OmniAgent/SynAgent) were public under the MIT
+  license; publishing that history again would republish MIT-licensed code.
+- Commits carry no AI attribution
+  ([Git governance](../.agents/rules/02-git-workflow.md) section 2); existing AI
+  co-author trailers were removed from the history.
+- `coagent8@1.0.0-beta.1` was published only to reserve the package name. npm
+  versions are immutable, so the first release for testers is `1.0.0-beta.2`.
+- npm placeholder: a `0.0.1` package without the CoAgent8 code holds the name and
+  the `latest` dist-tag until 1.0.0; running it prints how to install the
+  current beta (`coagent8@next`). `1.0.0-beta.1`, which contains code with open
+  audit P0 findings, is unpublished after the placeholder is live. Unpublishing
+  the only version would remove the whole package and free the name after 24
+  hours, so the order matters.
+- The public GitHub repository was deleted and recreated on 2026-10-06; its
+  `main` holds only GitHub's initial commit. This history reaches it through
+  pull requests with green CI.
+
+Work items:
+- [x] Offline backups of all refs, restore-tested.
+- [x] History starts at `v1.0.0-beta.1` (annotated tag); trees, authors and dates
+  of the replayed commits are unchanged; no commit carries an MIT license or an
+  AI co-author trailer.
+- [ ] Owner, before 2026-10-08 22:59 UTC: `npm publish` the `0.0.1` placeholder
+  (dist-tag `latest`), then `npm unpublish coagent8@1.0.0-beta.1`, then check
+  `npm view coagent8 dist-tags` (`latest: 0.0.1`).
+- [ ] Publish the history to GitHub through pull requests.
+- [ ] Ship third-party license notices for the bundled dependencies
+  (`THIRD_PARTY_NOTICES`) from beta 2.
 
 ### `RC-001` - freeze, validate and accept 1.0.0-rc.1 (and rc.2 if needed)
 

@@ -51,8 +51,8 @@
     "prepack": "npm run build",
     "test:coverage": "c8 --all --include=src/**/*.ts --check-coverage --statements=70 --lines=70 --branches=70 --functions=75 --reporter=text --reporter=json-summary --reports-dir=tests/artifacts/coverage node tests/run.cjs",
     "test:consumer": "node tests/consumer/smoke.cjs",
-    "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md 67d28ce..HEAD",
-    "release-notes": "git-cliff --config cliff.release-notes.toml --unreleased 67d28ce..HEAD"
+    "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md v1.0.0-beta.1..HEAD",
+    "release-notes": "git-cliff --config cliff.release-notes.toml --unreleased v1.0.0-beta.1..HEAD"
   },
   "keywords": [
     "cli",
