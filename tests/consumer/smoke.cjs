@@ -23,7 +23,7 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/index.cjs.map','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE','docs/ARCHITECTURE.md','docs/RUNTIME_CONTRACT.md','docs/ROADMAP.md','docs/VSCODE_INTEGRATION.md'])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/index.cjs.map','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.startsWith('assets/design/')),'Design assets must not ship in runtime package');

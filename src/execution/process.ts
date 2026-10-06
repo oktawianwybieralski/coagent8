@@ -206,7 +206,7 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
             const psScript = [
               '$now = [DateTime]::UtcNow.ToFileTimeUtc();',
               'Write-Output "# SNAPSHOT_AT $now";',
-              'Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {',
+              'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate -ErrorAction SilentlyContinue | ForEach-Object {',
               '  if ($_.ProcessId -gt 4 -and $_.CreationDate) {',
               '    "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.ToFileTimeUtc())"',
               '  }',
@@ -220,7 +220,7 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
             activeHelper = ps;
             helperTimeout = setTimeout(() => {
               try { ps.kill(); } catch {}
-            }, 1500);
+            }, 3000);
 
             let out = '';
             ps.stdout?.on('data', d => {
@@ -289,32 +289,28 @@ export function startDescendantTracking(proc: ChildProcess): () => void {
     return queryPromise;
   };
 
-  let timer1: NodeJS.Timeout | null = null;
-  let timer2: NodeJS.Timeout | null = null;
-  let intervalTimer: NodeJS.Timeout | null = null;
+  let pollTimer: NodeJS.Timeout | null = null;
 
-  timer1 = setTimeout(() => {
-    timer1 = null;
-    if (stopped) return;
-    void poll();
-    timer2 = setTimeout(() => {
-      timer2 = null;
-      if (stopped) return;
-      void poll();
-      intervalTimer = setInterval(() => {
-        if (stopped) return;
-        void poll();
-      }, 500);
-    }, 125);
-  }, 25);
+  const schedulePoll = (delayMs: number) => {
+    if (stopped || isTerminating) return;
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      if (stopped || isTerminating) return;
+      await poll();
+      if (!stopped && !isTerminating) {
+        schedulePoll(200);
+      }
+    }, delayMs);
+  };
+
+  schedulePoll(25);
 
   return () => {
     stopped = true;
     cimMutex.cancelWait(proc);
     cancelQueuedPolls.delete(proc);
-    if (timer1) { clearTimeout(timer1); timer1 = null; }
-    if (timer2) { clearTimeout(timer2); timer2 = null; }
-    if (intervalTimer) { clearInterval(intervalTimer); intervalTimer = null; }
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     if (helperTimeout) { clearTimeout(helperTimeout); helperTimeout = null; }
     if (activeHelper) {
       try { activeHelper.kill(); } catch {}
@@ -345,7 +341,7 @@ async function teardownWindowsDescendants(
         const psScript = [
           '$now = [DateTime]::UtcNow.ToFileTimeUtc();',
           'Write-Output "# SNAPSHOT_AT $now";',
-          'Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {',
+          'Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate -ErrorAction SilentlyContinue | ForEach-Object {',
           '  if ($_.ProcessId -gt 4 -and $_.CreationDate) {',
           '    "$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.ToFileTimeUtc())"',
           '  }',
@@ -360,7 +356,7 @@ async function teardownWindowsDescendants(
         const timer = setTimeout(() => {
           try { ps.kill(); } catch {}
           resolve(out);
-        }, 1500);
+        }, 3000);
 
         ps.stdout?.on('data', d => { out += d.toString('utf8'); });
         ps.on('close', () => { clearTimeout(timer); resolve(out); });
@@ -421,7 +417,7 @@ async function teardownWindowsDescendants(
         const timer = setTimeout(() => {
           try { killer.kill(); } catch {}
           resolve();
-        }, 1500);
+        }, 3000);
 
         killer.on('close', () => { clearTimeout(timer); resolve(); });
         killer.on('error', () => { clearTimeout(timer); resolve(); });

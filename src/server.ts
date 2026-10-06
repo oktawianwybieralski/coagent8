@@ -30,7 +30,7 @@ import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation } from './execution/controller.js';
 import type { ToolArguments } from './tools/arguments.js';
 
-type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inputSchema: { type: string; properties?: Record<string, object>; required?: string[] }; outputSchema?: { type: string; [key: string]: unknown } };
+export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inputSchema: { type: string; properties?: Record<string, object>; required?: string[] }; outputSchema?: { type: string; [key: string]: unknown } };
 
 const executionNames = new Set<string>([
   CANONICAL_TOOL_NAMES.CONSULT,
