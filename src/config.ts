@@ -1,8 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import type { ProviderId } from './conversation.js';
-import { CONFIG_CONSTANTS } from './constants.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './execution/stream.js';
@@ -25,12 +23,6 @@ export interface CoAgent8Config {
   toolProfile?: ToolProfile;
 }
 
-export const DEFAULT_CONFIG_DIR =
-  process.env[CONFIG_CONSTANTS.ENV_DIR] ||
-  path.join(os.homedir(), CONFIG_CONSTANTS.DIR_NAME);
-export const CONFIG_FILE =
-  process.env[CONFIG_CONSTANTS.ENV_CONFIG] ||
-  path.join(DEFAULT_CONFIG_DIR, CONFIG_CONSTANTS.FILE_NAME);
 export function getConfigFile(): string {
   return process.env.coagent8_CONFIG || path.join(getDataDir(), 'config.json');
 }
@@ -199,15 +191,6 @@ export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
     fs.renameSync(tmpPath, configFile);
   } finally { fs.rmSync(tmpPath, { force: true }); }
   return merged;
-}
-
-export function getToolProfile(): ToolProfile {
-  return loadConfig().toolProfile || 'canonical';
-}
-
-export function getDefaultBackend(): BackendId | null {
-  const config = loadConfig();
-  return config.defaultBackend;
 }
 
 export function setDefaultBackend(backend: unknown): CoAgent8Config {

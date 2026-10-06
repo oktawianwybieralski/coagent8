@@ -105,11 +105,6 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_
   return task;
 }
 
-/** Compatibility for the adapter being migrated by the other author. */
-export function killProcessSafely(proc: ChildProcess | null | undefined): void {
-  if (proc) void terminateProcessTree(proc).finally(() => { proc.stdin?.destroy(); proc.stdout?.destroy(); proc.stderr?.destroy(); });
-}
-
 /**
  * Cancels all running commands (interrupting protocol sessions first) and stops every
  * remaining owned process.

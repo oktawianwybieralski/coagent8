@@ -19,18 +19,6 @@ export const BRAND = {
   GITHUB_REPO: 'coagent8',
 } as const;
 
-export const CONFIG_CONSTANTS = {
-  DIR_NAME: '.coagent8',
-  FILE_NAME: 'config.json',
-  ENV_DIR: 'coagent8_DIR',
-  ENV_CONFIG: 'coagent8_CONFIG',
-  ENV_SESSIONS_DIR: 'coagent8_SESSIONS_DIR',
-} as const;
-
-export const SESSION_CONSTANTS = {
-  PREFIX: 'syn_sess_',
-} as const;
-
 export const CANONICAL_TOOL_NAMES = {
   CONSULT: 'consult',
   REVIEW: 'review',
@@ -66,11 +54,5 @@ export const DEPRECATED_LEGACY_TOOL_NAMES = [
   CANONICAL_TOOL_NAMES.IMPLEMENT,
 ] as const;
 
-/**
- * Enumeration of all registered tool names across CoAgent8 v1.0 canonical profile and compact gateway.
- */
-export const TOOL_NAMES = CANONICAL_TOOL_NAMES;
-
 export type CanonicalToolName = (typeof CANONICAL_TOOL_NAMES)[keyof typeof CANONICAL_TOOL_NAMES];
-export type ToolName = CanonicalToolName;
 

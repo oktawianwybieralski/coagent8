@@ -59,15 +59,8 @@ test('StreamReducer manages message accumulation and terminal answer replacement
   assert.ok(!reducer.getFormattedOutput().includes('Initial analysis'));
 });
 
-test('StreamReducer tracks activity progress and tool lifecycle', () => {
-  const activities = [];
-  const reducer = new StreamReducer({
-    onProgress: act => activities.push(act),
-  });
-
-  reducer.recordActivity('Scanning AST nodes...');
-  reducer.recordActivity('Running verification matrix...');
-  assert.deepEqual(activities, ['Scanning AST nodes...', 'Running verification matrix...']);
+test('StreamReducer tracks tool lifecycle', () => {
+  const reducer = new StreamReducer();
 
   // Tool transitions
   assert.equal(reducer.recordTool('tool-1', 'ast_grep', 'active'), true);
@@ -139,15 +132,13 @@ test('strict byte budgets never exceed available space even with small budgets a
   assert.ok(Buffer.byteLength(reducer.getFormattedOutput(), 'utf8') <= 10);
 });
 
-test('activity and tool state bounds prevent memory leaks', () => {
-  const reducer = new StreamReducer({ maxActivities: 5, maxTools: 5 });
+test('tool state bounds prevent memory leaks', () => {
+  const reducer = new StreamReducer({ maxTools: 5 });
 
   for (let i = 0; i < 20; i++) {
-    reducer.recordActivity(`Activity step ${i}`);
     reducer.recordTool(`tool-${i}`, `name-${i}`, 'active');
   }
 
-  assert.ok(reducer.getActivities().length <= 5);
   assert.ok(reducer.getActiveTools().size <= 5);
 
   // Completion-only tool events must also strictly respect maxTools: 5

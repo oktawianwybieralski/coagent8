@@ -1,6 +1,5 @@
 export const PROVIDERS = ['codex', 'gemini', 'claude'] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
-export type RoutingTarget = ProviderId | 'auto' | 'smart_quota';
 export type TerminalStatus = 'completed' | 'failed' | 'cancelled' | 'timed_out';
 export const ERROR_CODES = ['CLI_NOT_FOUND', 'CLI_UNSUPPORTED', 'AUTH_REQUIRED', 'MODEL_UNAVAILABLE',
   'RATE_LIMITED', 'SESSION_INVALID', 'SESSION_BUSY', 'ABORTED', 'TIMEOUT', 'SANDBOX_UNAVAILABLE',

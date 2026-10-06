@@ -23,14 +23,7 @@ export interface CodexConfig {
   sandboxMode: string;
 }
 
-export function resolveCodexCommand(): { command: string; argsPrefix: string[] } {
-  if (process.env.CODEX_PATH) {
-    return { command: process.env.CODEX_PATH, argsPrefix: [] };
-  }
-  return { command: CODEX_EXE, argsPrefix: [] };
-}
-
-export const CODEX_CMD = resolveCodexCommand();
+export const CODEX_CMD: { command: string; argsPrefix: string[] } = { command: CODEX_EXE, argsPrefix: [] };
 
 export function readCodexConfig(customPath?: string): CodexConfig {
   const result: CodexConfig = {

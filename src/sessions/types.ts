@@ -29,18 +29,6 @@ export interface SessionRecord {
 }
 
 /**
- * Data stored in a filesystem lock file protecting active session turns.
- */
-export interface SessionLockData {
-  /** Unique token identifying turn ownership. */
-  token: string;
-  /** Process ID holding the lock. */
-  pid: number;
-  /** Timestamp when the lock was acquired. */
-  time: number;
-}
-
-/**
  * Generic result wrapper for session operations.
  */
 export interface SessionResult<T = void> {

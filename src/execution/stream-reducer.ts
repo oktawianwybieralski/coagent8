@@ -3,26 +3,18 @@ import { StringDecoder } from 'node:string_decoder';
 import { truncateToByteLength } from './stream.js';
 
 export interface StreamReducerOptions {
-  onProgress?: ((message: string) => void) | null;
   maxLineBuffer?: number;
   maxTotalBytes?: number;
   maxMessageBytes?: number;
   maxMessages?: number;
-  maxFallbackLines?: number;
-  maxActivities?: number;
   maxTools?: number;
-}
-
-export interface ActivityStep {
-  text: string;
-  timestamp: number;
 }
 
 /**
  * Unified Stream Reducer
  * Standardizes chunk buffering, multi-byte UTF-8 boundary preservation,
  * per-record line bounding, response assembly, terminal answer replacement,
- * activity tracking, and strict memory bounds across provider adapters.
+ * tool tracking, and strict memory bounds across provider adapters.
  */
 export class StreamReducer {
   private readonly decoder = new StringDecoder('utf8');
@@ -34,30 +26,21 @@ export class StreamReducer {
   private totalMessageBytes = 0;
   private readonly messageMap = new Map<string, string>();
   private readonly messageBytesMap = new Map<string, number>();
-  private readonly rawFallbackLines: string[] = [];
-  private readonly errorLines: string[] = [];
   private readonly activeTools = new Map<string, string>();
   private readonly finishedTools = new Set<string>();
-  private readonly activities: ActivityStep[] = [];
 
   readonly maxLineBuffer: number;
   readonly maxTotalBytes: number;
   readonly maxMessageBytes: number;
   readonly maxMessages: number;
-  readonly maxFallbackLines: number;
-  readonly maxActivities: number;
   readonly maxTools: number;
-  readonly onProgress: ((message: string) => void) | null;
 
   constructor(options: StreamReducerOptions = {}) {
     this.maxLineBuffer = options.maxLineBuffer ?? 64 * 1024;
     this.maxTotalBytes = options.maxTotalBytes ?? 512 * 1024;
     this.maxMessageBytes = options.maxMessageBytes ?? 256 * 1024;
     this.maxMessages = options.maxMessages ?? 50;
-    this.maxFallbackLines = options.maxFallbackLines ?? 20;
-    this.maxActivities = options.maxActivities ?? 50;
     this.maxTools = options.maxTools ?? 50;
-    this.onProgress = options.onProgress ?? null;
   }
 
   /**
@@ -262,20 +245,6 @@ export class StreamReducer {
   }
 
   /**
-   * Records a user-visible or audit activity step with sliding window bounds.
-   */
-  recordActivity(activity: string): void {
-    if (!activity) return;
-    if (this.activities.length >= this.maxActivities) {
-      this.activities.shift();
-    }
-    this.activities.push({ text: activity, timestamp: Date.now() });
-    if (this.onProgress) {
-      this.onProgress(activity);
-    }
-  }
-
-  /**
    * Records tool state transition with bound protection. Returns true if transition was newly recorded.
    */
   recordTool(id: string, name: string, status: 'active' | 'done' | 'error'): boolean {
@@ -295,30 +264,6 @@ export class StreamReducer {
   }
 
   /**
-   * Records a diagnostic error line.
-   */
-  recordError(rawMsg: string, prefix = '[Error] '): void {
-    if (this.errorLines.length >= this.maxFallbackLines) return;
-    const maxLen = 500 - prefix.length;
-    let clean = String(rawMsg);
-    if (clean.length > maxLen) {
-      clean = clean.slice(0, maxLen - 3) + '...';
-    }
-    this.errorLines.push(`${prefix}${clean}`);
-  }
-
-  /**
-   * Records an unstructured non-JSON fallback line.
-   */
-  recordFallbackLine(line: string): void {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    if (this.rawFallbackLines.length < this.maxFallbackLines) {
-      this.rawFallbackLines.push(trimmed.slice(0, 500));
-    }
-  }
-
-  /**
    * Formats the consolidated output for terminal reporting.
    */
   getFormattedOutput(exitCode = 0, signal: NodeJS.Signals | null = null): string {
@@ -330,9 +275,6 @@ export class StreamReducer {
         return truncateToByteLength(joined, this.maxTotalBytes, this.maxTotalBytes >= 20 ? '\n...[truncated]' : '...');
       }
       return joined;
-    }
-    if (this.rawFallbackLines.length > 0) {
-      return this.rawFallbackLines.join('\n').trim();
     }
     if (exitCode === 0 && !signal) {
       return 'Task completed cleanly with no textual output.';
@@ -360,24 +302,12 @@ export class StreamReducer {
     return this.hasDiscardedOversizedLine || this.messageTruncated;
   }
 
-  getErrorLines(): string[] {
-    return [...this.errorLines];
-  }
-
-  getRawFallbackLines(): string[] {
-    return [...this.rawFallbackLines];
-  }
-
   getActiveTools(): Map<string, string> {
     return new Map(this.activeTools);
   }
 
   getFinishedTools(): Set<string> {
     return new Set(this.finishedTools);
-  }
-
-  getActivities(): ActivityStep[] {
-    return [...this.activities];
   }
 }
 

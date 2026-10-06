@@ -13,7 +13,6 @@ import type { ExecutionError } from '../../conversation.js';
 
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';
-export const GEMINI_EXE = process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 export const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];

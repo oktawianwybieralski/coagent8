@@ -892,11 +892,23 @@ preserved or explicitly migrated; deletion is not a contract change unless state
   mapping with one alias table. Merge the Codex and Gemini structured-error
   extractors. Validate arguments once at the server boundary (AUD-P2-4).
 - [ ] Drop the Gemini adapter's second timeout (AUD-P2-5).
-- [ ] Delete dead code (AUD-P2-6):
-  - the unused half of `StreamReducer`;
+- [x] Delete dead code (AUD-P2-6):
+  - the unused half of `StreamReducer` (`recordActivity`, `recordError`,
+    `recordFallbackLine` and the state, options and getters only they used);
   - `killProcessSafely`, `getProgressStage`, `getToolProfile`, `CONFIG_FILE`,
     `DEFAULT_CONFIG_DIR`, `resolveCodexCommand`, `SessionLockData`;
   - the unreachable truncation-string check in `git.ts`.
+
+  Also removed: `GEMINI_EXE`, `ProgressReporter`, `getDefaultBackend`,
+  `CONFIG_CONSTANTS`, `SESSION_CONSTANTS`, `TOOL_NAMES`, `ToolName`,
+  `RoutingTarget` and `hasExplicitDataDir`. Evidence: no reference remains in
+  `src`, `tests`, `extensions/vscode/src` or `scripts`; `npm run typecheck`
+  passes and the full suite (`node tests/run.cjs`) reports 202 tests, 200 pass,
+  2 skipped, the same inventory as before the deletion except two renamed
+  `tests/execution/stream-reducer.test.js` cases that no longer exercise
+  activities. `StreamReducer.pushChunk` and `flush` stay: the Codex collector
+  exposes them and `tests/backends/codex/collector.test.js` drives them,
+  although production reads app-server records through `line`.
 - [ ] Remove or implement phantom contract fields: `doctor.repair`,
   `doctor.workspace_path`, `resources.listChanged`, and the hardcoded doctor
   `security_policy` claims (AUD-P2-8).

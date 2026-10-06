@@ -1,9 +1,5 @@
 import { redactDiagnostic } from '../redaction.js';
 
-export function getProgressStage(elapsed: number, _type = 'general', backend = 'Agent'): string {
-  return `${backend} CLI running (${elapsed}s elapsed)`;
-}
-
 export type ProgressCallback = ((message: string | { message?: string }, progress?: number | null, total?: number | null) => void) & { close: () => void };
 
 export function createProgressReporter(

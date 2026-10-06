@@ -54,7 +54,7 @@ export async function runGit(
   if (result.status !== 'completed') {
     throw new Error(result.error?.message || result.stderr.trim() || `Git exited with code ${result.exitCode}`);
   }
-  if (result.isTruncated || result.stdout.includes('...[stdout truncated: buffer limit reached]')) {
+  if (result.isTruncated) {
     return result.stdout + '\n\n[Warning: Git diff exceeded buffer limit (4MB) and was truncated.]';
   }
   return result.stdout;

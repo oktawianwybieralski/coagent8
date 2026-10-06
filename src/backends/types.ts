@@ -103,13 +103,6 @@ export interface ExecutionOptions {
 }
 
 /**
- * Progress reporting callback function signature.
- */
-export interface ProgressReporter {
-  (info: { message?: string; percent?: number }): void;
-}
-
-/**
  * Unified contract implemented by all CLI backend adapters.
  */
 export interface CliAdapter {
