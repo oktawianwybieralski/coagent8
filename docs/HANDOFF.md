@@ -121,4 +121,6 @@ results in the project review before requesting an independent review by the Rev
    - release notes from `npm run release-notes`, plus known issues by hand;
    - verify the GitHub API path of the release notes.
 6. Then execution order 2: `EXEC-001`, caller-proof consent,
-   `CLI-INTERACT-001`, `SESSION-001` resource isolation and `LOCKS-001`.
+   `CLI-INTERACT-001`, `SESSION-001` resource isolation, `LOCKS-001` and
+   `CONTEXT-001` (token cost across MCP clients). The `CONTEXT-001`
+   resolved-model and agy-denial fixes are small and may land earlier.

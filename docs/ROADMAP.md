@@ -60,7 +60,8 @@ Every stage publishes the exact artifact that passed its gate:
 - clear tool contracts;
 - non-blocking startup;
 - the bounded refactoring in `SURFACE-001`, `EXEC-001`, `ROUTING-MIGRATE-001`,
-  `SESSION-001`, `HISTORY-002` and `SIMPLIFY-001`.
+  `SESSION-001`, `HISTORY-002` and `SIMPLIFY-001`;
+- lower token cost per turn and per call across MCP clients (`CONTEXT-001`).
 
 Supporting verification, documentation and correctness work accompanies the
 affected milestones. Each change requires its stated acceptance. An unchecked item
@@ -221,6 +222,7 @@ folded into `SIMPLIFY-001`.
 | 1 (gates beta 2) | `AUDIT-001` blockers: `WINDOWS-001` process identity, `REDACTION-002`, `HISTORY-002` archive isolation, `ROUTING-MIGRATE-001` cooldown fix, `ERRORS-001` typed errors, `PACKAGE-001`; `CHANGELOG-001` | No teardown without verified identity; answers unaltered except credential formats; archive failures never fail or block a turn; parsed resets survive; no unknown error reported as `INPUT_LIMIT`; no build output in Git. Each with a regression test derived from the audit reproduction |
 | 2 (gates beta 3), owner may reorder | `CLAUDE-BACKEND-001`: Claude Code in restricted read-only mode with streaming and resume | Subscription authentication; per-run read-only check; typed failures from stream-json; adapter tests green in CI |
 | 2 (gates beta 3) | Remaining audit P1: `EXEC-001` probes, argv and consent; `CLI-INTERACT-001` forward compatibility; `SESSION-001` resource isolation; `LOCKS-001`; `WINDOWS-001` supervision cost | One cached probe per backend and no probe in `execute`; validated model identifiers; consent not assertable by the caller; unknown agy events tolerated; resources honor workspace ownership; no permanent lease |
+| 2 (gates beta 3), owner may reorder | `CONTEXT-001`: token cost and single-call success; the resolved-model and agy-denial fixes may land earlier | Measured budgets enforced by tests; minimal `{"proposal": ...}` call succeeds; resolved model and workspace in every result; client acceptance recorded for Claude Code and agy |
 | 3 (gates RC 1) | `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002` remainder, `SIMPLIFY-001`, audit P2 items | Safe auto-resume; activity liveness; deletions and deduplication with behavior preserved |
 | 4 (gates RC 1) | `INSTALL-001`, optional integrations | Setup/repair isolated from core and bundled separately; VSIX and host presentation verified only where supported |
 | 5 (RC and final) | Remaining correctness, documentation and `RC-001`: candidate acceptance | Concrete milestone evidence; frozen scope; exact package passes full CI matrix and independent Reviewer approval |
@@ -628,6 +630,160 @@ execution order.
   A textual READY or PASS is not proof that a command ran or a release is approved.
 - [x] Verify plain answers, opt-in audit formatting, partial/truncated output and
   legacy calls.
+
+### `CONTEXT-001` - token cost and single-call success across MCP clients
+
+**Status:** Planned (measured 2026-10-06). Goal: the lowest token cost per turn and
+per call in Claude Code, Antigravity (agy) and Codex, and in any other MCP client,
+with one call sufficient for an ordinary request. The tool names, the six-tool
+surface, the separate `cancel` tool and the existing parameter names stay.
+
+**Client behavior** (evidence in brackets):
+
+| | Claude Code | agy (VS Code and CLI) | Codex | Other clients |
+| --- | --- | --- | --- | --- |
+| Result channel the model reads | `content` | `content` (agy transcripts) | `structuredContent` serialized as JSON; `content` ignored when it is present (`codex-rs/protocol/src/models.rs`) | usually `content` |
+| Result saved to a file | above 50,000 characters, or `_meta["anthropic/maxResultSizeChars"]` up to 500,000 (Claude Code MCP docs) | above about 4 KB: results of 3,950 B or less inline, 4,165 B or more saved as `output.txt` and read with an extra `view_file` step (over 200 MCP calls of several servers) | truncation budget of the model (Codex MCP docs) | varies |
+| Tool definitions | deferred; names and server instructions load at start | deferred; cached on disk as name, description and input schema, without `outputSchema` or icons | loaded upfront (`defer_loading: false`) | usually upfront |
+| Server instructions | read; truncated at 2,048 characters | cached as `instructions.md` | read; first 512 characters should stand alone | per specification |
+| MCP roots | `roots/list` answered with the launch directory plus added directories; `CLAUDE_PROJECT_DIR` set | unknown | apparently unsupported | per capability |
+| Tool timeout | long calls move to the background | no documented option; at least 2 minutes observed (a 108 s review completed) | 60 s by default (`tool_timeout_sec`) | varies |
+| Per-server configuration | `.mcp.json`, `~/.claude.json` | `~/.gemini/config/mcp_config.json` or `.agents/mcp_config.json`, with `cwd`, `env`, `disabled` and `disabledTools` (Antigravity MCP docs) | `config.toml` `[mcp_servers.<name>]` with `cwd`, `env` and `tool_timeout_sec` | varies |
+
+Behavior described by the Antigravity docs is limited to configuration. Its result
+channel, inline threshold and tool loading come only from the local measurements
+above.
+
+**Measured baseline:**
+- `tools/list` is 27.4 KB:
+  - icons 11.7 KB: the same 914 B PNG on all nine tools;
+  - `inputSchema` 8.3 KB;
+  - `outputSchema` 5.6 KB;
+  - descriptions 1.3 KB.
+
+  The model sees only names, descriptions and input schemas, about 9.6 KB.
+- No server instructions.
+- `doctor` returns 5.4 KB of indented JSON (5.6 KB as stored by agy): above the agy threshold, with the quotas
+  duplicated (`backends.<id>.quota` and `quotas`) and the static `security_policy` included.
+- Results report the requested alias (`opus`) instead of the model the backend
+  resolved. Claude reports it in `system/init`.
+- A real 8.4 KB review consisted of Evidence 2.7 KB, Fix 2.8 KB, Problem 1.7 KB and
+  envelope lines 1.2 KB.
+- An agy sandbox denial of one command fails the whole turn with
+  `SANDBOX_UNAVAILABLE` and discards the answer.
+
+Plan:
+
+- [ ] **Server instructions:** one sentence, because every client pays for it on
+  every turn: "Second opinion or code review from another local coding agent
+  (Codex, Claude Code, Antigravity) in a read-only sandbox." Rules needed only at
+  call time go into parameter descriptions, which are loaded only with the tool:
+  consent in `user_confirmed`, continuation in `session_handle`.
+- [ ] **Tool definitions:** prototype measured at 2.7 KB, or 3.4 KB with a trimmed
+  `outputSchema`, against 27.4 KB:
+  - one-line tool descriptions;
+  - parameter descriptions only where the name and enum are not enough;
+  - `reasoning_effort` as an enum;
+  - `outputSchema` limited to the fields actually sent.
+
+  The `analyze`, `debug` and `implement` aliases leave `tools/list` but stay
+  callable until 1.1.0. Measure whether the compact profile still saves anything
+  against the trimmed list; remove it if not.
+- [ ] **Icon:** advertise the single brand icon only in `serverInfo`, and only
+  when the negotiated protocol is `2025-11-25` or later. Context7 also declares its
+  icon only at server level, while GitHub MCP sets icons per toolset because each
+  toolset has a different icon. Keep the offline `data:` URI. Light and dark
+  variants are optional until a supported client displays icons. This saves
+  11.7 KB of transport per `tools/list`, not model tokens, which helps first launch.
+- [ ] **Single-call success:** the minimal call is `{"proposal": "..."}`:
+  - `backend` resolved automatically;
+  - workspace resolved from client roots;
+  - default model.
+
+  No `doctor` call is needed first. Every error states in one line what to do next,
+  for example `POLICY_DENIED: ask the user, then retry with user_confirmed: true`.
+  Input validation failures are tool execution errors (`isError: true`), not
+  protocol errors, so the model can correct itself, as specification 2025-11-25
+  recommends (SEP-1303). Clients without `structuredContent` support receive
+  the full result in `content`.
+- [ ] **Result in both channels, compact:**
+  - `content` leads with the answer and ends with a one-line footer, for example
+    `— claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (ready)`;
+  - `structuredContent` keeps the full `output` but omits `schemaVersion`,
+    `activity`, `historyAvailable` and empty or default fields, cutting about
+    300 B to about 100 B per result.
+
+  Both channels stay complete, because each client reads only one of them.
+  The specification recommends (SHOULD) that `content` also carry the serialized
+  `structuredContent` JSON. CoAgent8 deliberately sends markdown instead:
+  - Claude Code and agy read `content`;
+  - JSON escaping costs more tokens;
+  - Codex reads `structuredContent` anyway.
+
+  Record this as a known deviation in the runtime contract.
+- [ ] **Resolved model:**
+  - Claude from `system/init`;
+  - Codex from the `thread/start` response;
+  - agy from `init` when reported, otherwise the configured model, otherwise an
+    explicit `provider default`.
+
+  The session stores the concrete identifier. Governance still applies, because
+  its pattern matches `claude-opus-*`. `doctor` lists the Claude aliases instead
+  of an empty model list.
+- [ ] **Backend prompts:**
+  - review: Evidence at most two sentences with `file:line`, Fix one sentence, P3
+    one line, no preamble and no restated diff. Estimated saving about 45%,
+    bringing more reviews under the agy threshold. The envelope format and its
+    gate stay unchanged;
+  - consult: conclusion first, concise;
+  - shorter State Envelope instructions, from about 1.3 KB to about 0.6 KB;
+  - configurable extra diff exclusions (for example a generated `CHANGELOG.md`).
+    The current diff already uses `--unified=1` and excludes build output, maps
+    and lockfiles.
+- [ ] **`doctor`:**
+  - `detail: "summary"` (default; prototype 316 B, budget 1 KB) or `"full"`;
+  - `backend` filter;
+  - `quota: false` skips the slower quota probes;
+  - the full report goes in `structuredContent` without the duplicated quotas
+    and without `security_policy`.
+
+  This delivers the doctor phantom fields of AUD-P2-8 (owned by `SIMPLIFY-001`);
+  tick that item with the same evidence.
+- [ ] **Workspace:**
+  1. explicit `workspace_path`;
+  2. MCP roots, when the client declares the `roots` capability:
+     - one root is used;
+     - with several roots, as Claude Code reports after `--add-dir`, use the root
+       that contains the server working directory; otherwise require
+       `workspace_path`.
+
+     Cached per connection and refreshed on `notifications/roots/list_changed`;
+  3. owner decision: the server working directory, but never the home or a system
+     directory, or a hard requirement.
+
+  Every result reports `workspace` and its source, so no fallback is silent.
+  This delivers AUD-P2-9 (owned by `MCP-001`).
+- [ ] **Host setup:** CoAgent8 registration for Codex sets `tool_timeout_sec` to
+  1800, so reviews longer than the 60 s default can complete. The Antigravity
+  docs list no timeout option; measure the agy limit with a call longer than
+  5 minutes and document it.
+- [ ] **Owner decision:** treat an agy sandbox denial as a warning that keeps the
+  answer, as Claude `permission_denials` already are. A denial shows that the
+  sandbox works, not that it is missing.
+- [ ] **Budgets as regression tests:**
+  - server instructions at most 2,048 characters, first 512 self-contained;
+  - model-visible tool definitions at most 3 KB;
+  - doctor summary at most 1 KB;
+  - every execution result reports a concrete `model` and `workspace`.
+- [ ] **Client acceptance:** repeat the measurements in Claude Code and agy:
+  - result channel;
+  - inline threshold;
+  - instructions visible;
+  - roots.
+
+  Codex is unavailable now. Its behavior is taken from its source and docs and
+  needs one live call (`doctor`) with the rollout record inspected when it is
+  back. Record the results in the integration guide.
 
 ## 3. Smaller execution path, robust sessions and honest routing
 
