@@ -6,7 +6,7 @@ const { prepareBranding } = require('./branding.cjs');
 const start = performance.now();
 prepareBranding();
 esbuild.build({ entryPoints: ['src/index.ts'], outfile: 'dist/index.cjs', bundle: true,
-  platform: 'node', target: 'node20', format: 'cjs', sourcemap: true,
+  platform: 'node', target: 'node24', format: 'cjs', sourcemap: true,
   minify: true, keepNames: true, metafile: true, logLevel: 'warning', mainFields: ['module', 'main'],
 }).then(({ metafile }) => {
   const externalPackages = Object.values(metafile.outputs).flatMap(output => output.imports)

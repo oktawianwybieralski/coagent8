@@ -26,7 +26,7 @@ async function buildExtension() {
   await esbuild.build({
     entryPoints: [path.join(root, 'extensions/vscode/src/extension.ts')],
     outfile: path.join(output, 'dist/extension.cjs'),
-    bundle: true, platform: 'node', target: 'node20', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
+    bundle: true, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
   });
   console.log(`VS Code development extension built for MCP ${server.version}.`);
 }

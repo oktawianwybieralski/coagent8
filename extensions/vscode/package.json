@@ -27,7 +27,7 @@
           "type": "string",
           "default": "node",
           "scope": "machine",
-          "description": "Node.js 20+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH."
+          "description": "Node.js 24+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH."
         }
       }
     }

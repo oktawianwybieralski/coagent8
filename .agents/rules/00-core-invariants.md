@@ -20,7 +20,7 @@
 * **Direct pushes to `main` are strictly forbidden.** Under no circumstances may an agent or contributor commit or push directly to `main` during normal development. The sole permitted exception is an explicit, owner-authorized history recovery procedure using atomic force-with-lease for incident mitigation.
 * **Isolated Feature & Release Branches**: All development must occur on dedicated topic branches (`feat/*`, `fix/*`, `chore/*`) created from and targeting the active release branch (`release/vX.Y.Z`, currently `release/v1.0.0`); only final release and hotfix PRs target `main`. See [02-git-workflow](02-git-workflow.md).
 * **PR Squash-and-Merge**: Merging into a release branch or `main` is executed exclusively via GitHub Pull Requests with Squash and Merge (`gh pr merge --squash --delete-branch`), with a Conventional Commit title.
-* **Green Matrix Requirement**: The `main` branch must strictly remain 100% green across all continuous integration matrix jobs (Linux, macOS, Windows on Node 20 LTS and Node 22 LTS).
+* **Green Matrix Requirement**: The `main` branch must strictly remain 100% green across all continuous integration matrix jobs (Linux, macOS, Windows on Node 24 LTS and Node 26).
 * **Protected Review Gates**: No branch protection rules, required status checks, or Author-Reviewer review gates may be disabled or bypassed. Temporary bypass permissions must be revoked immediately after an authorized recovery.
 
 ---

@@ -32,7 +32,7 @@ root retains TypeScript 7 for `npm run typecheck`. The tooling package has its o
 lockfile and dependency tree so transitive tooling dependencies also resolve a
 compatible compiler. Install it with `npm ci --prefix tooling/documentation`; do not
 bypass peer dependency checks or replace the project compiler. Documentation tools
-require Node 20.19+, Node 22.13+, or Node 24+; CI uses current Node 20/22 releases.
+require Node 24+; CI uses current Node 24/26 releases.
 
 ## Comment conventions
 

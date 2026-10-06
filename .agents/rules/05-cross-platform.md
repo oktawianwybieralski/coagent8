@@ -8,7 +8,9 @@
 ## 1. Supported CI Environment Matrix
 CoAgent8 is verified across a 6-job matrix:
 * **Operating Systems:** Ubuntu (`ubuntu-latest`), macOS (`macos-latest`), Windows (`windows-latest`).
-* **Node.js LTS Versions:** Node 20.x and Node 22.x.
+* **Node.js Versions:** Node 24.x (LTS) and Node 26.x. The minimum supported
+  version is 24.0 (`engines` in `package.json`); older release lines are not
+  supported.
 
 ---
 
@@ -43,5 +45,5 @@ guarantees for window suppression.
    - Test teardown with owned fixture trees only, never by sweeping a live desktop.
 3. **Memory Limits & Stream Safety:**
    - Always enforce strict `maxBufferBytes` (512 KiB in `runCommand`, 4 MiB in `runGit`) and `StringDecoder` to prevent split UTF-8 corruption and memory exhaustion.
-4. **Node 20 Build Compatibility:**
-   - The standalone and VSIX builds use esbuild targeting Node 20. No Promise polyfill or tsdown preload is required.
+4. **Node 24 Build Compatibility:**
+   - The standalone and VSIX builds use esbuild targeting Node 24. No polyfill or preload is required.

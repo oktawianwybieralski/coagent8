@@ -34,7 +34,7 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   };
   const output = esbuild.buildSync({
     entryPoints: [path.resolve(__dirname, '../..', 'extensions/vscode/src/extension.ts')],
-    bundle: true, write: false, platform: 'node', target: 'node20', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
+    bundle: true, write: false, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
   }).outputFiles[0].text;
   const module = { exports: {} };
   vm.runInNewContext(output, { module, exports: module.exports, process, Buffer, require(name) {
@@ -57,7 +57,7 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   configurationListener({ affectsConfiguration() { return false; } });
   assert.equal(changes, 1);
   nodePath = ' ';
-  assert.throws(() => provider.provideMcpServerDefinitions(), /Node.js 20\+/);
+  assert.throws(() => provider.provideMcpServerDefinitions(), /Node.js 24\+/);
   context.subscriptions.forEach(subscription => subscription.dispose());
   assert.equal(disposed, 4);
 });

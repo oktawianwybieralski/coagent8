@@ -29,7 +29,7 @@ durable history is a planned change, not a current runtime option.
 
 ## Connect through MCP
 
-Use Node.js 20+ and at least one separately installed/authenticated backend CLI.
+Use Node.js 24+ and at least one separately installed/authenticated backend CLI.
 The **host** runs the chat and connects to CoAgent8; the **backend** CLI performs
 the requested task. Installing one does not configure or authenticate the other.
 Claude Code runs in restricted read-only print mode (`--restricted`, tools

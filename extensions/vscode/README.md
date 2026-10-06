@@ -1,7 +1,7 @@
 # CoAgent8 MCP for VS Code (development)
 
 Expose the bundled CoAgent8 MCP server to the native VS Code chat. Requires VS Code
-1.101+ and Node.js 20+ on PATH. Set `coagent8.nodePath` to an absolute Node executable
+1.101+ and Node.js 24+ on PATH. Set `coagent8.nodePath` to an absolute Node executable
 if necessary. Local coding CLIs must be installed and authenticated separately.
 
 Install the development VSIX using **Extensions: Install from VSIX...**, then open

@@ -38,7 +38,7 @@ repository and are excluded from runtime packages.
 The root `plugin.json` follows Agent Plugins 1.0.0. Its `extensions.com.openai`
 object supplies Codex presentation metadata. Root `mcp.json` configures the bundled
 stdio server using `${PLUGIN_ROOT}/dist/index.cjs`; the host expands the placeholder.
-Node.js 20+ must be available to the host, and coding CLIs must be installed and
+Node.js 24+ must be available to the host, and coding CLIs must be installed and
 authenticated separately. Build the project before installing it as a local plugin;
 install a built package rather than an unbuilt source checkout.
 
@@ -68,8 +68,7 @@ configuring a second manual CoAgent8 MCP entry alongside the installed plugin.
 
 From the repository root:
 
-VSIX packaging tooling requires Node.js 22.12+. The MCP runtime and extension still
-target Node.js 20+.
+The MCP runtime, the extension and the VSIX packaging tooling require Node.js 24+.
 
 ```bash
 npm ci
@@ -84,7 +83,7 @@ workspace, then use **MCP: List Servers**. The extension requires VS Code 1.101+
 It registers one provider and lets VS Code start, approve, and stop the MCP process.
 It does not launch a separate background process during activation.
 
-Set the machine-scoped `coagent8.nodePath` to a Node.js 20+ executable if `node` is
+Set the machine-scoped `coagent8.nodePath` to a Node.js 24+ executable if `node` is
 not on PATH. With SSH/WSL, Node and coding CLIs must exist on the remote extension
 host. The extension is disabled for untrusted and virtual workspaces.
 

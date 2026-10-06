@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
     provideMcpServerDefinitions() {
       if (hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [])) return [];
       const command = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-      if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 20+ executable.');
+      if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 24+ executable.');
       return [new vscode.McpStdioServerDefinition(
         'CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {}, version
       )];
@@ -36,7 +36,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }))?.map(item => item.client);
       if (!selected?.length) return;
       const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-      if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 20+ executable.');
+      if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
       const folders = vscode.workspace.workspaceFolders ?? [];
       if (folders.length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
       const results = await setupClients({ clients: selected, runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir() });
