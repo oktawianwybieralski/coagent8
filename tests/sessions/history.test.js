@@ -23,43 +23,132 @@ const { createSession, closeSession } = require('../../src/sessions/session.ts')
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('streaming deltas append directly to .jsonl event store in O(1)', async () => {
+test('streamed 60 KiB answer in 40-byte deltas persists within a factor of <= 3x (AUD-P0-3 remediation)', async () => {
   const sess = createSession('gemini', tempDir);
   const turnId = randomUUID();
   const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
 
   writer.accept({ type: 'turn_started' });
-  writer.accept({ type: 'user_message', text: 'Hello Phase 2 append-only store' });
+  writer.accept({ type: 'user_message', text: 'Prompt requesting 60 KiB response' });
   await writer.flush();
 
-  const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
-  assert.ok(fs.existsSync(logFile), 'JSONL event log must exist');
+  const chunkSize = 40;
+  const targetBytes = 60 * 1024;
+  const chunkText = '0123456789abcdefghijklmnopqrstuvwxyzABC\n'; // 40 bytes
+  const totalChunks = targetBytes / chunkSize;
 
-  const rawBefore = fs.readFileSync(logFile, 'utf8');
-  const linesBefore = rawBefore.trim().split('\n');
-  assert.ok(linesBefore.length >= 2, 'Header and events should be present in JSONL');
-
-  // Streaming deltas append new lines to .jsonl
-  for (let i = 1; i <= 3; i++) {
-    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: `chunk-${i} ` });
-    await writer.flush();
+  // Stream in 40-byte deltas with periodic flushes (simulating 250ms streaming intervals)
+  for (let i = 0; i < totalChunks; i++) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: chunkText });
+    if (i % 10 === 0) {
+      await writer.flush();
+    }
   }
-
-  const rawAfterDeltas = fs.readFileSync(logFile, 'utf8');
-  assert.ok(rawAfterDeltas.length > rawBefore.length, 'Log file must grow with streaming appends');
-  assert.ok(rawAfterDeltas.includes('chunk-3'), 'Delta content must be appended to the log file');
-
-  // Complete turn
-  writer.accept({ type: 'assistant_message', messageId: 'm1', text: 'Final complete answer' });
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
+  const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
+  const jsonFile = path.join(getHistoryDir(), `${sess.sessionHandle}.json`);
+  const logBytes = fs.statSync(logFile).size;
+  const jsonBytes = fs.statSync(jsonFile).size;
+  const totalPersistedBytes = logBytes + jsonBytes;
+  const ratio = totalPersistedBytes / targetBytes;
+
+  // Audit measured 6.55 MiB (112x). We assert <= 3x.
+  assert.ok(
+    ratio <= 3.0,
+    `Persisted bytes ratio ${ratio.toFixed(2)}x (${totalPersistedBytes} bytes for ${targetBytes} answer) must be <= 3.0x`
+  );
+
   const history = await getHistory(sess.sessionHandle);
   assert.ok(history, 'History must be loadable');
-  assert.equal(history.events.filter(e => e.type === 'assistant_message').length, 1);
-  assert.equal(history.events.find(e => e.type === 'assistant_message').text, 'Final complete answer');
-  assert.equal(history.events.at(-1).type, 'turn_finished');
-  assert.equal(history.events.at(-1).status, 'completed');
+  const msg = history.events.find(e => e.type === 'assistant_message');
+  assert.ok(msg);
+  assert.equal(Buffer.byteLength(msg.text, 'utf8'), targetBytes);
+});
+
+test('split credentials across multiple streaming deltas and flushes never reach disk unredacted', async () => {
+  const sess = createSession('gemini', tempDir);
+  const turnId = randomUUID();
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
+
+  writer.accept({ type: 'turn_started' });
+  writer.accept({ type: 'user_message', text: 'Generate split secret' });
+  await writer.flush();
+
+  // Split ghp_ token across multiple deltas and flushes
+  // ghp_ + 36 alphanumeric characters = 40 chars total
+  const secretGhp = 'ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const partsGhp = ['prefix text: g', 'hp_ABCDEF', 'GHIJKLMN', 'OPQRSTUV', 'WXYZ0123456789', ' suffix prose\n'];
+
+  for (const part of partsGhp) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
+  // Split sk- token across multiple deltas and flushes
+  const secretSk = 'sk-abcdefghijklmnopqrstuvwxyz123456';
+  const partsSk = ['another: s', 'k-abcdefg', 'hijklmnop', 'qrstuvwxyz', '123456', ' end prose\n'];
+
+  for (const part of partsSk) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
+  writer.accept({ type: 'turn_finished', status: 'completed' });
+  await writer.flush();
+
+  const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
+  const jsonFile = path.join(getHistoryDir(), `${sess.sessionHandle}.json`);
+  const rawLog = fs.readFileSync(logFile, 'utf8');
+  const rawJson = fs.readFileSync(jsonFile, 'utf8');
+
+  // Verify the raw .jsonl and .json files NEVER contain unredacted secrets
+  assert.ok(!rawLog.includes(secretGhp), '.jsonl must never contain raw unredacted ghp token');
+  assert.ok(!rawLog.includes(secretSk), '.jsonl must never contain raw unredacted sk token');
+  assert.ok(!rawJson.includes(secretGhp), '.json must never contain raw unredacted ghp token');
+  assert.ok(!rawJson.includes(secretSk), '.json must never contain raw unredacted sk token');
+
+  // Verify redacted token presence
+  assert.ok(rawLog.includes('ghp_***[REDACTED]***'), '.jsonl must contain redacted ghp token');
+  assert.ok(rawLog.includes('sk-***[REDACTED]***'), '.jsonl must contain redacted sk token');
+
+  const history = await getHistory(sess.sessionHandle);
+  assert.ok(history);
+  const msg = history.events.find(e => e.type === 'assistant_message');
+  assert.ok(msg);
+  assert.ok(msg.text.includes('ghp_***[REDACTED]***'));
+  assert.ok(msg.text.includes('sk-***[REDACTED]***'));
+});
+
+test('legacy snapshot-repeating format loads, paginates and resumes cleanly', async () => {
+  const sess = createSession('gemini', tempDir);
+  const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
+
+  // Write a legacy format log where assistant_message full snapshots are repeated
+  const { canonicalPath } = require('../../src/sessions/identity.ts');
+  const lines = [
+    JSON.stringify({ _type: 'header', schemaVersion: 1, sessionHandle: sess.sessionHandle, workspace: canonicalPath(tempDir), createdAt: new Date().toISOString(), nextSequence: 1 }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 1, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'turn_started' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 2, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'user_message', text: 'Legacy prompt' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 3, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'assistant_message', messageId: 'm1', text: 'Partial 1' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 4, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'assistant_message', messageId: 'm1', text: 'Partial 1 + Partial 2' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 5, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'assistant_message', messageId: 'm1', text: 'Final complete message' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 6, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'turn_finished', status: 'completed' }),
+  ];
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  fs.writeFileSync(logFile, lines.join('\n') + '\n', 'utf8');
+
+  // Verify load and pagination
+  const history = await getHistory(sess.sessionHandle);
+  assert.ok(history, 'Legacy log must load successfully');
+  const messages = history.events.filter(e => e.type === 'assistant_message');
+  assert.equal(messages.length, 1, 'Repeated snapshots must coalesce to single final message');
+  assert.equal(messages[0].text, 'Final complete message');
+
+  const page = await sessionHistory(sess.sessionHandle, tempDir);
+  assert.equal(page.events.filter(e => e.type === 'assistant_message').length, 1);
+  assert.equal(page.events.find(e => e.type === 'assistant_message').text, 'Final complete message');
 });
 
 test('capacity limits are strictly enforced during append-only writes', async () => {
