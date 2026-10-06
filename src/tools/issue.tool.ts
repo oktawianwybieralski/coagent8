@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { CANONICAL_TOOL_NAMES } from '../constants/index.js';
+import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { runDoctor, DoctorReport } from '../diagnostics/doctor.js';
 

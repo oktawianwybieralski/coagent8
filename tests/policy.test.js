@@ -3,7 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { checkModelGovernance, resolveWorkspacePath } = require('../src/backends/policy.ts');
+const { checkModelGovernance } = require('../src/backends/governance.ts');
+const { resolveWorkspacePath } = require('../src/paths.ts');
 
 test('checkModelGovernance blocks astra and opus without user confirmation', () => {
   const astraBlocked = checkModelGovernance('astra', false);

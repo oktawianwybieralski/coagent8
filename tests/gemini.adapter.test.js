@@ -7,7 +7,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-gemini-'));
 process.env.coagent8_DIR = dir;
 process.env.GEMINI_CLI_HOME = path.join(dir, 'original-home');
 process.env.GEMINI_PATH = path.resolve(__dirname, 'fixtures/gemini-cli/gemini.cjs');
-const { execute, createGeminiCollector } = require('../src/backends/gemini.adapter.ts');
+const { execute, createGeminiCollector } = require('../src/backends/gemini/adapter.ts');
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -146,7 +146,7 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
 });
 
 test('Gemini collector rejects malformed roles/content, duplicate terminal and total answer overflow', () => {
-  const { classifyGeminiError } = require('../src/backends/gemini.adapter.ts');
+  const { classifyGeminiError } = require('../src/backends/gemini/adapter.ts');
   assert.equal(classifyGeminiError('Model report-429.txt not found').code, 'MODEL_UNAVAILABLE');
   assert.equal(classifyGeminiError('Connection failed on port 1429').code, 'PROCESS_ERROR');
   const c = createGeminiCollector();

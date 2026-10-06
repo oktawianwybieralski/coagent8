@@ -1,5 +1,5 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
-import { CANONICAL_TOOL_NAMES } from '../constants/index.js';
+import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { handleConsult } from './consult.tool.js';
 import { handleReview } from './review.tool.js';
 import { handleIssue } from './issue.tool.js';

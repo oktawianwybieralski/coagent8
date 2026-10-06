@@ -1,16 +1,16 @@
-import { createGeminiCollector } from './gemini.collector.js';
-import { classifyGeminiError } from './gemini-errors.js';
-export { createGeminiCollector } from './gemini.collector.js';
-export { classifyGeminiError, extractStructuredGeminiError } from './gemini-errors.js';
+import { createGeminiCollector } from './collector.js';
+import { classifyGeminiError } from './errors.js';
+export { createGeminiCollector } from './collector.js';
+export { classifyGeminiError, extractStructuredGeminiError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runCommand, DEFAULT_TIMEOUT_MS } from '../execution/process.js';
-import { summarizeQuotaWindows } from './quota.js';
-import { redactDiagnostic } from '../redaction.js';
-import { checkModelGovernance } from './policy.js';
-import { resolveCliCommand } from './cli-resolver.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../types/adapter.types.js';
+import { runCommand, DEFAULT_TIMEOUT_MS } from '../../execution/process.js';
+import { summarizeQuotaWindows } from '../quota.js';
+import { redactDiagnostic } from '../../redaction.js';
+import { checkModelGovernance } from '../governance.js';
+import { resolveCliCommand } from '../../execution/cli-resolver.js';
+import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../../types/adapter.types.js';
 
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';

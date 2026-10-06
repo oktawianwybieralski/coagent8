@@ -1,6 +1,6 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { executeTask } from '../execution/controller.js';
-import { CANONICAL_TOOL_NAMES } from '../constants/index.js';
+import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
 export function getCanonicalConsultToolDefinition() {
   return {

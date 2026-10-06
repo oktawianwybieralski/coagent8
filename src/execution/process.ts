@@ -27,7 +27,7 @@
 
 import { spawn, ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
-import { resolveCliCommand } from '../backends/cli-resolver.js';
+import { resolveCliCommand } from './cli-resolver.js';
 import { createLineDecoder, truncateToByteLength } from './stream.js';
 import type { ExecutionError, TerminalStatus } from '../types/conversation.types.js';
 import { ERROR_CODES } from '../types/conversation.types.js';

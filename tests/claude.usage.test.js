@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseClaudeUsage, resolveUsageReset } = require('../src/backends/claude-usage.ts');
+const { parseClaudeUsage, resolveUsageReset } = require('../src/backends/claude/usage.ts');
 const { summarizeQuotaWindows } = require('../src/backends/quota.ts');
 const recorded = require('./fixtures/claude-cli/recordings/usage-subscription.json');
 

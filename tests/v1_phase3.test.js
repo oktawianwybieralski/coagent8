@@ -13,7 +13,7 @@ const {
   getAllCallableToolDefinitions,
   createServer,
 } = require('../src/server.ts');
-const { CANONICAL_TOOL_NAMES, TOOL_NAMES } = require('../src/constants/index.ts');
+const { CANONICAL_TOOL_NAMES, TOOL_NAMES } = require('../src/constants.ts');
 const { validateConfig, saveConfig, loadConfig } = require('../src/config.ts');
 const {
   createSession,
@@ -31,7 +31,7 @@ const {
   handleCancelSession,
 } = require('../src/tools/session.tool.ts');
 const { handleRun, runToolDefinition } = require('../src/tools/run.tool.ts');
-const { formatExecutionResult } = require('../src/tools/common.ts');
+const { formatExecutionResult } = require('../src/tools/result.ts');
 const { cancelSessionExecution } = require('../src/execution/controller.ts');
 const { createHistoryWriter } = require('../src/sessions/history.ts');
 

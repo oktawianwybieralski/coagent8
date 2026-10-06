@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { getEventListeners } = require('node:events');
 const { runCommand, activeProcesses, terminateAllProcesses } = require('../src/execution/process.ts');
-const { resolveCliCommand } = require('../src/backends/cli-resolver.ts');
+const { resolveCliCommand } = require('../src/execution/cli-resolver.ts');
 const { createLineDecoder, truncateToByteLength, readBoundedFile } = require('../src/execution/stream.ts');
 
 test('F05: pre-abort with a missing executable never launches or emits uncaught ENOENT', async () => {

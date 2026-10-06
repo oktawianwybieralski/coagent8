@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 import { spawn } from 'node:child_process';
-import { resolveCliCommand } from '../backends/cli-resolver.js';
+import { resolveCliCommand } from '../execution/cli-resolver.js';
 import { terminateProcessTree } from '../execution/process.js';
 import { createLineDecoder } from '../execution/stream.js';
 

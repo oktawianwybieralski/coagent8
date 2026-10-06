@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { BackendId, CoAgent8Config, RoutingStrategy, ToolProfile } from './types/config.types.js';
-import { CONFIG_CONSTANTS } from './constants/index.js';
+import { CONFIG_CONSTANTS } from './constants.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './execution/stream.js';

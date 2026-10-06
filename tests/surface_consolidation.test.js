@@ -13,7 +13,7 @@ const {
   CANONICAL_TOOL_NAMES,
   CORE_CANONICAL_TOOL_NAMES,
   DEPRECATED_LEGACY_TOOL_NAMES,
-} = require('../src/constants/index.ts');
+} = require('../src/constants.ts');
 const { handleConsult } = require('../src/tools/consult.tool.ts');
 const { handleAnalyze } = require('../src/tools/analyze.tool.ts');
 const { handleDebugError } = require('../src/tools/debug.tool.ts');

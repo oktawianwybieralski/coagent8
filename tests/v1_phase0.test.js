@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { resolveCliCommand } = require('../src/backends/cli-resolver.ts');
-const { extractStructuredGeminiError } = require('../src/backends/gemini.adapter.ts');
-const { extractStructuredCodexError } = require('../src/backends/codex.adapter.ts');
+const { resolveCliCommand } = require('../src/execution/cli-resolver.ts');
+const { extractStructuredGeminiError } = require('../src/backends/gemini/adapter.ts');
+const { extractStructuredCodexError } = require('../src/backends/codex/adapter.ts');
 const {
   recordQuotaCooldown,
   resetQuotaCooldown,

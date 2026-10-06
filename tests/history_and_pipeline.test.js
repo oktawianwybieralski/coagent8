@@ -14,7 +14,7 @@ const {createSession,getSession,acquireSessionTurn,releaseSessionTurn,getSession
 const {withFileLock}=require('../src/sessions/lock.ts');
 const {saveConfig}=require('../src/config.ts');
 const {createToolDefinitions,validateToolArguments}=require('../src/server.ts');
-const {checkModelGovernance}=require('../src/backends/policy.ts');
+const {checkModelGovernance}=require('../src/backends/governance.ts');
 test.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
 
 test('one pipeline pins provider, persists two turns and canonical messages, preserves Markdown, activity and errors',async()=>{
@@ -204,7 +204,7 @@ test('history fragment pagination returns the whole large UTF-8 message at limit
 test('oversized provider metadata cannot hang history pagination',async()=>{
   const s=createSession('gemini',dir),writer=createHistoryWriter(s.sessionHandle,dir,'gemini',randomUUID());
   assert.throws(()=>writer.accept({type:'assistant_message',messageId:'x'.repeat(300*1024),text:'short'}),/identifier/);
-  const {createGeminiCollector}=require('../src/backends/gemini.adapter.ts');
+  const {createGeminiCollector}=require('../src/backends/gemini/adapter.ts');
   assert.throws(()=>createGeminiCollector().line(JSON.stringify({type:'message',role:'assistant',message_id:'x'.repeat(300*1024),content:'short'})),/metadata/);
   writer.accept({type:'assistant_message',messageId:'safe',text:'short'});await writer.flush();
   const file=path.join(dir,'history',s.sessionHandle+'.json'),raw=JSON.parse(fs.readFileSync(file));
@@ -226,7 +226,7 @@ test('closing expired, invalidated or already closed sessions checks workspace u
 });
 
 test('formatExecutionResult produces clean Markdown with answer at top, and handleSessionHistory preserves global turn numbers across pagination', async () => {
-  const { formatExecutionResult } = require('../src/tools/common.ts');
+  const { formatExecutionResult } = require('../src/tools/result.ts');
   const { handleSessionHistory } = require('../src/tools/session.tool.ts');
 
   // Test formatExecutionResult

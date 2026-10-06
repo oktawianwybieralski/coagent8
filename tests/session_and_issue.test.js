@@ -22,11 +22,11 @@ const {
   pruneExpiredSessions,
   getSessionsDir,
 } = require('../src/sessions/session.ts');
-const { createCodexStreamCollector } = require('../src/backends/codex.adapter.ts');
+const { createCodexStreamCollector } = require('../src/backends/codex/adapter.ts');
 const { generateBugReport, sanitizeText, GITHUB_NEW_ISSUE_BASE } = require('../src/diagnostics/issue.ts');
 const { handleIssue, issueToolDefinition } = require('../src/tools/issue.tool.ts');
 const { handleRun } = require('../src/tools/run.tool.ts');
-const { formatExecutionResult } = require('../src/tools/common.ts');
+const { formatExecutionResult } = require('../src/tools/result.ts');
 
 test.after(() => {
   try {

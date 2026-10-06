@@ -1,8 +1,8 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { closeSession, cancelSession, listSessions } from '../sessions/session.js';
-import { CANONICAL_TOOL_NAMES } from '../constants/index.js';
+import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../sessions/history.js';
-import { resolveWorkspacePath } from '../backends/policy.js';
+import { resolveWorkspacePath } from '../paths.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,

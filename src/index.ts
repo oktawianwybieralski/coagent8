@@ -2,7 +2,7 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './server.js';
-import { BRAND } from './constants/index.js';
+import { BRAND } from './constants.js';
 import { shutdownProcessRunner } from './execution/process.js';
 import { redactDiagnostic } from './redaction.js';
 import { pruneExpiredSessions } from './sessions/session.js';

@@ -15,7 +15,7 @@ import { parse as parseToml } from 'smol-toml';
 import { parse, parseTree, modify, applyEdits, type ParseError, type Node as JsonNode } from 'jsonc-parser';
 import { readBoundedFileSync } from '../execution/stream.js';
 import { runCommand } from '../execution/process.js';
-import { resolveCliCommand, resolveBundledClaude, type CliCommand } from '../backends/cli-resolver.js';
+import { resolveCliCommand, resolveBundledClaude, type CliCommand } from '../execution/cli-resolver.js';
 import { redactDiagnostic } from '../redaction.js';
 import { withFileLock } from '../sessions/lock.js';
 import { object, withStdioRpc } from './rpc.js';

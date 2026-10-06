@@ -7,7 +7,7 @@ const {spawnSync}=require('node:child_process');
 const {createHash}=require('node:crypto');
 const assert=require('node:assert/strict');
 require('tsx/cjs'); // Test tooling only; deliberately absent from the installed consumer.
-const {resolveCliCommand}=require('../../src/backends/cli-resolver.ts');
+const {resolveCliCommand}=require('../../src/execution/cli-resolver.ts');
 const {connect}=require('../helpers/stdio.cjs');
 const root=path.resolve(__dirname,'../..');
 const artifacts=path.join(root,'tests','artifacts','consumer');fs.mkdirSync(artifacts,{recursive:true});

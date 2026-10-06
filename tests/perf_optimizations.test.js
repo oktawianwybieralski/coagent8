@@ -8,7 +8,7 @@ const os = require('node:os');
 const {
   resolveCliCommand,
   clearCliResolverCache,
-} = require('../src/backends/cli-resolver.ts');
+} = require('../src/execution/cli-resolver.ts');
 const {
   truncateToByteLength,
   createStreamReducer,

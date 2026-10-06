@@ -216,7 +216,8 @@ test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and exposes mac
 });
 
 test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCKED" evaluates to structured verdict READY', async () => {
-  const { evaluateStateEnvelopeGate, formatExecutionResult } = require('../src/tools/common.ts');
+  const { evaluateStateEnvelopeGate } = require('../src/tools/review-gate.ts');
+  const { formatExecutionResult } = require('../src/tools/result.ts');
   const reviewOutput = [
     'REVIEW: 1',
     'SNAPSHOT: sha1234567890',

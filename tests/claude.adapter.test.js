@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const {executeClaude,probe}=require('../src/backends/claude.adapter.ts');
+const {executeClaude,probe}=require('../src/backends/claude/adapter.ts');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 async function withFixture(run){
@@ -107,7 +107,7 @@ test('Claude probe reads version and login state without a model call',()=>withF
 }));
 
 test('Claude reads subscription quota from /usage without a model turn and feeds quota-aware routing',()=>withFixture(async({dir,captured})=>{
-  const {inspectQuota}=require('../src/backends/claude.adapter.ts');
+  const {inspectQuota}=require('../src/backends/claude/adapter.ts');
   const quota=await inspectQuota();
   assert.equal(quota.measured,true);assert.equal(quota.usedPercent,67);assert.equal(quota.window,'session');
   const {argv}=captured();assert.equal(argv.at(-1),'/usage');assert.equal(argv[argv.indexOf('--model')+1],'haiku');assert.equal(argv[argv.indexOf('--tools')+1],'');assert.ok(argv.includes('--restricted'));

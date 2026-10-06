@@ -7,7 +7,7 @@
  * @packageDocumentation
  */
 
-import { version } from '../../package.json';
+import { version } from '../package.json';
 
 export const BRAND = {
   NAME: 'CoAgent8',

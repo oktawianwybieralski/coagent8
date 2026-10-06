@@ -7,8 +7,8 @@ const path = require('node:path');
 const os = require('node:os');
 
 const { isRateLimitError, parseResetTimestamp } = require('../src/backends/rate-limit.ts');
-const { classifyCodexError, extractStructuredCodexError } = require('../src/backends/codex-errors.ts');
-const { parseGeminiUsage, probe: probeGemini } = require('../src/backends/gemini.adapter.ts');
+const { classifyCodexError, extractStructuredCodexError } = require('../src/backends/codex/errors.ts');
+const { parseGeminiUsage, probe: probeGemini } = require('../src/backends/gemini/adapter.ts');
 const { inspectQuotas, recordQuotaCooldown, resetQuotaCooldown } = require('../src/backends/availability.ts');
 const { runDoctor } = require('../src/diagnostics/doctor.ts');
 const { resolveBackend } = require('../src/backends/routing.ts');

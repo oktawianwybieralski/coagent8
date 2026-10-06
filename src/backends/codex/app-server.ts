@@ -12,12 +12,12 @@
  *
  * @packageDocumentation
  */
-import { BRAND } from '../constants/index.js';
-import { validEventIdentifier } from '../types/conversation.types.js';
-import type { AdapterEvent, ExecutionError } from '../types/adapter.types.js';
-import type { StdinChannel, StdinSession } from '../execution/process.js';
-import { classifyCodexTurnError } from './codex-errors.js';
-import type { createCodexStreamCollector } from './codex.collector.js';
+import { BRAND } from '../../constants.js';
+import { validEventIdentifier } from '../../types/conversation.types.js';
+import type { AdapterEvent, ExecutionError } from '../../types/adapter.types.js';
+import type { StdinChannel, StdinSession } from '../../execution/process.js';
+import { classifyCodexTurnError } from './errors.js';
+import type { createCodexStreamCollector } from './collector.js';
 
 export interface CodexAppSessionOptions {
   collector: ReturnType<typeof createCodexStreamCollector>;

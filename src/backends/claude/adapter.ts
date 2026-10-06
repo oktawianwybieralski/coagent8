@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { runCommand, type StdinChannel, type StdinSession } from '../execution/process.js';
-import { redactDiagnostic } from '../redaction.js';
-import { checkModelGovernance } from './policy.js';
-import { createClaudeStreamCollector } from './claude.collector.js';
-import { parseClaudeUsage } from './claude-usage.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../types/adapter.types.js';
+import { runCommand, type StdinChannel, type StdinSession } from '../../execution/process.js';
+import { redactDiagnostic } from '../../redaction.js';
+import { checkModelGovernance } from '../governance.js';
+import { createClaudeStreamCollector } from './collector.js';
+import { parseClaudeUsage } from './usage.js';
+import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../../types/adapter.types.js';
 export const id = 'claude', name = 'Claude Code CLI';
 export const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */

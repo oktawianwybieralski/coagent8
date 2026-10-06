@@ -1,5 +1,5 @@
 import { runDoctor } from '../diagnostics/doctor.js';
-import { CANONICAL_TOOL_NAMES } from '../constants/index.js';
+import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { redactDiagnostic } from '../redaction.js';
 
 export const doctorToolDefinition = {

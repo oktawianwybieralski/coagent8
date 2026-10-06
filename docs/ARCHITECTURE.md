@@ -16,12 +16,12 @@ flowchart TD
     Host["MCP host"] --> Server["server.ts: schemas and handlers"]
     Server --> Tools["tools/: task prompts and Git scope"]
     Tools --> Controller["execution/controller.ts: task lifecycle"]
-    Controller --> Routing["backends/: selection and policy"]
-    Controller --> Adapter["Concrete CLI adapter and parser"]
+    Controller --> Routing["backends/: selection and model governance"]
+    Controller --> Adapter["backends/<cli>/: adapter, parser and errors"]
     Adapter --> Process["execution/process.ts: bounded subprocess"]
     Process --> CLI["Local coding CLI"]
     Controller --> Sessions["sessions/: ownership, leases and history"]
-    Controller --> Result["tools/common.ts: output and envelope formatting"]
+    Controller --> Result["tools/result.ts: output and envelope formatting"]
     Result --> Host
     Server --> Resources["Session/history MCP resources"]
 ```
@@ -30,12 +30,12 @@ flowchart TD
 | --- | --- |
 | src/index.ts | Dispatch explicit setup commands or connect stdio and start background session pruning; coordinate shutdown |
 | src/server.ts, src/tools/ | Advertise profiles, validate requests, build prompts/diffs, serve resources and format responses |
-| src/execution/ | Coordinate turns, progress and cancellation; supervise subprocesses; collect bounded streams and Git context |
-| src/backends/ | Concrete registry, CLI resolution, native parsers, policy, routing and observed cooldowns |
+| src/execution/ | Coordinate turns, progress and cancellation; resolve CLI commands; supervise subprocesses; collect bounded streams, normalize CLI output and Git context |
+| src/backends/ | One folder per CLI (adapter, stream collector, error classification); shared registry, routing, model governance, quota and observed cooldowns |
 | src/sessions/ | Workspace/provider identity, native continuation records, turn leases, locks, history and pagination |
 | src/integrations/ | Optional host setup/repair, bounded RPC probes and VS Code registration detection |
 | src/diagnostics/ | Backend evidence and sanitized issue reports |
-| Config, paths, redaction | Named shared configuration, storage paths and privacy behavior |
+| Config, paths, redaction | Named shared configuration, storage and workspace paths, and privacy behavior |
 | extensions/vscode/ | Native MCP provider and optional shared setup UI |
 
 ## Coupling that remains

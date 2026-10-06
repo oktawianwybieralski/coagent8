@@ -14,13 +14,9 @@ const {
   getHistory,
   getHistoryDir,
 } = require('../src/sessions/history.ts');
-const {
-  stripAnsi,
-  stripCliBanners,
-  cleanCliOutput,
-  enforceStateEnvelopeGate,
-  formatExecutionResult,
-} = require('../src/tools/common.ts');
+const { stripAnsi, stripCliBanners, cleanCliOutput } = require('../src/execution/cli-output.ts');
+const { enforceStateEnvelopeGate } = require('../src/tools/review-gate.ts');
+const { formatExecutionResult } = require('../src/tools/result.ts');
 const { createToolDefinitions, getAllCallableToolDefinitions } = require('../src/server.ts');
 const { collectGitScope } = require('../src/execution/git.ts');
 

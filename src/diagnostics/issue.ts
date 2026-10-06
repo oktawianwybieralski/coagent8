@@ -20,7 +20,7 @@ import os from 'os';
 import { redactDiagnostic } from '../redaction.js';
 import { truncateToByteLength } from '../execution/stream.js';
 import { BugReportOptions, BugReportResult } from '../types/issue.types.js';
-import { BRAND } from '../constants/index.js';
+import { BRAND } from '../constants.js';
 
 export const REPO_OWNER = BRAND.GITHUB_OWNER;
 export const REPO_NAME = BRAND.GITHUB_REPO;

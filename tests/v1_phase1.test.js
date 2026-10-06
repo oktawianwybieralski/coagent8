@@ -14,7 +14,7 @@ const {
   execute: executeGemini,
   resolveModelAndEffort,
   createGeminiCollector,
-} = require('../src/backends/gemini.adapter.ts');
+} = require('../src/backends/gemini/adapter.ts');
 
 const {
   StreamReducer,
@@ -379,7 +379,7 @@ test('Phase 1 Task 1.4 Audit Remediation: messages exceeding maxMessages set isT
   assert.equal(reducer.getMessageMap().size, 3);
 
   // Gemini adapter throws BufferLimitError when exceeding maxMessages public messages
-  const { createGeminiCollector } = require('../src/backends/gemini.adapter.ts');
+  const { createGeminiCollector } = require('../src/backends/gemini/adapter.ts');
   const collector = createGeminiCollector();
   for (let i = 0; i < 50; i++) {
     collector.line(JSON.stringify({ type: 'message', role: 'assistant', content: `Message ${i}`, message_id: `msg-${i}` }));

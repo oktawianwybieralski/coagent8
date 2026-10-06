@@ -1,14 +1,14 @@
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { runCommand } from '../execution/process.js';
-import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult, ExecutionError } from '../types/adapter.types.js';
-import { validEventIdentifier } from '../types/conversation.types.js';
-import { checkModelGovernance } from './policy.js';
-import { redactDiagnostic } from '../redaction.js';
-import { createCodexStreamCollector } from './codex.collector.js';
-import { createCodexAppSession } from './codex.app-server.js';
-import { classifyCodexError } from './codex-errors.js';
+import { runCommand } from '../../execution/process.js';
+import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult, ExecutionError } from '../../types/adapter.types.js';
+import { validEventIdentifier } from '../../types/conversation.types.js';
+import { checkModelGovernance } from '../governance.js';
+import { redactDiagnostic } from '../../redaction.js';
+import { createCodexStreamCollector } from './collector.js';
+import { createCodexAppSession } from './app-server.js';
+import { classifyCodexError } from './errors.js';
 
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
@@ -132,10 +132,10 @@ export async function probe(): Promise<AdapterProbeResult> {
   };
 }
 
-export { truncateToByteLength } from '../execution/stream-reducer.js';
+export { truncateToByteLength } from '../../execution/stream-reducer.js';
 
-export { createCodexStreamCollector } from './codex.collector.js';
-export { classifyCodexError, extractStructuredCodexError } from './codex-errors.js';
+export { createCodexStreamCollector } from './collector.js';
+export { classifyCodexError, extractStructuredCodexError } from './errors.js';
 
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const config = readCodexConfig();

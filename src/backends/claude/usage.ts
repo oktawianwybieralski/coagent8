@@ -1,5 +1,5 @@
 /** Parses the subscription limits printed by `claude -p /usage`. @packageDocumentation */
-import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from './quota.js';
+import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';
 
 /**
  * One limit line, e.g. `Current session: 67% used · resets Oct 5, 11:49pm (Europe/Warsaw)`

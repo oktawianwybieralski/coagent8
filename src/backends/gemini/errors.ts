@@ -1,7 +1,7 @@
 /** Public Gemini terminal/error classification. @packageDocumentation */
-import { redactDiagnostic } from '../redaction.js';
-import { isRateLimitError } from './rate-limit.js';
-import type { ExecutionError } from '../types/adapter.types.js';
+import { redactDiagnostic } from '../../redaction.js';
+import { isRateLimitError } from '../rate-limit.js';
+import type { ExecutionError } from '../../types/adapter.types.js';
 export function classifyGeminiError(text: string): ExecutionError {
   const message = redactDiagnostic(text);
   const code = isRateLimitError(text) || /\bRESOURCE_EXHAUSTED\b|\bquota(?: limit)? (?:exceeded|exhausted)\b/i.test(text)

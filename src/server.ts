@@ -8,9 +8,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
 import { createProgressReporter } from './execution/progress.js';
-import { resolveWorkspacePath } from './backends/policy.js';
+import { resolveWorkspacePath } from './paths.js';
 import { redactDiagnostic } from './redaction.js';
-import { BRAND, CANONICAL_TOOL_NAMES } from './constants/index.js';
+import { BRAND, CANONICAL_TOOL_NAMES } from './constants.js';
 import { SERVER_ICON } from './generated/server-icon.js';
 import { loadConfig } from './config.js';
 import type { CoAgent8Config } from './types/config.types.js';
@@ -23,7 +23,7 @@ import { getCanonicalDebugToolDefinition, handleDebugError } from './tools/debug
 import { getCanonicalImplementToolDefinition, handleImplement } from './tools/implement.tool.js';
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
-import { executionOutputSchema, runOutputSchema, formatExecutionResult } from './tools/common.js';
+import { executionOutputSchema, runOutputSchema, formatExecutionResult } from './tools/result.js';
 import { ERROR_CODES } from './types/conversation.types.js';
 import { sanitizeHandle, listSessions } from './sessions/session.js';
 import { getHistory } from './sessions/history.js';

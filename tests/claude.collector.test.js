@@ -2,8 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createClaudeStreamCollector } = require('../src/backends/claude.collector.ts');
-const { classifyClaudeFailure, CLAUDE_ERROR_CATEGORIES } = require('../src/backends/claude-errors.ts');
+const { createClaudeStreamCollector } = require('../src/backends/claude/collector.ts');
+const { classifyClaudeFailure, CLAUDE_ERROR_CATEGORIES } = require('../src/backends/claude/errors.ts');
 
 const SESSION = '859bbd7d-81ae-440c-b76a-a80e596d0fa5';
 const TOOLS = ['Read', 'Glob', 'Grep'];
