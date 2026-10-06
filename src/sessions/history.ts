@@ -53,6 +53,8 @@ function isPotentialSecretPrefix(word: string): boolean {
   ) return true;
   if ('npm_'.startsWith(w) || w.includes('npm_')) return true;
   if ('hf_'.startsWith(w) || w.includes('hf_')) return true;
+  if ('eyj'.startsWith(w) || w.includes('eyj')) return true;
+  if ('xox'.startsWith(w) || w.includes('xox')) return true;
   if (
     w.includes('akia') || w.includes('asia') || w.includes('abia') || w.includes('acca') ||
     /^a(?:k(?:i(?:a)?)?|s(?:i(?:a)?)?|b(?:i(?:a)?)?|c(?:c(?:a)?)?)?$/i.test(w)
@@ -459,7 +461,7 @@ export async function evictOldestSessions(dir: string, neededBytes: number, acti
         try { const s = await fs.stat(lf); b += s.size; await fs.rm(lf, { force: true }); } catch {}
         invalidateHistoryCache(candidate.handle);
         freed += b;
-      });
+      }, 1);
     } catch {}
   }
 
@@ -771,15 +773,29 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
                 if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
               }
 
-              await fs.appendFile(logFile, header, 'utf8');
-              currentFileBytes = headerBytes;
-              headerWritten = true;
-
               currentTotal += headerBytes;
               try {
                 await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
               } catch {}
             });
+
+            try {
+              await fs.appendFile(logFile, header, 'utf8');
+              currentFileBytes = headerBytes;
+              headerWritten = true;
+            } catch (appendErr) {
+              await withFileLock(capLockFile, async () => {
+                const metaFile = path.join(dir, '.capacity.meta');
+                try {
+                  const raw = await readBoundedFile(metaFile, 1024);
+                  const parsed = JSON.parse(raw);
+                  if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
+                    await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - headerBytes) }));
+                  }
+                } catch {}
+              });
+              throw appendErr;
+            }
           }
         }
 
@@ -845,14 +861,28 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
           }
 
-          await fs.appendFile(logFile, appendLines, 'utf8');
-          currentFileBytes += appendBytes;
-
           currentTotal += appendBytes;
           try {
             await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
           } catch {}
         });
+
+        try {
+          await fs.appendFile(logFile, appendLines, 'utf8');
+          currentFileBytes += appendBytes;
+        } catch (appendErr) {
+          await withFileLock(capLockFile, async () => {
+            const metaFile = path.join(dir, '.capacity.meta');
+            try {
+              const raw = await readBoundedFile(metaFile, 1024);
+              const parsed = JSON.parse(raw);
+              if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
+                await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - appendBytes) }));
+              }
+            } catch {}
+          });
+          throw appendErr;
+        }
 
         // Materialize/update consolidated JSON snapshot on turn finish or non-streaming user_message
         const isTurnFinished = batch.some(e => e.type === 'turn_finished');

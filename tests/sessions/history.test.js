@@ -119,6 +119,22 @@ test('split credentials across multiple streaming deltas and flushes never reach
     await writer.flush();
   }
 
+  // Split JWT token across multiple deltas and flushes
+  const secretJwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signatureTail1234567890';
+  const partsJwt = ['auth header: eyJh', 'bGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.', 'signatureTail1234567890 finished\n'];
+  for (const part of partsJwt) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
+  // Split Slack token across multiple deltas and flushes
+  const secretSlack = 'xoxb-123456789012-3456789012345-abcdefghijklmnopqrstuvwx';
+  const partsSlack = ['slack key: xoxb-12345', '6789012-3456789012345-abcdefghijklmnopqrstuvwx end\n'];
+  for (const part of partsSlack) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
@@ -136,6 +152,10 @@ test('split credentials across multiple streaming deltas and flushes never reach
   assert.ok(!rawLog.includes('ghp_ABCDEFGHIJKLMN'), '.jsonl must never contain partial unredacted dot-prefixed token');
   assert.ok(!rawLog.includes(secretAws), '.jsonl must never contain raw unredacted aws token');
   assert.ok(!rawLog.includes('AKIAIOSF'), '.jsonl must never contain partial unredacted aws token');
+  assert.ok(!rawLog.includes(secretJwt), '.jsonl must never contain raw unredacted JWT');
+  assert.ok(!rawLog.includes('eyJhbGciOiJIUzI1Ni'), '.jsonl must never contain partial unredacted JWT header');
+  assert.ok(!rawLog.includes(secretSlack), '.jsonl must never contain raw unredacted Slack token');
+  assert.ok(!rawLog.includes('xoxb-12345'), '.jsonl must never contain partial unredacted Slack token');
 
   assert.ok(!rawJson.includes(secretGhp), '.json must never contain raw unredacted ghp token');
   assert.ok(!rawJson.includes(secretSk), '.json must never contain raw unredacted sk token');
@@ -145,12 +165,18 @@ test('split credentials across multiple streaming deltas and flushes never reach
   assert.ok(!rawJson.includes('ghp_ABCDEFGHIJKLMN'), '.json must never contain partial unredacted dot-prefixed token');
   assert.ok(!rawJson.includes(secretAws), '.json must never contain raw unredacted aws token');
   assert.ok(!rawJson.includes('AKIAIOSF'), '.json must never contain partial unredacted aws token');
+  assert.ok(!rawJson.includes(secretJwt), '.json must never contain raw unredacted JWT');
+  assert.ok(!rawJson.includes('eyJhbGciOiJIUzI1Ni'), '.json must never contain partial unredacted JWT header');
+  assert.ok(!rawJson.includes(secretSlack), '.json must never contain raw unredacted Slack token');
+  assert.ok(!rawJson.includes('xoxb-12345'), '.json must never contain partial unredacted Slack token');
 
   // Verify redacted token presence
   assert.ok(rawLog.includes('ghp_***[REDACTED]***'), '.jsonl must contain redacted ghp token');
   assert.ok(rawLog.includes('sk-***[REDACTED]***'), '.jsonl must contain redacted sk token');
   assert.ok(rawLog.includes('bob:***[REDACTED]***@host'), '.jsonl must contain redacted URL credentials');
   assert.ok(rawLog.includes('AKIA***[REDACTED]***'), '.jsonl must contain redacted aws token');
+  assert.ok(rawLog.includes('eyJ***[REDACTED]***'), '.jsonl must contain redacted JWT');
+  assert.ok(rawLog.includes('xox-***[REDACTED]***'), '.jsonl must contain redacted Slack token');
 
   const history = await getHistory(sess.sessionHandle);
   assert.ok(history);
@@ -160,6 +186,8 @@ test('split credentials across multiple streaming deltas and flushes never reach
   assert.ok(msg.text.includes('sk-***[REDACTED]***'));
   assert.ok(msg.text.includes('bob:***[REDACTED]***@host'));
   assert.ok(msg.text.includes('AKIA***[REDACTED]***'));
+  assert.ok(msg.text.includes('eyJ***[REDACTED]***'));
+  assert.ok(msg.text.includes('xox-***[REDACTED]***'));
 });
 
 test('streaming delta ending in potential secret prefix is held back until turn_finished', async () => {
@@ -179,19 +207,18 @@ test('streaming delta ending in potential secret prefix is held back until turn_
   const rawLogAfterFirstFlush = fs.readFileSync(logFile, 'utf8');
   assert.ok(!rawLogAfterFirstFlush.includes('AKI'), 'Potential secret prefix AKI must be held back from disk on intermediate flush');
 
-  // Now finish turn without completing the token as a secret
-  writer.accept({ type: 'assistant_delta', messageId: 'm1', text: 'RA non-secret suffix\n' });
+  // Now flush turn_finished alone without any new deltas: rawAssembled sweep must commit held-back tail
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
   const rawLogAfterFinish = fs.readFileSync(logFile, 'utf8');
-  assert.ok(rawLogAfterFinish.includes('AKIRA'), 'Held-back prefix is committed when turn finishes');
+  assert.ok(rawLogAfterFinish.includes('AKI'), 'Held-back prefix is committed by rawAssembled sweep when turn finishes');
 
   const history = await getHistory(sess.sessionHandle);
   assert.ok(history);
   const msg = history.events.find(e => e.type === 'assistant_message');
   assert.ok(msg);
-  assert.ok(msg.text.includes('AKIRA'));
+  assert.equal(msg.text, 'Connecting with id AKI');
 });
 
 test('resuming a session older than 7 days succeeds without lock timeout deadlock', async () => {
