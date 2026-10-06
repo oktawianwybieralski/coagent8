@@ -17,6 +17,7 @@ import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '..
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';
+import { isValidModelIdentifier } from '../governance.js';
 
 export interface CodexAppSessionOptions {
   collector: ReturnType<typeof createCodexStreamCollector>;
@@ -51,6 +52,7 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
   let prompt = '';
   let interruptRequested = false, interruptSent = false;
   let warnedRequest = false;
+  let resolvedModel: string | undefined;
 
   const send = (message: Record<string, unknown>) => channel?.send(message);
   // Every failure ends the server: no turn is left running after the run stops.
@@ -77,6 +79,8 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     }
     const id = record(result.thread)?.id;
     if (typeof id !== 'string') fail(typed('PROTOCOL_ERROR', 'Codex returned a thread without an ID.'));
+    // The thread reports the model chosen from the request or the Codex configuration.
+    if (isValidModelIdentifier(result.model)) resolvedModel = result.model;
     collector.initialize(id as string);
     send({ id: REQUEST.turn, method: 'turn/start', params: {
       threadId: id, input: [{ type: 'text', text: prompt, text_elements: [] }], effort: options.effort } });
@@ -146,5 +150,5 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     } else fail(typed('PROTOCOL_ERROR', 'Invalid Codex JSON-RPC message.'));
   }
 
-  return { session, line };
+  return { session, line, resolvedModel: () => resolvedModel };
 }

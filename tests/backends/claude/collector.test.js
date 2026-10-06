@@ -120,3 +120,10 @@ test('Claude collector snapshot reflects uninitialized state without masking pro
   assert.equal(snap.error, undefined, 'uninitialized snapshot before terminal has no synthetic error so adapter reports process stderr');
   assert.equal(snap.output, '');
 });
+
+test('Claude collector reports the model resolved in system/init and ignores an unsafe identifier', () => {
+  assert.equal(collect(recording('success-partial')).snapshot.model, 'claude-haiku-4-5-20251001');
+  const events = recording('success-partial');
+  events[0].model = '--tools=Bash';
+  assert.equal(collect(events).snapshot.model, undefined);
+});

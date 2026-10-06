@@ -20,8 +20,9 @@ async function withFixture(run){
 test('Claude runs restricted read-only print mode with streaming, a pinned session and the prompt as a stream-json message',()=>withFixture(async({dir,captured})=>{
   const events=[];
   const result=await executeClaude('Reply with OK',{cwd:dir,reasoningEffort:'low',onEvent:e=>events.push(e)});
-  assert.equal(result.status,'completed');assert.equal(result.output,'OK');assert.equal(result.model,'sonnet');
-  const {argv,stdin,records}=captured();assert.equal(stdin,'Reply with OK');
+  assert.equal(result.status,'completed');assert.equal(result.output,'OK');
+  assert.equal(result.model,'claude-haiku-4-5-20251001','the model reported by system/init, not the requested alias');
+  const {argv,stdin,records}=captured();assert.equal(stdin,'Reply with OK');assert.equal(argv[argv.indexOf('--model')+1],'sonnet');
   assert.deepEqual(records,[{type:'user',message:{role:'user',content:'Reply with OK'}}],'one user message, then stdin is closed');
   assert.equal(argv[argv.indexOf('--input-format')+1],'stream-json');
   assert.ok(argv.includes('--restricted'));assert.ok(!argv.includes('--bare'));assert.equal(argv[argv.indexOf('--tools')+1],'Read,Glob,Grep');
@@ -89,7 +90,7 @@ test('Claude validates the model before argv and keeps top-tier governance',()=>
   assert.equal((await executeClaude('x',{cwd:dir})).status,'completed');assert.equal(captured().argv.includes('sonnet'),true);
   process.env.ANTHROPIC_DEFAULT_SONNET_MODEL='claude-opus-4-6';
   assert.equal((await executeClaude('x',{cwd:dir})).error.code,'POLICY_DENIED');assert.equal(captured(),null);
-  const confirmed=await executeClaude('x',{cwd:dir,userConfirmed:true});assert.equal(confirmed.status,'completed');assert.equal(confirmed.model,'claude-opus-4-6');captured();
+  const confirmed=await executeClaude('x',{cwd:dir,userConfirmed:true});assert.equal(confirmed.status,'completed');assert.equal(captured().argv.includes('claude-opus-4-6'),true);
   process.env.ANTHROPIC_DEFAULT_SONNET_MODEL='--tools=Bash';
   assert.equal((await executeClaude('x',{cwd:dir})).error.code,'POLICY_DENIED');delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
   for(const model of ['opus','opusplan','opus[1m]','best','default'])assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'POLICY_DENIED',model);

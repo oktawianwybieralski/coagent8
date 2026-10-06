@@ -164,3 +164,15 @@ test('probe returns standardized AdapterProbeResult with executionSupported, cap
     for (const [key,value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }
 });
+
+test('Codex reports the model the thread resolved rather than the requested one', async () => {
+  assert.equal((await execute('x', options)).model, options.model);
+  process.env.CODEX_FIXTURE_MODE = 'resolved-model';
+  try {
+    const resolved = await execute('x', options);
+    assert.equal(resolved.status, 'completed');
+    assert.equal(resolved.model, 'gpt-6.1-sol-2026-10-01');
+  } finally {
+    delete process.env.CODEX_FIXTURE_MODE;
+  }
+});

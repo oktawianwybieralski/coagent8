@@ -1,4 +1,11 @@
 const GOVERNED_TOP_TIER_MODELS = new Set(['astra', 'claude-3-opus', 'claude-3-opus-20240229', 'opus']);
+/** Model identifier pattern from the audit (AUD-P1-6); rejects option-like and whitespace values. */
+const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
+
+/** Returns whether a requested or backend-reported model identifier is safe to pass on and record. */
+export function isValidModelIdentifier(value: unknown): value is string {
+  return typeof value === 'string' && MODEL_ID_PATTERN.test(value);
+}
 
 export interface GovernanceCheckResult {
   isError: true;

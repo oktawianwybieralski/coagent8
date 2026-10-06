@@ -5,6 +5,7 @@ import { redactDiagnostic } from '../../redaction.js';
 import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { classifyClaudeFailure } from './errors.js';
+import { isValidModelIdentifier } from '../governance.js';
 
 /** Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289). */
 const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event', 'control_response']);
@@ -50,6 +51,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   const tools = new Map<string, string>();
   const warned = new Set<string>();
   let sessionId: string | null = null;
+  let model: string | undefined;
   let currentMessageId: string | null = null;
   let terminal = false;
   let finalText: string | null = null;
@@ -81,6 +83,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!Array.isArray(servers) || servers.length > 0) fail('SANDBOX_UNAVAILABLE', 'Claude Code connected MCP servers despite the empty strict MCP configuration.');
     if (event.permissionMode !== 'dontAsk') fail('SANDBOX_UNAVAILABLE', 'Claude Code did not start in dontAsk permission mode.');
     sessionId = options.expectedSessionId.toLowerCase();
+    // The CLI resolves aliases such as `opus`; report the model that actually answers.
+    if (isValidModelIdentifier(event.model)) model = event.model;
     emit({ type: 'status', message: 'Initializing Claude Code session...' });
   }
   function acceptSystem(event: Record<string, unknown>) {
@@ -196,7 +200,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       ? classifyClaudeFailure({ category, apiErrorStatus: resultFields.apiErrorStatus, subtype: resultFields.subtype,
         errors: resultFields.errors, message: finalText, rateLimitResetsAt })
       : truncated ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false } : undefined;
-    return { sessionId, initialized: sessionId !== null, terminal, usage, truncated, error, output: (resultFields?.isError || !sessionId) ? '' : output, hasAssistantMessage: reducer.getMessageMap().size > 0 };
+    return { sessionId, initialized: sessionId !== null, model, terminal, usage, truncated, error, output: (resultFields?.isError || !sessionId) ? '' : output, hasAssistantMessage: reducer.getMessageMap().size > 0 };
   }
   return { line, snapshot, isTerminal: () => terminal };
 }

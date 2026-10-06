@@ -249,6 +249,8 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
   const status = processResult.status === 'cancelled' || processResult.status === 'timed_out' ? processResult.status : error ? 'failed' : 'completed';
   return {
     ...s,
+    // agy may omit the model from `init`; then the requested model is the best known.
+    model: s.model ?? targetModel,
     status,
     isError: status !== 'completed',
     error,

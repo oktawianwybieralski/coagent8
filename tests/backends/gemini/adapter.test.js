@@ -380,3 +380,14 @@ test('gemini-adapter: parseGeminiUsage parses agy usage groups and computes bott
   assert.equal(quota.window, 'weekly');
   assert.equal(quota.buckets.length, 2);
 });
+
+test('Gemini falls back to the requested model when agy omits it from init', async () => {
+  process.env.coagent8_FIXTURE_MODE = 'init-without-model';
+  try {
+    const result = await execute('request', { cwd: tempDir, model: 'gemini-3.8-flash-low' });
+    assert.equal(result.status, 'completed', JSON.stringify(result));
+    assert.equal(result.model, 'gemini-3.8-flash-low');
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
+});

@@ -61,7 +61,8 @@ function handle(message) {
     const sandbox = mode === 'sandbox-writable'
       ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
       : { type: 'readOnly', networkAccess: false };
-    send({ id, result: { thread: { id: threadId, turns: [] }, model: params.model, modelProvider: 'openai', serviceTier: null, cwd: params.cwd,
+    // `resolved-model`: the thread reports a concrete model other than the requested one.
+    send({ id, result: { thread: { id: threadId, turns: [] }, model: mode === 'resolved-model' ? 'gpt-6.1-sol-2026-10-01' : params.model, modelProvider: 'openai', serviceTier: null, cwd: params.cwd,
       approvalPolicy: mode === 'approvals-on' ? 'on-request' : 'never', sandbox, reasoningEffort: null } });
   } else if (method === 'turn/start') {
     send({ id, result: { turn: { id: TURN, items: [], status: 'inProgress', error: null } } });

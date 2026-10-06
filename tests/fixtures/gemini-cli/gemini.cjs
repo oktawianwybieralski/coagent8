@@ -73,7 +73,7 @@ function run() {
   }
 
   const sid = mode === 'wrong-session' ? '99999999-aaaa-bbbb-cccc-123456789012' : native;
-  send({ event: 'init', conversation_id: sid, model });
+  send(mode === 'init-without-model' ? { event: 'init', conversation_id: sid } : { event: 'init', conversation_id: sid, model });
 
   if (mode === 'secret-hang') {
     send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'sk-fixtureSecret1234567890abcdef' } });

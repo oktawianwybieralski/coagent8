@@ -5,6 +5,7 @@ import { redactDiagnostic } from '../../redaction.js';
 import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { extractStructuredGeminiError } from './errors.js';
+import { isValidModelIdentifier } from '../governance.js';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 /**
@@ -103,7 +104,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
       if (e.model != null && typeof e.model !== 'string') throw new Error('Invalid Gemini init metadata.');
       if (nativeSessionId && nativeSessionId !== sid) throw new Error('Gemini changed session within a turn.');
       nativeSessionId = sid;
-      if (typeof e.model === 'string') model = e.model;
+      if (isValidModelIdentifier(e.model)) model = e.model;
       return;
     }
 
