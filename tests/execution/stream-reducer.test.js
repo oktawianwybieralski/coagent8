@@ -4,46 +4,6 @@ const assert = require('node:assert/strict');
 const { StreamReducer, createStreamReducer } = require('../../src/execution/stream-reducer.ts');
 const { truncateToByteLength } = require('../../src/execution/stream.ts');
 
-test('StreamReducer preserves record boundaries, handles streaming chunks, and flushes cleanly', () => {
-  const reducer = createStreamReducer({ maxLineBuffer: 1024 });
-  const lines = [];
-
-  // Split chunk across boundary
-  reducer.pushChunk('{"type":"start"', l => lines.push(l));
-  assert.equal(lines.length, 0, 'No complete line yet');
-
-  reducer.pushChunk('}\n{"type":"step"}\n', l => lines.push(l));
-  assert.equal(lines.length, 2, 'Two complete lines received');
-  assert.equal(lines[0], '{"type":"start"}');
-  assert.equal(lines[1], '{"type":"step"}');
-
-  // Incomplete fragment flushed at end
-  reducer.pushChunk('{"type":"end"}', l => lines.push(l));
-  assert.equal(lines.length, 2);
-  reducer.flush(l => lines.push(l));
-  assert.equal(lines.length, 3);
-  assert.equal(lines[2], '{"type":"end"}');
-});
-
-test('StreamReducer safely discards oversized records without breaking JSONL boundaries', () => {
-  const reducer = new StreamReducer({ maxLineBuffer: 256 });
-  const lines = [];
-
-  // Valid small record
-  reducer.pushChunk('{"id":1}\n', l => lines.push(l));
-  assert.equal(lines.length, 1);
-
-  // Oversized record exceeding 256 bytes without newline
-  reducer.pushChunk('{"huge":"' + 'X'.repeat(500) + '"}');
-  assert.equal(reducer.hasOversizedLine(), true);
-
-  // Newline terminates the discarded record; next record is valid
-  reducer.pushChunk('\n{"id":2}\n', l => lines.push(l));
-  assert.equal(lines.length, 2);
-  assert.equal(lines[0], '{"id":1}');
-  assert.equal(lines[1], '{"id":2}');
-});
-
 test('StreamReducer manages message accumulation and terminal answer replacement', () => {
   const reducer = new StreamReducer({ maxTotalBytes: 500, maxMessageBytes: 200 });
 
@@ -70,42 +30,6 @@ test('StreamReducer tracks tool lifecycle', () => {
 
   assert.equal(reducer.getActiveTools().get('tool-1'), 'ast_grep');
   assert.ok(reducer.getFinishedTools().has('tool-1'));
-});
-
-test('StreamReducer handles multi-byte UTF-8 split across chunk buffers without corruption', () => {
-  const reducer = new StreamReducer();
-  const lines = [];
-
-  // 4-byte emoji 😀 is 0xF0 0x9F 0x98 0x80
-  const emojiBytes = Buffer.from('😀\n', 'utf8');
-  assert.equal(emojiBytes.length, 5);
-
-  // Split emoji across two chunks: 2 bytes in chunk 1, remaining 3 bytes in chunk 2
-  reducer.pushChunk(emojiBytes.subarray(0, 2), l => lines.push(l));
-  assert.equal(lines.length, 0);
-
-  reducer.pushChunk(emojiBytes.subarray(2), l => lines.push(l));
-  assert.equal(lines.length, 1);
-  assert.equal(lines[0], '😀');
-  assert.ok(!lines[0].includes('\uFFFD'), 'Must not produce replacement characters');
-});
-
-test('records containing a newline or trailing fragments strictly enforce maxLineBuffer', () => {
-  const reducer = new StreamReducer({ maxLineBuffer: 20 });
-  const lines = [];
-
-  // A 40-byte record arriving with a newline in a single chunk must be discarded
-  const oversizedChunk = 'X'.repeat(40) + '\nvalid\n';
-  reducer.pushChunk(oversizedChunk, l => lines.push(l));
-
-  assert.equal(lines.length, 1);
-  assert.equal(lines[0], 'valid');
-  assert.equal(reducer.hasOversizedLine(), true);
-
-  // An oversized trailing fragment must be discarded on flush
-  reducer.pushChunk('Y'.repeat(30));
-  reducer.flush(l => lines.push(l));
-  assert.equal(lines.length, 1, 'Trailing oversized fragment must not be emitted');
 });
 
 test('strict byte budgets never exceed available space even with small budgets and multiple messages', () => {

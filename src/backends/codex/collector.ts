@@ -10,7 +10,6 @@ export interface CodexStreamCollectorOptions {
   onEvent?: (event: AdapterEvent) => void;
   onProgress?: ((message: string) => void) | null;
   nativeSessionId?: string | null;
-  maxLineBuffer?: number;
   maxTotalMessageBytes?: number;
   maxMessages?: number;
   maxTextPerMessage?: number;
@@ -46,7 +45,7 @@ const TOOL_ITEMS: Record<string, string> = {
  * server emits once per model request.
  */
 export function createCodexStreamCollector(options: CodexStreamCollectorOptions = {}) {
-  const reducer = new StreamReducer({ maxLineBuffer: options.maxLineBuffer ?? 512 * 1024,
+  const reducer = new StreamReducer({
     maxTotalBytes: options.maxTotalMessageBytes ?? 512 * 1024, maxMessages: options.maxMessages ?? 50,
     maxMessageBytes: options.maxTextPerMessage ?? 512 * 1024 });
   let threadId = options.nativeSessionId ?? null;
@@ -163,7 +162,7 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   function snapshot() {
     const joined = [...reducer.getMessageMap().values()].join('\n\n');
     const output = truncateToByteLength(joined, reducer.maxTotalBytes);
-    const truncated = reducer.isTruncated() || reducer.hasOversizedLine() || output !== joined;
+    const truncated = reducer.isTruncated() || output !== joined;
     const usage: TerminalExecutionResult['usage'] = usageSeen
       ? { source: 'provider', inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } : undefined;
     return { threadId, turnId, initialized, terminal, interrupted, usage, truncated, output,
@@ -171,12 +170,5 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   }
   return { notify, initialize, beginTurn, line, snapshot,
     isTerminal: () => terminal,
-    pushChunk: (chunk: string) => reducer.pushChunk(chunk, line),
-    flush: () => reducer.flush(line),
-    getCapturedThreadId: () => threadId,
-    getFormattedOutput: () => snapshot().output,
-    getRawFallbackLines: () => [],
-    getJsonErrors: () => providerError ? [providerError.message] : [],
-    hasOversizedLine: () => reducer.hasOversizedLine(),
   };
 }

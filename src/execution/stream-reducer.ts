@@ -1,9 +1,7 @@
 import { Buffer } from 'node:buffer';
-import { StringDecoder } from 'node:string_decoder';
 import { truncateToByteLength } from './stream.js';
 
 export interface StreamReducerOptions {
-  maxLineBuffer?: number;
   maxTotalBytes?: number;
   maxMessageBytes?: number;
   maxMessages?: number;
@@ -12,16 +10,11 @@ export interface StreamReducerOptions {
 
 /**
  * Unified Stream Reducer
- * Standardizes chunk buffering, multi-byte UTF-8 boundary preservation,
- * per-record line bounding, response assembly, terminal answer replacement,
- * tool tracking, and strict memory bounds across provider adapters.
+ * Standardizes response assembly, terminal answer replacement, tool tracking,
+ * and strict memory bounds across provider adapters. Line framing belongs to
+ * createLineDecoder in execution/stream.
  */
 export class StreamReducer {
-  private readonly decoder = new StringDecoder('utf8');
-  private stdoutBuffer = '';
-  private stdoutBufferBytes = 0;
-  private discardingOversizedLine = false;
-  private hasDiscardedOversizedLine = false;
   private messageTruncated = false;
   private totalMessageBytes = 0;
   private readonly messageMap = new Map<string, string>();
@@ -29,98 +22,16 @@ export class StreamReducer {
   private readonly activeTools = new Map<string, string>();
   private readonly finishedTools = new Set<string>();
 
-  readonly maxLineBuffer: number;
   readonly maxTotalBytes: number;
   readonly maxMessageBytes: number;
   readonly maxMessages: number;
   readonly maxTools: number;
 
   constructor(options: StreamReducerOptions = {}) {
-    this.maxLineBuffer = options.maxLineBuffer ?? 64 * 1024;
     this.maxTotalBytes = options.maxTotalBytes ?? 512 * 1024;
     this.maxMessageBytes = options.maxMessageBytes ?? 256 * 1024;
     this.maxMessages = options.maxMessages ?? 50;
     this.maxTools = options.maxTools ?? 50;
-  }
-
-  /**
-   * Buffers incoming chunks using StringDecoder to prevent UTF-8 multi-byte split corruption.
-   * Enforces maxLineBuffer on every newline-delimited record and discards oversized records cleanly.
-   */
-  pushChunk(chunk: string | Buffer, onLine?: (line: string) => void): void {
-    const text = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
-
-    if (this.discardingOversizedLine) {
-      const nlIdx = text.indexOf('\n');
-      if (nlIdx === -1) {
-        return; // Still discarding oversized line, discard without buffering
-      }
-      this.discardingOversizedLine = false;
-      this.stdoutBuffer = text.slice(nlIdx + 1);
-      this.stdoutBufferBytes = Buffer.byteLength(this.stdoutBuffer, 'utf8');
-    } else {
-      const incomingBytes = Buffer.byteLength(text, 'utf8');
-      if (this.stdoutBufferBytes + incomingBytes > this.maxLineBuffer && !this.stdoutBuffer.includes('\n') && !text.includes('\n')) {
-        this.stdoutBuffer = '';
-        this.stdoutBufferBytes = 0;
-        this.discardingOversizedLine = true;
-        this.hasDiscardedOversizedLine = true;
-        return;
-      }
-      this.stdoutBuffer += text;
-      this.stdoutBufferBytes += incomingBytes;
-    }
-
-    if (!this.stdoutBuffer.includes('\n')) {
-      return;
-    }
-
-    let start = 0;
-    let nlIdx = -1;
-    while ((nlIdx = this.stdoutBuffer.indexOf('\n', start)) !== -1) {
-      let line = this.stdoutBuffer.slice(start, nlIdx);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      start = nlIdx + 1;
-
-      if (Buffer.byteLength(line, 'utf8') > this.maxLineBuffer) {
-        this.hasDiscardedOversizedLine = true;
-        continue;
-      }
-
-      onLine?.(line);
-    }
-
-    this.stdoutBuffer = start > 0 ? this.stdoutBuffer.slice(start) : this.stdoutBuffer;
-    this.stdoutBufferBytes = Buffer.byteLength(this.stdoutBuffer, 'utf8');
-    if (this.stdoutBufferBytes > this.maxLineBuffer) {
-      this.stdoutBuffer = '';
-      this.stdoutBufferBytes = 0;
-      this.discardingOversizedLine = true;
-      this.hasDiscardedOversizedLine = true;
-    }
-  }
-
-  /**
-   * Finalizes StringDecoder and flushes any remaining incomplete fragment in stdoutBuffer.
-   */
-  flush(onLine?: (line: string) => void): void {
-    const remainingDecoded = this.decoder.end();
-    if (remainingDecoded) {
-      this.stdoutBuffer += remainingDecoded;
-      this.stdoutBufferBytes += Buffer.byteLength(remainingDecoded, 'utf8');
-    }
-
-    if (this.stdoutBuffer) {
-      if (!this.discardingOversizedLine) {
-        if (this.stdoutBufferBytes > this.maxLineBuffer) {
-          this.hasDiscardedOversizedLine = true;
-        } else {
-          onLine?.(this.stdoutBuffer);
-        }
-      }
-      this.stdoutBuffer = '';
-      this.stdoutBufferBytes = 0;
-    }
   }
 
   private setBoundedActiveTool(id: string, name: string): void {
@@ -294,12 +205,8 @@ export class StreamReducer {
     return this.totalMessageBytes;
   }
 
-  hasOversizedLine(): boolean {
-    return this.hasDiscardedOversizedLine;
-  }
-
   isTruncated(): boolean {
-    return this.hasDiscardedOversizedLine || this.messageTruncated;
+    return this.messageTruncated;
   }
 
   getActiveTools(): Map<string, string> {

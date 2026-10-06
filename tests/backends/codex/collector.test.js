@@ -33,51 +33,26 @@ test('createCodexStreamCollector accumulates message updates from created -> upd
 
   // 1. Thread started event
   collector.initialize('thread_audit_123');
-  assert.equal(collector.getCapturedThreadId(), 'thread_audit_123');
+  assert.equal(collector.snapshot().threadId, 'thread_audit_123');
 
   // 2. Stream partial message
-  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Partial analysis: checking lock mechanism...' } }
-  }) + '\n');
-  assert.equal(collector.getFormattedOutput(), 'Partial analysis: checking lock mechanism...');
+  collector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Partial analysis: checking lock mechanism...' } }
+  }));
+  assert.equal(collector.snapshot().output, 'Partial analysis: checking lock mechanism...');
 
   // 3. Stream updated message
-  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Partial analysis: identified race window in reclamation.' } }
-  }) + '\n');
-  assert.equal(collector.getFormattedOutput(), 'Partial analysis: identified race window in reclamation.');
+  collector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Partial analysis: identified race window in reclamation.' } }
+  }));
+  assert.equal(collector.snapshot().output, 'Partial analysis: identified race window in reclamation.');
 
   // 4. Stream completed message with final audit findings
-  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Audit Findings:\n- Mutual exclusion verified with reclaimMutex.\n- Zero P1/P2 issues.' } }
-  }) + '\n');
-  collector.flush();
+  collector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Audit Findings:\n- Mutual exclusion verified with reclaimMutex.\n- Zero P1/P2 issues.' } }
+  }));
 
-  const finalOutput = collector.getFormattedOutput();
+  const finalOutput = collector.snapshot().output;
   assert.ok(finalOutput.includes('Mutual exclusion verified with reclaimMutex'));
   assert.ok(finalOutput.includes('Zero P1/P2 issues'));
   assert.ok(!finalOutput.includes('checking lock mechanism'));
-});
-
-test('createCodexStreamCollector safely discards oversized records without corrupting JSONL boundaries', async () => {
-  const collector = createCodexStreamCollector({ maxLineBuffer: 1024 }); // 1KB test limit
-
-  // Send a valid message chunk
-  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'First valid report' } }
-  }) + '\n');
-
-  // Send an oversized record (> 1KB) without newline
-  const bigChunk = '{"method":"raw_log","params":{"content":"' + 'X'.repeat(2000) + '"}}';
-  collector.pushChunk(bigChunk); // exceeds maxLineBuffer, gets discarded cleanly
-
-  // Send the newline terminating the oversized record, followed immediately by another valid message
-  collector.pushChunk('\n' + JSON.stringify({ method: 'item/completed', params: { item: { id: 'm2', type: 'agentMessage', text: 'Second valid report after oversized skip' } }
-  }) + '\n');
-
-  collector.flush();
-
-  const output = collector.getFormattedOutput();
-  assert.ok(output.includes('First valid report'));
-  assert.ok(output.includes('Second valid report after oversized skip'));
-  assert.ok(!output.includes('XXXXX'));
-  assert.equal(collector.getRawFallbackLines().length, 0, 'No corrupted JSON fragments in fallback');
 });
 
 test('createCodexStreamCollector retains bounded latest text under budget pressure rather than stale draft', async () => {
@@ -85,17 +60,16 @@ test('createCodexStreamCollector retains bounded latest text under budget pressu
   const collector = createCodexStreamCollector({ maxTotalMessageBytes: 150 });
 
   // Stream initial partial draft (60 bytes)
-  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'Initial partial analysis draft from turn.' } }
-  }) + '\n');
-  assert.equal(collector.getFormattedOutput(), 'Initial partial analysis draft from turn.');
+  collector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'Initial partial analysis draft from turn.' } }
+  }));
+  assert.equal(collector.snapshot().output, 'Initial partial analysis draft from turn.');
 
   // Stream final large findings (250 bytes), which exceeds the 150 bytes budget
   const finalFindings = 'Final comprehensive findings: identified 0 vulnerabilities in review, confirmed mutual exclusion and strict secret masking. '.repeat(2);
-  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: finalFindings } }
-  }) + '\n');
-  collector.flush();
+  collector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: finalFindings } }
+  }));
 
-  const output = collector.getFormattedOutput();
+  const output = collector.snapshot().output;
   // It must NOT keep the stale "Initial partial analysis draft"
   assert.ok(!output.includes('Initial partial analysis draft'));
   // It MUST keep the latest final findings with explicit truncation marker
@@ -104,15 +78,14 @@ test('createCodexStreamCollector retains bounded latest text under budget pressu
 
   // Reduced budget test (40 bytes total): 5-byte draft + 35-byte message leaves 0 bytes available
   const tightCollector = createCodexStreamCollector({ maxTotalMessageBytes: 40 });
-  tightCollector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'draft' } }
-  }) + '\n');
-  tightCollector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm2', type: 'agentMessage', text: '01234567890123456789012345678901234' } } // 35 bytes
-  }) + '\n');
+  tightCollector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'draft' } }
+  }));
+  tightCollector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm2', type: 'agentMessage', text: '01234567890123456789012345678901234' } } // 35 bytes
+  }));
   // Final text arrives for m1
-  tightCollector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'final text for m1' } }
-  }) + '\n');
-  tightCollector.flush();
-  const tightOutput = tightCollector.getFormattedOutput();
+  tightCollector.line(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'final text for m1' } }
+  }));
+  const tightOutput = tightCollector.snapshot().output;
   assert.ok(!tightOutput.includes('draft'), 'Stale draft must never survive under tight budget');
   assert.ok(tightOutput.includes('[truncated]'), 'Must indicate truncation');
 });

@@ -21,7 +21,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
   let terminal = false;
   let terminalError: ExecutionError | undefined;
   let sandboxDenied = false;
-  const reducer = new StreamReducer({ maxTotalBytes: 512 * 1024, maxMessageBytes: 256 * 1024, maxLineBuffer: 64 * 1024, maxTools: 50, maxMessages: 50 });
+  const reducer = new StreamReducer({ maxTotalBytes: 512 * 1024, maxMessageBytes: 256 * 1024, maxTools: 50, maxMessages: 50 });
   const seen = new Set<string>();
   let messageId = 'assistant-1';
   let messageNumber = 1;

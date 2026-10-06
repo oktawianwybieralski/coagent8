@@ -893,8 +893,9 @@ preserved or explicitly migrated; deletion is not a contract change unless state
   extractors. Validate arguments once at the server boundary (AUD-P2-4).
 - [ ] Drop the Gemini adapter's second timeout (AUD-P2-5).
 - [x] Delete dead code (AUD-P2-6):
-  - the unused half of `StreamReducer` (`recordActivity`, `recordError`,
-    `recordFallbackLine` and the state, options and getters only they used);
+  - the unused half of `StreamReducer` (`pushChunk`, `flush`, `recordActivity`,
+    `recordError`, `recordFallbackLine` and the state, options and getters only
+    they used);
   - `killProcessSafely`, `getProgressStage`, `getToolProfile`, `CONFIG_FILE`,
     `DEFAULT_CONFIG_DIR`, `resolveCodexCommand`, `SessionLockData`;
   - the unreachable truncation-string check in `git.ts`.
@@ -906,9 +907,13 @@ preserved or explicitly migrated; deletion is not a contract change unless state
   passes and the full suite (`node tests/run.cjs`) reports 202 tests, 200 pass,
   2 skipped, the same inventory as before the deletion except two renamed
   `tests/execution/stream-reducer.test.js` cases that no longer exercise
-  activities. `StreamReducer.pushChunk` and `flush` stay: the Codex collector
-  exposes them and `tests/backends/codex/collector.test.js` drives them,
-  although production reads app-server records through `line`.
+  activities. A follow-up removed the reducer's line framing (`pushChunk`,
+  `flush`) and the Codex collector methods only tests called; production frames
+  records with `createLineDecoder`, whose UTF-8, CRLF, oversized-line and
+  trailing-fragment behavior `tests/execution/process.test.js` (F08) measures.
+  Codex collector tests now feed records through `line` and read `snapshot()`;
+  five tests of the removed framing were deleted, leaving 197 tests (195 pass,
+  2 skipped).
 - [ ] Remove or implement phantom contract fields: `doctor.repair`,
   `doctor.workspace_path`, `resources.listChanged`, and the hardcoded doctor
   `security_policy` claims (AUD-P2-8).
