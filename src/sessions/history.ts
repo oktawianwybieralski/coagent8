@@ -32,6 +32,74 @@ import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, readBoundedFile } from '../execution/stream.js';
 import type { AdapterEvent, ConversationEvent, ProviderId } from '../conversation.js';
 import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../conversation.js';
+import { getSession } from './session.js';
+
+function isPotentialSecretPrefix(word: string): boolean {
+  if (!word) return false;
+  const w = word.toLowerCase();
+  if ('-----begin'.startsWith(w) || w.startsWith('-----begin')) return true;
+  if ('authorization'.startsWith(w) || w.startsWith('authorization')) return true;
+  if ('bearer'.startsWith(w) || w.startsWith('bearer')) return true;
+  if ('basic'.startsWith(w) || w.startsWith('basic')) return true;
+  if ('sk-'.startsWith(w) || 'sk_live_'.startsWith(w) || w.startsWith('sk-') || w.startsWith('sk_live_')) return true;
+  if ('aiza'.startsWith(w) || w.startsWith('aiza')) return true;
+  if ('ya29.'.startsWith(w) || w.startsWith('ya29.')) return true;
+  if (
+    'ghp_'.startsWith(w) || 'gho_'.startsWith(w) || 'ghu_'.startsWith(w) || 'ghs_'.startsWith(w) ||
+    'github_pat_'.startsWith(w) || 'glpat-'.startsWith(w) ||
+    w.startsWith('ghp_') || w.startsWith('gho_') || w.startsWith('ghu_') || w.startsWith('ghs_') ||
+    w.startsWith('github_pat_') || w.startsWith('glpat-')
+  ) return true;
+  if ('npm_'.startsWith(w) || w.startsWith('npm_')) return true;
+  if ('hf_'.startsWith(w) || w.startsWith('hf_')) return true;
+  if ('eyj'.startsWith(w) || w.startsWith('eyj')) return true;
+  if (/^a(?:kia|sia|bia|cca)?/i.test(w)) return true;
+  if ('xox'.startsWith(w) || w.startsWith('xox')) return true;
+  return false;
+}
+
+/**
+ * Computes the safe byte/character commit boundary for streaming text,
+ * holding back any incomplete credentials (e.g. split across deltas) or open PEM blocks.
+ */
+export function computeSafeCommitPoint(text: string, isFinished = false): number {
+  if (isFinished || text.length === 0) return text.length;
+
+  // 1. Open PEM block check: hold back from -----BEGIN if no matching -----END
+  const lower = text.toLowerCase();
+  const lastBegin = lower.lastIndexOf('-----begin');
+  if (lastBegin !== -1) {
+    const lastEnd = lower.lastIndexOf('-----end');
+    if (lastEnd < lastBegin) {
+      return lastBegin;
+    }
+  }
+
+  // 2. Keyword check in trailing 256 characters for auth headers
+  const windowStart = Math.max(0, text.length - 256);
+  const tail = text.slice(windowStart);
+  const tailLower = tail.toLowerCase();
+  const keywords = ['authorization', 'bearer', 'basic'];
+  for (const kw of keywords) {
+    const idx = tailLower.indexOf(kw);
+    if (idx !== -1) {
+      return windowStart + idx;
+    }
+  }
+
+  // 3. Trailing token characters check [A-Za-z0-9._~+/-]
+  let tokenRunStart = text.length;
+  while (tokenRunStart > 0 && /[A-Za-z0-9._~+/-]/.test(text[tokenRunStart - 1])) {
+    tokenRunStart--;
+  }
+
+  const trailingWord = text.slice(tokenRunStart);
+  if (trailingWord && isPotentialSecretPrefix(trailingWord)) {
+    return tokenRunStart;
+  }
+
+  return text.length;
+}
 
 /** Maximum byte capacity for a single session's history log (10 MiB). */
 const SESSION_LIMIT = 10 * 1024 * 1024;
@@ -182,7 +250,7 @@ async function load(handle: string, forceLog = false): Promise<History | null> {
         if (e.schemaVersion !== 1 || e.sessionHandle !== handle || !Number.isSafeInteger(e.sequence) || e.sequence <= seq || typeof e.eventId !== 'string' || typeof e.turnId !== 'string' || !Number.isFinite(Date.parse(e.timestamp))) throw new Error('Invalid history event.');
         seq = e.sequence;
         validateEvent(e);
-        if (Buffer.byteLength(JSON.stringify(e.type === 'assistant_message' || e.type === 'user_message' ? { ...e, text: '' } : e)) > 8192) throw new Error('History event metadata exceeds storage limit.');
+        if (Buffer.byteLength(JSON.stringify(e.type === 'assistant_message' || e.type === 'assistant_delta' || e.type === 'user_message' ? { ...e, text: '' } : e)) > 8192) throw new Error('History event metadata exceeds storage limit.');
         if (!validEventIdentifier(e.eventId) || !validEventIdentifier(e.turnId) || !PROVIDERS.includes(e.provider)) throw new Error('Invalid history event metadata.');
       }
       if (h.nextSequence <= seq) throw new Error('Invalid history sequence counter.');
@@ -247,10 +315,20 @@ async function load(handle: string, forceLog = false): Promise<History | null> {
           const e = item as unknown as ConversationEvent;
           validateEvent(e);
           if (e.schemaVersion !== 1 || e.sessionHandle !== handle || !Number.isSafeInteger(e.sequence) || typeof e.eventId !== 'string' || typeof e.turnId !== 'string' || !Number.isFinite(Date.parse(e.timestamp))) throw new Error('Invalid history event.');
-          if (Buffer.byteLength(JSON.stringify(e.type === 'assistant_message' || e.type === 'user_message' ? { ...e, text: '' } : e)) > 8192) throw new Error('History event metadata exceeds storage limit.');
+          if (Buffer.byteLength(JSON.stringify(e.type === 'assistant_message' || e.type === 'assistant_delta' || e.type === 'user_message' ? { ...e, text: '' } : e)) > 8192) throw new Error('History event metadata exceeds storage limit.');
           if (!validEventIdentifier(e.eventId) || !validEventIdentifier(e.turnId) || !PROVIDERS.includes(e.provider)) throw new Error('Invalid history event metadata.');
 
-          if (e.type === 'assistant_message') {
+          if (e.type === 'assistant_delta') {
+            const idx = events.findIndex(x => x.turnId === e.turnId && x.type === 'assistant_message' && x.messageId === e.messageId);
+            if (idx >= 0) {
+              (events[idx] as { text: string }).text += e.text;
+            } else {
+              events.push({
+                ...e,
+                type: 'assistant_message',
+              });
+            }
+          } else if (e.type === 'assistant_message') {
             const idx = events.findIndex(x => x.turnId === e.turnId && x.type === 'assistant_message' && x.messageId === e.messageId);
             if (idx >= 0) {
               events[idx] = { ...e, sequence: events[idx].sequence };
@@ -327,6 +405,65 @@ async function calculateDirectoryBytes(dir: string): Promise<number> {
   return total;
 }
 
+export async function evictOldestSessions(dir: string, neededBytes: number, activeHandle: string): Promise<number> {
+  let freed = 0;
+  const handles = new Set<string>();
+  try {
+    for (const name of await fs.readdir(dir)) {
+      if ((!name.endsWith('.json') && !name.endsWith('.jsonl')) || name.startsWith('.')) continue;
+      const h = name.replace(/\.jsonl?$/, '');
+      if (h && sanitizeHandle(h) && h !== activeHandle) {
+        handles.add(h);
+      }
+    }
+  } catch {
+    return 0;
+  }
+
+  const candidates: Array<{ handle: string; mtimeMs: number; totalBytes: number }> = [];
+  for (const h of handles) {
+    try {
+      const sess = getSession(h);
+      if (sess && sess.activePid != null) continue; // Skip active session
+    } catch {}
+
+    const jsonFile = path.join(dir, `${h}.json`);
+    const logFile = path.join(dir, `${h}.jsonl`);
+    let mtimeMs = 0;
+    let bytes = 0;
+    try { const s = await fs.stat(jsonFile); bytes += s.size; mtimeMs = Math.max(mtimeMs, s.mtimeMs); } catch {}
+    try { const s = await fs.stat(logFile); bytes += s.size; mtimeMs = Math.max(mtimeMs, s.mtimeMs); } catch {}
+
+    if (bytes > 0) {
+      candidates.push({ handle: h, mtimeMs, totalBytes: bytes });
+    }
+  }
+
+  // Sort LRU (oldest mtimeMs first)
+  candidates.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+  for (const candidate of candidates) {
+    if (freed >= neededBytes) break;
+    try {
+      await withFileLock(path.join(dir, `${candidate.handle}.lock`), async () => {
+        try {
+          const sess = getSession(candidate.handle);
+          if (sess && sess.activePid != null) return;
+        } catch {}
+        const jf = path.join(dir, `${candidate.handle}.json`);
+        const lf = path.join(dir, `${candidate.handle}.jsonl`);
+        let b = 0;
+        try { const s = await fs.stat(jf); b += s.size; await fs.rm(jf, { force: true }); } catch {}
+        try { const s = await fs.stat(lf); b += s.size; await fs.rm(lf, { force: true }); } catch {}
+        invalidateHistoryCache(candidate.handle);
+        freed += b;
+      });
+    } catch {}
+  }
+
+  return freed;
+}
+
 async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promise<number> {
   const metaFile = path.join(dir, '.capacity.meta');
   await fs.rm(metaFile, { force: true });
@@ -353,6 +490,13 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promi
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
+
+  if (total + extraBytes > TOTAL_LIMIT) {
+    const needed = total + extraBytes - TOTAL_LIMIT;
+    const freed = await evictOldestSessions(dir, needed, '');
+    total = Math.max(0, total - freed);
+  }
+
   try {
     await atomicWrite(metaFile, JSON.stringify({ totalBytes: total }));
   } catch {
@@ -372,6 +516,7 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promi
  * @returns Total storage bytes currently occupied after pruning.
  */
 export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
+  if (process.env.coagent8_HISTORY === 'off') return 0;
   const dir = getHistoryDir();
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   return withFileLock(path.join(dir, 'store'), () => pruneHistoryDirectoryInternal(dir, extraBytes));
@@ -395,8 +540,11 @@ export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
  */
 export function createHistoryWriter(handle: string, workspace: string, provider: ProviderId, turnId: string) {
   const pending: AdapterEvent[] = [];
-  const assembled = new Map<string, string>();
-  let chain = Promise.resolve(), writeError: Error | undefined;
+  const rawAssembled = new Map<string, string>();
+  const emittedRedactedLength = new Map<string, number>();
+  let chain = Promise.resolve();
+  let writeError: Error | undefined;
+  let writerDisabled = false;
   let hasPruned = false;
   let headerWritten = false;
   let nextSeq = 1;
@@ -406,30 +554,77 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
   let isStreaming = false;
 
   function accept(event: AdapterEvent) {
-    if (disabled) return;
+    if (disabled || writerDisabled) return;
     validateEvent(event);
     if (event.type === 'assistant_delta') isStreaming = true;
     if (event.type === 'turn_finished') isStreaming = false;
     if (event.type === 'user_message' && pending.some(e => e.type === 'user_message')) return;
-    if (event.type === 'assistant_delta' || event.type === 'assistant_message') {
-      const text = event.type === 'assistant_delta' ? (assembled.get(event.messageId) || '') + event.text : event.text;
-      const bounded = truncateToByteLength(text, 1024 * 1024); assembled.set(event.messageId, bounded);
+
+    if (event.type === 'assistant_delta') {
+      const prev = rawAssembled.get(event.messageId) || '';
+      const bounded = truncateToByteLength(prev + event.text, 1024 * 1024);
+      rawAssembled.set(event.messageId, bounded);
+      pending.push({ ...event });
+    } else if (event.type === 'assistant_message') {
+      const bounded = truncateToByteLength(event.text, 1024 * 1024);
+      rawAssembled.set(event.messageId, bounded);
       const index = pending.findIndex(e => e.type === 'assistant_message' && e.messageId === event.messageId);
       const snapshot: AdapterEvent = { type: 'assistant_message', messageId: event.messageId, text: redactCredentialFormats(bounded) };
       if (index >= 0) pending[index] = snapshot; else pending.push(snapshot);
-    } else pending.push(sanitize(event));
+    } else {
+      pending.push(sanitize(event));
+    }
     if (pending.length > 10000) throw new Error('History event limit exceeded.');
   }
 
   async function flush() {
-    if (disabled) return;
-    const batch = pending.splice(0).map(sanitize);
+    if (disabled || writerDisabled) return;
+
+    // Coalesce assistant_delta events in place to preserve chronological ordering
+    const isTurnFinished = pending.some(e => e.type === 'turn_finished');
+    const processedMessageIds = new Set<string>();
+    const coalesced: AdapterEvent[] = [];
+
+    for (const event of pending) {
+      if (event.type === 'assistant_delta') {
+        if (processedMessageIds.has(event.messageId)) continue;
+        processedMessageIds.add(event.messageId);
+
+        const hasAssistantMessage = pending.some(e => e.type === 'assistant_message' && e.messageId === event.messageId);
+        const rawText = rawAssembled.get(event.messageId) || '';
+        if (hasAssistantMessage) {
+          emittedRedactedLength.set(event.messageId, rawText.length);
+          continue;
+        }
+
+        const isFinished = isTurnFinished;
+        const safePoint = computeSafeCommitPoint(rawText, isFinished);
+        const rawToCommit = rawText.slice(0, safePoint);
+        const redacted = redactCredentialFormats(rawToCommit);
+        const alreadyEmitted = emittedRedactedLength.get(event.messageId) || 0;
+        if (redacted.length > alreadyEmitted) {
+          const deltaText = redacted.slice(alreadyEmitted);
+          coalesced.push({
+            type: 'assistant_delta',
+            messageId: event.messageId,
+            text: deltaText,
+          });
+          emittedRedactedLength.set(event.messageId, redacted.length);
+        }
+      } else {
+        coalesced.push(event);
+      }
+    }
+    pending.length = 0;
+
+    const batch = coalesced.map(sanitize);
     if (!batch.length) return;
 
     chain = chain.then(async () => {
       const dir = getHistoryDir();
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-      await withFileLock(path.join(dir, 'store'), async () => {
+      const sessionLockFile = path.join(dir, `${handle}.lock`);
+      await withFileLock(sessionLockFile, async () => {
         if (!hasPruned) {
           hasPruned = true;
           await pruneHistoryDirectoryInternal(dir);
@@ -459,7 +654,6 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             stat = await fs.stat(logFile);
           } catch (err: unknown) {
             if (!(err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT')) throw err;
-
           }
 
           if (stat) {
@@ -513,7 +707,12 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
               nextSequence: nextSeq,
             }) + '\n';
             const headerBytes = Buffer.byteLength(header, 'utf8');
-            if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+            if (currentTotal + headerBytes > TOTAL_LIMIT) {
+              const needed = currentTotal + headerBytes - TOTAL_LIMIT;
+              const freed = await evictOldestSessions(dir, needed, handle);
+              currentTotal = Math.max(0, currentTotal - freed);
+              if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+            }
             await fs.appendFile(logFile, header, 'utf8');
             currentFileBytes = headerBytes;
             currentTotal += headerBytes;
@@ -562,14 +761,18 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
 
         const appendBytes = Buffer.byteLength(appendLines, 'utf8');
         if (currentFileBytes + appendBytes > SESSION_LIMIT) throw new Error('History session limit reached.');
-        if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+        if (currentTotal + appendBytes > TOTAL_LIMIT) {
+          const needed = currentTotal + appendBytes - TOTAL_LIMIT;
+          const freed = await evictOldestSessions(dir, needed, handle);
+          currentTotal = Math.max(0, currentTotal - freed);
+          if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+        }
 
         await fs.appendFile(logFile, appendLines, 'utf8');
         currentFileBytes += appendBytes;
         currentTotal += appendBytes;
 
-        // Materialize/update consolidated JSON snapshot on completed message or turn finish
-        // Streaming deltas avoid monolithic snapshot rewrites, but still serialize batch bytes.
+        // Materialize/update consolidated JSON snapshot on turn finish or non-streaming user_message
         const isTurnFinished = batch.some(e => e.type === 'turn_finished');
         const shouldMaterialize = isTurnFinished || (!isStreaming && batch.some(e => e.type === 'user_message' || e.type === 'assistant_message'));
         if (shouldMaterialize) {
@@ -592,7 +795,10 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
         }
         historyCache.delete(handle);
       });
-    }).catch(err => { writeError = err; });
+    }).catch(err => {
+      writeError = err;
+      writerDisabled = true;
+    });
 
     await chain;
     if (writeError) throw writeError;
@@ -633,6 +839,7 @@ export async function sessionHistory(handle: string, workspace: string, cursor?:
  * @param workspace - Calling workspace path for verification.
  */
 export async function deleteHistory(handle: string, workspace: string): Promise<void> {
+  if (process.env.coagent8_HISTORY === 'off') return;
   const dir = getHistoryDir();
   await withFileLock(path.join(dir, 'store'), async () => {
     const h = await load(handle);
