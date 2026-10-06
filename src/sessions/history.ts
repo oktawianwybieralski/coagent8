@@ -53,9 +53,10 @@ function isPotentialSecretPrefix(word: string): boolean {
   ) return true;
   if ('npm_'.startsWith(w) || w.includes('npm_')) return true;
   if ('hf_'.startsWith(w) || w.includes('hf_')) return true;
-  if ('eyj'.startsWith(w) || w.includes('eyj')) return true;
-  if (/^a(?:k(?:i(?:a)?)?|s(?:i(?:a)?)?|b(?:i(?:a)?)?|c(?:c(?:a)?)?)?$/i.test(w)) return true;
-  if ('xox'.startsWith(w) || w.includes('xox')) return true;
+  if (
+    w.includes('akia') || w.includes('asia') || w.includes('abia') || w.includes('acca') ||
+    /^a(?:k(?:i(?:a)?)?|s(?:i(?:a)?)?|b(?:i(?:a)?)?|c(?:c(?:a)?)?)?$/i.test(w)
+  ) return true;
   return false;
 }
 
@@ -465,7 +466,7 @@ export async function evictOldestSessions(dir: string, neededBytes: number, acti
   return freed;
 }
 
-async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promise<number> {
+async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0, activeHandle = ''): Promise<number> {
   const metaFile = path.join(dir, '.capacity.meta');
   await fs.rm(metaFile, { force: true });
   let total = 0;
@@ -477,20 +478,24 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promi
         const stat = await fs.stat(file);
         if (Date.now() - stat.mtimeMs > 7 * 24 * 3600 * 1000) {
           const sessionHandle = name.replace(/\.jsonl?$/, '');
-          await withFileLock(path.join(dir, `${sessionHandle}.lock`), async () => {
-            try {
-              const sess = getSession(sessionHandle);
-              if (sess && sess.activePid != null) {
-                total += stat.size;
-                return;
-              }
-            } catch {}
-            try {
-              await fs.rm(file, { force: true });
-            } catch {
+          if (sessionHandle === activeHandle) {
+            total += stat.size;
+            continue;
+          }
+          try {
+            const sess = getSession(sessionHandle);
+            if (sess && sess.activePid != null) {
               total += stat.size;
+              continue;
             }
-          });
+          } catch {}
+          try {
+            await withFileLock(path.join(dir, `${sessionHandle}.lock`), async () => {
+              await fs.rm(file, { force: true });
+            }, 1);
+          } catch {
+            total += stat.size;
+          }
         } else {
           total += stat.size;
         }
@@ -504,7 +509,7 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promi
 
   if (total + extraBytes > TOTAL_LIMIT) {
     const needed = total + extraBytes - TOTAL_LIMIT;
-    const freed = await evictOldestSessions(dir, needed, '');
+    const freed = await evictOldestSessions(dir, needed, activeHandle);
     total = Math.max(0, total - freed);
   }
 
@@ -631,26 +636,24 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
       }
     };
 
-    for (const event of pending) {
+    for (let i = 0; i < pending.length; i++) {
+      const event = pending[i];
       if (event.type === 'assistant_delta') {
         if (processedMessageIds.has(event.messageId)) continue;
-        processedMessageIds.add(event.messageId);
 
-        const hasAssistantMessage = pending.some(e => e.type === 'assistant_message' && e.messageId === event.messageId);
-        if (hasAssistantMessage) {
+        const msgIndex = pending.findLastIndex(e => e.type === 'assistant_message' && e.messageId === event.messageId);
+        if (msgIndex !== -1 && i < msgIndex) {
           continue;
         }
 
+        processedMessageIds.add(event.messageId);
         commitMessage(event.messageId, isTurnFinished);
       } else if (event.type === 'turn_finished') {
         // Before finalizing turn, flush all uncommitted tails from rawAssembled
         for (const [msgId] of rawAssembled.entries()) {
           if (!processedMessageIds.has(msgId)) {
             processedMessageIds.add(msgId);
-            const hasAssistantMessage = pending.some(e => e.type === 'assistant_message' && e.messageId === msgId);
-            if (!hasAssistantMessage) {
-              commitMessage(msgId, true);
-            }
+            commitMessage(msgId, true);
           }
         }
         coalesced.push(event);
@@ -670,7 +673,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
       await withFileLock(sessionLockFile, async () => {
         if (!hasPruned) {
           hasPruned = true;
-          await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir));
+          await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, 0, handle));
         }
 
         const logFile = logFileFor(handle);
@@ -713,8 +716,22 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
                 lines.pop();
                 const validText = lines.length > 0 ? lines.join('\n') + '\n' : '';
                 const validBytes = Buffer.byteLength(validText, 'utf8');
+                const truncatedBytes = stat.size - validBytes;
                 await fs.truncate(logFile, validBytes);
                 currentFileBytes = validBytes;
+                if (truncatedBytes > 0) {
+                  const capLockFile = path.join(dir, '.capacity.lock');
+                  await withFileLock(capLockFile, async () => {
+                    const metaFile = path.join(dir, '.capacity.meta');
+                    try {
+                      const raw = await readBoundedFile(metaFile, 1024);
+                      const parsed = JSON.parse(raw);
+                      if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
+                        await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - truncatedBytes) }));
+                      }
+                    } catch {}
+                  });
+                }
               }
             }
           } else {
@@ -753,15 +770,16 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
                 currentTotal = Math.max(0, currentTotal - freed);
                 if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
               }
+
+              await fs.appendFile(logFile, header, 'utf8');
+              currentFileBytes = headerBytes;
+              headerWritten = true;
+
               currentTotal += headerBytes;
               try {
                 await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
               } catch {}
             });
-
-            await fs.appendFile(logFile, header, 'utf8');
-            currentFileBytes = headerBytes;
-            headerWritten = true;
           }
         }
 
@@ -827,14 +845,14 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
           }
 
+          await fs.appendFile(logFile, appendLines, 'utf8');
+          currentFileBytes += appendBytes;
+
           currentTotal += appendBytes;
           try {
             await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
           } catch {}
         });
-
-        await fs.appendFile(logFile, appendLines, 'utf8');
-        currentFileBytes += appendBytes;
 
         // Materialize/update consolidated JSON snapshot on turn finish or non-streaming user_message
         const isTurnFinished = batch.some(e => e.type === 'turn_finished');

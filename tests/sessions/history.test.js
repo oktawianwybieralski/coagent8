@@ -111,6 +111,14 @@ test('split credentials across multiple streaming deltas and flushes never reach
     await writer.flush();
   }
 
+  // Split AKIA token across multiple deltas and flushes
+  const secretAws = 'AKIAIOSFODNN7EXAMPLE';
+  const partsAws = ['aws key: AKIAIOSF', 'ODNN7EXAMPLE done\n'];
+  for (const part of partsAws) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
@@ -125,18 +133,24 @@ test('split credentials across multiple streaming deltas and flushes never reach
   assert.ok(!rawLog.includes(rawPassword), '.jsonl must never contain raw unredacted URL password');
   assert.ok(!rawLog.includes('hunter2sec'), '.jsonl must never contain partial unredacted URL password');
   assert.ok(!rawLog.includes(dotToken), '.jsonl must never contain raw unredacted dot-prefixed token');
-  assert.ok(!rawLog.includes('ghp_DOTPREFIX'), '.jsonl must never contain partial unredacted dot-prefixed token');
+  assert.ok(!rawLog.includes('ghp_ABCDEFGHIJKLMN'), '.jsonl must never contain partial unredacted dot-prefixed token');
+  assert.ok(!rawLog.includes(secretAws), '.jsonl must never contain raw unredacted aws token');
+  assert.ok(!rawLog.includes('AKIAIOSF'), '.jsonl must never contain partial unredacted aws token');
 
   assert.ok(!rawJson.includes(secretGhp), '.json must never contain raw unredacted ghp token');
   assert.ok(!rawJson.includes(secretSk), '.json must never contain raw unredacted sk token');
   assert.ok(!rawJson.includes(rawPassword), '.json must never contain raw unredacted URL password');
   assert.ok(!rawJson.includes('hunter2sec'), '.json must never contain partial unredacted URL password');
   assert.ok(!rawJson.includes(dotToken), '.json must never contain raw unredacted dot-prefixed token');
+  assert.ok(!rawJson.includes('ghp_ABCDEFGHIJKLMN'), '.json must never contain partial unredacted dot-prefixed token');
+  assert.ok(!rawJson.includes(secretAws), '.json must never contain raw unredacted aws token');
+  assert.ok(!rawJson.includes('AKIAIOSF'), '.json must never contain partial unredacted aws token');
 
   // Verify redacted token presence
   assert.ok(rawLog.includes('ghp_***[REDACTED]***'), '.jsonl must contain redacted ghp token');
   assert.ok(rawLog.includes('sk-***[REDACTED]***'), '.jsonl must contain redacted sk token');
   assert.ok(rawLog.includes('bob:***[REDACTED]***@host'), '.jsonl must contain redacted URL credentials');
+  assert.ok(rawLog.includes('AKIA***[REDACTED]***'), '.jsonl must contain redacted aws token');
 
   const history = await getHistory(sess.sessionHandle);
   assert.ok(history);
@@ -145,30 +159,76 @@ test('split credentials across multiple streaming deltas and flushes never reach
   assert.ok(msg.text.includes('ghp_***[REDACTED]***'));
   assert.ok(msg.text.includes('sk-***[REDACTED]***'));
   assert.ok(msg.text.includes('bob:***[REDACTED]***@host'));
+  assert.ok(msg.text.includes('AKIA***[REDACTED]***'));
 });
 
-test('streaming delta ending in incomplete word like area is committed upon turn_finished', async () => {
+test('streaming delta ending in potential secret prefix is held back until turn_finished', async () => {
   const sess = createSession('gemini', tempDir);
   const turnId = randomUUID();
   const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
 
   writer.accept({ type: 'turn_started' });
-  writer.accept({ type: 'user_message', text: 'Give area advice' });
+  writer.accept({ type: 'user_message', text: 'Give advice' });
   await writer.flush();
 
-  // Send delta ending in "area" without newline or space, flushed separately
-  writer.accept({ type: 'assistant_delta', messageId: 'm1', text: 'This is an area' });
+  // Send delta ending in "id AKI" without newline or space, flushed separately
+  writer.accept({ type: 'assistant_delta', messageId: 'm1', text: 'Connecting with id AKI' });
   await writer.flush();
 
-  // Now flush turn_finished alone
+  const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
+  const rawLogAfterFirstFlush = fs.readFileSync(logFile, 'utf8');
+  assert.ok(!rawLogAfterFirstFlush.includes('AKI'), 'Potential secret prefix AKI must be held back from disk on intermediate flush');
+
+  // Now finish turn without completing the token as a secret
+  writer.accept({ type: 'assistant_delta', messageId: 'm1', text: 'RA non-secret suffix\n' });
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
+
+  const rawLogAfterFinish = fs.readFileSync(logFile, 'utf8');
+  assert.ok(rawLogAfterFinish.includes('AKIRA'), 'Held-back prefix is committed when turn finishes');
 
   const history = await getHistory(sess.sessionHandle);
   assert.ok(history);
   const msg = history.events.find(e => e.type === 'assistant_message');
   assert.ok(msg);
-  assert.equal(msg.text, 'This is an area', 'Held-back tail word must be persisted when turn finishes');
+  assert.ok(msg.text.includes('AKIRA'));
+});
+
+test('resuming a session older than 7 days succeeds without lock timeout deadlock', async () => {
+  const sess = createSession('gemini', tempDir);
+  const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
+  const jsonFile = path.join(getHistoryDir(), `${sess.sessionHandle}.json`);
+
+  // Write initial turn
+  const writer1 = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  writer1.accept({ type: 'turn_started' });
+  writer1.accept({ type: 'user_message', text: 'Turn 1' });
+  writer1.accept({ type: 'assistant_message', messageId: 'm1', text: 'Response 1' });
+  writer1.accept({ type: 'turn_finished', status: 'completed' });
+  await writer1.flush();
+
+  // Age the history files past 7 days (e.g. 10 days ago)
+  const tenDaysAgo = new Date(Date.now() - 10 * 24 * 3600 * 1000);
+  fs.utimesSync(logFile, tenDaysAgo, tenDaysAgo);
+  if (fs.existsSync(jsonFile)) {
+    fs.utimesSync(jsonFile, tenDaysAgo, tenDaysAgo);
+  }
+
+  // Resume the session with a new turn
+  const writer2 = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  writer2.accept({ type: 'turn_started' });
+  writer2.accept({ type: 'user_message', text: 'Turn 2' });
+  writer2.accept({ type: 'assistant_message', messageId: 'm2', text: 'Response 2' });
+  writer2.accept({ type: 'turn_finished', status: 'completed' });
+
+  // Must not throw lock timeout or fail
+  await writer2.flush();
+
+  const history = await getHistory(sess.sessionHandle);
+  assert.ok(history);
+  const messages = history.events.filter(e => e.type === 'assistant_message');
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].text, 'Response 2');
 });
 
 test('legacy snapshot-repeating format loads, paginates and resumes cleanly', async () => {
