@@ -791,10 +791,13 @@ Plan:
   content. Only the server-directory fallback also adds a line to the text, so no
   fallback is silent. `session` history and close use the same workspace. This
   delivers AUD-P2-9 (owned by `MCP-001`).
-- [ ] **Host setup:** CoAgent8 registration for Codex sets `tool_timeout_sec` to
-  1800, so reviews longer than the 60 s default can complete. The Antigravity
-  docs list no timeout option; measure the agy limit with a call longer than
-  5 minutes and document it.
+- [x] **Host setup:** CoAgent8 registration for Codex sets `tool_timeout_sec` to
+  1800, so reviews longer than the 60 s default can complete. `codex mcp add` has
+  no option for it, so setup inserts the key after the table header and verifies
+  that the parsed configuration differs by that key alone. Verified in
+  `tests/integrations/setup.test.js`.
+- [ ] Measure the agy tool-call limit with a call longer than 5 minutes and
+  document it; the Antigravity docs list no timeout option.
 - [x] **Owner decision (2026-10-07):** an agy sandbox denial is a warning that
   keeps the answer, as Claude `permission_denials` already are. A denial shows
   that the sandbox works, not that it is missing. Adapter warnings of every

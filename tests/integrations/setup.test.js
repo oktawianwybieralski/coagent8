@@ -43,6 +43,8 @@ test('shared setup installs selected clients, preserves comments/secrets, and re
     assert.equal(parse(text).mcpServers.other.command, 'keep');
   }
   assert.equal(toml(fs.readFileSync(codex, 'utf8')).mcp_servers.other.command, 'synthetic-other');
+  assert.equal(toml(fs.readFileSync(codex, 'utf8')).mcp_servers.coagent8.tool_timeout_sec, 1800, 'reviews outlast the 60 s Codex default');
+  assert.ok(fs.readFileSync(codex, 'utf8').includes('# retained comment'));
   const snapshot = [codex, agy, claude].map(file => fs.readFileSync(file, 'utf8'));
   const second = await setupClients({ ...options, clients: undefined });
   assert.ok(second.every(result => result.action === 'preserved'), JSON.stringify(second));
@@ -147,4 +149,13 @@ test('setup uses its supplied Node executable for JavaScript client launchers', 
   const second = resolveSetupClient('codex', options.home, options.env, process.execPath);
   assert.equal(second.command, process.execPath);
   assert.deepEqual(second.argsPrefix, first.argsPrefix);
+});
+
+test('the Codex tool timeout is added after the CoAgent8 table header only, keeping formatting and other keys', () => {
+  const { withCodexToolTimeout, CODEX_TOOL_TIMEOUT_SEC } = require('../../src/integrations/setup.ts');
+  const config = '# keep\r\nmodel = "m"\r\n[mcp_servers.coagent8]\r\ncommand = "node"\r\nargs = ["x"]\r\n\r\n[mcp_servers.coagent8.env]\r\nA = "1"\r\n[mcp_servers.other]\r\ncommand = "o"\r\n';
+  const edited = withCodexToolTimeout(config);
+  assert.equal(edited, config.replace('[mcp_servers.coagent8]\r\n', `[mcp_servers.coagent8]\r\ntool_timeout_sec = ${CODEX_TOOL_TIMEOUT_SEC}\r\n`));
+  assert.equal(withCodexToolTimeout(edited), edited, 'an existing timeout is kept');
+  assert.throws(() => withCodexToolTimeout('[mcp_servers.other]\ncommand = "o"\n'), /no \[mcp_servers\.coagent8\] table/);
 });

@@ -128,7 +128,10 @@ do not attach them to issues. Old runtime versions are retained for rollback.
 Setup preserves existing manual or independently changed definitions. Missing
 JSON/JSONC entries retain unrelated servers, inputs, credentials, and comments.
 Codex's native registration command edits an isolated configuration copy before a
-conflict-checked replacement. Managed updates require successful native-host calls
+conflict-checked replacement. Setup then adds `tool_timeout_sec = 1800` to the
+`[mcp_servers.coagent8]` table, because Codex stops an MCP tool call after 60 s by
+default and `codex mcp add` has no option for it; the parsed result must differ by
+that key alone. Managed updates require successful native-host calls
 before and after replacement; a failed replacement restores the prior bytes when
 no concurrent editor changed them. Claude and agy updates currently remain deferred
 because their native-host calls are unverified. If concurrent edits prevent rollback,

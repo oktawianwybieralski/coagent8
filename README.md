@@ -44,8 +44,11 @@ npm ci
 npm run build
 ```
 
-Add a stdio server definition to your host's MCP configuration. The following
-JSON shape is used by many hosts; follow your host's configuration format:
+Add a stdio server definition to your host's MCP configuration. Codex stops an MCP
+tool call after 60 seconds by default, so for Codex also set
+`tool_timeout_sec = 1800` in its `[mcp_servers.coagent8]` table (`coagent8 setup`
+does this). The following JSON shape is used by many hosts; follow your host's
+configuration format:
 
 ```json
 {

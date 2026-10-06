@@ -211,6 +211,34 @@ function readSelection(file: string): Selection {
   }
   return { clients: [...new Set(data.clients)] as SetupClient[], owned };
 }
+/** Codex stops an MCP tool call after 60 s by default; a review can take several minutes. */
+export const CODEX_TOOL_TIMEOUT_SEC = 1800;
+
+/**
+ * Adds `tool_timeout_sec` to the CoAgent8 table that `codex mcp add` wrote, which has no option for it.
+ * @remarks The line goes right after the table header, keeping the user's formatting and comments;
+ * the parsed result must differ from the input by that key alone.
+ */
+export function withCodexToolTimeout(config: string): string {
+  const written = servers('codex', document('codex', config)).coagent8;
+  const header = /^\[mcp_servers\.coagent8\][^\S\r\n]*(?=\r?\n|$)/m.exec(config);
+  if (written === undefined || !header) throw new Error('Native Codex registration wrote no [mcp_servers.coagent8] table.');
+  const entry = object(written);
+  if (entry.tool_timeout_sec !== undefined) return config;
+  const eol = config.includes('\r\n') ? '\r\n' : '\n';
+  const at = header.index + header[0].length;
+  const edited = `${config.slice(0, at)}${eol}tool_timeout_sec = ${CODEX_TOOL_TIMEOUT_SEC}${config.slice(at)}`;
+  const parsed = document('codex', edited);
+  const added = object(servers('codex', parsed).coagent8);
+  const { tool_timeout_sec: timeout, ...rest } = added;
+  // Spread both sides: TOML tables have no prototype, the destructured rest has one.
+  if (timeout !== CODEX_TOOL_TIMEOUT_SEC || !isDeepStrictEqual(rest, { ...entry })
+      || !isDeepStrictEqual({ ...parsed, mcp_servers: undefined }, { ...document('codex', config), mcp_servers: undefined })) {
+    throw new Error('Adding the Codex tool timeout changed other settings.');
+  }
+  return edited;
+}
+
 async function nativeCodexEdit(before: string | null, target: Registration | null, cli: CliCommand, backup: string, env: NodeJS.ProcessEnv, cwd: string): Promise<string> {
   const staging = path.join(backup, 'codex-staging-' + randomUUID());
   fs.mkdirSync(staging, { mode: 0o700 });
@@ -218,8 +246,9 @@ async function nativeCodexEdit(before: string | null, target: Registration | nul
   const envArgs = Object.entries(target?.env ?? {}).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
   const args = target ? ['mcp', 'add', 'coagent8', ...envArgs, '--', target.command, ...target.args] : ['mcp', 'remove', 'coagent8'];
   const edited = await runCommand(cli.command, [...cli.argsPrefix, ...args], { cwd, env: { ...env, CODEX_HOME: staging }, timeoutMs: 15_000 });
-  const after = read(path.join(staging, 'config.toml'));
-  if (edited.status !== 'completed' || after === null) throw new Error('Native Codex registration failed.');
+  const written = read(path.join(staging, 'config.toml'));
+  if (edited.status !== 'completed' || written === null) throw new Error('Native Codex registration failed.');
+  const after = target ? withCodexToolTimeout(written) : written;
   const oldDoc = before === null ? {} : document('codex', before);
   const newDoc = document('codex', after);
   const strip = (data: Record<string, unknown>) => Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'coagent8'));
