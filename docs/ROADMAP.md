@@ -2,7 +2,7 @@
 
 **Next release:** `1.0.0-beta.1`. **Current package version:** `1.0.0-beta.1`.
 **Direction updated:** 2026-10-05. **Beta 1 readiness:** Blocked by the
-[independent audit at `c265cdf`](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
+[independent audit at `ad59f05`](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05)
 (3 P0 and 11 P1 findings).
 
 This is the single active implementation and acceptance plan for the 1.0.0
@@ -179,7 +179,7 @@ evidence that measures the claim; source inspection alone is not runtime evidenc
 ## Audit remediation index
 
 Every P0/P1 finding from the
-[independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf) has
+[independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05) has
 exactly one owning milestone below. P2 findings are owned as listed; P3 nits are
 folded into `SIMPLIFY-001`.
 
@@ -366,7 +366,7 @@ Work items:
   - Claude and Codex adapter fixtures speak the new protocols;
   - no PowerShell or CIM helper is launched by a consult.
 
-  Evidence (2026-10-06, Windows 11, Node 22.20, commit `caa4958` on
+  Evidence (2026-10-06, Windows 11, Node 22.20, commit `6a83824` on
   `fix/windows-process-identity`):
   - `tests/process.test.js` covers each property above. The "no helper" property
     is asserted statically: no source file references CIM, `taskkill`,
@@ -383,7 +383,7 @@ Work items:
   - Linux (Docker `node:22`, Node 22.23.3, WSL2 kernel 6.6): the process,
     Claude, Codex and Gemini suites pass, including the POSIX-only grace tests.
     The exception is the Codex `probe` test, which fails identically on the
-    pre-branch revision `6724ba5~1`. Without Codex credentials it reports
+    pre-branch revision `43378c2~1`. Without Codex credentials it reports
     `unauthenticated`, which the assertion does not allow. macOS is covered by
     the CI matrix only.
 - [ ] Open acceptance: one live Codex app-server turn, resume and
@@ -971,7 +971,7 @@ Beta 1 gate:
   - a short tester guide in the README (install, register in a host, report a bug).
 - [ ] Write the beta 1 GitHub release notes with known issues and security
   notes. These come from the open audit findings in
-  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf);
+  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-deviations-audit-at-ad59f05);
   the changelog does not carry them (`CHANGELOG-001`).
 - [x] Create `CHANGELOG.md` (Keep a Changelog) with an Unreleased section.
 - [x] `CHANGELOG.md` is generated from the commit history (`CHANGELOG-001`).
@@ -1040,10 +1040,10 @@ Decision:
 
 Work items:
 - [x] Add git-cliff 2.14.2 (exact pin) and `cliff.toml`. `npm run changelog`
-  runs `git-cliff ... ca600a1..HEAD`. In a release PR, `-- --tag vX` places the
+  runs `git-cliff ... 67d28ce..HEAD`. In a release PR, `-- --tag vX` places the
   commits since the previous tag under that version.
 - [x] Migrate the hand-written `[Unreleased]` section.
-  - The squashed development line `ca600a1` keeps its curated text as the
+  - The squashed development line `67d28ce` keeps its curated text as the
     baseline at the end of the file (`cliff.toml` footer).
   - The hand-written entries for later commits were dropped. Those commits are
     on topic branches; their SHAs disappear when the branch is squash-merged, so
@@ -1069,7 +1069,7 @@ Work items:
   contributors list) on the first real release PR. It needs PRs that exist on
   GitHub.
 - [x] Acceptance:
-  - On this branch, `git-cliff ... ca600a1..ca600a1` (the state of
+  - On this branch, `git-cliff ... 67d28ce..67d28ce` (the state of
     `release/v1.0.0`) reproduces the committed `CHANGELOG.md` without a diff.
   - In a scratch clone of `release/v1.0.0`, a simulated squash commit and
     `--tag v1.0.0-beta.1` produced a `## [1.0.0-beta.1] - <date>` section whose
@@ -1077,7 +1077,7 @@ Work items:
   - `git diff --check` passes. The output has single blank lines and one
     trailing newline.
   - Release notes in the same scratch clone, offline:
-    - beta 1 (range `ca600a1..HEAD`) listed only the simulated PRs #6-#9;
+    - beta 1 (range `67d28ce..HEAD`) listed only the simulated PRs #6-#9;
     - after a `v1.0.0-beta.1` tag, beta 2 listed only #11 with the compare link
       `v1.0.0-beta.1...v1.0.0-beta.2`.
 

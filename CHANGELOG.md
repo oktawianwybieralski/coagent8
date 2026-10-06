@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
-## Baseline: 1.0.0-beta.1 development line ([`ca600a1`](https://github.com/oktawianwybieralski/coagent8/commit/ca600a1d7ce5035b3f36976e7bb0637e35d74214))
+## Baseline: 1.0.0-beta.1 development line ([`67d28ce`](https://github.com/oktawianwybieralski/coagent8/commit/67d28ce343c5b9bec81bedbb9f942f86e884ee54))
 
 ### Added
 - Canonical tool surface: `consult` (with `task_type`), `review`, `doctor`,

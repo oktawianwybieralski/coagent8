@@ -4,6 +4,7 @@
   <img src="assets/logo.svg" width="128" height="128" alt="CoAgent8" />
 </p>
 
+
 CoAgent8 exposes local coding CLIs through a stdio MCP server. An agent in a
 compatible MCP host can ask Codex, Claude Code or Antigravity (`agy`, the Gemini
 adapter) for help and receive public output through a read-only execution profile.
@@ -16,13 +17,13 @@ The [roadmap](docs/ROADMAP.md) prioritizes quiet Windows operation, ordinary MCP
 use and a smaller execution path. `consult` returns plain answers; optional
 durable history is a planned change, not a current runtime option.
 
-> **Known issues.** An [independent audit](docs/PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
-> of `c265cdf` found release blockers:
+> **Known issues.** An [independent audit](docs/PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05)
+> of `ad59f05` found release blockers:
 > - Windows process teardown can match unrelated processes through stale parent PIDs.
 > - Secret redaction rewrites ordinary code in answers.
 > - Long streamed answers can fill the history archive and block executions.
 >
-> See the [runtime contract's known deviations](docs/RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf)
+> See the [runtime contract's known deviations](docs/RUNTIME_CONTRACT.md#7-known-deviations-audit-at-ad59f05)
 > and the [roadmap](docs/ROADMAP.md#audit-remediation-index).
 
 ## Connect through MCP

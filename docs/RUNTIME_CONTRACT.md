@@ -8,7 +8,7 @@ This describes current implementation, not the proposed simplified API.
 [ROADMAP.md](ROADMAP.md) owns migration and acceptance for optional durable
 history, reduced supervision and audit remediation. Where the implementation
 violates this contract, the deviation is listed in
-[section 7](#7-known-deviations-audit-at-c265cdf) rather than silently assumed
+[section 7](#7-known-deviations-audit-at-ad59f05) rather than silently assumed
 away. Local contributor verification is defined separately in the
 [quality gate](../.agents/rules/04-quality-gate.md).
 
@@ -185,9 +185,9 @@ Gemini stderr sandbox-denial evidence does not create a terminal result. A real
 terminal remains required and real duplicate terminals still fail the protocol.
 Denial produces `SANDBOX_UNAVAILABLE` with continuation disabled.
 
-## 7. Known deviations (audit at c265cdf)
+## 7. Known deviations (audit at ad59f05)
 
-The [independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
+The [independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-ad59f05)
 found these differences between the intended contract and the implementation.
 Each is owned by a roadmap milestone (see the
 [remediation index](ROADMAP.md#audit-remediation-index)). Remove an entry only
