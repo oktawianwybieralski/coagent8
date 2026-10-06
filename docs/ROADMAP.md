@@ -110,9 +110,9 @@ registrations and their rollback safeguards while separating those integrations.
 
 The runtime enforces the State Envelope for `review` only; `consult` returns a
 plain answer with `verdict: "NOT_APPLICABLE"`. Every execution currently persists
-conversation history. The canonical profile advertises six core tools plus three
-deprecated aliases (`analyze`, `debug`, `implement`); the compact profile
-advertises four. No new runtime option is implied by this plan unless an item
+conversation history. The canonical profile advertises six core tools; the
+deprecated aliases (`analyze`, `debug`, `implement`) stay callable but are not
+advertised (`CONTEXT-001`). The compact profile advertises four. No new runtime option is implied by this plan unless an item
 says so.
 
 ## Architecture principle: conventional layout and bounded responsibilities
@@ -674,27 +674,35 @@ above.
 
 Plan:
 
-- [ ] **Server instructions:** one sentence, because every client pays for it on
-  every turn: "Second opinion or code review from another local coding agent
-  (Codex, Claude Code, Antigravity) in a read-only sandbox." Rules needed only at
-  call time go into parameter descriptions, which are loaded only with the tool:
-  consent in `user_confirmed`, continuation in `session_handle`.
-- [ ] **Tool definitions:** prototype measured at 2.7 KB, or 3.4 KB with a trimmed
-  `outputSchema`, against 27.4 KB:
+- [x] **Server instructions:** one sentence (119 characters), because every
+  client pays for it on every turn: "Second opinion or code review from another
+  local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox."
+  Rules needed only at call time go into parameter descriptions, which are loaded
+  only with the tool: consent in `user_confirmed`, continuation in
+  `session_handle`.
+- [x] **Tool definitions:** model-visible definitions 3.7 KB against 9.6 KB, and
+  `tools/list` 6.1 KB against 27.4 KB:
   - one-line tool descriptions;
   - parameter descriptions only where the name and enum are not enough;
   - `reasoning_effort` as an enum;
-  - `outputSchema` limited to the fields actually sent.
+  - the execution parameters defined once (`src/tools/schema.ts`).
 
-  The `analyze`, `debug` and `implement` aliases leave `tools/list` but stay
-  callable until 1.1.0. Measure whether the compact profile still saves anything
-  against the trimmed list; remove it if not.
-- [ ] **Icon:** advertise the single brand icon only in `serverInfo`, and only
-  when the negotiated protocol is `2025-11-25` or later. Context7 also declares its
-  icon only at server level, while GitHub MCP sets icons per toolset because each
-  toolset has a different icon. Keep the offline `data:` URI. Light and dark
-  variants are optional until a supported client displays icons. This saves
-  11.7 KB of transport per `tools/list`, not model tokens, which helps first launch.
+  The prototype's 2.7 KB assumed merged and renamed parameters; keeping every
+  existing parameter and accepted alias costs the difference. The `analyze`,
+  `debug` and `implement` aliases left `tools/list` but stay callable until
+  1.1.0. The compact profile now measures 4.2 KB against 3.7 KB for the six
+  tools, so it saves nothing. Verified in `tests/tools/surface.test.js` (budget
+  3,800 B).
+- [ ] Remove the compact profile, which no longer saves tokens.
+- [ ] Limit `outputSchema` to the fields actually sent (with the compact result).
+- [x] **Icon:** the single brand icon is declared only in `serverInfo`. Context7
+  also declares its icon only at server level, while GitHub MCP sets icons per
+  toolset because each toolset has a different icon. The offline `data:` URI stays.
+  The icon is sent whatever the negotiated protocol version: the SDK offers no
+  supported per-version server info, and a 2025-06-18 client ignores the field.
+  Light and dark variants are optional until a supported client displays icons.
+  This saves 11.7 KB of transport per `tools/list`, not model tokens, which helps
+  first launch.
 - [ ] **Single-call success:** the minimal call is `{"proposal": "..."}`:
   - `backend` resolved automatically;
   - workspace resolved from client roots;

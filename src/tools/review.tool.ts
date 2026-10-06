@@ -1,4 +1,5 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
+import { EXECUTION_PARAMETERS } from './schema.js';
 import { executeTask } from '../execution/controller.js';
 import { collectGitScope } from '../execution/git.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
@@ -6,49 +7,15 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
-    description:
-      'Run CoAgent8 Review: automated code review on uncommitted changes, staged index, branches, or commits using local reasoning agents in read-only sandbox mode.',
+    description: 'Code review of git changes by another coding agent; returns VERDICT READY or BLOCKED.',
     inputSchema: {
       type: 'object',
       properties: {
-        scope: {
-          type: 'string',
-          description:
-            'Target changes to review. Formats: "uncommitted" (default), "staged", commit SHA ("a1b2c3d"), revision ("HEAD~1"), base branch ("main"), or revision range ("main...feature").',
-        },
-        target: {
-          type: 'string',
-          description: 'Optional explicit target commit SHA, branch name, or revision range.',
-        },
-        instructions: {
-          type: 'string',
-          description: 'Review focus guidelines, constraints, conventions, or security/performance checks.',
-        },
-        backend: {
-          type: 'string',
-          enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-          description: 'CLI agent backend to execute the review (default: "auto").',
-        },
-        workspace_path: {
-          type: 'string',
-          description: 'Optional absolute path to workspace root.',
-        },
-        model: {
-          type: 'string',
-          description: 'Optional model override for the selected backend.',
-        },
-        reasoning_effort: {
-          type: 'string',
-          description: 'Reasoning depth level (e.g. "low", "medium", "high", "xhigh", "max").',
-        },
-        user_confirmed: {
-          type: 'boolean',
-          description: 'Mandatory true confirmation if invoking top-tier models (e.g. "astra", "claude-3-opus").',
-        },
-        session_handle: {
-          type: 'string',
-          description: 'Optional persistent session handle from a previous turn to preserve full multi-turn context.',
-        },
+        scope: { type: 'string', description: 'uncommitted (default), staged, a commit, a branch or a range a...b.' },
+        // Accepted alias of scope.
+        target: { type: 'string' },
+        instructions: { type: 'string', description: 'Review focus.' },
+        ...EXECUTION_PARAMETERS,
       },
     },
   };

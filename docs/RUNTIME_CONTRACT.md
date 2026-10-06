@@ -27,8 +27,8 @@ Backend selection: an explicit `backend` or the configured `defaultBackend` is u
 The client name is self-reported and only steers this preference; it never relaxes a policy.
 
 ### Dual Tool Profiles
-1. **Canonical Profile (Default)**: Advertises nine tools - six core tools plus
-   three deprecated aliases:
+1. **Canonical Profile (Default)**: Advertises the six core tools; the three
+   deprecated aliases are callable but not advertised:
    * Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
      `implementation`), `review`.
    * Management: `doctor`, `session`, `cancel`.
@@ -40,6 +40,13 @@ The client name is self-reported and only steers this preference; it never relax
    * `doctor`, `session`, `cancel`.
 
 Every tool is callable in either profile; the profile controls advertisement only.
+
+The server sends one sentence of `instructions` in `initialize` and declares its
+icon once, in `serverInfo`; tools carry no icon. Execution parameters are defined
+once (`src/tools/schema.ts`) with descriptions only where the name and enum leave
+them unclear; the consent rule is in the `user_confirmed` description. The icon is
+sent for every negotiated protocol version, because the SDK offers no supported
+per-version server info; clients of protocol 2025-06-18 ignore the unknown field.
 
 ---
 

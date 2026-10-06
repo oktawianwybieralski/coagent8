@@ -1,43 +1,22 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { closeSession, cancelSession, listSessions } from '../sessions/session.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import { WORKSPACE_PARAMETER } from './schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../sessions/history.js';
 import { resolveWorkspacePath } from '../paths.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description:
-    'Unified session lifecycle & history management: list active sessions, inspect history events, or close sessions.',
+  description: 'List sessions, read a session history or close a session.',
   inputSchema: {
     type: 'object',
     properties: {
-      action: {
-        type: 'string',
-        enum: ['list', 'history', 'close'],
-        description: 'Action to perform: "list" active sessions, "history" of conversation events, or "close" a session.',
-      },
-      session_handle: {
-        type: 'string',
-        description: 'The opaque session handle (required for "history" and "close").',
-      },
-      cursor: {
-        type: 'string',
-        description: 'Pagination cursor for "history" action.',
-      },
-      limit: {
-        type: 'integer',
-        minimum: 1,
-        maximum: 100,
-        description: 'Maximum number of history events to return.',
-      },
-      delete_history: {
-        type: 'boolean',
-        description: 'For "close" action: also permanently remove durable event log files.',
-      },
-      workspace_path: {
-        type: 'string',
-        description: 'Optional workspace path.',
-      },
+      action: { type: 'string', enum: ['list', 'history', 'close'] },
+      session_handle: { type: 'string', description: 'Required for history and close.' },
+      cursor: { type: 'string' },
+      limit: { type: 'integer', minimum: 1, maximum: 100 },
+      delete_history: { type: 'boolean', description: 'close: also delete the history.' },
+      ...WORKSPACE_PARAMETER,
     },
     required: ['action'],
   },
@@ -45,19 +24,12 @@ export const sessionToolDefinition = {
 
 export const cancelToolDefinition = {
   name: CANONICAL_TOOL_NAMES.CANCEL,
-  description:
-    'Explicit subprocess teardown and lock recovery for an active or hung session.',
+  description: 'Cancel the running turn of a session.',
   inputSchema: {
     type: 'object',
     properties: {
-      session_handle: {
-        type: 'string',
-        description: 'The opaque session handle whose execution should be cancelled.',
-      },
-      workspace_path: {
-        type: 'string',
-        description: 'Optional workspace path.',
-      },
+      session_handle: { type: 'string' },
+      ...WORKSPACE_PARAMETER,
     },
     required: ['session_handle'],
   },

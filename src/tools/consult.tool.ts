@@ -1,63 +1,22 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
+import { EXECUTION_PARAMETERS } from './schema.js';
 import { executeTask } from '../execution/controller.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
 export function getCanonicalConsultToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.CONSULT,
-    description:
-      'Universal technical consultation: evaluate architecture plans, refactoring strategies, debugging/root-cause analysis, or code implementation proposals.',
+    description: 'Second opinion from another coding agent: advice, design, debugging or implementation.',
     inputSchema: {
       type: 'object',
       properties: {
-        proposal: {
-          type: 'string',
-          description: 'The proposed plan, architecture, bug report, or implementation specification to evaluate.',
-        },
-        task_type: {
-          type: 'string',
-          enum: ['architecture', 'debug', 'implementation'],
-          description: 'Optional task specialization: "architecture" (structural analysis), "debug" (root cause analysis), or "implementation" (code design). Defaults to general technical advice.',
-        },
-        context_files: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Optional list of relevant files or directories providing context or interfaces.',
-        },
-        file_paths: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Optional alias for context_files: list of files or directories to inspect.',
-        },
-        specific_questions: {
-          type: 'string',
-          description: 'Specific concerns, trade-offs, or questions to address.',
-        },
-        backend: {
-          type: 'string',
-          enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-          description: 'CLI agent backend to consult (default: "auto").',
-        },
-        workspace_path: {
-          type: 'string',
-          description: 'Optional absolute path to workspace root.',
-        },
-        model: {
-          type: 'string',
-          description: 'Optional model override.',
-        },
-        reasoning_effort: {
-          type: 'string',
-          description: 'Reasoning depth level (default: "medium").',
-        },
-        user_confirmed: {
-          type: 'boolean',
-          description: 'Mandatory true confirmation if using top-tier models ("astra", "claude-3-opus").',
-        },
-        session_handle: {
-          type: 'string',
-          description: 'Optional persistent session handle from a previous turn to preserve full multi-turn context.',
-        },
+        proposal: { type: 'string', description: 'Question or plan, with context.' },
+        task_type: { type: 'string', enum: ['architecture', 'debug', 'implementation'] },
+        context_files: { type: 'array', items: { type: 'string' } },
+        // Accepted alias of context_files.
+        file_paths: { type: 'array', items: { type: 'string' } },
+        specific_questions: { type: 'string' },
+        ...EXECUTION_PARAMETERS,
       },
       required: ['proposal'],
     },

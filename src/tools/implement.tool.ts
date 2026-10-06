@@ -1,4 +1,5 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
+import { EXECUTION_PARAMETERS } from './schema.js';
 import { handleConsult } from './consult.tool.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
@@ -28,31 +29,7 @@ export function getCanonicalImplementToolDefinition() {
           type: 'string',
           description: 'Optional background context or architectural details.',
         },
-        backend: {
-          type: 'string',
-          enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-          description: 'CLI agent backend to implement with (default: "auto").',
-        },
-        workspace_path: {
-          type: 'string',
-          description: 'Optional absolute path to workspace root.',
-        },
-        model: {
-          type: 'string',
-          description: 'Optional model override.',
-        },
-        reasoning_effort: {
-          type: 'string',
-          description: 'Reasoning effort depth (default: "high").',
-        },
-        user_confirmed: {
-          type: 'boolean',
-          description: 'Mandatory true confirmation if using the top-tier "astra" model.',
-        },
-        session_handle: {
-          type: 'string',
-          description: 'Optional persistent session handle from a previous turn.',
-        },
+        ...EXECUTION_PARAMETERS,
       },
       required: ['specification'],
     },

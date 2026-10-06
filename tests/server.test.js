@@ -87,7 +87,8 @@ test('F14/F15: shared schema validates required fields, types, enums, unknown fi
   assert.throws(()=>validateToolArguments({},consultTool.inputSchema),/Missing/);
   assert.throws(()=>validateToolArguments({proposal:'x',user_confirmed:'yes'},consultTool.inputSchema),/expected boolean/);
   assert.throws(()=>validateToolArguments({proposal:'x',extra:1},consultTool.inputSchema),/Unknown/);
-  const schema=tools.find(t=>t.name==='analyze').inputSchema;
+  const { getAllCallableToolDefinitions } = require('../src/server.ts');
+  const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
   assert.ok(validateToolArguments({task:'x',backend:'gemini'},schema));
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
   for(const model of ['gpt-6-astra','gpt-6.1-astra','claude-opus-4-6','opus','astra'])assert.ok(checkModelGovernance(model,false),model);

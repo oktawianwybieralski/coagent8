@@ -114,10 +114,10 @@ for installation, ownership, rollback and current host-verification limits.
 | session | List, read history or close sessions |
 | cancel | Cancel a session's active execution |
 | issue | Generate a sanitized report and issue link |
-| analyze, debug, implement | Deprecated aliases of `consult` with the matching `task_type` |
+| analyze, debug, implement | Deprecated aliases of `consult` with the matching `task_type`; callable but not advertised |
 
-The default canonical profile advertises these six tools and the three deprecated
-aliases. Setting `"toolProfile": "compact"` in `~/.coagent8/config.json` advertises
+The default canonical profile advertises these six tools, with one-sentence server
+instructions and short descriptions so clients spend few tokens on them. Setting `"toolProfile": "compact"` in `~/.coagent8/config.json` advertises
 `run`, `doctor`, `session` and `cancel`; run dispatches task actions and issue reporting.
 
 Example consult arguments:

@@ -46,15 +46,6 @@ const executionNames = new Set<string>([
 function buildToolDefinitionsWithSchemas(tools: ToolDefinition[]): Tool[] {
   return tools.map(tool => {
     const { outputSchema: configuredOutput, ...definition } = tool;
-    const properties: Record<string, object> = { ...tool.inputSchema.properties };
-    if (executionNames.has(tool.name)) {
-      if (!properties.session_handle) {
-        properties.session_handle = { type: 'string', minLength: 1 };
-      }
-      if (!properties.timeout_ms) {
-        properties.timeout_ms = { type: 'integer', minimum: 100, maximum: 1800000 };
-      }
-    }
     const outputSchema = configuredOutput
       ? configuredOutput
       : tool.name === CANONICAL_TOOL_NAMES.RUN
@@ -63,10 +54,10 @@ function buildToolDefinitionsWithSchemas(tools: ToolDefinition[]): Tool[] {
           ? executionOutputSchema
           : undefined;
 
+    // The brand icon is declared once, on the server; tools carry no copy of it.
     return {
       ...definition,
-      icons: [{ ...SERVER_ICON, sizes: [...SERVER_ICON.sizes] }],
-      inputSchema: { ...tool.inputSchema, type: 'object' as const, properties, additionalProperties: false },
+      inputSchema: { ...tool.inputSchema, type: 'object' as const, additionalProperties: false },
       ...(outputSchema ? { outputSchema: outputSchema as Tool['outputSchema'] } : {}),
     };
   });
@@ -87,7 +78,8 @@ export function getCoreCanonicalTools(): ToolDefinition[] {
 }
 
 /**
- * Redundant legacy tools aliased to consult, maintained for backward-compatible discovery through 1.0.x (removal planned for v1.1.0).
+ * Legacy tools aliased to consult. They stay callable through 1.0.x (removal planned for v1.1.0)
+ * but are not advertised, so their definitions cost no client context.
  */
 export function getLegacyAliasTools(): ToolDefinition[] {
   return [
@@ -97,12 +89,6 @@ export function getLegacyAliasTools(): ToolDefinition[] {
   ];
 }
 
-function getCanonicalTools(): ToolDefinition[] {
-  return [
-    ...getCoreCanonicalTools(),
-    ...getLegacyAliasTools(),
-  ];
-}
 
 function getCompactTools(): ToolDefinition[] {
   return [
@@ -115,7 +101,8 @@ function getCompactTools(): ToolDefinition[] {
 
 export function getAllCallableToolDefinitions(): Tool[] {
   return buildToolDefinitionsWithSchemas([
-    ...getCanonicalTools(),
+    ...getCoreCanonicalTools(),
+    ...getLegacyAliasTools(),
     runToolDefinition,
   ]);
 }
@@ -126,7 +113,7 @@ export function getAllCallableToolDefinitions(): Tool[] {
 export function createToolDefinitions(configOverride?: CoAgent8Config): Tool[] {
   const synConfig = configOverride || loadConfig();
   const toolProfile = synConfig.toolProfile || 'canonical';
-  const tools = toolProfile === 'compact' ? getCompactTools() : getCanonicalTools();
+  const tools = toolProfile === 'compact' ? getCompactTools() : getCoreCanonicalTools();
   return buildToolDefinitionsWithSchemas(tools);
 }
 
@@ -188,6 +175,12 @@ export function validateToolArguments(value: unknown, schema: Schema, field = 'a
   return args as Record<string, unknown>;
 }
 
+/**
+ * Server-wide guidance for the client model. Every client includes it on every turn, so it
+ * stays one sentence; call-time rules live in the parameter descriptions (`schema.ts`).
+ */
+export const SERVER_INSTRUCTIONS = 'Second opinion or code review from another local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox.';
+
 export function createServer(): Server {
   composeExecutionCancellation();
   const server = new Server(
@@ -198,7 +191,7 @@ export function createServer(): Server {
       websiteUrl: `https://github.com/${BRAND.GITHUB_OWNER}/${BRAND.GITHUB_REPO}`,
       icons: [{ ...SERVER_ICON, sizes: [...SERVER_ICON.sizes] }],
     },
-    { capabilities: { tools: {}, resources: { listChanged: true } } }
+    { capabilities: { tools: {}, resources: { listChanged: true } }, instructions: SERVER_INSTRUCTIONS }
   );
 
   server.oninitialized = () => setCallerProvider(providerForClient(server.getClientVersion()?.name));

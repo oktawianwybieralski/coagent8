@@ -30,24 +30,14 @@ export const issueOutputSchema = {
 
 export const issueToolDefinition = {
   name: CANONICAL_TOOL_NAMES.ISSUE,
-  description:
-    'Prepare a privacy-sanitized bug report, pre-filled GitHub issue URL, and CLI command to report issues or submit feedback.',
+  description: 'Sanitized bug report with a pre-filled GitHub issue link.',
   outputSchema: issueOutputSchema,
   inputSchema: {
     type: 'object',
     properties: {
-      error_message: {
-        type: 'string',
-        description: 'Error message, stack trace, or diagnostic snippet to include.',
-      },
-      context: {
-        type: 'string',
-        description: 'Context or actions that led to the problem.',
-      },
-      include_doctor: {
-        type: 'boolean',
-        description: 'Whether to attach non-sensitive CLI doctor diagnostics (default: true).',
-      },
+      error_message: { type: 'string' },
+      context: { type: 'string', description: 'What led to the problem.' },
+      include_doctor: { type: 'boolean', description: 'Default true: attach doctor diagnostics.' },
     },
   },
 };

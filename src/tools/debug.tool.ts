@@ -1,4 +1,5 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
+import { EXECUTION_PARAMETERS } from './schema.js';
 import { handleConsult } from './consult.tool.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
@@ -23,31 +24,7 @@ export function getCanonicalDebugToolDefinition() {
           items: { type: 'string' },
           description: 'Optional list of relevant source files to provide context.',
         },
-        backend: {
-          type: 'string',
-          enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-          description: 'CLI agent backend to diagnose with (default: "auto").',
-        },
-        workspace_path: {
-          type: 'string',
-          description: 'Optional absolute path to workspace root.',
-        },
-        model: {
-          type: 'string',
-          description: 'Optional model override.',
-        },
-        reasoning_effort: {
-          type: 'string',
-          description: 'Reasoning effort depth (default: "xhigh" for debugging).',
-        },
-        user_confirmed: {
-          type: 'boolean',
-          description: 'Mandatory true confirmation if using top-tier models ("astra", "claude-3-opus").',
-        },
-        session_handle: {
-          type: 'string',
-          description: 'Optional persistent session handle from a previous turn.',
-        },
+        ...EXECUTION_PARAMETERS,
       },
       required: ['error_message'],
     },

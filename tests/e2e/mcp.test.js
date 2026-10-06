@@ -19,8 +19,9 @@ test('MCP stdio exposes unified schema; two fixture turns, public history, fallb
   assert.ok(icon.src.startsWith('data:image/png;base64,'));
   assert.deepEqual(Buffer.from(icon.src.slice('data:image/png;base64,'.length),'base64'),fs.readFileSync(path.resolve('assets/logo64.png')));
   c.proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-  const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,9);assert.ok(list.result.tools.some(x=>x.name==='issue'));
-  assert.ok(list.result.tools.every(tool=>JSON.stringify(tool.icons)===JSON.stringify(init.result.serverInfo.icons)));
+  const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,6);assert.ok(list.result.tools.some(x=>x.name==='issue'));
+  assert.ok(list.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
+  assert.match(init.result.instructions,/^Second opinion or code review from another local coding agent/);
   const definition=list.result.tools.find(x=>x.name==='consult');assert.ok(definition.inputSchema.properties.backend.enum.includes('gemini'));assert.ok(definition.outputSchema);
   const invalid=await c.request('tools/call',{name:'analyze',arguments:{task:'x',file_paths:[2]}});assert.equal(invalid.result.isError,true);assert.equal(invalid.error,undefined);
   const bad=await c.request('tools/call',{name:'consult',arguments:{proposal:'x',workspace_path:path.join(dir,'token=fixtureSecret')}});assert.ok(!JSON.stringify(bad).includes('fixtureSecret'));

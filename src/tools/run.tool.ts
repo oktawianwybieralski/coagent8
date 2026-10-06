@@ -1,4 +1,5 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
+import { EXECUTION_PARAMETERS } from './schema.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { handleConsult } from './consult.tool.js';
 import { handleReview } from './review.tool.js';
@@ -71,37 +72,7 @@ export const runToolDefinition = {
         items: { type: 'string' },
         description: 'Optional list of context files for "consult" or "implement".',
       },
-      backend: {
-        type: 'string',
-        enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-        description: 'CLI agent backend to execute with (default: "auto").',
-      },
-      workspace_path: {
-        type: 'string',
-        description: 'Optional absolute path to workspace root.',
-      },
-      model: {
-        type: 'string',
-        description: 'Optional model override.',
-      },
-      reasoning_effort: {
-        type: 'string',
-        description: 'Reasoning depth level (e.g. "low", "medium", "high", "xhigh", "max").',
-      },
-      user_confirmed: {
-        type: 'boolean',
-        description: 'Mandatory true confirmation if using top-tier models ("astra", "claude-3-opus").',
-      },
-      session_handle: {
-        type: 'string',
-        description: 'Optional persistent session handle from a previous turn to preserve multi-turn context.',
-      },
-      timeout_ms: {
-        type: 'integer',
-        minimum: 100,
-        maximum: 1800000,
-        description: 'Operation deadline in milliseconds.',
-      },
+      ...EXECUTION_PARAMETERS,
     },
     required: ['action'],
   },

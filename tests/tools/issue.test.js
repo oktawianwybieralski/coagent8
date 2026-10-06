@@ -18,7 +18,7 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('canonical issue tool formats bug report, executes doctor by default, and supports opting out', async () => {
   assert.equal(issueToolDefinition.name, 'issue');
-  assert.ok(issueToolDefinition.description.includes('privacy-sanitized bug report'));
+  assert.ok(issueToolDefinition.description.includes('Sanitized bug report'));
 
   // Default with doctor
   const resWithDoc = await handleIssue({

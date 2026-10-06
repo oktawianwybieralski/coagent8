@@ -1,4 +1,5 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
+import { EXECUTION_PARAMETERS } from './schema.js';
 import { handleConsult } from './consult.tool.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
@@ -19,31 +20,7 @@ export function getCanonicalAnalyzeToolDefinition() {
           items: { type: 'string' },
           description: 'Optional list of files or directories to inspect.',
         },
-        backend: {
-          type: 'string',
-          enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-          description: 'CLI agent backend to analyze with (default: "auto").',
-        },
-        workspace_path: {
-          type: 'string',
-          description: 'Optional absolute path to workspace root.',
-        },
-        model: {
-          type: 'string',
-          description: 'Optional model override.',
-        },
-        reasoning_effort: {
-          type: 'string',
-          description: 'Reasoning depth level (default: "high").',
-        },
-        user_confirmed: {
-          type: 'boolean',
-          description: 'Mandatory true confirmation if using top-tier models ("astra", "claude-3-opus").',
-        },
-        session_handle: {
-          type: 'string',
-          description: 'Optional persistent session handle from a previous turn to preserve full multi-turn context.',
-        },
+        ...EXECUTION_PARAMETERS,
       },
       required: ['task'],
     },
