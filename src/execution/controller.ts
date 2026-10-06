@@ -141,7 +141,13 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   const receive = (event: AdapterEvent) => {
     if (event.type === 'user_message' || event.type === 'turn_started' || event.type === 'turn_finished') return;
     lastEvent = Date.now();
-    if (event.type !== 'status') writer.accept(event);
+    if (event.type !== 'status') {
+      try {
+        writer.accept(event);
+      } catch (err) {
+        if (!historyError) historyError = err as Error;
+      }
+    }
     if (event.type === 'assistant_delta' || event.type === 'assistant_message') sawPublicMessage = true;
     if (event.type === 'tool_finished') {
       toolCount++;
@@ -166,7 +172,13 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   let heartbeat: NodeJS.Timeout | undefined, flushTimer: NodeJS.Timeout | undefined;
   let result: TerminalExecutionResult;
   try {
-    writer.accept({ type: 'turn_started' }); writer.accept({ type: 'user_message', text: publicInput }); await writer.flush();
+    try {
+      writer.accept({ type: 'turn_started' });
+      writer.accept({ type: 'user_message', text: publicInput });
+      await writer.flush();
+    } catch (err) {
+      historyError = err as Error;
+    }
     heartbeat = setInterval(() => {
       const elapsedMs = Date.now() - lastEvent;
       if (elapsedMs >= 10000) {
@@ -174,7 +186,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
         report(`Operation in progress (${lastPhase}, ${totalElapsedSec}s elapsed)...`);
       }
     }, 5000);
-    flushTimer = setInterval(() => { void writer.flush().catch(err => { historyError = err; }); }, 250);
+    flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
     const options: ExecutionOptions = { cwd, model, reasoningEffort: args.reasoning_effort, nativeSessionId: session.threadId, threadId: session.threadId,
       userConfirmed: args.user_confirmed, timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
     const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
@@ -186,43 +198,81 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
     result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
       error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
-    if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) await updateSession(handle, { threadId: raw.nativeSessionId || raw.threadId || null, model: raw.model || model, cliVersion: backend.probe.version,
-      safetyProfile: backend.id === 'gemini' ? `gemini-${backend.probe.version}-read-only` : undefined }, token);
-    if (error?.code === 'SESSION_INVALID') await updateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: error.code }, token);
-    if (error?.code === 'RATE_LIMITED') {
-      await checkAndRecordRateLimit(backend.id, error.message).catch(() => {});
-    }
-    if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
   } catch (err) {
     const code = (err as { code?: ErrorCode })?.code;
     result = { isError: true, status: 'failed', output: '', error: { code: code && ERROR_CODES.includes(code) ? code : 'PROCESS_ERROR', message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
-    if (result.error?.code === 'RATE_LIMITED') {
-      await checkAndRecordRateLimit(backend.id, result.error.message).catch(() => {});
-    }
   } finally {
     if (heartbeat) clearInterval(heartbeat); if (flushTimer) clearInterval(flushTimer);
     if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);
   }
+
+  const warnings: string[] = [...(options.warnings || [])];
+
+  // Post-execution bookkeeping: session metadata (AUD-P1-3)
   try {
+    const raw = result as ExecutionResult;
+    const protocolTrusted = !result.error || result.error.code !== 'PROTOCOL_ERROR';
+    if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) {
+      await updateSession(handle, {
+        threadId: raw.nativeSessionId || raw.threadId || null,
+        model: raw.model || model,
+        cliVersion: backend.probe.version,
+        safetyProfile: backend.id === 'gemini' ? `gemini-${backend.probe.version}-read-only` : undefined,
+      }, token);
+    }
+    if (result.error?.code === 'SESSION_INVALID') {
+      await updateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: result.error.code }, token);
+    }
+  } catch (sessionErr) {
+    warnings.push(`Session update failed: ${redactDiagnostic((sessionErr as Error).message, 512)}`);
+    result = { ...result, continuationAvailable: false };
+    try {
+      await updateSession(handle, { state: 'invalidated' }, token);
+    } catch {}
+  }
+
+  // History archival finalization
+  try {
+    if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
     if (result.error) writer.accept({ type: 'error', error: result.error });
-    writer.accept({ type: 'turn_finished', status: result.status }); await writer.flush();
-  } catch (err) { historyError = err as Error; }
+    writer.accept({ type: 'turn_finished', status: result.status });
+    await writer.flush();
+  } catch (err) {
+    if (!historyError) historyError = err as Error;
+  }
+
+  // Release session turn lease (fail-closed)
   const released = await releaseSessionTurn(handle, token);
   activeSessionAborts.delete(handle);
   notifySettled!();
-  if ((historyError || !released.ok) && !cancelController.signal.aborted) {
-    result = { ...result, isError: true, status: 'failed', error: { code: 'HISTORY_ERROR', message: redactDiagnostic(historyError?.message || released.error), retryable: false } };
-    if (!historyError) {
-      try { writer.accept({ type: 'error', error: result.error! }); writer.accept({ type: 'turn_finished', status: 'failed' }); await writer.flush(); }
-      catch (err) { historyError = err as Error; }
-    }
+
+  if (!released.ok && !cancelController.signal.aborted) {
+    result = {
+      ...result,
+      isError: true,
+      status: 'failed',
+      error: { code: 'SESSION_INVALID', message: redactDiagnostic(released.error), retryable: false },
+    };
   }
-  const warnings: string[] = [...(options.warnings || [])];
+
+  if (historyError) {
+    warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
+  }
+
+  // Quota cooldown update (AUD-P1-1: one owner, one write)
   try {
     if (result.error?.code === 'RATE_LIMITED') await recordQuotaCooldown(backend.id);
     else if (!result.isError && result.status === 'completed') await resetQuotaCooldown(backend.id);
   } catch (error) {
     warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
   }
-  return formatExecutionResult(backend.id, result, '', handle, { turn: session.turnCount || 1, toolCount, durationMs: Date.now() - started, historyAvailable: !writer.disabled && !historyError }, { ...options, warnings });
+
+  return formatExecutionResult(
+    backend.id,
+    result,
+    '',
+    handle,
+    { turn: session.turnCount || 1, toolCount, durationMs: Date.now() - started, historyAvailable: !writer.disabled && !historyError },
+    { ...options, warnings }
+  );
 }
