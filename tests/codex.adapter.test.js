@@ -130,20 +130,37 @@ test('readCodexConfig and normalizeReasoningEffort default safe reasoning depth 
 });
 
 test('probe returns standardized AdapterProbeResult with executionSupported, capabilities, loginHint, modelSource, and authEvidence', async () => {
-  const result = await probe();
-  assert.equal(result.id, 'codex');
-  assert.equal(result.name, 'OpenAI Codex CLI');
-  assert.equal(typeof result.installed, 'boolean');
-  assert.equal(result.executionSupported, result.installed);
-  assert.deepEqual(result.capabilities, {
-    resume: true,
-    streaming: true,
-    readOnlyVerified: true,
-    reasoningEffort: true,
-  });
-  assert.equal(result.loginHint, 'codex');
-  assert.equal(result.modelSource, 'config.toml and built-in model definitions');
-  assert.ok(Array.isArray(result.authEvidence));
-  assert.ok(result.authEvidence.length > 0);
-  assert.ok(['authenticated', 'unknown'].includes(result.authStatus));
+  // Isolate the probe from the machine's Codex login: empty home directory, no API key.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(),'coagent8-codex-home-'));
+  const authFile = path.join(path.dirname(process.env.CODEX_CONFIG_PATH),'auth.json');
+  const saved = {HOME:process.env.HOME,USERPROFILE:process.env.USERPROFILE,OPENAI_API_KEY:process.env.OPENAI_API_KEY,CODEX_API_KEY:process.env.CODEX_API_KEY};
+  process.env.HOME = home; process.env.USERPROFILE = home;
+  delete process.env.OPENAI_API_KEY; delete process.env.CODEX_API_KEY;
+  try {
+    fs.rmSync(authFile,{force:true});
+    const result = await probe();
+    assert.equal(result.id, 'codex');
+    assert.equal(result.name, 'OpenAI Codex CLI');
+    assert.equal(typeof result.installed, 'boolean');
+    assert.equal(result.executionSupported, result.installed);
+    assert.deepEqual(result.capabilities, {
+      resume: true,
+      streaming: true,
+      readOnlyVerified: true,
+      reasoningEffort: true,
+    });
+    assert.equal(result.loginHint, 'codex');
+    assert.equal(result.modelSource, 'config.toml and built-in model definitions');
+    assert.ok(Array.isArray(result.authEvidence));
+    assert.ok(result.authEvidence.length > 0);
+    assert.equal(result.authStatus, 'unauthenticated');
+    fs.writeFileSync(authFile, JSON.stringify({auth_mode:'chatgpt',tokens:{}}));
+    const signedIn = await probe();
+    assert.equal(signedIn.authStatus, 'authenticated');
+    assert.ok(signedIn.authEvidence.includes('Auth credentials present (chatgpt)'));
+  } finally {
+    fs.rmSync(authFile,{force:true});
+    fs.rmSync(home,{recursive:true,force:true});
+    for (const [key,value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
 });
