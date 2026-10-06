@@ -166,3 +166,15 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
   );
   assert.ok(!resAborted.content[0].text.includes('> Report this issue:'));
 });
+
+test('withWorkspace names the workspace in structured content and flags only the server-directory fallback in text', () => {
+  const { withWorkspace } = require('../../src/tools/result.ts');
+  const base = { content: [{ type: 'text', text: 'answer' }], structuredContent: { status: 'completed', output: 'answer' } };
+  const fromRoot = withWorkspace(base, { path: tempDir, source: 'client_root' });
+  assert.equal(fromRoot.structuredContent.workspaceSource, 'client_root');
+  assert.equal(fromRoot.content[0].text, 'answer');
+  const fallback = withWorkspace(base, { path: tempDir, source: 'server_directory' });
+  assert.match(fallback.content[0].text, /^answer\n> Workspace: .+ \(server directory; pass workspace_path to change it\)$/);
+  const invalid = { isError: true, content: [{ type: 'text', text: 'Validation Error' }] };
+  assert.equal(withWorkspace(invalid, { path: tempDir, source: 'server_directory' }), invalid, 'results without structured content stay unchanged');
+});

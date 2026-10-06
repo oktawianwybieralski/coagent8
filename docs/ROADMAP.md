@@ -582,9 +582,10 @@ execution order.
   concealing errors that affect execution safety or active session ownership.
 - [ ] A malformed `config.json` must not hide tools. Fall back to defaults and
   report the configuration error in `doctor` and on execution (AUD-P2-11).
-- [ ] Resolve the workspace from MCP roots when `workspace_path` is absent, or
+- [x] Resolve the workspace from MCP roots when `workspace_path` is absent, or
   require it. Never default silently to the server's working directory
-  (AUD-P2-9).
+  (AUD-P2-9). Delivered by `CONTEXT-001`; verified in `tests/workspace.test.js`
+  and `tests/server.test.js`.
 
 ### `STARTUP-001` - non-blocking MCP server initialization
 
@@ -762,7 +763,7 @@ Plan:
   others (`inspectQuotas` `only`). The agy probe still reads its quota as part of
   the probe. This delivers the doctor phantom fields of AUD-P2-8 (owned by
   `SIMPLIFY-001`). Verified in `tests/diagnostics/doctor.test.js`.
-- [ ] **Workspace:**
+- [x] **Workspace:**
   1. explicit `workspace_path`;
   2. MCP roots, when the client declares the `roots` capability:
      - one root is used;
@@ -771,11 +772,13 @@ Plan:
        `workspace_path`.
 
      Cached per connection and refreshed on `notifications/roots/list_changed`;
-  3. owner decision: the server working directory, but never the home or a system
-     directory, or a hard requirement.
+  3. the server working directory (owner decision of 2026-10-07), but never the
+     home, a filesystem root or a system directory.
 
-  Every result reports `workspace` and its source, so no fallback is silent.
-  This delivers AUD-P2-9 (owned by `MCP-001`).
+  Every execution result reports `workspace` and `workspaceSource` in structured
+  content. Only the server-directory fallback also adds a line to the text, so no
+  fallback is silent. `session` history and close use the same workspace. This
+  delivers AUD-P2-9 (owned by `MCP-001`).
 - [ ] **Host setup:** CoAgent8 registration for Codex sets `tool_timeout_sec` to
   1800, so reviews longer than the 60 s default can complete. The Antigravity
   docs list no timeout option; measure the agy limit with a call longer than

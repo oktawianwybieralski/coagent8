@@ -16,6 +16,7 @@ import { generateBugReport } from '../diagnostics/issue.js';
 import { issueOutputSchema } from './issue.tool.js';
 import { cleanCliOutput } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate } from './review-gate.js';
+import type { ResolvedWorkspace } from '../paths.js';
 
 /**
  * Standard MCP JSON schema describing structuredContent for all execution tool responses.
@@ -26,6 +27,7 @@ export const executionOutputSchema = {
     schemaVersion: { type: 'integer', const: 1 }, provider: { type: ['string', 'null'], enum: ['codex', 'gemini', 'claude', null] },
     status: { type: 'string', enum: ['completed', 'failed', 'cancelled', 'timed_out'] }, output: { type: 'string' },
     model: { type: 'string' }, sessionHandle: { type: ['string', 'null'] }, turn: { type: 'integer' },
+    workspace: { type: 'string' }, workspaceSource: { type: 'string', enum: ['argument', 'client_root', 'server_directory'] },
     verdict: { type: 'string', enum: ['READY', 'BLOCKED', 'NOT_APPLICABLE'] }, reason: { type: 'string' },
     warnings: { type: 'array', items: { type: 'string' } },
     continuationAvailable: { type: 'boolean' }, truncated: { type: 'boolean' }, historyAvailable: { type: 'boolean' },
@@ -128,4 +130,20 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   parts.push(footerLines.join('\n'));
 
   return { isError: res.isError, content: [{ type: 'text' as const, text: parts.join('\n\n') }], structuredContent };
+}
+
+/**
+ * Reports the workspace an execution used, so a fallback is never silent.
+ * @remarks Structured content always names the workspace and its source. The text adds a
+ * line only for the server-directory fallback, the one case the caller may need to correct.
+ */
+export function withWorkspace<T extends { content: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }>(result: T, workspace: ResolvedWorkspace): T {
+  if (!result.structuredContent) return result;
+  const shown = redactDiagnostic(workspace.path, 1024);
+  const structuredContent = { ...result.structuredContent, workspace: shown, workspaceSource: workspace.source };
+  if (workspace.source !== 'server_directory') return { ...result, structuredContent };
+  const [first, ...rest] = result.content;
+  const note = `> Workspace: ${shown} (server directory; pass workspace_path to change it)`;
+  const content = first?.type === 'text' ? [{ ...first, text: `${first.text}\n${note}` }, ...rest] : [...result.content, { type: 'text', text: note }];
+  return { ...result, content, structuredContent };
 }

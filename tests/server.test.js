@@ -120,3 +120,46 @@ test('the connected client name sets the caller CLI that auto routing avoids', a
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('execution results report a workspace taken from client roots; roots are read once until the client reports a change', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+  const { pathToFileURL } = require('node:url');
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const { saveConfig } = require('../src/config.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-root-'));
+  const original = adapterRegistry.gemini;
+  const seen = [];
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true }),
+    execute: async (_prompt, options) => { seen.push(options.cwd); return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'gemini-test', truncated: false, continuationAvailable: true }; } };
+  const server = createServer();
+  const client = new Client({ name: 'roots-client', version: '1' }, { capabilities: { roots: { listChanged: true } } });
+  let rootsRequests = 0;
+  client.setRequestHandler(ListRootsRequestSchema, async () => { rootsRequests++; return { roots: [{ uri: pathToFileURL(root).href, name: 'project' }] }; });
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const first = await client.callTool({ name: 'consult', arguments: { proposal: 'x' } });
+    assert.equal(first.isError, false, JSON.stringify(first));
+    assert.equal(first.structuredContent.workspaceSource, 'client_root');
+    assert.equal(fs.realpathSync(seen[0]), fs.realpathSync(root));
+    assert.ok(!first.content[0].text.includes('> Workspace:'), 'a client root costs no extra text');
+    await client.callTool({ name: 'consult', arguments: { proposal: 'y' } });
+    assert.equal(rootsRequests, 1, 'roots are cached per connection');
+    await client.sendRootsListChanged();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await client.callTool({ name: 'consult', arguments: { proposal: 'z' } });
+    assert.equal(rootsRequests, 2, 'a roots change is read again');
+    const explicit = await client.callTool({ name: 'consult', arguments: { proposal: 'w', workspace_path: tempDir } });
+    assert.equal(explicit.structuredContent.workspaceSource, 'argument');
+    assert.equal(rootsRequests, 2, 'an explicit path needs no roots request');
+  } finally {
+    await client.close();
+    await server.close();
+    adapterRegistry.gemini = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

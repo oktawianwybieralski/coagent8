@@ -66,9 +66,10 @@ several eligible backends, `auto` prefers a CLI other than the calling client's
 own and the most measured quota headroom, as `smart_quota` does.
 
 The backend executables resolve from PATH. Set `CODEX_PATH`, `CLAUDE_PATH`, or
-`GEMINI_PATH`/`AGY_PATH` in the server environment for custom locations. Supply
-`workspace_path` to execution tools when the host's process directory is not the
-project to inspect.
+`GEMINI_PATH`/`AGY_PATH` in the server environment for custom locations. Without
+`workspace_path`, the workspace comes from the client's MCP roots, or else from the
+server's working directory, except the home, a filesystem root or a system
+directory. Each result reports the workspace it used.
 
 For a locally built package, `npm pack` creates a tarball that can be installed
 with `npm install --omit=dev <tarball-path>`. Both `coagent8` and `coagent8-mcp`

@@ -35,7 +35,8 @@ export const cancelToolDefinition = {
   },
 };
 
-export async function handleSession(args: ToolArguments) {
+/** @param workspace - The workspace the server resolved for this call; history and close are scoped to it. */
+export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
   if (!action || !['list', 'history', 'close'].includes(action)) {
     throw new Error('Validation Error: action must be one of "list", "history", "close".');
@@ -61,13 +62,13 @@ export async function handleSession(args: ToolArguments) {
     if (!args.session_handle || typeof args.session_handle !== 'string') {
       throw new Error('Validation Error: session_handle is required for action "history".');
     }
-    return await handleSessionHistory({ ...args, session_handle: args.session_handle });
+    return await handleSessionHistory({ ...args, session_handle: args.session_handle }, workspace);
   }
   if (action === 'close') {
     if (!args.session_handle || typeof args.session_handle !== 'string') {
       throw new Error('Validation Error: session_handle is required for action "close".');
     }
-    return await handleCloseSession(args);
+    return await handleCloseSession(args, workspace);
   }
   throw new Error(`Unknown action: ${action}`);
 }
@@ -94,9 +95,8 @@ export async function handleCancelSession(args: { session_handle: string; worksp
   };
 }
 
-export async function handleCloseSession(args: ToolArguments) {
+export async function handleCloseSession(args: ToolArguments, workspace = resolveWorkspacePath(args.workspace_path)) {
   if (typeof args.session_handle !== 'string' || !args.session_handle) throw new Error('Validation Error: session_handle is required for action "close".');
-  const workspace = resolveWorkspacePath(args.workspace_path);
   const closed = await closeSession(args.session_handle, workspace);
   if (args.delete_history) await deleteHistory(args.session_handle, workspace);
   return {
@@ -111,8 +111,7 @@ export async function handleCloseSession(args: ToolArguments) {
   };
 }
 
-export async function handleSessionHistory(args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number }) {
-  const workspace = resolveWorkspacePath(args.workspace_path);
+export async function handleSessionHistory(args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number }, workspace = resolveWorkspacePath(args.workspace_path)) {
   const history = await sessionHistory(args.session_handle, workspace, args.cursor, args.limit);
   if (!history.events.length) {
     return { content: [{ type: 'text' as const, text: 'No public events found on this page.' }], structuredContent: history };

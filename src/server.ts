@@ -5,10 +5,12 @@ import {
   ListResourcesRequestSchema,
   ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
+  RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { fileURLToPath } from 'node:url';
 import type { Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
 import { createProgressReporter } from './execution/progress.js';
-import { resolveWorkspacePath } from './paths.js';
+import { chooseWorkspace, type ResolvedWorkspace } from './paths.js';
 import { redactDiagnostic } from './redaction.js';
 import { BRAND, CANONICAL_TOOL_NAMES } from './constants.js';
 import { SERVER_ICON } from './generated/server-icon.js';
@@ -21,7 +23,7 @@ import { getCanonicalDebugToolDefinition, handleDebugError } from './tools/debug
 import { getCanonicalImplementToolDefinition, handleImplement } from './tools/implement.tool.js';
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
-import { executionOutputSchema, runOutputSchema, formatExecutionResult } from './tools/result.js';
+import { executionOutputSchema, runOutputSchema, formatExecutionResult, withWorkspace } from './tools/result.js';
 import { ERROR_CODES } from './conversation.js';
 import { listSessions } from './sessions/session.js';
 import { sanitizeHandle } from './sessions/identity.js';
@@ -165,6 +167,9 @@ export function validateToolArguments(value: unknown, schema: Schema, field = 'a
  * Server-wide guidance for the client model. Every client includes it on every turn, so it
  * stays one sentence; call-time rules live in the parameter descriptions (`schema.ts`).
  */
+/** Bound on the client's answer to roots/list. */
+const ROOTS_TIMEOUT_MS = 5000;
+
 export const SERVER_INSTRUCTIONS = 'Second opinion or code review from another local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox.';
 
 export function createServer(): Server {
@@ -181,6 +186,20 @@ export function createServer(): Server {
   );
 
   server.oninitialized = () => setCallerProvider(providerForClient(server.getClientVersion()?.name));
+
+  // Client roots are read once per connection and again after the client reports a change.
+  let clientRoots: Promise<string[]> | null = null;
+  server.setNotificationHandler(RootsListChangedNotificationSchema, async () => { clientRoots = null; });
+  async function workspaceRoots(): Promise<string[] | null> {
+    if (!server.getClientCapabilities()?.roots) return null;
+    clientRoots ??= server.listRoots(undefined, { timeout: ROOTS_TIMEOUT_MS })
+      .then(result => result.roots.filter(root => root.uri.startsWith('file:')).map(root => fileURLToPath(root.uri)))
+      .catch((cause: unknown) => { clientRoots = null; throw new Error('Validation Error: The client did not answer roots/list; pass workspace_path.', { cause }); });
+    return clientRoots;
+  }
+  async function resolveWorkspace(rawPath: string | undefined): Promise<ResolvedWorkspace> {
+    return chooseWorkspace(rawPath, rawPath ? null : await workspaceRoots());
+  }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: createToolDefinitions() }));
 
@@ -260,29 +279,33 @@ export function createServer(): Server {
       // handlers receive the corresponding narrowed contributor type.
       const args = validateToolArguments(request.params.arguments, definition.inputSchema as Schema) as ToolArguments;
 
-      const cwd = resolveWorkspacePath(args.workspace_path as string | undefined);
-
       switch (name) {
         case CANONICAL_TOOL_NAMES.DOCTOR:
           return await handleDoctor(args as { backend?: string; detail?: string; quota?: boolean });
-        case CANONICAL_TOOL_NAMES.SESSION:
-          return await handleSession(args);
-        case CANONICAL_TOOL_NAMES.CANCEL:
-          return await handleCancelSession(args as { session_handle: string; workspace_path?: string });
-        case CANONICAL_TOOL_NAMES.RUN:
-          return await handleRun(args, cwd, extra.signal, progress);
-        case CANONICAL_TOOL_NAMES.REVIEW:
-          return await handleReview(name, args, cwd, extra.signal, progress);
-        case CANONICAL_TOOL_NAMES.CONSULT:
-          return await handleConsult(name, args, cwd, extra.signal, progress);
-        case CANONICAL_TOOL_NAMES.ANALYZE:
-          return await handleAnalyze(name, args, cwd, extra.signal, progress);
-        case CANONICAL_TOOL_NAMES.DEBUG:
-          return await handleDebugError(args, cwd, extra.signal, progress);
-        case CANONICAL_TOOL_NAMES.IMPLEMENT:
-          return await handleImplement(args, cwd, extra.signal, progress);
         case CANONICAL_TOOL_NAMES.ISSUE:
           return await handleIssue(args);
+        case CANONICAL_TOOL_NAMES.CANCEL:
+          // Without workspace_path, cancel stays unscoped: the handle alone identifies the turn.
+          return await handleCancelSession(args as { session_handle: string; workspace_path?: string });
+      }
+      const workspace = await resolveWorkspace(args.workspace_path as string | undefined);
+      const cwd = workspace.path;
+      switch (name) {
+        case CANONICAL_TOOL_NAMES.SESSION:
+          return await handleSession(args, cwd);
+        case CANONICAL_TOOL_NAMES.RUN:
+          // The issue action returns a bug report, not an execution result.
+          return args.action === 'issue' ? await handleRun(args, cwd, extra.signal, progress) : withWorkspace(await handleRun(args, cwd, extra.signal, progress), workspace);
+        case CANONICAL_TOOL_NAMES.REVIEW:
+          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress), workspace);
+        case CANONICAL_TOOL_NAMES.CONSULT:
+          return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress), workspace);
+        case CANONICAL_TOOL_NAMES.ANALYZE:
+          return withWorkspace(await handleAnalyze(name, args, cwd, extra.signal, progress), workspace);
+        case CANONICAL_TOOL_NAMES.DEBUG:
+          return withWorkspace(await handleDebugError(args, cwd, extra.signal, progress), workspace);
+        case CANONICAL_TOOL_NAMES.IMPLEMENT:
+          return withWorkspace(await handleImplement(args, cwd, extra.signal, progress), workspace);
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

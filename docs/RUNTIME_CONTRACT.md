@@ -26,6 +26,21 @@ Backend selection: an explicit `backend` or the configured `defaultBackend` is u
 
 The client name is self-reported and only steers this preference; it never relaxes a policy.
 
+Workspace selection, per call:
+1. an explicit `workspace_path`;
+2. the client's MCP roots, when the client declares the `roots` capability:
+   - one root is used;
+   - with several, the root containing the server's working directory is used,
+     otherwise the call asks for `workspace_path`;
+   - roots are read once per connection and again after
+     `notifications/roots/list_changed`;
+3. the server's working directory, unless it is the home, a filesystem root or a
+   system directory.
+
+Execution results carry `workspace` and `workspaceSource`, and the text notes the
+server-directory fallback. `session` history and close use the same workspace;
+`cancel` without `workspace_path` stays unscoped.
+
 ### Tool Surface
 Every client is offered the six core tools:
 * Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
