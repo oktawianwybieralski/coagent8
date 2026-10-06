@@ -87,12 +87,28 @@ per-version server info; clients of protocol 2025-06-18 ignore the unknown field
 * `truncated`: True if output reached capacity buffer limits.
 
 ### Structured Content
-Execution tools return `structuredContent` validated by `outputSchema`:
-`schemaVersion`, `provider`, `status`, `output`, `model`, `sessionHandle`, `turn`,
-`verdict` (`READY` | `BLOCKED` | `NOT_APPLICABLE`), optional `reason`,
-`warnings`, `continuationAvailable`, `truncated`, `historyAvailable`, optional
-`error` and `activity` (`toolCount`, `durationMs`). Tool errors (`isError`) are
-distinct from audit conclusions (`verdict`).
+Execution tools return `structuredContent` validated by `outputSchema`. Always
+present: `provider`, `status`, `output` and `verdict` (`READY` | `BLOCKED` |
+`NOT_APPLICABLE`).
+
+Present only when they carry information, because Codex shows the model only this
+object:
+* `model`, the concrete model the backend resolved;
+* `sessionHandle` and `turn`;
+* `reason`, `error` and `warnings`, adapter warnings such as sandbox denials
+  included;
+* `continuationAvailable` and `truncated`, only when true;
+* `historyAvailable`, only when false;
+* `workspace` and `workspaceSource`.
+
+The text content leads with the answer and ends with one footer line, for example
+`> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 1, ready)`.
+The text is markdown, not the serialized `structuredContent` that the specification
+recommends (SHOULD): Claude Code and agy read `content`, JSON escaping costs more
+tokens, and Codex reads `structuredContent`. Tool errors (`isError`) are distinct
+from audit conclusions (`verdict`). Input validation failures are tool execution
+errors, and a consent refusal says in one line to ask the user and retry with
+`user_confirmed: true`.
 
 ### Typed Error Codes (`ERROR_CODES`)
 `CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`, `RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`, `ABORTED`, `TIMEOUT`, `SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`, `INPUT_LIMIT`, `PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`.

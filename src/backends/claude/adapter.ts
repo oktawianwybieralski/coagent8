@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { runCommand, type StdinChannel, type StdinSession } from '../../execution/process.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { checkModelGovernance, isValidModelIdentifier } from '../governance.js';
+import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
@@ -130,7 +130,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   try { model = resolveClaudeModel(requested); }
   catch (err) { return rejected('POLICY_DENIED', (err as Error).message); }
   if (!isValidModelIdentifier(model)) return rejected('POLICY_DENIED', 'Invalid Claude model identifier from the environment alias override.');
-  if (checkModelGovernance(model, options.userConfirmed)) return rejected('POLICY_DENIED', 'Top-tier model requires explicit consent.', model);
+  if (checkModelGovernance(model, options.userConfirmed)) return rejected('POLICY_DENIED', consentRequiredMessage(model), model);
   const resumeRaw = options.nativeSessionId || options.threadId || null;
   const resumeId = typeof resumeRaw === 'string' ? resumeRaw.trim().toLowerCase() : null;
   if (resumeId && !SESSION_ID_PATTERN.test(resumeId)) return rejected('SESSION_INVALID', 'Invalid native Claude session ID.', model);

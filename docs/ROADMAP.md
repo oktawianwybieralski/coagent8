@@ -698,7 +698,8 @@ Plan:
 - [x] Remove the compact profile, which no longer saves tokens. A legacy
   `toolProfile` key is ignored, and `run` stays callable. Verified in
   `tests/tools/surface.test.js`.
-- [ ] Limit `outputSchema` to the fields actually sent (with the compact result).
+- [x] Limit `outputSchema` to the fields actually sent (with the compact result):
+  only `provider`, `status`, `output` and `verdict` are required.
 - [x] **Icon:** the single brand icon is declared only in `serverInfo`. Context7
   also declares its icon only at server level, while GitHub MCP sets icons per
   toolset because each toolset has a different icon. The offline `data:` URI stays.
@@ -707,7 +708,7 @@ Plan:
   Light and dark variants are optional until a supported client displays icons.
   This saves 11.7 KB of transport per `tools/list`, not model tokens, which helps
   first launch.
-- [ ] **Single-call success:** the minimal call is `{"proposal": "..."}`:
+- [x] **Single-call success:** the minimal call is `{"proposal": "..."}`:
   - `backend` resolved automatically;
   - workspace resolved from client roots;
   - default model.
@@ -716,14 +717,17 @@ Plan:
   for example `POLICY_DENIED: ask the user, then retry with user_confirmed: true`.
   Input validation failures are tool execution errors (`isError: true`), not
   protocol errors, so the model can correct itself, as specification 2025-11-25
-  recommends (SEP-1303). Clients without `structuredContent` support receive
-  the full result in `content`.
-- [ ] **Result in both channels, compact:**
+  recommends (SEP-1303); the server already returned them so. Clients without
+  `structuredContent` support receive the full result in `content`. Verified by
+  the consent test in `tests/execution/controller-history.test.js`, the routing
+  tests and the roots test in `tests/server.test.js`.
+- [x] **Result in both channels, compact:**
   - `content` leads with the answer and ends with a one-line footer, for example
-    `— claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (ready)`;
+    `> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 1, ready)`;
   - `structuredContent` keeps the full `output` but omits `schemaVersion`,
-    `activity`, `historyAvailable` and empty or default fields, cutting about
-    300 B to about 100 B per result.
+    `activity` and empty or default fields. `historyAvailable` appears only when
+    false. Measured overhead beyond the answer: about 320 B before, 197 B after
+    for a result with a model and a session handle, which carry information.
 
   Both channels stay complete, because each client reads only one of them.
   The specification recommends (SHOULD) that `content` also carry the serialized
@@ -732,16 +736,19 @@ Plan:
   - JSON escaping costs more tokens;
   - Codex reads `structuredContent` anyway.
 
-  Record this as a known deviation in the runtime contract.
-- [ ] **Resolved model:**
+  Recorded in the runtime contract (Structured Content). Verified in
+  `tests/tools/result.test.js`.
+- [x] **Resolved model:**
   - Claude from `system/init`;
   - Codex from the `thread/start` response;
-  - agy from `init` when reported, otherwise the configured model, otherwise an
-    explicit `provider default`.
+  - agy from `init` when reported, otherwise the requested model, otherwise an
+    explicit `provider default` in the footer.
 
   The session stores the concrete identifier. Governance still applies, because
   its pattern matches `claude-opus-*`. `doctor` lists the Claude aliases instead
-  of an empty model list.
+  of an empty model list. Every backend validates a reported identifier with the
+  shared governance check. Verified in the Claude, Codex and agy adapter and
+  collector tests.
 - [ ] **Backend prompts:**
   - review: Evidence at most two sentences with `file:line`, Fix one sentence, P3
     one line, no preamble and no restated diff. Estimated saving about 45%,
@@ -783,9 +790,12 @@ Plan:
   1800, so reviews longer than the 60 s default can complete. The Antigravity
   docs list no timeout option; measure the agy limit with a call longer than
   5 minutes and document it.
-- [ ] **Owner decision:** treat an agy sandbox denial as a warning that keeps the
-  answer, as Claude `permission_denials` already are. A denial shows that the
-  sandbox works, not that it is missing.
+- [x] **Owner decision (2026-10-07):** an agy sandbox denial is a warning that
+  keeps the answer, as Claude `permission_denials` already are. A denial shows
+  that the sandbox works, not that it is missing. Adapter warnings of every
+  backend reach the result's `warnings`. Verified in
+  `tests/backends/gemini/adapter.test.js` and
+  `tests/execution/controller-history.test.js`.
 - [ ] **Budgets as regression tests:**
   - server instructions at most 2,048 characters, first 512 self-contained;
   - model-visible tool definitions at most 3 KB;

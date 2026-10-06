@@ -24,7 +24,7 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   assert.ok(first.structuredContent.output.includes('const answer = 42;'));
   assert.ok(first.structuredContent.output.includes('😀')); assert.ok(!first.structuredContent.output.includes('fixtureSecret'));
   assert.equal(first.structuredContent.continuationAvailable,true);
-  assert.equal(first.structuredContent.activity.toolCount,1);
+  assert.match(first.content[0].text,/ · 1 op · /);
   const handle = first.structuredContent.sessionHandle;
   const thread = getSession(handle).threadId;
   assert.equal(thread,'11111111-aaaa-bbbb-cccc-123456789012');

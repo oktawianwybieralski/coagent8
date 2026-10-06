@@ -46,8 +46,8 @@ test('formatExecutionResult enforces strict No-Emoji standard and clean blockquo
   assert.ok(!emojiRegex.test(text), `Output should not contain any emojis: ${text}`);
 
   // Verify clean blockquotes
-  assert.ok(text.includes('> CoAgent8: codex (gpt-6.1-sol) · 4.5s · 3 ops'));
-  assert.ok(text.includes('> Session: syn_sess_1234567890abcdef (turn 2 · ready)'));
+  assert.ok(text.endsWith('> CoAgent8: codex · gpt-6.1-sol · 4.5s · 3 ops · syn_sess_1234567890abcdef (turn 2, ready)'), 'one footer line');
+  assert.deepEqual(Object.keys(formatted.structuredContent), ['provider', 'status', 'output', 'model', 'sessionHandle', 'turn', 'verdict', 'continuationAvailable'], 'default-valued fields are omitted');
 });
 
 test('error formatting uses enterprise-grade blockquote without warning emojis', async () => {

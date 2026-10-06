@@ -6,7 +6,7 @@ import path from 'node:path';
 import { runCommand, DEFAULT_TIMEOUT_MS } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { checkModelGovernance } from '../governance.js';
+import { checkModelGovernance, consentRequiredMessage } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../conversation.js';
@@ -161,7 +161,7 @@ function failed(error: ExecutionError): TerminalExecutionResult {
 
 async function executeInternal(prompt: string, options: ExecutionOptions): Promise<TerminalExecutionResult> {
   if (checkModelGovernance(options.model, options.userConfirmed)) {
-    return failed({ code: 'POLICY_DENIED', message: 'Top-tier model requires explicit consent.', retryable: false });
+    return failed({ code: 'POLICY_DENIED', message: consentRequiredMessage(options.model), retryable: false });
   }
   if (options.abortSignal?.aborted) {
     return { ...failed({ code: 'ABORTED', message: 'Cancelled before launch.', retryable: false }), status: 'cancelled' };

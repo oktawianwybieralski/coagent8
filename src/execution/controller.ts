@@ -24,7 +24,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
-import { checkModelGovernance } from '../backends/governance.js';
+import { checkModelGovernance, consentRequiredMessage } from '../backends/governance.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
@@ -110,7 +110,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   if (previous && !previous.threadId) throw new Error('SESSION_INVALID: Native continuation is unavailable for this session; history remains accessible.');
   const config = backend.probe.config as { defaultModel?: string } | undefined;
   const model = args.model || previous?.model || config?.defaultModel;
-  if (checkModelGovernance(model, args.user_confirmed)) throw new Error('POLICY_DENIED: Effective model requires explicit user_confirmed: true.');
+  if (checkModelGovernance(model, args.user_confirmed)) throw new Error(`POLICY_DENIED: ${consentRequiredMessage(model)}`);
   await pruneExpiredSessions();
   const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
   if (!acquired.session) throw new Error(`SESSION_BUSY: ${acquired.error}`);

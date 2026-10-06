@@ -19,20 +19,23 @@ import { evaluateStateEnvelopeGate } from './review-gate.js';
 import type { ResolvedWorkspace } from '../paths.js';
 
 /**
- * Standard MCP JSON schema describing structuredContent for all execution tool responses.
+ * MCP JSON schema of structuredContent for every execution tool response.
+ * @remarks Codex shows the model only this structured content, so fields with a default
+ * value are omitted: `continuationAvailable` and `truncated` appear only when true,
+ * `historyAvailable` only when false, and `sessionHandle`, `turn`, `model`, `reason`,
+ * `error` and `warnings` only when they have a value.
  */
 export const executionOutputSchema = {
-  type: 'object', required: ['schemaVersion', 'provider', 'status', 'output', 'sessionHandle', 'continuationAvailable', 'truncated', 'activity', 'historyAvailable', 'verdict'],
+  type: 'object', required: ['provider', 'status', 'output', 'verdict'],
   properties: {
-    schemaVersion: { type: 'integer', const: 1 }, provider: { type: ['string', 'null'], enum: ['codex', 'gemini', 'claude', null] },
+    provider: { type: ['string', 'null'], enum: ['codex', 'gemini', 'claude', null] },
     status: { type: 'string', enum: ['completed', 'failed', 'cancelled', 'timed_out'] }, output: { type: 'string' },
-    model: { type: 'string' }, sessionHandle: { type: ['string', 'null'] }, turn: { type: 'integer' },
+    model: { type: 'string' }, sessionHandle: { type: 'string' }, turn: { type: 'integer' },
     workspace: { type: 'string' }, workspaceSource: { type: 'string', enum: ['argument', 'client_root', 'server_directory'] },
     verdict: { type: 'string', enum: ['READY', 'BLOCKED', 'NOT_APPLICABLE'] }, reason: { type: 'string' },
     warnings: { type: 'array', items: { type: 'string' } },
     continuationAvailable: { type: 'boolean' }, truncated: { type: 'boolean' }, historyAvailable: { type: 'boolean' },
     error: { type: 'object', required: ['code', 'message', 'retryable'], properties: { code: { type: 'string' }, message: { type: 'string' }, retryable: { type: 'boolean' } } },
-    activity: { type: 'object', required: ['toolCount', 'durationMs'], properties: { toolCount: { type: 'integer' }, durationMs: { type: 'number' } } },
   },
 };
 
@@ -94,10 +97,15 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   }
 
   const output = redactCredentialFormats(gated);
-  const structuredContent = { schemaVersion: 1, provider, status: res.status, output, model: res.model, sessionHandle, turn: meta.turn,
+  const structuredContent = { provider, status: res.status, output,
+    ...(res.model ? { model: res.model } : {}),
+    ...(sessionHandle ? { sessionHandle, turn: meta.turn } : {}),
     verdict, ...(reason ? { reason } : {}),
-    continuationAvailable: res.continuationAvailable, truncated: res.truncated, historyAvailable: meta.historyAvailable,
-    error, warnings, activity: { toolCount: meta.toolCount, durationMs: meta.durationMs } };
+    ...(res.continuationAvailable ? { continuationAvailable: true } : {}),
+    ...(res.truncated ? { truncated: true } : {}),
+    ...(sessionHandle && !meta.historyAvailable ? { historyAvailable: false } : {}),
+    ...(error ? { error } : {}),
+    ...(warnings.length ? { warnings } : {}) };
   const parts: string[] = [];
   if (error) {
     parts.push(`> Error [${error.code}]: ${error.message}`);
@@ -108,12 +116,10 @@ export async function formatExecutionResult(provider: string | null, res: Termin
 
   const durationSec = (meta.durationMs / 1000).toFixed(1);
   const opLabel = meta.toolCount === 1 ? 'op' : 'ops';
+  const session = sessionHandle ? ` · ${sessionHandle} (turn ${meta.turn}, ${res.continuationAvailable ? 'ready' : 'finished'})` : '';
   const footerLines: string[] = [
-    `> CoAgent8: ${provider || 'CLI'} (${res.model || 'default'}) · ${durationSec}s · ${meta.toolCount} ${opLabel}`,
+    `> CoAgent8: ${provider || 'CLI'} · ${res.model || 'provider default'} · ${durationSec}s · ${meta.toolCount} ${opLabel}${session}`,
   ];
-  if (sessionHandle) {
-    footerLines.push(`> Session: ${sessionHandle} (turn ${meta.turn} · ${res.continuationAvailable ? 'ready' : 'finished'})`);
-  }
   if (res.truncated) {
     footerLines.push('> Notice: Output reached buffer limit.');
   }

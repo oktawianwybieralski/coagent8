@@ -28,7 +28,7 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
   try {
     saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});
     const first=await executeTask('PROMPT_WITH_PRIVATE_SNAPSHOT','User first turn',{backend:'gemini'},tempDir);
-    assert.equal(first.isError,false); assert.equal(first.structuredContent.activity.toolCount,1); assert.ok(first.content[0].text.includes('const answer = 42;'));
+    assert.equal(first.isError,false); assert.match(first.content[0].text,/ · 1 op · /); assert.ok(first.content[0].text.includes('const answer = 42;'));
     const handle=first.structuredContent.sessionHandle;
     const second=await executeTask('second prompt','User second turn',{session_handle:handle},tempDir);
     assert.equal(second.structuredContent.turn,2);
@@ -66,7 +66,7 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
     await assert.rejects(executeTask('x','second',{session_handle:handle},tempDir),/POLICY_DENIED/);assert.equal(calls,1);
     mode='rate';const rate=await executeTask('x','rate',{session_handle:handle,user_confirmed:true},tempDir);assert.equal(rate.structuredContent.error.code,'RATE_LIMITED');assert.equal(getSession(handle).threadId,'native_fixture');
     assert.equal(require('../../src/backends/availability.ts').readQuotaCache().data.codex.status,'rate_limited');
-    mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle,user_confirmed:true},tempDir);assert.equal(invalid.structuredContent.error.code,'SESSION_INVALID');assert.equal(invalid.structuredContent.continuationAvailable,false);assert.equal(getSession(handle),null);
+    mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle,user_confirmed:true},tempDir);assert.equal(invalid.structuredContent.error.code,'SESSION_INVALID');assert.equal(invalid.structuredContent.continuationAvailable,undefined);assert.equal(getSession(handle),null);
     const history=await sessionHistory(handle,tempDir);assert.ok(!JSON.stringify(history).includes('MUST_NOT_PERSIST'));assert.equal(history.events.at(-1).status,'failed');
     for(mode of ['missing','contradiction']) {const r=await executeTask('x','x',{user_confirmed:true},tempDir);assert.equal(r.isError,true);assert.equal(r.structuredContent.error.code,'PROTOCOL_ERROR');assert.equal(getSession(r.structuredContent.sessionHandle).activePid,null);}
   }finally{adapterRegistry.codex=original;saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});}

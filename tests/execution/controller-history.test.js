@@ -65,7 +65,7 @@ test('full archive never blocks CLI launch, returns successful answer with histo
     assert.notEqual(res.structuredContent.error?.code, 'HISTORY_ERROR');
     assert.ok(res.content[0].text.startsWith('Secured answer from backend'));
     assert.equal(res.structuredContent.output, 'Secured answer from backend');
-    assert.equal(res.structuredContent.historyAvailable, true, 'History must be available after LRU eviction');
+    assert.equal(res.structuredContent.historyAvailable, undefined, 'History must be available after LRU eviction (the field appears only when false)');
     const remaining = fs.readdirSync(historyDir).filter(f => f.startsWith('syn_sess_dummy'));
     assert.ok(remaining.length < 11, 'LRU retention must have evicted oldest dummy sessions');
     assert.ok(!remaining.includes('syn_sess_dummy0000000000000000.jsonl'), 'Oldest dummy session must be evicted');
@@ -138,7 +138,7 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
 
     assert.equal(res.isError, false, 'Turn must succeed despite metadata write failure');
     assert.ok(res.content[0].text.startsWith('Important successfully computed answer'));
-    assert.equal(res.structuredContent.continuationAvailable, false, 'continuationAvailable must be disabled on metadata failure');
+    assert.equal(res.structuredContent.continuationAvailable, undefined, 'continuationAvailable must be disabled on metadata failure (the field appears only when true)');
     assert.ok(
       res.structuredContent.warnings.some(w => w.includes('Session update failed')),
       'Warning must report metadata failure'
@@ -263,6 +263,21 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
     const warnings = res.structuredContent.warnings;
     assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'duplicates collapse');
     assert.equal(warnings.length, 5, 'adapter warnings are bounded');
+  } finally {
+    adapterRegistry.gemini = original;
+  }
+});
+
+test('a top-tier model without consent is refused with a one-line instruction for the single retry', async () => {
+  const original = adapterRegistry.gemini;
+  let executed = false;
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+    execute: async () => { executed = true; throw new Error('must not run'); } };
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'gemini', model: 'claude-opus-4-6-thinking' }, tempDir),
+      /^Error: POLICY_DENIED: Model 'claude-opus-4-6-thinking' is top-tier: ask the user, then retry with user_confirmed: true\.$/);
+    assert.equal(executed, false);
   } finally {
     adapterRegistry.gemini = original;
   }
