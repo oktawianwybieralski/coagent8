@@ -73,12 +73,12 @@ target Node.js 20+.
 
 ```bash
 npm ci
-npm ci --prefix tools/vscode
+npm ci --prefix tooling/vscode
 npm run typecheck
 npm run package:vscode
 ```
 
-The resulting `.rc-artifacts/coagent8-mcp-<version>.vsix` is a local development
+The resulting `.artifacts/coagent8-mcp-<version>.vsix` is a local development
 package. Install it with **Extensions: Install from VSIX...**, open a trusted
 workspace, then use **MCP: List Servers**. The extension requires VS Code 1.101+.
 It registers one provider and lets VS Code start, approve, and stop the MCP process.

@@ -13,24 +13,24 @@ API generation; see the [quality gate](../.agents/rules/04-quality-gate.md).
 
 ```bash
 npm ci
-npm ci --prefix tools/documentation
+npm ci --prefix tooling/documentation
 npm run lint:docs
 npm run docs
 ```
 
 The linter checks all TypeScript files under `src/` with `tsdoc/syntax` configured
 as an error. TypeDoc expands `src/` into module entry points and writes HTML to
-`.rc-artifacts/api-docs/index.html`. Generation fails on warnings, including broken
+`.artifacts/api-docs/index.html`. Generation fails on warnings, including broken
 documentation links. CI runs both commands in every supported OS/Node matrix job.
 Generated HTML is ignored by Git and excluded from the published package.
 
 ## Toolchain compatibility
 
-The private `tools/documentation` tooling package pins TypeScript 6 because TypeDoc
+The private `tooling/documentation` tooling package pins TypeScript 6 because TypeDoc
 and the ESLint TypeScript parser currently support its compiler API. The repository
 root retains TypeScript 7 for `npm run typecheck`. The tooling package has its own
 lockfile and dependency tree so transitive tooling dependencies also resolve a
-compatible compiler. Install it with `npm ci --prefix tools/documentation`; do not
+compatible compiler. Install it with `npm ci --prefix tooling/documentation`; do not
 bypass peer dependency checks or replace the project compiler. Documentation tools
 require Node 20.19+, Node 22.13+, or Node 24+; CI uses current Node 20/22 releases.
 

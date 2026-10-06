@@ -4,7 +4,7 @@
   "entryPoints": ["../../src"],
   "entryPointStrategy": "expand",
   "tsconfig": "../../tsconfig.json",
-  "out": "../../.rc-artifacts/api-docs",
+  "out": "../../.artifacts/api-docs",
   "readme": "../../docs/CODE_DOCUMENTATION.md",
   "treatWarningsAsErrors": true
 }

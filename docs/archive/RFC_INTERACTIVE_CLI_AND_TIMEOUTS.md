@@ -10,7 +10,7 @@
 ## Authority and scope
 
 This RFC is not an active implementation plan or permission to auto-confirm CLI
-prompts. [ROADMAP.md](ROADMAP.md) owns prioritization; interactive confirmation and
+prompts. [ROADMAP.md](../ROADMAP.md) owns prioritization; interactive confirmation and
 adaptive timeouts remain deferred. Historical latency statements below were not
 remeasured in the product reassessment. The earlier workflow proposals are consolidated in section 4;
 current Git policy is [02-git-workflow.md](../.agents/rules/02-git-workflow.md) and

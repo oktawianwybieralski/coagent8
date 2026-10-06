@@ -4,9 +4,9 @@ const { createVSIX } = require('@vscode/vsce');
 
 const root = path.resolve(__dirname, '../..');
 const { version } = require('../../package.json');
-const artifact = path.join(root, '.rc-artifacts', `coagent8-mcp-${version}.vsix`);
+const artifact = path.join(root, '.artifacts', `coagent8-mcp-${version}.vsix`);
 createVSIX({
-  cwd: path.join(root, '.rc-artifacts/vscode'),
+  cwd: path.join(root, '.artifacts/vscode'),
   packagePath: artifact,
   dependencies: false,
   preRelease: version.includes('-'),

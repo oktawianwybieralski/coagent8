@@ -4,14 +4,14 @@ const esbuild = require('esbuild');
 
 async function buildExtension() {
   const root = path.resolve(__dirname, '..');
-  const output = path.join(root, '.rc-artifacts/vscode');
+  const output = path.join(root, '.artifacts/vscode');
   const manifest = require('../extensions/vscode/package.json');
   const server = require('../package.json');
   if (manifest.version !== server.version) throw new Error('VS Code and MCP source versions must match.');
   // VSIX requires a numeric version; the package command marks development builds as pre-release.
   const version = server.version.split('-')[0];
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('VSIX requires a numeric major.minor.patch version.');
-  if (output.startsWith(root) && output.includes('.rc-artifacts')) {
+  if (output.startsWith(root) && output.includes('.artifacts')) {
     fs.rmSync(output, { recursive: true, force: true });
   }
   fs.mkdirSync(path.join(output, 'dist'), { recursive: true });

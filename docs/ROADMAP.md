@@ -1210,7 +1210,7 @@ Work on topic branches. This plan does not authorize push, merge or publication.
 Interactive auto-confirm, SQLite, generated diff UI and multi-backend consensus
 remain deferred. Activity-based inactivity supervision is scheduled under
 `CLI-INTERACT-001`; structured consult output is implemented (`CONSULT-001`).
-The [interactive CLI RFC](RFC_INTERACTIVE_CLI_AND_TIMEOUTS.md) is historical discussion,
+The [interactive CLI RFC](archive/RFC_INTERACTIVE_CLI_AND_TIMEOUTS.md) is historical discussion,
 not an instruction to implement or weaken consent.
 
 The simplification is complete only when:

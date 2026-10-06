@@ -10,7 +10,7 @@ require('tsx/cjs'); // Test tooling only; deliberately absent from the installed
 const {resolveCliCommand}=require('../../src/execution/cli-resolver.ts');
 const {connect}=require('../helpers/stdio.cjs');
 const root=path.resolve(__dirname,'../..');
-const artifacts=path.join(root,'tests','artifacts','consumer');fs.mkdirSync(artifacts,{recursive:true});
+const artifacts=path.join(root,'.artifacts','consumer');fs.mkdirSync(artifacts,{recursive:true});
 const npm=process.env.npm_execpath || path.join(path.dirname(process.execPath),'node_modules','npm','bin','npm-cli.js');
 function npmRun(args,cwd=root) {
   const result=spawnSync(process.execPath,[npm,...args],{cwd,encoding:'utf8',windowsHide:true,maxBuffer:2*1024*1024});
@@ -27,7 +27,7 @@ function npmRun(args,cwd=root) {
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.startsWith('assets/design/')),'Design assets must not ship in runtime package');
-  assert.ok(!pack.files.some(f=>f.path.includes('node_modules')||/^(?:test|tests|fixtures|\.rc-tools|\.rc-artifacts)\//.test(f.path)||/consumer-smoke|node20-polyfill|\.test\.[cm]?js$/.test(f.path)));
+  assert.ok(!pack.files.some(f=>f.path.includes('node_modules')||/^(?:test|tests|fixtures|\.rc-tools|\.artifacts)\//.test(f.path)||/consumer-smoke|node20-polyfill|\.test\.[cm]?js$/.test(f.path)));
   const dir=await fsp.mkdtemp(path.join(os.tmpdir(),'coagent8-consumer-'));
   try {
     npmRun(['init','--yes'],dir);
