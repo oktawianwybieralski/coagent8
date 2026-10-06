@@ -1,6 +1,6 @@
 # git-cliff configuration: CHANGELOG.md is generated from Conventional Commits
-# (CHANGELOG-001 in docs/ROADMAP.md). Run `npm run changelog` in a release commit only;
-# `npm run changelog:check` validates and previews before every push and PR.
+# (CHANGELOG-001 in docs/ROADMAP.md). `npm run changelog` runs before every push and,
+# with `--tag`, in release commits; `npm run changelog:check` previews a PR title.
 # Every entry starts with its commit, linked to GitHub.
 
 [changelog]

@@ -1029,7 +1029,8 @@ Decision:
   - a `!` or a `BREAKING CHANGE` footer is listed under a Breaking section;
   - `docs`, `chore`, `test`, `ci`, `build` and `style` are omitted.
 - Generation happens in the release commit only (`npm run changelog`). Pull
-  requests do not edit `CHANGELOG.md`.
+  requests do not edit `CHANGELOG.md`. (Superseded on 2026-10-06: the file is
+  regenerated before every push; see the last work items.)
 - The PR title is the changelog line. It must describe the change for users.
   The Reviewer checks this like any other PR content.
 - Known issues and security notes do not derive from commits. They belong in the
@@ -1106,13 +1107,21 @@ Work items:
   - Checked in a scratch clone with simulated squash commits (#12-#15): a
     `BREAKING CHANGE:` footer in the squash body is detected; a `!` only on a
     listed branch commit is not; the non-conventional revert fails with exit 1.
-- [x] Changelog check before every push and PR (owner request, 2026-10-06).
-  - `npm run changelog:check` validates every commit since `v1.0.0-beta.1` and
-    previews `[Unreleased]`; `-- --with-commit "<PR title>"` previews the PR
-    title as a `pending` entry and rejects a non-conventional title.
-  - It writes no file. Committing the regenerated file on topic branches was
-    rejected: the squash replaces the branch SHAs, and parallel PRs would
-    conflict on `CHANGELOG.md`.
+- [x] Changelog before every push and PR (owner decision, 2026-10-06). It
+  supersedes the release-commit-only generation in the decision above.
+  - Before every push the agent runs `npm run changelog` and commits a changed
+    `CHANGELOG.md` alone as `chore(changelog): regenerate`. `chore` is omitted,
+    so that commit does not make the file stale.
+  - Before opening a PR or changing its title,
+    `npm run changelog:check -- --with-commit "<PR title>"` previews the title
+    as a `pending` entry and rejects a non-conventional title.
+  - Accepted trade-offs: on the release branch, the last merged PR shows its
+    branch commits (still reachable on GitHub through the PR) until the next
+    regeneration replaces them with the squash commit; parallel PRs conflict on
+    `CHANGELOG.md` and are resolved by regenerating, never by hand.
+  - A check-only variant (no committed file outside release commits) was
+    chosen first the same day and then replaced: the committed file stayed at
+    beta 1 between releases.
   - Topic-branch commits must now be Conventional Commits too
     ([Git governance](../.agents/rules/02-git-workflow.md) sections 2, 3 and 6;
     [quality gate](../.agents/rules/04-quality-gate.md); `AGENTS.md`).

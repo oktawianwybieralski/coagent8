@@ -110,8 +110,8 @@ docs(rules): define release branches, tags and PR process
 ```
 
 Commits on topic branches disappear in the squash, but their headers must still
-be valid Conventional Commits: the changelog check that runs before every push
-(section 6) rejects any other subject. The pull request title and description
+be valid Conventional Commits: the changelog regeneration that runs before every
+push (section 6) rejects any other subject. The pull request title and description
 become the final commit, so they must meet this section.
 
 ---
@@ -139,8 +139,8 @@ become the final commit, so they must meet this section.
      [04-quality-gate](04-quality-gate.md). Never report an unexecuted check as PASS.
   5. **Risk and rollback** - what could break and how to revert.
   6. **Checklist** - docs, runtime contract and roadmap status updated where
-     behavior changed; `CHANGELOG.md` not edited (it is generated, section 6);
-     the changelog check passed for the branch and for the title;
+     behavior changed; `CHANGELOG.md` regenerated, never edited by hand
+     (section 6); the title preview passed;
      no secrets, local paths or personal data in the diff.
 
 ### Review and merge
@@ -261,11 +261,13 @@ become the final commit, so they must meet this section.
 * `CHANGELOG.md` at the repository root is generated from the Conventional
   Commits history by git-cliff (`cliff.toml`, `npm run changelog`). It follows
   Keep a Changelog 1.1.0 with one section per released version, newest first.
-* Only a release commit regenerates it. Other PRs never edit `CHANGELOG.md`; the
-  Reviewer rejects a manual edit.
-* Each squash-merged PR is one entry. The PR title is the entry and must describe
-  the change for users. Each entry starts with its commit, linked to GitHub; the
-  `(#N)` suffix of the squash subject becomes a link to the PR.
+* Nobody edits it by hand; the Reviewer rejects a manual edit. It is regenerated
+  before every push (below) and, with `--tag`, in each release commit
+  (section 5).
+* Each entry starts with its commit, linked to GitHub; the `(#N)` suffix of a
+  squash subject becomes a link to the PR. On a topic branch the entries are the
+  branch commits. After the squash merge they are replaced by the PR title (one
+  entry per PR) at the next regeneration on the release branch.
 * Groups: Breaking (`!` or `BREAKING CHANGE`), Added (`feat`), Changed (`perf`,
   `refactor`), Removed (`revert`), Fixed (`fix`). `docs`, `chore`, `test`, `ci`,
   `build` and `style` are omitted. A breaking commit is listed under Breaking
@@ -273,28 +275,6 @@ become the final commit, so they must meet this section.
 * A subject that is not a Conventional Commit (for example GitHub's default
   `Revert "..."` title) fails the generation (`require_conventional`) instead of
   silently losing its entry.
-
-### Changelog check before every push and pull request
-
-The agent runs this check itself; it writes no file and does not replace the
-release-commit rule above.
-
-1. **Before every `git push`** (any branch), run `npm run changelog:check`.
-   * It fails when any commit since `v1.0.0-beta.1` is not a Conventional
-     Commit. A failure blocks the push: reword the offending commit; never push
-     past it.
-   * On success it prints the `[Unreleased]` entries. Confirm that none is
-     duplicated, misgrouped or missing.
-2. **Before `gh pr create` and before every PR title change**, run
-   `npm run changelog:check -- --with-commit "<PR title>"`.
-   * The title appears as a `pending` entry. It must sit in the right group and
-     describe the change for users.
-   * A non-zero exit means the title is not a Conventional Commit. (git-cliff
-     2.14.2 reports this case with a panic, exit code 101.)
-   * A breaking change needs `!` in the title or a `BREAKING CHANGE:` footer in
-     the squash message. A `!` on a branch commit alone is lost in the squash.
-   * Copy the `pending` entry into the PR description (section 3).
-3. Report both results in the PR **Verification** section as PASS or FAIL.
 * The 1.0.0-beta.1 release (tag `v1.0.0-beta.1`, the first commit of the
   history) keeps its curated description as the oldest entry at the end of the
   file (`cliff.toml` footer).
@@ -308,6 +288,36 @@ release-commit rule above.
   - Known issues, security notes and artifact digests are added by hand; they do
     not derive from commits.
 * Keep each PR to one user-visible change so that its entry is precise.
+
+### Regeneration before every push and pull request
+
+The agent does this itself, without being asked.
+
+1. **Before every `git push`** (any branch), after the last change is
+   committed:
+   * Run `npm run changelog`. It fails when any commit since `v1.0.0-beta.1` is
+     not a Conventional Commit. A failure blocks the push: reword the offending
+     commit; never push past it.
+   * If `CHANGELOG.md` changed, commit it alone as `chore(changelog): regenerate`.
+     `chore` is omitted from the changelog, so this commit does not make the file
+     stale. Do not amend it into an earlier commit: that changes the SHA that
+     the file links.
+   * Confirm that no entry is duplicated, misgrouped or missing, then push.
+   * A file generated before the last commit is stale. A generated file cannot
+     list the commit that contains it, which is why the file gets its own commit.
+2. **Before `gh pr create` and before every PR title change**, run
+   `npm run changelog:check -- --with-commit "<PR title>"`. It writes no file.
+   * The title appears as a `pending` entry. It must sit in the right group and
+     describe the change for users.
+   * A non-zero exit means the title is not a Conventional Commit. (git-cliff
+     2.14.2 reports this case with a panic, exit code 101.)
+   * A breaking change needs `!` in the title or a `BREAKING CHANGE:` footer in
+     the squash message. A `!` on a branch commit alone is lost in the squash.
+   * Copy the `pending` entry into the PR description (section 3).
+3. **Merge conflict in `CHANGELOG.md`** (for example after rebasing on the
+   release branch): never resolve it by hand. Take either side, run
+   `npm run changelog` and commit the result as in step 1.
+4. Report the results in the PR **Verification** section as PASS or FAIL.
 
 ---
 
