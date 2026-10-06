@@ -18,6 +18,14 @@ away. Local contributor verification is defined separately in the
 
 The central execution controller is [`src/execution/controller.ts`](../src/execution/controller.ts). Tool handlers supply a composed internal prompt and a sanitized public user message. Dynamic routing chooses an active CLI adapter; the adapter handles command arguments and native event parsing. Process execution, storage, progress telemetry, heartbeats, and Markdown rendering are completely shared.
 
+Backend selection: an explicit `backend` or the configured `defaultBackend` is used as given. Otherwise `auto` with one eligible backend uses it, and with several it selects like `smart_quota`:
+* it skips the calling client's own CLI, derived from `clientInfo.name` (`claude` → Claude Code, `codex` → Codex, `antigravity`/`agy`/`gemini` → agy), unless only that CLI is available;
+* it skips providers with an observed rate limit;
+* it prefers the largest measured headroom, counting an unmeasured quota as 50%;
+* ties keep the provider order `codex`, `gemini`, `claude`.
+
+The client name is self-reported and only steers this preference; it never relaxes a policy.
+
 ### Dual Tool Profiles
 1. **Canonical Profile (Default)**: Advertises nine tools - six core tools plus
    three deprecated aliases:
@@ -204,7 +212,7 @@ when its fix lands with a regression test.
 | --- | --- | --- |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
 | AUD-P1-1 | A rate limit records the provider's reset time | The controller writes a second, tiered cooldown that replaces the parsed reset (3 days becomes 45 s) |
-| AUD-P1-2 | Error codes identify the cause | Errors without a known `CODE:` prefix, including `ONBOARDING_REQUIRED` and lock timeouts, are returned as `INPUT_LIMIT` |
+| AUD-P1-2 | Error codes identify the cause | Errors without a known `CODE:` prefix, including lock timeouts, are returned as `INPUT_LIMIT` |
 | AUD-P1-4 | agy runs with native `--sandbox` | The `/usage` quota probe runs on every Gemini request without `--sandbox` |
 | AUD-P1-5 | Native stream parsing tolerates CLI evolution | An unknown agy event type fails the call with `PROTOCOL_ERROR` |
 | AUD-P1-7 | Top-tier models require the user's consent | `user_confirmed` is asserted by the caller; agy's default model is not governed |

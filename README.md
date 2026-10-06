@@ -60,9 +60,10 @@ JSON shape is used by many hosts; follow your host's configuration format:
 
 No setup command, recognized client name or VSIX is required for this path.
 CoAgent8 advertises tools independently of the calling client's name. Backend
-availability is checked when executing tasks or explicit diagnostics. Specify
-`backend` on a call, or configure `defaultBackend`; auto selection with multiple
-eligible backends and no configured default requires a choice.
+availability is checked when executing tasks or explicit diagnostics. A call
+may name `backend`, and `defaultBackend` sets a fixed choice. Otherwise, with
+several eligible backends, `auto` prefers a CLI other than the calling client's
+own and the most measured quota headroom, as `smart_quota` does.
 
 The backend executables resolve from PATH. Set `CODEX_PATH`, `CLAUDE_PATH`, or
 `GEMINI_PATH`/`AGY_PATH` in the server environment for custom locations. Supply

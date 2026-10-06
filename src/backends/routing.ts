@@ -4,6 +4,26 @@ import { selectSmartQuotaBackend } from './availability.js';
 import type { AdapterProbeResult, CliAdapter } from './types.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 export interface ResolvedBackend { id: ProviderId; adapter: CliAdapter; probe: AdapterProbeResult; isSmartQuota?: boolean }
+
+/** CLI of the connected MCP client; a stdio server process serves exactly one client. */
+let callerProvider: ProviderId | null = null;
+
+/**
+ * Maps an MCP `clientInfo.name` to the provider whose CLI the client is.
+ * @remarks A routing preference only, never a security decision: the name is self-reported.
+ */
+export function providerForClient(clientName: string | undefined): ProviderId | null {
+  const name = (clientName || '').toLowerCase();
+  if (name.includes('claude')) return 'claude';
+  if (name.includes('codex')) return 'codex';
+  if (/antigravity|jetski|gemini|\bagy\b/.test(name)) return 'gemini';
+  return null;
+}
+
+/** Records the connected client's own CLI so `auto` prefers a different one. */
+export function setCallerProvider(provider: ProviderId | null): void {
+  callerProvider = provider;
+}
 export async function resolveBackend(requested?: string | null): Promise<ResolvedBackend> {
   const config = loadConfig(), allowed = config.routing.allowedBackends;
   const raw = requested || 'auto';
@@ -23,10 +43,10 @@ export async function resolveBackend(requested?: string | null): Promise<Resolve
   for (const [id, probe] of results) probes.set(id, probe);
   const installed = candidates.filter(id => probes.get(id)?.installed && probes.get(id)?.executionSupported !== false);
   if (!installed.length) throw new Error(candidates.some(id=>probes.get(id)?.installed) ? 'CLI_UNSUPPORTED: No installed permitted CLI supports execution; run doctor.' : 'CLI_NOT_FOUND: No permitted CLI installed; run doctor.');
-  if (target === 'smart_quota') {
-    const id = await selectSmartQuotaBackend(installed, { probesOverride: Object.fromEntries(probes), config });
+  if (target === 'smart_quota' || installed.length > 1) {
+    // Without a configured default, auto chooses like smart_quota: another CLI than the caller's, most headroom first.
+    const id = await selectSmartQuotaBackend(installed, { probesOverride: Object.fromEntries(probes), config, callerProvider });
     return selected(id as ProviderId, true);
   }
-  if (installed.length > 1) throw new Error(`ONBOARDING_REQUIRED: Choose a provider (${installed.join(', ')}) using config defaultBackend or backend parameter.`);
   return selected(installed[0]);
 }

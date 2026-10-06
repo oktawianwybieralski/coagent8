@@ -792,8 +792,14 @@ Plan:
 - [x] Make backend resolution (`src/backends/routing.ts:resolveBackend`) strictly
   read-only: no `setDefaultBackend` mutation during `auto` resolution. Verified in
   `tests/backends/routing.test.js`.
-- [ ] Prefer an explicit backend or configured default. Preserve the onboarding error
-  when auto-selection is ambiguous, reported with its own error code (see `ERRORS-001`).
+- [x] Prefer an explicit backend or configured default. Owner decision of 2026-10-07
+  (`CONTEXT-001`): an ambiguous `auto` no longer returns the onboarding error. It
+  selects like `smart_quota`:
+  - skipping the calling client's own CLI;
+  - skipping providers with an observed rate limit;
+  - preferring measured headroom.
+
+  Verified in `tests/backends/routing.test.js` and `tests/server.test.js`.
 - [ ] Bounded probe caching (AUD-P1-4):
   - one cached probe per backend, bound to the resolved executable path, mtime,
     version output, relevant environment variables and configuration digests;
@@ -1116,7 +1122,8 @@ These statuses summarize prior implementation; they are not fresh test results.
   - a `ToolError` class carries an `ErrorCode`;
   - no `CODE:` string prefixes and no prefix parsing in `server.ts`;
   - an unknown failure maps to `PROCESS_ERROR`, never `INPUT_LIMIT`;
-  - `ONBOARDING_REQUIRED` gets a defined code.
+  - `ONBOARDING_REQUIRED` no longer occurs: an ambiguous `auto` selects a backend
+    (`EXEC-001`).
 
   Also review the 37 empty `catch {}` blocks individually and distinguish
   expected absence from actionable I/O errors, including `ensureConfigDir`

@@ -15,7 +15,11 @@ export interface AvailabilitySelectionOptions {
   config?: { routing: { allowedBackends: ProviderId[] } };
   probesOverride?: ProbeMap;
   quotasOverride?: QuotaReport;
+  /** The calling client's own CLI; chosen only when no other provider is available. */
+  callerProvider?: ProviderId | null;
 }
+/** Headroom assumed for an unmeasured quota, so only measured headroom changes the preference order. */
+const UNMEASURED_HEADROOM_PERCENT = 50;
 function getQuotaCacheFile(): string { return process.env.coagent8_QUOTA_CACHE || path.join(getDataDir(), 'quota-cache.json'); }
 export const QUOTA_CACHE_TTL_MS = 60000;
 const BACKOFF_DELAYS_MS = [15 * 1000, 45 * 1000, 180 * 1000] as const;
@@ -185,8 +189,14 @@ export async function selectSmartQuotaBackend(candidates: ProviderId[] | null = 
     config.routing.allowedBackends.includes(id) && quotas[id]?.installed &&
     quotas[id].executionSupported !== false && options.probesOverride?.[id]?.executionSupported !== false);
   if (!installed.length) throw new Error('No active permitted CLI installed for smart_quota.');
-  const ready = installed.find(id => quotas[id].status !== 'rate_limited');
-  if (ready) return ready;
+  // A second opinion comes from another CLI than the caller's own when one is available.
+  const others = installed.filter(id => id !== options.callerProvider);
+  const headroom = (id: ProviderId) => quotas[id].measured && quotas[id].headroomPercent !== null ? quotas[id].headroomPercent as number : UNMEASURED_HEADROOM_PERCENT;
+  for (const pool of [others, installed]) {
+    // Stable sort: equal headroom keeps the provider preference order.
+    const ready = pool.filter(id => quotas[id].status !== 'rate_limited').sort((a, b) => headroom(b) - headroom(a));
+    if (ready.length) return ready[0];
+  }
   const times = installed.map(id => quotas[id].cooldownUntil || quotas[id].resetsAt).filter(Boolean).sort();
   throw new Error('All permitted providers have observed rate limits.' + (times.length ? ' Earliest recovery cooldown resets at: ' + times[0] : ''));
 }

@@ -92,3 +92,30 @@ test('F14/F15: shared schema validates required fields, types, enums, unknown fi
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
   for(const model of ['gpt-6-astra','gpt-6.1-astra','claude-opus-4-6','opus','astra'])assert.ok(checkModelGovernance(model,false),model);
 });
+
+test('the connected client name sets the caller CLI that auto routing avoids', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const { resolveBackend, setCallerProvider } = require('../src/backends/routing.ts');
+  const { saveConfig } = require('../src/config.ts');
+  const original = { ...adapterRegistry };
+  const server = createServer();
+  const client = new Client({ name: 'claude-code', version: '2.1.291' });
+  try {
+    for (const id of ['codex', 'claude', 'gemini']) {
+      adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
+        probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
+    }
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'gemini'] } });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    assert.equal((await resolveBackend()).id, 'gemini', 'Claude Code as client is routed to another CLI');
+  } finally {
+    await client.close();
+    await server.close();
+    setCallerProvider(null);
+    Object.assign(adapterRegistry, original);
+  }
+});

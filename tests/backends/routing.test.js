@@ -28,7 +28,8 @@ test('auto and smart_quota ignore an installed but unsupported provider; explici
     saveConfig({defaultBackend:'gemini'});await assert.rejects(resolveBackend(),/CLI_UNSUPPORTED/);
     saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['codex']}});await assert.rejects(resolveBackend(),/CLI_NOT_FOUND/);
     saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','gemini']}});
-    adapterRegistry.gemini.probe=async()=>({installed:true,executionSupported:true});await assert.rejects(resolveBackend(),/ONBOARDING_REQUIRED/);
+    adapterRegistry.gemini.probe=async()=>({installed:true,executionSupported:true});
+    const chosen=await resolveBackend();assert.equal(chosen.id,'gemini','without a default, auto chooses like smart_quota in provider order');assert.equal(chosen.isSmartQuota,true);
   }finally{Object.assign(adapterRegistry,original);}
 });
 
@@ -49,6 +50,47 @@ test('routing: resolveBackend auto mode is strictly read-only and does not mutat
     assert.equal(resolved.id, 'gemini');
     assert.equal(loadConfig().defaultBackend, null); // Strictly read-only; no silent mutation!
   } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('routing: auto prefers another CLI than the calling client and measured headroom, falling back to the caller', async () => {
+  const { setCallerProvider, providerForClient } = require('../../src/backends/routing.ts');
+  const { selectSmartQuotaBackend } = require('../../src/backends/availability.ts');
+  const original = { ...adapterRegistry };
+  try {
+    assert.equal(providerForClient('claude-code'), 'claude');
+    assert.equal(providerForClient('codex-mcp-client'), 'codex');
+    assert.equal(providerForClient('Antigravity'), 'gemini');
+    assert.equal(providerForClient('antigravity-client'), 'gemini');
+    assert.equal(providerForClient('cursor-vscode'), null);
+    assert.equal(providerForClient(undefined), null);
+    for (const id of ['codex', 'claude', 'gemini']) {
+      adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
+        probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
+    }
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'gemini'] } });
+    setCallerProvider('gemini');
+    assert.equal((await resolveBackend()).id, 'claude', 'agy as client gets Claude');
+    setCallerProvider('claude');
+    assert.equal((await resolveBackend('auto')).id, 'gemini', 'Claude Code as client gets agy');
+    saveConfig({ defaultBackend: 'claude' });
+    assert.equal((await resolveBackend()).id, 'claude', 'a configured default wins over the caller preference');
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude'] } });
+    assert.equal((await resolveBackend()).id, 'claude', 'the caller CLI remains the last resort');
+
+    const config = { routing: { allowedBackends: ['codex', 'claude', 'gemini'] } };
+    const quotasOverride = {
+      codex: { installed: true, status: 'operational', measured: true, headroomPercent: 10 },
+      gemini: { installed: true, status: 'operational', measured: true, headroomPercent: 80 },
+      claude: { installed: true, status: 'operational', measured: false, headroomPercent: 99 },
+    };
+    assert.equal(await selectSmartQuotaBackend(['codex', 'gemini', 'claude'], { config, quotasOverride, callerProvider: null }), 'gemini', 'measured headroom ranks');
+    assert.equal(await selectSmartQuotaBackend(['codex', 'gemini', 'claude'], { config, quotasOverride, callerProvider: 'gemini' }), 'claude', 'unmeasured counts as 50%, above a measured 10%');
+    const limited = { ...quotasOverride, codex: { ...quotasOverride.codex, status: 'rate_limited' }, claude: { ...quotasOverride.claude, status: 'rate_limited' } };
+    assert.equal(await selectSmartQuotaBackend(['codex', 'gemini', 'claude'], { config, quotasOverride: limited, callerProvider: 'gemini' }), 'gemini', 'caller chosen when the others are rate limited');
+  } finally {
+    setCallerProvider(null);
     Object.assign(adapterRegistry, original);
   }
 });

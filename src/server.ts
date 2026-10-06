@@ -29,6 +29,7 @@ import { listSessions } from './sessions/session.js';
 import { sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation } from './execution/controller.js';
+import { providerForClient, setCallerProvider } from './backends/routing.js';
 import type { ToolArguments } from './tools/arguments.js';
 
 export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inputSchema: { type: string; properties?: Record<string, object>; required?: string[] }; outputSchema?: { type: string; [key: string]: unknown } };
@@ -199,6 +200,8 @@ export function createServer(): Server {
     },
     { capabilities: { tools: {}, resources: { listChanged: true } } }
   );
+
+  server.oninitialized = () => setCallerProvider(providerForClient(server.getClientVersion()?.name));
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: createToolDefinitions() }));
 
