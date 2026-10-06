@@ -106,10 +106,12 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   assert.equal(validEffort.status, 'completed');
 
   process.env.coagent8_FIXTURE_MODE = 'sandbox-denied';
-  const deniedRes = await execute('request', { cwd: tempDir });
-  assert.equal(deniedRes.status, 'failed');
-  assert.equal(deniedRes.error.code, 'SANDBOX_UNAVAILABLE');
-  assert.equal(deniedRes.continuationAvailable, false);
+  const warnings = [];
+  const deniedRes = await execute('request', { cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+  assert.equal(deniedRes.status, 'completed', 'a denial shows the sandbox works; the answer stays');
+  assert.equal(deniedRes.output, 'Answer from the files agy could read.');
+  assert.equal(deniedRes.continuationAvailable, true);
+  assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1);
   delete process.env.coagent8_FIXTURE_MODE;
 });
 
@@ -171,14 +173,16 @@ test('Gemini collector rejects malformed roles/content, duplicate terminal and t
   assert.throws(() => terminal.line(JSON.stringify({ type: 'result', status: 'success' })), /duplicate/);
 });
 
-test('Gemini production adapter preserves denial independently of terminal order and rejects real duplicates', async () => {
+test('Gemini production adapter reports a denial independently of terminal order and rejects real duplicates', async () => {
   try {
     for (const mode of ['sandbox-denied-stderr-first', 'sandbox-denied-stdout-first']) {
       process.env.coagent8_FIXTURE_MODE = mode;
-      const result = await execute('synthetic denial request', { cwd: tempDir });
-      assert.equal(result.status, 'failed', mode);
-      assert.equal(result.error.code, 'SANDBOX_UNAVAILABLE', mode);
-      assert.equal(result.continuationAvailable, false, mode);
+      const warnings = [];
+      const result = await execute('synthetic denial request', { cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+      assert.equal(result.status, 'completed', mode);
+      assert.equal(result.output, 'Answer from the files agy could read.', mode);
+      assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, mode);
+      assert.equal(result.continuationAvailable, true, mode);
       assert.equal(result.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
     }
     process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-duplicate';

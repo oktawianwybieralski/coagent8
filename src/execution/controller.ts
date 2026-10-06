@@ -48,6 +48,8 @@ export interface ExecutionRequest {
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
 const activeSessionAborts = new Map<string, { abort: () => void; wait: () => Promise<boolean> }>();
+/** Distinct adapter warnings carried into one result, such as sandbox denials. */
+const MAX_ADAPTER_WARNINGS = 5;
 
 /**
  * Cancels active CLI execution for a specific session handle, aborting the process tree.
@@ -137,6 +139,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   const started = Date.now(); let toolCount = 0, historyError: Error | undefined, sawPublicMessage = false;
   let lastEvent = Date.now();
   let lastPhase = 'Initialization';
+  const adapterWarnings = new Set<string>();
   const report = (message: string) => onProgress?.({ message: redactDiagnostic(message, 512) });
   const receive = (event: AdapterEvent) => {
     if (event.type === 'user_message' || event.type === 'turn_started' || event.type === 'turn_finished') return;
@@ -162,6 +165,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
       report(event.message);
     } else if (event.type === 'warning') {
       report(`Warning: ${event.message}`);
+      if (adapterWarnings.size < MAX_ADAPTER_WARNINGS) adapterWarnings.add(event.message);
     } else if (event.type === 'error') {
       report(`Error: ${event.error.message}`);
     } else if (event.type === 'assistant_message') {
@@ -206,7 +210,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);
   }
 
-  const warnings: string[] = [...(options.warnings || [])];
+  const warnings: string[] = [...(options.warnings || []), ...adapterWarnings];
 
   // Post-execution bookkeeping: session metadata (AUD-P1-3)
   try {

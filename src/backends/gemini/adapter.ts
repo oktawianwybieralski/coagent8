@@ -230,9 +230,9 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
 
 
   const s = collector.snapshot();
-  let error: ExecutionError | undefined = processResult.error || (s.sandboxDenied
-    ? { code: 'SANDBOX_UNAVAILABLE', message: 'Tool execution denied by sandbox policy.', retryable: false }
-    : s.terminalError);
+  // A denied action shows that the sandbox works; the answer stays, as with Claude permission denials.
+  if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
+  let error: ExecutionError | undefined = processResult.error || s.terminalError;
   if (!error && processResult.status !== 'completed') {
     const fallbackStderr = processResult.stderr ? processResult.stderr.trim() : '';
     error = fallbackStderr
@@ -259,7 +259,7 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
     exitCode: processResult.exitCode,
     signal: processResult.signal,
     truncated: processResult.isTruncated || s.truncated || error?.code === 'BUFFER_LIMIT',
-    continuationAvailable: !!(s.nativeSessionId || native) && !s.sandboxDenied && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE',
+    continuationAvailable: !!(s.nativeSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
   };
 }
 

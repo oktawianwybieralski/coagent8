@@ -242,3 +242,28 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
     fs.rmSync(isolatedDir, { recursive: true, force: true });
   }
 });
+
+test('adapter warnings such as a sandbox denial reach the result once each, with the answer kept', async () => {
+  const original = adapterRegistry.gemini;
+  adapterRegistry.gemini = {
+    id: 'gemini',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture' }),
+    execute: async (_prompt, options) => {
+      for (let i = 0; i < 2; i++) options.onEvent({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
+      for (let i = 0; i < 10; i++) options.onEvent({ type: 'warning', message: `distinct warning ${i}` });
+      return { status: 'completed', isError: false, output: 'Answer kept', nativeSessionId: randomUUID(), model: 'gemini-test', truncated: false, continuationAvailable: true };
+    },
+  };
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
+    assert.equal(res.isError, false);
+    assert.equal(res.structuredContent.output, 'Answer kept');
+    const warnings = res.structuredContent.warnings;
+    assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'duplicates collapse');
+    assert.equal(warnings.length, 5, 'adapter warnings are bounded');
+  } finally {
+    adapterRegistry.gemini = original;
+  }
+});

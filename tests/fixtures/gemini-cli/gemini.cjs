@@ -87,7 +87,7 @@ function run() {
       result: {
         conversation_id: sid,
         status: 'SUCCESS',
-        response: '',
+        response: 'Answer from the files agy could read.',
         duration_seconds: 0.5,
         num_turns: 1,
         usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
