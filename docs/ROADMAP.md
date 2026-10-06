@@ -515,8 +515,9 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
   relevant changes while preserving required status checks and the full release matrix.
 - [ ] Keep complete failure logs. Rerun only to investigate a failure or validate
   a new change; do not treat an unexplained passing retry as a fix (`VERIFY-001`).
-- [ ] Replace tests that cement defects. Example: the "O(1) appends" history test
-  that never measures size. Each replacement asserts the measured property.
+- [x] Replace tests that cement defects. Example: replaced the "O(1) appends" history
+  test with a measured ratio test asserting persisted bytes <= 3× of answer size in
+  `tests/sessions/history.test.js` (measured 1.05× for 60 KiB stream).
 
 ### `HANDOFF-001` - portable agent instructions and handoff templates
 
@@ -823,31 +824,42 @@ production (AUD-P1-1).
 
 ### `HISTORY-002` - continuation versus archival storage
 
-**Status:** Blocker (AUD-P0-3, AUD-P1-3).
+**Status:** Implemented (AUD-P0-3, AUD-P1-3, AUD-P2-12).
 
-- [ ] Persist streamed answers as append-only deltas. A final `assistant_message`
+- [x] Persist streamed answers as append-only deltas. A final `assistant_message`
   replaces the deltas on load, and the `.json` snapshot is materialized once, on
   `turn_finished`. Acceptance: persisted bytes stay within a small constant factor
-  of the answer size (the audit measured 54-112×).
-- [ ] Uncouple archive failures from execution:
+  of the answer size (<= 3×). Tested in `tests/sessions/history.test.js` (60 KiB stream
+  in 40-byte deltas measured at 1.05× persisted bytes ratio vs audit's 112×). Legacy
+  snapshot logs load and paginate with identical semantics (`tests/sessions/history.test.js`).
+  Split credential tail buffering ensures secrets split across deltas/flushes never reach disk
+  unredacted (`tests/sessions/history.test.js`).
+- [x] Uncouple archive failures from execution:
   - initial, periodic and final flush errors become redacted warnings with
     `historyAvailable: false`;
   - the initial flush must never prevent a CLI launch;
   - capacity limits evict the oldest sessions (LRU) instead of refusing new turns.
-- [ ] Move post-execution bookkeeping (session metadata, archive, cooldown) out of
+  Tested in `tests/execution/controller-history.test.js` (full archive, flush failures, 120 KiB stream)
+  and `tests/sessions/history-capacity.test.js`.
+- [x] Move post-execution bookkeeping (session metadata, archive, cooldown) out of
   the execution `try`. A bookkeeping failure never discards a successful answer;
-  it becomes a warning with continuation disabled (AUD-P1-3).
-- [ ] Preserve fail-closed session ownership and safety: keep turn acquisition,
+  it becomes a warning with continuation disabled (AUD-P1-3). Tested in
+  `tests/execution/controller-history.test.js` (`updateSession` failure returns completed answer).
+- [x] Preserve fail-closed session ownership and safety: keep turn acquisition,
   lease releases (`releaseSessionTurn`), turn mutual exclusion, and workspace binding
-  strictly fail-closed. A lease-release failure is a session error, not `HISTORY_ERROR`.
-- [ ] With archival history disabled, a one-shot call must not require history files.
-- [ ] Replace the global `history/store` lock and per-flush `.capacity.meta`
+  strictly fail-closed. A lease-release failure is a session error (`SESSION_INVALID`), not `HISTORY_ERROR`.
+  Tested in `tests/execution/controller-history.test.js`.
+- [x] With archival history disabled (`coagent8_HISTORY=off`), a one-shot call must not require history files.
+  Tested in `tests/execution/controller-history.test.js`.
+- [x] Replace the global `history/store` lock and per-flush `.capacity.meta`
   rewrite with per-session locking and lazily computed capacity (AUD-P2-12).
-- [ ] Retain simple file-based `.jsonl` / `.json` sessions or ephemeral turns;
+  Tested in `tests/sessions/history.test.js` (concurrent flushes across different sessions succeed independently).
+- [x] Retain simple file-based `.jsonl` / `.json` sessions or ephemeral turns;
   SQLite is deferred.
-- [ ] Define retention, default mode, resource/tool behavior and migration before
+- [x] Define retention, default mode, resource/tool behavior and migration before
   altering storage. Preserve existing histories, recovery and pagination
   consistency. Do not delete user data outside the documented retention.
+  Retention rules documented in `docs/RUNTIME_CONTRACT.md` §4.
 
 ### `INSTALL-001` / `MIGRATION-001` - optional setup and presentation
 

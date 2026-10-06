@@ -203,10 +203,8 @@ when its fix lands with a regression test.
 | ID | Intended contract | Current behavior |
 | --- | --- | --- |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
-| AUD-P0-3 | History is archival and bounded | Streamed answers are stored 50-110× their size; reaching 10 MiB per session turns a successful turn into `HISTORY_ERROR`; above 100 MiB in total, new executions fail before the CLI starts |
 | AUD-P1-1 | A rate limit records the provider's reset time | The controller writes a second, tiered cooldown that replaces the parsed reset (3 days becomes 45 s) |
 | AUD-P1-2 | Error codes identify the cause | Errors without a known `CODE:` prefix, including `ONBOARDING_REQUIRED` and lock timeouts, are returned as `INPUT_LIMIT` |
-| AUD-P1-3 | A completed CLI answer is returned | A session-metadata update failure after execution replaces the answer with an empty failed result |
 | AUD-P1-4 | agy runs with native `--sandbox` | The `/usage` quota probe runs on every Gemini request without `--sandbox` |
 | AUD-P1-5 | Native stream parsing tolerates CLI evolution | An unknown agy event type fails the call with `PROTOCOL_ERROR` |
 | AUD-P1-7 | Top-tier models require the user's consent | `user_confirmed` is asserted by the caller; agy's default model is not governed |
