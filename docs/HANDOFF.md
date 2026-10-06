@@ -80,7 +80,7 @@ is pushed:
 | `build/node-24-minimum` | `c0c030f` | Node.js 24 minimum; CI on Node 24.x and 26.x |
 | `fix/hermetic-test-environment` | `076b59d` | `tests/run.cjs` runs the suite in a hermetic environment without real backend CLIs |
 | `perf/tsdown-bundle-comparison` | `a36a267`..`991b7e4` | Server bundle built with tsdown; no comments in the bundle; `dist/THIRD_PARTY_NOTICES.txt`; build tooling needs Node 24.11 (`devEngines`). Evidence: [BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md) |
-| `fix/history-archive-integrity` | `3dac0d6`..`310ae93` | `HISTORY-002`: bounded append-only delta storage, split-credential tail buffering, best-effort archival, LRU capacity eviction, fail-closed leases |
+| `fix/history-archive-integrity` | `3dac0d6`..`0cddde5` | `HISTORY-002`: bounded append-only delta storage, split-credential tail buffering, best-effort archival, LRU capacity eviction, fail-closed leases |
 
 ## Verification
 
