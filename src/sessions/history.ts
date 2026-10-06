@@ -41,20 +41,21 @@ function isPotentialSecretPrefix(word: string): boolean {
   if ('authorization'.startsWith(w) || w.startsWith('authorization')) return true;
   if ('bearer'.startsWith(w) || w.startsWith('bearer')) return true;
   if ('basic'.startsWith(w) || w.startsWith('basic')) return true;
-  if ('sk-'.startsWith(w) || 'sk_live_'.startsWith(w) || w.startsWith('sk-') || w.startsWith('sk_live_')) return true;
-  if ('aiza'.startsWith(w) || w.startsWith('aiza')) return true;
-  if ('ya29.'.startsWith(w) || w.startsWith('ya29.')) return true;
+  if ('https://'.startsWith(w) || 'http://'.startsWith(w) || w.includes('://')) return true;
+  if ('sk-'.startsWith(w) || 'sk_live_'.startsWith(w) || w.includes('sk-') || w.includes('sk_live_')) return true;
+  if ('aiza'.startsWith(w) || w.includes('aiza')) return true;
+  if ('ya29.'.startsWith(w) || w.includes('ya29.')) return true;
   if (
     'ghp_'.startsWith(w) || 'gho_'.startsWith(w) || 'ghu_'.startsWith(w) || 'ghs_'.startsWith(w) ||
     'github_pat_'.startsWith(w) || 'glpat-'.startsWith(w) ||
-    w.startsWith('ghp_') || w.startsWith('gho_') || w.startsWith('ghu_') || w.startsWith('ghs_') ||
-    w.startsWith('github_pat_') || w.startsWith('glpat-')
+    w.includes('ghp_') || w.includes('gho_') || w.includes('ghu_') || w.includes('ghs_') ||
+    w.includes('github_pat_') || w.includes('glpat-')
   ) return true;
-  if ('npm_'.startsWith(w) || w.startsWith('npm_')) return true;
-  if ('hf_'.startsWith(w) || w.startsWith('hf_')) return true;
-  if ('eyj'.startsWith(w) || w.startsWith('eyj')) return true;
-  if (/^a(?:kia|sia|bia|cca)?/i.test(w)) return true;
-  if ('xox'.startsWith(w) || w.startsWith('xox')) return true;
+  if ('npm_'.startsWith(w) || w.includes('npm_')) return true;
+  if ('hf_'.startsWith(w) || w.includes('hf_')) return true;
+  if ('eyj'.startsWith(w) || w.includes('eyj')) return true;
+  if (/^a(?:k(?:i(?:a)?)?|s(?:i(?:a)?)?|b(?:i(?:a)?)?|c(?:c(?:a)?)?)?$/i.test(w)) return true;
+  if ('xox'.startsWith(w) || w.includes('xox')) return true;
   return false;
 }
 
@@ -87,9 +88,9 @@ export function computeSafeCommitPoint(text: string, isFinished = false): number
     }
   }
 
-  // 3. Trailing token characters check [A-Za-z0-9._~+/-]
+  // 3. Trailing non-whitespace token check
   let tokenRunStart = text.length;
-  while (tokenRunStart > 0 && /[A-Za-z0-9._~+/-]/.test(text[tokenRunStart - 1])) {
+  while (tokenRunStart > 0 && !/\s/.test(text[tokenRunStart - 1])) {
     tokenRunStart--;
   }
 
@@ -475,11 +476,21 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0): Promi
       try {
         const stat = await fs.stat(file);
         if (Date.now() - stat.mtimeMs > 7 * 24 * 3600 * 1000) {
-          try {
-            await fs.rm(file, { force: true });
-          } catch {
-            total += stat.size;
-          }
+          const sessionHandle = name.replace(/\.jsonl?$/, '');
+          await withFileLock(path.join(dir, `${sessionHandle}.lock`), async () => {
+            try {
+              const sess = getSession(sessionHandle);
+              if (sess && sess.activePid != null) {
+                total += stat.size;
+                return;
+              }
+            } catch {}
+            try {
+              await fs.rm(file, { force: true });
+            } catch {
+              total += stat.size;
+            }
+          });
         } else {
           total += stat.size;
         }
@@ -519,7 +530,7 @@ export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
   if (process.env.coagent8_HISTORY === 'off') return 0;
   const dir = getHistoryDir();
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  return withFileLock(path.join(dir, 'store'), () => pruneHistoryDirectoryInternal(dir, extraBytes));
+  return withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, extraBytes));
 }
 
 /**
@@ -541,7 +552,7 @@ export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
 export function createHistoryWriter(handle: string, workspace: string, provider: ProviderId, turnId: string) {
   const pending: AdapterEvent[] = [];
   const rawAssembled = new Map<string, string>();
-  const emittedRedactedLength = new Map<string, number>();
+  const emittedRedactedText = new Map<string, string>();
   let chain = Promise.resolve();
   let writeError: Error | undefined;
   let writerDisabled = false;
@@ -560,21 +571,29 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
     if (event.type === 'turn_finished') isStreaming = false;
     if (event.type === 'user_message' && pending.some(e => e.type === 'user_message')) return;
 
+    if (pending.length >= 10000) throw new Error('History event limit exceeded.');
+
     if (event.type === 'assistant_delta') {
       const prev = rawAssembled.get(event.messageId) || '';
       const bounded = truncateToByteLength(prev + event.text, 1024 * 1024);
       rawAssembled.set(event.messageId, bounded);
-      pending.push({ ...event });
+      const last = pending[pending.length - 1];
+      if (last && last.type === 'assistant_delta' && last.messageId === event.messageId) {
+        last.text += event.text;
+      } else {
+        pending.push({ ...event });
+      }
     } else if (event.type === 'assistant_message') {
       const bounded = truncateToByteLength(event.text, 1024 * 1024);
       rawAssembled.set(event.messageId, bounded);
+      const redacted = redactCredentialFormats(bounded);
+      emittedRedactedText.set(event.messageId, redacted);
       const index = pending.findIndex(e => e.type === 'assistant_message' && e.messageId === event.messageId);
-      const snapshot: AdapterEvent = { type: 'assistant_message', messageId: event.messageId, text: redactCredentialFormats(bounded) };
+      const snapshot: AdapterEvent = { type: 'assistant_message', messageId: event.messageId, text: redacted };
       if (index >= 0) pending[index] = snapshot; else pending.push(snapshot);
     } else {
       pending.push(sanitize(event));
     }
-    if (pending.length > 10000) throw new Error('History event limit exceeded.');
   }
 
   async function flush() {
@@ -585,32 +604,56 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
     const processedMessageIds = new Set<string>();
     const coalesced: AdapterEvent[] = [];
 
+    const commitMessage = (messageId: string, isFinished: boolean) => {
+      const rawText = rawAssembled.get(messageId) || '';
+      const safePoint = computeSafeCommitPoint(rawText, isFinished);
+      const rawToCommit = rawText.slice(0, safePoint);
+      const redacted = redactCredentialFormats(rawToCommit);
+      const previouslyEmitted = emittedRedactedText.get(messageId) || '';
+
+      if (redacted.length > previouslyEmitted.length) {
+        if (redacted.startsWith(previouslyEmitted)) {
+          coalesced.push({
+            type: 'assistant_delta',
+            messageId,
+            text: redacted.slice(previouslyEmitted.length),
+          });
+          emittedRedactedText.set(messageId, redacted);
+        } else {
+          // A boundary rewrite occurred; emit assistant_message replacement so load() updates the full message
+          coalesced.push({
+            type: 'assistant_message',
+            messageId,
+            text: redacted,
+          });
+          emittedRedactedText.set(messageId, redacted);
+        }
+      }
+    };
+
     for (const event of pending) {
       if (event.type === 'assistant_delta') {
         if (processedMessageIds.has(event.messageId)) continue;
         processedMessageIds.add(event.messageId);
 
         const hasAssistantMessage = pending.some(e => e.type === 'assistant_message' && e.messageId === event.messageId);
-        const rawText = rawAssembled.get(event.messageId) || '';
         if (hasAssistantMessage) {
-          emittedRedactedLength.set(event.messageId, rawText.length);
           continue;
         }
 
-        const isFinished = isTurnFinished;
-        const safePoint = computeSafeCommitPoint(rawText, isFinished);
-        const rawToCommit = rawText.slice(0, safePoint);
-        const redacted = redactCredentialFormats(rawToCommit);
-        const alreadyEmitted = emittedRedactedLength.get(event.messageId) || 0;
-        if (redacted.length > alreadyEmitted) {
-          const deltaText = redacted.slice(alreadyEmitted);
-          coalesced.push({
-            type: 'assistant_delta',
-            messageId: event.messageId,
-            text: deltaText,
-          });
-          emittedRedactedLength.set(event.messageId, redacted.length);
+        commitMessage(event.messageId, isTurnFinished);
+      } else if (event.type === 'turn_finished') {
+        // Before finalizing turn, flush all uncommitted tails from rawAssembled
+        for (const [msgId] of rawAssembled.entries()) {
+          if (!processedMessageIds.has(msgId)) {
+            processedMessageIds.add(msgId);
+            const hasAssistantMessage = pending.some(e => e.type === 'assistant_message' && e.messageId === msgId);
+            if (!hasAssistantMessage) {
+              commitMessage(msgId, true);
+            }
+          }
         }
+        coalesced.push(event);
       } else {
         coalesced.push(event);
       }
@@ -627,21 +670,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
       await withFileLock(sessionLockFile, async () => {
         if (!hasPruned) {
           hasPruned = true;
-          await pruneHistoryDirectoryInternal(dir);
-        }
-
-        const metaFile = path.join(dir, '.capacity.meta');
-        let currentTotal: number | null = null;
-        try {
-          const raw = await readBoundedFile(metaFile, 1024);
-          const parsed = JSON.parse(raw);
-          if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
-            currentTotal = parsed.totalBytes;
-          }
-        } catch {}
-
-        if (currentTotal == null) {
-          currentTotal = await calculateDirectoryBytes(dir);
+          await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir));
         }
 
         const logFile = logFileFor(handle);
@@ -685,9 +714,6 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
                 const validText = lines.length > 0 ? lines.join('\n') + '\n' : '';
                 const validBytes = Buffer.byteLength(validText, 'utf8');
                 await fs.truncate(logFile, validBytes);
-                if (currentTotal != null) {
-                  currentTotal = Math.max(0, currentTotal - (stat.size - validBytes));
-                }
                 currentFileBytes = validBytes;
               }
             }
@@ -707,15 +733,34 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
               nextSequence: nextSeq,
             }) + '\n';
             const headerBytes = Buffer.byteLength(header, 'utf8');
-            if (currentTotal + headerBytes > TOTAL_LIMIT) {
-              const needed = currentTotal + headerBytes - TOTAL_LIMIT;
-              const freed = await evictOldestSessions(dir, needed, handle);
-              currentTotal = Math.max(0, currentTotal - freed);
-              if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
-            }
+
+            const capLockFile = path.join(dir, '.capacity.lock');
+            await withFileLock(capLockFile, async () => {
+              const metaFile = path.join(dir, '.capacity.meta');
+              let currentTotal: number | null = null;
+              try {
+                const raw = await readBoundedFile(metaFile, 1024);
+                const parsed = JSON.parse(raw);
+                if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
+                  currentTotal = parsed.totalBytes;
+                }
+              } catch {}
+              if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
+
+              if (currentTotal + headerBytes > TOTAL_LIMIT) {
+                const needed = currentTotal + headerBytes - TOTAL_LIMIT;
+                const freed = await evictOldestSessions(dir, needed, handle);
+                currentTotal = Math.max(0, currentTotal - freed);
+                if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+              }
+              currentTotal += headerBytes;
+              try {
+                await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
+              } catch {}
+            });
+
             await fs.appendFile(logFile, header, 'utf8');
             currentFileBytes = headerBytes;
-            currentTotal += headerBytes;
             headerWritten = true;
           }
         }
@@ -761,16 +806,35 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
 
         const appendBytes = Buffer.byteLength(appendLines, 'utf8');
         if (currentFileBytes + appendBytes > SESSION_LIMIT) throw new Error('History session limit reached.');
-        if (currentTotal + appendBytes > TOTAL_LIMIT) {
-          const needed = currentTotal + appendBytes - TOTAL_LIMIT;
-          const freed = await evictOldestSessions(dir, needed, handle);
-          currentTotal = Math.max(0, currentTotal - freed);
-          if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
-        }
+
+        const capLockFile = path.join(dir, '.capacity.lock');
+        await withFileLock(capLockFile, async () => {
+          const metaFile = path.join(dir, '.capacity.meta');
+          let currentTotal: number | null = null;
+          try {
+            const raw = await readBoundedFile(metaFile, 1024);
+            const parsed = JSON.parse(raw);
+            if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
+              currentTotal = parsed.totalBytes;
+            }
+          } catch {}
+          if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
+
+          if (currentTotal + appendBytes > TOTAL_LIMIT) {
+            const needed = currentTotal + appendBytes - TOTAL_LIMIT;
+            const freed = await evictOldestSessions(dir, needed, handle);
+            currentTotal = Math.max(0, currentTotal - freed);
+            if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+          }
+
+          currentTotal += appendBytes;
+          try {
+            await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
+          } catch {}
+        });
 
         await fs.appendFile(logFile, appendLines, 'utf8');
         currentFileBytes += appendBytes;
-        currentTotal += appendBytes;
 
         // Materialize/update consolidated JSON snapshot on turn finish or non-streaming user_message
         const isTurnFinished = batch.some(e => e.type === 'turn_finished');
@@ -783,16 +847,23 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             const jsonBytes = Buffer.byteLength(text);
             let oldJsonBytes = 0;
             try { const s = await fs.stat(jsonFile); oldJsonBytes = s.size; } catch {}
-            currentTotal = currentTotal - oldJsonBytes + jsonBytes;
+            const deltaBytes = jsonBytes - oldJsonBytes;
             await atomicWrite(jsonFile, text);
+            if (deltaBytes !== 0) {
+              await withFileLock(capLockFile, async () => {
+                const metaFile = path.join(dir, '.capacity.meta');
+                try {
+                  const raw = await readBoundedFile(metaFile, 1024);
+                  const parsed = JSON.parse(raw);
+                  if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
+                    await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes + deltaBytes) }));
+                  }
+                } catch {}
+              });
+            }
           }
         }
 
-        try {
-          await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
-        } catch {
-          await fs.rm(metaFile, { force: true }).catch(() => {});
-        }
         historyCache.delete(handle);
       });
     }).catch(err => {
@@ -841,38 +912,42 @@ export async function sessionHistory(handle: string, workspace: string, cursor?:
 export async function deleteHistory(handle: string, workspace: string): Promise<void> {
   if (process.env.coagent8_HISTORY === 'off') return;
   const dir = getHistoryDir();
-  await withFileLock(path.join(dir, 'store'), async () => {
+  const sessionLockFile = path.join(dir, `${handle}.lock`);
+  await withFileLock(sessionLockFile, async () => {
     const h = await load(handle);
     if (h && h.workspace !== canonicalPath(workspace)) throw new Error('History workspace mismatch.');
     const jsonFile = fileFor(handle);
     const logFile = logFileFor(handle);
-    const metaFile = path.join(dir, '.capacity.meta');
 
     let removedBytes = 0;
     try { const stat = await fs.stat(jsonFile); removedBytes += stat.size; } catch {}
     try { const stat = await fs.stat(logFile); removedBytes += stat.size; } catch {}
 
-    let previousTotal: number | null = null;
-    try {
-      const raw = await readBoundedFile(metaFile, 1024);
-      const parsed = JSON.parse(raw);
-      if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-        previousTotal = parsed.totalBytes;
-      }
-    } catch {}
-
-    await fs.rm(metaFile, { force: true });
     await fs.rm(jsonFile, { force: true });
     await fs.rm(logFile, { force: true });
     historyCache.delete(handle);
 
-    if (removedBytes > 0 && previousTotal != null) {
-      const updated = Math.max(0, previousTotal - removedBytes);
-      try {
-        await atomicWrite(metaFile, JSON.stringify({ totalBytes: updated }));
-      } catch {
-        await fs.rm(metaFile, { force: true }).catch(() => {});
-      }
+    if (removedBytes > 0) {
+      const capLockFile = path.join(dir, '.capacity.lock');
+      await withFileLock(capLockFile, async () => {
+        const metaFile = path.join(dir, '.capacity.meta');
+        let currentTotal: number | null = null;
+        try {
+          const raw = await readBoundedFile(metaFile, 1024);
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
+            currentTotal = parsed.totalBytes;
+          }
+        } catch {}
+        if (currentTotal != null) {
+          const updated = Math.max(0, currentTotal - removedBytes);
+          try {
+            await atomicWrite(metaFile, JSON.stringify({ totalBytes: updated }));
+          } catch {
+            await fs.rm(metaFile, { force: true }).catch(() => {});
+          }
+        }
+      });
     }
   });
 }

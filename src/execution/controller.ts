@@ -259,10 +259,14 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
   }
 
-  // Quota cooldown update (AUD-P1-1: one owner, one write)
+  // Quota cooldown update
   try {
-    if (result.error?.code === 'RATE_LIMITED') await recordQuotaCooldown(backend.id);
-    else if (!result.isError && result.status === 'completed') await resetQuotaCooldown(backend.id);
+    if (result.error?.code === 'RATE_LIMITED') {
+      const parsed = await checkAndRecordRateLimit(backend.id, result.error.message);
+      if (!parsed) await recordQuotaCooldown(backend.id);
+    } else if (!result.isError && result.status === 'completed') {
+      await resetQuotaCooldown(backend.id);
+    }
   } catch (error) {
     warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
   }

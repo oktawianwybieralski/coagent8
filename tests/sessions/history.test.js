@@ -95,6 +95,22 @@ test('split credentials across multiple streaming deltas and flushes never reach
     await writer.flush();
   }
 
+  // Split URL credentials across multiple deltas and flushes
+  const rawPassword = 'hunter2secret';
+  const partsUrl = ['git clone https://bob:hunter2sec', 'ret@host/x repo\n'];
+  for (const part of partsUrl) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
+  // Split token preceded by non-whitespace (e.g. dot) across deltas and flushes
+  const dotToken = 'ghp_ABCDEFGHIJKLMN0123456789opqrstuvwxyz';
+  const partsDot = ['config.ghp_ABCDEFGHIJKLMN', '0123456789opqrstuvwxyz finished\n'];
+  for (const part of partsDot) {
+    writer.accept({ type: 'assistant_delta', messageId: 'm1', text: part });
+    await writer.flush();
+  }
+
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
@@ -106,12 +122,21 @@ test('split credentials across multiple streaming deltas and flushes never reach
   // Verify the raw .jsonl and .json files NEVER contain unredacted secrets
   assert.ok(!rawLog.includes(secretGhp), '.jsonl must never contain raw unredacted ghp token');
   assert.ok(!rawLog.includes(secretSk), '.jsonl must never contain raw unredacted sk token');
+  assert.ok(!rawLog.includes(rawPassword), '.jsonl must never contain raw unredacted URL password');
+  assert.ok(!rawLog.includes('hunter2sec'), '.jsonl must never contain partial unredacted URL password');
+  assert.ok(!rawLog.includes(dotToken), '.jsonl must never contain raw unredacted dot-prefixed token');
+  assert.ok(!rawLog.includes('ghp_DOTPREFIX'), '.jsonl must never contain partial unredacted dot-prefixed token');
+
   assert.ok(!rawJson.includes(secretGhp), '.json must never contain raw unredacted ghp token');
   assert.ok(!rawJson.includes(secretSk), '.json must never contain raw unredacted sk token');
+  assert.ok(!rawJson.includes(rawPassword), '.json must never contain raw unredacted URL password');
+  assert.ok(!rawJson.includes('hunter2sec'), '.json must never contain partial unredacted URL password');
+  assert.ok(!rawJson.includes(dotToken), '.json must never contain raw unredacted dot-prefixed token');
 
   // Verify redacted token presence
   assert.ok(rawLog.includes('ghp_***[REDACTED]***'), '.jsonl must contain redacted ghp token');
   assert.ok(rawLog.includes('sk-***[REDACTED]***'), '.jsonl must contain redacted sk token');
+  assert.ok(rawLog.includes('bob:***[REDACTED]***@host'), '.jsonl must contain redacted URL credentials');
 
   const history = await getHistory(sess.sessionHandle);
   assert.ok(history);
@@ -119,6 +144,31 @@ test('split credentials across multiple streaming deltas and flushes never reach
   assert.ok(msg);
   assert.ok(msg.text.includes('ghp_***[REDACTED]***'));
   assert.ok(msg.text.includes('sk-***[REDACTED]***'));
+  assert.ok(msg.text.includes('bob:***[REDACTED]***@host'));
+});
+
+test('streaming delta ending in incomplete word like area is committed upon turn_finished', async () => {
+  const sess = createSession('gemini', tempDir);
+  const turnId = randomUUID();
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
+
+  writer.accept({ type: 'turn_started' });
+  writer.accept({ type: 'user_message', text: 'Give area advice' });
+  await writer.flush();
+
+  // Send delta ending in "area" without newline or space, flushed separately
+  writer.accept({ type: 'assistant_delta', messageId: 'm1', text: 'This is an area' });
+  await writer.flush();
+
+  // Now flush turn_finished alone
+  writer.accept({ type: 'turn_finished', status: 'completed' });
+  await writer.flush();
+
+  const history = await getHistory(sess.sessionHandle);
+  assert.ok(history);
+  const msg = history.events.find(e => e.type === 'assistant_message');
+  assert.ok(msg);
+  assert.equal(msg.text, 'This is an area', 'Held-back tail word must be persisted when turn finishes');
 });
 
 test('legacy snapshot-repeating format loads, paginates and resumes cleanly', async () => {

@@ -45,13 +45,16 @@ test('full archive never blocks CLI launch, returns successful answer with histo
     fs.mkdirSync(historyDir, { recursive: true });
 
     // Pre-fill history directory above TOTAL_LIMIT (100 MiB) with sessions younger than 7 days
-    const TOTAL_LIMIT = 100 * 1024 * 1024;
+    const now = Date.now();
     for (let i = 0; i < 11; i++) {
       const dummyHandle = `syn_sess_dummy000000000000000${i.toString(16)}`;
       const dummyFile = path.join(historyDir, `${dummyHandle}.jsonl`);
       const fd = fs.openSync(dummyFile, 'w');
       fs.ftruncateSync(fd, 10 * 1024 * 1024); // 10 MiB each = 110 MiB total
       fs.closeSync(fd);
+      // Give each dummy file an older mtime (dummy 0 is oldest, dummy 10 is newest)
+      const mtime = new Date(now - (11 - i) * 60 * 1000);
+      fs.utimesSync(dummyFile, mtime, mtime);
     }
 
     const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
@@ -62,15 +65,10 @@ test('full archive never blocks CLI launch, returns successful answer with histo
     assert.notEqual(res.structuredContent.error?.code, 'HISTORY_ERROR');
     assert.ok(res.content[0].text.startsWith('Secured answer from backend'));
     assert.equal(res.structuredContent.output, 'Secured answer from backend');
-    // Either history was evicted per documented LRU retention (making historyAvailable true)
-    // or historyAvailable was false with warning. It must never fail the turn!
-    if (res.structuredContent.historyAvailable) {
-      // Eviction occurred: verify that oldest dummy files were evicted
-      const remaining = fs.readdirSync(historyDir).filter(f => f.startsWith('syn_sess_dummy'));
-      assert.ok(remaining.length < 11, 'LRU retention must have evicted oldest dummy sessions');
-    } else {
-      assert.ok(res.structuredContent.warnings.some(w => w.includes('History not saved')));
-    }
+    assert.equal(res.structuredContent.historyAvailable, true, 'History must be available after LRU eviction');
+    const remaining = fs.readdirSync(historyDir).filter(f => f.startsWith('syn_sess_dummy'));
+    assert.ok(remaining.length < 11, 'LRU retention must have evicted oldest dummy sessions');
+    assert.ok(!remaining.includes('syn_sess_dummy0000000000000000.jsonl'), 'Oldest dummy session must be evicted');
   } finally {
     adapterRegistry.gemini = original;
   }
@@ -157,9 +155,8 @@ test('lease failure returns fail-closed SESSION_INVALID error (AUD-P0-3 lease in
     id: 'gemini',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture' }),
-    execute: async (_prompt, options) => {
+    execute: async (_prompt, _options) => {
       // Simulate external concurrent process or file mutation invalidating the turn lease
-      const handle = options.threadId || options.nativeSessionId;
       // We mutate all active session files in sessions dir to have a mismatched turnToken
       const sessionsDir = path.join(tempDir, 'sessions');
       if (fs.existsSync(sessionsDir)) {
