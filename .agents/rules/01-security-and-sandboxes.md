@@ -33,12 +33,13 @@ All execution results, streaming activity lines, bug reports, and diagnostic log
 
 **Output integrity:** Redaction must not change the meaning of public model
 answers. In answers and stored assistant messages, replace only recognized
-credential formats (for example `sk-…`, `ghp_…`, AWS key IDs, PEM private keys,
-`Bearer` tokens). Keyword-based rules (`token=`, `password:`, `auth=`) and home
-path redaction apply to diagnostics, stderr, error messages, doctor output and
-issue reports. Rewriting ordinary code such as `const token = getToken();` is a
-defect, not a privacy feature. The current implementation violates this rule;
-remediation is `REDACTION-002` (AUD-P0-2) in the [roadmap](../../docs/ROADMAP.md#audit-remediation-index).
+credential formats (for example `sk-…`, `sk_live_…`, `ghp_…`, `gho_…`, `ghu_…`,
+`ghs_…`, `github_pat_…`, `glpat-…`, `ya29.…`, `npm_…`, `hf_…`, bare JWT,
+AWS key IDs, PEM private keys, `Bearer` tokens). Keyword-based rules
+(`token=`, `password:`, `auth=`) and home path redaction apply to diagnostics,
+stderr, error messages, doctor output and issue reports. Rewriting ordinary code
+such as `const token = getToken();` is a defect, not a privacy feature.
+This rule is implemented in `REDACTION-002` (AUD-P0-2, AUD-P2-13).
 
 **Consent enforcement:** `user_confirmed` is an assertion by the calling agent;
 the server cannot verify it. Server-side confirmation through MCP elicitation is

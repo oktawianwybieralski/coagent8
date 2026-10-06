@@ -28,7 +28,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { withFileLock, atomicWrite } from './lock.js';
 import { getDataDir } from '../paths.js';
 import { canonicalPath, sanitizeHandle } from './identity.js';
-import { redactDiagnostic, redactSecrets } from '../redaction.js';
+import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, readBoundedFile } from '../execution/stream.js';
 import type { AdapterEvent, ConversationEvent, ProviderId } from '../types/conversation.types.js';
 import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../types/conversation.types.js';
@@ -79,8 +79,8 @@ function validateEvent(event: AdapterEvent) {
 function sanitize(event: AdapterEvent): AdapterEvent {
   const native = event.nativeEventId ? { nativeEventId: event.nativeEventId } : {};
   switch (event.type) {
-    case 'assistant_delta': case 'assistant_message': return { type: event.type, messageId: event.messageId, text: redactSecrets(event.text), ...native };
-    case 'user_message': return { type: event.type, text: redactSecrets(event.text), ...native };
+    case 'assistant_delta': case 'assistant_message': return { type: event.type, messageId: event.messageId, text: redactCredentialFormats(event.text), ...native };
+    case 'user_message': return { type: event.type, text: redactCredentialFormats(event.text), ...native };
     case 'warning': case 'status': return { type: event.type, message: redactDiagnostic(event.message), ...native };
     case 'error': return { type: event.type, error: { code: event.error.code, retryable: event.error.retryable, message: redactDiagnostic(event.error.message) }, ...native };
     case 'tool_started': return { type: event.type, toolId: event.toolId, name: redactDiagnostic(event.name, 128), ...native };
@@ -415,7 +415,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
       const text = event.type === 'assistant_delta' ? (assembled.get(event.messageId) || '') + event.text : event.text;
       const bounded = truncateToByteLength(text, 1024 * 1024); assembled.set(event.messageId, bounded);
       const index = pending.findIndex(e => e.type === 'assistant_message' && e.messageId === event.messageId);
-      const snapshot: AdapterEvent = { type: 'assistant_message', messageId: event.messageId, text: redactSecrets(bounded) };
+      const snapshot: AdapterEvent = { type: 'assistant_message', messageId: event.messageId, text: redactCredentialFormats(bounded) };
       if (index >= 0) pending[index] = snapshot; else pending.push(snapshot);
     } else pending.push(sanitize(event));
     if (pending.length > 10000) throw new Error('History event limit exceeded.');

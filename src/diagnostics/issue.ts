@@ -7,7 +7,7 @@
  *   (delimited by 3+ backticks or tildes) to avoid leaking proprietary code in public bug reports.
  * - **Diff Stripping**: Erases raw Git diffs (`diff --git ...`, `--- a/... +++ b/...`) from reports.
  * - **Credential & Path Masking**: Strips recognized API keys, Bearer/Basic tokens, private keys,
- *   passwords, and the local user's home directory (`~`) using `redactDiagnostic` and `redactSecrets`.
+ *   passwords, and the local user's home directory (`~`) using `redactDiagnostic`.
  *   Redaction strictly precedes byte truncation to ensure credential prefixes cannot be exposed.
  * - **Pre-Filled GitHub URL Construction**: Builds URL-encoded issue links targeting the canonical
  *   GitHub repository issues page (`/issues/new?title=...&body=...`), including system architecture,

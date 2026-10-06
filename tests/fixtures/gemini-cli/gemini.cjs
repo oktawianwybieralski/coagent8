@@ -76,7 +76,7 @@ function run() {
   send({ event: 'init', conversation_id: sid, model });
 
   if (mode === 'secret-hang') {
-    send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: '{"api_key":"fixtureSecret' } });
+    send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'sk-fixtureSecret1234567890abcdef' } });
     setInterval(() => {}, 1000);
     return;
   }

@@ -5,7 +5,7 @@ import { runCommand } from '../execution/process.js';
 import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult, ExecutionError } from '../types/adapter.types.js';
 import { validEventIdentifier } from '../types/conversation.types.js';
 import { checkModelGovernance } from './policy.js';
-import { redactDiagnostic, redactSecrets } from '../redaction.js';
+import { redactDiagnostic } from '../redaction.js';
 import { createCodexStreamCollector } from './codex.collector.js';
 import { createCodexAppSession } from './codex.app-server.js';
 import { classifyCodexError } from './codex-errors.js';

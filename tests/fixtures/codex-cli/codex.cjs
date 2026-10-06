@@ -32,7 +32,7 @@ function runTurn() {
   item('item/completed', { type: 'commandExecution', id: 'read-1', command: 'PRIVATE_RAW_COMMAND', status: 'completed', aggregatedOutput: 'PRIVATE_TOOL_OUTPUT', exitCode: 0 });
   item('item/started', { type: 'agentMessage', id: 'message-1', text: '' });
   notify('item/agentMessage/delta', { threadId, turnId: TURN, itemId: 'message-1', delta: 'Draft' });
-  const text = 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\napi_key=fixtureSecret';
+  const text = 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   const usage = last => ({ threadId, turnId: TURN, tokenUsage: { total: last, last, modelContextWindow: null } });

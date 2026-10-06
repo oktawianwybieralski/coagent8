@@ -1,6 +1,6 @@
 /** Public Codex app-server notification collector shared by production execution and parser regressions. @packageDocumentation */
 import { BufferLimitError, StreamReducer, truncateToByteLength } from '../execution/stream.js';
-import { redactDiagnostic, redactSecrets } from '../redaction.js';
+import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { validEventIdentifier } from '../types/conversation.types.js';
 import type { AdapterEvent, ExecutionError, TerminalExecutionResult } from '../types/adapter.types.js';
 import { classifyCodexTurnError } from './codex-errors.js';
@@ -64,7 +64,7 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     if (!validEventIdentifier(item.id) || typeof item.text !== 'string') protocolError('Invalid public Codex message.');
     const id = item.id as string;
     if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) throw new BufferLimitError('Too many Codex public messages.');
-    reducer.upsertMessage(id, redactSecrets(item.text));
+    reducer.upsertMessage(id, redactCredentialFormats(item.text));
     emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
   }
   function acceptItem(method: string, item: Record<string, unknown> | null) {

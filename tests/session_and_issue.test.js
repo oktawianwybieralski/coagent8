@@ -261,8 +261,7 @@ test('diagnostic and issue truncation cannot expose recognized credential prefix
   const {truncateToByteLength}=require('../src/execution/stream.ts');
   const key='sk-'+'A'.repeat(40);
   for(const input of ['{"api_key":"fixtureSecret','password=\'fixtureSecret','{"token":"fixtureSecret\\','{"secret":"fixtureSecret\\\n']) {
-    const {redactSecrets}=require('../src/redaction.ts');
-    assert.ok(!redactSecrets(input).includes('fixtureSecret'));assert.ok(!redactDiagnostic(input).includes('fixtureSecret'));assert.ok(!sanitizeText(input).includes('fixtureSecret'));
+    assert.ok(!redactDiagnostic(input).includes('fixtureSecret'));assert.ok(!sanitizeText(input).includes('fixtureSecret'));
   }
   for(const budget of [64,512,4096,512*1024]){
     const input='x'.repeat(budget-16)+' '+key;
@@ -274,9 +273,10 @@ test('diagnostic and issue truncation cannot expose recognized credential prefix
 });
 
 test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquoted passwords, and resists ReDoS', async () => {
-  const {redactSecrets}=require('../src/redaction.ts');
+  const {redactDiagnostic, redactCredentialFormats}=require('../src/redaction.ts');
   const keys='-----BEGIN PRIVATE KEY-----\nPRIVATE_DER_SECRET\n-----END PRIVATE KEY-----\n{"aws_access_key_id":"QUOTED_ID_SECRET","aws_secret_access_key":"QUOTED_AWS_SECRET"}';
-  for(const secret of ['PRIVATE_DER_SECRET','QUOTED_ID_SECRET','QUOTED_AWS_SECRET'])assert.ok(!redactSecrets(keys).includes(secret));
+  assert.ok(!redactCredentialFormats(keys).includes('PRIVATE_DER_SECRET'));
+  for(const secret of ['PRIVATE_DER_SECRET','QUOTED_ID_SECRET','QUOTED_AWS_SECRET'])assert.ok(!redactDiagnostic(keys).includes(secret));
   // Test Basic auth, temporary AWS keys (ASIA), and complex passwords with semicolons and equals
   const leakedText = 'Authorization: Basic dXNlcjpwYXNzd29yZA== and AWS_ACCESS_KEY_ID=ASIA1234567890ABCDEF and AWS_SECRET_ACCESS_KEY=superSecretValue and password=abc;def=ghi and aws_session_token=xyz123';
   const sanitized = sanitizeText(leakedText);

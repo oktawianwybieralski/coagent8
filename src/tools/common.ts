@@ -30,7 +30,7 @@
  */
 
 import type { TerminalExecutionResult } from '../types/adapter.types.js';
-import { redactDiagnostic, redactSecrets } from '../redaction.js';
+import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { issueOutputSchema } from './issue.tool.js';
 
@@ -292,7 +292,7 @@ export async function formatExecutionResult(provider: string | null, res: Termin
     verdict = 'NOT_APPLICABLE';
   }
 
-  const output = redactSecrets(gated);
+  const output = redactCredentialFormats(gated);
   const structuredContent = { schemaVersion: 1, provider, status: res.status, output, model: res.model, sessionHandle, turn: meta.turn,
     verdict, ...(reason ? { reason } : {}),
     continuationAvailable: res.continuationAvailable, truncated: res.truncated, historyAvailable: meta.historyAvailable,

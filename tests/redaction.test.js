@@ -1,7 +1,307 @@
-const { test } = require('node:test');
+'use strict';
+
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
-const { redactDiagnostic } = require('../src/redaction.ts');
+const { redactCredentialFormats, redactDiagnostic, redactSecrets } = require('../src/redaction.ts');
+
+test('AUD-P0-2 & Opus P1/P2 regression: public code answers and URLs round-trip without corruption', () => {
+  const negativeCases = [
+    'const token = getToken(req);',
+    'interface User { password: string; secret: Buffer }',
+    'max_token = 4096',
+    'const auth = useAuth();',
+    'headers: { Authorization: `Bearer ${token}` }',
+    '{ Authorization: token }',
+    "Authorization: ' + token",
+    'interface H { Authorization: string }',
+    'send a Bearer token in the header',
+    'Bearer token is standard practice',
+    '## Basic Authentication',
+    '## Basic AuthenticationMechanism',
+    'use Bearer AuthenticationToken',
+    '`https://${user}:${pass}@${host}/db`',
+    'https://<user>:<password>@host',
+    'https://{user}:{password}@host',
+    'Authorization: Bearer <TOKEN_PLACEHOLDER>',
+    'Authorization: Bearer YOUR_API_TOKEN_HERE',
+    'keys look like sk-...',
+    'ssh://git@github.com/owner/repo.git',
+    'https://git@github.com/owner/repo.git',
+    'disk-task...[truncated]',
+    'self_ghp_test...[truncated]',
+  ];
+
+  for (const input of negativeCases) {
+    const result = redactCredentialFormats(input);
+    assert.equal(result, input, `Expected "${input}" to round-trip unchanged in public output, got "${result}"`);
+    assert.equal(redactSecrets(input), input, 'redactSecrets alias must also preserve public code');
+  }
+});
+
+test('REDACTION-002: high-confidence credential formats are individually redacted in public output', () => {
+  const cases = [
+    {
+      name: 'PEM private key',
+      input: 'Here is the key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...fake\n-----END RSA PRIVATE KEY-----\nEnd of key.',
+      expectedRedacted: '-----BEGIN PRIVATE KEY-----\n***[REDACTED]***\n-----END PRIVATE KEY-----',
+      expectedAbsent: 'MIIEowIBAAKCAQEA0...fake',
+    },
+    {
+      name: 'OpenAI API key',
+      input: 'const key = "sk-proj-1234567890abcdef1234567890abcdef";',
+      expectedRedacted: 'sk-***[REDACTED]***',
+      expectedAbsent: '1234567890abcdef1234567890abcdef',
+    },
+    {
+      name: 'Stripe live key',
+      input: 'stripeKey: "sk_live_123456789012345678901234"',
+      expectedRedacted: 'sk_live_***[REDACTED]***',
+      expectedAbsent: '123456789012345678901234',
+    },
+    {
+      name: 'Google AI key',
+      input: 'const apiKey = "AIzaSyD-1234567890abcdefghijklmnopqrstu";',
+      expectedRedacted: 'AIza***[REDACTED]***',
+      expectedAbsent: '1234567890abcdefghijklmnopqrstu',
+    },
+    {
+      name: 'Google OAuth access token',
+      input: 'token: "ya29.a0AfH6SMB_1234567890abcdefghijklmnopqrstuvwxyz"',
+      expectedRedacted: 'ya29.***[REDACTED]***',
+      expectedAbsent: 'a0AfH6SMB_1234567890',
+    },
+    {
+      name: 'GitHub classic PAT (ghp)',
+      input: 'const ghp = "ghp_111122223333444455556666777788889999";',
+      expectedRedacted: 'ghp_***[REDACTED]***',
+      expectedAbsent: '111122223333444455556666777788889999',
+    },
+    {
+      name: 'GitHub OAuth token (gho)',
+      input: 'const gho = "gho_222233334444555566667777888899990000";',
+      expectedRedacted: 'gho_***[REDACTED]***',
+      expectedAbsent: '222233334444555566667777888899990000',
+    },
+    {
+      name: 'GitHub user token (ghu)',
+      input: 'const ghu = "ghu_333344445555666677778888999900001111";',
+      expectedRedacted: 'ghu_***[REDACTED]***',
+      expectedAbsent: '333344445555666677778888999900001111',
+    },
+    {
+      name: 'GitHub server token (ghs)',
+      input: 'const ghs = "ghs_444455556666777788889999000011112222";',
+      expectedRedacted: 'ghs_***[REDACTED]***',
+      expectedAbsent: '444455556666777788889999000011112222',
+    },
+    {
+      name: 'GitHub fine-grained PAT',
+      input: 'github_pat_11A2B3C4D012345678901234567890123456789012345678901234567890123456789012345678901234',
+      expectedRedacted: 'github_pat_***[REDACTED]***',
+      expectedAbsent: '11A2B3C4D012345678901234567890123456789012345678901234567890123456789012345678901234',
+    },
+    {
+      name: 'GitLab PAT',
+      input: 'export GITLAB_TOKEN="glpat-0123456789abcdefghij"',
+      expectedRedacted: 'glpat-***[REDACTED]***',
+      expectedAbsent: '0123456789abcdefghij',
+    },
+    {
+      name: 'npm access token',
+      input: 'npmToken = npm_0123456789abcdefghijklmnopqrstuvwxyz',
+      expectedRedacted: 'npm_***[REDACTED]***',
+      expectedAbsent: '0123456789abcdefghijklmnopqrstuvwxyz',
+    },
+    {
+      name: 'Hugging Face token',
+      input: 'hf_token = hf_0123456789abcdefghijklmnopqrstuvwxyz1234',
+      expectedRedacted: 'hf_***[REDACTED]***',
+      expectedAbsent: '0123456789abcdefghijklmnopqrstuvwxyz1234',
+    },
+    {
+      name: 'Bare JWT',
+      input: 'jwt: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      expectedRedacted: 'eyJ***[REDACTED]***',
+      expectedAbsent: 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+    },
+    {
+      name: 'AWS Access Key ID',
+      input: 'aws_key = AKIA1234567890ABCDEF;',
+      expectedRedacted: 'AKIA***[REDACTED]***',
+      expectedAbsent: '1234567890ABCDEF',
+    },
+    {
+      name: 'Authorization: Bearer header',
+      input: 'headers = { Authorization: Bearer secret-bearer-token-1234567890 }',
+      expectedRedacted: 'Authorization: Bearer ***[REDACTED]***',
+      expectedAbsent: 'secret-bearer-token-1234567890',
+    },
+    {
+      name: 'Authorization: Basic header',
+      input: 'headers = { Authorization: Basic dXNlcjpwYXNzd29yZDEyMzQ1Ng== }',
+      expectedRedacted: 'Authorization: Basic ***[REDACTED]***',
+      expectedAbsent: 'dXNlcjpwYXNzd29yZDEyMzQ1Ng==',
+    },
+    {
+      name: 'Standalone Basic auth token decoding to user:password',
+      input: 'curl with Basic dXNlcjpwYXNzd29yZDEyMzQ1Ng== header',
+      expectedRedacted: 'Basic ***[REDACTED]***',
+      expectedAbsent: 'dXNlcjpwYXNzd29yZDEyMzQ1Ng==',
+    },
+    {
+      name: 'Lowercase basic auth token',
+      input: 'curl -H "x: basic dXNlcjpwYXNzd29yZDEyMzQ1Ng=="',
+      expectedRedacted: 'basic ***[REDACTED]***',
+      expectedAbsent: 'dXNlcjpwYXNzd29yZDEyMzQ1Ng==',
+    },
+    {
+      name: 'Standalone Bearer token',
+      input: 'use Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 for auth',
+      expectedRedacted: 'Bearer ***[REDACTED]***',
+      expectedAbsent: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9',
+    },
+    {
+      name: 'Lowercase bearer token with digits',
+      input: 'header: bearer secret1234567890abcdef',
+      expectedRedacted: 'bearer ***[REDACTED]***',
+      expectedAbsent: 'secret1234567890abcdef',
+    },
+    {
+      name: 'URL with embedded password',
+      input: 'git clone https://user:super_secret_pass@github.com/owner/repo.git',
+      expectedRedacted: 'https://user:***[REDACTED]***@github.com/owner/repo.git',
+      expectedAbsent: 'super_secret_pass',
+    },
+    {
+      name: 'PostgreSQL connection URL with password',
+      input: 'DATABASE_URL="postgres://app:realpass@db/x"',
+      expectedRedacted: 'postgres://app:***[REDACTED]***@db/x',
+      expectedAbsent: 'realpass',
+    },
+    {
+      name: 'PostgreSQL connection URL with percent-encoded password',
+      input: 'DATABASE_URL="postgres://app:p%40ss@db/x"',
+      expectedRedacted: 'postgres://app:***[REDACTED]***@db/x',
+      expectedAbsent: 'p%40ss',
+    },
+    {
+      name: 'PostgreSQL connection URL with multibyte percent-encoded Cyrillic password',
+      input: 'DATABASE_URL="postgres://app:p%D0%B0ss@db/x"',
+      expectedRedacted: 'postgres://app:***[REDACTED]***@db/x',
+      expectedAbsent: 'p%D0%B0ss',
+    },
+    {
+      name: 'URL with password containing brace but not a whole placeholder',
+      input: 'DATABASE_URL="https://u:ab{c9x@host/db"',
+      expectedRedacted: 'https://u:***[REDACTED]***@host/db',
+      expectedAbsent: 'ab{c9x',
+    },
+    {
+      name: 'Redis connection URL with password and no username',
+      input: 'REDIS_URL="redis://:s3cret@cache:6379"',
+      expectedRedacted: 'redis://:***[REDACTED]***@cache:6379',
+      expectedAbsent: 's3cret',
+    },
+    {
+      name: 'MongoDB connection URL with password',
+      input: 'mongodb+srv://u:p@cluster/db',
+      expectedRedacted: 'mongodb+srv://u:***[REDACTED]***@cluster/db',
+      expectedAbsent: 'u:p@',
+    },
+    {
+      name: 'Slack bot token format',
+      input: 'slack = "xoxb-1234567890-abcdefghijklmn"',
+      expectedRedacted: 'xox-***[REDACTED]***',
+      expectedAbsent: '1234567890-abcdefghijklmn',
+    },
+    {
+      name: 'Truncated credential prefix',
+      input: 'API token was sk-proj-1234567890...[truncated]',
+      expectedRedacted: '***[REDACTED]***',
+      expectedAbsent: 'sk-proj-1234567890',
+    },
+    {
+      name: 'Truncated credential with newline prefix',
+      input: 'sk-proj-1234567\n...[truncated]',
+      expectedRedacted: '***[REDACTED]***',
+      expectedAbsent: 'sk-proj-1234567',
+    },
+    {
+      name: 'Truncated Bearer token',
+      input: 'Bearer abc123def456...[truncated]',
+      expectedRedacted: 'Bearer ***[REDACTED]***',
+      expectedAbsent: 'abc123def456',
+    },
+    {
+      name: 'Lowercase truncated bearer token',
+      input: 'bearer abc123def456...[truncated]',
+      expectedRedacted: 'bearer ***[REDACTED]***',
+      expectedAbsent: 'abc123def456',
+    },
+    {
+      name: 'Truncated Bearer token with slash and newline',
+      input: 'Bearer abc123/def456\n...[truncated]',
+      expectedRedacted: 'Bearer ***[REDACTED]***',
+      expectedAbsent: 'abc123/def456',
+    },
+    {
+      name: 'Truncated Basic token with plus',
+      input: 'Basic dXNlcjpw+YXNz...[truncated]',
+      expectedRedacted: 'Basic ***[REDACTED]***',
+      expectedAbsent: 'dXNlcjpw+YXNz',
+    },
+    {
+      name: 'URL with placeholder user but real password',
+      input: 'postgres://${user}:hunter2pass@db/x',
+      expectedRedacted: 'postgres://${user}:***[REDACTED]***@db/x',
+      expectedAbsent: 'hunter2pass',
+    },
+    {
+      name: 'Short Authorization: Basic header (admin:admin)',
+      input: 'Authorization: Basic YWRtaW46YWRtaW4=',
+      expectedRedacted: 'Authorization: Basic ***[REDACTED]***',
+      expectedAbsent: 'YWRtaW46YWRtaW4=',
+    },
+    {
+      name: 'URL password with unencoded @',
+      input: 'postgres://u:p@ss@word@host/db',
+      expectedRedacted: 'postgres://u:***[REDACTED]***@host/db',
+      expectedAbsent: 'p@ss@word',
+    },
+  ];
+
+  for (const c of cases) {
+    const result = redactCredentialFormats(c.input);
+    assert.ok(result.includes(c.expectedRedacted), `Test "${c.name}": expected result to contain "${c.expectedRedacted}", got "${result}"`);
+    assert.ok(!result.includes(c.expectedAbsent), `Test "${c.name}": expected result NOT to contain "${c.expectedAbsent}", got "${result}"`);
+  }
+});
+
+test('REDACTION-002: diagnostic redaction strips keyword=value rules, Authorization catch-all, and home directory', () => {
+  const diagInput = 'Error connecting to database: password="superSecretPassword" token=anotherSecret api_key=12345 auth=jwtVal Authorization: custom-token at ' + os.homedir() + '/workspace/app.js';
+  const diagResult = redactDiagnostic(diagInput);
+
+  assert.ok(!diagResult.includes('superSecretPassword'));
+  assert.ok(!diagResult.includes('anotherSecret'));
+  assert.ok(!diagResult.includes('12345'));
+  assert.ok(!diagResult.includes('jwtVal'));
+  assert.ok(!diagResult.includes('custom-token'));
+  assert.ok(!diagResult.includes(os.homedir()));
+  assert.ok(diagResult.includes('~/workspace/app.js') || diagResult.includes('~\\workspace\\app.js'));
+  assert.ok(diagResult.includes('password="***[REDACTED]***"'));
+  assert.ok(diagResult.includes('token=***[REDACTED]***'));
+  assert.ok(diagResult.includes('Authorization: ***[REDACTED]***'));
+
+  // Connection URLs with passwords across any scheme are stripped in diagnostics
+  const pgDiag = redactDiagnostic('Error connecting to postgres://app:p%40ss@db/x');
+  assert.ok(!pgDiag.includes('p%40ss'));
+  assert.ok(pgDiag.includes('postgres://app:***[REDACTED]***@db/x') || pgDiag.includes('postgres://***[REDACTED]***@db/x'));
+
+  const redisDiag = redactDiagnostic('Redis failed at redis://:s3cret@cache:6379');
+  assert.ok(!redisDiag.includes('s3cret'));
+  assert.ok(redisDiag.includes('redis://:***[REDACTED]***@cache:6379') || redisDiag.includes('redis://***[REDACTED]***@cache:6379'));
+});
 
 test('diagnostics redact raw, structured and repeatedly JSON-escaped Windows home paths before truncation', () => {
   const original = os.homedir;
@@ -27,3 +327,33 @@ test('diagnostics redact raw, structured and repeatedly JSON-escaped Windows hom
     assert.ok(!redactDiagnostic(home.replace(/\\/g, '/') + '/private').includes('Synthetic User'));
   } finally { os.homedir = original; }
 });
+
+test('AUD-P0-2: user_message stored in history preserves user code and token keywords without diagnostic alteration', async () => {
+  const { createHistoryWriter, sessionHistory, deleteHistory } = require('../src/sessions/history.ts');
+  const { createSession, getSessionFilePath } = require('../src/sessions/session.ts');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-hist-test-'));
+  let sess = null;
+  try {
+    sess = createSession('codex', tempDir);
+    const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'codex', 'turn-1');
+    const userPrompt = 'const token = getToken(req); password = "test"; C:\\Users\\User\\project';
+    writer.accept({ type: 'turn_started' });
+    writer.accept({ type: 'user_message', text: userPrompt });
+    await writer.flush();
+
+    const history = await sessionHistory(sess.sessionHandle, tempDir);
+    const storedUserMsg = history.events.find(e => e.type === 'user_message');
+    assert.ok(storedUserMsg, 'user_message event should be present in history');
+    assert.equal(storedUserMsg.text, userPrompt, 'user_message code and keywords must be preserved without diagnostic corruption');
+  } finally {
+    if (sess) {
+      await deleteHistory(sess.sessionHandle, tempDir).catch(() => {});
+      const file = getSessionFilePath(sess.sessionHandle);
+      if (file && fs.existsSync(file)) fs.unlinkSync(file);
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+

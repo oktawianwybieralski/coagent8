@@ -27,7 +27,7 @@ import { resolveBackend } from '../backends/routing.js';
 import { checkModelGovernance } from '../backends/policy.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
-import { redactDiagnostic, redactSecrets } from '../redaction.js';
+import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, BufferLimitError } from './stream.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult, AdapterEvent } from '../types/adapter.types.js';
 import { ERROR_CODES, type ErrorCode } from '../types/conversation.types.js';
@@ -185,7 +185,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
     if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
     result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
-      error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactSecrets(raw.output || '') : '' };
+      error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
     if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) await updateSession(handle, { threadId: raw.nativeSessionId || raw.threadId || null, model: raw.model || model, cliVersion: backend.probe.version,
       safetyProfile: backend.id === 'gemini' ? `gemini-${backend.probe.version}-read-only` : undefined }, token);
     if (error?.code === 'SESSION_INVALID') await updateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: error.code }, token);

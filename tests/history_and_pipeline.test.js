@@ -22,10 +22,10 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
   adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>({installed:true,version:'fixture'}),execute:async(prompt,options)=>{
     options.onEvent({type:'user_message',text:'CLI echo must be ignored'});
     options.onEvent({type:'assistant_delta',messageId:'m',text:'Draft'});
-    options.onEvent({type:'assistant_message',messageId:'m',text:'Final **answer**\n```js\nconst answer = 42;\n```\napi_key=fixtureSecret'});
+    options.onEvent({type:'assistant_message',messageId:'m',text:'Final **answer**\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef'});
     options.onEvent({type:'tool_started',toolId:'t',name:'read_file'});
     options.onEvent({type:'tool_finished',toolId:'t',name:'read_file',success:true});
-    return {status:'completed',isError:false,output:'Final **answer**\n```js\nconst answer = 42;\n```\napi_key=fixtureSecret',nativeSessionId:'11111111-aaaa-bbbb-cccc-123456789012',model:'fixture-model',truncated:false,continuationAvailable:true};
+    return {status:'completed',isError:false,output:'Final **answer**\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef',nativeSessionId:'11111111-aaaa-bbbb-cccc-123456789012',model:'fixture-model',truncated:false,continuationAvailable:true};
   }};
   try {
     saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});

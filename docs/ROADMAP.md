@@ -462,20 +462,23 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 
 ### `REDACTION-002` - output integrity versus diagnostic redaction
 
-**Status:** Open (AUD-P0-2 blocker, AUD-P2-13).
+**Status:** Implemented (AUD-P0-2 blocker, AUD-P2-13).
 
-- [ ] Split redaction.
-  - Public answers and stored assistant messages are filtered for high-confidence
-    credential formats only: `sk-…`, `ghp_…`, `github_pat_…`, AWS key IDs,
-    PEM private keys, `Bearer …`.
-  - Keyword=value rules (`token=`, `password:`, `auth=`) and home-path redaction
-    apply to diagnostics, stderr, errors, doctor output and issue reports.
-- [ ] Regression: the four audit inputs round-trip unchanged; a real key inside an
-  answer is still replaced.
-- [ ] Add missing formats: `gho_`, `ghu_`, `ghs_`, `glpat-`, `ya29.`, bare JWT,
+- [x] Split redaction:
+  - Public answers, stored assistant messages, and user messages are filtered for high-confidence
+    credential formats only via `redactCredentialFormats`: `sk-…`, `sk_live_…`,
+    `ghp_…`, `gho_…`, `ghu_…`, `ghs_…`, `github_pat_…`, `glpat-…`, `ya29.…`,
+    `npm_…`, `hf_…`, bare JWT, AWS key IDs (`AKIA…`, `ASIA…`), PEM private keys,
+    `Bearer …`, `Basic …`, and real connection strings (`postgres://`, `redis://`).
+  - Keyword=value rules (`aws_secret_access_key=`, `token=`, `password:`, `auth=`),
+    catch-all URL query tokens (`?token=`), and home-path redaction apply strictly to
+    diagnostics, stderr, errors, doctor output, and issue reports via `redactDiagnostic`,
+    ensuring ordinary code syntax and query strings in public answers are preserved.
+- [x] Regression: the four audit inputs round-trip unchanged (`tests/redaction.test.js`);
+  real keys inside answers are replaced.
+- [x] Add missing formats: `gho_`, `ghu_`, `ghs_`, `glpat-`, `ya29.`, bare JWT,
   `sk_live_`, `npm_`, `hf_`.
-- [ ] Update the redaction rule in [01-security-and-sandboxes](../.agents/rules/01-security-and-sandboxes.md)
-  if the final scope differs from its current text.
+- [x] Update the redaction rule in [01-security-and-sandboxes](../.agents/rules/01-security-and-sandboxes.md).
 
 ### `PACKAGE-001` - built output is not source
 
