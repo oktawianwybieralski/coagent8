@@ -372,11 +372,11 @@ Work items:
 
   Evidence (2026-10-06, Windows 11, Node 22.20, commit `ca8cf88` on
   `fix/windows-process-identity`):
-  - `tests/process.test.js` covers each property above. The "no helper" property
+  - `tests/execution/process.test.js` covers each property above. The "no helper" property
     is asserted statically: no source file references CIM, `taskkill`,
     `Stop-Process` or `ParentProcessId`.
-  - Adapter fixtures: `tests/claude.adapter.test.js` and
-    `tests/codex.adapter.test.js`.
+  - Adapter fixtures: `tests/backends/claude/adapter.test.js` and
+    `tests/backends/codex/adapter.test.js`.
   - Results: full suite 196/196; typecheck; build; consumer smoke (Codex and
     Gemini fixture turns through the packed bundle); `lint:docs`.
   - Live Claude 2.1.289 (haiku) through `executeClaude`:
@@ -417,7 +417,7 @@ Work items:
     with a 2 s grace and is killed with the default grace.
   - Live agy `SIGTERM` handling is not verified.
   - Implemented as `signalGraceMs` (`AGY_SIGNAL_GRACE_MS = 2000`). The tests
-    are in `tests/process.test.js` and `tests/gemini.adapter.test.js`. They are
+    are in `tests/execution/process.test.js` and `tests/backends/gemini/adapter.test.js`. They are
     POSIX-only and pass on Linux (Docker `node:22`, see the evidence above).
 - [x] Native deadline (`--print-timeout`): rejected after live verification.
   Do not use it.
@@ -503,7 +503,7 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 - [x] Add explicit file/suite selection to `tests/run.cjs`. No-argument discovery
   still finds the full inventory; selected files do not append other tests.
   Preserves portable arguments, bounded concurrency (`--test-concurrency=2` default with CLI override),
-  and awaited cleanup. Tested via `tests/discovery.test.js` and `node tests/run.cjs tests/v1_phase1.test.js`.
+  and awaited cleanup. Tested via `tests/discovery.test.js` and `node tests/run.cjs tests/execution/stream-reducer.test.js`.
 - [ ] Group tests by behavior/cost rather than historical phase numbers. Retain
   meaningful behavioral coverage; use an explicit migration when a contract changes.
 - [ ] Run coverage once per applicable CI matrix job instead of separately
@@ -567,10 +567,10 @@ execution order.
 - [x] Add focused acceptance for a client with an arbitrary name and no optional
   capabilities: initialization and tools/list must not invoke a backend, require
   a recognized host or mutate host registrations. A missing backend must not hide
-  tools; its invocation returns an actionable error. Verified in `tests/generic_mcp.test.js`.
+  tools; its invocation returns an actionable error. Verified in `tests/e2e/generic-mcp.test.js`.
 - [x] Confirm a fixture-backed call through the generic MCP boundary, then record
   a real Continue Agent-mode connection separately when that host is available.
-  Verified generic stdio call boundary in `tests/generic_mcp.test.js` and `tests/mcp.test.js`.
+  Verified generic stdio call boundary in `tests/e2e/generic-mcp.test.js` and `tests/e2e/mcp.test.js`.
 - [x] Keep startup independent of optional archive maintenance failures, without
   concealing errors that affect execution safety or active session ownership.
 - [ ] A malformed `config.json` must not hide tools. Fall back to defaults and
@@ -630,7 +630,7 @@ execution order.
 
 - [x] Make backend resolution (`src/backends/routing.ts:resolveBackend`) strictly
   read-only: no `setDefaultBackend` mutation during `auto` resolution. Verified in
-  `tests/routing.test.js`.
+  `tests/backends/routing.test.js`.
 - [ ] Prefer an explicit backend or configured default. Preserve the onboarding error
   when auto-selection is ambiguous, reported with its own error code (see `ERRORS-001`).
 - [ ] Bounded probe caching (AUD-P1-4):
