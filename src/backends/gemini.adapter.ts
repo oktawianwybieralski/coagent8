@@ -15,6 +15,8 @@ import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, Cli
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';
 export const GEMINI_EXE = process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy';
+/** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
+export const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -216,6 +218,8 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
     stdinInput: prompt,
     abortSignal: options.abortSignal,
     timeoutMs: options.timeoutMs,
+    // agy has no headless interrupt; on POSIX, SIGTERM lets it cancel its own commands first.
+    signalGraceMs: AGY_SIGNAL_GRACE_MS,
     maxBufferBytes: 512 * 1024,
     maxLineBytes: 512 * 1024,
     onStdoutLine: collector.line,

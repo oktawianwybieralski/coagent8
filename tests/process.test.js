@@ -207,6 +207,20 @@ test('layer 1: a session that throws on start or interrupt falls back to a force
   assert.ok(Date.now() - interruptedAt < 9000, 'a failed interrupt does not wait for the grace period');
 });
 
+test('layer 2 (POSIX): a per-run signal grace lets a SIGTERM handler finish before SIGKILL', async t => {
+  if (process.platform === 'win32') { t.skip('POSIX process-group signals only'); return; }
+  // Handles SIGTERM with 1 s of cleanup, then exits 0.
+  const cli = "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 1000)); console.log('ready'); setInterval(() => {}, 1000);";
+  for (const [signalGraceMs, cleanExit] of [[2000, true], [undefined, false]]) {
+    const controller = new AbortController();
+    const result = await runCommand(process.execPath, ['-e', cli], { abortSignal: controller.signal, timeoutMs: 15000, signalGraceMs, onStdoutLine() { controller.abort(); } });
+    assert.equal(result.status, 'cancelled');
+    if (cleanExit) assert.equal(result.exitCode, 0, 'the handler finished inside the 2 s grace');
+    else assert.equal(result.signal, 'SIGKILL', 'the default 250 ms grace escalates to SIGKILL');
+  }
+  assert.equal((await runCommand(process.execPath, ['-e', ''], { signalGraceMs: -1 })).error.code, 'INPUT_LIMIT');
+});
+
 test('layer 3: a descendant outside the owned tree that holds stdout cannot delay the result', async () => {
   const { PIPE_DRAIN_MS } = require('../src/execution/process.ts');
   // The leaf escapes the owned tree (a non-Node intermediate on Windows, its own process

@@ -174,3 +174,19 @@ test('Gemini production adapter preserves denial independently of terminal order
     assert.equal(duplicate.continuationAvailable, false);
   } finally { delete process.env.coagent8_FIXTURE_MODE; }
 });
+
+test('Gemini (agy) gets a 2 s SIGTERM grace on POSIX to shut down its own commands', async t => {
+  if (process.platform === 'win32') { t.skip('POSIX process-group signals only'); return; }
+  const marker = path.join(dir, 'agy-clean-shutdown');
+  process.env.coagent8_FIXTURE_MODE = 'sigterm-cleanup';
+  process.env.coagent8_FIXTURE_MARKER = marker;
+  try {
+    const controller = new AbortController();
+    const result = await execute('request', { cwd: dir, timeoutMs: 15000, abortSignal: controller.signal, onEvent: event => { if (event.type === 'assistant_delta' || event.type === 'assistant_message') controller.abort(); } });
+    assert.equal(result.status, 'cancelled');
+    assert.equal(fs.readFileSync(marker, 'utf8'), 'clean', 'agy finished its SIGTERM cleanup before SIGKILL');
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+    delete process.env.coagent8_FIXTURE_MARKER;
+  }
+});

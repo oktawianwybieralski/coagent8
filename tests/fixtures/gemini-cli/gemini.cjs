@@ -113,6 +113,12 @@ function run() {
 
   if (mode === 'no-terminal') return;
   if (mode === 'hang') { setInterval(() => {}, 1000); return; }
+  // agy-like shutdown: SIGTERM starts a 1 s cleanup that records its completion.
+  if (mode === 'sigterm-cleanup') {
+    process.on('SIGTERM', () => setTimeout(() => { require('node:fs').writeFileSync(process.env.coagent8_FIXTURE_MARKER, 'clean'); process.exit(0); }, 1000));
+    setInterval(() => {}, 1000);
+    return;
+  }
 
   if (['auth', 'model', 'rate', 'invalid-session', 'error-exit-zero'].includes(mode)) {
     const message = {

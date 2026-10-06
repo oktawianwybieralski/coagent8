@@ -46,6 +46,8 @@ in [docs/ROADMAP.md](docs/ROADMAP.md#audit-remediation-index).
 - Codex runs as `codex app-server` (JSON-RPC) instead of `codex exec`: each run
   verifies a read-only sandbox with approvals disabled, declines server
   requests, interrupts with `turn/interrupt` and ignores sub-agent threads.
+- agy gets 2 s between `SIGTERM` and `SIGKILL` on POSIX so it can cancel its
+  own commands; it has no headless interrupt (`runCommand` `signalGraceMs`).
 - License changed to GPL-3.0-only.
 
 ### Deprecated

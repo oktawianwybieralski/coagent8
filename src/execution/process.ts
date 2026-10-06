@@ -41,6 +41,8 @@ export const DEFAULT_TIMEOUT_MS = 900_000;
 export const MAX_PROMPT_BYTES = 4 * 1024 * 1024;
 /** Default time a protocol CLI has to exit after an interrupt before it is stopped (layer 2). */
 export const INTERRUPT_GRACE_MS = 3000;
+/** Default POSIX time between `SIGTERM` and `SIGKILL` for an owned process group. */
+export const SIGNAL_GRACE_MS = 250;
 /** Time stdout/stderr may stay open after the root exits before the runner stops reading. */
 export const PIPE_DRAIN_MS = 2000;
 /** Upper bound for observing the owned root's exit after a forced stop on Windows. */
@@ -80,7 +82,7 @@ function hasExited(proc: ChildProcess): boolean {
  * @param graceMs - Grace period in milliseconds between SIGTERM and SIGKILL on POSIX (default: 250ms).
  * @returns Promise that resolves once termination completes.
  */
-export function terminateProcessTree(proc: ChildProcess, graceMs = 250): Promise<void> {
+export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_MS): Promise<void> {
   const prior = teardowns.get(proc);
   if (prior) return prior;
   const task = (async () => {
@@ -161,6 +163,8 @@ export interface RunCommandOptions {
   session?: StdinSession | null;
   /** Milliseconds a session CLI has to exit after an interrupt (default {@link INTERRUPT_GRACE_MS}). */
   interruptGraceMs?: number;
+  /** POSIX milliseconds between `SIGTERM` and `SIGKILL` for the process group (default {@link SIGNAL_GRACE_MS}). */
+  signalGraceMs?: number;
   abortSignal?: AbortSignal | null;
   timeoutMs?: number | null;
   maxBufferBytes?: number;
@@ -208,8 +212,9 @@ export function runCommand(command: string, args: string[], options: RunCommandO
   if (options.abortSignal?.aborted) return Promise.resolve(failure('ABORTED', 'Operation cancelled before launch.'));
   const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS, limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
   const grace = options.interruptGraceMs ?? INTERRUPT_GRACE_MS;
+  const signalGrace = options.signalGraceMs ?? SIGNAL_GRACE_MS;
   if (!Number.isFinite(timeout) || timeout <= 0 || !Number.isSafeInteger(limit) || limit < 1) return Promise.resolve(failure('INPUT_LIMIT', 'Invalid deadline or buffer budget.'));
-  if (!Number.isSafeInteger(grace) || grace < 0) return Promise.resolve(failure('INPUT_LIMIT', 'Invalid interrupt grace period.'));
+  if (!Number.isSafeInteger(grace) || grace < 0 || !Number.isSafeInteger(signalGrace) || signalGrace < 0) return Promise.resolve(failure('INPUT_LIMIT', 'Invalid grace period.'));
   if (Buffer.byteLength(options.stdinInput || '') > (options.maxInputBytes ?? MAX_PROMPT_BYTES)) return Promise.resolve(failure('INPUT_LIMIT', 'Prompt exceeds the UTF-8 byte limit.'));
   let child: ChildProcess;
   try {
@@ -246,7 +251,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       if (forced) return;
       forced = true;
       if (graceTimer) clearTimeout(graceTimer);
-      void terminateProcessTree(child).finally(() => {
+      void terminateProcessTree(child, signalGrace).finally(() => {
         child.stdin?.destroy();
         child.stdout?.destroy();
         child.stderr?.destroy();
@@ -282,7 +287,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     // POSIX group and stop waiting for the pipes after a bounded drain period.
     child.once('exit', () => {
       if (graceTimer) clearTimeout(graceTimer);
-      void terminateProcessTree(child);
+      void terminateProcessTree(child, signalGrace);
       drainTimer = setTimeout(() => { child.stdout?.destroy(); child.stderr?.destroy(); }, PIPE_DRAIN_MS);
     });
     child.on('close', async (exitCode, signal) => {
@@ -294,7 +299,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       catch (err) { stopped = failure(callbackErrorCode(err), (err as Error).message); }
       stdout = truncateToByteLength(stdout + outDecoder.end(), limit);
       stderr = truncateToByteLength(stderr + errDecoder.end(), limit);
-      await terminateProcessTree(child);
+      await terminateProcessTree(child, signalGrace);
       activeProcesses.delete(child); activeRuns.delete(child);
       resolve({ ...(stopped || { status: exitCode === 0 && !signal ? 'completed' : 'failed' }), stdout, stderr, exitCode, signal, isTruncated: truncated });
     });

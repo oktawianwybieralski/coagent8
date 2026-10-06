@@ -133,7 +133,7 @@ from execution/ownership failures requires the planned contract migration.
 * `runCommand(command, args, options)` runs strictly with `shell: false`.
 * Termination is layered. Only the spawned process is ever targeted, through the handle Node holds or the process group it created; nothing is selected by PID or parent PID, and no process snapshot or polling exists.
   1. **Protocol interrupt**: a run with a stdin protocol session (Claude, Codex) keeps stdin open. Cancellation, deadlines and server shutdown ask the CLI to end its turn; the session closes stdin on the terminal event and the CLI exits by itself.
-  2. **Forced stop**: when the CLI has not exited within the grace period (3 s), or for runs without a session, the root is stopped. **Windows**: `proc.kill()` (`TerminateProcess` on the owned handle). **POSIX**: the detached process group (`detached: true`) receives `SIGTERM`, then `SIGKILL` after 250ms.
+  2. **Forced stop**: when the CLI has not exited within the grace period (3 s), or for runs without a session, the root is stopped. **Windows**: `proc.kill()` (`TerminateProcess` on the owned handle). **POSIX**: the detached process group (`detached: true`) receives `SIGTERM`, then `SIGKILL` after 250ms by default (2 s for agy, which has no headless interrupt and shuts down its own commands on `SIGTERM`).
   3. **Descendants**: on Windows, libuv's `KILL_ON_JOB_CLOSE` job ends a chain of Node processes with its root; descendants of native backends are the backend's responsibility. After the root exits, a descendant still holding stdout/stderr cannot delay the result by more than 2 s.
 * **Buffer Capacities**: Prompts up to 4 MiB (via stdin), diagnostics up to 512 KiB per channel, public output up to 1 MiB. StringDecoder preserves split UTF-8 code points across chunks.
 
@@ -146,6 +146,7 @@ from execution/ownership failures requires the planned contract migration.
 * Prompts are delivered via standard input (stdin) to eliminate Windows 32 KiB command-line overflows.
 * Real-time events stream via `--output-format stream-json`.
 * Multi-turn resume uses `--conversation <uuid>`.
+* agy 1.2.17 has no headless interrupt; cancellation and deadlines force-stop it (POSIX: `SIGTERM` with a 2 s grace, then `SIGKILL`).
 
 ### OpenAI Codex (`codex`)
 * Runs `codex app-server -c sandbox_mode="read-only" -c approval_policy="never"` (JSON-RPC over stdio, Codex 0.160) for one turn: `initialize`/`initialized`, `thread/start` or `thread/resume` (`excludeTurns`), `turn/start`; stdin is closed on `turn/completed`.

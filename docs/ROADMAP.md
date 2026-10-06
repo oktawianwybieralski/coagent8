@@ -366,7 +366,7 @@ Work items:
   - Claude and Codex adapter fixtures speak the new protocols;
   - no PowerShell or CIM helper is launched by a consult.
 
-  Evidence (2026-10-06, Windows 11, Node 22.20, uncommitted working tree on
+  Evidence (2026-10-06, Windows 11, Node 22.20, commit `caa4958` on
   `fix/windows-process-identity`):
   - `tests/process.test.js` covers each property above. The "no helper" property
     is asserted statically: no source file references CIM, `taskkill`,
@@ -380,9 +380,50 @@ Work items:
     - abort: `cancelled`, exit 1, no signal (the CLI exited by itself);
     - 4 s deadline: `timed_out`, the process ended 0.75 s after the deadline,
       inside the 3 s grace period.
-  - POSIX layers were not run locally. The CI matrix covers them.
+  - Linux (Docker `node:22`, Node 22.23.3, WSL2 kernel 6.6): the process,
+    Claude, Codex and Gemini suites pass, including the POSIX-only grace tests.
+    The exception is the Codex `probe` test, which fails identically on the
+    pre-branch revision `6724ba5~1`. Without Codex credentials it reports
+    `unauthenticated`, which the assertion does not allow. macOS is covered by
+    the CI matrix only.
 - [ ] Open acceptance: one live Codex app-server turn, resume and
   `turn/interrupt` before beta 1. The owner authorizes the model calls.
+
+Gemini backend (agy) termination:
+
+agy 1.2.17 offers no protocol interrupt in headless mode. Checked sources:
+- `--help`: `--input-format stream-json` only queues further prompts into the
+  same conversation ("runs one turn per message").
+- Changelog: interruption exists only interactively (Esc, Ctrl+C) and through
+  Remote Control.
+- Binary strings: no `control_request`, `control_response` or similar.
+
+Consequences:
+- Windows: a cancellation or deadline force-stops `agy.exe` (layer 2). It is a
+  native Go binary, not Node, so commands it started may survive.
+- POSIX: the process group receives `SIGTERM`. The changelog states that a
+  session shutdown cancels running commands and streaming connections, but
+  250 ms before `SIGKILL` may be too short for that.
+
+Work items:
+- [x] POSIX grace: `runCommand` accepts a per-run `SIGTERM` to `SIGKILL` grace
+  period. The agy adapter uses 2 s, so agy can cancel its own commands.
+  - Acceptance: a POSIX fixture that handles `SIGTERM` for 1 s exits by itself
+    with a 2 s grace and is killed with the default grace.
+  - Live agy `SIGTERM` handling is not verified.
+  - Implemented as `signalGraceMs` (`AGY_SIGNAL_GRACE_MS = 2000`). The tests
+    are in `tests/process.test.js` and `tests/gemini.adapter.test.js`. They are
+    POSIX-only and pass on Linux (Docker `node:22`, see the evidence above).
+- [ ] Native deadline: pass `--print-timeout` slightly below the run deadline,
+  so agy ends a timed-out turn itself before the forced stop (deadlines only,
+  not user cancellation).
+  - Prerequisite: one or two live agy turns. They establish the exit code, the
+    terminal `result` event, partial output and the cleanup of running commands
+    when the limit expires. The owner authorizes the model calls.
+- [ ] Windows user cancellation has no graceful path. Request a headless
+  interrupt message for `stream-json` from the agy maintainers. Do not add a
+  workaround. If surviving agy descendants are measured, the per-run Job
+  Object helper (AUD-P2-14) applies.
 
 Supervision cost (AUD-P1-4, order 2):
 - [ ] Resolved by layer 3: no descendant polling exists. Record in the project
