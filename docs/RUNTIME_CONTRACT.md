@@ -110,16 +110,23 @@ release. The `verdict` field is derived from model-written text: any `[P1]` or
 ### Event Model
 Adapters emit validated payloads: `assistant_delta`, `assistant_message`, `tool_started`, `tool_finished`, `status`, `warning`, `error`. The controller manages `turn_started`, `user_message`, and `turn_finished`. Identifiers and tool names are bounded to 256 UTF-8 bytes without control characters.
 
-### Append-Only Storage & Torn-Tail Resilience
+### Append-Only Storage, Retention & Torn-Tail Resilience
 
-Every execution currently acquires a session and writes history; optional durable
-history is not implemented. A history or lease-release failure can mark an otherwise
-successful turn failed with HISTORY_ERROR. Separating optional archival failures
-from execution/ownership failures requires the planned contract migration.
+Session archival history is best-effort and bounded. Initial, periodic and final flush errors emit redacted warnings with `historyAvailable: false` and never fail the turn, block CLI invocation, or overwrite successful responses. Session turn leases remain fail-closed: a failure in `releaseSessionTurn` yields a hard session error (`SESSION_INVALID`), not `HISTORY_ERROR`. Post-execution session metadata and cooldown bookkeeping run outside the execution block; a metadata failure returns the secured output with a warning and `continuationAvailable: false`.
 
-* Streaming batches append to `.jsonl` without rewriting the materialized snapshot. Copying and serialization scale with assembled message bytes; recovery and storage accounting can read existing history.
-* Under directory file lock, `createHistoryWriter` inspects the log tail for torn or partial records from unexpected process crashes, repairing byte boundaries via in-place `fs.truncate`.
-* Materialized `.json` snapshots are written atomically upon message completion or `turn_finished`.
+#### Retention and Capacity Policy
+* **Capacity Bounds**: Each individual session's history log (`.jsonl`) is bounded by `SESSION_LIMIT` (10 MiB). Global history storage across all sessions is bounded by `TOTAL_LIMIT` (100 MiB).
+* **Expiry Retention**: Sessions inactive for longer than 7 days (based on file `mtime` and `updatedAt`) are automatically pruned during directory retention maintenance.
+* **Capacity Retention (LRU Eviction)**: When total history storage exceeds `TOTAL_LIMIT` or when writing a new batch would exceed it, the storage engine evicts whole inactive sessions in order of least recently used (LRU by `updatedAt` / `mtime`) until storage is within limits.
+* **Active Session Immunity**: Sessions with an active turn lease (`activePid != null` or active turn lock) are strictly protected and are never evicted.
+* **Oversized Output Handling**: If an answer or cumulative session exceeds `SESSION_LIMIT` (10 MiB), the full response is returned to the caller; archival persistence is truncated or skipped with a warning (`historyAvailable: false`).
+* **Disabled Archival**: Setting `coagent8_HISTORY=off` disables history persistence completely; one-shot executions do not create or require history directories or files.
+
+#### Streaming Deltas & Crash Resilience
+* Streaming assistant deltas append to `.jsonl` as coalesced deltas per flush. Copying and serialization scale with new delta bytes, keeping persisted bytes within a small constant factor (<= 3×) of the response text size. Materialized `.json` snapshots are written atomically once, upon `turn_finished`.
+* Secret redaction buffers an uncommitted tail across deltas so that credentials split across stream batches never reach disk unredacted.
+* Under session file lock, `createHistoryWriter` inspects the log tail for torn or partial records from unexpected process crashes, repairing byte boundaries via in-place `fs.truncate`.
+* Legacy logs with full snapshots continue to load, paginate, and resume with identical semantics.
 
 ### Pagination & Revisions
 * `session` (`action: "history"`) returns at most 100 events and a 240 KiB page budget.
