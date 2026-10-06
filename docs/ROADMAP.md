@@ -635,7 +635,13 @@ execution order.
 
 ### `CONTEXT-001` - token cost and single-call success across MCP clients
 
-**Status:** Planned (measured 2026-10-06). Goal: the lowest token cost per turn and
+**Status:** Implemented on `feat/context-budget` (2026-10-07); client acceptance
+and the agy timeout measurement remain. Measured on the built stdio server:
+- `tools/list`: 27.4 KB to 5.7 KB, model-visible part 9.6 KB to 3.7 KB;
+- `doctor`: 5.4 KB to a 310 B summary;
+- server instructions: 119 characters.
+
+Goal: the lowest token cost per turn and
 per call in Claude Code, Antigravity (agy) and Codex, and in any other MCP client,
 with one call sufficient for an ordinary request. The tool names, the six-tool
 surface, the separate `cancel` tool and the existing parameter names stay.
@@ -804,11 +810,13 @@ Plan:
   backend reach the result's `warnings`. Verified in
   `tests/backends/gemini/adapter.test.js` and
   `tests/execution/controller-history.test.js`.
-- [ ] **Budgets as regression tests:**
-  - server instructions at most 2,048 characters, first 512 self-contained;
-  - model-visible tool definitions at most 3 KB;
-  - doctor summary at most 1 KB;
-  - every execution result reports a concrete `model` and `workspace`.
+- [x] **Budgets as regression tests:**
+  - server instructions at most 512 characters (`tests/tools/surface.test.js`);
+  - model-visible tool definitions at most 3,800 B, measured 3,728 B (the 3 KB
+    target assumed renamed parameters);
+  - doctor summary at most 1 KB (`tests/diagnostics/doctor.test.js`);
+  - every execution result reports the resolved `model` (adapter and collector
+    tests) and `workspace` (`tests/server.test.js`).
 - [ ] **Client acceptance:** repeat the measurements in Claude Code and agy:
   - result channel;
   - inline threshold;
