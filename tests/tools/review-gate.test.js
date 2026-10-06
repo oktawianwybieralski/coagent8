@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { enforceStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
 
-test('Phase 4 Task 4.5: enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue is reported', () => {
+test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue is reported', () => {
   const reviewOutput = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -24,7 +24,7 @@ test('Phase 4 Task 4.5: enforceStateEnvelopeGate overrides VERDICT: READY to BLO
   assert.ok(!gated.includes('VERDICT: READY'), 'VERDICT: READY must be overridden');
 });
 
-test('Phase 4 Task 4.5: enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P2 issue is reported', () => {
+test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P2 issue is reported', () => {
   const reviewOutput = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -45,7 +45,7 @@ test('Phase 4 Task 4.5: enforceStateEnvelopeGate overrides VERDICT: READY to BLO
   assert.ok(!gated.includes('VERDICT: READY'), 'VERDICT: READY must be overridden');
 });
 
-test('Phase 4 Task 4.5: enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if response was truncated', () => {
+test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if response was truncated', () => {
   const truncatedOutput = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -62,7 +62,7 @@ test('Phase 4 Task 4.5: enforceStateEnvelopeGate overrides VERDICT: READY to BLO
   assert.ok(!gated.includes('VERDICT: READY'));
 });
 
-test('Phase 4 Task 4.5: enforceStateEnvelopeGate preserves VERDICT: READY when only P3 (nit) is reported and not truncated', () => {
+test('enforceStateEnvelopeGate preserves VERDICT: READY when only P3 (nit) is reported and not truncated', () => {
   const cleanReview = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -83,7 +83,7 @@ test('Phase 4 Task 4.5: enforceStateEnvelopeGate preserves VERDICT: READY when o
   assert.ok(!gated.includes('VERDICT: BLOCKED'));
 });
 
-test('Phase 4 Task 4.5: enforceStateEnvelopeGate handles case variations, partial coverage, and missing verdicts', () => {
+test('enforceStateEnvelopeGate handles case variations, partial coverage, and missing verdicts', () => {
   // Case-insensitive verdict with P1
   const caseInsensitiveOutput = 'REVIEW: 1\nverdict: READY\n[P1] security defect\nEND_REVIEW';
   const gatedCase = enforceStateEnvelopeGate(caseInsensitiveOutput, false);

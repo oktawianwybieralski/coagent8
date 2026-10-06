@@ -13,7 +13,7 @@ const { withFileLock, inProcessLocks } = require('../../src/sessions/lock.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('Phase 2 Audit Remediation: inProcessLocks queue entries are deterministically deleted upon lock release', async () => {
+test('inProcessLocks queue entries are deterministically deleted upon lock release', async () => {
   const resource1 = path.join(tempDir, 'lock-cleanup-1');
   const resource2 = path.join(tempDir, 'lock-cleanup-2');
 
@@ -31,7 +31,7 @@ test('Phase 2 Audit Remediation: inProcessLocks queue entries are deterministica
   assert.equal(inProcessLocks.has(path.resolve(resource2)), false);
 });
 
-test('Phase 2 Audit Remediation: timed out waiters in inProcessLocks queue preserve FIFO ordering for subsequent waiters and cleanly delete tail', async () => {
+test('timed out waiters in inProcessLocks queue preserve FIFO ordering for subsequent waiters and cleanly delete tail', async () => {
   const resource = path.join(tempDir, 'lock-queue-timeout-test');
   const executionOrder = [];
 
@@ -81,7 +81,7 @@ test('Phase 2 Audit Remediation: timed out waiters in inProcessLocks queue prese
   assert.equal(inProcessLocks.has(path.resolve(resource)), false);
 });
 
-test('Perf Optimization Area 3: withFileLock handles concurrency with jittered exponential backoff', async () => {
+test('withFileLock handles concurrency with jittered exponential backoff', async () => {
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'coagent8-perf-lock-'));
   const targetResource = path.join(tempDir, 'critical-resource');
 

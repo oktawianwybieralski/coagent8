@@ -15,7 +15,7 @@ const { checkModelGovernance } = require('../src/backends/governance.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('Phase 2 Task 2.3: MCP server registers and fulfills coagent8://sessions and coagent8://sessions/{id}/history resources', async () => {
+test('MCP server registers and fulfills coagent8://sessions and coagent8://sessions/{id}/history resources', async () => {
   const sess = createSession('gemini', tempDir);
   const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
   writer.accept({ type: 'turn_started' });

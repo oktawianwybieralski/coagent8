@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const { extractStructuredGeminiError } = require('../../src/backends/gemini/adapter.ts');
 const { extractStructuredCodexError, classifyCodexError } = require('../../src/backends/codex/errors.ts');
 
-test('Phase 0 Task 0.2: Structured error extraction handles typed envelopes and prevents false 429 lockouts', () => {
+test('Structured error extraction handles typed envelopes and prevents false 429 lockouts', () => {
   // Gemini typed envelopes
   const gemini429 = extractStructuredGeminiError({ code: 429, message: 'Resource exhausted' });
   assert.equal(gemini429.code, 'RATE_LIMITED');

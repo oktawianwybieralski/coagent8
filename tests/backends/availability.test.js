@@ -12,7 +12,7 @@ const {
   inspectQuotas,
 } = require('../../src/backends/availability.ts');
 
-test('Phase 0 Task 0.3: Adaptive cooldown backoff escalates on retry failure and resets on success', async t => {
+test('Adaptive cooldown backoff escalates on retry failure and resets on success', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-backoff-test-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 

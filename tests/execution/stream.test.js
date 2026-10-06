@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { truncateToByteLength } = require('../../src/execution/stream-reducer.ts');
 
-test('Phase 1 Task 1.4: truncateToByteLength truncates safely along UTF-8 multi-byte boundaries', () => {
+test('truncateToByteLength truncates safely along UTF-8 multi-byte boundaries', () => {
   const polish = 'zażółć gęślą jaźń';
   const emoji = '😀🎉🚀🔥💎';
 
@@ -27,7 +27,7 @@ test('Phase 1 Task 1.4: truncateToByteLength truncates safely along UTF-8 multi-
   assert.ok(withSuffix.endsWith('...[trunc]'));
 });
 
-test('Perf Optimization Area 2: truncateToByteLength handles fast-path, emoji, and large strings efficiently', () => {
+test('truncateToByteLength handles fast-path, emoji, and large strings efficiently', () => {
   const polish = 'zażółć gęślą jaźń';
   const emoji = '😀🎉🚀🔥💎';
 

@@ -26,7 +26,7 @@ test.after(() => {
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('Phase 3 Task 3.1: session tool consolidates list, history and close actions', async () => {
+test('session tool consolidates list, history and close actions', async () => {
   const sess = createSession('gemini', tempDir);
   const handle = sess.sessionHandle;
 
@@ -72,7 +72,7 @@ test('Phase 3 Task 3.1: session tool consolidates list, history and close action
   );
 });
 
-test('Phase 3 Task 3.1: cancel tool releases leases, child execution and recovers locks', async () => {
+test('cancel tool releases leases, child execution and recovers locks', async () => {
   const sess = createSession('gemini', tempDir);
   const handle = sess.sessionHandle;
 
@@ -111,7 +111,7 @@ test('Phase 3 Task 3.1: cancel tool releases leases, child execution and recover
   assert.equal(fakeRes.structuredContent.cancelled, false);
 });
 
-test('Phase 3 Audit Remediation: cancelSession respects external live processes and protects replacement turn tokens', async () => {
+test('cancelSession respects external live processes and protects replacement turn tokens', async () => {
   const sess = createSession('gemini', tempDir);
   const handle = sess.sessionHandle;
   const file = getSessionFilePath(handle);

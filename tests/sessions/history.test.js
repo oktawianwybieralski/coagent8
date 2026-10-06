@@ -23,7 +23,7 @@ const { createSession, closeSession } = require('../../src/sessions/session.ts')
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('Phase 2 Task 2.1: streaming deltas append directly to .jsonl event store in O(1)', async () => {
+test('streaming deltas append directly to .jsonl event store in O(1)', async () => {
   const sess = createSession('gemini', tempDir);
   const turnId = randomUUID();
   const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
@@ -62,7 +62,7 @@ test('Phase 2 Task 2.1: streaming deltas append directly to .jsonl event store i
   assert.equal(history.events.at(-1).status, 'completed');
 });
 
-test('Phase 2 Task 2.1: capacity limits are strictly enforced during append-only writes', async () => {
+test('capacity limits are strictly enforced during append-only writes', async () => {
   const sess = createSession('gemini', tempDir);
   const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
 
@@ -77,7 +77,7 @@ test('Phase 2 Task 2.1: capacity limits are strictly enforced during append-only
   );
 });
 
-test('Phase 2 Task 2.3: pagination is deterministically indexed by event sequence', async () => {
+test('pagination is deterministically indexed by event sequence', async () => {
   const sess = createSession('gemini', tempDir);
   const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
 
@@ -115,7 +115,7 @@ test('Phase 2 Task 2.3: pagination is deterministically indexed by event sequenc
   assert.equal(page3.nextCursor, null, 'No next cursor on final page');
 });
 
-test('Phase 2 Audit Remediation: streaming deltas do not trigger monolithic .json snapshot rewrite', async () => {
+test('streaming deltas do not trigger monolithic .json snapshot rewrite', async () => {
   const sess = createSession('gemini', tempDir);
   const jsonFile = path.join(getHistoryDir(), `${sess.sessionHandle}.json`);
   const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
@@ -156,7 +156,7 @@ test('Phase 2 Audit Remediation: streaming deltas do not trigger monolithic .jso
   assert.equal(finalJson.events.at(-1).type, 'turn_finished');
 });
 
-test('Phase 4 Task 4.4: sessionHistory cleanly ignores corrupted trailing JSONL line from unexpected process crash', async () => {
+test('sessionHistory cleanly ignores corrupted trailing JSONL line from unexpected process crash', async () => {
   const handle = 'syn_sess_' + randomUUID().replace(/-/g, '').slice(0, 16);
   const historyDir = getHistoryDir(tempDir);
   fs.mkdirSync(historyDir, { recursive: true });
@@ -186,7 +186,7 @@ test('Phase 4 Task 4.4: sessionHistory cleanly ignores corrupted trailing JSONL 
   assert.equal(direct.events.length, 3);
 });
 
-test('Phase 4 Task 4.4: subsequent append cleanly starts on newline even if previous process crashed with a torn tail', async () => {
+test('subsequent append cleanly starts on newline even if previous process crashed with a torn tail', async () => {
   const handle = 'syn_sess_' + randomUUID().replace(/-/g, '').slice(0, 16);
   const historyDir = getHistoryDir(tempDir);
   fs.mkdirSync(historyDir, { recursive: true });
@@ -215,7 +215,7 @@ test('Phase 4 Task 4.4: subsequent append cleanly starts on newline even if prev
   assert.equal(direct.events.find(e => e.text === 'Second query')?.text, 'Second query');
 });
 
-test('Perf Optimization Area 4: sessionHistory uses binary search pagination and in-memory cache', async () => {
+test('sessionHistory uses binary search pagination and in-memory cache', async () => {
   clearHistoryCache();
   const testDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'coagent8-perf-history-'));
   const session = createSession('codex', testDir);
@@ -254,7 +254,7 @@ test('Perf Optimization Area 4: sessionHistory uses binary search pagination and
   await fsp.rm(testDir, { recursive: true, force: true });
 });
 
-test('Perf Optimization Area 4: getHistory returns defensive copies protecting cached snapshots from mutation', async () => {
+test('getHistory returns defensive copies protecting cached snapshots from mutation', async () => {
   clearHistoryCache();
   const testDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'coagent8-perf-defensive-'));
   const session = createSession('codex', testDir);

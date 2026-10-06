@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const { resolveCliCommand, clearCliResolverCache } = require('../../src/execution/cli-resolver.ts');
 
-test('Phase 0 Task 0.1: Windows shim resolves native .exe entrypoints and preserves wrapper flags', async t => {
+test('Windows shim resolves native .exe entrypoints and preserves wrapper flags', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-shim-test-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -84,7 +84,7 @@ test('Phase 0 Task 0.1: Windows shim resolves native .exe entrypoints and preser
   assert.throws(() => resolveCliCommand(shimSuffix), /arguments after %\*.*are not supported/);
 });
 
-test('Perf Optimization Area 1: CLI resolution caching with clearCliResolverCache and fast hits', () => {
+test('CLI resolution caching with clearCliResolverCache and fast hits', () => {
   clearCliResolverCache();
 
   // Resolve node executable (guaranteed to exist across platforms)
@@ -104,7 +104,7 @@ test('Perf Optimization Area 1: CLI resolution caching with clearCliResolverCach
   clearCliResolverCache();
 });
 
-test('Perf Optimization Area 1: cliCache hit refreshes LRU recency', () => {
+test('cliCache hit refreshes LRU recency', () => {
   clearCliResolverCache();
   const testNode = process.execPath;
   const env = { PATH: path.dirname(testNode) };

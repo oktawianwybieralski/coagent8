@@ -26,7 +26,7 @@ test('response formatting has no cooldown/storage writes and carries execution-o
   assert.ok(formatted.structuredContent.warnings[0].includes('REDACTED'));
 });
 
-test('Phase 3 Task 3.4: formatExecutionResult enforces strict No-Emoji standard and clean blockquotes', async () => {
+test('formatExecutionResult enforces strict No-Emoji standard and clean blockquotes', async () => {
   const result = {
     status: 'completed',
     isError: false,
@@ -54,7 +54,7 @@ test('Phase 3 Task 3.4: formatExecutionResult enforces strict No-Emoji standard 
   assert.ok(text.includes('> Session: syn_sess_1234567890abcdef (turn 2 · ready)'));
 });
 
-test('Phase 3 Task 3.4: error formatting uses enterprise-grade blockquote without warning emojis', async () => {
+test('error formatting uses enterprise-grade blockquote without warning emojis', async () => {
   const errorResult = {
     status: 'failed',
     isError: true,

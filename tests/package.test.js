@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('Phase 4 Task 4.1: package.json has zero omniagent entry in bin and clean coagent8 release metadata', () => {
+test('package.json has zero omniagent entry in bin and clean coagent8 release metadata', () => {
   const pkgPath = path.resolve(__dirname, '..', 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
@@ -13,7 +13,7 @@ test('Phase 4 Task 4.1: package.json has zero omniagent entry in bin and clean c
   assert.equal(pkg.bin.coagent8, './dist/index.cjs', 'coagent8 binary must point to dist/index.cjs');
 });
 
-test('Phase 4 Task 4.1: package-lock.json has zero omniagent entry in bin', () => {
+test('package-lock.json has zero omniagent entry in bin', () => {
   const lockPath = path.resolve(__dirname, '..', 'package-lock.json');
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
 

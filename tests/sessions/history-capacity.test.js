@@ -12,7 +12,7 @@ const { createSession, closeSession } = require('../../src/sessions/session.ts')
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('Phase 0 Task 0.4: History streaming flush skips directory scan and enforces TOTAL_LIMIT', async t => {
+test('History streaming flush skips directory scan and enforces TOTAL_LIMIT', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-history-scan-test-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -63,7 +63,7 @@ test('Phase 0 Task 0.4: History streaming flush skips directory scan and enforce
   }
 });
 
-test('Phase 0 Task 0.4: Concurrent writers strictly enforce 100MB TOTAL_LIMIT', async t => {
+test('Concurrent writers strictly enforce 100MB TOTAL_LIMIT', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-history-concurrent-test-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 

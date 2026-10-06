@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const { StreamReducer, createStreamReducer, truncateToByteLength } = require('../../src/execution/stream-reducer.ts');
 
-test('Phase 1 Task 1.4: StreamReducer preserves record boundaries, handles streaming chunks, and flushes cleanly', () => {
+test('StreamReducer preserves record boundaries, handles streaming chunks, and flushes cleanly', () => {
   const reducer = createStreamReducer({ maxLineBuffer: 1024 });
   const lines = [];
 
@@ -24,7 +24,7 @@ test('Phase 1 Task 1.4: StreamReducer preserves record boundaries, handles strea
   assert.equal(lines[2], '{"type":"end"}');
 });
 
-test('Phase 1 Task 1.4: StreamReducer safely discards oversized records without breaking JSONL boundaries', () => {
+test('StreamReducer safely discards oversized records without breaking JSONL boundaries', () => {
   const reducer = new StreamReducer({ maxLineBuffer: 256 });
   const lines = [];
 
@@ -43,7 +43,7 @@ test('Phase 1 Task 1.4: StreamReducer safely discards oversized records without 
   assert.equal(lines[1], '{"id":2}');
 });
 
-test('Phase 1 Task 1.4: StreamReducer manages message accumulation and terminal answer replacement', () => {
+test('StreamReducer manages message accumulation and terminal answer replacement', () => {
   const reducer = new StreamReducer({ maxTotalBytes: 500, maxMessageBytes: 200 });
 
   // 1. Delta accumulation
@@ -58,7 +58,7 @@ test('Phase 1 Task 1.4: StreamReducer manages message accumulation and terminal 
   assert.ok(!reducer.getFormattedOutput().includes('Initial analysis'));
 });
 
-test('Phase 1 Task 1.4: StreamReducer tracks activity progress and tool lifecycle', () => {
+test('StreamReducer tracks activity progress and tool lifecycle', () => {
   const activities = [];
   const reducer = new StreamReducer({
     onProgress: act => activities.push(act),
@@ -78,7 +78,7 @@ test('Phase 1 Task 1.4: StreamReducer tracks activity progress and tool lifecycl
   assert.ok(reducer.getFinishedTools().has('tool-1'));
 });
 
-test('Phase 1 Task 1.4 Audit Remediation: StreamReducer handles multi-byte UTF-8 split across chunk buffers without corruption', () => {
+test('StreamReducer handles multi-byte UTF-8 split across chunk buffers without corruption', () => {
   const reducer = new StreamReducer();
   const lines = [];
 
@@ -96,7 +96,7 @@ test('Phase 1 Task 1.4 Audit Remediation: StreamReducer handles multi-byte UTF-8
   assert.ok(!lines[0].includes('\uFFFD'), 'Must not produce replacement characters');
 });
 
-test('Phase 1 Task 1.4 Audit Remediation: records containing a newline or trailing fragments strictly enforce maxLineBuffer', () => {
+test('records containing a newline or trailing fragments strictly enforce maxLineBuffer', () => {
   const reducer = new StreamReducer({ maxLineBuffer: 20 });
   const lines = [];
 
@@ -114,7 +114,7 @@ test('Phase 1 Task 1.4 Audit Remediation: records containing a newline or traili
   assert.equal(lines.length, 1, 'Trailing oversized fragment must not be emitted');
 });
 
-test('Phase 1 Task 1.4 Audit Remediation: strict byte budgets never exceed available space even with small budgets and multiple messages', () => {
+test('strict byte budgets never exceed available space even with small budgets and multiple messages', () => {
   // Truncating with tiny budget (2 bytes) must never exceed 2 bytes
   const tiny = truncateToByteLength('Long text string', 2, '...[truncated]');
   assert.ok(Buffer.byteLength(tiny, 'utf8') <= 2);
@@ -138,7 +138,7 @@ test('Phase 1 Task 1.4 Audit Remediation: strict byte budgets never exceed avail
   assert.ok(Buffer.byteLength(reducer.getFormattedOutput(), 'utf8') <= 10);
 });
 
-test('Phase 1 Task 1.4 Audit Remediation: activity and tool state bounds prevent memory leaks', () => {
+test('activity and tool state bounds prevent memory leaks', () => {
   const reducer = new StreamReducer({ maxActivities: 5, maxTools: 5 });
 
   for (let i = 0; i < 20; i++) {
@@ -158,7 +158,7 @@ test('Phase 1 Task 1.4 Audit Remediation: activity and tool state bounds prevent
   assert.ok(compReducer.getFinishedTools().size <= 5, `Finished tools size was ${compReducer.getFinishedTools().size}`);
 });
 
-test('Phase 1 Task 1.4 Audit Remediation: joining messages under tight budget marks isTruncated true', () => {
+test('joining messages under tight budget marks isTruncated true', () => {
   const reducer = new StreamReducer({ maxTotalBytes: 10, maxMessageBytes: 10 });
   reducer.upsertMessage('m1', '12345'); // 5 bytes
   reducer.upsertMessage('m2', '67890'); // 5 bytes
@@ -168,7 +168,7 @@ test('Phase 1 Task 1.4 Audit Remediation: joining messages under tight budget ma
   assert.equal(reducer.isTruncated(), true, 'Joined output truncation must mark isTruncated true');
 });
 
-test('Perf Optimization Area 2: StreamReducer fast-path token streaming without full-string recomputation', () => {
+test('StreamReducer fast-path token streaming without full-string recomputation', () => {
   const reducer = createStreamReducer({
     maxLineBuffer: 1024,
     maxMessageBytes: 64 * 1024,
@@ -195,7 +195,7 @@ test('Perf Optimization Area 2: StreamReducer fast-path token streaming without 
   assert.equal(reducer.getTotalBytes(), Buffer.byteLength('Final authoritative answer.', 'utf8'));
 });
 
-test('Perf Optimization Area 2: StreamReducer accounts for split surrogate pairs without overcounting', () => {
+test('StreamReducer accounts for split surrogate pairs without overcounting', () => {
   const reducer = createStreamReducer({
     maxLineBuffer: 1024,
     maxMessageBytes: 8,

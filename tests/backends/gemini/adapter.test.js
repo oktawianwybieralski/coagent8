@@ -204,7 +204,7 @@ test('Gemini (agy) gets a 2 s SIGTERM grace on POSIX to shut down its own comman
   }
 });
 
-test('Phase 1 Task 1.1: prompt is delivered via STDIN and omitted from CLI args', async () => {
+test('prompt is delivered via STDIN and omitted from CLI args', async () => {
   const capturePath = path.join(tempDir, 'capture-stdin.json');
   process.env.coagent8_FIXTURE_CAPTURE = capturePath;
 
@@ -223,7 +223,7 @@ test('Phase 1 Task 1.1: prompt is delivered via STDIN and omitted from CLI args'
   delete process.env.coagent8_FIXTURE_CAPTURE;
 });
 
-test('Phase 1 Task 1.1: large prompts exceeding 32KB pass safely via STDIN without CreateProcessW limit crashes', async () => {
+test('large prompts exceeding 32KB pass safely via STDIN without CreateProcessW limit crashes', async () => {
   const capturePath = path.join(tempDir, 'capture-large-stdin.json');
   process.env.coagent8_FIXTURE_CAPTURE = capturePath;
 
@@ -241,7 +241,7 @@ test('Phase 1 Task 1.1: large prompts exceeding 32KB pass safely via STDIN witho
   delete process.env.coagent8_FIXTURE_CAPTURE;
 });
 
-test('Phase 1 Task 1.3: resolveModelAndEffort decouples base models from reasoning effort', () => {
+test('resolveModelAndEffort decouples base models from reasoning effort', () => {
   // 1. Explicit effort strips synthetic suffix
   assert.deepEqual(resolveModelAndEffort('gemini-3.8-flash-high', 'low'), {
     model: 'gemini-3.8-flash',
@@ -291,7 +291,7 @@ test('Phase 1 Task 1.3: resolveModelAndEffort decouples base models from reasoni
   });
 });
 
-test('Phase 1 Task 1.3: execute separates model and effort into distinct CLI arguments', async () => {
+test('execute separates model and effort into distinct CLI arguments', async () => {
   const capturePath = path.join(tempDir, 'capture-model-effort.json');
   process.env.coagent8_FIXTURE_CAPTURE = capturePath;
 
@@ -316,7 +316,7 @@ test('Phase 1 Task 1.3: execute separates model and effort into distinct CLI arg
   delete process.env.coagent8_FIXTURE_CAPTURE;
 });
 
-test('Phase 1 Task 1.4 Audit Remediation: messages exceeding maxMessages set isTruncated and throw in Gemini adapter', async () => {
+test('messages exceeding maxMessages set isTruncated and throw in Gemini adapter', async () => {
   const reducer = new StreamReducer({ maxMessages: 3 });
   reducer.upsertMessage('m1', 'first');
   reducer.upsertMessage('m2', 'second');

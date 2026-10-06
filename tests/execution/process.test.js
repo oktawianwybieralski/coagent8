@@ -260,14 +260,14 @@ test('layer 3: the supervisor never snapshots, polls or kills by PID', () => {
   assert.equal(fs.existsSync(path.join(dir, 'execution', 'process-tree.ts')), false);
 });
 
-test('Phase 1 Task 1.2: direct process launch without PowerShell wrapper or C# Roslyn compilation', async () => {
+test('direct process launch without PowerShell wrapper or C# Roslyn compilation', async () => {
   assert.ok(!fs.existsSync(path.resolve('assets/windows-job.ps1')), 'assets/windows-job.ps1 must be retired');
   const result = await runCommand(process.execPath, ['-e', 'console.log("direct_launch_ok")']);
   assert.equal(result.status, 'completed');
   assert.ok(result.stdout.includes('direct_launch_ok'));
 });
 
-test('Phase 1 Task 1.2: terminateProcessTree terminates running process cleanly without leaving orphans', async () => {
+test('terminateProcessTree terminates running process cleanly without leaving orphans', async () => {
   // Launch an idle child process
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
     stdio: 'ignore',

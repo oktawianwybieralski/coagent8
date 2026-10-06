@@ -30,7 +30,7 @@ const { withFileLock } = require('../../src/sessions/lock.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('Phase 2 Task 2.2: atomic file lease replaces .claims directory and prevents race conditions', async () => {
+test('atomic file lease replaces .claims directory and prevents race conditions', async () => {
   const resource = path.join(tempDir, 'atomic-lease-test');
   const leaseFile = `${resource}.lease`;
   const claimsDir = `${resource}.claims`;
@@ -50,7 +50,7 @@ test('Phase 2 Task 2.2: atomic file lease replaces .claims directory and prevent
   assert.ok(!fs.existsSync(leaseFile), 'Lease file must be removed after release');
 });
 
-test('Phase 2 Task 2.2: stale lease with dead process is atomically reclaimed', async () => {
+test('stale lease with dead process is atomically reclaimed', async () => {
   const resource = path.join(tempDir, 'stale-lease-test');
   const leaseFile = `${resource}.lease`;
 
@@ -69,7 +69,7 @@ test('Phase 2 Task 2.2: stale lease with dead process is atomically reclaimed', 
   assert.ok(!fs.existsSync(leaseFile), 'Lease file must be cleaned up');
 });
 
-test('Phase 2 Task 2.2: session pruner cleans up stale .lease files', async () => {
+test('session pruner cleans up stale .lease files', async () => {
   const sess = createSession('gemini', tempDir);
   const leasePath = path.join(getSessionsDir(), `${sess.sessionHandle}.json.lease`);
 
@@ -80,7 +80,7 @@ test('Phase 2 Task 2.2: session pruner cleans up stale .lease files', async () =
   assert.ok(!fs.existsSync(leasePath), 'Stale lease file must be pruned when owner is dead');
 });
 
-test('Phase 2 Audit Remediation: stale lease recovery does not steal replacement lease of a live owner', async () => {
+test('stale lease recovery does not steal replacement lease of a live owner', async () => {
   const resource = path.join(tempDir, 'lease-race-test');
   const leaseFile = `${resource}.lease`;
 

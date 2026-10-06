@@ -140,7 +140,7 @@ test('SURFACE-001: direct legacy handlers validate required parameters', async (
   }
 });
 
-test('Phase 3 Task 3.1: canonical profile advertises exactly 9 unprefixed domain tools', () => {
+test('canonical profile advertises exactly 9 unprefixed domain tools', () => {
   const tools = createToolDefinitions({
     schemaVersion: 1,
     defaultBackend: 'codex',
@@ -171,7 +171,7 @@ test('Phase 3 Task 3.1: canonical profile advertises exactly 9 unprefixed domain
   }
 });
 
-test('Phase 3 Task 3.2: compact profile advertises exactly 4 tools (run, doctor, session, cancel)', () => {
+test('compact profile advertises exactly 4 tools (run, doctor, session, cancel)', () => {
   const tools = createToolDefinitions({
     schemaVersion: 1,
     defaultBackend: 'codex',
@@ -184,7 +184,7 @@ test('Phase 3 Task 3.2: compact profile advertises exactly 4 tools (run, doctor,
   assert.deepEqual(names, ['cancel', 'doctor', 'run', 'session']);
 });
 
-test('Phase 3 Task 3.2: run gateway strictly validates parameters per-action', async () => {
+test('run gateway strictly validates parameters per-action', async () => {
   // 1. Unknown action
   await assert.rejects(
     async () => handleRun({ action: 'unknown' }, tempDir),
@@ -220,7 +220,7 @@ test('Phase 3 Task 3.2: run gateway strictly validates parameters per-action', a
   );
 });
 
-test('Phase 4: canonical profile advertises exactly 9 domain tools without legacy aliases', () => {
+test('canonical profile advertises exactly 9 domain tools without legacy aliases', () => {
   const tools = createToolDefinitions({
     schemaVersion: 1,
     defaultBackend: 'codex',
@@ -240,7 +240,7 @@ test('Phase 4: canonical profile advertises exactly 9 domain tools without legac
   }
 });
 
-test('Phase 4: getAllCallableToolDefinitions provides lookup strictly for canonical tools and run gateway', () => {
+test('getAllCallableToolDefinitions provides lookup strictly for canonical tools and run gateway', () => {
   const allTools = getAllCallableToolDefinitions();
   const allNames = new Set(allTools.map(t => t.name));
 
@@ -262,7 +262,7 @@ test('Phase 4: getAllCallableToolDefinitions provides lookup strictly for canoni
   assert.ok(!allNames.has('codex_status'));
 });
 
-test('Phase 4: server tools/call dispatches canonical tools and rejects legacy aliases as unknown', async () => {
+test('server tools/call dispatches canonical tools and rejects legacy aliases as unknown', async () => {
   const server = createServer();
   const callHandler = server._requestHandlers.get('tools/call');
 
