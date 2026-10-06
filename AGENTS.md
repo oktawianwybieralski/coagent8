@@ -30,7 +30,7 @@ MCP use. Historical plans and RFCs do not override this direction.
 2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:
    - **Direct pushes to `main` are strictly forbidden.**
    - All development takes place on dedicated topic branches (`feat/*`, `fix/*`, `perf/*`, `chore/*`) created from and targeting the active release branch `release/v1.0.0`. Betas and release candidates are annotated tags on that branch (`v1.0.0-beta.1`, `v1.0.0-beta.2`, `v1.0.0-rc.1`); the final `v1.0.0` tag is on `main`.
-   - Merge exclusively via **Pull Requests with Squash and Merge** (`gh pr merge --squash --delete-branch`); commits and PR titles follow Conventional Commits; versions follow SemVer; changes are recorded in `CHANGELOG.md`.
+   - Merge exclusively via **Pull Requests with Squash and Merge** (`gh pr merge --squash --delete-branch`); commits and PR titles follow Conventional Commits; versions follow SemVer; `CHANGELOG.md` is generated from the history in release commits.
    - `main` receives only finalized, audited release snapshots; must strictly remain 100% green across all 6 CI matrix jobs.
    - History recovery is strictly an emergency owner procedure with atomic force-with-lease.
 

@@ -214,7 +214,7 @@ folded into `SIMPLIFY-001`.
 | Order | Work | Acceptance |
 | --- | --- | --- |
 | Done | `WINDOWS-001` (window suppression), `VERIFY-SCOPE-001` (runner selection), `STARTUP-001`, `SURFACE-001`, `CONSULT-001` | Recorded below; window suppression is in source but not in the committed bundle until `PACKAGE-001` |
-| 1 (gates beta 1) | `AUDIT-001` blockers: `WINDOWS-001` process identity, `REDACTION-002`, `HISTORY-002` archive isolation, `ROUTING-MIGRATE-001` cooldown fix, `ERRORS-001` typed errors, `PACKAGE-001` | No teardown without verified identity; answers unaltered except credential formats; archive failures never fail or block a turn; parsed resets survive; no unknown error reported as `INPUT_LIMIT`; no build output in Git. Each with a regression test derived from the audit reproduction |
+| 1 (gates beta 1) | `AUDIT-001` blockers: `WINDOWS-001` process identity, `REDACTION-002`, `HISTORY-002` archive isolation, `ROUTING-MIGRATE-001` cooldown fix, `ERRORS-001` typed errors, `PACKAGE-001`; `CHANGELOG-001` | No teardown without verified identity; answers unaltered except credential formats; archive failures never fail or block a turn; parsed resets survive; no unknown error reported as `INPUT_LIMIT`; no build output in Git. Each with a regression test derived from the audit reproduction |
 | 2 (gates beta 2), owner may reorder | `CLAUDE-BACKEND-001`: Claude Code in restricted read-only mode with streaming and resume | Subscription authentication; per-run read-only check; typed failures from stream-json; adapter tests green in CI |
 | 2 (gates beta 2) | Remaining audit P1: `EXEC-001` probes, argv and consent; `CLI-INTERACT-001` forward compatibility; `SESSION-001` resource isolation; `LOCKS-001`; `WINDOWS-001` supervision cost | One cached probe per backend and no probe in `execute`; validated model identifiers; consent not assertable by the caller; unknown agy events tolerated; resources honor workspace ownership; no permanent lease |
 | 3 (gates RC 1) | `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002` remainder, `SIMPLIFY-001`, audit P2 items | Safe auto-resume; activity liveness; deletions and deduplication with behavior preserved |
@@ -481,6 +481,10 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 - [ ] Produce plugin/VSIX artifacts from the built tarball, not from a committed
   bundle.
 - [ ] Keep `index.js`, `mcp.json` and `bin` entries valid for installed packages.
+- [ ] The esbuild bundle is not byte-reproducible. Rebuilding unchanged source on
+  2026-10-06 (through `npm pack` `prepack`) renamed minified identifiers, for
+  example `Ay` became `Py`. Removing `dist/` from Git removes that noise from
+  diffs.
 - [ ] Acceptance: a fresh clone cannot run a stale bundle. The consumer smoke test
   verifies the packed bundle matches a build of the packed source.
 
@@ -965,7 +969,12 @@ Beta 1 gate:
   - a GitHub bug-report issue template that asks for the `issue` tool output,
     `doctor` output, OS, Node version and backend CLI versions;
   - a short tester guide in the README (install, register in a host, report a bug).
+- [ ] Write the beta 1 GitHub release notes with known issues and security
+  notes. These come from the open audit findings in
+  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf);
+  the changelog does not carry them (`CHANGELOG-001`).
 - [x] Create `CHANGELOG.md` (Keep a Changelog) with an Unreleased section.
+- [x] `CHANGELOG.md` is generated from the commit history (`CHANGELOG-001`).
 - [ ] Create the GitHub triage labels defined in
   [Git governance](../.agents/rules/02-git-workflow.md#7-issues-and-tester-feedback)
   and apply the branch and tag protection in its section 8.
@@ -985,6 +994,92 @@ Beta 2 gate:
 
 An independent review by the Reviewer is required for each beta's changes before merge,
 as for any PR. The hash-bound release approval applies from RC 1.
+
+### `CHANGELOG-001` - changelog generated from the commit history
+
+**Status:** Done on `fix/windows-process-identity` (2026-10-06). The first
+release commit (beta 1) is the first real generation.
+
+Rationale:
+- Squash-merged PR titles and bodies on `release/v1.0.0` are Conventional
+  Commits ([Git governance](../.agents/rules/02-git-workflow.md)). They already
+  hold one entry per change.
+- A hand-written `CHANGELOG.md` duplicates that record and drifts from it. An
+  entry is easy to forget, and the review does not see the omission.
+- All 28 commits in the history were checked and conform. No tag exists yet.
+
+Decision:
+- Generate `CHANGELOG.md` with [git-cliff](https://git-cliff.org/), pinned as a
+  development dependency and configured in `cliff.toml` (Keep a Changelog
+  layout). The output is committed so that GitHub and release notes can link
+  it. It is not part of the npm package (`files` in `package.json`).
+- auto-changelog was also considered and rejected. It groups by merged PRs,
+  closed issues and commits rather than Conventional Commit types, so the
+  type-to-section mapping would need a custom Handlebars template. Its
+  pure-JavaScript install (git-cliff ships a native binary per platform, for
+  every CI platform) does not outweigh that.
+- Type mapping:
+  - `feat` becomes Added, `fix` becomes Fixed, `perf` and `refactor` become
+    Changed, `revert` becomes Removed;
+  - a `!` or a `BREAKING CHANGE` footer is listed under a Breaking section;
+  - `docs`, `chore`, `test`, `ci`, `build` and `style` are omitted.
+- Generation happens in the release commit only (`npm run changelog`). Pull
+  requests do not edit `CHANGELOG.md`.
+- The PR title is the changelog line. It must describe the change for users.
+  The Reviewer checks this like any other PR content.
+- Known issues and security notes do not derive from commits. They belong in the
+  GitHub release notes, written at release time.
+- Rejected:
+  - release-please: a bot with write permissions, and version bumps across
+    several manifests;
+  - semantic-release: publishes to npm by itself, which bypasses the release
+    gate and the independent review.
+
+- Each entry starts with its commit (short SHA linked to GitHub), as in
+  projects such as PrestaShop (owner request, 2026-10-06).
+
+Work items:
+- [x] Add git-cliff 2.14.2 (exact pin) and `cliff.toml`. `npm run changelog`
+  runs `git-cliff ... ca600a1..HEAD`. In a release PR, `-- --tag vX` places the
+  commits since the previous tag under that version.
+- [x] Migrate the hand-written `[Unreleased]` section.
+  - The squashed development line `ca600a1` keeps its curated text as the
+    baseline at the end of the file (`cliff.toml` footer).
+  - The hand-written entries for later commits were dropped. Those commits are
+    on topic branches; their SHAs disappear when the branch is squash-merged, so
+    their entries come from the squash commit in the release commit.
+  - The known-issues and security note moves to the beta 1 release notes
+    (`BETA-001`).
+- [x] Update [Git governance](../.agents/rules/02-git-workflow.md) sections 3, 5
+  and 6 and `AGENTS.md`.
+- [x] Splitting a squash commit's body into one entry per listed commit
+  (`split_commits`) was tried and rejected. With git-cliff 2.14.2 a prose line
+  containing a colon inherited the PR title as a duplicate entry, and a
+  `Co-authored-by:` trailer became an entry. Each PR is one entry instead.
+- [x] GitHub release notes in the layout of the PrestaShop release pages (owner
+  request, 2026-10-06; for example PrestaShop 9.2.0).
+  - Configuration: `cliff.release-notes.toml` and `npm run release-notes -- --tag vX`.
+  - Entries are grouped by area (commit scope), then by type.
+  - Each entry is `[#PR](link): description (by @author)`.
+  - Breaking changes come first. Contributors and a "Full Changelog" compare
+    link follow the entries.
+  - Without `GITHUB_TOKEN`, the PR number comes from the squash subject `(#N)`
+    and the author is the Git author name.
+- [ ] Verify the GitHub API path (`GITHUB_TOKEN`: `@username` links and the
+  contributors list) on the first real release PR. It needs PRs that exist on
+  GitHub.
+- [x] Acceptance:
+  - On this branch, `git-cliff ... ca600a1..ca600a1` (the state of
+    `release/v1.0.0`) reproduces the committed `CHANGELOG.md` without a diff.
+  - In a scratch clone of `release/v1.0.0`, a simulated squash commit and
+    `--tag v1.0.0-beta.1` produced a `## [1.0.0-beta.1] - <date>` section whose
+    entries begin with the linked squash SHA.
+  - `git diff --check` passes. The output has single blank lines and one
+    trailing newline.
+  - Release notes in the same scratch clone, offline:
+    - beta 1 (range `ca600a1..HEAD`) listed only the simulated PRs #6-#9;
+    - after a `v1.0.0-beta.1` tag, beta 2 listed only #11 with the compare link
+      `v1.0.0-beta.1...v1.0.0-beta.2`.
 
 ### `RC-001` - freeze, validate and accept 1.0.0-rc.1 (and rc.2 if needed)
 

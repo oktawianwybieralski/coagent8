@@ -1,0 +1,94 @@
+# git-cliff configuration: CHANGELOG.md is generated from Conventional Commits
+# (CHANGELOG-001 in docs/ROADMAP.md). Run `npm run changelog` in a release commit only.
+# Every entry starts with its commit, linked to GitHub.
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to CoAgent8 are documented in this file. It is generated
+from the Conventional Commits history by [git-cliff](https://git-cliff.org/)
+(`npm run changelog`); do not edit it by hand. Each entry starts with the commit
+that introduced it.
+
+The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
+"""
+body = """
+{% set repo = "https://github.com/oktawianwybieralski/coagent8" -%}
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{% set breaking = commits | filter(attribute="breaking", value=true) -%}
+{% if breaking | length > 0 %}
+### Breaking
+{% for commit in breaking -%}
+- [`{{ commit.id | truncate(length=7, end="") }}`]({{ repo }}/commit/{{ commit.id }}) {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{% endfor -%}
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits -%}
+- [`{{ commit.id | truncate(length=7, end="") }}`]({{ repo }}/commit/{{ commit.id }}) {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{% endfor -%}
+{% endfor %}
+"""
+# The 1.0.0-beta.1 development line was squashed into one commit (ca600a1) with a
+# one-line subject. Its curated description is kept here as the oldest entry;
+# `npm run changelog` generates everything after it.
+footer = """
+## Baseline: 1.0.0-beta.1 development line ([`ca600a1`](https://github.com/oktawianwybieralski/coagent8/commit/ca600a1d7ce5035b3f36976e7bb0637e35d74214))
+
+### Added
+- Canonical tool surface: `consult` (with `task_type`), `review`, `doctor`,
+  `session`, `cancel`, `issue`; compact profile through `run`.
+- Plain `consult` answers with a structured `verdict` field; the State Envelope is
+  enforced for `review` only.
+- Generic MCP interoperability: tools are listed without a recognized client and
+  without invoking a backend.
+- Optional `setup`, `repair` and `status` commands for Codex, Claude Code and agy
+  host registration, reused by the VS Code extension.
+- Native Gemini (`agy`) quota inspection in `doctor`.
+- Focused test file selection in `tests/run.cjs`.
+
+### Changed
+- Session pruning runs in the background after the MCP transport connects.
+- Backend resolution no longer writes the default backend to the configuration.
+- Hidden PowerShell windows for Windows process supervision and tests.
+- License changed to GPL-3.0-only.
+
+### Deprecated
+- Tools `analyze`, `debug` and `implement`; use `consult` with `task_type`.
+  Removal is planned for v1.1.0.
+
+### Fixed
+- Gemini sandbox-denial handling no longer reports valid results as duplicates.
+- Escaped and structured Windows home paths are redacted in diagnostics."""
+trim = false
+# One blank line between blocks.
+postprocessors = [
+  { pattern = '\n{3,}', replace = "\n\n" },
+]
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+# One entry per squash-merged PR: the PR title. Splitting the squash body into
+# entries was rejected: prose lines and trailers such as Co-authored-by are
+# misparsed (checked with git-cliff 2.14.2).
+split_commits = false
+protect_breaking_commits = true
+filter_commits = false
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+.*"
+sort_commits = "oldest"
+# The leading HTML comments order the sections; striptags removes them from the headings.
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^(perf|refactor)", group = "<!-- 1 -->Changed" },
+  { message = "^revert", group = "<!-- 2 -->Removed" },
+  { message = "^fix", group = "<!-- 3 -->Fixed" },
+  { message = "^(docs|chore|test|ci|build|style)", skip = true },
+]
