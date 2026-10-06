@@ -12,8 +12,6 @@ import { resolveWorkspacePath } from './paths.js';
 import { redactDiagnostic } from './redaction.js';
 import { BRAND, CANONICAL_TOOL_NAMES } from './constants.js';
 import { SERVER_ICON } from './generated/server-icon.js';
-import { loadConfig } from './config.js';
-import type { CoAgent8Config } from './config.js';
 import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
 import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession } from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
@@ -90,15 +88,6 @@ export function getLegacyAliasTools(): ToolDefinition[] {
 }
 
 
-function getCompactTools(): ToolDefinition[] {
-  return [
-    runToolDefinition,
-    doctorToolDefinition,
-    sessionToolDefinition,
-    cancelToolDefinition,
-  ];
-}
-
 export function getAllCallableToolDefinitions(): Tool[] {
   return buildToolDefinitionsWithSchemas([
     ...getCoreCanonicalTools(),
@@ -108,13 +97,10 @@ export function getAllCallableToolDefinitions(): Tool[] {
 }
 
 /**
- * Returns advertised tool definitions according to the active toolProfile configuration.
+ * Returns the advertised tool definitions: the six core tools, for every client.
  */
-export function createToolDefinitions(configOverride?: CoAgent8Config): Tool[] {
-  const synConfig = configOverride || loadConfig();
-  const toolProfile = synConfig.toolProfile || 'canonical';
-  const tools = toolProfile === 'compact' ? getCompactTools() : getCoreCanonicalTools();
-  return buildToolDefinitionsWithSchemas(tools);
+export function createToolDefinitions(): Tool[] {
+  return buildToolDefinitionsWithSchemas(getCoreCanonicalTools());
 }
 
 /**

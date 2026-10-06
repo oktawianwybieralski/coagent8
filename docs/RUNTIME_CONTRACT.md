@@ -26,20 +26,21 @@ Backend selection: an explicit `backend` or the configured `defaultBackend` is u
 
 The client name is self-reported and only steers this preference; it never relaxes a policy.
 
-### Dual Tool Profiles
-1. **Canonical Profile (Default)**: Advertises the six core tools; the three
-   deprecated aliases are callable but not advertised:
-   * Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
-     `implementation`), `review`.
-   * Management: `doctor`, `session`, `cancel`.
-   * Feedback & Diagnostics: `issue`.
-   * Deprecated aliases of `consult`: `analyze`, `debug`, `implement`. Each maps
-     its arguments to `consult` and returns a deprecation warning.
-2. **Compact Profile (`run`)**: Subcommand gateway exposing four tools:
-   * `run` (actions: `consult`, `review`, `issue`; deprecated `analyze`, `debug`, `implement`).
-   * `doctor`, `session`, `cancel`.
+### Tool Surface
+Every client is offered the six core tools:
+* Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
+  `implementation`), `review`.
+* Management: `doctor`, `session`, `cancel`.
+* Feedback & Diagnostics: `issue`.
 
-Every tool is callable in either profile; the profile controls advertisement only.
+Callable but not advertised:
+* the deprecated aliases of `consult`: `analyze`, `debug`, `implement`. Each maps
+  its arguments to `consult` and returns a deprecation warning;
+* the legacy `run` gateway (actions: `consult`, `review`, `issue`; deprecated
+  `analyze`, `debug`, `implement`).
+
+The former `toolProfile` configuration key is ignored. Its compact profile
+measured more model-visible bytes than the six tools.
 
 The server sends one sentence of `instructions` in `initialize` and declares its
 icon once, in `serverInfo`; tools carry no icon. Execution parameters are defined

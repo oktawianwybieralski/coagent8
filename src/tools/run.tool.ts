@@ -8,7 +8,7 @@ import { handleIssue } from './issue.tool.js';
 export const runToolDefinition = {
   name: CANONICAL_TOOL_NAMES.RUN,
   description:
-    'Compact subcommand gateway: execute canonical actions (consult, review, issue) or deprecated legacy actions (analyze, debug, implement) with strict validation and argument mapping.',
+    'Legacy subcommand gateway, callable but not advertised: runs consult, review, issue or the deprecated analyze, debug and implement actions.',
   inputSchema: {
     type: 'object',
     properties: {

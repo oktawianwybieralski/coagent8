@@ -116,9 +116,9 @@ for installation, ownership, rollback and current host-verification limits.
 | issue | Generate a sanitized report and issue link |
 | analyze, debug, implement | Deprecated aliases of `consult` with the matching `task_type`; callable but not advertised |
 
-The default canonical profile advertises these six tools, with one-sentence server
-instructions and short descriptions so clients spend few tokens on them. Setting `"toolProfile": "compact"` in `~/.coagent8/config.json` advertises
-`run`, `doctor`, `session` and `cancel`; run dispatches task actions and issue reporting.
+Every client gets these six tools, with one-sentence server instructions and short
+descriptions so clients spend few tokens on them. The legacy `run` gateway and the
+deprecated aliases remain callable; the former `toolProfile` setting is ignored.
 
 Example consult arguments:
 

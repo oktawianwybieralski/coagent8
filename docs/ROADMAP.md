@@ -112,7 +112,7 @@ The runtime enforces the State Envelope for `review` only; `consult` returns a
 plain answer with `verdict: "NOT_APPLICABLE"`. Every execution currently persists
 conversation history. The canonical profile advertises six core tools; the
 deprecated aliases (`analyze`, `debug`, `implement`) stay callable but are not
-advertised (`CONTEXT-001`). The compact profile advertises four. No new runtime option is implied by this plan unless an item
+advertised (`CONTEXT-001`). The compact profile was removed (`CONTEXT-001`). No new runtime option is implied by this plan unless an item
 says so.
 
 ## Architecture principle: conventional layout and bounded responsibilities
@@ -607,7 +607,8 @@ execution order.
   `review`, `doctor`, `session`, `cancel`, `issue`.
 - [x] Retain the compact profile via the `run` gateway with legacy action
   compatibility (`analyze`, `debug`, `implement` mapped to `consult` with
-  deprecation warnings).
+  deprecation warnings). Superseded by `CONTEXT-001`: the profile is removed and
+  `run` stays callable.
 - [x] Deprecate and alias the separately advertised `analyze`, `debug` and
   `implement` tools to `consult` handlers with argument mapping. Removed the
   phantom `context_files` field from `debug`. The six-tool baseline excludes the
@@ -693,7 +694,9 @@ Plan:
   1.1.0. The compact profile now measures 4.2 KB against 3.7 KB for the six
   tools, so it saves nothing. Verified in `tests/tools/surface.test.js` (budget
   3,800 B).
-- [ ] Remove the compact profile, which no longer saves tokens.
+- [x] Remove the compact profile, which no longer saves tokens. A legacy
+  `toolProfile` key is ignored, and `run` stays callable. Verified in
+  `tests/tools/surface.test.js`.
 - [ ] Limit `outputSchema` to the fields actually sent (with the compact result).
 - [x] **Icon:** the single brand icon is declared only in `serverInfo`. Context7
   also declares its icon only at server level, while GitHub MCP sets icons per

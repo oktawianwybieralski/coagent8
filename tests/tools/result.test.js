@@ -13,10 +13,6 @@ process.env.coagent8_SESSIONS = tempSessionsFile;
 
 const { formatExecutionResult } = require('../../src/tools/result.ts');
 
-test.after(() => {
-  delete process.env.coagent8_TOOL_PROFILE;
-});
-
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('response formatting has no cooldown/storage writes and carries execution-owned warnings', async () => {

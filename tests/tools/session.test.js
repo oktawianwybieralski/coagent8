@@ -20,10 +20,6 @@ const {
 const { handleSession, handleCancelSession } = require('../../src/tools/session.tool.ts');
 const { createHistoryWriter } = require('../../src/sessions/history.ts');
 
-test.after(() => {
-  delete process.env.coagent8_TOOL_PROFILE;
-});
-
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('session tool consolidates list, history and close actions', async () => {

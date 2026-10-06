@@ -21,10 +21,6 @@ const { handleImplement } = require('../../src/tools/implement.tool.ts');
 const { handleRun, runToolDefinition } = require('../../src/tools/run.tool.ts');
 const { createSession } = require('../../src/sessions/session.ts');
 
-test.after(() => {
-  delete process.env.coagent8_TOOL_PROFILE;
-});
-
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('SURFACE-001: core canonical tools interface defines exactly 6 canonical tools', () => {
@@ -141,12 +137,7 @@ test('SURFACE-001: direct legacy handlers validate required parameters', async (
 });
 
 test('canonical profile advertises exactly the 6 core tools, without the callable legacy aliases', () => {
-  const tools = createToolDefinitions({
-    schemaVersion: 1,
-    defaultBackend: 'codex',
-    routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] },
-    toolProfile: 'canonical',
-  });
+  const tools = createToolDefinitions();
 
   assert.equal(tools.length, 6, 'Default canonical profile must advertise exactly 6 tools');
   const names = tools.map(t => t.name).sort();
@@ -161,17 +152,18 @@ test('canonical profile advertises exactly the 6 core tools, without the callabl
   }
 });
 
-test('compact profile advertises exactly 4 tools (run, doctor, session, cancel)', () => {
-  const tools = createToolDefinitions({
-    schemaVersion: 1,
-    defaultBackend: 'codex',
-    routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] },
-    toolProfile: 'compact',
-  });
-
-  assert.equal(tools.length, 4, 'Compact profile must advertise exactly 4 tools');
-  const names = tools.map(t => t.name).sort();
-  assert.deepEqual(names, ['cancel', 'doctor', 'run', 'session']);
+test('a legacy toolProfile setting is ignored: every client gets the same six tools', () => {
+  const { loadConfig } = require('../../src/config.ts');
+  const configFile = path.join(tempDir, 'legacy-profile-config.json');
+  fs.writeFileSync(configFile, JSON.stringify({ schemaVersion: 1, defaultBackend: null, toolProfile: 'compact' }));
+  const previous = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = configFile;
+  try {
+    assert.equal(loadConfig().toolProfile, undefined, 'the key no longer has a meaning');
+    assert.deepEqual(createToolDefinitions().map(t => t.name).sort(), ['cancel', 'consult', 'doctor', 'issue', 'review', 'session']);
+  } finally {
+    if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
+  }
 });
 
 test('run gateway strictly validates parameters per-action', async () => {
@@ -211,12 +203,7 @@ test('run gateway strictly validates parameters per-action', async () => {
 });
 
 test('canonical profile advertises the 6 core tools; legacy aliases stay callable only', () => {
-  const tools = createToolDefinitions({
-    schemaVersion: 1,
-    defaultBackend: 'codex',
-    routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] },
-    toolProfile: 'canonical',
-  });
+  const tools = createToolDefinitions();
 
   assert.equal(tools.length, 6);
   const names = new Set(tools.map(t => t.name));
@@ -318,7 +305,7 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
 test('CONTEXT-001 budgets: one-sentence server instructions and compact model-visible tool definitions', () => {
   const { SERVER_INSTRUCTIONS } = require('../../src/server.ts');
   assert.ok(SERVER_INSTRUCTIONS.length <= 512, 'every client reads the first 512 characters; Claude Code truncates at 2,048');
-  const tools = createToolDefinitions({ schemaVersion: 1, defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] }, toolProfile: 'canonical' });
+  const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
   assert.ok(visible <= 3800, `model-visible tool definitions: ${visible} B (was 9.6 KB before CONTEXT-001)`);

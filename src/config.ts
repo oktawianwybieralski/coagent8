@@ -9,8 +9,6 @@ import { readBoundedFileSync } from './execution/stream.js';
 export type BackendId = ProviderId | 'smart_quota';
 export type RoutingStrategy = 'fixed' | 'smart_quota';
 
-export type ToolProfile = 'canonical' | 'compact';
-
 export interface RoutingConfig {
   strategy: RoutingStrategy;
   allowedBackends: ProviderId[];
@@ -20,7 +18,6 @@ export interface CoAgent8Config {
   schemaVersion: number;
   defaultBackend: BackendId | null;
   routing: RoutingConfig;
-  toolProfile?: ToolProfile;
 }
 
 function getConfigFile(): string {
@@ -29,16 +26,14 @@ function getConfigFile(): string {
 
 const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'gemini', 'smart_quota'];
 const VALID_STRATEGIES: RoutingStrategy[] = ['fixed', 'smart_quota'];
-const VALID_TOOL_PROFILES: ToolProfile[] = ['canonical', 'compact'];
 
 const DEFAULT_CONFIG: CoAgent8Config = {
   schemaVersion: 1,
-  defaultBackend: null, // null triggers onboarding if multiple backends detected
+  defaultBackend: null, // null lets auto choose among several backends
   routing: {
     strategy: 'fixed',
     allowedBackends: ['codex', 'claude', 'gemini'],
   },
-  toolProfile: 'canonical',
 };
 
 function ensureConfigDir(): void {
@@ -124,15 +119,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     },
   };
 
-  if (config.toolProfile !== undefined && config.toolProfile !== null) {
-    if (typeof config.toolProfile !== 'string' || !VALID_TOOL_PROFILES.includes(config.toolProfile.toLowerCase() as ToolProfile)) {
-      throw new Error(
-        `Configuration Error: Invalid toolProfile: '${config.toolProfile}'. Supported: ${VALID_TOOL_PROFILES.join(', ')}`
-      );
-    }
-    validated.toolProfile = config.toolProfile.toLowerCase() as ToolProfile;
-  }
-
+  // A legacy `toolProfile` key is ignored: one tool list now serves every client.
   return validated;
 }
 
@@ -162,11 +149,6 @@ export function loadConfig(): CoAgent8Config {
     }
 
     cfg = validateConfig(parsed);
-  }
-
-  // Environment variable overrides for testing and container runtime
-  if (process.env.coagent8_TOOL_PROFILE && VALID_TOOL_PROFILES.includes(process.env.coagent8_TOOL_PROFILE.toLowerCase() as ToolProfile)) {
-    cfg.toolProfile = process.env.coagent8_TOOL_PROFILE.toLowerCase() as ToolProfile;
   }
 
   return cfg;

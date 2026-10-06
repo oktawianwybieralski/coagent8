@@ -60,16 +60,10 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
   assert.ok(runDef.outputSchema.anyOf, 'Run gateway outputSchema must be a union (anyOf) accommodating both execution and issue');
   assert.equal(runDef.outputSchema.type, 'object', 'Run gateway outputSchema must declare root type: object');
 
-  // Verify compact profile tools pass SDK's ListToolsResultSchema validation
+  // The advertised tools pass the SDK's ListToolsResultSchema validation
   const { ListToolsResultSchema } = require('@modelcontextprotocol/sdk/types.js');
-  const compactTools = createToolDefinitions({
-    schemaVersion: 1,
-    defaultBackend: 'codex',
-    routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] },
-    toolProfile: 'compact',
-  });
-  const parsedCompact = ListToolsResultSchema.parse({ tools: compactTools });
-  assert.equal(parsedCompact.tools.length, 4);
+  const parsed = ListToolsResultSchema.parse({ tools: createToolDefinitions() });
+  assert.equal(parsed.tools.length, 6);
 
   // tools/call dispatch
   const callHandler = server._requestHandlers.get('tools/call');
