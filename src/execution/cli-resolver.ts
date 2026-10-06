@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { readBoundedFileSync } from './stream.js';
 export interface CliCommand { command: string; argsPrefix: string[]; source: 'native' | 'node' | 'npm-shim' }
-export class CliResolutionError extends Error {
+class CliResolutionError extends Error {
   readonly code: 'CLI_NOT_FOUND' | 'CLI_UNSUPPORTED';
   constructor(code: 'CLI_NOT_FOUND' | 'CLI_UNSUPPORTED', message: string) {
     super(message);

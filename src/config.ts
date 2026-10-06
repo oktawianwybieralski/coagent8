@@ -23,15 +23,15 @@ export interface CoAgent8Config {
   toolProfile?: ToolProfile;
 }
 
-export function getConfigFile(): string {
+function getConfigFile(): string {
   return process.env.coagent8_CONFIG || path.join(getDataDir(), 'config.json');
 }
 
-export const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'gemini', 'smart_quota'];
-export const VALID_STRATEGIES: RoutingStrategy[] = ['fixed', 'smart_quota'];
-export const VALID_TOOL_PROFILES: ToolProfile[] = ['canonical', 'compact'];
+const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'gemini', 'smart_quota'];
+const VALID_STRATEGIES: RoutingStrategy[] = ['fixed', 'smart_quota'];
+const VALID_TOOL_PROFILES: ToolProfile[] = ['canonical', 'compact'];
 
-export const DEFAULT_CONFIG: CoAgent8Config = {
+const DEFAULT_CONFIG: CoAgent8Config = {
   schemaVersion: 1,
   defaultBackend: null, // null triggers onboarding if multiple backends detected
   routing: {
@@ -41,7 +41,7 @@ export const DEFAULT_CONFIG: CoAgent8Config = {
   toolProfile: 'canonical',
 };
 
-export function ensureConfigDir(): void {
+function ensureConfigDir(): void {
   const dir = path.dirname(getConfigFile());
   if (!fs.existsSync(dir)) {
     try {

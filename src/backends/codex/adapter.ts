@@ -12,7 +12,7 @@ import { classifyCodexError } from './errors.js';
 
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
-export const CODEX_EXE = process.env.CODEX_PATH || 'codex';
+const CODEX_EXE = process.env.CODEX_PATH || 'codex';
 export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(os.homedir(), '.codex', 'config.toml');
 
 export const VALID_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -23,7 +23,7 @@ export interface CodexConfig {
   sandboxMode: string;
 }
 
-export const CODEX_CMD: { command: string; argsPrefix: string[] } = { command: CODEX_EXE, argsPrefix: [] };
+const CODEX_CMD: { command: string; argsPrefix: string[] } = { command: CODEX_EXE, argsPrefix: [] };
 
 export function readCodexConfig(customPath?: string): CodexConfig {
   const result: CodexConfig = {

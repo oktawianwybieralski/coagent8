@@ -19,7 +19,7 @@ export const GIT_DIFF_PATHSPEC_EXCLUSIONS: readonly string[] = [
   ':(exclude)yarn.lock',
 ];
 
-export function isExcludedPath(relPath: string): boolean {
+function isExcludedPath(relPath: string): boolean {
   const norm = relPath.replace(/\\/g, '/');
   return (
     norm.startsWith('dist/') ||
@@ -38,7 +38,7 @@ function boundedSnapshot(text: string): string {
   return truncateToByteLength(text.trim(), SNAPSHOT_BYTES, '\n[Incomplete snapshot: total prompt budget reached.]');
 }
 
-export async function runGit(
+async function runGit(
   args: string[],
   cwd = process.cwd(),
   abortSignal: AbortSignal | null = null,

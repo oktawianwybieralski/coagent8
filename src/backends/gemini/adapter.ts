@@ -14,9 +14,9 @@ import type { ExecutionError } from '../../conversation.js';
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
-export const AGY_SIGNAL_GRACE_MS = 2000;
+const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-export const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
+const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 export function resolveModelAndEffort(

@@ -7,27 +7,27 @@ import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../conversation.js';
 export const id = 'claude', name = 'Claude Code CLI';
-export const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
+const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
 export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** `--restricted` needs 2.1.248 and `--permission-prompts` 2.1.259 (Claude Code CLI reference). */
-export const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 259];
+const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 259];
 /** Local /usage execution in print mode was verified live on 2.1.289; versions older than 2.1.289 skip /usage; a reported model turn or cost is discarded. */
-export const MIN_CLAUDE_USAGE_VERSION: readonly [number, number, number] = [2, 1, 289];
+const MIN_CLAUDE_USAGE_VERSION: readonly [number, number, number] = [2, 1, 289];
 /** Model identifier pattern from the audit (AUD-P1-6); rejects option-like and whitespace values. */
-export const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
+const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
 
-export function resolveClaudeModel(requested = 'sonnet'): string {
+function resolveClaudeModel(requested = 'sonnet'): string {
   if (requested === 'default') throw Object.assign(new Error('Claude model=default has unknown cost; choose an explicit model or sonnet/haiku alias.'), { code: 'POLICY_DENIED' });
   const match = /^(sonnet|haiku|opus)(\[1m\])?$/.exec(requested);
   const override = match && process.env[`ANTHROPIC_DEFAULT_${match[1].toUpperCase()}_MODEL`];
   return override ? override + (match![2] || '') : requested;
 }
 
-export function supportsVersion(versionOutput: string, min: readonly [number, number, number]): boolean {
+function supportsVersion(versionOutput: string, min: readonly [number, number, number]): boolean {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(versionOutput.trim());
   if (!match) return false;
   const actual = match.slice(1, 4).map(Number);
@@ -36,12 +36,12 @@ export function supportsVersion(versionOutput: string, min: readonly [number, nu
 }
 
 /** Returns whether a `claude --version` output meets {@link MIN_CLAUDE_VERSION}. */
-export function supportsRestrictedMode(versionOutput: string): boolean {
+function supportsRestrictedMode(versionOutput: string): boolean {
   return supportsVersion(versionOutput, MIN_CLAUDE_VERSION);
 }
 
 /** Returns whether a `claude --version` output meets {@link MIN_CLAUDE_USAGE_VERSION}. */
-export function supportsLocalUsage(versionOutput: string): boolean {
+function supportsLocalUsage(versionOutput: string): boolean {
   return supportsVersion(versionOutput, MIN_CLAUDE_USAGE_VERSION);
 }
 

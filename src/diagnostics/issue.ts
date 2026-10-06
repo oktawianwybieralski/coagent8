@@ -34,10 +34,10 @@ export interface BugReportResult {
   prompt: string;
 }
 
-export const REPO_OWNER = BRAND.GITHUB_OWNER;
-export const REPO_NAME = BRAND.GITHUB_REPO;
+const REPO_OWNER = BRAND.GITHUB_OWNER;
+const REPO_NAME = BRAND.GITHUB_REPO;
 export const GITHUB_NEW_ISSUE_BASE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
-export const MAX_RAW_INPUT_LENGTH = 4096;
+const MAX_RAW_INPUT_LENGTH = 4096;
 
 /**
  * Safely slices a string at unicode character boundaries with an ellipsis indicator.
@@ -46,7 +46,7 @@ export const MAX_RAW_INPUT_LENGTH = 4096;
  * @param maxLength - Maximum number of unicode code points (default: 80).
  * @returns Sliced string or empty string.
  */
-export function safeSlice(str?: string | null, maxLength = 80): string {
+function safeSlice(str?: string | null, maxLength = 80): string {
   if (!str || typeof str !== 'string') return '';
   const chars = Array.from(str);
   if (chars.length <= maxLength) return str;
@@ -59,7 +59,7 @@ export function safeSlice(str?: string | null, maxLength = 80): string {
  * @param text - Text containing potential code blocks.
  * @returns Text with code blocks replaced by redaction placeholders.
  */
-export function redactCodeBlocks(text?: string | null): string {
+function redactCodeBlocks(text?: string | null): string {
   if (!text || typeof text !== 'string') return '';
   const lines = text.split(/\r?\n/);
   const result: string[] = [];

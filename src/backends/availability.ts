@@ -16,11 +16,11 @@ export interface AvailabilitySelectionOptions {
   probesOverride?: ProbeMap;
   quotasOverride?: QuotaReport;
 }
-export function getQuotaCacheFile(): string { return process.env.coagent8_QUOTA_CACHE || path.join(getDataDir(), 'quota-cache.json'); }
+function getQuotaCacheFile(): string { return process.env.coagent8_QUOTA_CACHE || path.join(getDataDir(), 'quota-cache.json'); }
 export const QUOTA_CACHE_TTL_MS = 60000;
-export const BACKOFF_DELAYS_MS = [15 * 1000, 45 * 1000, 180 * 1000] as const;
+const BACKOFF_DELAYS_MS = [15 * 1000, 45 * 1000, 180 * 1000] as const;
 
-export function sanitizeCacheData(raw: unknown): QuotaReport {
+function sanitizeCacheData(raw: unknown): QuotaReport {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const data = raw as QuotaReport;
   for (const id of Object.keys(data)) {

@@ -22,7 +22,7 @@ import { object, withStdioRpc } from './rpc.js';
 
 export const SETUP_CLIENTS = ['codex', 'claude', 'agy'] as const;
 export type SetupClient = typeof SETUP_CLIENTS[number];
-export interface Registration { command: string; args: string[]; env?: Record<string, string> }
+interface Registration { command: string; args: string[]; env?: Record<string, string> }
 interface Selection { clients: SetupClient[]; owned: Partial<Record<SetupClient, string>> }
 /** Separates registry, direct-runtime, and native-host evidence. No credentials are returned. */
 export interface SetupStatus {
@@ -149,7 +149,7 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
 }
 
 /** Initializes a registered runtime and invokes doctor without claiming native host discovery. */
-export async function probeRuntime(entry: Registration, env: NodeJS.ProcessEnv, cwd: string): Promise<string[]> {
+async function probeRuntime(entry: Registration, env: NodeJS.ProcessEnv, cwd: string): Promise<string[]> {
   return withStdioRpc(entry.command, entry.args, async rpc => {
     const init = object(await rpc.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'coagent8-setup', version: '1' } }));
     if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');

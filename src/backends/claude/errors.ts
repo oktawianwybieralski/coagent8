@@ -27,7 +27,7 @@ export const CLAUDE_ERROR_CATEGORIES: Readonly<Record<string, ClaudeErrorMapping
 });
 
 /** HTTP statuses from `result.api_error_status`, used when no category is present. */
-export const CLAUDE_HTTP_STATUS_CODES: Readonly<Record<number, ClaudeErrorMapping>> = Object.freeze({
+const CLAUDE_HTTP_STATUS_CODES: Readonly<Record<number, ClaudeErrorMapping>> = Object.freeze({
   401: { code: 'AUTH_REQUIRED', retryable: false },
   403: { code: 'AUTH_REQUIRED', retryable: false },
   404: { code: 'MODEL_UNAVAILABLE', retryable: false },
@@ -39,7 +39,7 @@ export const CLAUDE_HTTP_STATUS_CODES: Readonly<Record<number, ClaudeErrorMappin
  * the CLI's own message prefix (observed with 2.1.289 for `--resume` of an
  * unknown session ID).
  */
-export const CLAUDE_EXECUTION_ERROR_PREFIXES: ReadonlyArray<readonly [string, ClaudeErrorMapping]> = Object.freeze([
+const CLAUDE_EXECUTION_ERROR_PREFIXES: ReadonlyArray<readonly [string, ClaudeErrorMapping]> = Object.freeze([
   ['No conversation found with session ID', { code: 'SESSION_INVALID', retryable: false }],
 ] as const);
 

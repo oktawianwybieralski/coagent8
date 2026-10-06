@@ -55,7 +55,7 @@ const activeSessionAborts = new Map<string, { abort: () => void; wait: () => Pro
  * @param handle - Session handle to abort.
  * @returns Resolves true if execution settled cleanly within the timeout window.
  */
-export async function cancelSessionExecution(handle: string): Promise<boolean> {
+async function cancelSessionExecution(handle: string): Promise<boolean> {
   const entry = activeSessionAborts.get(handle);
   if (entry) {
     entry.abort();

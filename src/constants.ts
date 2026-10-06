@@ -54,5 +54,3 @@ export const DEPRECATED_LEGACY_TOOL_NAMES = [
   CANONICAL_TOOL_NAMES.IMPLEMENT,
 ] as const;
 
-export type CanonicalToolName = (typeof CANONICAL_TOOL_NAMES)[keyof typeof CANONICAL_TOOL_NAMES];
-

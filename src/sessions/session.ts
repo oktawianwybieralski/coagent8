@@ -10,7 +10,7 @@ import { readBoundedFileSync } from '../execution/stream.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history.js';
 import { canonicalPath, sanitizeHandle } from './identity.js';
 
-export const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
+const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
 const ownedTurns = new Map<string, string>();
 export function getSessionsDir(): string {
   const explicit = process.env.coagent8_SESSIONS_DIR || process.env.coagent8_SESSIONS;
@@ -21,13 +21,13 @@ export function isProcessAlive(pid?: number | null): boolean {
   try { process.kill(pid, 0); return true; } catch (err) { return (err as NodeJS.ErrnoException).code === 'EPERM'; }
 }
 export function getSessionFilePath(handle: string): string | null { return sanitizeHandle(handle) ? path.join(getSessionsDir(), `${handle}.json`) : null; }
-export function saveSessionFile(file: string, record: SessionRecord): void {
+function saveSessionFile(file: string, record: SessionRecord): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.tmp.${crypto.randomUUID()}`;
   try { fs.writeFileSync(temp, JSON.stringify(record), { mode: 0o600, flag: 'wx' }); fs.renameSync(temp, file); }
   finally { fs.rmSync(temp, { force: true }); }
 }
-export function parseSession(raw: unknown, handle: string): SessionRecord | null {
+function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const s = raw as SessionRecord;
   if (s.sessionHandle !== handle || !sanitizeHandle(handle) || !PROVIDERS.includes(s.backend as typeof PROVIDERS[number]) || typeof s.workspace !== 'string' || !path.isAbsolute(s.workspace)) return null;
@@ -43,7 +43,7 @@ export function parseSession(raw: unknown, handle: string): SessionRecord | null
   for (const value of [s.model, s.cliVersion, s.safetyProfile, s.lastErrorCode]) if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   return { ...s, schemaVersion: 2, state: s.state || (s.activePid ? 'running' : 'idle'), activePid: s.activePid ?? null, activeTurnAt: s.activeTurnAt ?? null, threadId: s.threadId ?? null, turnToken: s.turnToken ?? null, turnCount: s.turnCount ?? 0 };
 }
-export function readRecord(file: string, handle: string): SessionRecord | null {
+function readRecord(file: string, handle: string): SessionRecord | null {
   try { return parseSession(JSON.parse(readBoundedFileSync(file)), handle); } catch { return null; }
 }
 function active(s: SessionRecord): boolean { return isProcessAlive(s.activePid); }
@@ -54,7 +54,7 @@ export function getSession(handle: string, options: GetSessionOptions = {}): Ses
   if ((options.backend && s.backend !== options.backend) || (options.workspace && canonicalPath(s.workspace) !== canonicalPath(options.workspace))) return null;
   return s;
 }
-export async function withSessionLock<T>(handle: string, fn: (file: string) => T | Promise<T>): Promise<SessionResult<T>> {
+async function withSessionLock<T>(handle: string, fn: (file: string) => T | Promise<T>): Promise<SessionResult<T>> {
   const file = getSessionFilePath(handle); if (!file) return { ok: false, error: 'Invalid session handle format' };
   try {
     return await withFileLock(file, async () => {

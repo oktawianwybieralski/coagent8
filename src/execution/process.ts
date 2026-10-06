@@ -34,11 +34,11 @@ import { ERROR_CODES } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
 
 /** Default buffer ceiling per output channel (stdout/stderr) in bytes (512 KiB). */
-export const MAX_BUFFER_BYTES = 512 * 1024;
+const MAX_BUFFER_BYTES = 512 * 1024;
 /** Default execution deadline in milliseconds (15 minutes / 900,000 ms). */
 export const DEFAULT_TIMEOUT_MS = 900_000;
 /** Maximum allowable standard input payload size in bytes (4 MiB). */
-export const MAX_PROMPT_BYTES = 4 * 1024 * 1024;
+const MAX_PROMPT_BYTES = 4 * 1024 * 1024;
 /** Default time a protocol CLI has to exit after an interrupt before it is stopped (layer 2). */
 export const INTERRUPT_GRACE_MS = 3000;
 /** Default POSIX time between `SIGTERM` and `SIGKILL` for an owned process group. */
