@@ -24,8 +24,7 @@ test('runDoctor returns structured diagnostic report for all three CLIs', async 
   assert.ok(report);
   assert.ok(['operational', 'partially_configured', 'degraded_no_active_backends'].includes(report.status));
   assert.ok(Array.isArray(report.active_backends));
-  assert.ok(report.security_policy.zero_silent_downloads === true);
-  assert.ok(report.security_policy.read_only_sandbox_guard === true);
+  assert.equal(report.security_policy, undefined, 'no hardcoded policy claims (AUD-P2-8)');
 
   // Backends
   assert.ok(report.backends.codex);
@@ -85,6 +84,60 @@ test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_bac
     assert.ok(report.ready_backends.includes('gemini'));
     assert.ok(report.recommendations.some(r => r.includes('codex: usage limit reached or rate limited')));
   } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('doctor summary is a few lines, backend filter keeps other cached quotas, full report has quotas once', async () => {
+  const { formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');
+  const { inspectQuotas } = require('../../src/backends/availability.ts');
+  const { handleDoctor } = require('../../src/tools/doctor.tool.ts');
+  const original = { ...adapterRegistry };
+  const quotaReads = [];
+  const quotaCache = process.env.coagent8_QUOTA_CACHE;
+  process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'doctor-summary-quota-cache.json');
+  try {
+    for (const id of ['codex', 'claude', 'gemini']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        inspectQuota: async () => { quotaReads.push(id); return { measured: true, window: '5h', usedPercent: 40, headroomPercent: 60, resetsAt: '2026-10-07T12:00:00Z' }; },
+        probe: async () => ({
+          id, installed: true, version: `${id} 1.0.0`, executionSupported: true, authStatus: 'authenticated',
+          config: { defaultModel: `${id}-model` }, availableModels: Array.from({ length: 14 }, (_, i) => `${id}-model-${i}`),
+          capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
+          ...(id === 'gemini' ? { quota: { measured: true, window: 'weekly', usedPercent: 19, headroomPercent: 81, resetsAt: '2026-10-12T17:31:49Z',
+            buckets: [{ id: 'gemini-weekly', name: 'Weekly', window: 'weekly', remainingFraction: 0.81, resetTime: '2026-10-12T17:31:49Z' }] } } : {}),
+        }),
+      };
+    }
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] } });
+
+    const report = await runDoctor();
+    const summary = formatDoctorSummary(report);
+    assert.equal(summary.split('\n').length, 4, summary);
+    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto/);
+    assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model · 5h 60% left, resets 2026-10-07T12:00:00Z/);
+    assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model · weekly 81% left/);
+    assert.ok(Buffer.byteLength(summary) < 1024, 'summary budget 1 KB');
+
+    assert.equal(report.backends.gemini.quota, undefined, 'quota reported once, under quotas');
+    assert.equal(report.quotas.gemini.buckets.length, 1);
+
+    quotaReads.length = 0;
+    const claudeOnly = await runDoctor({ backend: 'claude', quota: false });
+    assert.deepEqual(Object.keys(claudeOnly.backends), ['claude']);
+    assert.deepEqual(quotaReads, [], 'quota: false skips native quota reads');
+    const cache = await inspectQuotas(false);
+    assert.equal(cache.codex.installed, true, 'a filtered doctor keeps the other providers cached');
+    assert.equal(cache.gemini.installed, true);
+
+    const summaryResult = await handleDoctor({});
+    assert.equal(summaryResult.structuredContent, undefined);
+    const full = await handleDoctor({ detail: 'full', backend: 'gemini' });
+    assert.deepEqual(JSON.parse(full.content[0].text), full.structuredContent);
+    assert.deepEqual(Object.keys(full.structuredContent.backends), ['gemini']);
+  } finally {
+    process.env.coagent8_QUOTA_CACHE = quotaCache;
     Object.assign(adapterRegistry, original);
   }
 });

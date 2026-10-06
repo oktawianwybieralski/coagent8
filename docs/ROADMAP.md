@@ -613,7 +613,7 @@ execution order.
   phantom `context_files` field from `debug`. The six-tool baseline excludes the
   temporarily advertised aliases.
 - [ ] Remove remaining phantom contract fields and deduplicate prompt tokens:
-  - Remove `doctor.repair` and `doctor.workspace_path` from `doctor.tool.ts` inputSchema (both are currently ignored; removing them saves context tokens for MCP clients, AUD-P2-8; tracked in `SIMPLIFY-001`).
+  - [x] Remove `doctor.repair` and `doctor.workspace_path` from the `doctor` inputSchema (AUD-P2-8; delivered by `CONTEXT-001`).
   - Eliminate prompt token redundancy in `review` caller instructions: caller handoffs must not duplicate State Envelope rules (`VERDICT`, `[P1/P2/P3]`), because `review.tool.ts` automatically formats the required envelope protocol in the task prompt.
 
 ### `CONSULT-001` - separate advice from release approval and structured verdict output
@@ -740,15 +740,17 @@ Plan:
   - configurable extra diff exclusions (for example a generated `CHANGELOG.md`).
     The current diff already uses `--unified=1` and excludes build output, maps
     and lockfiles.
-- [ ] **`doctor`:**
+- [x] **`doctor`:**
   - `detail: "summary"` (default; prototype 316 B, budget 1 KB) or `"full"`;
   - `backend` filter;
   - `quota: false` skips the slower quota probes;
   - the full report goes in `structuredContent` without the duplicated quotas
     and without `security_policy`.
 
-  This delivers the doctor phantom fields of AUD-P2-8 (owned by `SIMPLIFY-001`);
-  tick that item with the same evidence.
+  A filtered run refreshes only that provider's cached quota and keeps the
+  others (`inspectQuotas` `only`). The agy probe still reads its quota as part of
+  the probe. This delivers the doctor phantom fields of AUD-P2-8 (owned by
+  `SIMPLIFY-001`). Verified in `tests/diagnostics/doctor.test.js`.
 - [ ] **Workspace:**
   1. explicit `workspace_path`;
   2. MCP roots, when the client declares the `roots` capability:
@@ -1092,9 +1094,11 @@ preserved or explicitly migrated; deletion is not a contract change unless state
   Codex collector tests now feed records through `line` and read `snapshot()`;
   five tests of the removed framing were deleted, leaving 197 tests (195 pass,
   2 skipped).
-- [ ] Remove or implement phantom contract fields: `doctor.repair`,
-  `doctor.workspace_path`, `resources.listChanged`, and the hardcoded doctor
-  `security_policy` claims (AUD-P2-8).
+- [x] Remove the doctor phantom contract fields `doctor.repair` and
+  `doctor.workspace_path` and the hardcoded doctor `security_policy` claims
+  (AUD-P2-8; delivered by `CONTEXT-001`, verified in
+  `tests/diagnostics/doctor.test.js`).
+- [ ] Remove or implement the phantom `resources.listChanged` capability (AUD-P2-8).
 - [ ] Stop banner stripping for JSON-backed adapters. Redact progress messages
   once. Correct stale model names in tool descriptions. Make `cancel` report
   whether anything was cancelled. Redact home paths in `session list` (P3).
