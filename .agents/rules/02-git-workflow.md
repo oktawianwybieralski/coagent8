@@ -109,9 +109,10 @@ Refs: AUD-P0-1
 docs(rules): define release branches, tags and PR process
 ```
 
-Commits on topic branches may be informal work-in-progress; they disappear in the
-squash. The pull request title and description become the final commit, so they
-must meet this section.
+Commits on topic branches disappear in the squash, but their headers must still
+be valid Conventional Commits: the changelog check that runs before every push
+(section 6) rejects any other subject. The pull request title and description
+become the final commit, so they must meet this section.
 
 ---
 
@@ -122,20 +123,24 @@ must meet this section.
 * Target the active release branch (`release/v1.0.0`). Target `main` only for a
   final release PR or a hotfix.
 * **Title**: a valid Conventional Commit header (section 2). It becomes the
-  squash-merge subject.
+  squash-merge subject and the changelog entry. Preview that entry with the
+  changelog check (section 6) before opening the PR and whenever the title
+  changes.
 * Open as **draft** while work or verification is incomplete.
 * One concern per PR. Prefer under ~400 changed lines excluding generated files
   and lockfiles; split larger work into reviewable steps.
 * **Description** (English) with these sections:
   1. **Summary** - what changes and why.
   2. **Links** - `Fixes #…` / `Refs #…`, roadmap item and audit finding IDs.
-  3. **Changes** - notable behavior, contract or migration effects.
+  3. **Changes** - notable behavior, contract or migration effects, and the
+     `pending` changelog entry from the title preview (section 6).
   4. **Verification** - the commands run, platform and Node version, and each
      result as PASS, FAIL or NOT_RUN with a reason, selected per
      [04-quality-gate](04-quality-gate.md). Never report an unexecuted check as PASS.
   5. **Risk and rollback** - what could break and how to revert.
   6. **Checklist** - docs, runtime contract and roadmap status updated where
      behavior changed; `CHANGELOG.md` not edited (it is generated, section 6);
+     the changelog check passed for the branch and for the title;
      no secrets, local paths or personal data in the diff.
 
 ### Review and merge
@@ -259,10 +264,37 @@ must meet this section.
 * Only a release commit regenerates it. Other PRs never edit `CHANGELOG.md`; the
   Reviewer rejects a manual edit.
 * Each squash-merged PR is one entry. The PR title is the entry and must describe
-  the change for users. Each entry starts with its commit, linked to GitHub.
+  the change for users. Each entry starts with its commit, linked to GitHub; the
+  `(#N)` suffix of the squash subject becomes a link to the PR.
 * Groups: Breaking (`!` or `BREAKING CHANGE`), Added (`feat`), Changed (`perf`,
   `refactor`), Removed (`revert`), Fixed (`fix`). `docs`, `chore`, `test`, `ci`,
-  `build` and `style` are omitted.
+  `build` and `style` are omitted. A breaking commit is listed under Breaking
+  only, not again under its type.
+* A subject that is not a Conventional Commit (for example GitHub's default
+  `Revert "..."` title) fails the generation (`require_conventional`) instead of
+  silently losing its entry.
+
+### Changelog check before every push and pull request
+
+The agent runs this check itself; it writes no file and does not replace the
+release-commit rule above.
+
+1. **Before every `git push`** (any branch), run `npm run changelog:check`.
+   * It fails when any commit since `v1.0.0-beta.1` is not a Conventional
+     Commit. A failure blocks the push: reword the offending commit; never push
+     past it.
+   * On success it prints the `[Unreleased]` entries. Confirm that none is
+     duplicated, misgrouped or missing.
+2. **Before `gh pr create` and before every PR title change**, run
+   `npm run changelog:check -- --with-commit "<PR title>"`.
+   * The title appears as a `pending` entry. It must sit in the right group and
+     describe the change for users.
+   * A non-zero exit means the title is not a Conventional Commit. (git-cliff
+     2.14.2 reports this case with a panic, exit code 101.)
+   * A breaking change needs `!` in the title or a `BREAKING CHANGE:` footer in
+     the squash message. A `!` on a branch commit alone is lost in the squash.
+   * Copy the `pending` entry into the PR description (section 3).
+3. Report both results in the PR **Verification** section as PASS or FAIL.
 * The 1.0.0-beta.1 release (tag `v1.0.0-beta.1`, the first commit of the
   history) keeps its curated description as the oldest entry at the end of the
   file (`cliff.toml` footer).
@@ -271,8 +303,8 @@ must meet this section.
   - Entries are grouped by area (commit scope; "General" without one), then by
     type.
   - Each entry is `#PR: description (by @author)`.
-  - Breaking changes come first. Contributors and a "Full Changelog" compare
-    link follow the entries.
+  - Breaking changes come first and are not repeated under their area.
+    Contributors and a "Full Changelog" compare link follow the entries.
   - Known issues, security notes and artifact digests are added by hand; they do
     not derive from commits.
 * Keep each PR to one user-visible change so that its entry is precise.

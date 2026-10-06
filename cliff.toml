@@ -1,5 +1,6 @@
 # git-cliff configuration: CHANGELOG.md is generated from Conventional Commits
-# (CHANGELOG-001 in docs/ROADMAP.md). Run `npm run changelog` in a release commit only.
+# (CHANGELOG-001 in docs/ROADMAP.md). Run `npm run changelog` in a release commit only;
+# `npm run changelog:check` validates and previews before every push and PR.
 # Every entry starts with its commit, linked to GitHub.
 
 [changelog]
@@ -26,15 +27,23 @@ body = """
 {% if breaking | length > 0 %}
 ### Breaking
 {% for commit in breaking -%}
-- [`{{ commit.id | truncate(length=7, end="") }}`]({{ repo }}/commit/{{ commit.id }}) {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{{ self::entry(commit=commit, repo=repo) }}
 {% endfor -%}
 {% endif -%}
-{% for group, commits in commits | group_by(attribute="group") %}
+{# A breaking commit is listed under Breaking only, not again under its type. #}
+{% for group, commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") %}
 ### {{ group | striptags | trim }}
 {% for commit in commits -%}
-- [`{{ commit.id | truncate(length=7, end="") }}`]({{ repo }}/commit/{{ commit.id }}) {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{{ self::entry(commit=commit, repo=repo) }}
 {% endfor -%}
 {% endfor %}
+{# The "(#N)" suffix of a squash-merge subject becomes a link to the PR. A PR
+   title previewed with --with-commit has no commit yet and shows as pending. #}
+{% macro entry(commit, repo) -%}
+{% set text = commit.message | split(pat=" (#") | first | upper_first -%}
+- {% if commit.id %}[`{{ commit.id | truncate(length=7, end="") }}`]({{ repo }}/commit/{{ commit.id }}){% else %}`pending`{% endif %} {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ text }}
+{%- if commit.message is containing(" (#") %} ([#{{ commit.message | split(pat=" (#") | last | trim_end_matches(pat=")") }}]({{ repo }}/pull/{{ commit.message | split(pat=" (#") | last | trim_end_matches(pat=")") }})){% endif %}
+{%- endmacro entry %}
 """
 # 1.0.0-beta.1 is the first commit of the history (tag v1.0.0-beta.1), a release
 # commit that the type filter omits. Its curated description is kept here as the
@@ -83,6 +92,9 @@ postprocessors = [
 [git]
 conventional_commits = true
 filter_unconventional = true
+# A subject that is not a Conventional Commit (for example GitHub's default
+# `Revert "..."`) fails the generation instead of silently losing its entry.
+require_conventional = true
 # One entry per squash-merged PR: the PR title. Splitting the squash body into
 # entries was rejected: prose lines and commit trailers are
 # misparsed (checked with git-cliff 2.14.2).

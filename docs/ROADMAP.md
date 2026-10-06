@@ -1089,6 +1089,33 @@ Work items:
     Re-check on 2026-10-06: `npm run changelog` reproduces the committed file;
     for a range without commits, git-cliff adds an empty `[Unreleased]` heading,
     which the release commit replaces with `--tag`.
+- [x] Review of the configuration (2026-10-06, git-cliff 2.14.2, still the
+  latest on npm). git-cliff remains the right tool, but three defects were fixed:
+  - A breaking commit was listed twice, under Breaking and again under its type
+    (in both `cliff.toml` and `cliff.release-notes.toml`). It is now listed
+    under Breaking only.
+  - A non-conventional subject, such as GitHub's default `Revert "..."` title,
+    was silently dropped by `filter_unconventional`. `require_conventional = true`
+    now fails the generation instead.
+  - The `(#N)` suffix of a squash subject was plain text in `CHANGELOG.md`. It is
+    now a link to the PR.
+  - Correction to the acceptance above: git-cliff 2.14.2 ignores an empty range
+    (`A..A`) and processes the history of `HEAD` instead. The
+    `ca600a1..ca600a1` check therefore measured `HEAD`, not `release/v1.0.0`.
+    Previews must not rely on a range that can be empty.
+  - Checked in a scratch clone with simulated squash commits (#12-#15): a
+    `BREAKING CHANGE:` footer in the squash body is detected; a `!` only on a
+    listed branch commit is not; the non-conventional revert fails with exit 1.
+- [x] Changelog check before every push and PR (owner request, 2026-10-06).
+  - `npm run changelog:check` validates every commit since `v1.0.0-beta.1` and
+    previews `[Unreleased]`; `-- --with-commit "<PR title>"` previews the PR
+    title as a `pending` entry and rejects a non-conventional title.
+  - It writes no file. Committing the regenerated file on topic branches was
+    rejected: the squash replaces the branch SHAs, and parallel PRs would
+    conflict on `CHANGELOG.md`.
+  - Topic-branch commits must now be Conventional Commits too
+    ([Git governance](../.agents/rules/02-git-workflow.md) sections 2, 3 and 6;
+    [quality gate](../.agents/rules/04-quality-gate.md); `AGENTS.md`).
 
 ### `REPO-001` - history from beta 1, npm name placeholder
 

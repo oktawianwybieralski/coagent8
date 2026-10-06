@@ -31,6 +31,7 @@ MCP use. Historical plans and RFCs do not override this direction.
    - **Direct pushes to `main` are strictly forbidden.**
    - All development takes place on dedicated topic branches (`feat/*`, `fix/*`, `perf/*`, `chore/*`) created from and targeting the active release branch `release/v1.0.0`. Betas and release candidates are annotated tags on that branch (`v1.0.0-beta.2`, `v1.0.0-beta.3`, `v1.0.0-rc.1`); the final `v1.0.0` tag is on `main`. `v1.0.0-beta.1` is the npm name placeholder and the first commit of the history; the first release for testers is `v1.0.0-beta.2`.
    - Merge exclusively via **Pull Requests with Squash and Merge** (`gh pr merge --squash --delete-branch`); commits and PR titles follow Conventional Commits; versions follow SemVer; `CHANGELOG.md` is generated from the history in release commits.
+   - **Changelog check**: run `npm run changelog:check` before every push, and `npm run changelog:check -- --with-commit "<PR title>"` before opening a PR or changing its title; a failure blocks the push or PR. The check never edits `CHANGELOG.md`.
    - `main` receives only finalized, audited release snapshots; must strictly remain 100% green across all 6 CI matrix jobs.
    - History recovery is strictly an emergency owner procedure with atomic force-with-lease.
    - **No AI attribution (forbidden)**: never add a `Co-Authored-By` trailer for an AI tool, a "Generated with" line or similar to commits, PRs, changelogs or release notes. The owner is the sole author.

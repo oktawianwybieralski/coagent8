@@ -25,8 +25,12 @@ body = """
 {{ self::entry(commit=commit, repo=repo) }}
 {% endfor %}
 {% endif -%}
+{# A breaking commit is listed under Breaking changes only. #}
+{% set regular = commits | filter(attribute="breaking", value=false) -%}
+{% if regular | length > 0 -%}
 ## Changes
-{% for scope, area in commits | group_by(attribute="scope") %}
+{% endif -%}
+{% for scope, area in regular | group_by(attribute="scope") %}
 ### {{ scope | upper_first }}
 {% for group, items in area | group_by(attribute="group") %}
 #### {{ group | striptags | trim }}
@@ -69,6 +73,7 @@ postprocessors = [
 [git]
 conventional_commits = true
 filter_unconventional = true
+require_conventional = true
 split_commits = false
 protect_breaking_commits = true
 filter_commits = false
