@@ -1,11 +1,10 @@
 const { spawn } = require('node:child_process');
 const { createLineDecoder } = require('../../src/execution/stream.ts');
-const { startDescendantTracking, terminateProcessTree } = require('../../src/execution/process.ts');
+const { terminateProcessTree } = require('../../src/execution/process.ts');
 const { redactDiagnostic } = require('../../src/redaction.ts');
 
 function connect(command, args, options = {}) {
   const proc = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: 'pipe', windowsHide: true, detached: process.platform !== 'win32' });
-  const stop = startDescendantTracking(proc);
   const pending = new Map();
   const notifications = [];
   let next = 1, stderr = '', totalBytes = 0, failure, cleanupTask;
@@ -19,7 +18,6 @@ function connect(command, args, options = {}) {
   async function cleanup() {
     if (!cleanupTask) cleanupTask = (async () => {
       rejectPending(new Error('MCP connection closed.'));
-      stop();
       await terminateProcessTree(proc);
       proc.stdin.destroy(); proc.stdout.destroy(); proc.stderr.destroy();
       await exited;

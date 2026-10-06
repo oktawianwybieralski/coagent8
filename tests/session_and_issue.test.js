@@ -37,14 +37,17 @@ test.after(() => {
 test('live Codex collector emits public progress without private tool operands or reasoning', () => {
   const progress = [];
   const collector = createCodexStreamCollector({ onProgress: message => progress.push(message) });
-  const accept = event => collector.line(JSON.stringify(event));
-  accept({ type: 'thread.started', thread_id: 'thread_progress' });
-  accept({ type: 'turn.started' });
-  accept({ type: 'item.started', item: { id: 'command', type: 'command_execution', command: 'private-command' } });
-  accept({ type: 'item.started', item: { id: 'search', type: 'web_search', query: 'private-query' } });
-  accept({ type: 'item.started', item: { id: 'tool', type: 'mcp_tool_call', arguments: { path: 'private-path' } } });
-  accept({ type: 'item.started', item: { type: 'thought', summary: 'private-reasoning' } });
-  accept({ type: 'item.started', item: { id: 'message', type: 'agent_message', text: 'Public findings' } });
+  const accept = (method, params) => collector.line(JSON.stringify({ method, params }));
+  const started = item => accept('item/started', { threadId: 'thread_progress', turnId: 'turn_1', item });
+  collector.initialize('thread_progress');
+  collector.beginTurn('turn_1');
+  accept('turn/started', { threadId: 'thread_progress', turn: { id: 'turn_1' } });
+  started({ id: 'command', type: 'commandExecution', command: 'private-command' });
+  started({ id: 'search', type: 'webSearch', query: 'private-query' });
+  started({ id: 'tool', type: 'mcpToolCall', arguments: { path: 'private-path' } });
+  started({ id: 'thought', type: 'reasoning', summary: ['private-reasoning'] });
+  started({ id: 'message', type: 'agentMessage', text: '' });
+  accept('item/completed', { threadId: 'thread_progress', turnId: 'turn_1', item: { id: 'message', type: 'agentMessage', text: 'Public findings' } });
   assert.deepEqual(progress, [
     'Initializing Codex session...', 'Starting task analysis...', 'Executing sandbox command...',
     'Executing web search...', 'Executing MCP tool...', 'Analyzing context and architecture...', 'Formulating findings...',
@@ -370,27 +373,21 @@ test('createCodexStreamCollector accumulates message updates from created -> upd
   const collector = createCodexStreamCollector();
 
   // 1. Thread started event
-  collector.pushChunk(JSON.stringify({ type: 'thread.started', thread_id: 'thread_audit_123' }) + '\n');
+  collector.initialize('thread_audit_123');
   assert.equal(collector.getCapturedThreadId(), 'thread_audit_123');
 
   // 2. Stream partial message
-  collector.pushChunk(JSON.stringify({
-    type: 'item.created',
-    item: { id: 'msg_0', type: 'agent_message', text: 'Partial analysis: checking lock mechanism...' }
+  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Partial analysis: checking lock mechanism...' } }
   }) + '\n');
   assert.equal(collector.getFormattedOutput(), 'Partial analysis: checking lock mechanism...');
 
   // 3. Stream updated message
-  collector.pushChunk(JSON.stringify({
-    type: 'item.updated',
-    item: { id: 'msg_0', type: 'agent_message', text: 'Partial analysis: identified race window in reclamation.' }
+  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Partial analysis: identified race window in reclamation.' } }
   }) + '\n');
   assert.equal(collector.getFormattedOutput(), 'Partial analysis: identified race window in reclamation.');
 
   // 4. Stream completed message with final audit findings
-  collector.pushChunk(JSON.stringify({
-    type: 'item.completed',
-    item: { id: 'msg_0', type: 'agent_message', text: 'Audit Findings:\n- Mutual exclusion verified with reclaimMutex.\n- Zero P1/P2 issues.' }
+  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'msg_0', type: 'agentMessage', text: 'Audit Findings:\n- Mutual exclusion verified with reclaimMutex.\n- Zero P1/P2 issues.' } }
   }) + '\n');
   collector.flush();
 
@@ -404,19 +401,15 @@ test('createCodexStreamCollector safely discards oversized records without corru
   const collector = createCodexStreamCollector({ maxLineBuffer: 1024 }); // 1KB test limit
 
   // Send a valid message chunk
-  collector.pushChunk(JSON.stringify({
-    type: 'item.completed',
-    item: { id: 'm1', type: 'agent_message', text: 'First valid report' }
+  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'First valid report' } }
   }) + '\n');
 
   // Send an oversized record (> 1KB) without newline
-  const bigChunk = '{"type":"raw_log","content":"' + 'X'.repeat(2000) + '"}';
+  const bigChunk = '{"method":"raw_log","params":{"content":"' + 'X'.repeat(2000) + '"}}';
   collector.pushChunk(bigChunk); // exceeds maxLineBuffer, gets discarded cleanly
 
   // Send the newline terminating the oversized record, followed immediately by another valid message
-  collector.pushChunk('\n' + JSON.stringify({
-    type: 'item.completed',
-    item: { id: 'm2', type: 'agent_message', text: 'Second valid report after oversized skip' }
+  collector.pushChunk('\n' + JSON.stringify({ method: 'item/completed', params: { item: { id: 'm2', type: 'agentMessage', text: 'Second valid report after oversized skip' } }
   }) + '\n');
 
   collector.flush();
@@ -453,17 +446,13 @@ test('createCodexStreamCollector retains bounded latest text under budget pressu
   const collector = createCodexStreamCollector({ maxTotalMessageBytes: 150 });
 
   // Stream initial partial draft (60 bytes)
-  collector.pushChunk(JSON.stringify({
-    type: 'item.created',
-    item: { id: 'm1', type: 'agent_message', text: 'Initial partial analysis draft from turn.' }
+  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'Initial partial analysis draft from turn.' } }
   }) + '\n');
   assert.equal(collector.getFormattedOutput(), 'Initial partial analysis draft from turn.');
 
   // Stream final large findings (250 bytes), which exceeds the 150 bytes budget
   const finalFindings = 'Final comprehensive findings: identified 0 vulnerabilities in review, confirmed mutual exclusion and strict secret masking. '.repeat(2);
-  collector.pushChunk(JSON.stringify({
-    type: 'item.completed',
-    item: { id: 'm1', type: 'agent_message', text: finalFindings }
+  collector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: finalFindings } }
   }) + '\n');
   collector.flush();
 
@@ -476,18 +465,12 @@ test('createCodexStreamCollector retains bounded latest text under budget pressu
 
   // Reduced budget test (40 bytes total): 5-byte draft + 35-byte message leaves 0 bytes available
   const tightCollector = createCodexStreamCollector({ maxTotalMessageBytes: 40 });
-  tightCollector.pushChunk(JSON.stringify({
-    type: 'item.created',
-    item: { id: 'm1', type: 'agent_message', text: 'draft' }
+  tightCollector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'draft' } }
   }) + '\n');
-  tightCollector.pushChunk(JSON.stringify({
-    type: 'item.created',
-    item: { id: 'm2', type: 'agent_message', text: '01234567890123456789012345678901234' } // 35 bytes
+  tightCollector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm2', type: 'agentMessage', text: '01234567890123456789012345678901234' } } // 35 bytes
   }) + '\n');
   // Final text arrives for m1
-  tightCollector.pushChunk(JSON.stringify({
-    type: 'item.completed',
-    item: { id: 'm1', type: 'agent_message', text: 'final text for m1' }
+  tightCollector.pushChunk(JSON.stringify({ method: 'item/completed', params: { item: { id: 'm1', type: 'agentMessage', text: 'final text for m1' } }
   }) + '\n');
   tightCollector.flush();
   const tightOutput = tightCollector.getFormattedOutput();

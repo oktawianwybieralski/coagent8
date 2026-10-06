@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { runCommand } from '../execution/process.js';
+import { runCommand, type StdinChannel, type StdinSession } from '../execution/process.js';
 import { redactDiagnostic } from '../redaction.js';
 import { checkModelGovernance } from './policy.js';
 import { createClaudeStreamCollector } from './claude.collector.js';
@@ -115,7 +115,9 @@ export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterP
  * @remarks Subscription (OAuth) and API-key authentication both work. Each run
  * fails closed with `SANDBOX_UNAVAILABLE` unless `system/init` reports only
  * {@link CLAUDE_READ_ONLY_TOOLS}, no MCP server and `dontAsk`. A new turn
- * pins a fresh `--session-id`; a continuation passes `--resume`.
+ * pins a fresh `--session-id`; a continuation passes `--resume`. The prompt is one
+ * stream-json user message on stdin, which stays open so cancellation and deadlines
+ * can interrupt the turn (`control_request` `interrupt`) before the process is stopped.
  */
 export async function executeClaude(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const rejected = (code: ExecutionError['code'], message: string, model?: string): TerminalExecutionResult => ({
@@ -135,14 +137,28 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   // --restricted keeps OAuth/subscription auth (unlike --bare) and ignores user/project/local settings.
   const args = ['-p', '--restricted', '--tools', CLAUDE_READ_ONLY_TOOLS.join(','), '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
     '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-    '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', model];
+    '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', model];
   const effort = options.reasoningEffort?.toLowerCase();
   if (effort && VALID_REASONING_EFFORTS.includes(effort)) args.push('--effort', effort);
   else if (effort) options.onEvent?.({ type: 'warning', message: redactDiagnostic(`Ignoring unsupported Claude reasoning effort '${effort.slice(0, 32)}'.`) });
   args.push(resumeId ? '--resume' : '--session-id', sessionId);
   const collector = createClaudeStreamCollector({ expectedSessionId: sessionId, allowedTools: CLAUDE_READ_ONLY_TOOLS, onEvent: options.onEvent });
-  const result = await runCommand(claudeCommand(), args, { cwd: options.cwd, stdinInput: prompt, abortSignal: options.abortSignal,
-    timeoutMs: options.timeoutMs, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine: collector.line });
+  let channel: StdinChannel | undefined;
+  const session: StdinSession = {
+    start(opened, input) {
+      channel = opened;
+      opened.send({ type: 'user', message: { role: 'user', content: input } });
+    },
+    // Claude answers with a `control_response` and ends the turn with an error `result`.
+    interrupt(opened) { opened.send({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } }); },
+  };
+  // stdin is closed only after the terminal `result`: Claude 2.1.289 did not exit on EOF mid-turn.
+  const onStdoutLine = (line: string) => {
+    try { collector.line(line); }
+    finally { if (collector.isTerminal()) channel?.close(); }
+  };
+  const result = await runCommand(claudeCommand(), args, { cwd: options.cwd, stdinInput: prompt, session, abortSignal: options.abortSignal,
+    timeoutMs: options.timeoutMs, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine });
   const snapshot = collector.snapshot();
   let error = result.error || snapshot.error;
   if (!error && !snapshot.terminal) {

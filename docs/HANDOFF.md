@@ -23,7 +23,7 @@ regression test derived from the audit reproduction:
 
 | Finding | Milestone | Done when |
 | --- | --- | --- |
-| AUD-P0-1 | `WINDOWS-001` | Teardown selects processes by (PID, creation time) through a pure, unit-tested function; no sweep after a clean exit with nothing observed; name denylist removed; test runner and MCP harness use the same supervisor |
+| AUD-P0-1 | `WINDOWS-001` | Layered teardown: protocol interrupt (Claude, Codex), then the owned root handle or POSIX group; no PID, PPID, snapshot or polling anywhere; see the decision record in `WINDOWS-001` |
 | AUD-P0-2 | `REDACTION-002` | Ordinary code in answers round-trips unchanged; credential formats are still redacted |
 | AUD-P0-3 | `HISTORY-002` | Streamed answers persist within a small constant factor of their size; archive failures are warnings; a full archive never blocks a CLI launch |
 | AUD-P1-3 | `HISTORY-002` | Bookkeeping failures never discard a successful answer |

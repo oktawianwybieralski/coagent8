@@ -131,8 +131,10 @@ from execution/ownership failures requires the planned contract migration.
 ## 5. Subprocess Execution & Supervision
 
 * `runCommand(command, args, options)` runs strictly with `shell: false`.
-* **Windows**: Child processes and descendants are tracked via CIM/WMI background polling (every 500 ms, serialized by `CimMutex`). Teardown uses `taskkill.exe /PID <pid> /T /F`, followed by a PowerShell CIM sweep when `taskkill` fails - including after every normal exit, where `taskkill` returns 128. Descendants are currently matched by parent PID only; see section 7.
-* **POSIX**: Spawns detached process groups (`detached: true`) and terminates using `process.kill(-proc.pid, 'SIGTERM')` followed by `SIGKILL` after 250ms.
+* Termination is layered. Only the spawned process is ever targeted, through the handle Node holds or the process group it created; nothing is selected by PID or parent PID, and no process snapshot or polling exists.
+  1. **Protocol interrupt**: a run with a stdin protocol session (Claude, Codex) keeps stdin open. Cancellation, deadlines and server shutdown ask the CLI to end its turn; the session closes stdin on the terminal event and the CLI exits by itself.
+  2. **Forced stop**: when the CLI has not exited within the grace period (3 s), or for runs without a session, the root is stopped. **Windows**: `proc.kill()` (`TerminateProcess` on the owned handle). **POSIX**: the detached process group (`detached: true`) receives `SIGTERM`, then `SIGKILL` after 250ms.
+  3. **Descendants**: on Windows, libuv's `KILL_ON_JOB_CLOSE` job ends a chain of Node processes with its root; descendants of native backends are the backend's responsibility. After the root exits, a descendant still holding stdout/stderr cannot delay the result by more than 2 s.
 * **Buffer Capacities**: Prompts up to 4 MiB (via stdin), diagnostics up to 512 KiB per channel, public output up to 1 MiB. StringDecoder preserves split UTF-8 code points across chunks.
 
 ---
@@ -146,14 +148,16 @@ from execution/ownership failures requires the planned contract migration.
 * Multi-turn resume uses `--conversation <uuid>`.
 
 ### OpenAI Codex (`codex`)
-* Invokes `codex exec` with `--sandbox read-only` and `--json`.
+* Runs `codex app-server -c sandbox_mode="read-only" -c approval_policy="never"` (JSON-RPC over stdio, Codex 0.160) for one turn: `initialize`/`initialized`, `thread/start` or `thread/resume` (`excludeTurns`), `turn/start`; stdin is closed on `turn/completed`.
+* Every run fails closed with `SANDBOX_UNAVAILABLE` unless the thread response reports a `readOnly` sandbox and `approvalPolicy: "never"`. Server-initiated requests are answered with a JSON-RPC error; nothing is approved.
+* Cancellation and deadlines send `turn/interrupt`. Notifications of other threads (sub-agents) are ignored. Turn usage sums `tokenUsage.last` over the turn's `thread/tokenUsage/updated` notifications.
 * Discards private model thoughts and raw tool stdout/stderr.
-* Resumes multi-turn context via native session IDs.
+* Resumes multi-turn context via native thread IDs; an unknown thread is `SESSION_INVALID`.
 
 ### Claude Code (`claude`)
 * Runs `claude -p --restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none` with `--settings {"disableAllHooks":true} --strict-mcp-config --mcp-config {"mcpServers":{}}`. `--restricted` removes code-running tools and WebFetch, confines file tools to the working directory, ignores user, project and local settings files and keeps subscription (OAuth) authentication; API keys also work.
 * Every run fails closed with `SANDBOX_UNAVAILABLE` unless `system/init` reports only the read-only tools, no MCP server and `dontAsk`; any execution that emits content or completes without a verified `system/init` is rejected.
-* Prompts are delivered on stdin. Events stream via `--output-format stream-json --verbose --include-partial-messages`; thinking blocks, tool inputs and tool results are discarded. Unknown event types and `system` subtypes produce one warning each.
+* The prompt is one user message on stdin (`--input-format stream-json`); stdin stays open until the terminal `result`, and cancellation and deadlines send a `control_request` `interrupt` first. Events stream via `--output-format stream-json --verbose --include-partial-messages`; thinking blocks, tool inputs and tool results are discarded. Unknown event types and `system` subtypes produce one warning each.
 * A new session pins `--session-id <uuid>`; continuation uses `--resume <uuid>`. UUID comparison is case-insensitive. Reasoning effort maps to `--effort` (`low`, `medium`, `high`, `xhigh`, `max`). Model identifiers are validated before argv.
 * Failures are typed from `assistant.error`, `result.api_error_status` and anchored `result.errors` prefixes through the table in `src/backends/claude-errors.ts`; stderr is not classified.
 * Probe: `claude --version` (minimum 2.1.259) and `claude auth status`, without a model call.
@@ -190,7 +194,6 @@ when its fix lands with a regression test.
 
 | ID | Intended contract | Current behavior |
 | --- | --- | --- |
-| AUD-P0-1 | Teardown terminates only owned processes | Windows descendants are matched by parent PID alone; a stale parent PID can match unrelated user processes, which are then stopped with `Stop-Process -Force`. Only a fixed list of system/shell names is excluded |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
 | AUD-P0-3 | History is archival and bounded | Streamed answers are stored 50-110× their size; reaching 10 MiB per session turns a successful turn into `HISTORY_ERROR`; above 100 MiB in total, new executions fail before the CLI starts |
 | AUD-P1-1 | A rate limit records the provider's reset time | The controller writes a second, tiered cooldown that replaces the parsed reset (3 days becomes 45 s) |

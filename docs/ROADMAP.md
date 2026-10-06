@@ -92,8 +92,8 @@ serves autonomous AI agents (in Cursor, Claude Desktop, Antigravity, VS Code, Ze
    become standard MCP tool responses with sanitized diagnostic errors and token
    metrics.
 4. **Owned process supervision.** Owned child trees (`codex.exe`, `conhost.exe`)
-   are torn down with bounded I/O. Teardown must target only processes whose
-   identity, PID plus creation time, proves ownership (`WINDOWS-001`).
+   are torn down with bounded I/O. Teardown interrupts the backend's turn first
+   and then targets only the owned handle or process group (`WINDOWS-001`).
 5. **Routing and failover (`smart_quota`).** Work is redirected away from a
    provider with an observed rate-limit cooldown, for example from rate-limited
    Codex to Gemini agy.
@@ -263,32 +263,140 @@ Completed:
   Validate POSIX teardown separately. This evidence concerns owned survivors; it
   does not cover unowned processes matched by a stale parent PID (AUD-P0-1).
 
-Process identity (AUD-P0-1, order 1):
-- [x] Treat process identity as (PID, creation time).
-  - PowerShell emits only a snapshot (`ProcessId`, `ParentProcessId`,
-    `CreationDate`).
-  - A pure TypeScript function selects owned descendants, rejecting any child
-    created before its parent (`selectOwnedTree` in `src/execution/process-tree.ts`).
-  - The root identity is captured while the root is alive.
-- [x] Never start a sweep after a clean exit when no descendant was observed.
-  Kill each verified identity individually, re-checking its creation time; never
-  rely on `/T` across unverified PIDs (`teardownWindowsDescendants` in `src/execution/process.ts`).
-- [x] Remove the process-name denylist. It is not a safety mechanism.
-- [x] Apply the same supervisor to the test runner and MCP test harness.
-- [x] Acceptance: unit tests over synthetic snapshots, including stale PPID,
-  reused root PID and live-root cases (`tests/process_tree.test.js`, 9/9 passed; `tests/v1_phase1.test.js`, 21/21 passed). No validation by sweeping a live desktop.
+Process termination in three layers (AUD-P0-1 order 1, AUD-P1-4 order 2):
+
+Decision (2026-10-06). The earlier (PID, creation time) snapshot design
+(`process-tree.ts`, CIM polling every 200-500 ms, per-PID PowerShell kills) is
+replaced. It reconstructed a tree from `ParentProcessId`, which Windows does not
+maintain. It still killed some PIDs without verified identity (`created: 0`),
+adopted children of a reused root PID before the first snapshot, missed
+descendants created and orphaned between polls, and launched PowerShell
+continuously, against the quiet-Windows priority.
+
+The only process CoAgent8 terminates is the one it spawned. It does so through
+the handle Node holds, or, on POSIX, through the process group it created.
+Nothing is ever selected by PID or parent PID. Termination escalates through
+three layers:
+
+1. Protocol interrupt. The backend is asked to stop its turn over its own
+   protocol. When the turn reports its terminal event, stdin is closed and the
+   CLI exits by itself and cleans up its own children.
+2. Forced stop of the owned root. If the CLI has not exited within the grace
+   period, `terminateProcessTree` stops it. On Windows it calls `proc.kill()`
+   (`TerminateProcess` on the handle held since spawn, so PID reuse cannot
+   redirect it). On POSIX it sends `SIGTERM` then `SIGKILL` to the detached
+   process group.
+3. No tree guessing. No snapshot, polling, PPID walk, `taskkill /T` or name
+   list. Descendants are the backend's responsibility. On Windows, libuv puts
+   every non-detached child into a Job Object with `KILL_ON_JOB_CLOSE`, so a
+   chain of Node processes dies with its root. A descendant created by a
+   non-Node process (for example a command launched by native `codex.exe`) is
+   outside that job and may survive a forced stop. That is a backend defect
+   (openai/codex#47735, #28361, #15413). It is not fixed by guessing PIDs. If it
+   becomes a measured problem, the fix is a per-run Job Object helper (below).
+
+Evidence recorded before implementation (Windows 11, Node 22.20):
+- libuv `src/win/process.c`: global job with `KILL_ON_JOB_CLOSE |
+  SILENT_BREAKAWAY_OK`; the source comment states that this job control does
+  not trickle down to subprocesses.
+- Owned fixture node -> node -> node, `proc.kill()` on the root: all three
+  exited. Owned fixture node -> `cmd.exe` -> node: the leaf survived.
+- Claude Code 2.1.289 (`-p --input-format stream-json`, haiku):
+  - `{"type":"control_request","request_id":...,"request":{"subtype":"interrupt"}}`
+    returns a `control_response` (`success`) within about 10 ms, then a `result`
+    with `subtype: error_during_execution`, `terminal_reason: aborted_streaming`
+    and no `result` field (anthropics/claude-code#94741).
+  - Closing stdin after `result` exits the process in under 1 s.
+  - Closing stdin mid-turn did not end the process: the turn completed and the
+    process stayed alive until killed after 90 s (observed once). stdin is
+    therefore closed only after a terminal `result`.
+- Codex 0.160 `app-server` (marked experimental):
+  - The handshake (`initialize`, `initialized`, `thread/start`) needs no model
+    call.
+  - The `thread/start` response reports
+    `sandbox: {"type":"readOnly","networkAccess":false}` and
+    `approvalPolicy: "never"`, so read-only mode can be verified per run.
+  - EOF on stdin exits the server within about 50 ms. The user-configured MCP
+    servers it was starting left no surviving process.
+  - An unknown thread on `thread/resume` returns error `-32600`
+    ("no rollout found").
+  - A live Codex turn and `turn/interrupt` were not exercised (owner decision:
+    no live Codex calls). The protocol follows the generated 0.160 schema and the
+    published app-server reference: `turn/interrupt` ends the turn with
+    `turn/completed` and `status: "interrupted"`.
+- agy 1.2.17 (the `gemini` backend) has `--input-format stream-json` but no
+  documented interrupt. It uses layers 2 and 3 only.
+
+Work items:
+- [x] Layer 1 infrastructure in `runCommand`: an optional stdin protocol session
+  (`start`, `interrupt`, grace period). Cancellation, deadline and server
+  shutdown call `interrupt`, keep reading output until exit, and fall back to
+  layer 2 when the grace period ends. Runs without a session keep the current
+  write-and-close stdin behavior.
+- [x] Claude: switch to `--input-format stream-json`. Send the prompt as one
+  user message, close stdin on `result`, interrupt with `control_request`.
+  Accept `control_response` and a `result` without the `result` field.
+- [x] Codex: replace `codex exec --json` with `codex app-server`.
+  - Handshake with `initialize`/`initialized`.
+  - Start with `thread/start`, or continue with `thread/resume` and
+    `excludeTurns`, so the response does not carry the full history.
+  - Fail closed with `SANDBOX_UNAVAILABLE` unless the response reports
+    `readOnly` and `never`.
+  - Send the prompt with `turn/start`, close stdin on `turn/completed`, and
+    interrupt with `turn/interrupt`.
+  - Answer any server-initiated request with a JSON-RPC error.
+  - Turn usage is the sum of `tokenUsage.last` over the turn's
+    `thread/tokenUsage/updated` notifications (one per model request).
+- [x] Layer 2: `terminateProcessTree` reduces to `proc.kill()` on Windows and
+  the process-group signals on POSIX. After the root exits, a descendant that
+  still holds stdout/stderr no longer blocks the run until its deadline. The
+  runner destroys its pipe ends after a short drain period.
+- [x] Layer 3: delete `src/execution/process-tree.ts`, `startDescendantTracking`,
+  `CimMutex`, `trackedDescendants`/`trackedIdentities`, the `extraPids`
+  parameter and their tests. Remove descendant tracking from the test runner,
+  the stdio test helper and `integrations/rpc.ts`.
+- [x] Rule: rewrite the process identity invariant in
+  [05-cross-platform](../.agents/rules/05-cross-platform.md) to "terminate only
+  owned handles and owned process groups; never select by PID or parent PID".
+- [x] Acceptance, with owned fixture trees only (no live-desktop sweep):
+  - an interrupted fixture CLI exits without forced stop and reports `cancelled`;
+  - a CLI that ignores the interrupt is stopped after the grace period;
+  - a Node chain dies with its root on Windows;
+  - a surviving pipe holder does not delay the result past the drain period;
+  - Claude and Codex adapter fixtures speak the new protocols;
+  - no PowerShell or CIM helper is launched by a consult.
+
+  Evidence (2026-10-06, Windows 11, Node 22.20, uncommitted working tree on
+  `fix/windows-process-identity`):
+  - `tests/process.test.js` covers each property above. The "no helper" property
+    is asserted statically: no source file references CIM, `taskkill`,
+    `Stop-Process` or `ParentProcessId`.
+  - Adapter fixtures: `tests/claude.adapter.test.js` and
+    `tests/codex.adapter.test.js`.
+  - Results: full suite 196/196; typecheck; build; consumer smoke (Codex and
+    Gemini fixture turns through the packed bundle); `lint:docs`.
+  - Live Claude 2.1.289 (haiku) through `executeClaude`:
+    - completed: exit 0;
+    - abort: `cancelled`, exit 1, no signal (the CLI exited by itself);
+    - 4 s deadline: `timed_out`, the process ended 0.75 s after the deadline,
+      inside the 3 s grace period.
+  - POSIX layers were not run locally. The CI matrix covers them.
+- [ ] Open acceptance: one live Codex app-server turn, resume and
+  `turn/interrupt` before beta 1. The owner authorizes the model calls.
 
 Supervision cost (AUD-P1-4, order 2):
-- [ ] Do not track descendants for short-lived commands (`--version`, `git`).
-  Poll only long-running tasks.
-- [ ] Measure helper launches per consult/review on Windows before and after.
-  Record the counts and latency.
+- [ ] Resolved by layer 3: no descendant polling exists. Record in the project
+  review that a consult launches no helper process.
 
 Crash orphans and Job Objects (AUD-P2-14, order 3):
-- [ ] Prototype a Job Object with `KILL_ON_JOB_CLOSE`. It removes polling and
-  crash orphans. Evaluate compatibility with backend sandboxes and nested jobs,
-  and the distribution cost of a helper.
-- [ ] Add a POSIX parent-death strategy for detached groups.
+- On Windows the server's own libuv job already kills its direct children when
+  the server dies. Descendants of native backends are not covered.
+- [ ] Only if non-Node descendants are measured to survive: prototype a per-run
+  Job Object helper with `KILL_ON_JOB_CLOSE` and without silent breakaway.
+  Evaluate compatibility with backend sandboxes, nested jobs, and the cost of
+  distributing and signing a native helper.
+- [ ] Add a POSIX parent-death strategy for detached groups. Do not rely on
+  stdin EOF: Claude did not exit on EOF mid-turn (see the evidence above).
 
 ### `REDACTION-002` - output integrity versus diagnostic redaction
 

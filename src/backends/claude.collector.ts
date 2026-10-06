@@ -6,7 +6,7 @@ import type { AdapterEvent, ExecutionError, TerminalExecutionResult } from '../t
 import { classifyClaudeFailure } from './claude-errors.js';
 
 /** Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289). */
-const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event']);
+const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event', 'control_response']);
 /** `system` subtypes the collector understands; others produce one warning each. */
 const KNOWN_SYSTEM_SUBTYPES = new Set(['init', 'status', 'thinking_tokens', 'api_retry']);
 
@@ -181,6 +181,10 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     else if (event.type === 'rate_limit_event') {
       const info = record(event.rate_limit_info);
       if (info?.status === 'rejected' && typeof info.resetsAt === 'number') rateLimitResetsAt = info.resetsAt;
+    } else if (event.type === 'control_response') {
+      // Acknowledges an interrupt; the turn still ends with its own `result`.
+      const response = record(event.response);
+      if (response?.subtype !== 'success') warnOnce('control_response', 'Claude Code rejected an interrupt request.');
     } else if (!KNOWN_TYPES.has(event.type)) warnOnce(event.type, `Ignoring unknown Claude Code event type '${event.type.slice(0, 64)}'.`);
   }
   function snapshot() {
@@ -193,5 +197,5 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       : truncated ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false } : undefined;
     return { sessionId, initialized: sessionId !== null, terminal, usage, truncated, error, output: (resultFields?.isError || !sessionId) ? '' : output, hasAssistantMessage: reducer.getMessageMap().size > 0 };
   }
-  return { line, snapshot };
+  return { line, snapshot, isTerminal: () => terminal };
 }

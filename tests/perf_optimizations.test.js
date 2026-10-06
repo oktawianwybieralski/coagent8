@@ -4,17 +4,11 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
 
 const {
   resolveCliCommand,
   clearCliResolverCache,
 } = require('../src/backends/cli-resolver.ts');
-const {
-  startDescendantTracking,
-  terminateProcessTree,
-  trackedDescendants,
-} = require('../src/execution/process.ts');
 const {
   truncateToByteLength,
   createStreamReducer,
@@ -54,87 +48,6 @@ test('Perf Optimization Area 1: CLI resolution caching with clearCliResolverCach
   assert.ok(!res3.argsPrefix.includes('--mutated'), 'Cached resolution returned isolated argsPrefix');
 
   clearCliResolverCache();
-});
-
-test('Perf Optimization Area 1: startDescendantTracking cleans up tiered timers immediately', (t) => {
-  const dummyProc = spawn(process.execPath, ['-e', 'process.exit(0)'], { windowsHide: true });
-  const stop = startDescendantTracking(dummyProc);
-
-  // Calling stop should cleanly tear down timers without throwing
-  assert.doesNotThrow(() => stop());
-  stop(); // Idempotent teardown
-});
-
-test('Perf Optimization Area 1: CimMutex serializes concurrent queries and permits queued cancellation', async () => {
-  const { CimMutex } = require('../src/execution/process.ts');
-  const mutex = new CimMutex();
-  const procA = { pid: 11111 };
-  const procB = { pid: 22222 };
-  const procC = { pid: 33333 };
-
-  let bCancelled = false;
-  let cAcquired = false;
-
-  // Proc A acquires lock
-  const releaseA = await mutex.acquire(procA, () => false);
-  assert.equal(typeof releaseA, 'function', 'Proc A acquires release function');
-
-  // Proc B and Proc C attempt to acquire while A holds it
-  const waitB = mutex.acquire(procB, () => bCancelled);
-  const waitC = mutex.acquire(procC, () => false).then(rel => {
-    cAcquired = true;
-    return rel;
-  });
-
-  // Neither B nor C should acquire while A holds lock
-  assert.equal(cAcquired, false, 'C must not acquire while A holds lock');
-
-  // Cancel B from queue
-  bCancelled = true;
-  mutex.cancelWait(procB);
-  const resB = await waitB;
-  assert.equal(resB, null, 'Cancelled B resolves with null immediately');
-  assert.equal(cAcquired, false, 'Cancelling B must not allow C to acquire while A holds lock');
-
-  // Release A
-  releaseA();
-
-  // Now C must acquire
-  const releaseC = await waitC;
-  assert.equal(cAcquired, true, 'C acquires once A releases');
-  assert.equal(typeof releaseC, 'function');
-  releaseC();
-});
-
-test('Perf Optimization Area 1: CimMutex does not grant lock to cancelled entry upon dequeue', async () => {
-  const { CimMutex } = require('../src/execution/process.ts');
-  const mutex = new CimMutex();
-  const procA = { pid: 11111 };
-  const procB = { pid: 22222 };
-  const procC = { pid: 33333 };
-
-  let bCancelled = false;
-  let cAcquired = false;
-
-  const releaseA = await mutex.acquire(procA, () => false);
-  const waitB = mutex.acquire(procB, () => bCancelled);
-  const waitC = mutex.acquire(procC, () => false).then(rel => {
-    cAcquired = true;
-    return rel;
-  });
-
-  // Mark B as cancelled without explicit cancelWait
-  bCancelled = true;
-
-  // Release A - dequeue should skip B and grant to C
-  releaseA();
-
-  const resB = await waitB;
-  assert.equal(resB, null, 'Cancelled B resolved with null during dequeue');
-
-  const releaseC = await waitC;
-  assert.equal(cAcquired, true, 'C acquired lock directly after B was skipped');
-  releaseC();
 });
 
 test('Perf Optimization Area 2: truncateToByteLength handles fast-path, emoji, and large strings efficiently', () => {

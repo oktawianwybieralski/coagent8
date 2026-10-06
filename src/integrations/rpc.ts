@@ -4,7 +4,7 @@
  */
 import { spawn } from 'node:child_process';
 import { resolveCliCommand } from '../backends/cli-resolver.js';
-import { startDescendantTracking, terminateProcessTree } from '../execution/process.js';
+import { terminateProcessTree } from '../execution/process.js';
 import { createLineDecoder } from '../execution/stream.js';
 
 /** Narrows an untrusted protocol/configuration value to an object. */
@@ -30,7 +30,6 @@ export async function withStdioRpc<T>(command: string, args: string[], operation
   const proc = spawn(resolved.command, [...resolved.argsPrefix, ...args], {
     cwd: options.cwd, env: options.env, stdio: 'pipe', windowsHide: true, detached: process.platform !== 'win32',
   });
-  const stopTracking = startDescendantTracking(proc);
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   let next = 1;
   let failure: Error | undefined;
@@ -100,7 +99,6 @@ export async function withStdioRpc<T>(command: string, args: string[], operation
       item.reject(new Error('Probe closed.'));
     }
     pending.clear();
-    stopTracking();
     await terminateProcessTree(proc);
     try { decoder.finish(); } catch { fail('Malformed probe output.'); }
   }

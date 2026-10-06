@@ -21,5 +21,5 @@ tests, including nested fixtures with test-like filenames. Resolve fixture paths
 from the referring file instead of assuming the shell's current directory.
 
 The shared runner limits concurrent test files to two because each suite can own
-CLI process trees and Windows CIM workers. Pass `--test-concurrency=N` for an
+CLI process trees. Pass `--test-concurrency=N` for an
 explicit stress run; all production and test deadlines remain unchanged.

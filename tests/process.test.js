@@ -104,14 +104,131 @@ test('missing command, async spawn failure, closed stdin and native executable a
   assert.equal(result.status, 'completed', result.stderr);
 });
 
-test('owned process-tree teardown releases retained descendant tracking records', async () => {
+test('layer 2: terminateProcessTree stops the owned root through its handle and is idempotent', async () => {
   const { spawn } = require('node:child_process');
   const { once } = require('node:events');
-  const { trackedDescendants, terminateProcessTree } = require('../src/execution/process.ts');
+  const { terminateProcessTree } = require('../src/execution/process.ts');
   const proc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform !== 'win32', windowsHide: true });
   await once(proc, 'spawn');
-  trackedDescendants.set(proc, new Set());
-  try { await terminateProcessTree(proc); }
-  finally { await terminateProcessTree(proc); }
-  assert.equal(trackedDescendants.has(proc), false);
+  const first = terminateProcessTree(proc);
+  assert.equal(terminateProcessTree(proc), first, 'concurrent calls share one teardown');
+  await first;
+  if (proc.exitCode === null && proc.signalCode === null) await once(proc, 'exit');
+  assert.ok(proc.exitCode !== 0 || proc.signalCode !== null, 'the root was stopped, not left running');
+});
+
+// Fake protocol CLI: NDJSON on stdin; answers an interrupt with a terminal record unless told to ignore it.
+const protocolCli = `
+let buf = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', d => {
+  buf += d; let i;
+  while ((i = buf.indexOf('\\n')) >= 0) {
+    const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1);
+    if (m.type === 'start') console.log(JSON.stringify({ type: 'started', input: m.input }));
+    if (m.type === 'interrupt' && process.argv[1] !== 'ignore') console.log(JSON.stringify({ type: 'done', reason: 'interrupted' }));
+  }
+});
+process.stdin.on('end', () => process.exit(0));
+setInterval(() => {}, 1000);
+`;
+function protocolSession(onStarted) {
+  const seen = [];
+  let channel;
+  return {
+    seen,
+    session: { start(c, input) { channel = c; c.send({ type: 'start', input }); }, interrupt(c) { c.send({ type: 'interrupt' }); } },
+    line(raw) {
+      const m = JSON.parse(raw); seen.push(m.type);
+      if (m.type === 'started') onStarted?.();
+      if (m.type === 'done') channel.close();
+    },
+  };
+}
+
+test('layer 1: an interrupted protocol CLI ends its turn and exits by itself before the grace period', async () => {
+  for (const [mode, expected] of [['abort', 'cancelled'], ['timeout', 'timed_out']]) {
+    const controller = new AbortController();
+    const fake = protocolSession(() => { if (mode === 'abort') controller.abort(); });
+    const startedAt = Date.now();
+    const result = await runCommand(process.execPath, ['-e', protocolCli], {
+      stdinInput: 'prompt', session: fake.session, onStdoutLine: fake.line, abortSignal: controller.signal,
+      timeoutMs: mode === 'timeout' ? 1500 : 30_000, interruptGraceMs: 10_000,
+    });
+    assert.equal(result.status, expected, `${mode}: ${result.stderr}`);
+    assert.deepEqual(fake.seen, ['started', 'done'], `${mode}: output after the interrupt is still delivered`);
+    assert.equal(result.exitCode, 0, `${mode}: the CLI exited by itself, it was not stopped`);
+    assert.ok(Date.now() - startedAt < 9000, `${mode}: no wait for the grace period`);
+    assert.equal(activeProcesses.size, 0);
+  }
+});
+
+test('layer 1 -> 2: a CLI that ignores the interrupt is stopped when the grace period ends', async () => {
+  const controller = new AbortController();
+  const fake = protocolSession(() => controller.abort());
+  const startedAt = Date.now();
+  const result = await runCommand(process.execPath, ['-e', protocolCli, 'ignore'], {
+    stdinInput: 'prompt', session: fake.session, onStdoutLine: fake.line, abortSignal: controller.signal, interruptGraceMs: 400,
+  });
+  assert.equal(result.status, 'cancelled');
+  assert.deepEqual(fake.seen, ['started']);
+  assert.ok(result.exitCode !== 0 || result.signal !== null, 'the root was stopped');
+  assert.ok(Date.now() - startedAt >= 400, 'the grace period was honored');
+  assert.equal(activeProcesses.size, 0);
+});
+
+test('layer 1: a session that closed stdin before failing lets the CLI exit by itself', async () => {
+  let channel;
+  const startedAt = Date.now();
+  const result = await runCommand(process.execPath, ['-e', protocolCli], {
+    session: { start(c) { channel = c; c.send({ type: 'start' }); }, interrupt() { throw new Error('interrupt must not be sent after EOF'); } },
+    onStdoutLine() { channel.close(); throw Object.assign(new Error('bad record'), { code: 'PROTOCOL_ERROR' }); }, interruptGraceMs: 10_000,
+  });
+  assert.equal(result.error.code, 'PROTOCOL_ERROR');
+  assert.equal(result.exitCode, 0, 'EOF ended the CLI; it was not stopped');
+  assert.ok(Date.now() - startedAt < 9000, 'the exit did not wait for the grace period');
+});
+
+test('layer 1: a session that throws on start or interrupt falls back to a forced stop', async () => {
+  const startedAt = Date.now();
+  const failing = await runCommand(process.execPath, ['-e', protocolCli], {
+    session: { start() { throw Object.assign(new Error('bad start'), { code: 'PROTOCOL_ERROR' }); }, interrupt() { throw new Error('nothing was started'); } }, interruptGraceMs: 10_000,
+  });
+  assert.equal(failing.error.code, 'PROTOCOL_ERROR');
+  assert.notEqual(failing.exitCode, 0, 'a session that never started is stopped');
+  assert.ok(Date.now() - startedAt < 9000, 'a failed start does not wait for the grace period');
+  const controller = new AbortController();
+  const interruptedAt = Date.now();
+  const broken = await runCommand(process.execPath, ['-e', protocolCli], {
+    session: { start(c) { c.send({ type: 'start' }); }, interrupt() { throw new Error('channel broken'); } },
+    onStdoutLine() { controller.abort(); }, abortSignal: controller.signal, interruptGraceMs: 10_000,
+  });
+  assert.equal(broken.status, 'cancelled');
+  assert.ok(Date.now() - interruptedAt < 9000, 'a failed interrupt does not wait for the grace period');
+});
+
+test('layer 3: a descendant outside the owned tree that holds stdout cannot delay the result', async () => {
+  const { PIPE_DRAIN_MS } = require('../src/execution/process.ts');
+  // The leaf escapes the owned tree (a non-Node intermediate on Windows, its own process
+  // group on POSIX), inherits stdout and exits by itself after 6 s.
+  const leaf = 'setTimeout(() => {}, 6000)';
+  const root = process.platform === 'win32'
+    ? `require('node:child_process').spawn('cmd.exe', ['/d', '/s', '/c', '""' + process.execPath + '" -e "${leaf}""'], { stdio: 'inherit', windowsHide: true, windowsVerbatimArguments: true }); setTimeout(() => process.exit(0), 500);`
+    : `require('node:child_process').spawn(process.execPath, ['-e', '${leaf}'], { stdio: 'inherit', detached: true }).unref(); setTimeout(() => process.exit(0), 500);`;
+  const startedAt = Date.now();
+  const result = await runCommand(process.execPath, ['-e', root], { timeoutMs: 30_000 });
+  const elapsed = Date.now() - startedAt;
+  assert.equal(result.status, 'completed', result.stderr);
+  assert.ok(elapsed < 500 + PIPE_DRAIN_MS + 1500, `result after ${elapsed} ms`);
+  assert.equal(activeProcesses.size, 0);
+});
+
+test('layer 3: the supervisor never snapshots, polls or kills by PID', () => {
+  const dir = path.resolve(__dirname, '..', 'src');
+  const files = fs.readdirSync(dir, { recursive: true }).filter(file => /\.ts$/.test(file));
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(dir, file), 'utf8');
+    assert.doesNotMatch(source, /Win32_Process|Get-CimInstance|taskkill|Stop-Process|ParentProcessId/i, file);
+  }
+  assert.equal(fs.existsSync(path.join(dir, 'execution', 'process-tree.ts')), false);
 });

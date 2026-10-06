@@ -37,6 +37,15 @@ in [docs/ROADMAP.md](docs/ROADMAP.md#audit-remediation-index).
 - Session pruning runs in the background after the MCP transport connects.
 - Backend resolution no longer writes the default backend to the configuration.
 - Hidden PowerShell windows for Windows process supervision and tests.
+- Process termination is layered: cancellation, deadlines and server shutdown
+  first interrupt the backend's turn over its own protocol, then stop only the
+  owned root process (Windows handle, POSIX process group) after a 3 s grace
+  period. Descendant polling, process snapshots and PID-based kills are removed.
+- Claude Code receives the prompt as a `stream-json` user message and is
+  interrupted with a `control_request` before any forced stop.
+- Codex runs as `codex app-server` (JSON-RPC) instead of `codex exec`: each run
+  verifies a read-only sandbox with approvals disabled, declines server
+  requests, interrupts with `turn/interrupt` and ignores sub-agent threads.
 - License changed to GPL-3.0-only.
 
 ### Deprecated
@@ -45,6 +54,10 @@ in [docs/ROADMAP.md](docs/ROADMAP.md#audit-remediation-index).
 
 ### Fixed
 - Gemini sandbox-denial handling no longer reports valid results as duplicates.
+- Windows teardown no longer selects processes by parent PID, so it cannot stop
+  unrelated user processes whose parent PID was reused (AUD-P0-1).
+- A descendant that keeps stdout/stderr open after the CLI exits no longer
+  delays the result until the deadline.
 - Escaped and structured Windows home paths are redacted in diagnostics.
 
 ### Security

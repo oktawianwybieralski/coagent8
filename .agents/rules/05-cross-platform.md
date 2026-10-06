@@ -17,30 +17,30 @@ CoAgent8 is verified across a 6-job matrix:
 All test/helper launches on Windows must suppress visible windows, including
 descendants launched through PowerShell `Start-Process` (`-WindowStyle Hidden`).
 Hiding a parent with `windowsHide: true` is not enough for independently launched
-descendants. Keep cancellation and awaited cleanup while reducing redundant
-supervision; do not remove process-tree guarantees to suppress windows.
+descendants. Keep cancellation and awaited cleanup; do not trade teardown
+guarantees for window suppression.
 
 1. **No Shell Glob Assumptions:**
    - `tests/helpers/discovery.cjs` selects only `*.test.js` recursively under `tests/`, excluding fixtures, helpers, consumer tooling and artifacts. Both tests and coverage invoke `tests/run.cjs`, which passes each discovered path as an individual argument to tsx. Empty discovery fails. Never pass shell globs to Node's test runner.
-2. **Process Tree Teardown:**
-   - On POSIX: Spawn detached (`detached: true`) and terminate using process group signalling (`process.kill(-proc.pid, 'SIGTERM')` followed by `SIGKILL`).
-   - On Windows: Terminate the owned tree so that no owned background child process survives. Destroy stdio streams upon exit.
-   - **Process identity (safety invariant):**
-     - A process's identity is its PID **plus its creation time**. Never select a
-       process for termination by PID or `ParentProcessId` alone. Windows keeps
-       stale parent PIDs and reuses PIDs, so a parent-PID match can name an
-       unrelated user process.
-     - A descendant is owned only if it was created no earlier than its verified
-       parent and the root identity was captured while the root was alive.
-     - Re-check identity immediately before each kill. Do not apply `/T` to a PID
-       whose identity is unverified.
-     - Process-name allow/deny lists are not a safety mechanism and must not
-       substitute for identity checks.
-     - Do not start a sweep after a clean exit when no descendant was observed.
-     - Test teardown selection with synthetic process snapshots and owned fixture
-       trees, never by sweeping a live desktop. The current implementation
-       violates this invariant; remediation is `WINDOWS-001` (AUD-P0-1) in the
-       [roadmap](../../docs/ROADMAP.md#audit-remediation-index).
+2. **Process Teardown (safety invariant):**
+   - Terminate only what this process owns: a spawned `ChildProcess` through its
+     handle (`proc.kill()`; on Windows `TerminateProcess` on the handle held since
+     spawn) or, on POSIX, the process group created by spawning it detached
+     (`process.kill(-proc.pid, 'SIGTERM')` followed by `SIGKILL`).
+   - Never select a process by PID, `ParentProcessId`, creation-time heuristics or
+     process name. Windows keeps stale parent PIDs and reuses PIDs, so a parent-PID
+     match can name an unrelated user process. Do not use `taskkill /T`,
+     `Stop-Process`, CIM/WMI snapshots or descendant polling.
+   - Stop a protocol CLI gracefully first: interrupt its turn over its own
+     protocol and close stdin on the terminal event, then force-stop the owned root
+     after a bounded grace period.
+   - Descendants are the backend's responsibility. A chain of Node processes ends
+     with its root through libuv's `KILL_ON_JOB_CLOSE` job on Windows. A per-run Job
+     Object helper is the only acceptable way to extend ownership to other
+     descendants (`WINDOWS-001` in the [roadmap](../../docs/ROADMAP.md)).
+   - After the root exits, stop waiting for inherited stdout/stderr after a bounded
+     drain period instead of searching for the holder.
+   - Test teardown with owned fixture trees only, never by sweeping a live desktop.
 3. **Memory Limits & Stream Safety:**
    - Always enforce strict `maxBufferBytes` (512 KiB in `runCommand`, 4 MiB in `runGit`) and `StringDecoder` to prevent split UTF-8 corruption and memory exhaustion.
 4. **Node 20 Build Compatibility:**

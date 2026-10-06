@@ -62,14 +62,10 @@ returns a plain answer with `verdict: "NOT_APPLICABLE"`. The envelope gate is
 application policy, not an MCP requirement or proof of test execution.
 
 Routing probes backends before every execution, and some adapters repeat
-capability/version probes inside `execute` (AUD-P1-4). Windows runCommand uses
-descendant tracking for short probes as well as long tasks. Polling starts
-PowerShell CIM queries, and the test runner and MCP harness also start trackers.
-Descendants are currently identified by parent PID alone, so teardown can match
-unrelated processes whose parent PID is stale (AUD-P0-1). Reducing this work
-requires preserving process-tree ownership and cancellation, including when
-intermediate ancestors have exited, and identifying processes by PID plus
-creation time.
+capability/version probes inside `execute` (AUD-P1-4). Process supervision no
+longer polls: termination interrupts the backend's turn over its protocol, then
+stops only the owned root handle or POSIX process group, and never selects a
+process by PID or parent PID (`WINDOWS-001`).
 
 Secret redaction is shared between diagnostics and public answers, so
 diagnostic keyword rules also rewrite code in model answers (AUD-P0-2). MCP
@@ -114,8 +110,8 @@ plugin framework, new database or additional controller/repository hierarchy is
 required by this target.
 
 Preserve read-only execution, model consent, redaction, bounds, typed failures,
-session ownership and cleanup. Cleanup terminates only processes whose identity
-(PID plus creation time) proves ownership. Redaction protects credentials
+session ownership and cleanup. Cleanup terminates only owned handles and owned
+process groups. Redaction protects credentials
 without altering the content of public answers. Optional bookkeeping (archive,
 cooldown cache, session metadata) reports warnings and never changes an
 execution's outcome. Public names, configuration, stored histories and

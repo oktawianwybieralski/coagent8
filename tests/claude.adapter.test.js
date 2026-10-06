@@ -17,11 +17,13 @@ async function withFixture(run){
   }finally{for(const key of Object.keys(process.env))if(!(key in previous))delete process.env[key];Object.assign(process.env,previous);fs.rmSync(dir,{recursive:true,force:true});}
 }
 
-test('Claude runs restricted read-only print mode with streaming, a pinned session and the prompt on stdin',()=>withFixture(async({dir,captured})=>{
+test('Claude runs restricted read-only print mode with streaming, a pinned session and the prompt as a stream-json message',()=>withFixture(async({dir,captured})=>{
   const events=[];
   const result=await executeClaude('Reply with OK',{cwd:dir,reasoningEffort:'low',onEvent:e=>events.push(e)});
   assert.equal(result.status,'completed');assert.equal(result.output,'OK');assert.equal(result.model,'sonnet');
-  const {argv,stdin}=captured();assert.equal(stdin,'Reply with OK');
+  const {argv,stdin,records}=captured();assert.equal(stdin,'Reply with OK');
+  assert.deepEqual(records,[{type:'user',message:{role:'user',content:'Reply with OK'}}],'one user message, then stdin is closed');
+  assert.equal(argv[argv.indexOf('--input-format')+1],'stream-json');
   assert.ok(argv.includes('--restricted'));assert.ok(!argv.includes('--bare'));assert.equal(argv[argv.indexOf('--tools')+1],'Read,Glob,Grep');
   assert.equal(argv[argv.indexOf('--permission-mode')+1],'dontAsk');assert.equal(argv[argv.indexOf('--permission-prompts')+1],'none');
   assert.deepEqual(JSON.parse(argv[argv.indexOf('--settings')+1]),{disableAllHooks:true});assert.ok(argv.includes('--strict-mcp-config'));
@@ -128,4 +130,25 @@ test('Claude reads subscription quota from /usage without a model turn and feeds
     captured();
     await inspectQuotas(true,{claude:{installed:true}});assert.equal(captured(),null,'caller-supplied probes do not trigger native reads by default');
   }finally{Object.assign(adapterRegistry,original);}
+}));
+
+test('Claude cancellation and deadlines interrupt the turn over stream-json before any forced stop',()=>withFixture(async({dir,captured})=>{
+  for(const [mode,expected] of [['abort','cancelled'],['deadline','timed_out']]){
+    process.env.CLAUDE_FIXTURE_SCENARIO='interruptible';
+    const controller=new AbortController();const events=[];const startedAt=Date.now();
+    const result=await executeClaude('Count slowly',{cwd:dir,abortSignal:controller.signal,timeoutMs:mode==='deadline'?1500:30000,
+      onEvent:e=>{events.push(e);if(mode==='abort'&&e.type==='assistant_message')controller.abort();}});
+    assert.equal(result.status,expected,mode);assert.equal(result.error.code,mode==='abort'?'ABORTED':'TIMEOUT');
+    assert.equal(result.exitCode,1,`${mode}: Claude exited by itself after the interrupted result`);
+    assert.ok(Date.now()-startedAt<2900,`${mode}: no wait for the forced-stop grace period`);
+    const {records}=captured();
+    assert.deepEqual(records.map(r=>r.type),['user','control_request'],mode);
+    assert.equal(records[1].request.subtype,'interrupt');
+    assert.equal(events.filter(e=>e.type==='warning').length,0,`${mode}: control_response is a known event`);
+  }
+  process.env.CLAUDE_FIXTURE_SCENARIO='ignore-interrupt';
+  const controller=new AbortController();const startedAt=Date.now();
+  const stuck=await executeClaude('x',{cwd:dir,abortSignal:controller.signal,onEvent:e=>{if(e.type==='assistant_message')controller.abort();}});
+  assert.equal(stuck.status,'cancelled');assert.ok(Date.now()-startedAt>=3000,'a CLI that ignores the interrupt is stopped after the grace period');
+  assert.notEqual(stuck.exitCode,1,'the stuck CLI did not exit by itself');
 }));

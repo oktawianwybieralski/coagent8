@@ -61,3 +61,28 @@ export function extractStructuredCodexError(errorPayload: unknown, fallbackMessa
   const text = typeof errorPayload === 'string' ? errorPayload : fallbackMessage || 'Codex reported an error.';
   return classifyCodexError(text);
 }
+
+/** `codexErrorInfo` values of the app-server protocol (0.160) with a dedicated error code. */
+const TURN_ERROR_CODES: Record<string, ExecutionError['code']> = {
+  unauthorized: 'AUTH_REQUIRED', usageLimitExceeded: 'RATE_LIMITED', rateLimitExceeded: 'RATE_LIMITED',
+};
+
+/**
+ * Classifies an app-server `TurnError` (`{ message, codexErrorInfo, additionalDetails }`).
+ * @param error - The `error` of a failed turn or `error` notification.
+ * @param fallbackMessage - Message used when the payload carries none.
+ * @returns A typed error; HTTP failures use their status code, other kinds their message.
+ */
+export function classifyCodexTurnError(error: unknown, fallbackMessage: string): ExecutionError {
+  const data = error !== null && typeof error === 'object' && !Array.isArray(error) ? error as Record<string, unknown> : {};
+  const message = typeof data.message === 'string' && data.message ? data.message : fallbackMessage;
+  const info = data.codexErrorInfo;
+  if (typeof info === 'string' && TURN_ERROR_CODES[info]) {
+    const code = TURN_ERROR_CODES[info];
+    return { code, message: redactDiagnostic(message), retryable: code === 'RATE_LIMITED' };
+  }
+  const http = info !== null && typeof info === 'object' && !Array.isArray(info)
+    ? Object.values(info as Record<string, unknown>).map(value => (value as { httpStatusCode?: unknown } | null)?.httpStatusCode).find(value => typeof value === 'number')
+    : undefined;
+  return typeof http === 'number' ? extractStructuredCodexError({ status_code: http, message }) : classifyCodexError(message);
+}

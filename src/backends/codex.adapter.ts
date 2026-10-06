@@ -7,6 +7,7 @@ import { validEventIdentifier } from '../types/conversation.types.js';
 import { checkModelGovernance } from './policy.js';
 import { redactDiagnostic, redactSecrets } from '../redaction.js';
 import { createCodexStreamCollector } from './codex.collector.js';
+import { createCodexAppSession } from './codex.app-server.js';
 import { classifyCodexError } from './codex-errors.js';
 
 export const id = 'codex';
@@ -146,15 +147,15 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   });
   if (checkModelGovernance(model, options.userConfirmed)) return rejected('POLICY_DENIED', 'Effective Codex model requires explicit confirmation.');
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
-  // Exec-level sandbox is placed before resume; resume has no --sandbox flag.
-  // Pin the config too so a resumed thread cannot inherit a writable profile.
-  const args = ['exec', '--sandbox', 'read-only', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"'];
-  if (requestedThread) args.push('resume', requestedThread);
-  args.push('--skip-git-repo-check', '--json', '-m', model, '-c', `model_reasoning_effort="${effort}"`, '-');
+  // The app-server session requests read-only mode per thread and verifies the server's
+  // answer; the config overrides pin the same policy for the server's defaults.
+  const args = ['app-server', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"'];
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
+  const app = createCodexAppSession({ collector, threadId: requestedThread, model, effort,
+    cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent });
   const result = await runCommand(process.env.CODEX_PATH || CODEX_EXE, args, {
-    cwd: options.cwd, stdinInput: prompt, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
-    maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine: collector.line,
+    cwd: options.cwd, stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
+    maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine: app.line,
   });
   const snapshot = collector.snapshot();
   const { initialized, terminal, threadId, usage } = snapshot;
@@ -166,6 +167,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
       : { code: 'PROCESS_ERROR', message: `Codex exited with code ${result.exitCode}.`, retryable: false };
   }
   if (!error && (!initialized || !terminal)) error = { code: 'PROTOCOL_ERROR', message: 'Codex exited without a thread and terminal event.', retryable: false };
+  if (!error && snapshot.interrupted) error = { code: 'PROCESS_ERROR', message: 'Codex interrupted the turn.', retryable: false };
   const status = result.status === 'cancelled' || result.status === 'timed_out' ? result.status : error ? 'failed' : 'completed';
   return { status, isError: status !== 'completed', output: snapshot.output, model,
     threadId, nativeSessionId: threadId, error, errorDetail: error?.message, exitCode: result.exitCode, signal: result.signal,

@@ -58,7 +58,7 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 5. **[P2: Cross-Platform & CI Matrix Guardrails (`05-cross-platform.md`)](./.agents/rules/05-cross-platform.md)**:
    - Explicit recursive `tests/*.test.js` discovery through `tests/run.cjs` (no shell glob assumptions for Windows `cmd.exe`).
-   - Process tree teardown terminates only owned processes; process identity is PID plus creation time, never PID or parent PID alone, and name lists are not a safety mechanism. POSIX uses process group `process.kill(-proc.pid)`.
+   - Teardown terminates only owned handles and owned process groups, after a protocol interrupt where the backend supports one; never select a process by PID, parent PID or name. POSIX uses process group `process.kill(-proc.pid)`.
    - Strict buffer bounding (`maxBufferBytes: 512KB`, `maxInputBytes: 4MB`).
 
 6. **[P2: Language & Code Style Standards (`06-language-and-style.md`)](./.agents/rules/06-language-and-style.md)**:

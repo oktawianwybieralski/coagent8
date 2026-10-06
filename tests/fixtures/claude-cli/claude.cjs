@@ -26,30 +26,68 @@ const recordings = {
   'auth-failed': ['auth-failed', 1], 'model-not-found': ['model-not-found', 1], 'resume-unknown': ['resume-unknown', 1],
   'unknown-events': ['success-partial', 0], 'write-tools': ['success-partial', 0], 'no-result': ['success-partial', 0],
   'missing-init': ['success-partial', 0], 'startup-failure': ['success-partial', 1],
+  interruptible: ['success-partial', 0], 'ignore-interrupt': ['success-partial', 0],
 };
 const [file, exitCode] = recordings[scenario] || [];
 if (!file) { console.error(`unknown fixture scenario ${scenario}`); process.exit(2); }
-let stdin = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', chunk => { stdin += chunk; });
-process.stdin.on('end', () => {
-  if (env.CLAUDE_FIXTURE_CAPTURE) fs.writeFileSync(env.CLAUDE_FIXTURE_CAPTURE, JSON.stringify({ argv, stdin }));
-  if (scenario === 'startup-failure') {
-    process.stderr.write('Claude Code CLI failed to initialize: invalid argument\n');
-    process.exit(1);
-  }
+if (scenario === 'startup-failure') {
+  process.stderr.write('Claude Code CLI failed to initialize: invalid argument\n');
+  process.exit(1);
+}
+// `--input-format stream-json`: one NDJSON record per line. Like Claude Code 2.1.289, the
+// process exits only once stdin is closed after the turn's `result`.
+const records = [];
+const send = event => process.stdout.write(JSON.stringify(event) + '\n');
+let pending = '', answered = false, interruptible = null;
+function capture() {
+  if (!env.CLAUDE_FIXTURE_CAPTURE) return;
+  const user = records.find(record => record.type === 'user');
+  fs.writeFileSync(env.CLAUDE_FIXTURE_CAPTURE, JSON.stringify({ argv, stdin: user ? user.message.content : '', records }));
+}
+function answer() {
   const lines = fs.readFileSync(path.join(__dirname, 'recordings', `${file}.jsonl`), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   const out = [];
   for (const event of lines) {
     if (sessionId && typeof event.session_id === 'string') event.session_id = sessionId;
     if (scenario === 'missing-init' && event.subtype === 'init') continue;
     if (scenario === 'write-tools' && event.subtype === 'init') event.tools = [...event.tools, 'Bash', 'Write'];
-    if (scenario === 'no-result' && event.type === 'result') continue;
+    if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
     if (scenario === 'unknown-events' && event.type === 'result') {
       out.push({ type: 'future_event_type', payload: 1 }, { type: 'future_event_type', payload: 2 }, { type: 'system', subtype: 'future_subtype' });
     }
     out.push(event);
   }
-  process.stdout.write(out.map(event => JSON.stringify(event)).join('\n') + '\n');
-  process.exitCode = exitCode;
+  for (const event of out) send(event);
+  // A CLI that dies without a terminal result: exit without waiting for stdin.
+  if (scenario === 'no-result') process.exit(exitCode);
+  if (scenario === 'interruptible' || scenario === 'ignore-interrupt') {
+    // The turn keeps running until an interrupt arrives (2.1.289 output shapes, recorded live).
+    interruptible = setInterval(() => {}, 1000);
+  }
+}
+function interrupt(request) {
+  send({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { still_queued: [] } } });
+  // Only a running turn ends with an interrupted result.
+  if (scenario === 'ignore-interrupt' || !interruptible) return;
+  clearInterval(interruptible);
+  interruptible = null;
+  send({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: sessionId, terminal_reason: 'aborted_streaming', stop_reason: null, errors: [] });
+  process.exitCode = 1;
+}
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => {
+  pending += chunk;
+  let index;
+  while ((index = pending.indexOf('\n')) >= 0) {
+    const record = JSON.parse(pending.slice(0, index));
+    pending = pending.slice(index + 1);
+    records.push(record);
+    if (record.type === 'user' && !answered) { answered = true; capture(); answer(); }
+    else if (record.type === 'control_request' && record.request?.subtype === 'interrupt') { capture(); interrupt(record); }
+  }
+});
+process.stdin.on('end', () => {
+  capture();
+  clearInterval(interruptible);
+  if (process.exitCode === undefined) process.exitCode = exitCode;
 });
