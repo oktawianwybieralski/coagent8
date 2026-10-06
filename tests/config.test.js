@@ -20,8 +20,8 @@ const {
   selectSmartQuotaBackend,
   recordQuotaCooldown,
   checkAndRecordRateLimit,
-  isRateLimitError,
 } = require('../src/backends/availability.ts');
+const { isRateLimitError } = require('../src/backends/rate-limit.ts');
 
 test.after(() => {
   try {

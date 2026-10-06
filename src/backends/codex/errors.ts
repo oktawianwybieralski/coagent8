@@ -1,6 +1,6 @@
 /** Typed native Codex failures; independent of execution and parsing. @packageDocumentation */
 import { redactDiagnostic } from '../../redaction.js';
-import type { ExecutionError } from '../types.js';
+import type { ExecutionError } from '../../conversation.js';
 
 export function classifyCodexError(message: string): ExecutionError {
   const code = /429|rate.?limit|quota|too many requests|usage\s*limit|spend\s*cap/i.test(message) ? 'RATE_LIMITED'

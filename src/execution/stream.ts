@@ -1,7 +1,27 @@
 import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
-export * from './stream-reducer.js';
+
+/**
+ * Truncates a UTF-8 string to a maximum byte length without splitting multi-byte characters.
+ * Guarantees that the resulting string's UTF-8 byte length NEVER exceeds maxBytes.
+ */
+export function truncateToByteLength(str: string, maxBytes: number, suffix = '...[truncated]'): string {
+  if (typeof str !== 'string' || maxBytes <= 0) return '';
+  if (str.length <= maxBytes && Buffer.byteLength(str, 'utf8') <= maxBytes) return str;
+
+  const suffixBytes = Buffer.byteLength(suffix, 'utf8');
+  if (suffixBytes >= maxBytes) {
+    const sBuf = Buffer.allocUnsafe(maxBytes);
+    const written = sBuf.write(suffix, 0, maxBytes, 'utf8');
+    return sBuf.toString('utf8', 0, written);
+  }
+
+  const targetBytes = maxBytes - suffixBytes;
+  const buf = Buffer.allocUnsafe(targetBytes);
+  const written = buf.write(str, 0, targetBytes, 'utf8');
+  return buf.toString('utf8', 0, written) + suffix;
+}
 
 export class BufferLimitError extends Error { readonly code = 'BUFFER_LIMIT'; }
 export function readBoundedFileSync(file: string, limit = 64 * 1024): string {

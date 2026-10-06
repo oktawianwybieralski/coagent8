@@ -1,7 +1,5 @@
 import { createGeminiCollector } from './collector.js';
 import { classifyGeminiError } from './errors.js';
-export { createGeminiCollector } from './collector.js';
-export { classifyGeminiError, extractStructuredGeminiError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,7 +8,8 @@ import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { checkModelGovernance } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../types.js';
+import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
+import type { ExecutionError } from '../../conversation.js';
 
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';

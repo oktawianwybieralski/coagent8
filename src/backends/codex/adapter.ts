@@ -2,8 +2,8 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { runCommand } from '../../execution/process.js';
-import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult, ExecutionError } from '../types.js';
-import { validEventIdentifier } from '../../conversation.js';
+import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult } from '../types.js';
+import { validEventIdentifier, type ExecutionError } from '../../conversation.js';
 import { checkModelGovernance } from '../governance.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
@@ -131,11 +131,6 @@ export async function probe(): Promise<AdapterProbeResult> {
     authEvidence,
   };
 }
-
-export { truncateToByteLength } from '../../execution/stream-reducer.js';
-
-export { createCodexStreamCollector } from './collector.js';
-export { classifyCodexError, extractStructuredCodexError } from './errors.js';
 
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const config = readCodexConfig();

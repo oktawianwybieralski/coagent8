@@ -13,8 +13,7 @@
  * @packageDocumentation
  */
 import { BRAND } from '../../constants.js';
-import { validEventIdentifier } from '../../conversation.js';
-import type { AdapterEvent, ExecutionError } from '../types.js';
+import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';

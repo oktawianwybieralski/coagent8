@@ -361,7 +361,7 @@ test('history fragment pagination returns the whole large UTF-8 message at limit
 test('oversized provider metadata cannot hang history pagination',async()=>{
   const s=createSession('gemini',tempDir),writer=createHistoryWriter(s.sessionHandle,tempDir,'gemini',randomUUID());
   assert.throws(()=>writer.accept({type:'assistant_message',messageId:'x'.repeat(300*1024),text:'short'}),/identifier/);
-  const {createGeminiCollector}=require('../../src/backends/gemini/adapter.ts');
+  const {createGeminiCollector}=require('../../src/backends/gemini/collector.ts');
   assert.throws(()=>createGeminiCollector().line(JSON.stringify({type:'message',role:'assistant',message_id:'x'.repeat(300*1024),content:'short'})),/metadata/);
   writer.accept({type:'assistant_message',messageId:'safe',text:'short'});await writer.flush();
   const file=path.join(tempDir,'history',s.sessionHandle+'.json'),raw=JSON.parse(fs.readFileSync(file));

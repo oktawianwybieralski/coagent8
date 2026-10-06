@@ -1,5 +1,4 @@
 import { isRateLimitError, parseResetTimestamp } from './rate-limit.js';
-export { isRateLimitError, parseResetTimestamp } from './rate-limit.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { adapterRegistry } from './registry.js';
@@ -7,10 +6,10 @@ import { loadConfig } from '../config.js';
 import { QuotaReport, QuotaCacheRecord } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../sessions/lock.js';
-import { PROVIDERS } from '../conversation.js';
+import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
 import { readBoundedFileSync } from '../execution/stream.js';
-import type { AdapterProbeResult, ProviderId } from './types.js';
+import type { AdapterProbeResult } from './types.js';
 type ProbeMap = Partial<Record<ProviderId, AdapterProbeResult>>;
 export interface AvailabilitySelectionOptions {
   config?: { routing: { allowedBackends: ProviderId[] } };

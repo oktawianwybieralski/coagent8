@@ -1,8 +1,9 @@
 /** Bounded Gemini public-event parsing, independent of process launch. @packageDocumentation */
-import { BufferLimitError, StreamReducer } from '../../execution/stream.js';
+import { BufferLimitError } from '../../execution/stream.js';
+import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { validEventIdentifier } from '../../conversation.js';
-import type { AdapterEvent, ExecutionError, TerminalExecutionResult } from '../types.js';
+import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
+import type { TerminalExecutionResult } from '../types.js';
 import { extractStructuredGeminiError } from './errors.js';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 

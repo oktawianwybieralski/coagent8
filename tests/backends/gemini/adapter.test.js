@@ -13,12 +13,12 @@ process.env.GEMINI_PATH = path.resolve(__dirname, '../../fixtures/gemini-cli/gem
 
 const {
   execute,
-  createGeminiCollector,
   execute: executeGemini,
   resolveModelAndEffort,
   parseGeminiUsage,
 } = require('../../../src/backends/gemini/adapter.ts');
 const { StreamReducer } = require('../../../src/execution/stream-reducer.ts');
+const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
 
 process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'quota-cache.json');
 
@@ -159,7 +159,7 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
 });
 
 test('Gemini collector rejects malformed roles/content, duplicate terminal and total answer overflow', () => {
-  const { classifyGeminiError } = require('../../../src/backends/gemini/adapter.ts');
+  const { classifyGeminiError } = require('../../../src/backends/gemini/errors.ts');
   assert.equal(classifyGeminiError('Model report-429.txt not found').code, 'MODEL_UNAVAILABLE');
   assert.equal(classifyGeminiError('Connection failed on port 1429').code, 'PROCESS_ERROR');
   const c = createGeminiCollector();
@@ -329,7 +329,7 @@ test('messages exceeding maxMessages set isTruncated and throw in Gemini adapter
   assert.equal(reducer.getMessageMap().size, 3);
 
   // Gemini adapter throws BufferLimitError when exceeding maxMessages public messages
-  const { createGeminiCollector } = require('../../../src/backends/gemini/adapter.ts');
+  const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
   const collector = createGeminiCollector();
   for (let i = 0; i < 50; i++) {
     collector.line(JSON.stringify({ type: 'message', role: 'assistant', content: `Message ${i}`, message_id: `msg-${i}` }));

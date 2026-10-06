@@ -9,7 +9,6 @@ import { PROVIDERS } from '../conversation.js';
 import { readBoundedFileSync } from '../execution/stream.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history.js';
 import { canonicalPath, sanitizeHandle } from './identity.js';
-export { canonicalPath, sanitizeHandle } from './identity.js';
 
 export const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
 const ownedTurns = new Map<string, string>();

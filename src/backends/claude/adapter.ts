@@ -4,7 +4,8 @@ import { redactDiagnostic } from '../../redaction.js';
 import { checkModelGovernance } from '../governance.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter, ExecutionError } from '../types.js';
+import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
+import type { ExecutionError } from '../../conversation.js';
 export const id = 'claude', name = 'Claude Code CLI';
 export const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */

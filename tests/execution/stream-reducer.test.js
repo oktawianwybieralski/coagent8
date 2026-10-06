@@ -1,7 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { StreamReducer, createStreamReducer, truncateToByteLength } = require('../../src/execution/stream-reducer.ts');
+const { StreamReducer, createStreamReducer } = require('../../src/execution/stream-reducer.ts');
+const { truncateToByteLength } = require('../../src/execution/stream.ts');
 
 test('StreamReducer preserves record boundaries, handles streaming chunks, and flushes cleanly', () => {
   const reducer = createStreamReducer({ maxLineBuffer: 1024 });

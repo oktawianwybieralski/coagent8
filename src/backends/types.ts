@@ -2,7 +2,6 @@
  * Result returned by an adapter probe operation inspecting CLI installation and authentication state.
  */
 import type { AdapterEvent, ExecutionError, TerminalStatus } from '../conversation.js';
-export * from '../conversation.js';
 
 export interface AdapterProbeResult {
   /** Unique adapter identifier (e.g. 'codex', 'claude', 'gemini'). */

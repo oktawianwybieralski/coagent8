@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { extractStructuredGeminiError } = require('../../src/backends/gemini/adapter.ts');
+const { extractStructuredGeminiError } = require('../../src/backends/gemini/errors.ts');
 const { extractStructuredCodexError, classifyCodexError } = require('../../src/backends/codex/errors.ts');
 
 test('Structured error extraction handles typed envelopes and prevents false 429 lockouts', () => {

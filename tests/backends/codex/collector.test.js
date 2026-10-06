@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-const { createCodexStreamCollector } = require('../../../src/backends/codex/adapter.ts');
+const { createCodexStreamCollector } = require('../../../src/backends/codex/collector.ts');
 
 test('live Codex collector emits public progress without private tool operands or reasoning', () => {
   const progress = [];

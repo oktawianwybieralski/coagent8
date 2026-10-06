@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { truncateToByteLength } = require('../../src/execution/stream-reducer.ts');
+const { truncateToByteLength } = require('../../src/execution/stream.ts');
 
 test('truncateToByteLength truncates safely along UTF-8 multi-byte boundaries', () => {
   const polish = 'zażółć gęślą jaźń';

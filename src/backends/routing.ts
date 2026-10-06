@@ -1,8 +1,8 @@
 import { adapterRegistry } from './registry.js';
 import { loadConfig } from '../config.js';
 import { selectSmartQuotaBackend } from './availability.js';
-import type { AdapterProbeResult, CliAdapter, ProviderId } from './types.js';
-import { PROVIDERS } from '../conversation.js';
+import type { AdapterProbeResult, CliAdapter } from './types.js';
+import { PROVIDERS, type ProviderId } from '../conversation.js';
 export interface ResolvedBackend { id: ProviderId; adapter: CliAdapter; probe: AdapterProbeResult; isSmartQuota?: boolean }
 export async function resolveBackend(requested?: string | null): Promise<ResolvedBackend> {
   const config = loadConfig(), allowed = config.routing.allowedBackends;
