@@ -1123,9 +1123,10 @@ Work items:
 - [x] History starts at `v1.0.0-beta.1` (annotated tag); trees, authors and dates
   of the replayed commits are unchanged; no commit carries an MIT license or an
   AI co-author trailer.
-- [ ] Owner, before 2026-10-08 22:59 UTC: `npm publish` the `0.0.1` placeholder
-  (dist-tag `latest`), then `npm unpublish coagent8@1.0.0-beta.1`, then check
-  `npm view coagent8 dist-tags` (`latest: 0.0.1`).
+- [ ] Owner, before 2026-10-08 22:59 UTC: publish `1.0.0-beta.2` if it is ready,
+  otherwise the `0.0.1` placeholder; only then `npm unpublish coagent8@1.0.0-beta.1`
+  and check `npm view coagent8 dist-tags`. The placeholder is needed only when beta 2
+  is not published before the deadline.
 - [ ] Publish the history to GitHub through pull requests.
 - [ ] Ship third-party license notices for the bundled dependencies
   (`THIRD_PARTY_NOTICES`) from beta 2.
