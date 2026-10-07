@@ -19,7 +19,6 @@ const {
   inspectQuotas,
   selectSmartQuotaBackend,
   recordQuotaCooldown,
-  checkAndRecordRateLimit,
 } = require('../src/backends/availability.ts');
 const { isRateLimitError } = require('../src/backends/rate-limit.ts');
 
@@ -130,12 +129,8 @@ test('quota module operates without fabricated numbers and respects exhaustion &
   const concurrent=JSON.parse(fs.readFileSync(testQuotaCache,'utf8'));for(const id of ['codex','claude','gemini'])assert.equal(concurrent.data[id].status,'rate_limited');
   await Promise.all(['codex','claude','gemini'].map(id=>recordQuotaCooldown(id,-5000)));
 
-  // 6. Runtime rate-limit error detection and cooldown recording
-  const recorded = await checkAndRecordRateLimit(
-    'codex',
-    'OpenAI API Error: 429 Too Many Requests - rate limit exceeded for 5h window'
-  );
-  assert.equal(recorded, true);
+  // 6. Runtime rate-limit cooldown recording
+  await recordQuotaCooldown('codex', undefined, 'OpenAI API Error: 429 Too Many Requests - rate limit exceeded for 5h window');
 
   // Quota metrics remain null (unmeasured/honest) while status becomes rate_limited
   const inspectedAfterRateLimit = await inspectQuotas(true, fakeProbes);

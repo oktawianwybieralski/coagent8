@@ -32,7 +32,8 @@ import { truncateToByteLength, BufferLimitError } from './stream.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ERROR_CODES, type ErrorCode, type AdapterEvent } from '../conversation.js';
 import { formatExecutionResult } from '../tools/result.js';
-import { recordQuotaCooldown, resetQuotaCooldown, checkAndRecordRateLimit } from '../backends/availability.js';
+import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
+import { parseResetTimestamp } from '../backends/rate-limit.js';
 
 /**
  * Universal execution parameters accepted by execution tools and the run gateway.
@@ -263,11 +264,12 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
   }
 
-  // Quota cooldown update
+  // Quota cooldown update: exactly one write per rate-limited turn, using the provider
+  // reset when the message states one and the tiered backoff otherwise.
   try {
     if (result.error?.code === 'RATE_LIMITED') {
-      const parsed = await checkAndRecordRateLimit(backend.id, result.error.message);
-      if (!parsed) await recordQuotaCooldown(backend.id);
+      const reset = parseResetTimestamp(result.error.message);
+      await recordQuotaCooldown(backend.id, reset?.cooldownMs, result.error.message.slice(0, 200) || undefined);
     } else if (!result.isError && result.status === 'completed') {
       await resetQuotaCooldown(backend.id);
     }

@@ -1,4 +1,3 @@
-import { isRateLimitError, parseResetTimestamp } from './rate-limit.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { adapterRegistry } from './registry.js';
@@ -171,14 +170,6 @@ export async function resetQuotaCooldown(id: string): Promise<void> {
       await store(current);
     }
   });
-}
-export async function checkAndRecordRateLimit(id:string, output?:string|null):Promise<boolean> {
-  if(!isRateLimitError(output)) return false;
-  const parsed = output ? parseResetTimestamp(output) : null;
-  const cooldownMs = parsed?.cooldownMs;
-  const reason = output ? redactDiagnostic(output.slice(0, 200), 512) : 'Observed rate limit (heuristic cooldown)';
-  await recordQuotaCooldown(id, cooldownMs, reason);
-  return true;
 }
 /**
  * Selects the first permitted executable provider without an observed cooldown.

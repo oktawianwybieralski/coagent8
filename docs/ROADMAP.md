@@ -944,18 +944,24 @@ without a model call.
 
 ### `ROUTING-MIGRATE-001` / `QUOTA-001` - honest circuit breaker and native quota introspection
 
-**Status:** Partially implemented; parsed reset cooldowns are broken in
-production (AUD-P1-1).
+**Status:** Partially implemented; the AUD-P1-1 single-write fix is on
+`fix/cooldown-single-write`, not yet merged.
 
 - [x] Gemini (`agy`) native quota: `agy --output-format json -p "/usage"` is parsed
   into measured `remaining_fraction`, `headroomPercent` and `resetsAt`. Moving this
   probe off the request path is tracked in `EXEC-001`.
 - [x] Codex classification: `usage limit`, `hit your usage limit` and `spend cap`
   map to `RATE_LIMITED`.
-- [ ] Record exactly one cooldown per rate-limited turn, using the parsed provider
+- [x] Record exactly one cooldown per rate-limited turn, using the parsed provider
   reset when present and the tiered backoff otherwise. Remove the second write in
   the controller. Acceptance: a regression through the controller sequence, not
-  only `checkAndRecordRateLimit` (AUD-P1-1, order 1).
+  only `checkAndRecordRateLimit` (AUD-P1-1, order 1). Evidence:
+  `tests/execution/controller-cooldown.test.js` runs `executeTask` with a
+  rate-limited fixture and reads the cooldown cache: "Try again in 3 days" records
+  3 days, a message without a reset records one first-tier cooldown (15 s, level 0).
+  With a second write reinjected, the same test fails with 45 s, the audit
+  reproduction. The controller is the only writer; `checkAndRecordRateLimit` is
+  removed because adapters already classify `RATE_LIMITED`.
 - [ ] Classify from structured payloads first and anchored provider phrases
   second. Stop matching bare `429`, `quota` or `auth` substrings. Parse `ms`
   before `m` and decimal durations (AUD-P2-1).
