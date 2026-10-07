@@ -2011,6 +2011,20 @@ Implementation follow-up on 2026-10-07 (`fix/vsix-presentation`):
   signed-in backend, Antigravity-only unknown auth, override/registration errors,
   installation cancellation/failure, repeated repair and cleanup preserving
   manual/edited entries. Backup failure and stale preview regressions passed.
+- Private packaging/consumer follow-up: `package:vscode` passed. Archive
+  inspection verified `okidev`, title/author, four separate commands, main icon,
+  compact Details badges, regenerated changelog with standard vsce link rewriting,
+  and both runtime/setup bundles byte-equal to the packed npm contents. Consumer
+  smoke passed against the same tarball digest, including separate bundled
+  status/cleanup/help dispatch with installed dependencies unavailable.
+  Private VSIX: `.artifacts/coagent8-mcp-1.0.0-beta.2.vsix`, SHA-256
+  `d258c4ad6b51b19a2b8268a390d7952829377ee5b062b5a889b19508a43a523a`.
+  npm tarball SHA-256:
+  `6fede11e9cb5b94fe1093e5240b79f2b8b2f8591b867d0af5d9118097ef58500`.
+  Local record: `.artifacts/cli-setup-acceptance-2026-10-07.json`. Source/package
+  documentation snapshot: `1619eb0`; subsequent roadmap evidence is prose only
+  and excluded from packages. These hashes supersede earlier private artifact
+  references; any replacement requires new inspection and hash evidence.
 - Installed VS Code onboarding, sign-in, Details badges, native-host calls for
   Claude/Antigravity and uninstall -> restart residual-state acceptance are pending.
   The owner's actual extensions, histories, credentials and registrations were
