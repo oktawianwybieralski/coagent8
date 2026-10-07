@@ -13,6 +13,7 @@ const { executeTask } = require('../../src/execution/controller.ts');
 const { getHistoryDir } = require('../../src/sessions/history.ts');
 const { getSessionFilePath } = require('../../src/sessions/session.ts');
 const { saveConfig } = require('../../src/config.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -61,11 +62,11 @@ test('full archive never blocks CLI launch, returns successful answer with histo
 
     assert.equal(cliExecuted, true, 'Backend CLI must have executed');
     assert.equal(res.isError, false, 'Turn must not be marked as failed');
-    assert.notEqual(res.structuredContent.error?.code, 'PROCESS_ERROR');
-    assert.notEqual(res.structuredContent.error?.code, 'HISTORY_ERROR');
+    assert.notEqual(readResult(res).error?.code, 'PROCESS_ERROR');
+    assert.notEqual(readResult(res).error?.code, 'HISTORY_ERROR');
     assert.ok(res.content[0].text.startsWith('Secured answer from backend'));
-    assert.equal(res.structuredContent.output, 'Secured answer from backend');
-    assert.equal(res.structuredContent.historyAvailable, undefined, 'History must be available after LRU eviction (the field appears only when false)');
+    assert.equal(readResult(res).answer, 'Secured answer from backend');
+    assert.equal(readResult(res).historyAvailable, true, 'History must be available after LRU eviction');
     const remaining = fs.readdirSync(historyDir).filter(f => f.startsWith('syn_sess_dummy'));
     assert.ok(remaining.length < 11, 'LRU retention must have evicted oldest dummy sessions');
     assert.ok(!remaining.includes('syn_sess_dummy0000000000000000.jsonl'), 'Oldest dummy session must be evicted');
@@ -101,9 +102,9 @@ test('per-session limit: 120 KiB streamed answer returns successfully (AUD-P0-3)
     const res = await executeTask('Generate 120 KiB', 'Public question', { backend: 'gemini' }, tempDir);
 
     assert.equal(res.isError, false, '120 KiB response must return successfully');
-    assert.equal(res.structuredContent.status, 'completed');
+    assert.equal(readResult(res).status, 'completed');
     assert.ok(res.content[0].text.startsWith(largeOutput));
-    assert.equal(res.structuredContent.output.length, 120 * 1024);
+    assert.equal(readResult(res).answer.length, 120 * 1024);
   } finally {
     adapterRegistry.gemini = original;
   }
@@ -138,9 +139,9 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
 
     assert.equal(res.isError, false, 'Turn must succeed despite metadata write failure');
     assert.ok(res.content[0].text.startsWith('Important successfully computed answer'));
-    assert.equal(res.structuredContent.continuationAvailable, undefined, 'continuationAvailable must be disabled on metadata failure (the field appears only when true)');
+    assert.equal(readResult(res).continuationAvailable, false, 'continuationAvailable must be disabled on metadata failure');
     assert.ok(
-      res.structuredContent.warnings.some(w => w.includes('Session update failed')),
+      readResult(res).warnings.some(w => w.includes('Session update failed')),
       'Warning must report metadata failure'
     );
   } finally {
@@ -187,9 +188,9 @@ test('lease failure returns fail-closed SESSION_INVALID error (AUD-P0-3 lease in
     const res = await executeTask('Prompt', 'Public question', { backend: 'gemini' }, tempDir);
 
     assert.equal(res.isError, true, 'Lease failure must fail closed');
-    assert.equal(res.structuredContent.status, 'failed');
-    assert.equal(res.structuredContent.error?.code, 'SESSION_INVALID', 'Must return SESSION_INVALID, not HISTORY_ERROR');
-    assert.notEqual(res.structuredContent.error?.code, 'HISTORY_ERROR');
+    assert.equal(readResult(res).status, 'failed');
+    assert.equal(readResult(res).error?.code, 'SESSION_INVALID', 'Must return SESSION_INVALID, not HISTORY_ERROR');
+    assert.notEqual(readResult(res).error?.code, 'HISTORY_ERROR');
   } finally {
     adapterRegistry.gemini = original;
   }
@@ -223,7 +224,7 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
 
     assert.equal(res.isError, false);
     assert.ok(res.content[0].text.startsWith('No history answer'));
-    assert.equal(res.structuredContent.historyAvailable, false);
+    assert.equal(readResult(res).historyAvailable, false);
 
     // Verify history directory does not exist or has no json/jsonl files
     const historyDir = path.join(isolatedDir, 'history');
@@ -259,8 +260,8 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
     const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
     assert.equal(res.isError, false);
-    assert.equal(res.structuredContent.output, 'Answer kept');
-    const warnings = res.structuredContent.warnings;
+    assert.equal(readResult(res).answer, 'Answer kept');
+    const warnings = readResult(res).warnings;
     assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'duplicates collapse');
     assert.equal(warnings.length, 5, 'adapter warnings are bounded');
   } finally {

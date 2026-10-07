@@ -12,6 +12,7 @@ const tempSessionsFile = path.join(tempDir, 'sessions.json');
 process.env.coagent8_SESSIONS = tempSessionsFile;
 
 const { formatExecutionResult } = require('../../src/tools/result.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -19,7 +20,7 @@ test('response formatting has no cooldown/storage writes and carries execution-o
   const formatted = await formatExecutionResult('codex', { status: 'failed', isError: true, output: '', error: { code: 'RATE_LIMITED', message: 'synthetic limit', retryable: true }, truncated: false, continuationAvailable: false }, '', null,
     { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, { warnings: ['token=synthetic-secret'] });
   assert.deepEqual(fs.readdirSync(tempDir), []);
-  assert.ok(formatted.structuredContent.warnings[0].includes('REDACTED'));
+  assert.ok(readResult(formatted).warnings[0].includes('REDACTED'));
 });
 
 test('formatExecutionResult enforces strict No-Emoji standard and clean blockquotes', async () => {
@@ -47,7 +48,7 @@ test('formatExecutionResult enforces strict No-Emoji standard and clean blockquo
 
   // Verify clean blockquotes
   assert.ok(text.endsWith('> CoAgent8: codex · gpt-6.1-sol · 4.5s · 3 ops · syn_sess_1234567890abcdef (turn 2, ready)'), 'one footer line');
-  assert.deepEqual(Object.keys(formatted.structuredContent), ['provider', 'status', 'output', 'model', 'sessionHandle', 'turn', 'verdict', 'continuationAvailable'], 'default-valued fields are omitted');
+  assert.deepEqual(Object.keys(formatted), ['isError', 'content'], 'markdown is the only channel');
 });
 
 test('formatExecutionResult omits a zero operation count and the first turn, and keeps footer lines apart', async () => {
@@ -87,7 +88,7 @@ test('error formatting uses enterprise-grade blockquote without warning emojis',
   const text = formatted.content[0].text;
   const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
   assert.ok(!emojiRegex.test(text), `Error output should not contain any emojis: ${text}`);
-  assert.ok(text.includes('> Error [RATE_LIMITED]: Provider quota exhausted.'));
+  assert.ok(text.startsWith('> Error [RATE_LIMITED, retryable]: Provider quota exhausted.'), 'the error line says the same request may succeed later');
 });
 
 test('formatExecutionResult appends issue reporting link strictly on fatal unrecoverable system errors', async () => {
@@ -179,14 +180,46 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
   assert.ok(!resAborted.content[0].text.includes('> Report this issue:'));
 });
 
-test('withWorkspace names the workspace in structured content and flags only the server-directory fallback in text', () => {
+test('withWorkspace adds a line only for the server-directory fallback', () => {
   const { withWorkspace } = require('../../src/tools/result.ts');
-  const base = { content: [{ type: 'text', text: 'answer' }], structuredContent: { status: 'completed', output: 'answer' } };
-  const fromRoot = withWorkspace(base, { path: tempDir, source: 'client_root' });
-  assert.equal(fromRoot.structuredContent.workspaceSource, 'client_root');
-  assert.equal(fromRoot.content[0].text, 'answer');
+  const base = { isError: false, content: [{ type: 'text', text: 'answer' }] };
+  assert.equal(withWorkspace(base, { path: tempDir, source: 'client_root' }), base, 'a client root costs no text');
+  assert.equal(withWorkspace(base, { path: tempDir, source: 'argument' }), base, 'an explicit path costs no text');
   const fallback = withWorkspace(base, { path: tempDir, source: 'server_directory' });
   assert.match(fallback.content[0].text, /^answer\n>\n> Workspace: .+ \(server directory\)$/, 'the note is its own quoted paragraph');
-  const invalid = { isError: true, content: [{ type: 'text', text: 'Validation Error' }] };
-  assert.equal(withWorkspace(invalid, { path: tempDir, source: 'server_directory' }), invalid, 'results without structured content stay unchanged');
+});
+
+test('CONTEXT-001: an execution result is markdown only and its footer carries every field a caller acts on', async () => {
+  const meta = { turn: 2, toolCount: 1, durationMs: 1200, historyAvailable: false };
+  const review = await formatExecutionResult('claude', {
+    status: 'completed', isError: false, output: 'Summary without an envelope.', model: 'claude-haiku-4-5-20251001',
+    truncated: false, continuationAvailable: true,
+  }, '', 'syn_sess_review', meta, { requireEnvelope: true });
+  assert.equal(review.structuredContent, undefined, 'Claude Code would show the model only structuredContent');
+  const read = readResult(review);
+  assert.equal(read.provider, 'claude');
+  assert.equal(read.model, 'claude-haiku-4-5-20251001');
+  assert.equal(read.durationSec, 1.2);
+  assert.equal(read.ops, 1);
+  assert.equal(read.sessionHandle, 'syn_sess_review');
+  assert.equal(read.turn, 2);
+  assert.equal(read.state, 'ready');
+  assert.equal(read.historyAvailable, false, 'a turn without history says so');
+  assert.equal(read.verdict, 'BLOCKED', 'the gate verdict is in the footer, not only in the answer');
+  assert.ok(read.reason, 'a blocked verdict states its reason');
+
+  const failed = readResult(await formatExecutionResult('codex', {
+    status: 'failed', isError: true, output: '', error: { code: 'AUTH_REQUIRED', message: 'Sign in to Codex.', retryable: false },
+    truncated: false, continuationAvailable: false,
+  }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, { requireEnvelope: true }));
+  assert.deepEqual(failed.error, { code: 'AUTH_REQUIRED', retryable: false, message: 'Sign in to Codex.' });
+  assert.equal(failed.verdict, 'BLOCKED');
+  assert.equal(failed.reason, null, 'the error line already states why');
+
+  const consult = readResult(await formatExecutionResult('gemini', {
+    status: 'completed', isError: false, output: 'answer', truncated: false, continuationAvailable: false,
+  }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }));
+  assert.equal(consult.verdict, 'NOT_APPLICABLE', 'consult has no verdict line');
+  assert.equal(consult.model, 'provider default');
+  assert.equal(consult.text, 'answer\n\n> CoAgent8: gemini · provider default · 0.0s');
 });

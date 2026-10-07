@@ -91,33 +91,47 @@ per-version server info; clients of protocol 2025-06-18 ignore the unknown field
 * `continuationAvailable`: True if native multi-turn resume is supported and thread ID is valid.
 * `truncated`: True if output reached capacity buffer limits.
 
-### Structured Content
-Execution tools return `structuredContent` validated by `outputSchema`. Always
-present: `provider`, `status`, `output` and `verdict` (`READY` | `BLOCKED` |
-`NOT_APPLICABLE`).
+### Execution Tool Result
+`consult`, `review`, `run` and the deprecated aliases return one markdown text
+block and `isError`. They declare no `outputSchema` and send no
+`structuredContent` (breaking change in 1.0.0, `CONTEXT-001`): Claude Code 2.1.289
+shows the model only `structuredContent` when a result has one, agy reads
+`content`, and Codex reads `structuredContent` when present and `content`
+otherwise (its source, `codex-rs/protocol/src/models.rs`). One
+channel keeps every client on the same text and avoids JSON escaping.
 
-Present only when they carry information, because Codex shows the model only this
-object:
-* `model`, the concrete model the backend resolved;
-* `sessionHandle` and `turn`;
-* `reason`, `error` and `warnings`, adapter warnings such as sandbox denials
-  included;
-* `continuationAvailable` and `truncated`, only when true;
-* `historyAvailable`, only when false;
-* `workspace` and `workspaceSource`.
+The text has three parts:
+1. On failure, a first line `> Error [<CODE>]: <message>`, or
+   `> Error [<CODE>, retryable]: <message>` when the same request may succeed
+   later (for example `RATE_LIMITED` or `TIMEOUT`). The status follows from the
+   code: `ABORTED` is cancelled, `TIMEOUT` timed out, any other code failed. Any
+   answer the backend produced follows under `Partial response:`.
+2. The answer, unchanged apart from escape-sequence stripping, the review gate and
+   credential redaction.
+3. The footer, quoted paragraphs separated by an empty `>` line so markdown
+   renderers keep each on its own line:
+   * always `> CoAgent8: <backend> · <model> · <seconds>s`, then ` · <n> ops` when
+     non-zero and ` · <handle> (<state>)` when a session exists. The model is the
+     one the backend resolved, or `provider default`. The state is `ready` (the
+     handle continues the conversation) or `finished`, preceded by `turn <n>, `
+     from turn 2 and followed by `, no history` when the turn was not archived;
+   * `review` only: `> Verdict: READY` or `> Verdict: BLOCKED (<reason>)`, the
+     State Envelope gate's verdict; a failed run gives its reason in the error line;
+   * `> Notice: Output reached buffer limit.` when truncated;
+   * `> Warning: <text>` per warning, adapter warnings such as sandbox denials
+     included;
+   * `> Report this issue: [...](<url>)` for `PROCESS_ERROR`, `CLI_UNSUPPORTED`
+     and `PROTOCOL_ERROR`;
+   * `> Workspace: <path> (server directory)` when the server directory was the
+     fallback workspace. An explicit `workspace_path` or a client root adds no line.
 
-The text content leads with the answer and ends with a quoted footer line, for example
-`> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 2, ready)`.
-The operation count appears only when non-zero and the turn only from turn 2.
-Notices, warnings and the server-directory workspace note
-(`> Workspace: <path> (server directory)`) follow as separate quoted paragraphs,
-separated by an empty `>` line so markdown renderers keep each on its own line.
-The text is markdown, not the serialized `structuredContent` that the specification
-recommends (SHOULD): Claude Code and agy read `content`, JSON escaping costs more
-tokens, and Codex reads `structuredContent`. Tool errors (`isError`) are distinct
-from audit conclusions (`verdict`). Input validation failures are tool execution
-errors, and a consent refusal says in one line to retry without the top-tier
-model or with a non-top-tier one.
+Example: `> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 2, ready)`.
+
+Tool errors (`isError`) are distinct from audit conclusions (`Verdict`). Input
+validation failures are tool execution errors, and a consent refusal says in one
+line to retry without the top-tier model or with a non-top-tier one. `doctor`
+with `detail: "full"`, `session` and `issue` return data, not an answer, and keep
+`structuredContent`.
 
 ### Top-tier model consent
 

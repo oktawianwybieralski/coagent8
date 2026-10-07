@@ -10,6 +10,7 @@ process.env.coagent8_DIR = path.join(tempDir, 'data');
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { handleReview } = require('../../src/tools/review.tool.ts');
 const { saveConfig } = require('../../src/config.ts');
+const { readResult } = require('../helpers/result.cjs');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('review prompt names the snapshot, asks for the bounded envelope, and a matching answer passes the gate', async () => {
@@ -37,7 +38,7 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
       assert.ok(prompt.includes(line), line);
     }
     assert.ok(prompt.includes('+export const a = 2;'));
-    assert.equal(result.structuredContent.verdict, 'READY', JSON.stringify(result.structuredContent));
+    assert.equal(readResult(result).verdict, 'READY', result.content[0].text);
   } finally {
     adapterRegistry.gemini = original;
   }

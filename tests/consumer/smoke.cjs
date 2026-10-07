@@ -9,6 +9,7 @@ const assert=require('node:assert/strict');
 require('tsx/cjs'); // Test tooling only; deliberately absent from the installed consumer.
 const {resolveCliCommand}=require('../../src/execution/cli-resolver.ts');
 const {connect}=require('../helpers/stdio.cjs');
+const {readResult}=require('../helpers/result.cjs');
 const root=path.resolve(__dirname,'../..');
 const artifacts=path.join(root,'.artifacts','consumer');fs.mkdirSync(artifacts,{recursive:true});
 const npm=process.env.npm_execpath || path.join(path.dirname(process.execPath),'node_modules','npm','bin','npm-cli.js');
@@ -89,20 +90,21 @@ function npmRun(args,cwd=root) {
       proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
       const tools=await request('tools/list',{});assert.equal(tools.result.tools.length,6);
       assert.ok(tools.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
+      for(const name of ['consult','review'])assert.equal(tools.result.tools.find(tool=>tool.name===name).outputSchema,undefined,`${name}: markdown result only`);
       if(binIndex===0) {
       const first=await request('tools/call',{name:'consult',arguments:{proposal:'consumer first turn',backend:'gemini',workspace_path:dir}});assert.equal(first.result.isError,false,JSON.stringify(first));
-      const handle=first.result.structuredContent.sessionHandle;
-      const second=await request('tools/call',{name:'analyze',arguments:{task:'consumer second turn',session_handle:handle,workspace_path:dir}});assert.equal(second.result.structuredContent.turn,2);
+      const handle=readResult(first.result).sessionHandle;
+      const second=await request('tools/call',{name:'analyze',arguments:{task:'consumer second turn',session_handle:handle,workspace_path:dir}});assert.equal(readResult(second.result).turn,2);
       const history=await request('tools/call',{name:'session',arguments:{action:'history',session_handle:handle,workspace_path:dir}});assert.equal(history.result.structuredContent.events.filter(e=>e.type==='assistant_message').length,2);
       const codexFirst=await request('tools/call',{name:'consult',arguments:{proposal:'Codex consumer first turn',backend:'codex',model:'gpt-6.1-sol',workspace_path:dir}});
       assert.equal(codexFirst.result.isError,false,JSON.stringify(codexFirst));
-      assert.equal(codexFirst.result.structuredContent.status,'completed');
-      assert.ok(codexFirst.result.structuredContent.output.includes('const answer = 42;'));
-      assert.equal(codexFirst.result.structuredContent.continuationAvailable,true);
-      const codexHandle=codexFirst.result.structuredContent.sessionHandle;
+      assert.equal(readResult(codexFirst.result).status,'completed');
+      assert.ok(readResult(codexFirst.result).answer.includes('const answer = 42;'));
+      assert.equal(readResult(codexFirst.result).continuationAvailable,true);
+      const codexHandle=readResult(codexFirst.result).sessionHandle;
       const codexSecond=await request('tools/call',{name:'analyze',arguments:{task:'Codex consumer second turn',session_handle:codexHandle,workspace_path:dir}});
       assert.equal(codexSecond.result.isError,false,JSON.stringify(codexSecond));
-      assert.equal(codexSecond.result.structuredContent.turn,2);
+      assert.equal(readResult(codexSecond.result).turn,2);
       const codexHistory=await request('tools/call',{name:'session',arguments:{action:'history',session_handle:codexHandle,workspace_path:dir}});
       assert.equal(codexHistory.result.structuredContent.events.filter(e=>e.type==='assistant_message').length,2);
       for(const forbidden of ['PRIVATE_REASONING','PRIVATE_RAW_COMMAND','PRIVATE_TOOL_OUTPUT','fixtureSecret'])assert.ok(!JSON.stringify(codexHistory).includes(forbidden),forbidden);

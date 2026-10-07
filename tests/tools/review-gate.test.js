@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { enforceStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue is reported', () => {
   const reviewOutput = [
@@ -189,6 +190,7 @@ test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCK
     continuationAvailable: false,
   }, '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false }, { requireEnvelope: true });
 
-  assert.equal(formatted.structuredContent.verdict, 'READY');
-  assert.equal(formatted.structuredContent.reason, undefined);
+  const { verdict, reason } = readResult(formatted);
+  assert.equal(verdict, 'READY');
+  assert.equal(reason, null);
 });

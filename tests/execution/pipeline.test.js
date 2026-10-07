@@ -12,6 +12,7 @@ const { executeTask } = require('../../src/execution/controller.ts');
 const { sessionHistory, deleteHistory } = require('../../src/sessions/history.ts');
 const { getSession } = require('../../src/sessions/session.ts');
 const { saveConfig } = require('../../src/config.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -29,9 +30,9 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
     saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});
     const first=await executeTask('PROMPT_WITH_PRIVATE_SNAPSHOT','User first turn',{backend:'gemini'},tempDir);
     assert.equal(first.isError,false); assert.match(first.content[0].text,/ · 1 op · /); assert.ok(first.content[0].text.includes('const answer = 42;'));
-    const handle=first.structuredContent.sessionHandle;
+    const handle=readResult(first).sessionHandle;
     const second=await executeTask('second prompt','User second turn',{session_handle:handle},tempDir);
-    assert.equal(second.structuredContent.turn,2);
+    assert.equal(readResult(second).turn,2);
     const page=await sessionHistory(handle,tempDir);
     assert.equal(page.events.filter(e=>e.type==='user_message').length,2);
     assert.equal(page.events.filter(e=>e.type==='assistant_message').length,2);
@@ -63,12 +64,12 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
     const cancelled=new AbortController();cancelled.abort();await assert.rejects(executeTask('x','x',{},tempDir,cancelled.signal),{code:'ABORTED'});assert.equal(calls,0);
     await assert.rejects(executeTask('x','x',{},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,0);
     const approve={askConsent:async()=>true};
-    const first=await executeTask('x','first',{},tempDir,null,null,approve),handle=first.structuredContent.sessionHandle;
+    const first=await executeTask('x','first',{},tempDir,null,null,approve),handle=readResult(first).sessionHandle;
     await assert.rejects(executeTask('x','second',{session_handle:handle},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,1);
-    mode='rate';const rate=await executeTask('x','rate',{session_handle:handle},tempDir,null,null,approve);assert.equal(rate.structuredContent.error.code,'RATE_LIMITED');assert.equal(getSession(handle).threadId,'native_fixture');
+    mode='rate';const rate=await executeTask('x','rate',{session_handle:handle},tempDir,null,null,approve);assert.equal(readResult(rate).error.code,'RATE_LIMITED');assert.equal(getSession(handle).threadId,'native_fixture');
     assert.equal(require('../../src/backends/availability.ts').readQuotaCache().data.codex.status,'rate_limited');
-    mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle},tempDir,null,null,approve);assert.equal(invalid.structuredContent.error.code,'SESSION_INVALID');assert.equal(invalid.structuredContent.continuationAvailable,undefined);assert.equal(getSession(handle),null);
+    mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle},tempDir,null,null,approve);assert.equal(readResult(invalid).error.code,'SESSION_INVALID');assert.equal(readResult(invalid).continuationAvailable, false);assert.equal(getSession(handle),null);
     const history=await sessionHistory(handle,tempDir);assert.ok(!JSON.stringify(history).includes('MUST_NOT_PERSIST'));assert.equal(history.events.at(-1).status,'failed');
-    for(mode of ['missing','contradiction']) {const r=await executeTask('x','x',{},tempDir,null,null,approve);assert.equal(r.isError,true);assert.equal(r.structuredContent.error.code,'PROTOCOL_ERROR');assert.equal(getSession(r.structuredContent.sessionHandle).activePid,null);}
+    for(mode of ['missing','contradiction']) {const r=await executeTask('x','x',{},tempDir,null,null,approve);assert.equal(r.isError,true);assert.equal(readResult(r).error.code,'PROTOCOL_ERROR');assert.equal(getSession(readResult(r).sessionHandle).activePid,null);}
   }finally{adapterRegistry.codex=original;saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});}
 });

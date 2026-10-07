@@ -136,8 +136,9 @@ Example consult arguments:
 }
 ```
 
-Execution responses include structured status and, where available, a session
-handle for continuation. Read-only profiles, explicit top-tier model consent,
+Execution responses are markdown: the answer, then a quoted footer with the
+backend, model, duration and, where available, a session handle for continuation;
+a failure starts with its error code, and a review ends with its verdict. Read-only profiles, explicit top-tier model consent,
 secret redaction, bounded buffers and owned-process cleanup apply. See the
 [runtime contract](docs/RUNTIME_CONTRACT.md) for options, errors, history and limits.
 A model-generated review verdict does not establish independently verified results.

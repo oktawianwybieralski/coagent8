@@ -6,6 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const { connect: connectStdio } = require('../helpers/stdio.cjs');
+const { readResult } = require('../helpers/result.cjs');
 
 function createClient(dir, extraEnv = {}) {
   return connectStdio(
@@ -62,10 +63,10 @@ test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools withou
     arguments: { proposal: 'Evaluate architecture without installed backend', backend: 'claude', workspace_path: dir },
   });
   assert.equal(call.result.isError, true);
-  assert.ok(call.result.structuredContent);
-  assert.equal(call.result.structuredContent.error.code, 'CLI_NOT_FOUND');
-  assert.ok(call.result.structuredContent.error.message.includes('not installed; run doctor'));
-  assert.equal(call.result.structuredContent.verdict, 'NOT_APPLICABLE');
+  const missing = readResult(call.result);
+  assert.equal(missing.error.code, 'CLI_NOT_FOUND');
+  assert.ok(missing.error.message.includes('not installed; run doctor'));
+  assert.equal(missing.verdict, 'NOT_APPLICABLE');
 
   // Verify host configuration was NOT mutated
   const finalConfigContent = fs.readFileSync(configPath, 'utf8');
@@ -107,10 +108,10 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
   });
 
   assert.equal(res.result.isError, false);
-  const structured = res.result.structuredContent;
-  assert.equal(structured.status, 'completed');
-  assert.equal(structured.verdict, 'NOT_APPLICABLE', 'Consult must return verdict: NOT_APPLICABLE');
-  assert.equal(structured.reason, undefined, 'Consult must not have verdict reason');
+  const consulted = readResult(res.result);
+  assert.equal(consulted.status, 'completed');
+  assert.equal(consulted.verdict, 'NOT_APPLICABLE', 'Consult must return verdict: NOT_APPLICABLE');
+  assert.equal(consulted.reason, null, 'Consult must not have verdict reason');
   // Ensure synthetic State Envelope was NOT injected
   assert.ok(!res.result.content[0].text.includes('VERDICT: BLOCKED'), 'Ordinary consult must not acquire synthetic VERDICT: BLOCKED');
   assert.ok(!res.result.content[0].text.includes('CHECKS: typecheck='), 'Ordinary consult must not have synthetic CHECKS');
@@ -170,7 +171,7 @@ test('STARTUP-001 & SHUTDOWN: graceful shutdown cleanly awaits pending backgroun
   assert.equal(c.proc.exitCode, 0, 'Process must exit cleanly with code 0 after maintenance completes');
 });
 
-test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and exposes machine-readable verdict in structuredContent', async (t) => {
+test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and states the verdict in the footer', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-review-envelope-'));
   execFileSync('git', ['init', '-q'], { cwd: dir, windowsHide: true });
   execFileSync('git', ['config', 'user.name', 'AuditFixture'], { cwd: dir, windowsHide: true });
@@ -207,10 +208,10 @@ test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and exposes mac
   });
 
   assert.equal(res.result.isError, false);
-  const structured = res.result.structuredContent;
-  assert.equal(structured.status, 'completed');
-  assert.equal(structured.verdict, 'BLOCKED', 'Review missing envelope fields must evaluate to VERDICT: BLOCKED');
-  assert.ok(structured.reason, 'Review BLOCKED must provide structured reason');
+  const reviewed = readResult(res.result);
+  assert.equal(reviewed.status, 'completed');
+  assert.equal(reviewed.verdict, 'BLOCKED', 'Review missing envelope fields must evaluate to VERDICT: BLOCKED');
+  assert.ok(reviewed.reason, 'Review BLOCKED must state its reason');
 
   c.proc.stdin.end();
   await c.waitForExit(5000);

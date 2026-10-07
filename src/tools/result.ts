@@ -13,43 +13,22 @@
 import type { TerminalExecutionResult } from '../backends/types.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
-import { issueOutputSchema } from './issue.tool.js';
 import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate } from './review-gate.js';
 import type { ResolvedWorkspace } from '../paths.js';
 
 /**
- * MCP JSON schema of structuredContent for every execution tool response.
- * @remarks Codex shows the model only this structured content, so fields with a default
- * value are omitted: `continuationAvailable` and `truncated` appear only when true,
- * `historyAvailable` only when false, and `sessionHandle`, `turn`, `model`, `reason`,
- * `error` and `warnings` only when they have a value.
+ * Execution tool result: markdown text only.
+ * @remarks No `structuredContent` and no `outputSchema` (CONTEXT-001, owner decision of
+ * 2026-10-07): Claude Code shows the model only `structuredContent` when a result has one,
+ * agy reads `content`, and Codex reads `content` when no structured content is present.
+ * The footer therefore carries every field a caller acts on.
  */
-export const executionOutputSchema = {
-  type: 'object', required: ['provider', 'status', 'output', 'verdict'],
-  properties: {
-    provider: { type: ['string', 'null'], enum: ['codex', 'gemini', 'claude', null] },
-    status: { type: 'string', enum: ['completed', 'failed', 'cancelled', 'timed_out'] }, output: { type: 'string' },
-    model: { type: 'string' }, sessionHandle: { type: 'string' }, turn: { type: 'integer' },
-    workspace: { type: 'string' }, workspaceSource: { type: 'string', enum: ['argument', 'client_root', 'server_directory'] },
-    verdict: { type: 'string', enum: ['READY', 'BLOCKED', 'NOT_APPLICABLE'] }, reason: { type: 'string' },
-    warnings: { type: 'array', items: { type: 'string' } },
-    continuationAvailable: { type: 'boolean' }, truncated: { type: 'boolean' }, historyAvailable: { type: 'boolean' },
-    error: { type: 'object', required: ['code', 'message', 'retryable'], properties: { code: { type: 'string' }, message: { type: 'string' }, retryable: { type: 'boolean' } } },
-  },
-};
-
-/**
- * Output schema union for the run gateway accommodating both standard execution results
- * and issue/bug-report structuredContent.
- */
-export const runOutputSchema = {
-  type: 'object',
-  anyOf: [
-    executionOutputSchema,
-    issueOutputSchema,
-  ],
-};
+export interface ExecutionToolResult {
+  [key: string]: unknown;
+  isError: boolean;
+  content: Array<{ type: 'text'; text: string }>;
+}
 
 /**
  * Separates footer lines with an empty quoted line: consecutive `>` lines form one
@@ -64,7 +43,8 @@ const FOOTER_LINE_BREAK = '\n>\n';
  * - Evaluates State Envelope gates when applicable.
  * - Redacts secrets and credentials before public return.
  * - Includes execution-owned cooldown warnings without writing persistent state.
- * - Appends non-whimsical metadata blockquote footer lines (turn, duration, session).
+ * - Appends blockquote footer lines: backend, model, duration, operations, session handle
+ *   with its state, the review verdict, notices and warnings.
  * - Appends pre-filled GitHub issue report link on unrecoverable fatal system errors.
  *
  * @param provider - Backend provider identifier (e.g. 'codex', 'gemini', 'claude', or null).
@@ -73,7 +53,7 @@ const FOOTER_LINE_BREAK = '\n>\n';
  * @param sessionHandle - Active session handle or null.
  * @param meta - Execution metadata (turn, tool count, duration, history status).
  * @param options - Envelope formatting options.
- * @returns Standard MCP CallToolResult with content array and structuredContent metadata.
+ * @returns MCP CallToolResult with the markdown answer and footer as its only content.
  */
 export async function formatExecutionResult(provider: string | null, res: TerminalExecutionResult, defaultText = '', sessionHandle: string | null = null,
   meta = { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, options: { requireEnvelope?: boolean; warnings?: string[] } = {}) {
@@ -103,18 +83,9 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   }
 
   const output = redactCredentialFormats(gated);
-  const structuredContent = { provider, status: res.status, output,
-    ...(res.model ? { model: res.model } : {}),
-    ...(sessionHandle ? { sessionHandle, turn: meta.turn } : {}),
-    verdict, ...(reason ? { reason } : {}),
-    ...(res.continuationAvailable ? { continuationAvailable: true } : {}),
-    ...(res.truncated ? { truncated: true } : {}),
-    ...(sessionHandle && !meta.historyAvailable ? { historyAvailable: false } : {}),
-    ...(error ? { error } : {}),
-    ...(warnings.length ? { warnings } : {}) };
   const parts: string[] = [];
   if (error) {
-    parts.push(`> Error [${error.code}]: ${error.message}`);
+    parts.push(`> Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);
     if (output) parts.push(`Partial response:\n\n${output}`);
   } else {
     parts.push(output || (res.status === 'completed' ? 'CLI completed with no public text.' : 'No public response.'));
@@ -123,10 +94,15 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   const durationSec = (meta.durationMs / 1000).toFixed(1);
   const ops = meta.toolCount > 0 ? ` · ${meta.toolCount} ${meta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = meta.turn > 1 ? `turn ${meta.turn}, ` : '';
-  const session = sessionHandle ? ` · ${sessionHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'})` : '';
+  const history = meta.historyAvailable ? '' : ', no history';
+  const session = sessionHandle ? ` · ${sessionHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
   const footerLines: string[] = [
     `> CoAgent8: ${provider || 'CLI'} · ${res.model || 'provider default'} · ${durationSec}s${ops}${session}`,
   ];
+  if (verdict !== 'NOT_APPLICABLE') {
+    // A failed run states its reason in the error line already.
+    footerLines.push(`> Verdict: ${verdict}${reason && !error ? ` (${reason})` : ''}`);
+  }
   if (res.truncated) {
     footerLines.push('> Notice: Output reached buffer limit.');
   }
@@ -142,21 +118,18 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   }
   parts.push(footerLines.join(FOOTER_LINE_BREAK));
 
-  return { isError: res.isError, content: [{ type: 'text' as const, text: parts.join('\n\n') }], structuredContent };
+  return { isError: res.isError, content: [{ type: 'text', text: parts.join('\n\n') }] } satisfies ExecutionToolResult;
 }
 
 /**
- * Reports the workspace an execution used, so a fallback is never silent.
- * @remarks Structured content always names the workspace and its source. The text adds a
- * line only for the server-directory fallback, the one case the caller may need to correct.
+ * Reports the workspace an execution used when it is the server-directory fallback, the one
+ * case the caller may need to correct, so a fallback is never silent. An explicit argument
+ * or a client root is the workspace the caller already chose.
  */
-export function withWorkspace<T extends { content: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }>(result: T, workspace: ResolvedWorkspace): T {
-  if (!result.structuredContent) return result;
-  const shown = redactDiagnostic(workspace.path, 1024);
-  const structuredContent = { ...result.structuredContent, workspace: shown, workspaceSource: workspace.source };
-  if (workspace.source !== 'server_directory') return { ...result, structuredContent };
+export function withWorkspace<T extends { content: Array<{ type: string; text?: string }> }>(result: T, workspace: ResolvedWorkspace): T {
+  if (workspace.source !== 'server_directory') return result;
   const [first, ...rest] = result.content;
-  const note = `> Workspace: ${shown} (server directory)`;
+  const note = `> Workspace: ${redactDiagnostic(workspace.path, 1024)} (server directory)`;
   const content = first?.type === 'text' ? [{ ...first, text: `${first.text}${FOOTER_LINE_BREAK}${note}` }, ...rest] : [...result.content, { type: 'text', text: note }];
-  return { ...result, content, structuredContent };
+  return { ...result, content };
 }

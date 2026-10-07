@@ -12,6 +12,7 @@ process.env.coagent8_QUOTA_CACHE = quotaCache;
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { executeTask } = require('../../src/execution/controller.ts');
 const { saveConfig } = require('../../src/config.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 const MINUTE_MS = 60 * 1000;
 
@@ -33,7 +34,7 @@ async function rateLimitedTurn(message) {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
     const started = Date.now();
     const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
-    assert.equal(res.structuredContent.error.code, 'RATE_LIMITED');
+    assert.equal(readResult(res).error.code, 'RATE_LIMITED');
     const entry = JSON.parse(fs.readFileSync(quotaCache, 'utf8')).data.gemini;
     return { entry, cooldownMs: Date.parse(entry.cooldownUntil) - started };
   } finally {

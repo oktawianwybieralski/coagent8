@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { stripAnsi } = require('../../src/execution/cli-output.ts');
 const { formatExecutionResult } = require('../../src/tools/result.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test('stripAnsi deterministically strips colors, cursor moves, and formatting sequences', () => {
   const coloredText = '\u001b[31mError:\u001b[0m \u001b[1;33mHigh severity\u001b[0m in \u001b[4;36mserver.ts\u001b[0m\u001b[2K\r';
@@ -21,5 +22,5 @@ test('an answer that quotes npm notices or update banners reaches the caller unc
     'A new version of npm is available; they are harmless.',
   ].join('\n');
   const formatted = await formatExecutionResult('codex', { status: 'completed', isError: false, output: answer, truncated: false, continuationAvailable: false });
-  assert.equal(formatted.structuredContent.output, answer);
+  assert.equal(readResult(formatted).answer, answer);
 });

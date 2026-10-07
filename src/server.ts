@@ -21,7 +21,7 @@ import { getCanonicalConsultToolDefinition, handleConsult } from './tools/consul
 import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js';
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
-import { executionOutputSchema, runOutputSchema, formatExecutionResult, withWorkspace } from './tools/result.js';
+import { formatExecutionResult, withWorkspace } from './tools/result.js';
 import { ToolError, errorCodeOf } from './conversation.js';
 import { listSessions } from './sessions/session.js';
 import { canonicalPath, sanitizeHandle } from './sessions/identity.js';
@@ -43,14 +43,8 @@ const executionNames = new Set<string>([
 
 function buildToolDefinitionsWithSchemas(tools: ToolDefinition[]): Tool[] {
   return tools.map(tool => {
-    const { outputSchema: configuredOutput, ...definition } = tool;
-    const outputSchema = configuredOutput
-      ? configuredOutput
-      : tool.name === CANONICAL_TOOL_NAMES.RUN
-        ? runOutputSchema
-        : executionNames.has(tool.name)
-          ? executionOutputSchema
-          : undefined;
+    // Execution tools declare no outputSchema: their result is markdown only (CONTEXT-001).
+    const { outputSchema, ...definition } = tool;
 
     // The brand icon is declared once, on the server; tools carry no copy of it.
     return {

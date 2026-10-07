@@ -21,6 +21,7 @@ const {
 } = require('../../../src/backends/gemini/adapter.ts');
 const { StreamReducer } = require('../../../src/execution/stream-reducer.ts');
 const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
+const { readResult } = require('../../helpers/result.cjs');
 
 process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'quota-cache.json');
 
@@ -147,10 +148,10 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
     const response = await executeTask('partial answer', 'public request', { backend: 'gemini' }, tempDir, controller.signal);
-    assert.equal(response.structuredContent.status, 'cancelled', JSON.stringify(response));
-    assert.ok(response.structuredContent.output.includes('REDACTED'));
+    assert.equal(readResult(response).status, 'cancelled', JSON.stringify(response));
+    assert.ok(readResult(response).answer.includes('REDACTED'));
     assert.ok(!JSON.stringify(response).includes('fixtureSecret'));
-    const handle = response.structuredContent.sessionHandle;
+    const handle = readResult(response).sessionHandle;
     const page = await sessionHistory(handle, tempDir);
     assert.equal(page.events.filter(e => e.type === 'assistant_message').length, 1);
     assert.equal(page.events.at(-1).status, 'cancelled');

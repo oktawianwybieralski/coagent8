@@ -701,9 +701,9 @@ execution order.
 
 - [x] Ordinary-advice mode for consult: no State Envelope instructions or gate;
   `verdict: "NOT_APPLICABLE"`.
-- [x] Audit status in `structuredContent` (`verdict`, `reason`, `sessionHandle`)
-  validated by `outputSchema`; tool errors (`isError`) are distinct from audit
-  conclusions.
+- [x] Audit status exposed to the caller; tool errors (`isError`) are distinct from
+  audit conclusions. Since `CONTEXT-001` (markdown result) the verdict and reason are
+  the footer line `> Verdict: ...` instead of `structuredContent`.
 - [x] Keep review's diff preparation with an explicit strict-audit default.
 - [x] Preserve structured execution status, typed errors, cancellation and privacy.
   A textual READY or PASS is not proof that a command ran or a release is approved.
@@ -727,7 +727,7 @@ surface, the separate `cancel` tool and the existing parameter names stay.
 
 | | Claude Code | agy (VS Code and CLI) | Codex | Other clients |
 | --- | --- | --- | --- | --- |
-| Result channel the model reads | `structuredContent` when present, else `content` (2.1.289, measured 2026-10-07) | `content` (agy transcripts; stub measurement 2026-10-07) | `structuredContent` serialized as JSON; `content` ignored when it is present (`codex-rs/protocol/src/models.rs`) | usually `content` |
+| Result channel the model reads | `structuredContent` when present, else `content`; `content` also for `isError: true` results (2.1.289, measured 2026-10-07) | `content` (agy transcripts; stub measurement 2026-10-07) | `structuredContent` serialized as JSON; `content` ignored when it is present (`codex-rs/protocol/src/models.rs`) | usually `content` |
 | Result saved to a file | above 50,000 characters, or `_meta["anthropic/maxResultSizeChars"]` up to 500,000 (Claude Code MCP docs) | above about 4 KB: results of 3,950 B or less inline, 4,165 B or more saved as `output.txt` and read with an extra `view_file` step (over 200 MCP calls of several servers) | truncation budget of the model (Codex MCP docs) | varies |
 | Tool definitions | deferred; names and server instructions load at start | deferred; cached on disk as name, description and input schema, without `outputSchema` or icons | loaded upfront (`defer_loading: false`) | usually upfront |
 | Server instructions | read; truncated at 2,048 characters | cached as `instructions.md` | read; first 512 characters should stand alone | per specification |
@@ -782,7 +782,8 @@ Plan:
   `toolProfile` key is ignored, and `run` stays callable. Verified in
   `tests/tools/surface.test.js`.
 - [x] Limit `outputSchema` to the fields actually sent (with the compact result):
-  only `provider`, `status`, `output` and `verdict` are required.
+  only `provider`, `status`, `output` and `verdict` are required. Superseded by the
+  markdown-only result below: execution tools declare no `outputSchema`.
 - [x] **Icon:** the single brand icon is declared only in `serverInfo`. Context7
   also declares its icon only at server level, while GitHub MCP sets icons per
   toolset because each toolset has a different icon. The offline `data:` URI stays.
@@ -800,8 +801,7 @@ Plan:
   for example a `POLICY_DENIED` that says to retry without the top-tier model.
   Input validation failures are tool execution errors (`isError: true`), not
   protocol errors, so the model can correct itself, as specification 2025-11-25
-  recommends (SEP-1303); the server already returned them so. Clients without
-  `structuredContent` support receive the full result in `content`. Verified by
+  recommends (SEP-1303); the server already returned them so. Verified by
   the consent test in `tests/execution/controller-history.test.js`, the routing
   tests and the roots test in `tests/server.test.js`.
 - [x] **Result in both channels, compact:**
@@ -822,7 +822,9 @@ Plan:
   - Codex reads `structuredContent` anyway.
 
   Recorded in the runtime contract (Structured Content). Verified in
-  `tests/tools/result.test.js`.
+  `tests/tools/result.test.js`. Superseded by the markdown-only result (owner
+  decision of 2026-10-07, below): the Claude Code measurement contradicted the
+  first bullet.
 - [x] **Resolved model:**
   - Claude from `system/init`;
   - Codex from the `thread/start` response;
@@ -917,16 +919,42 @@ Plan:
   form and URL elicitation and cancel it in `-p` mode. Inline limits: Claude
   between 45,000 and 60,000 B, agy between 3,900 and 4,300 B. The result channel
   contradicts the table above for Claude Code.
-- [ ] Claude Code 2.1.289 gives the model only `structuredContent` when a result
-  has it (stream-json transcript of a stub result with different markers in
-  `content` and `structuredContent`). CoAgent8's markdown `content` and footer
-  therefore reach agy but not Claude Code, where the answer arrives JSON-escaped
-  in `output`. Decide whether to keep both channels (owner decision); re-measure
-  the token cost in Claude Code first.
+- [x] **Markdown as the only result channel** (owner decision of 2026-10-07,
+  breaking). Claude Code 2.1.289 gives the model only `structuredContent` when a
+  result has it (stream-json transcript of a stub result with different markers in
+  `content` and `structuredContent`), so CoAgent8's markdown `content` and footer
+  reached agy but not Claude Code, where the answer arrived JSON-escaped in
+  `output`. Evidence for the decision:
+  - live consults from Claude Code on 2026-10-07: both successful results
+    (Codex `gpt-5.6-luna`, Gemini `gemini-3.8-flash`) arrived as JSON, with LaTeX
+    double-escaped and without the duration or operation count; both failures
+    (`isError: true`) arrived as the markdown `content`;
+  - cost for the calling model, markdown versus JSON: Codex weather answer 413 B
+    versus 584 B, Gemini weather answer 1,115 B versus 1,296 B, a review of about
+    7 KB 6,986 B versus 7,321 B (134 JSON escapes);
+  - Context7, measured on 2026-10-07 from an SDK client, returns text only: neither
+    of its two tools declares `outputSchema`, and no result carries
+    `structuredContent`;
+  - nothing in `src/` or `extensions/` reads `structuredContent`.
 
-  Codex is unavailable now. Its behavior is taken from its source and docs and
-  needs one live call (`doctor`) with the rollout record inspected when it is
-  back. Record the results in the integration guide.
+  `consult`, `review`, `run` and the deprecated aliases declare no `outputSchema`
+  and send no `structuredContent`. The footer carries what the structured fields
+  carried: backend, resolved model, duration, operations, session handle with
+  `ready` or `finished`, `, no history` when the turn was not archived, the review
+  verdict and reason (`> Verdict: ...`), and the error code with `, retryable` when
+  the same request may succeed later. `doctor` (full), `session` and `issue` keep
+  `structuredContent`, because they return data. `tools/list` 5,515 B to 3,669 B;
+  model-visible definitions unchanged. Recorded in the runtime contract (Execution
+  Tool Result). Evidence: `tests/tools/result.test.js` (CONTEXT-001 footer test),
+  `tests/e2e/mcp.test.js` and `tests/consumer/smoke.cjs` (no `outputSchema` on
+  `consult` and `review` over stdio, no `structuredContent` in a fixture turn);
+  both fail on the previous source (6 failures). Every execution assertion reads
+  the text through `tests/helpers/result.cjs`, which rejects an unknown footer
+  line. Full suite: 254 pass, 0 fail, 3 skipped.
+- [ ] Live acceptance of the markdown result: one cheap consult from Claude Code,
+  Codex and agy each, and Codex reading `content` without `structuredContent` (its
+  behavior is taken from its source and not yet observed). Record the results in
+  the integration guide.
 
 ## 3. Smaller execution path, robust sessions and honest routing
 
@@ -1137,11 +1165,11 @@ without a model call.
 
 ### `SESSION-001` - safe auto-resume and first-class handle exposure
 
-- [x] Expose `sessionHandle` as a first-class machine-readable field in `structuredContent`
-  (when continuation is available) so calling orchestrator models do not need to scrape Markdown blockquotes.
-  `structuredContent.sessionHandle` and `turn` are present whenever a session
-  exists (`runOutputSchema`); evidence: the key assertion in
-  `tests/tools/result.test.js` and the handle reuse in `tests/consumer/smoke.cjs`.
+- [x] Expose `sessionHandle` as a first-class field the caller can read: the footer
+  states the handle with `turn <n>` and `ready` or `finished` whenever a session
+  exists. It was `structuredContent.sessionHandle` until the markdown-only result
+  (`CONTEXT-001`). Evidence: the footer test in `tests/tools/result.test.js` and the
+  handle reuse in `tests/consumer/smoke.cjs`.
 - [ ] Session continuation controls:
   - Introduce `session_mode: "new" | "auto" | "none"` in execution schemas. The
     audit recommends `"none"` as the default for `consult`, so ordinary advice

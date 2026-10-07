@@ -142,8 +142,10 @@ Consequences for CoAgent8:
 - In headless mode both clients cancel the consent request, so a top-tier model
   always fails with `POLICY_DENIED`. The interactive prompt is not yet verified.
 - agy stops a CoAgent8 call after 3 minutes, which cancels the backend turn.
-- In Claude Code the model sees the JSON `structuredContent` (answer in
-  `output`), not the markdown `content` with its footer.
+- Claude Code showed the model the JSON `structuredContent` (answer in
+  `output`), not the markdown `content` with its footer, and showed `content` only
+  for a result with `isError: true` (a live consult, 2026-10-07). Execution tools
+  therefore return markdown only (`CONTEXT-001`).
 
 The VSIX offers **CoAgent8: Set Up or Repair Chat Clients** on first local
 activation and in the Command Palette. Select installed standalone Codex, Claude

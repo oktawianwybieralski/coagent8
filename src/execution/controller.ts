@@ -104,7 +104,7 @@ export async function waitForActiveExecutionTasks(): Promise<void> {
  * @param abortSignal - Optional caller abort signal.
  * @param onProgress - Optional MCP progress callback.
  * @param options - Execution formatting options (e.g. `requireEnvelope` for reviews).
- * @returns Formatted MCP CallToolResult with markdown text and structuredContent metadata.
+ * @returns Formatted MCP CallToolResult with the markdown answer and footer.
  */
 export async function executeTask(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: TaskOptions = {}) {
   const task = executeTaskInternal(prompt, publicInput, args, cwd, abortSignal, onProgress, options);

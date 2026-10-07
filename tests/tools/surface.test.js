@@ -18,6 +18,7 @@ const { CORE_CANONICAL_TOOL_NAMES } = require('../../src/constants.ts');
 const { LEGACY_ALIASES, handleLegacyAlias } = require('../../src/tools/legacy.ts');
 const { handleRun, runToolDefinition } = require('../../src/tools/run.tool.ts');
 const { createSession } = require('../../src/sessions/session.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -325,7 +326,7 @@ test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to 
         assert.ok(prompt.includes(header) && prompt.indexOf('REQUEST') > prompt.indexOf(header), `${name} via ${via}: header and request`);
         assert.ok(prompt.includes('Target files:\na.ts'), `${name} via ${via}: files`);
         if (via === 'run' || name !== 'analyze') assert.ok(prompt.includes(`QUESTIONS / FOCUS:\n${questions}`), `${name} via ${via}: questions`);
-        assert.match(result.structuredContent.warnings[0], via === 'tool' ? new RegExp(`^Tool '${name}' is deprecated`) : new RegExp(`^Subcommand '${name}' in run gateway is deprecated`));
+        assert.match(readResult(result).warnings[0], via === 'tool' ? new RegExp(`^Tool '${name}' is deprecated`) : new RegExp(`^Subcommand '${name}' in run gateway is deprecated`));
       }
     }
   } finally {

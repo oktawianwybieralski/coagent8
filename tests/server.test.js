@@ -12,6 +12,7 @@ const { createHistoryWriter } = require('../src/sessions/history.ts');
 const { createSession } = require('../src/sessions/session.ts');
 const { createServer, createToolDefinitions, validateToolArguments } = require('../src/server.ts');
 const { isGovernedModel } = require('../src/backends/governance.ts');
+const { readResult } = require('./helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -105,7 +106,7 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
 
 test('F14/F15: shared schema validates required fields, types, enums, unknown fields and model families',()=>{
   const tools=createToolDefinitions();assert.equal(new Set(tools.map(t=>t.name)).size,tools.length);
-  const consultTool=tools.find(t=>t.name==='consult');assert.ok(consultTool.inputSchema.properties.session_handle);assert.ok(consultTool.outputSchema);
+  const consultTool=tools.find(t=>t.name==='consult');assert.ok(consultTool.inputSchema.properties.session_handle);assert.equal(consultTool.outputSchema,undefined,'execution results are markdown only (CONTEXT-001)');
   assert.throws(()=>validateToolArguments({},consultTool.inputSchema),/Missing/);
   assert.throws(()=>validateToolArguments({proposal:'x',user_confirmed:true},consultTool.inputSchema),/Unknown arguments\.user_confirmed/,'consent is not a tool argument');
   assert.throws(()=>validateToolArguments({proposal:'x',extra:1},consultTool.inputSchema),/Unknown/);
@@ -166,9 +167,8 @@ test('execution results report a workspace taken from client roots; roots are re
     await client.connect(clientTransport);
     const first = await client.callTool({ name: 'consult', arguments: { proposal: 'x' } });
     assert.equal(first.isError, false, JSON.stringify(first));
-    assert.equal(first.structuredContent.workspaceSource, 'client_root');
     assert.equal(fs.realpathSync(seen[0]), fs.realpathSync(root));
-    assert.ok(!first.content[0].text.includes('> Workspace:'), 'a client root costs no extra text');
+    assert.equal(readResult(first).workspace, null, 'a client root costs no extra text');
     await client.callTool({ name: 'consult', arguments: { proposal: 'y' } });
     assert.equal(rootsRequests, 1, 'roots are cached per connection');
     await client.sendRootsListChanged();
@@ -176,7 +176,8 @@ test('execution results report a workspace taken from client roots; roots are re
     await client.callTool({ name: 'consult', arguments: { proposal: 'z' } });
     assert.equal(rootsRequests, 2, 'a roots change is read again');
     const explicit = await client.callTool({ name: 'consult', arguments: { proposal: 'w', workspace_path: tempDir } });
-    assert.equal(explicit.structuredContent.workspaceSource, 'argument');
+    assert.equal(readResult(explicit).workspace, null, 'an explicit path costs no extra text');
+    assert.equal(fs.realpathSync(seen[3]), fs.realpathSync(tempDir), 'the explicit path is the workspace');
     assert.equal(rootsRequests, 2, 'an explicit path needs no roots request');
   } finally {
     await client.close();
@@ -201,7 +202,7 @@ test('execution errors carry the code raised at their source; an unknown failure
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const call = async args => (await client.callTool({ name: 'consult', arguments: { workspace_path: tempDir, ...args } })).structuredContent.error;
+    const call = async args => readResult(await client.callTool({ name: 'consult', arguments: { workspace_path: tempDir, ...args } })).error;
     const unknown = await call({ proposal: 'x' });
     assert.equal(unknown.code, 'PROCESS_ERROR');
     assert.equal(unknown.message, 'Lock timeout on probe cache.');
@@ -210,7 +211,7 @@ test('execution errors carry the code raised at their source; an unknown failure
     assert.ok(!denied.message.startsWith('POLICY_DENIED'), 'the message carries no code prefix');
     assert.equal((await call({ proposal: 'x', session_handle: 'syn_sess_0000000000000000' })).code, 'SESSION_INVALID');
     const invalid = await client.callTool({ name: 'consult', arguments: { proposal: '', workspace_path: tempDir } });
-    assert.equal(invalid.structuredContent.error.code, 'INPUT_LIMIT', 'rejected input keeps INPUT_LIMIT');
+    assert.equal(readResult(invalid).error.code, 'INPUT_LIMIT', 'rejected input keeps INPUT_LIMIT');
   } finally {
     await client.close();
     await server.close();
@@ -265,7 +266,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
 
     const plain = await connect({});
     opened.push(plain);
-    const refused = (await call(plain.client, 'claude-opus-4-6-thinking')).structuredContent.error;
+    const refused = readResult(await call(plain.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(refused.code, 'POLICY_DENIED');
     assert.match(refused.message, /no MCP elicitation/);
 
@@ -274,23 +275,23 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const requests = [];
     let answer = { action: 'decline' };
     asking.client.setRequestHandler(ElicitRequestSchema, async request => { requests.push(request.params); return answer; });
-    const declined = (await call(asking.client, 'claude-opus-4-6-thinking')).structuredContent.error;
+    const declined = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(declined.code, 'POLICY_DENIED');
     assert.match(declined.message, /did not approve/);
     answer = { action: 'accept', content: { approve: false } };
-    assert.equal((await call(asking.client, 'claude-opus-4-6-thinking')).structuredContent.error.code, 'POLICY_DENIED', 'an unchecked box declines');
+    assert.equal(readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error.code, 'POLICY_DENIED', 'an unchecked box declines');
     assert.deepEqual(consented, [], 'nothing runs before the user approves');
 
     answer = { action: 'accept', content: { approve: true } };
     const approved = await call(asking.client, 'claude-opus-4-6-thinking');
-    assert.equal(approved.structuredContent.output, 'approved answer');
+    assert.equal(readResult(approved).answer, 'approved answer');
     assert.deepEqual(consented, ['claude-opus-4-6-thinking']);
     assert.match(requests[0].message, /top-tier model 'claude-opus-4-6-thinking' on gemini/);
     assert.equal(requests[0].requestedSchema.properties.approve.type, 'boolean');
 
     // A default-tier model never prompts the user.
     const plainTurn = await call(asking.client, undefined);
-    assert.equal(plainTurn.isError, false, JSON.stringify(plainTurn.structuredContent));
+    assert.equal(plainTurn.isError, false, plainTurn.content[0].text);
     assert.equal(requests.length, 3);
     assert.deepEqual(consented, ['claude-opus-4-6-thinking', undefined]);
   } finally {

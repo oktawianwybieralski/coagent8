@@ -57,8 +57,7 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
   const { getAllCallableToolDefinitions } = require('../../src/server.ts');
   const allCallable = getAllCallableToolDefinitions();
   const runDef = allCallable.find(t => t.name === 'run');
-  assert.ok(runDef.outputSchema.anyOf, 'Run gateway outputSchema must be a union (anyOf) accommodating both execution and issue');
-  assert.equal(runDef.outputSchema.type, 'object', 'Run gateway outputSchema must declare root type: object');
+  assert.equal(runDef.outputSchema, undefined, 'run returns execution results, which are markdown only (CONTEXT-001)');
 
   // The advertised tools pass the SDK's ListToolsResultSchema validation
   const { ListToolsResultSchema } = require('@modelcontextprotocol/sdk/types.js');

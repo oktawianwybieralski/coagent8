@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {connect: connectStdio}=require('../helpers/stdio.cjs');
+const { readResult } = require('../helpers/result.cjs');
 
 function connect(dir) {
   return connectStdio(process.execPath,['--require','tsx/cjs',path.resolve(__dirname, '../../src/index.ts')],{env:{...process.env,coagent8_DIR:dir,GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.resolve(__dirname, '../fixtures/gemini-cli/gemini.cjs')}});
@@ -22,14 +23,17 @@ test('MCP stdio exposes unified schema; two fixture turns, public history, fallb
   const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,6);assert.ok(list.result.tools.some(x=>x.name==='issue'));
   assert.ok(list.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
   assert.match(init.result.instructions,/^Second opinion or code review from another local coding agent/);
-  const definition=list.result.tools.find(x=>x.name==='consult');assert.ok(definition.inputSchema.properties.backend.enum.includes('gemini'));assert.ok(definition.outputSchema);
+  const definition=list.result.tools.find(x=>x.name==='consult');assert.ok(definition.inputSchema.properties.backend.enum.includes('gemini'));
+  // CONTEXT-001: Claude Code shows the model only structuredContent when a result has one, so execution tools declare no outputSchema and return markdown only.
+  for(const name of ['consult','review'])assert.equal(list.result.tools.find(x=>x.name===name).outputSchema,undefined,name);
   const invalid=await c.request('tools/call',{name:'analyze',arguments:{task:'x',file_paths:[2]}});assert.equal(invalid.result.isError,true);assert.equal(invalid.error,undefined);
   const bad=await c.request('tools/call',{name:'consult',arguments:{proposal:'x',workspace_path:path.join(dir,'token=fixtureSecret')}});assert.ok(!JSON.stringify(bad).includes('fixtureSecret'));
   const first=await c.request('tools/call',{name:'consult',arguments:{proposal:'first public turn',backend:'gemini',workspace_path:dir},_meta:{progressToken:'turn-one'}});
   assert.equal(first.result.isError,false,JSON.stringify(first));
-  const handle=first.result.structuredContent.sessionHandle;
+  assert.equal(first.result.structuredContent,undefined,'the answer and its footer reach every client in content');
+  const handle=readResult(first.result).sessionHandle;
   const second=await c.request('tools/call',{name:'analyze',arguments:{task:'second public turn',session_handle:handle,workspace_path:dir}});
-  assert.equal(second.result.isError,false);assert.equal(second.result.structuredContent.turn,2);assert.ok(second.result.content[0].text.includes('Markdown'));
+  assert.equal(second.result.isError,false);assert.equal(readResult(second.result).turn,2);assert.ok(second.result.content[0].text.includes('Markdown'));
   const history=await c.request('tools/call',{name:'session',arguments:{action:'history',session_handle:handle,workspace_path:dir,limit:100}});
   assert.equal(history.result.structuredContent.events.filter(e=>e.type==='user_message').length,2);
   assert.equal(history.result.structuredContent.events.filter(e=>e.type==='assistant_message').length,2);
