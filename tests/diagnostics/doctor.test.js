@@ -122,9 +122,10 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.equal(summary.split('\n').length, 7, summary);
     assert.match(summary, /\ngemini: ready[^\n]*\n {2}models: gemini-3\.8-flash \(high\|low\)(\n|$)/, 'the catalog the CLI lists, with the efforts a model needs');
     assert.match(summary, /\n {2}models: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
-    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto/);
-    assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
-    assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model \(CLI config\) · weekly 81% left/);
+    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices \d{4}-\d{2}-\d{2} \(19 models\)/);
+    // The fixture models have no price, so the policy asks before each turn and doctor says so.
+    assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
+    assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model \(CLI config, asks each turn\) · weekly 81% left/);
     assert.ok(Buffer.byteLength(summary) < 1024, 'summary budget 1 KB');
 
     assert.equal(report.backends.gemini.quota, undefined, 'quota reported once, under quotas');

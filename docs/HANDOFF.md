@@ -36,9 +36,11 @@ scope. The runtime contract lists these as `CUR-001` through `CUR-012` (the last
 `CUR-003` (accepted consent without the checkbox) is closed on `fix/explicit-consent`.
 
 Archival off does not mean session-free execution. Catalog validation is
-best-effort. Current consent uses model-name families; relative-price consent
-is a proposal. Model catalogs and defaults come from the CLIs and `config.json`
-(`refactor/model-catalog-cache`). Do not document them as existing
+best-effort. Consent is decided by approximate price (`feat/price-based-consent`);
+model catalogs and defaults come from the CLIs and `config.json`
+(`refactor/model-catalog-cache`). Claude's recorded default `claude-opus-5-5`
+costs 20 USD per million output tokens, at the default limit, so it asks on every
+turn until the owner relaxes `governance`. Do not document them as existing
 configuration or weaken the P0 policy while implementing them.
 
 ## Local branches after 24052e3
@@ -53,17 +55,19 @@ pushed. The ledger up to `24052e3` is in the
 | `fix/explicit-consent` | `d811099` | `CUR-003`: only an accepted form with `approve: true` is consent |
 | `fix/session-effort-continuation` | `690b3d0` | A continuation keeps the session's reasoning effort (found by the headless AX retest) |
 | `docs/ax-retest` | `dd4711a` | Headless AX retest in fresh Codex and agy sessions recorded in `CONTEXT-001` |
-| `refactor/model-catalog-cache` | this change | No model names in `src/` code (governance aside); defaults from the CLIs and `config.json`; catalogs in `models.json`; Claude names resolved through `system/init` |
+| `refactor/model-catalog-cache` | `1d3c8dc` | No model names in `src/` code (governance aside); defaults from the CLIs and `config.json`; catalogs in `models.json`; Claude names resolved through `system/init` |
+| `feat/price-based-consent` | this change | Consent by approximate price (OpenRouter): relative to the default, a 20 USD limit, remember for unknown or approximate prices; rule 01 reworded with the owner's confirmation |
 
 ## Next work
 
 Order decided by the owner on 2026-10-07: `CUR-003` first (done), then:
 
 1. Done: `refactor/model-catalog-cache` (`EXEC-001`). The recorded Claude
-   default is `claude-opus-5-5` on the owner's account, governed by the current
-   name rule, so headless clients must name a Claude model until step 2.
-2. `feat/price-based-consent` (`EXEC-001`); the owner confirms the new rule 01
-   text before it is committed.
+   default on the owner's account is `claude-opus-5-5`.
+2. Done: `feat/price-based-consent` (`EXEC-001`), rule 01 confirmed by the owner.
+   At 20 USD per million output tokens that Claude default reaches the default
+   limit and asks on every turn; headless clients must name a cheaper Claude model
+   until the owner relaxes `governance` (`neverAsk` or `askAbovePrice`).
 3. Close `CUR-001` (review input completeness/snapshot binding) and `CUR-002`
    (inherited MCP isolation), then the execution/cache/session work in the
    owning roadmap milestones.

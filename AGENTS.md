@@ -27,10 +27,10 @@ MCP use. Historical plans and RFCs do not override this direction.
      Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
      agy receives native --sandbox. Inherited MCP isolation for Codex/agy remains
      an open deviation, not an exemption from this invariant.
-   - Governed models (currently astra/opus families and best) require explicit
-     user approval (an explicit `approve: true`) through server MCP elicitation;
-     a calling agent cannot grant it. Price governance remains a proposal in the
-     roadmap.
+   - Models priced as expensive (at least 2x the backend default, or 20 USD per
+     million output tokens), unknown or approximately priced require explicit user
+     approval (`approve: true`) through server MCP elicitation; a calling agent
+     cannot grant it.
    - Automated secret redaction for API keys, tokens, credentials, and user home directory paths, without rewriting ordinary content of public answers.
 
 2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:

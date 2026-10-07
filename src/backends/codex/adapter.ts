@@ -4,7 +4,7 @@ import fs from 'fs';
 import { runCommand } from '../../execution/process.js';
 import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult } from '../types.js';
 import { validEventIdentifier, type ExecutionError } from '../../conversation.js';
-import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../governance.js';
+import { isValidModelIdentifier } from '../model-identifier.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
 import { createCodexAppSession } from './app-server.js';
@@ -145,7 +145,6 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   });
   if (model === undefined) return rejected('INPUT_LIMIT', 'No Codex model selected; the controller passes the config.toml model or the catalog default.');
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
-  if (isGovernedModel(model) && options.consentedModel !== model) return rejected('POLICY_DENIED', consentRequiredMessage(model));
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
   // The app-server session requests read-only mode per thread and verifies the server's
   // answer; the config overrides pin the same policy for the server's defaults.

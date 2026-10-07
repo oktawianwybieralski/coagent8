@@ -79,7 +79,7 @@ function npmRun(args,cwd=root) {
     assert.ok(!fs.existsSync(sdk),'SDK must be unavailable during runtime smoke');
     assert.ok(!fs.existsSync(path.join(dir,'node_modules','tsx')));for(const tool of ['esbuild','tsdown','rolldown'])assert.ok(!fs.existsSync(path.join(dir,'node_modules',tool)),tool);
     for(const [binIndex,command] of commands.entries()) {
-    const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.join(root,'tests','fixtures','gemini-cli','gemini.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:''}});
+    const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.join(root,'tests','fixtures','gemini-cli','gemini.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
     const {proc,request}=connection;
     try {
       const init=await request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'tarball-consumer',version:'1'}});assert.equal(init.result.serverInfo.version,installed.version);

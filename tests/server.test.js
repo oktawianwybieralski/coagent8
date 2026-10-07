@@ -11,7 +11,6 @@ process.env.coagent8_DIR = tempDir;
 const { createHistoryWriter } = require('../src/sessions/history.ts');
 const { createSession } = require('../src/sessions/session.ts');
 const { createServer, createToolDefinitions, validateToolArguments } = require('../src/server.ts');
-const { isGovernedModel } = require('../src/backends/governance.ts');
 const { readResult } = require('./helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -104,7 +103,7 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   }
 });
 
-test('F14/F15: shared schema validates required fields, types, enums, unknown fields and model families',()=>{
+test('F14/F15: shared schema validates required fields, types, enums and unknown fields',()=>{
   const tools=createToolDefinitions();assert.equal(new Set(tools.map(t=>t.name)).size,tools.length);
   const consultTool=tools.find(t=>t.name==='consult');assert.ok(consultTool.inputSchema.properties.session_handle);assert.equal(consultTool.outputSchema,undefined,'execution results are markdown only (CONTEXT-001)');
   assert.throws(()=>validateToolArguments({},consultTool.inputSchema),/Missing/);
@@ -114,7 +113,6 @@ test('F14/F15: shared schema validates required fields, types, enums, unknown fi
   const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
   assert.ok(validateToolArguments({task:'x',backend:'gemini'},schema));
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
-  for(const model of ['gpt-6-astra','gpt-6.1-astra','claude-opus-4-6','opus','astra'])assert.ok(isGovernedModel(model),model);
 });
 
 test('the connected client name sets the caller CLI that auto routing avoids', async () => {
@@ -246,13 +244,13 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
   const { ElicitRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
   const { adapterRegistry } = require('../src/backends/registry.ts');
-  const { saveConfig } = require('../src/config.ts');
+  const { saveConfig, loadConfig } = require('../src/config.ts');
   const original = adapterRegistry.gemini;
   const consented = [];
   const withDefault = defaultModel => async () => ({ installed: true, version: 'fixture', config: { defaultModel } });
   adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: withDefault('gemini-3.8-flash-high'),
     execute: async (_prompt, options) => {
-      consented.push(options.consentedModel);
+      consented.push(options.model);
       return { status: 'completed', isError: false, output: 'approved answer', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
     } };
   const connect = async capabilities => {
@@ -265,7 +263,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   };
   const opened = [];
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] } });
     const callWith = (client, args) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...args } });
     const call = (client, model) => callWith(client, model ? { model } : {});
 
@@ -297,9 +295,10 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const approved = readResult(await call(asking.client, 'claude-opus-4-6-thinking'));
     assert.equal(approved.answer, 'approved answer');
     assert.deepEqual(consented, ['claude-opus-4-6-thinking']);
-    assert.match(requests[0].message, /top-tier model 'claude-opus-4-6-thinking' on gemini/);
+    assert.match(requests[0].message, /run 'claude-opus-4-6-thinking' on gemini\? Its price is known only approximately/);
     assert.equal(requests[0].requestedSchema.properties.approve.type, 'boolean');
     assert.deepEqual(requests[0].requestedSchema.required, ['approve']);
+    assert.equal(requests[0].requestedSchema.properties.remember.type, 'boolean', 'an approximate price offers remember');
 
     // A continued session asks again on every turn, and an empty form still declines.
     answer = { action: 'accept', content: {} };
@@ -312,11 +311,24 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     assert.deepEqual(consented, ['claude-opus-4-6-thinking'], 'no declined turn ran');
     adapterRegistry.gemini = { ...adapterRegistry.gemini, probe: withDefault('gemini-3.8-flash-high') };
 
-    // A default-tier model never prompts the user.
+    // A default model the policy does not price as expensive never prompts the user.
     const plainTurn = await call(asking.client, undefined);
     assert.equal(plainTurn.isError, false, plainTurn.content[0].text);
     assert.equal(requests.length, 8);
-    assert.deepEqual(consented, ['claude-opus-4-6-thinking', undefined]);
+    assert.deepEqual(consented, ['claude-opus-4-6-thinking', 'gemini-3.8-flash-high']);
+
+    // An expensive priced model asks on every turn, without remember.
+    answer = { action: 'decline' };
+    assert.equal(readResult(await call(asking.client, 'gpt-6-astra')).error.code, 'POLICY_DENIED');
+    assert.equal(requests.at(-1).requestedSchema.properties.remember, undefined, 'a known high price is asked for every time');
+    // An unknown model approved with remember is not asked for again.
+    answer = { action: 'accept', content: { approve: true, remember: true } };
+    assert.equal(readResult(await call(asking.client, 'gpt-7-nova')).answer, 'approved answer');
+    assert.deepEqual(loadConfig().governance.neverAsk, ['gpt-7-nova']);
+    answer = { action: 'decline' };
+    const asked = requests.length;
+    assert.equal(readResult(await call(asking.client, 'gpt-7-nova')).answer, 'approved answer');
+    assert.equal(requests.length, asked, 'remembered: no prompt');
   } finally {
     for (const { client, server } of opened) { await client.close(); await server.close(); }
     adapterRegistry.gemini = original;

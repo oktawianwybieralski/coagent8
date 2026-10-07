@@ -27,6 +27,10 @@ are removed, and PATH retains Node, Git and OS tools. Launch through `tests/run.
 instead of bypassing that isolation. Fixtures model protocols and failure paths;
 they do not prove native authentication, external MCP isolation or UI acceptance.
 Recorded CLI transcripts under fixture subdirectories are dated historical evidence.
+`prices/openrouter-models.json` abridges the OpenRouter model list of 2026-10-07 to
+the models the fixtures name (id and pricing only) and adds `fixture/fixture-model`
+for test doubles; the runner points `coagent8_PRICES_URL` at it, so no test reads
+prices from the network.
 
 Most unit/e2e checks load current `src/` via tsx. Setup checks use `dist/index.cjs`
 and need a prior build for current-bundle evidence. Consumer smoke installs and

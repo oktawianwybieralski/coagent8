@@ -28,7 +28,7 @@ import { canonicalPath, sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation, type ConsentPrompt } from './execution/controller.js';
 import { providerForClient, setCallerProvider } from './backends/routing.js';
-import { isValidModelIdentifier } from './backends/governance.js';
+import { isValidModelIdentifier } from './backends/model-identifier.js';
 import type { ToolArguments } from './tools/arguments.js';
 
 export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inputSchema: { type: string; properties?: Record<string, object>; required?: string[] }; outputSchema?: { type: string; [key: string]: unknown } };
@@ -200,23 +200,27 @@ export function createServer(): Server {
     return chooseWorkspace(rawPath, rawPath ? null : await workspaceRoots());
   }
 
-  // A top-tier model runs only after the user approves it in the client (AUD-P1-7). Without
-  // form elicitation there is no prompt and the controller refuses such a model.
+  // A model the governance policy asks for runs only after the user approves it in the client
+  // (AUD-P1-7). Without form elicitation there is no prompt and the controller refuses it.
   function consentPrompt(signal: AbortSignal): ConsentPrompt | undefined {
     if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
-    return async ({ backend, model }) => {
+    return async ({ backend, model, reason, offerRemember }) => {
       let answer: ElicitResult;
       try {
         answer = await server.elicitInput({
-          message: `${BRAND.NAME}: run top-tier model '${model}' on ${backend}? It uses more of your plan or budget than the default model.`,
-          requestedSchema: { type: 'object', properties: { approve: { type: 'boolean', title: `Run ${model}`, default: true } }, required: ['approve'] },
+          message: `${BRAND.NAME}: run '${model}' on ${backend}? ${reason}`,
+          requestedSchema: { type: 'object', required: ['approve'], properties: {
+            approve: { type: 'boolean', title: `Run ${model}`, default: true },
+            ...(offerRemember ? { remember: { type: 'boolean', title: `Do not ask again for ${model}`, default: false } } : {}),
+          } },
         }, { signal, timeout: CONSENT_TIMEOUT_MS });
       } catch (cause) {
         if (signal.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.', { cause });
-        throw new ToolError('POLICY_DENIED', `The approval request for top-tier model '${model}' failed: ${(cause as Error).message}`, { cause });
+        throw new ToolError('POLICY_DENIED', `The approval request for model '${model}' failed: ${(cause as Error).message}`, { cause });
       }
       // Only an accepted form with the box checked is consent (CUR-003); a missing field is not.
-      return answer.action === 'accept' && answer.content?.approve === true;
+      const approved = answer.action === 'accept' && answer.content?.approve === true;
+      return { approved, remember: approved && offerRemember && answer.content?.remember === true };
     };
   }
 

@@ -97,7 +97,9 @@ Storage root: `coagent8_DIR` or `~/.coagent8`.
 
 `defaultBackend` accepts a concrete provider or `smart_quota`.
 `backends.<id>.defaultModel` is the model a turn runs when neither the call nor
-its session names one; it must be a valid model identifier.
+its session names one; it must be a valid model identifier. `governance`
+(`priceMultiplier`, `askAbovePrice`, `alwaysAsk`, `neverAsk`) is described under
+[model consent](#model-consent).
 `routing.strategy` accepts `fixed` or `smart_quota`. For `auto`, a configured
 smart strategy takes precedence over the fixed default. An explicit provider
 wins, subject to `allowedBackends`, installation and execution support.
@@ -118,8 +120,7 @@ Explicit fixed-provider resolution bypasses that quota-cache requirement.
 Missing configuration uses defaults. An existing unreadable, malformed or invalid
 file refuses execution with `POLICY_DENIED`. Discovery remains available;
 doctor reports the error using diagnostic defaults. Unsupported configuration
-properties are ignored and dropped when CoAgent8 writes the file; proposed price
-settings have no runtime effect.
+properties are ignored and dropped when CoAgent8 writes the file.
 
 ## 2. Models, consent, results and errors
 
@@ -166,21 +167,48 @@ duplicate processes, and the keys do not cover every provider setting.
 Doctor reports each backend's default and its source. When the default is one
 the CLI does not state itself (the first model agy lists, the model Claude Code
 reports), the first doctor records it in `config.json` and says so, so a later
-catalog order or account change cannot switch it silently. Price-based consent is
-a proposal, not configuration supported by this snapshot.
+catalog order or account change cannot switch it silently. The summary marks a
+default the governance policy asks for on every turn.
 
-### Top-tier model consent
+### Model consent
 
-Current governance matches `astra`/`opus` families, `opusplan` and exact
-`best`. It is a name rule, not a price comparison. Requested, resumed and
-effective default models are governed on every turn.
+Governance decides by approximate price, not by name, for the concrete model a
+turn runs (requested, resumed or default), on every turn. The user is asked when
+the model:
+
+1. is on `governance.alwaysAsk`;
+2. has no price list to compare (asked until approved with "remember");
+3. has no known price, or one matched only approximately, such as a `-thinking`
+   or `-preview` name or a `[1m]` context variant (asked until approved with
+   "remember");
+4. costs at least `governance.askAbovePrice` USD per million output tokens
+   (default 20; the backend default included; `null` disables);
+5. costs at least `governance.priceMultiplier` (default 2) times the backend
+   default's output price.
+
+`governance.neverAsk` exempts a model unless it is also on `alwaysAsk`; an
+approval with "remember" adds the model to it. Rules 4 and 5 ask on every turn
+and offer no "remember".
+
+Prices are OpenRouter's public API prices (`GET /api/v1/models`, no key, no user
+data sent), or a list at `coagent8_PRICES_URL` (http(s) URL or local file). Reads
+are bounded to 10 s and 4 MiB and validated; variants (`:batch`) and entries
+without a fixed price are skipped. The output price of each model is stored in
+`models.json`. A turn reads the list only when none is stored, shared by
+concurrent turns and retried at most every five minutes after a failure; doctor
+reads a list older than a week again. A stored list is used whatever its age.
+Prices are matched by name: exactly, also without an effort (`-high`) or date
+suffix; otherwise approximately when one name extends the other. Among several
+entries the highest price counts. Prices decide only whether to ask; they are not
+billing and say nothing about a model's safety.
 
 The rule requires explicit user approval through MCP form elicitation.
 The calling agent cannot grant consent. Unsupported elicitation, decline,
 cancel or unchecked approval yields `POLICY_DENIED`. The request has a
 five-minute timeout and follows caller cancellation. Consent binds to one model
 and one turn; acquisition of a session and model execution follow consent.
-Version, auth and catalog probes may launch metadata CLI processes first.
+Version, auth, catalog and model-resolution probes may launch metadata CLI
+processes, and the price list may be read, before consent.
 
 The form requires `approve`, and only an accepted form with `approve: true` is
 consent. An accepted form without the field, with a non-boolean value or with
@@ -388,7 +416,6 @@ These are open implementation issues, not relaxed security requirements.
 | CUR-007 | Timeout and duration omit preparation; agy headless host has a measured 180-second limit | `CLI-INTERACT-001` / `CONTEXT-001` |
 | CUR-008 | Sessions remain mandatory with archival disabled; first active handle is unavailable until return | `SESSION-001` / `HISTORY-002` |
 | CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |
-| CUR-010 | Governance families remain name literals; no price catalog exists (defaults and aliases come from the CLIs and `config.json`) | `EXEC-001` |
 | CUR-011 | POSIX unexpected-parent-death cleanup is not implemented | `WINDOWS-001` |
 | CUR-012 | Snapshot bytes are accounted after writing; the archive budget is not a strict instantaneous disk ceiling | `HISTORY-002` |
 

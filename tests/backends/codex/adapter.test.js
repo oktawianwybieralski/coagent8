@@ -89,10 +89,10 @@ test('Codex declines server requests, ignores sub-agent threads, sums turn usage
   delete process.env.CODEX_FIXTURE_MODE;
 });
 
-test('Codex respects deadlines, cancellation and effective model governance through the common runner',async () => {
+test('Codex respects deadlines and cancellation through the common runner, and never runs without a selected model',async () => {
   fs.rmSync(process.env.CODEX_FIXTURE_CAPTURE,{force:true});
-  const denied = await execute('x',{...options,model:'gpt-6.1-astra'});
-  assert.equal(denied.error.code,'POLICY_DENIED'); assert.equal(fs.existsSync(process.env.CODEX_FIXTURE_CAPTURE),false);
+  const unselected = await execute('x',{...options,model:undefined});
+  assert.equal(unselected.error.code,'INPUT_LIMIT'); assert.equal(fs.existsSync(process.env.CODEX_FIXTURE_CAPTURE),false);
   const aborted = await execute('x',{...options,abortSignal:AbortSignal.abort()});
   assert.equal(aborted.status,'cancelled'); assert.equal(aborted.error.code,'ABORTED');
   assert.equal(fs.existsSync(process.env.CODEX_FIXTURE_CAPTURE),false);

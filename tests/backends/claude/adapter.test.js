@@ -82,19 +82,16 @@ test('Claude tolerates unknown events, maps auth and model failures, and require
   assert.equal(startup.continuationAvailable,false);
 }));
 
-test('Claude validates the model before argv, runs only the model it is given and keeps top-tier governance',()=>withFixture(async({dir,captured})=>{
+test('Claude validates the model before argv and runs exactly the model it is given',()=>withFixture(async({dir,captured})=>{
   for(const model of ['--dangerously-skip-permissions','sonnet --tools Bash','','x'.repeat(129)]){
     assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'INPUT_LIMIT',model);
   }
   assert.equal((await executeClaude('x',{cwd:dir})).error.code,'INPUT_LIMIT','without a selected model the CLI never chooses one');
   assert.equal(captured(),null);
-  const governed='claude-opus-4-6';
-  assert.equal((await executeClaude('x',{cwd:dir,model:governed})).error.code,'POLICY_DENIED');assert.equal(captured(),null);
-  assert.equal((await executeClaude('x',{cwd:dir,model:governed,consentedModel:'claude-opus-4-7'})).error.code,'POLICY_DENIED','consent covers one exact model');assert.equal(captured(),null);
-  const confirmed=await executeClaude('x',{cwd:dir,model:governed,consentedModel:governed});assert.equal(confirmed.status,'completed');
-  const {argv}=captured();assert.equal(argv[argv.indexOf('--model')+1],governed);
-  for(const model of ['opus','opusplan','opus[1m]','best'])assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'POLICY_DENIED',model);
-  assert.equal(captured(),null);
+  // Consent is the controller's: it asks the user before it passes a model that needs approval.
+  const expensive='claude-opus-4-6';
+  const ran=await executeClaude('x',{cwd:dir,model:expensive});assert.equal(ran.status,'completed');
+  const {argv}=captured();assert.equal(argv[argv.indexOf('--model')+1],expensive);
 }));
 
 test('Claude reports the model a name or its default runs from a local /usage run, without a model turn',()=>withFixture(async({captured})=>{

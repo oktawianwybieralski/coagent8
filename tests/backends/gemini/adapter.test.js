@@ -416,7 +416,7 @@ test('Gemini falls back to the requested model when agy omits it from init', asy
   }
 });
 
-test('agy always runs the selected model, and a top-tier model only with consent for that model (AUD-P1-7)', async () => {
+test('agy always runs exactly the selected model; the controller, not the adapter, asks for consent (AUD-P1-7)', async () => {
   const capturePath = path.join(tempDir, 'governed-capture.json');
   process.env.coagent8_FIXTURE_CAPTURE = capturePath;
   try {
@@ -428,14 +428,11 @@ test('agy always runs the selected model, and a top-tier model only with consent
     const args = JSON.parse(fs.readFileSync(capturePath, 'utf8')).args;
     assert.equal(args[args.indexOf('--model') + 1], MODEL);
     fs.rmSync(capturePath);
-    const governed = 'claude-opus-4-6-thinking';
-    for (const consentedModel of [undefined, 'claude-opus-4-7']) {
-      const denied = await execute('request', { cwd: tempDir, model: governed, consentedModel });
-      assert.equal(denied.error.code, 'POLICY_DENIED');
-    }
-    assert.equal(fs.existsSync(capturePath), false, 'agy is not launched without consent');
-    const approved = await execute('request', { cwd: tempDir, model: governed, consentedModel: governed });
-    assert.equal(approved.status, 'completed', JSON.stringify(approved));
+    const expensive = 'claude-opus-4-6-thinking';
+    const ran = await execute('request', { cwd: tempDir, model: expensive });
+    assert.equal(ran.status, 'completed', JSON.stringify(ran));
+    const expensiveArgs = JSON.parse(fs.readFileSync(capturePath, 'utf8')).args;
+    assert.equal(expensiveArgs[expensiveArgs.indexOf('--model') + 1], expensive);
   } finally {
     delete process.env.coagent8_FIXTURE_CAPTURE;
   }

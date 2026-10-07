@@ -5,7 +5,7 @@ import { redactDiagnostic } from '../../redaction.js';
 import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { extractStructuredGeminiError } from './errors.js';
-import { isValidModelIdentifier } from '../governance.js';
+import { isValidModelIdentifier } from '../model-identifier.js';
 /** Distinct unknown event types reported per turn; later ones are ignored silently. */
 const MAX_REPORTED_UNKNOWN_TYPES = 5;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;

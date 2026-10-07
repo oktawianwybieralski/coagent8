@@ -5,7 +5,8 @@ import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './execution/stream.js';
 import { withFileLock } from './sessions/lock.js';
-import { isValidModelIdentifier } from './backends/governance.js';
+import { isValidModelIdentifier } from './backends/model-identifier.js';
+import type { GovernanceSettings } from './backends/governance.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
 export type BackendId = ProviderId | 'smart_quota';
@@ -28,7 +29,12 @@ export interface CoAgent8Config {
   routing: RoutingConfig;
   /** Per-backend settings; doctor records a default model here when it finds none. */
   backends: Partial<Record<ProviderId, BackendSettings>>;
+  /** When the user is asked before a model runs; an approval with "remember" adds to `neverAsk`. */
+  governance: GovernanceSettings;
 }
+
+/** Longest `alwaysAsk` or `neverAsk` list. */
+const MAX_GOVERNED_MODELS = 256;
 
 function getConfigFile(): string {
   return process.env.coagent8_CONFIG || path.join(getDataDir(), 'config.json');
@@ -45,6 +51,9 @@ const DEFAULT_CONFIG: CoAgent8Config = {
     allowedBackends: ['codex', 'claude', 'gemini'],
   },
   backends: {},
+  // Owner decision of 2026-10-07: twice the default's price, and 20 USD per million output
+  // tokens for any model, the default included, unless the user relaxes either.
+  governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
 };
 
 function ensureConfigDir(): void {
@@ -139,6 +148,34 @@ export function validateConfig(value: unknown): CoAgent8Config {
     }
   }
 
+  const governance: GovernanceSettings = { ...DEFAULT_CONFIG.governance, alwaysAsk: [], neverAsk: [] };
+  if (config.governance !== undefined && config.governance !== null) {
+    if (typeof config.governance !== 'object' || Array.isArray(config.governance)) {
+      throw new Error('Configuration Error: governance must be an object.');
+    }
+    const fields = config.governance as Record<string, unknown>;
+    if (fields.priceMultiplier !== undefined) {
+      if (typeof fields.priceMultiplier !== 'number' || !Number.isFinite(fields.priceMultiplier) || fields.priceMultiplier <= 1) {
+        throw new Error('Configuration Error: governance.priceMultiplier must be a number greater than 1.');
+      }
+      governance.priceMultiplier = fields.priceMultiplier;
+    }
+    if (fields.askAbovePrice !== undefined) {
+      if (fields.askAbovePrice !== null && (typeof fields.askAbovePrice !== 'number' || !Number.isFinite(fields.askAbovePrice) || fields.askAbovePrice < 0)) {
+        throw new Error('Configuration Error: governance.askAbovePrice must be a price in USD per million output tokens, or null.');
+      }
+      governance.askAbovePrice = fields.askAbovePrice;
+    }
+    for (const list of ['alwaysAsk', 'neverAsk'] as const) {
+      const value = fields[list];
+      if (value === undefined) continue;
+      if (!Array.isArray(value) || value.length > MAX_GOVERNED_MODELS || !value.every(isValidModelIdentifier)) {
+        throw new Error(`Configuration Error: governance.${list} must be a list of at most ${MAX_GOVERNED_MODELS} model identifiers.`);
+      }
+      governance[list] = [...new Set(value)];
+    }
+  }
+
   const validated: CoAgent8Config = {
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
@@ -147,6 +184,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
       allowedBackends,
     },
     backends,
+    governance,
   };
 
   // A legacy `toolProfile` key is ignored: one tool list now serves every client.
@@ -154,7 +192,8 @@ export function validateConfig(value: unknown): CoAgent8Config {
 }
 
 function defaultConfig(): CoAgent8Config {
-  return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] }, backends: {} };
+  return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] }, backends: {},
+    governance: { ...DEFAULT_CONFIG.governance, alwaysAsk: [], neverAsk: [] } };
 }
 
 /**
@@ -210,9 +249,25 @@ export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
       ...(updates.routing || {}),
     },
     backends: { ...current.backends, ...(updates.backends || {}) },
+    governance: { ...current.governance, ...(updates.governance || {}) },
   });
   writeConfig(merged);
   return merged;
+}
+
+/**
+ * Adds a model the user approved with "remember" to `governance.neverAsk`.
+ * @returns Whether the list changed.
+ * @throws When the configuration cannot be locked, read, validated or written.
+ */
+export async function rememberApprovedModel(model: string): Promise<boolean> {
+  ensureConfigDir();
+  return withFileLock(getConfigFile(), async () => {
+    const current = loadConfig();
+    if (current.governance.neverAsk.includes(model)) return false;
+    writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }));
+    return true;
+  });
 }
 
 /**

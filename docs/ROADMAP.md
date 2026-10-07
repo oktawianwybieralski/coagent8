@@ -33,7 +33,7 @@ The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pendin
 | Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, cache-failure tolerance, end-to-end budget |
 | Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Coalesced misses, fuller invalidation, catalog/default redesign |
 | Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
-| Governance | Current astra/opus/best name rules | Persisted catalog and price policy remain proposals; resolve safety/design questions before implementation |
+| Governance | Consent by approximate price (relative to the default, 20 USD limit, remember for unknown prices); models and defaults from the CLIs and `config.json` (`CUR-010` closed locally) | Interactive approval UI acceptance |
 
 The [review at `24052e3`](PROJECT_REVIEW_2026-10-05.md#review-at-24052e3-2026-10-07)
 defines `CUR-*` findings. Their owning items below take precedence over
@@ -1025,6 +1025,13 @@ Plan:
   `gpt-6.1-sol` for 52.8 s from agy. Once prices are stored (`EXEC-001`, consent by
   relative price), `auto` could also prefer a cheaper model. Options: a faster default tier for `consult`,
   or only stating in the `backend` description that `auto` may run a large model.
+- [ ] `auto` and consent: when the client cannot ask the user (no form
+  elicitation), `auto`/`smart_quota` should skip a backend whose default model the
+  governance policy asks for, instead of selecting it and failing with
+  `POLICY_DENIED`. Since consent by price (2026-10-07) the owner's Claude default
+  `claude-opus-5-5` asks on every turn, so a plain headless consult routed to
+  Claude fails. Consent itself stays independent of quota: quota is transient and
+  sometimes unmeasured, and a P0 decision must not change with it.
 - [x] Live acceptance of the markdown result, 2026-10-07, built server at
   `fix/refused-call-footer`, each client a fresh headless process:
   - Claude Code 2.1.289 (`claude -p`, haiku) called `consult` on Codex
@@ -1335,7 +1342,7 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   a headless client must name a Claude model.
 
   Test fixtures may keep model names: they reproduce recorded CLI output.
-- [ ] **Consent by relative price instead of name families** (owner direction of
+- [x] **Consent by relative price instead of name families** (owner direction of
   2026-10-07). Approximate prices are enough: the decision is only whether to ask
   the user, and the tiers differ by up to 100×. The name rule is already stale:
   the recorded `claude-fable-5-1` example (then quoted at 10/50 USD per million
@@ -1361,32 +1368,60 @@ definition budget from 3,800 B to about 5 KB for described parameters.
     rejected: it is larger, and it prices `gpt-5.6-sol` at 4/20 where OpenRouter
     bills 2/10.
 
-  Proposed plan (requires implementation and the stated policy approval):
-  - doctor reads OpenRouter at most weekly (10 s timeout, size bound, field
-    validation) and stores the output price with each catalog model in
-    `models.json`, flagging approximate ID matches;
-  - a model needs consent when its output price is at least 2× the backend
-    default's (`governance.priceMultiplier`, default 2), or when it is on the
-    user's `governance.alwaysAsk` list; `governance.neverAsk` exempts a model.
-    Today this asks for `gpt-6-astra`, `claude-opus-*`, `claude-fable-*`, and
-    `gemini-3.1-pro` and the Claude models through agy;
-  - a model without a price, or with an approximate match, asks once, with a
-    "remember" box in the elicitation that writes the answer to `config.json`;
-  - `GOVERNED_FAMILY` and `GOVERNED_TOP_TIER_MODELS` go away. Rule 01 (P0) names
-    `astra` and `opus`, so its wording changes in the same branch (owner
-    confirmation required before merge);
-  - tests: `fable` asks, `luna` does not, `astra` asks, an unknown model asks once
-    and is remembered, no price data at all asks for anything not remembered.
+  Owner decisions of 2026-10-07 on the design questions of the review at `24052e3`:
+  - an expensive default asks by default: an absolute limit of 20 USD per million
+    output tokens (`governance.askAbovePrice`) applies to every model, the default
+    included, besides the relative rule (2× the default, `priceMultiplier`); the
+    user relaxes it with `neverAsk` for a model or `askAbovePrice: null`;
+  - without any stored list a turn reads it once (bounded); doctor reads it again
+    after a week;
+  - "remember" stores approvals only, by model id, in `governance.neverAsk`; a
+    decline stores nothing;
+  - the limit stays at 20 USD, weighed against 10 and 15: at today's prices it is
+    the opus/astra tier (`claude-opus-5.5` 20, `claude-opus-4.6` 25, `gpt-6-astra`
+    and `claude-fable-5.1` 50) and leaves sonnet (10 to 15), sol (10) and pro (12)
+    to the relative rule; 10 would ask on every turn of the Codex default
+    `gpt-6.1-sol`. Consent stays independent of quota (`auto` item in `CONTEXT-001`);
+  - the rule 01 (P0) wording, with the 20 USD limit, was confirmed before the commit.
 
-  Design questions before implementation:
-  - an expensive default has a ratio of one to itself: decide an independent
-    expensive-model threshold without weakening explicit consent;
-  - define missing/stale/approximate prices, provider aliases, changes in a
-    remembered model and the scope of remembered approval;
-  - validate first-listed agy defaults against catalog order changes, and
-    design Claude's default before writing user configuration;
-  - keep metadata fetches bounded and offline-safe. Do not infer subscription
-    billing equivalence or a model's safety from approximate API price alone.
+  Prices on 2026-10-07 (OpenRouter, USD per million output tokens): Codex default
+  `gpt-6.1-sol` 10, `gpt-6-astra` 50, `gpt-5.6-terra` 12, `gpt-5.6-luna` 1.2,
+  `gpt-6-luna` 0.5; agy default `gemini-3.8-flash` 3.75, `gemini-3.1-pro-preview`
+  12, `claude-sonnet-4.6` 15, `claude-opus-4.6` 25, `gpt-oss-120b` 0.17; Claude
+  `claude-opus-5.5` 20, `claude-sonnet-5.5` 10, `claude-fable-5.1` 50,
+  `claude-haiku-4.5` 5.
+
+  On `feat/price-based-consent`:
+  - `backends/prices.ts` reads OpenRouter's public list (or `coagent8_PRICES_URL`,
+    URL or file), bounded to 10 s and 4 MiB, keeps each model's output price in
+    `models.json` and matches names exactly (also without an effort or date
+    suffix) or approximately (one name extends the other; `[1m]` variants);
+  - `backends/governance.ts` decides: `alwaysAsk`, no price list, unknown or
+    approximate price (with "remember"), at or above `askAbovePrice`, at least
+    `priceMultiplier` times the default's; `neverAsk` exempts. The name families
+    and the adapters' name checks are gone; the controller is the only consent
+    owner and passes the adapter the model the user approved;
+  - the elicitation names the reason and offers "remember" only for an unknown or
+    approximate price; doctor shows the price list date and marks a default that
+    asks on every turn.
+
+  Evidence: `tests/backends/governance.test.js` (fable asks, luna does not, astra
+  asks; the default above the limit asks unless relaxed; unknown and approximate
+  models ask with remember; without prices everything not remembered asks; name
+  matching; a local HTTP source read once, refused over 4 MiB or without priced
+  models, read again by doctor after a week) and `tests/server.test.js` (a real MCP
+  client: the form offers remember only for unknown or approximate prices, an
+  unknown model approved with remember is in `neverAsk` and not asked again). The
+  same cases through `executeTask` without elicitation: on the previous source
+  `claude-fable-5-1` (default `claude-sonnet-5-5`) and an unknown `gpt-7-nova` ran
+  without asking; on this branch both are refused. `tests/backends/model-literals.test.js`
+  now covers all of `src/`. Full suite: 277 tests, 274 pass, 0 fail, 3 skipped;
+  typecheck, `lint:docs`, `npm run docs`, build and consumer smoke pass. Live on
+  2026-10-07 through the built server (no elicitation, temporary data directory,
+  live OpenRouter list: 351 priced models, 11 KB stored): Codex `gpt-5.6-luna` and
+  Claude `haiku` answered `OK`; `gpt-6-astra` and `fable` were refused (50 USD at or
+  above the limit) and agy's `claude-opus-4-6-thinking` (approximate price); doctor
+  marked Claude's default `claude-opus-5-5` (20 USD) as asking on every turn.
 
 - [ ] `CUR-006`: coalesce concurrent probe/catalog misses; expand invalidation
   for actual provider configuration/env selectors (including Codex home and

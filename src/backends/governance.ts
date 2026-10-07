@@ -1,30 +1,74 @@
-const GOVERNED_TOP_TIER_MODELS = new Set(['astra', 'claude-3-opus', 'claude-3-opus-20240229', 'opus', 'best']);
-const GOVERNED_FAMILY = /(?:^|[-_/])(?:astra|opus(?:plan)?)(?:$|[-_/\d\[])/;
-/** Model identifier pattern from the audit (AUD-P1-6); rejects option-like and whitespace values. */
-const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
-
 /**
- * Returns whether a model is top-tier and runs only after the user approves it.
- * @remarks Consent comes from the user through MCP elicitation, never from a tool
- * argument the calling agent sets (AUD-P1-7).
+ * Model governance (`EXEC-001`, owner decisions of 2026-10-07): whether the user must
+ * approve a model before it runs, decided by its approximate price, not by its name.
+ *
+ * @remarks
+ * A model is asked for when it is on `alwaysAsk`; when no price list is available; when its
+ * price is unknown or matched only approximately; when its output price is at or above
+ * `askAbovePrice` (USD per million tokens, default 20, which also covers an expensive
+ * default model); or when it is at least `priceMultiplier` (default 2) times the price of its
+ * backend's default model. `neverAsk` exempts a model, and an approval with "remember"
+ * adds an unknown or approximate one to it. Consent itself is asked by the server through
+ * MCP elicitation; a calling agent cannot grant it (AUD-P1-7).
+ *
+ * @packageDocumentation
  */
-export function isGovernedModel(model: string | null | undefined): boolean {
-  if (typeof model !== 'string') return false;
-  const normalized = model.trim().toLowerCase();
-  return GOVERNED_TOP_TIER_MODELS.has(normalized) || GOVERNED_FAMILY.test(normalized);
+import { findPrice, type PriceList } from './prices.js';
+
+/** The user's governance settings (`config.json` `governance`). */
+export interface GovernanceSettings {
+  /** A model at least this many times the default's output price is asked for. */
+  priceMultiplier: number;
+  /** A model whose output price in USD per million tokens is at least this is asked for; null disables. */
+  askAbovePrice: number | null;
+  /** Models asked for on every turn whatever they cost. */
+  alwaysAsk: string[];
+  /** Models never asked for (unless also on `alwaysAsk`). */
+  neverAsk: string[];
 }
 
-/** One-line refusal when the user's approval for a top-tier model cannot be requested. */
-export function consentRequiredMessage(model: string | undefined): string {
-  return `Model '${model}' is top-tier and needs the user's approval, which this client cannot ask for (no MCP elicitation); retry without it or with a non-top-tier model.`;
+/** Whether to ask the user before a model runs, and why. */
+export interface ConsentDecision {
+  ask: boolean;
+  /** The approval may be remembered: the model has no price, or only an approximate one. */
+  offerRemember: boolean;
+  /** One sentence for the user and, on refusal, the caller. */
+  reason: string;
+}
+
+const usd = (value: number) => `${Number(value.toFixed(2))} USD`;
+
+/**
+ * Decides whether the user must approve a model before it runs.
+ * @param model - The concrete model the turn would run.
+ * @param defaultModel - The backend's default model, the price reference; undefined when none is known.
+ * @param prices - The price list, or undefined when none could be read.
+ * @param settings - The user's governance settings.
+ */
+export function decideConsent(model: string, defaultModel: string | undefined, prices: PriceList | undefined, settings: GovernanceSettings): ConsentDecision {
+  if (settings.alwaysAsk.includes(model)) return { ask: true, offerRemember: false, reason: `'${model}' is on the governance.alwaysAsk list.` };
+  if (settings.neverAsk.includes(model)) return { ask: false, offerRemember: false, reason: `'${model}' is on the governance.neverAsk list.` };
+  if (!prices) return { ask: true, offerRemember: true, reason: `No price list is available, so its cost is unknown.` };
+  const price = findPrice(prices, model);
+  if (!price) return { ask: true, offerRemember: true, reason: `No price is known for '${model}'.` };
+  if (!price.exact) return { ask: true, offerRemember: true, reason: `Its price is known only approximately, as ${price.matched}: ${usd(price.output)} per million output tokens.` };
+  if (settings.askAbovePrice !== null && price.output >= settings.askAbovePrice) {
+    return { ask: true, offerRemember: false, reason: `Its output costs ${usd(price.output)} per million tokens, at or above the ${usd(settings.askAbovePrice)} limit.` };
+  }
+  const reference = defaultModel && defaultModel !== model ? findPrice(prices, defaultModel) : undefined;
+  if (reference && reference.output > 0 && price.output >= settings.priceMultiplier * reference.output) {
+    return { ask: true, offerRemember: false,
+      reason: `Its output costs ${usd(price.output)} per million tokens, ${Number((price.output / reference.output).toFixed(1))} times the default ${defaultModel}'s ${usd(reference.output)}.` };
+  }
+  return { ask: false, offerRemember: false, reason: `Its output costs ${usd(price.output)} per million tokens.` };
+}
+
+/** One-line refusal when the user's approval cannot be requested. */
+export function consentRequiredMessage(model: string, reason: string): string {
+  return `Model '${model}' needs the user's approval, which this client cannot ask for (no MCP elicitation). ${reason} Retry with another model.`;
 }
 
 /** One-line refusal when the user declined or did not answer the approval request. */
-export function consentDeclinedMessage(model: string | undefined): string {
-  return `The user did not approve top-tier model '${model}'; retry without it or with a non-top-tier model.`;
-}
-
-/** Returns whether a requested or backend-reported model identifier is safe to pass on and record. */
-export function isValidModelIdentifier(value: unknown): value is string {
-  return typeof value === 'string' && MODEL_ID_PATTERN.test(value);
+export function consentDeclinedMessage(model: string): string {
+  return `The user did not approve model '${model}'; retry with another model.`;
 }

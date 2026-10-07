@@ -96,7 +96,7 @@ test('the first doctor records a default the CLI does not state itself in config
   adapterRegistry.claude = stub('claude', { observeModel: async requested => requested ?? 'claude-observed-default' });
   const first = await runDoctor({ quota: false });
   assert.deepEqual(first.defaultModels.gemini, { model: 'gemini-3.8-flash-high', source: 'first-listed', recorded: true });
-  assert.deepEqual(first.defaultModels.claude, { model: 'claude-observed-default', source: 'observed', recorded: true });
+  assert.deepEqual(first.defaultModels.claude, { model: 'claude-observed-default', source: 'observed', recorded: true, asks: true });
   assert.deepEqual(first.defaultModels.codex, { model: 'gpt-6.1-sol', source: 'catalog' }, "Codex's declared default is not pinned");
   assert.match(formatDoctorSummary(first), /gemini: [^\n]* · model gemini-3\.8-flash-high \(first listed, recorded in config\.json\)/);
   assert.deepEqual(loadConfig().backends, { codex: {}, claude: { defaultModel: 'claude-observed-default' }, gemini: { defaultModel: 'gemini-3.8-flash-high' } });

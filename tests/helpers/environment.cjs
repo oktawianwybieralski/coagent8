@@ -60,6 +60,8 @@ function createTestEnvironment(base = process.env) {
     CODEX_PATH: path.join(fixtures, 'codex-cli', 'codex.cjs'),
     AGY_PATH: path.join(fixtures, 'gemini-cli', 'gemini.cjs'),
     GEMINI_PATH: path.join(fixtures, 'gemini-cli', 'gemini.cjs'),
+    // Model prices come from a recorded list, never from the network.
+    coagent8_PRICES_URL: path.join(fixtures, 'prices', 'openrouter-models.json'),
   });
   for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) delete env[key];
   return { env, root };

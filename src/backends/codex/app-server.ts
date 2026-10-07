@@ -17,7 +17,7 @@ import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';
-import { isValidModelIdentifier } from '../governance.js';
+import { isValidModelIdentifier } from '../model-identifier.js';
 
 export interface CodexAppSessionOptions {
   collector: ReturnType<typeof createCodexStreamCollector>;

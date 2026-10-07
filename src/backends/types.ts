@@ -99,11 +99,6 @@ export interface ExecutionOptions {
   onProgress?: (info: { message?: string; percent?: number }) => void;
   /** Existing thread or session ID for resuming multi-turn conversation. */
   threadId?: string | null;
-  /**
-   * The top-tier model the user approved for this turn through MCP elicitation.
-   * Set only by the controller after the user's answer, never from tool arguments.
-   */
-  consentedModel?: string;
   /** Backend process-phase budget in milliseconds; defaults to 900,000, excluding controller preparation. */
   timeoutMs?: number;
   nativeSessionId?: string | null;

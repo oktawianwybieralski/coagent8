@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { runCommand, type StdinChannel, type StdinSession } from '../../execution/process.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../governance.js';
+import { isValidModelIdentifier } from '../model-identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
@@ -138,7 +138,6 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   const model: unknown = options.model;
   if (model === undefined) return rejected('INPUT_LIMIT', 'No Claude model selected; the controller passes the model Claude Code reported.');
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Claude model identifier.');
-  if (isGovernedModel(model) && options.consentedModel !== model) return rejected('POLICY_DENIED', consentRequiredMessage(model), model);
   const resumeRaw = options.nativeSessionId || options.threadId || null;
   const resumeId = typeof resumeRaw === 'string' ? resumeRaw.trim().toLowerCase() : null;
   if (resumeId && !SESSION_ID_PATTERN.test(resumeId)) return rejected('SESSION_INVALID', 'Invalid native Claude session ID.', model);

@@ -141,8 +141,8 @@ transcript, agy results from its answers.
 | Permission for an MCP tool in `-p` mode | `--allowedTools` | an allow rule `mcp(<server>/<tool>)` in the user settings; a workspace settings file is ignored |
 
 Consequences for CoAgent8:
-- In headless mode both clients cancel the consent request, so a top-tier model
-  always fails with `POLICY_DENIED`. The interactive prompt is not yet verified.
+- In headless mode both clients cancel the consent request, so a model that
+  needs approval always fails with `POLICY_DENIED`. The interactive prompt is not yet verified.
 - In the measured headless agy version, the 3-minute host limit cancels the
   backend turn. Interactive Antigravity IDE timing was not measured.
 - Claude Code showed the model the JSON `structuredContent` (answer in

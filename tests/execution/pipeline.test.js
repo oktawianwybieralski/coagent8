@@ -63,7 +63,7 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
     saveConfig({defaultBackend:'codex',routing:{strategy:'fixed',allowedBackends:['codex']}});
     const cancelled=new AbortController();cancelled.abort();await assert.rejects(executeTask('x','x',{},tempDir,cancelled.signal),{code:'ABORTED'});assert.equal(calls,0);
     await assert.rejects(executeTask('x','x',{},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,0);
-    const approve={askConsent:async()=>true};
+    const approve={askConsent:async()=>({approved:true})};
     const first=await executeTask('x','first',{},tempDir,null,null,approve),handle=readResult(first).sessionHandle;
     await assert.rejects(executeTask('x','second',{session_handle:handle},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,1);
     mode='rate';const rate=await executeTask('x','rate',{session_handle:handle},tempDir,null,null,approve);assert.equal(readResult(rate).error.code,'RATE_LIMITED');assert.equal(getSession(handle).threadId,'native_fixture');

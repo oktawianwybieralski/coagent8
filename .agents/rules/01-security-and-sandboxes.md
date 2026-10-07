@@ -17,16 +17,28 @@ Never grant write permissions or file modification capabilities to external CLI 
 
 ---
 
-## 2. Top-Tier Model Governance
-Models classified as top-tier reasoning engines run only after the user approves them:
-* `astra` family in OpenAI Codex.
-* `claude-3-opus` / `opus` family in Claude Code, also when reached through agy.
+## 2. Model Cost Governance
+A model runs without asking only when it is not on `governance.alwaysAsk` and its
+approximate output price is known exactly, below `governance.askAbovePrice`
+(default 20 USD per million tokens, the backend's default model included) and
+below `governance.priceMultiplier` (default 2) times the price of its backend's
+default model. Otherwise it runs only after the user approves it:
+* a priced model at or above either limit, or on `alwaysAsk`, is asked on every
+  turn;
+* a model without a price, or matched to a price only approximately, is asked
+  until the user approves it with "remember", which adds it to
+  `governance.neverAsk`;
+* without any price data, every model not on `neverAsk` is asked.
+`neverAsk` exempts a model unless it is also on `alwaysAsk`; only the user's
+configuration relaxes a limit. Prices are approximate public API prices
+(OpenRouter); they decide only whether to ask, never billing or a model's safety.
 
 **Invariant:** Consent comes from the user through MCP elicitation, asked by the
-server for the model the backend will actually run, including its default. A
+server for the concrete model the backend will run, including its default. A
 calling agent cannot grant it. Without an approval the turn fails closed with
-`POLICY_DENIED` before session acquisition or a model turn. Metadata-only
-version/auth/catalog probes can launch CLIs before consent.
+`POLICY_DENIED` before session acquisition or a model turn. Metadata-only probes
+(version, auth, catalog, model resolution, prices) can start CLIs or read the
+price list before consent.
 An accepted form must contain an explicit boolean `approve: true`; an omitted
 field is not consent.
 
@@ -56,4 +68,4 @@ boundary. These gaps block safety acceptance rather than weakening this rule.
 
 **Consent transport:** implemented in `EXEC-001` (AUD-P1-7); the explicit
 `approve: true` requirement closed `CUR-003`. The contract is in
-[RUNTIME_CONTRACT](../../docs/RUNTIME_CONTRACT.md#top-tier-model-consent).
+[RUNTIME_CONTRACT](../../docs/RUNTIME_CONTRACT.md#model-consent).
