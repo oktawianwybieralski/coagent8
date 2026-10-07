@@ -44,14 +44,25 @@ test('bad authoritative override does not hide other clients; old/malformed cont
   assert.equal(signedOut[1].authentication, 'unauthenticated');
   assert.equal(signedOut[1].ready, false);
 });
-test('Antigravity-only installation checks controls without guessing authentication or starting a model', async t => {
+test('Antigravity-only installation checks controls and sign-in silently without starting a model', async t => {
   const p = profile(t);
-  const results = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture } });
+  const envLog = path.join(p.home, 'env.jsonl');
+  const results = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture, SETUP_FIXTURE_ENV_LOG: envLog } });
   assert.equal(results[2].installed, true);
   assert.equal(results[2].compatibility, 'supported');
-  assert.equal(results[2].authentication, 'unknown');
-  assert.equal(results[2].ready, false);
-  assert.deepEqual(fs.readFileSync(p.log, 'utf8').trim().split('\n').map(JSON.parse), [['--version'], ['--help']]);
+  assert.equal(results[2].authentication, 'authenticated');
+  assert.equal(results[2].ready, true);
+  assert.doesNotMatch(JSON.stringify(results), /fixture@example/, 'the signed-in account is not reported');
+  assert.deepEqual(fs.readFileSync(p.log, 'utf8').trim().split('\n').map(JSON.parse), [['--version'], ['--help'], []], 'no prompt, -p or login');
+  const calls = fs.readFileSync(envLog, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(calls.every(call => call.autoUpdate === 'true'), 'every agy probe disables its console-opening updater');
+  assert.deepEqual(calls.map(call => call.auth), [null, null, 'check']);
+  const signedOut = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture, SETUP_FIXTURE_SIGNED_OUT: '1' } });
+  assert.equal(signedOut[2].authentication, 'unauthenticated');
+  assert.equal(signedOut[2].ready, false);
+  // Any other failure, such as a token refresh without network, is not evidence of sign-out.
+  const unclear = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture, SETUP_FIXTURE_AUTH_ERROR: '1' } });
+  assert.equal(unclear[2].authentication, 'unknown');
   // agy 1.3.1 writes its help to stderr with exit code 0.
   const stderrHelp = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture, SETUP_FIXTURE_HELP_STDERR: '1' } });
   assert.equal(stderrHelp[2].compatibility, 'supported');

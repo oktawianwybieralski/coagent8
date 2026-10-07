@@ -20,7 +20,9 @@ export interface CliReadiness {
 /** Reads bounded version/help/login metadata; token validity still needs a user-authorized turn. */
 export async function inspectCli(client: SetupClient, cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<CliReadiness> {
   const result: CliReadiness = { version: null, compatibility: 'unknown', authentication: 'unknown', ready: false, diagnostic: '' };
-  const command = (args: string[]) => runCommand(cli.command, [...cli.argsPrefix, ...args], { env, cwd, timeoutMs: 10_000, maxBufferBytes: 64 * 1024 });
+  // agy's background updater opens a console window on Windows; probes never need it.
+  const probeEnv = client === 'agy' ? { ...env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : env;
+  const command = (args: string[], extraEnv: NodeJS.ProcessEnv = {}) => runCommand(cli.command, [...cli.argsPrefix, ...args], { env: { ...probeEnv, ...extraEnv }, cwd, timeoutMs: 10_000, maxBufferBytes: 64 * 1024 });
   const version = await command(['--version']);
   if (version.exitCode !== 0 || version.status !== 'completed') {
     result.diagnostic = 'CLI version probe failed or timed out. Check the executable and retry.';
@@ -67,12 +69,19 @@ export async function inspectCli(client: SetupClient, cli: CliCommand, env: Node
       if (auth.status === 'completed' && auth.exitCode === 0 && data.loggedIn === true) result.authentication = 'authenticated';
       else if (auth.exitCode === 1 && data.loggedIn === false) result.authentication = 'unauthenticated';
     } catch { /* Unsupported or malformed metadata leaves authentication unknown. */ }
+  } else {
+    // agy has no status subcommand. `AGY_CLI_CDE_AUTH_ACTION=check` is the silent check the
+    // Google Antigravity extension runs (exit 0 when signed in); it starts no prompt or login,
+    // unlike `-p /usage`, which falls back to interactive sign-in. Only its own messages count:
+    // other failures, such as a network error while refreshing a token, stay unknown.
+    const auth = await command([], { AGY_CLI_CDE_AUTH_ACTION: 'check' });
+    const status = auth.stdout + '\n' + auth.stderr;
+    if (auth.status === 'completed' && auth.exitCode === 0 && /^Already authenticated as /m.test(status)) result.authentication = 'authenticated';
+    // A nonzero exit is `failed`; a timeout or launch error has no exit code and stays unknown.
+    else if (auth.status === 'failed' && typeof auth.exitCode === 'number' && auth.exitCode !== 0 && /not (?:authenticated|signed in|logged in)/i.test(status)) result.authentication = 'unauthenticated';
   }
-  // agy has no documented noninteractive login-status command. Do not start a
-  // prompt to infer authentication; quota/real execution acceptance stays separate.
   result.ready = result.compatibility === 'supported' && result.authentication === 'authenticated';
   result.diagnostic = result.ready ? 'CLI controls and local sign-in verified; per-turn sandbox and token validity remain execution checks.'
-    : client === 'agy' ? 'CLI controls detected. Sign in with agy; authentication needs a separately authorized native check.'
-      : `Sign-in ${result.authentication}; use ${client === 'codex' ? 'codex login' : 'claude auth login'} explicitly, then refresh.`;
+    : `Sign-in ${result.authentication}; use ${client === 'codex' ? 'codex login' : client === 'claude' ? 'claude auth login' : 'agy'} explicitly, then refresh.`;
   return result;
 }

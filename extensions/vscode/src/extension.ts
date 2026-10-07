@@ -137,7 +137,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const ready = results.filter(result => result.ready).map(result => LABELS[result.client]);
     const choice = await vscode.window.showInformationMessage(ready.length
       ? `Ready: ${ready.join(', ')}. The VS Code MCP provider is available independently of native-host registration.`
-      : 'No CLI has verified compatibility and sign-in yet. Install/update or sign in, then refresh. Antigravity sign-in requires separate native acceptance.', 'Show Details');
+      : 'No CLI has verified compatibility and sign-in yet. Install/update or sign in, then refresh.', 'Show Details');
     if (choice === 'Show Details') output?.show(true);
   }
   /**

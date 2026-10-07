@@ -271,9 +271,15 @@ not establish authentication. Claude must meet the adapter's shared minimum
 2.1.289 and advertise the required restricted/streaming controls. Codex also
 passes an app-server initialize handshake without creating a thread or model
 turn. Codex/Claude authentication reflects only their own local status command.
-Antigravity's help/version controls can be checked, but no documented
-noninteractive login-status command was found; its authentication remains
-`unknown` here. Native quota/authentication acceptance is separate.
+agy has no status subcommand; its sign-in is read from
+`AGY_CLI_CDE_AUTH_ACTION=check`, the silent check the Google Antigravity
+extension runs (exit 0 with "Already authenticated as ..."). It starts no prompt
+or login. A clear "not authenticated" result is reported as signed out; any other
+failure, such as a token refresh without network, stays `unknown`. The account
+name is not recorded. agy keeps credentials outside the profile directory, so an
+isolated home does not simulate a signed-out state. All agy probes set
+`AGY_CLI_DISABLE_AUTO_UPDATE=true`. Native quota/authentication acceptance is
+separate.
 
 **CoAgent8: Register or Repair Native Chat Hosts** is optional. Its separate
 picker and confirmation authorize writes to selected clients' external MCP

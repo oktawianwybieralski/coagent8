@@ -144,7 +144,8 @@ command waits until the CLI is found; standalone installer commands are inserted
 in a terminal without execution, so press Enter, then choose **Check Now**, or
 **Reload Window** if the installer changed PATH. Sign-in commands are offered the
 same way. At least one compatible signed-in CLI is needed for useful execution.
-Antigravity authentication remains unverified by this metadata-only status check.
+Sign-in is read from each CLI's own silent check (for Antigravity CLI, the check
+the Google Antigravity extension uses); it never starts a login or a model turn.
 
 Installation/check selections do not register external MCP servers. Optional
 **CoAgent8: Register or Repair Native Chat Hosts** has a separate selection and
