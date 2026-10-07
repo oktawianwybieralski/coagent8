@@ -212,6 +212,10 @@ test('execution errors carry the code raised at their source; an unknown failure
     assert.equal((await call({ proposal: 'x', session_handle: 'syn_sess_0000000000000000' })).code, 'SESSION_INVALID');
     const invalid = await client.callTool({ name: 'consult', arguments: { proposal: '', workspace_path: tempDir } });
     assert.equal(readResult(invalid).error.code, 'INPUT_LIMIT', 'rejected input keeps INPUT_LIMIT');
+    // Live, 2026-10-07: a call refused before launch showed "provider default" beside the model the caller named.
+    const refused = readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', model: 'gemini-3.8-flash', workspace_path: tempDir } }));
+    assert.equal(refused.model, 'gemini-3.8-flash', 'the footer names the requested model');
+    assert.equal(readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', model: '--yolo', workspace_path: tempDir } })).model, 'provider default', 'an invalid identifier is not echoed');
   } finally {
     await client.close();
     await server.close();

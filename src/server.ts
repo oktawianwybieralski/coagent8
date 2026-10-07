@@ -28,6 +28,7 @@ import { canonicalPath, sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation, type ConsentPrompt } from './execution/controller.js';
 import { providerForClient, setCallerProvider } from './backends/routing.js';
+import { isValidModelIdentifier } from './backends/governance.js';
 import type { ToolArguments } from './tools/arguments.js';
 
 export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inputSchema: { type: string; properties?: Record<string, object>; required?: string[] }; outputSchema?: { type: string; [key: string]: unknown } };
@@ -340,12 +341,15 @@ export function createServer(): Server {
         const raw = request.params.arguments;
         const provider = typeof raw?.backend === 'string' && ['codex', 'gemini', 'claude'].includes(raw.backend) ? raw.backend : null;
         const code = errorCodeOf(err);
+        // A call refused before launch names the model the caller asked for, not "provider default".
+        const requestedModel = typeof raw?.model === 'string' && isValidModelIdentifier(raw.model) ? raw.model : undefined;
         return formatExecutionResult(
           provider,
           {
             status: code === 'ABORTED' ? 'cancelled' : code === 'TIMEOUT' ? 'timed_out' : 'failed',
             isError: true,
             output: '',
+            ...(requestedModel ? { model: requestedModel } : {}),
             truncated: false,
             continuationAvailable: false,
             error: { code, message, retryable: false },
