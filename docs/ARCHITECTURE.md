@@ -28,7 +28,8 @@ flowchart TD
 
 | Owner | Current responsibility |
 | --- | --- |
-| src/index.ts | Dispatch explicit setup commands or connect stdio and start background session pruning; coordinate shutdown |
+| src/index.ts | Dispatch explicit setup commands, otherwise serve stdio |
+| src/stdio-server.ts | Connect stdio, start background maintenance (session pruning by default, injectable for tests) and coordinate shutdown |
 | src/server.ts, src/tools/ | Advertise profiles, validate requests, build prompts/diffs, serve resources and format responses |
 | src/execution/ | Coordinate turns, progress and cancellation; resolve CLI commands; supervise subprocesses; collect bounded streams, normalize CLI output and Git context |
 | src/backends/ | One folder per CLI (adapter, stream collector, error classification); shared registry, routing, model governance, quota and observed cooldowns |
