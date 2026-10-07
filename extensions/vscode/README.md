@@ -29,7 +29,7 @@ integration.
 ## What you can do
 
 - Get a second opinion on architecture, debugging or a proposed implementation.
-- Review uncommitted changes, staged changes, commits, branches or commit ranges.
+- Review current workspace changes; staged/revision scopes require matching files.
 - Inspect backend availability, authentication evidence, models and quota.
 - Continue an agent conversation and read its archived public messages.
 - Cancel a known active session or prepare a sanitized bug report.
@@ -60,7 +60,8 @@ Node.js and the backend CLIs must be available and authenticated there.
    Follow VS Code's server trust and tool approval prompts.
 4. Open a chat agent that supports MCP tools and enable CoAgent8's tools in its
    tool picker if necessary.
-5. Ask: **"Use CoAgent8 doctor to check the coding agents available for this
+5. Run **CoAgent8: Set Up Coding CLIs** to check, install or sign in to a CLI.
+   Ask: **"Use CoAgent8 doctor to check the coding agents available for this
    workspace."** Resolve any missing CLI or authentication reported there.
 6. Ask for a consultation or review using one of the examples below.
 
@@ -209,8 +210,9 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
 
 ## Known limitations
 
-- Codex and agy can inherit external MCP tools. Their sandbox flags alone do
-  not establish complete read-only isolation; this remains a release blocker.
+- Codex disables and verifies inherited MCP tools per thread (measured on 0.162).
+  agy still inherits external MCP tools and plugins, an owner-accepted limitation
+  of its native sandbox. Doctor names them and CoAgent8 refuses nested turns.
 - Review input completeness and release hashes need independent verification.
 - Model-approval forms have not been accepted across every chat host. Recorded
   headless and VS Code chat tests include clients that do not show the form.
@@ -222,9 +224,17 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
 - Installation and uninstallation were accepted on Windows; update and chat UI
   acceptance remain partial. Package checks do not prove native backend
   readiness or a successful model turn.
-- After an uninstall, VS Code keeps this extension's stored state, so the
-  welcome notification does not reappear after a reinstall. Run
-  **CoAgent8: Set Up Coding CLIs** from the Command Palette instead.
+- The welcome notification appears on activation until a CLI is ready or you
+  choose **Don't Show Again**. Dismissal and remembered CLI choices survive
+  uninstall/reinstall in VS Code's stored state.
+
+Use **CoAgent8: Open Configuration (config.json)** to edit backend defaults and
+model consent. The file remains the single source of truth; only the Node.js
+executable is a VS Code setting. Schema completion/validation covers
+`~/.coagent8/config.json`. For a `coagent8_CONFIG` override at another path, add a
+`$schema` pointing to the installed extension's `schemas/config.schema.json`.
+This command creates defaults only when the file is missing and preserves
+existing contents, including invalid JSON that needs repair.
 
 Track current behavior in the
 [runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md)

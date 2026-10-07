@@ -22,6 +22,17 @@ const {
 } = require('../src/backends/availability.ts');
 const { isRateLimitError } = require('../src/backends/rate-limit.ts');
 
+test('editor schema association survives backend-default and remembered-consent updates', async () => {
+  const { recordDefaultModel, rememberApprovedModel } = require('../src/config.ts');
+  const schema = 'file:///fixture-extension/schemas/config.schema.json';
+  saveConfig({ $schema: schema });
+  await recordDefaultModel('codex', 'fixture-config-model');
+  await rememberApprovedModel('fixture-config-model');
+  assert.equal(JSON.parse(fs.readFileSync(testConfigFile, 'utf8')).$schema, schema);
+  assert.throws(() => validateConfig({ $schema: 12 }), /\$schema/);
+  assert.throws(() => validateConfig({ $schema: 'x'.repeat(2049) }), /\$schema/);
+});
+
 test.after(() => {
   try {
     fs.rmSync(testTempDir, { recursive: true, force: true });

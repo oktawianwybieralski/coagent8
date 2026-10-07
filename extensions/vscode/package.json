@@ -19,7 +19,7 @@
   "extensionKind": ["workspace"],
   "main": "./dist/extension.cjs",
   "icon": "assets/logo.png",
-  "files": ["dist/**", "assets/**", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": ["dist/**", "assets/**", "schemas/**", "README.md", "CHANGELOG.md", "LICENSE"],
   "activationEvents": ["onMcpServerDefinitionProvider:coagent8", "onStartupFinished"],
   "capabilities": {
     "untrustedWorkspaces": { "supported": false, "description": "CoAgent8 runs local coding CLIs and requires a trusted workspace." },
@@ -27,12 +27,14 @@
   },
   "contributes": {
     "commands": [
+      { "command": "coagent8.openConfiguration", "title": "CoAgent8: Open Configuration (config.json)" },
       { "command": "coagent8.setup", "title": "CoAgent8: Set Up Coding CLIs" },
       { "command": "coagent8.refreshCliStatus", "title": "CoAgent8: Refresh CLI Status" },
       { "command": "coagent8.registerNativeHosts", "title": "CoAgent8: Register or Repair Native Chat Hosts" },
       { "command": "coagent8.cleanup", "title": "CoAgent8: Preview and Remove Owned Registrations" }
     ],
     "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
+    "jsonValidation": [{ "fileMatch": "**/.coagent8/config.json", "url": "./schemas/config.schema.json" }],
     "configuration": {
       "title": "CoAgent8",
       "properties": {
@@ -40,7 +42,7 @@
           "type": "string",
           "default": "node",
           "scope": "machine",
-          "description": "Node.js 24+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH."
+          "markdownDescription": "Node.js 24+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH. Edit backend, model and consent options in [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration)."
         }
       }
     }

@@ -373,10 +373,17 @@ Owner acceptance on Windows, 2026-10-07: after cleanup, uninstall and restart no
 CoAgent8 registration, `~/.coagent8` data or extension directory remained.
 Uninstalling without cleanup leaves working native-host registrations that point
 to `~/.coagent8/runtime`. VS Code keeps the uninstalled extension's
-`globalState` (the shown welcome notification and remembered CLI choices), so a
-reinstall does not show the welcome notification again; run **CoAgent8: Set Up
-Coding CLIs** from the Command Palette instead. This is not a reason to
+`globalState` (explicit welcome dismissal and remembered CLI choices). The welcome
+notification now appears on activation until a CLI is ready or **Don't Show
+Again** is chosen; the older `setupOffered` flag does not suppress it. Run
+**CoAgent8: Set Up Coding CLIs** from the Command Palette at any time. This is not a reason to
 mass-delete the owner's profile.
+
+**CoAgent8: Open Configuration (config.json)** opens the runtime configuration
+and creates defaults only if missing. It honors `coagent8_CONFIG`; the ordinary
+path is `~/.coagent8/config.json`, associated with the VSIX's bundled JSON schema.
+A custom override outside that path needs an explicit `$schema` association.
+Backend/model/consent options stay in this file, rather than VS Code settings.
 
 Setup currently supports local default standalone profiles. Remote VS Code hosts
 continue to use the bundled provider but do not run external-client setup on the

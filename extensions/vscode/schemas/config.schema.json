@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CoAgent8 configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "maxLength": 2048, "description": "Optional schema location for a custom configuration path." },
+    "schemaVersion": { "const": 1, "default": 1 },
+    "defaultBackend": { "enum": [null, "codex", "claude", "gemini", "smart_quota"], "default": null },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": { "enum": ["fixed", "smart_quota"], "default": "fixed" },
+        "allowedBackends": { "type": "array", "items": { "enum": ["codex", "claude", "gemini"] }, "default": ["codex", "claude", "gemini"] }
+      }
+    },
+    "backends": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "codex": { "$ref": "#/definitions/backend" },
+        "claude": { "$ref": "#/definitions/backend" },
+        "gemini": { "$ref": "#/definitions/backend" }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "priceMultiplier": { "type": "number", "exclusiveMinimum": 1, "default": 2 },
+        "askAbovePrice": { "type": ["number", "null"], "minimum": 0, "default": 20, "description": "USD per million output tokens; null disables this threshold." },
+        "alwaysAsk": { "$ref": "#/definitions/models", "description": "Models requiring approval on every turn, including entries also in neverAsk." },
+        "neverAsk": { "$ref": "#/definitions/models", "description": "User-selected exemptions, unless the model is also in alwaysAsk." }
+      }
+    }
+  },
+  "definitions": {
+    "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
+    "models": { "type": "array", "maxItems": 256, "items": { "$ref": "#/definitions/model" }, "default": [] },
+    "backend": { "type": "object", "additionalProperties": false, "properties": { "defaultModel": { "$ref": "#/definitions/model" } } }
+  }
+}

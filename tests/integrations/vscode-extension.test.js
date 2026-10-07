@@ -3,21 +3,26 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const vm = require('node:vm');
 const esbuild = require('esbuild');
+const fs = require('node:fs');
+const os = require('node:os');
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [] } = {}) {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false } = {}) {
   const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
   const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
   const cleanupCalls = [];
+  const notifications = [], stateUpdates = [], openedFiles = [];
   let selections;
   const dispose = () => {};
   const vscode = {
+    Uri: { file(file) { return { fsPath: file }; } },
     env: {},
     extensions: { getExtension(id) { return vendorExtensions.includes(id) ? { extensionPath: path.resolve('vendor', id), extensionUri: { scheme: 'file' } } : undefined; }, onDidChange() { return { dispose }; } },
     ProgressLocation: { Notification: 15 },
     EventEmitter: class { event = () => {}; dispose() {} },
     workspace: {
+      async openTextDocument(uri) { return { uri, text: fs.readFileSync(uri.fsPath, 'utf8') }; },
       onDidChangeConfiguration() { return { dispose }; },
       getConfiguration() { return { get() { return 'node'; } }; }, workspaceFolders: [],
     },
@@ -59,7 +64,8 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
           },
         };
       },
-      async showInformationMessage(_message, ...actions) { return answer(actions); },
+      async showInformationMessage(message, ...actions) { notifications.push({ message, actions }); return answer(actions); },
+      async showTextDocument(document) { openedFiles.push(document); },
       async showWarningMessage(message, ...rest) { warnings.push(message); return answer(rest.filter(item => typeof item === 'string')); },
       // The user cancels a wait that does not succeed on its first check.
       async withProgress(options, task) {
@@ -98,13 +104,51 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   });
   const context = {
     subscriptions: [],
-    globalState: { get(key) { return key === 'setupOffered' ? true : remembered; }, async update(key, value) { if (key === 'setupClients') selections = Array.from(value); } },
+    globalState: { get(key) { return key === 'setupDismissed' ? dismissed : key === 'setupOffered' ? true : remembered; }, async update(key, value) { stateUpdates.push({ key, value }); if (key === 'setupClients') selections = Array.from(value); } },
     asAbsolutePath(relative) { return path.resolve(relative); },
   };
   module.exports.activate(context);
-  await handlers[command]();
-  return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals };
+  if (!activationOnly) await handlers[command]();
+  await new Promise(resolve => setImmediate(resolve));
+  return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, stateUpdates, openedFiles };
 }
+
+test('welcome persists across legacy setupOffered profiles until ready or explicitly dismissed', async () => {
+  const first = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true });
+  assert.equal(first.notifications.length, 1);
+  assert.deepEqual(first.notifications[0].actions, ['Set Up CLIs', "Don't Show Again"]);
+  assert.deepEqual(first.stateUpdates, []);
+  assert.equal((await runSetupPicker({ installed: [], dismissed: false, activationOnly: true })).notifications.length, 1);
+  const dismissed = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true, action: "Don't Show Again" });
+  assert.deepEqual(dismissed.stateUpdates, [{ key: 'setupDismissed', value: true }]);
+  const suppressed = await runSetupPicker({ installed: [], dismissed: true, activationOnly: true });
+  assert.equal(suppressed.notifications.length, 0);
+  assert.equal(suppressed.events.length, 0, 'explicit dismissal avoids startup probes');
+  const ready = await runSetupPicker({ installed: ['codex'], dismissed: false, activationOnly: true });
+  assert.equal(ready.notifications.length, 0);
+  assert.equal(ready.terminals.length, 0);
+  assert.equal(ready.reveals.length, 0);
+});
+
+test('Open Configuration creates defaults only when absent and opens malformed existing JSON unchanged', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-config-editor-'));
+  const file = path.join(directory, 'custom', 'config.json');
+  const previous = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = file;
+  try {
+    const created = await runSetupPicker({ command: 'coagent8.openConfiguration' });
+    assert.equal(created.errors.length, 0);
+    assert.equal(created.openedFiles[0].uri.fsPath, file);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), require('../../src/config.ts').validateConfig({}));
+    fs.writeFileSync(file, '{ malformed existing configuration');
+    const existing = await runSetupPicker({ command: 'coagent8.openConfiguration' });
+    assert.equal(existing.openedFiles[0].text, '{ malformed existing configuration');
+    assert.equal(fs.readFileSync(file, 'utf8'), existing.openedFiles[0].text);
+  } finally {
+    if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test('CLI selection remembers full-label backend choices without authorizing external registration', async () => {
   const result = await runSetupPicker();
@@ -279,5 +323,5 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   extensionListener();
   assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EXTENSION_PATHS), {});
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 8);
+  assert.equal(disposed, 9);
 });

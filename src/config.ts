@@ -24,6 +24,8 @@ export interface BackendSettings {
 }
 
 export interface CoAgent8Config {
+  /** Editor schema association, preserved across runtime configuration updates. */
+  $schema?: string;
   schemaVersion: number;
   defaultBackend: BackendId | null;
   routing: RoutingConfig;
@@ -36,7 +38,8 @@ export interface CoAgent8Config {
 /** Longest `alwaysAsk` or `neverAsk` list. */
 const MAX_GOVERNED_MODELS = 256;
 
-function getConfigFile(): string {
+/** Resolves the user's configuration path, honoring the runtime environment override. */
+export function getConfigFile(): string {
   return process.env.coagent8_CONFIG || path.join(getDataDir(), 'config.json');
 }
 
@@ -74,6 +77,10 @@ export function validateConfig(value: unknown): CoAgent8Config {
     throw new Error('Configuration Error: configuration must be a valid JSON object.');
   }
   const config = value as Record<string, unknown>;
+  const schema = config.$schema;
+  if (schema !== undefined && (typeof schema !== 'string' || schema.length > 2048)) {
+    throw new Error('Configuration Error: $schema must be a string of at most 2048 characters.');
+  }
 
   const schemaVersion = config.schemaVersion ?? DEFAULT_CONFIG.schemaVersion;
   if (schemaVersion !== 1) {
@@ -177,6 +184,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
   }
 
   const validated: CoAgent8Config = {
+    ...(schema === undefined ? {} : { $schema: schema }),
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
     routing: {
