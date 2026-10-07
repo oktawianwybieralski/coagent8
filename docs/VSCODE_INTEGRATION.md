@@ -213,7 +213,10 @@ is distinct from per-turn sandbox verification, token validity and a successful
 model response. No CLI is required to initialize MCP or list its tools.
 
 Discovery prefers explicit executable overrides, PATH, then bundled Codex/Claude
-binaries. A bad override fails closed for that client while other clients remain
+binaries and, for agy, the copy that the Google Antigravity extension downloads
+to `~/.gemini/bin` when it starts its backend. Only that executable is reused,
+with the usual `--sandbox` turn; CoAgent8 does not call the extension's running
+backend (`ANTIGRAVITY-HUB-001` in the [roadmap](ROADMAP.md)). A bad override fails closed for that client while other clients remain
 visible. The provider passes the currently installed `openai.chatgpt` and
 `anthropic.claude-code` paths from VS Code's extension API, including custom
 installation roots, using `coagent8_EXTENSION_PATHS` (JSON object with optional
@@ -232,8 +235,9 @@ For missing Codex/Claude, onboarding offers **Install Vendor Extension** or
 **Open Install Command**. Extension installation uses VS Code's documented
 `workbench.extensions.installExtension` action after the user's choice; its
 bundled CLI must still pass the subsequent check. CoAgent8 has no unconditional
-vendor extension dependencies or extension pack. The inspected Google extension
-does not supply `agy`; Antigravity uses its official standalone installer.
+vendor extension dependencies or extension pack. The Google extension
+ships no `agy` in its VSIX but downloads one when its backend starts;
+without it, Antigravity uses its official standalone installer.
 Standalone commands are inserted in a visible terminal without execution:
 press Enter to install. Cancellation/failure is reported per client, with a
 refresh/retry path. A terminal command offer is not installation evidence.

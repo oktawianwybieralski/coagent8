@@ -130,6 +130,21 @@ export function resolveBundledCodex(home = os.homedir(), env = process.env): Cli
   return resolveBundledExtension('codex', home, env);
 }
 
+/**
+ * Resolves the agy CLI that the Antigravity VS Code extension installs and updates.
+ * @param home - Local profile root; the extension installs to `~/.gemini/bin`.
+ * @param env - Resolution environment for the selected executable.
+ * @returns A shell-free command, or null when no managed executable is usable.
+ * @remarks The extension replaces this binary when it starts its own backend, so the
+ * path is read on each fallback. Only the executable is reused: every turn still runs
+ * as a separate `--sandbox` process, never through the extension's running backend.
+ */
+export function resolveManagedAgy(home = os.homedir(), env = process.env): CliCommand | null {
+  const file = path.join(home, '.gemini', 'bin', process.platform === 'win32' ? 'agy.exe' : 'agy');
+  try { return resolveCliCommand(file, { env }); }
+  catch (error) { if (!(error instanceof CliResolutionError)) throw error; return null; }
+}
+
 function resolveBundledExtension(client: 'codex' | 'claude', home: string, env: NodeJS.ProcessEnv): CliCommand | null {
   const family = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : null;
   const arch = process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : null;
@@ -236,9 +251,9 @@ export function resolveCliCommand(command: string, options: { env?: NodeJS.Proce
     });
     return resolved;
   }
-  if (!explicit && (command === 'claude' || command === 'codex') && platform === process.platform) {
+  if (!explicit && (command === 'claude' || command === 'codex' || command === 'agy') && platform === process.platform) {
     const home = platform === 'win32' ? env.USERPROFILE || os.homedir() : env.HOME || os.homedir();
-    const bundled = command === 'claude' ? resolveBundledClaude(home, env) : resolveBundledCodex(home, env);
+    const bundled = command === 'claude' ? resolveBundledClaude(home, env) : command === 'codex' ? resolveBundledCodex(home, env) : resolveManagedAgy(home, env);
     if (bundled) return bundled;
   }
   throw new CliResolutionError('CLI_NOT_FOUND', `CLI '${path.basename(command)}' is not installed or executable; configure its *_PATH or PATH.`);

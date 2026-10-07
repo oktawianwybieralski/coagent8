@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
 const { MARKER } = require('./helpers/environment.cjs');
-const { resolveCliCommand, resolveBundledClaude, clearCliResolverCache } = require('../src/execution/cli-resolver.ts');
+const { resolveCliCommand, resolveBundledClaude, resolveManagedAgy, clearCliResolverCache } = require('../src/execution/cli-resolver.ts');
 
 const root = process.env[MARKER];
 const fixtures = path.resolve(__dirname, 'fixtures');
@@ -22,4 +22,5 @@ test('backend CLIs resolve to fixtures and real installations are unreachable', 
     assert.throws(() => resolveCliCommand(name), { code: 'CLI_NOT_FOUND' }, `${name} must not resolve on the test PATH`);
   }
   assert.equal(resolveBundledClaude(), null);
+  assert.equal(resolveManagedAgy(), null);
 });

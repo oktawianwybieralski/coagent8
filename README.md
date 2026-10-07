@@ -62,8 +62,9 @@ adds it. Host deadlines can be shorter than the bridge deadline. A measured agy
 notifications; interactive IDE behavior has not been measured.
 
 No setup command, recognized client name or VSIX is required for ordinary MCP
-use. Backends resolve from PATH; override with `CODEX_PATH`, `CLAUDE_PATH` or
-`GEMINI_PATH`/`AGY_PATH`. The workspace comes from `workspace_path`, client
+use. Backends resolve from PATH, then from executables installed by their VS
+Code extensions (for agy, `~/.gemini/bin`); override with `CODEX_PATH`,
+`CLAUDE_PATH` or `GEMINI_PATH`/`AGY_PATH`. The workspace comes from `workspace_path`, client
 roots, or an eligible server working directory. Only the server-directory
 fallback adds a workspace line to the result.
 

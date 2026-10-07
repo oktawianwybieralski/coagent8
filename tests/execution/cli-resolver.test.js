@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { resolveCliCommand, clearCliResolverCache } = require('../../src/execution/cli-resolver.ts');
+const { resolveCliCommand, resolveManagedAgy, clearCliResolverCache } = require('../../src/execution/cli-resolver.ts');
 
 test('Windows shim resolves native .exe entrypoints and preserves wrapper flags', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-shim-test-'));
@@ -118,4 +118,35 @@ test('cliCache hit refreshes LRU recency', () => {
   const r2 = resolveCliCommand(cmd, { env });
   assert.equal(r2.command, testNode);
   clearCliResolverCache();
+});
+
+test('agy falls back to the Antigravity extension-managed binary only after PATH', t => {
+  clearCliResolverCache();
+  t.after(clearCliResolverCache);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-managed-agy-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const env = { HOME: home, USERPROFILE: home, PATH: '' };
+  assert.throws(() => resolveCliCommand('agy', { env }), { code: 'CLI_NOT_FOUND' });
+  assert.equal(resolveManagedAgy(home, env), null);
+
+  const executable = process.platform === 'win32' ? 'agy.exe' : 'agy';
+  const managed = path.join(home, '.gemini', 'bin', executable);
+  fs.mkdirSync(path.dirname(managed), { recursive: true });
+  fs.writeFileSync(managed, 'synthetic');
+  fs.chmodSync(managed, 0o755);
+  assert.deepEqual(resolveCliCommand('agy', { env }), { command: managed, argsPrefix: [], source: 'native' });
+
+  // A standalone installation on PATH keeps precedence over the managed copy.
+  const standaloneDir = path.join(home, 'standalone');
+  fs.mkdirSync(standaloneDir);
+  fs.writeFileSync(path.join(standaloneDir, executable), 'synthetic');
+  fs.chmodSync(path.join(standaloneDir, executable), 0o755);
+  assert.equal(resolveCliCommand('agy', { env: { ...env, PATH: standaloneDir } }).command, path.join(standaloneDir, executable));
+
+  // An explicit executable stays authoritative: a missing override never falls back.
+  assert.throws(() => resolveCliCommand(path.join(home, 'missing', executable), { env }), { code: 'CLI_NOT_FOUND' });
+
+  // Removal is observed on the next fallback; no managed path is pinned.
+  fs.rmSync(managed);
+  assert.throws(() => resolveCliCommand('agy', { env }), { code: 'CLI_NOT_FOUND' });
 });
