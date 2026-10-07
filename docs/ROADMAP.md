@@ -1018,8 +1018,12 @@ without a model call.
   `disk quota check` are `PROCESS_ERROR` for both classifiers) and
   `tests/backends/rate-limit.test.js` (`20ms` is 20 ms, `1.5s` is 1.5 s); both fail
   against the previous classifiers.
-- [ ] Remove remaining synthetic telemetry: a missing `remaining_fraction` is
-  unmeasured, not 100% headroom (AUD-P2-2).
+- [x] Remove remaining synthetic telemetry: a missing `remaining_fraction` is
+  unmeasured, not 100% headroom (AUD-P2-2). On `fix/unmeasured-quota`, not yet
+  merged. `parseGeminiUsage` drops windows without `remaining_fraction` and
+  returns no quota when none is measured. Evidence:
+  `tests/backends/gemini/adapter.test.js` (a payload whose only window lacks the
+  field yields no quota; with one measured window of 0.3, headroom is 30%).
 - [ ] Claude Code status: distinguish unauthenticated or logged-out states from
   runtime process errors without stderr substring guesses. Not implemented;
   `authStatus` is always `unknown`.
@@ -1247,8 +1251,9 @@ These statuses summarize prior implementation; they are not fresh test results.
 - [x] `PARSER-001`: live Codex collector coverage replaces the unused parser path.
 - [x] `ROUTING-001`: smart_quota uses observed availability/cooldowns, not invented
   account headroom. Preserve or explicitly migrate that external contract.
-- [x] `TYPES-001`: narrowed untrusted boundaries; three explicit `any` remain in
-  `parseGeminiUsage`.
+- [x] `TYPES-001`: narrowed untrusted boundaries. The last three explicit `any`
+  in `parseGeminiUsage` were replaced by `unknown` narrowing on
+  `fix/unmeasured-quota`; `src/` has no explicit `any`.
 - [ ] `DIAGNOSTICS-001`: authentication evidence must be explicitly unverified for
   every backend. Reopened: Codex reports `authenticated` from file presence or
   environment variables (AUD-P2-2). Claude reports the CLI's own `claude auth status`

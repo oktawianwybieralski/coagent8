@@ -437,3 +437,12 @@ test('agy /usage runs only from quota inspection, sandboxed; probe and execute l
     fs.rmSync(capture, { force: true });
   }
 });
+
+test('gemini-adapter: a window without remaining_fraction is unmeasured, not full headroom (AUD-P2-2)', () => {
+  const payload = (buckets) => ({ status: 'SUCCESS', command: { name: 'usage', data: { groups: [{ name: 'Gemini', buckets }] } } });
+  assert.equal(parseGeminiUsage(payload([{ id: 'weekly', window: 'weekly' }])), undefined, 'no measured window, no quota');
+  const partial = parseGeminiUsage(payload([{ id: 'five-hour', window: '5h' }, { id: 'weekly', window: 'weekly', remaining_fraction: 0.3 }]));
+  assert.equal(partial.headroomPercent, 30);
+  assert.equal(partial.buckets.length, 1, 'the unmeasured window is not reported');
+  assert.equal(parseGeminiUsage('not a payload'), undefined);
+});

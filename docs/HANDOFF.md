@@ -91,7 +91,8 @@ is pushed:
 | `fix/resource-workspace-isolation` | `070ad58` | `SESSION-001` (AUD-P1-8, order 2): resources and `session list` scoped to the workspace |
 | `fix/lease-integrity` | `35f015c`..`aea0642` | `LOCKS-001` (AUD-P1-9, order 2): atomic, renewed leases; stale by age, dead PID or unreadable content; no lease deletion in the sweep |
 | `perf/bounded-probes` | `ec7844f`..`1b49856` | `EXEC-001` (AUD-P1-4, order 2): cached probes, agy `/usage` only in doctor and sandboxed, no re-probe in `execute` |
-| `fix/error-classification` | this change | `ROUTING-MIGRATE-001` (AUD-P2-1, order 3): anchored rate-limit and auth phrases; `ms` and decimal resets |
+| `fix/error-classification` | `cb0f723` | `ROUTING-MIGRATE-001` (AUD-P2-1, order 3): anchored rate-limit and auth phrases; `ms` and decimal resets |
+| `fix/unmeasured-quota` | this change | `ROUTING-MIGRATE-001` (AUD-P2-2, order 3): unmeasured agy windows are not full headroom; no `any` in `src/` |
 
 ## Verification
 

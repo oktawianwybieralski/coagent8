@@ -35,26 +35,35 @@ export function resolveModelAndEffort(
   return { model, effort: undefined };
 }
 
-export function parseGeminiUsage(parsed: any): AdapterProbeResult['quota'] {
-  try {
-    const groups = parsed?.command?.data?.groups;
-    if (!Array.isArray(groups)) return undefined;
-    const geminiGroup = groups.find((g: any) => /gemini/i.test(g?.name || '')) || groups[0];
-    if (!geminiGroup || !Array.isArray(geminiGroup.buckets)) return undefined;
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
 
-    const buckets = geminiGroup.buckets.map((b: any) => ({
-      id: String(b?.id || ''),
-      name: String(b?.name || ''),
-      window: String(b?.window || ''),
-      remainingFraction: typeof b?.remaining_fraction === 'number' ? b.remaining_fraction : 1,
-      resetTime: String(b?.reset_time || ''),
+/**
+ * Reads agy's `/usage` payload into a measured quota.
+ * @param parsed - The parsed JSON output of `agy --output-format json -p /usage`.
+ * @returns The bottleneck window, or undefined when no window reports `remaining_fraction`.
+ * @remarks A window without `remaining_fraction` is unmeasured, never full headroom (AUD-P2-2).
+ */
+export function parseGeminiUsage(parsed: unknown): AdapterProbeResult['quota'] {
+  const groups = asRecord(asRecord(asRecord(parsed)?.command)?.data)?.groups;
+  if (!Array.isArray(groups)) return undefined;
+  const records = groups.map(asRecord).filter((group): group is Record<string, unknown> => group !== undefined);
+  const geminiGroup = records.find(group => /gemini/i.test(String(group.name ?? ''))) || records[0];
+  if (!geminiGroup || !Array.isArray(geminiGroup.buckets)) return undefined;
+
+  const buckets = geminiGroup.buckets.map(asRecord)
+    .filter((bucket): bucket is Record<string, unknown> => typeof bucket?.remaining_fraction === 'number')
+    .map(bucket => ({
+      id: String(bucket.id ?? ''),
+      name: String(bucket.name ?? ''),
+      window: String(bucket.window ?? ''),
+      remainingFraction: bucket.remaining_fraction as number,
+      resetTime: String(bucket.reset_time ?? ''),
     }));
 
-    const quota = summarizeQuotaWindows(buckets);
-    return quota && { ...quota, window: quota.window || 'weekly' };
-  } catch (_) {
-    return undefined;
-  }
+  const quota = summarizeQuotaWindows(buckets);
+  return quota && { ...quota, window: quota.window || 'weekly' };
 }
 
 export async function probe(): Promise<AdapterProbeResult> {
