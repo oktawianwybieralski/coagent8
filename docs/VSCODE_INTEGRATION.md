@@ -123,6 +123,15 @@ cannot contain a dot; the Marketplace publisher's display name **Oktawian Wybier
 configured on the publisher account, not by the manifest. Packaging does not
 create, verify or reserve that account. The GitHub repository URL is unchanged.
 Before publishing, confirm ownership of `oki-dev` and its display name.
+An unpublished local VSIX can show the publisher ID in its header when no
+Marketplace display-name metadata is available; `author.name` does not control
+that header.
+
+Private VSIX packaging embeds the tarball's PNG logo as a data URI in the Details
+README, avoiding an image URL that points at unpublished repository content.
+The packaging command preserves that URI with `rewriteRelativeLinks: false`;
+the staging build makes the changelog's repository link absolute. Marketplace
+publication requires an HTTPS image source and a separate presentation check.
 
 This identity differs from the old development ID
 `oktawianwybieralski.coagent8-mcp`. An old installation is not upgraded by the

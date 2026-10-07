@@ -13,7 +13,7 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "CoAgent8",
+        "displayName": "CoAgent8 - MCP bridge to coding CLIs",
         "shortDescription": "Consult local coding agents and run CoAgent8 Review through MCP.",
         "longDescription": "Connect Codex, Claude Code, and Gemini through a local MCP server with read-only execution, persistent sessions, and public conversation history.",
         "developerName": "Oktawian Wybieralski",

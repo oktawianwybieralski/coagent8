@@ -9,6 +9,8 @@ createVSIX({
   cwd: path.join(root, '.artifacts/vscode'),
   packagePath: artifact,
   dependencies: false,
+  // Keep the embedded PNG in private VSIX previews; README links are absolute.
+  rewriteRelativeLinks: false,
   baseContentUrl: 'https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0',
   baseImagesUrl: 'https://raw.githubusercontent.com/oktawianwybieralski/coagent8/release/v1.0.0',
   preRelease: version.includes('-'),

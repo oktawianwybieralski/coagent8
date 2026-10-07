@@ -5,6 +5,12 @@ import { redactDiagnostic } from '../../../src/redaction.js';
 import os from 'node:os';
 import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-profile.js';
 
+const SETUP_CLIENT_LABELS: Record<SetupClient, string> = {
+  codex: 'Codex CLI',
+  claude: 'Claude Code CLI',
+  agy: 'Antigravity CLI',
+};
+
 /** Registers server definitions; VS Code owns the MCP subprocess lifecycle. */
 export function activate(context: vscode.ExtensionContext): void {
   const changed = new vscode.EventEmitter<void>();
@@ -31,8 +37,8 @@ export function activate(context: vscode.ExtensionContext): void {
     try {
       const installed = SETUP_CLIENTS.filter(client => resolveSetupClient(client));
       const remembered = context.globalState.get<SetupClient[]>('setupClients');
-      const selected = remembered ?? (await vscode.window.showQuickPick(installed.map(client => ({ label: client, client })), {
-        canPickMany: true, title: 'Select installed chats to connect to CoAgent8',
+      const selected = remembered ?? (await vscode.window.showQuickPick(installed.map(client => ({ label: SETUP_CLIENT_LABELS[client], client })), {
+        canPickMany: true, title: 'Select installed coding CLIs to connect to CoAgent8',
       }))?.map(item => item.client);
       if (!selected?.length) return;
       const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
@@ -52,7 +58,7 @@ export function activate(context: vscode.ExtensionContext): void {
   if (!vscode.env.remoteName && !context.globalState.get<boolean>('setupOffered')) {
     void (async () => {
       await context.globalState.update('setupOffered', true);
-      const choice = await vscode.window.showInformationMessage('CoAgent8 is available in VS Code. Connect standalone chat clients as well?', 'Set Up Clients');
+      const choice = await vscode.window.showInformationMessage('CoAgent8 is available in VS Code. Connect standalone coding CLIs as well?', 'Set Up Clients');
       if (choice === 'Set Up Clients') await vscode.commands.executeCommand('coagent8.setup');
     })();
   }

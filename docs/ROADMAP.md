@@ -1842,6 +1842,16 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   rendering/install/update UI remain unverified. This is local packaging
   evidence, not release approval.
 
+- [x] Follow-up private VSIX presentation on `fix/vsix-presentation`
+  (2026-10-07): use the shared title "CoAgent8 - MCP bridge to coding CLIs",
+  show Codex CLI / Claude Code CLI / Antigravity CLI in the setup picker while
+  preserving saved client IDs, and embed the packed PNG in the private Details
+  README. Typecheck, six focused provider/package tests, fixture consumer smoke
+  and VSIX title/identity/PNG-byte inspection passed on Windows, Node 26.10.0.
+  Publisher display names come from Marketplace metadata, not `author.name`;
+  the unpublished VSIX can still display `oki-dev`. Actual Details rendering
+  remains unverified; public packaging requires HTTPS-hosted README images.
+
 - [ ] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
   core startup and backend execution. Ship setup as a separate entrypoint and
   bundle, so installer-only code and JSONC handling leave the core. Codex

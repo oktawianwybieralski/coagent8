@@ -1,4 +1,4 @@
-# CoAgent8 MCP for VS Code
+# CoAgent8 - MCP bridge to coding CLIs
 
 <p align="center">
   <img src="assets/logo.png" width="128" height="128" alt="CoAgent8 logo" />
@@ -125,7 +125,7 @@ or a separate backend settings UI. See the
 [runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#configuration-and-routing).
 
 **CoAgent8: Set Up or Repair Chat Clients** connects selected installed local
-standalone Codex, Claude Code and agy clients. The first local activation offers
+standalone Codex CLI, Claude Code CLI and Antigravity CLI clients. The first local activation offers
 this optional setup. Selected clients are remembered for repair; existing manual
 registrations and unrelated settings are preserved. Standalone clients have
 their own MCP registries, separate from VS Code's native provider.
@@ -204,6 +204,9 @@ the author; **oki.dev** is the brand and website. The GitHub repository remains
 under `oktawianwybieralski`.
 Changing the publisher identifier creates a separate extension identity, so an
 old development installation is not automatically replaced by this VSIX.
+For an unpublished VSIX, VS Code can show the publisher ID `oki-dev` in the
+header. The author's name above is separate from the publisher display name,
+which is configured in the Marketplace account.
 
 [Website](https://oki.dev) | [Issues and questions](https://github.com/oktawianwybieralski/coagent8/issues)
 | [Source](https://github.com/oktawianwybieralski/coagent8)

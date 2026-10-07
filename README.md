@@ -1,4 +1,4 @@
-# CoAgent8 - MCP bridge to local coding CLIs
+# CoAgent8 - MCP bridge to coding CLIs
 
 <p align="center">
   <picture>
