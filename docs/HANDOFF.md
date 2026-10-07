@@ -32,7 +32,9 @@ merged, matrix-verified or released candidate. Package metadata is beta.1.
 New open findings concern incomplete review input/approval binding, inherited
 Codex/agy MCP capabilities, automatic-routing cache
 failures, sticky commentary limits, concurrent cache misses and request-budget
-scope. The runtime contract lists these as `CUR-001` through `CUR-012` (the last is source-inspected capacity accounting).
+scope. The runtime contract lists these as `CUR-001` through `CUR-013` (`CUR-012` is source-inspected capacity accounting;
+`CUR-013`, a review of another revision reading the live workspace, came from the
+owner's VS Code retest).
 `CUR-003` (accepted consent without the checkbox) is closed on `fix/explicit-consent`.
 
 Archival off does not mean session-free execution. Catalog validation is
@@ -56,7 +58,14 @@ pushed. The ledger up to `24052e3` is in the
 | `fix/session-effort-continuation` | `690b3d0` | A continuation keeps the session's reasoning effort (found by the headless AX retest) |
 | `docs/ax-retest` | `dd4711a` | Headless AX retest in fresh Codex and agy sessions recorded in `CONTEXT-001` |
 | `refactor/model-catalog-cache` | `1d3c8dc` | No model names in `src/` code (governance aside); defaults from the CLIs and `config.json`; catalogs in `models.json`; Claude names resolved through `system/init` |
-| `feat/price-based-consent` | this change | Consent by approximate price (OpenRouter): relative to the default, a 20 USD limit, remember for unknown or approximate prices; rule 01 reworded with the owner's confirmation |
+| `feat/price-based-consent` | `ce882ba` | Consent by approximate price (OpenRouter): relative to the default, a 20 USD limit, remember for unknown or approximate prices; rule 01 reworded with the owner's confirmation |
+| `fix/agy-quiet-updater` | `dcf9a90` | P0 quiet Windows: every agy launch sets `AGY_CLI_DISABLE_AUTO_UPDATE=true`; agy's updater opened a focus-stealing console window (`WINDOWS-001`) |
+| `fix/consent-unanswered` | `0c89f70` | A cancelled approval request is reported as unanswered, not as the user's refusal; Codex cancels without showing a form (`EXEC-001`) |
+| `docs/vscode-retest` | this change | Owner's VS Code chat retest in `CONTEXT-001`; `CUR-013` (review of another revision reads the live workspace) |
+
+`docs/readme` (`de47a4d`, README feature list and badges) branches from
+`feat/price-based-consent` outside this stack; its regenerated `CHANGELOG.md` is
+kept in the stash "docs/readme: regenerated CHANGELOG.md (pending chore(changelog))".
 
 ## Next work
 
@@ -81,6 +90,15 @@ Order decided by the owner on 2026-10-07: `CUR-003` first (done), then:
 The headless AX retest in fresh Codex and agy sessions ran on 2026-10-07 and is
 recorded in `CONTEXT-001`; its one CoAgent8 defect is fixed on
 `fix/session-effort-continuation`.
+
+The owner's VS Code chat retest of 2026-10-07 is recorded in `CONTEXT-001`. Open
+after it:
+- the owner's live check of `fix/agy-quiet-updater` in a fresh Codex chat after
+  restarting VS Code, with the first Gemini call at least 15 minutes after the
+  last agy launch (the bundle is rebuilt; a running server keeps the old one);
+- an owner decision on `CUR-013` (review of a commit other than the checkout);
+- a consent dialog in a VS Code chat: neither chat showed one, so step 6 can only
+  pass in a client that renders MCP forms.
 
 ## Verification and invariants
 

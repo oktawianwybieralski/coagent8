@@ -824,8 +824,9 @@ execution responses supersede the earlier structured result.
 
 **Status:** Implemented across the local context/Markdown/agent-experience
 branches (2026-10-07), with the headless client measurements recorded below.
-The headless AX retests in fresh Codex and agy sessions are recorded below;
-the retest in VS Code chat hosts and interactive UI acceptance remain open. The following
+The headless AX retests in fresh Codex and agy sessions and the owner's retest in
+the Codex and Antigravity chats in VS Code are recorded below. A consent dialog in
+a VS Code chat remains unverified: neither chat showed one. The following
 is chronological evidence: earlier schemas, budgets and result channels are
 superseded by later entries. First measurements on the built stdio server:
 - `tools/list`: 27.4 KB to 5.7 KB, model-visible part 9.6 KB to 3.7 KB;
@@ -1240,6 +1241,54 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   Every wrong model or effort was corrected from the error in one retry, without
   reading source. The same steps, plus a governed-model consent dialog, are the
   owner's retest in VS Code chat hosts.
+- [x] Owner's retest in VS Code chat hosts, 2026-10-07 (17:46 to 17:52), after a
+  VS Code restart, built server `57e803f7` (`feat/price-based-consent`), Windows
+  11 Pro 26200, VS Code 1.140.0. Hosts: the Codex chat (extension
+  `openai.chatgpt` 26.1002.51308, app-server 0.162.0-alpha.2, `gpt-6.1-sol`
+  medium) and the Antigravity chat (extension `google.google-antigravity` 1.7.0).
+  Backends: agy 1.3.1, Claude Code 2.1.289, Codex 0.160.1 under the Codex host
+  and 0.160.0 under the Antigravity host. The two hosts' PATHs resolve different
+  Codex installations.
+
+  | Step | Expected | Codex chat | Antigravity chat |
+  | --- | --- | --- | --- |
+  | 1 | `gemini-3.8-flash` without effort: `INPUT_LIMIT` with the three efforts, then `391` after one retry | PASS (retry `gemini-3.8-flash-low`, 8.0 s) | PASS (retry with effort `medium`, 5.9 s) |
+  | 2 | continuation with only the handle: `400`, `(turn 2, ready)` | PASS (6.2 s) | PASS (9.2 s) |
+  | 3 | `luna` + `minimal`: seven models, then "not 'minimal'", then only the test script, `1 op`, no commentary | PASS (8.3 s) | PASS (10.7 s; one sentence quoting the script) |
+  | 4 | `haiku` + `minimal`: `Warsaw` and the ignored-effort warning | PASS (3.1 s) | PASS (3.1 s) |
+  | 5 | review of `2437d98` on `haiku`: findings, then `> Verdict: ...` | format PASS, verdict wrong: `BLOCKED` (46.9 s, 7 ops) | format PASS, verdict wrong: `BLOCKED` (47.0 s, 11 ops) |
+  | 6 | `opus`: consent form; decline gives "did not approve" | FAIL: no form shown, `POLICY_DENIED` "did not approve" | FAIL: same |
+
+  CoAgent8 defects:
+  - Step 6: neither host showed a form; Codex answers every elicitation with
+    `cancel` (stub measurement), and CoAgent8 reported that as the user's refusal.
+    Fixed on `fix/consent-unanswered` (`EXEC-001`). The consent dialog itself
+    remains unverified in both VS Code chats.
+  - Step 5: both reviews are false positives. The finding says the diff imports
+    `isValidModelIdentifier` from `governance.js`, which "contains only
+    `GovernanceSettings`, `ConsentDecision`, and `decideConsent`". At `2437d98`
+    `governance.ts` did export it and `model-identifier.ts` did not exist. The
+    reviewer read the checked-out files of a later revision. The envelope also
+    claimed `CHECKS: typecheck=FAIL`, a check Claude's restricted tools cannot run,
+    and the gate accepted both claims. Recorded as `CUR-013`; the fix needs an
+    owner decision (for example a temporary worktree of the reviewed commit). The
+    headless retest of the same commit returned `READY` (63.4 s).
+  - The first Gemini call of the Codex chat opened a focus-stealing console
+    window: agy's auto-updater (`WINDOWS-001`, fixed on `fix/agy-quiet-updater`).
+
+  Host-side behavior, not CoAgent8 defects:
+  - The Antigravity host sent `prompt` instead of `proposal` on its first call and
+    corrected it from `Missing required arguments.proposal.` in one retry.
+  - Each host made every call once; no duplicate calls this time.
+  - The Codex host reported step 5's "first line" as a paraphrase of the first
+    finding; the answer starts with the envelope (`REVIEW: 1`), as the Antigravity
+    host reported.
+  - Presentation (owner's note): the Antigravity chat shows a titled entry per call
+    and more of what the backend did; the Codex chat shows less, but shows the
+    server icon.
+  - Codex's `approvals_reviewer = "auto_review"` rejected a `codex exec` call of
+    `opus` inside this repository by citing rule 01, before the call reached
+    CoAgent8.
 
 ## 3. Smaller execution path, robust sessions and honest routing
 

@@ -421,6 +421,7 @@ These are open implementation issues, not relaxed security requirements.
 | CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |
 | CUR-011 | POSIX unexpected-parent-death cleanup is not implemented | `WINDOWS-001` |
 | CUR-012 | Snapshot bytes are accounted after writing; the archive budget is not a strict instantaneous disk ceiling | `HISTORY-002` |
+| CUR-013 | A review of a commit other than the checkout runs in the live workspace, so the reviewer reads files of another revision; Claude's restricted tools cannot read the commit's tree, and an unrunnable check can be reported as FAIL | `AUDIT-001` / `SURFACE-001` |
 
 The original `c265cdf` audit remains historical evidence. Its process-identity,
 answer-redaction, archive-integrity, typed-error and workspace-resource fixes are
