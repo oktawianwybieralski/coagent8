@@ -6,7 +6,7 @@ import path from 'node:path';
 import { runCommand, DEFAULT_TIMEOUT_MS } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { checkModelGovernance, consentRequiredMessage } from '../governance.js';
+import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
 import { errorCodeOf, type ExecutionError } from '../../conversation.js';
@@ -160,6 +160,9 @@ function failed(error: ExecutionError): TerminalExecutionResult {
 }
 
 async function executeInternal(prompt: string, options: ExecutionOptions): Promise<TerminalExecutionResult> {
+  if (options.model && !isValidModelIdentifier(options.model)) {
+    return failed({ code: 'INPUT_LIMIT', message: 'Invalid Gemini model identifier.', retryable: false });
+  }
   if (checkModelGovernance(options.model, options.userConfirmed)) {
     return failed({ code: 'POLICY_DENIED', message: consentRequiredMessage(options.model), retryable: false });
   }

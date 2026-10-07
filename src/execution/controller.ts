@@ -24,7 +24,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
-import { checkModelGovernance, consentRequiredMessage } from '../backends/governance.js';
+import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../backends/governance.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
@@ -103,6 +103,8 @@ export async function executeTask(prompt: string, publicInput: string, args: Exe
 
 async function executeTaskInternal(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: { requireEnvelope?: boolean; warnings?: string[] } = {}) {
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
+  // The model reaches CLI argv; option-like or whitespace values are rejected before any backend runs.
+  if (args.model !== undefined && !isValidModelIdentifier(args.model)) throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');
   const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
   if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');

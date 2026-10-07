@@ -4,7 +4,7 @@ import fs from 'fs';
 import { runCommand } from '../../execution/process.js';
 import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult } from '../types.js';
 import { validEventIdentifier, type ExecutionError } from '../../conversation.js';
-import { checkModelGovernance, consentRequiredMessage } from '../governance.js';
+import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
 import { createCodexAppSession } from './app-server.js';
@@ -143,6 +143,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const rejected = (code: ExecutionError['code'], message: string): TerminalExecutionResult => ({
     status: 'failed', isError: true, output: '', model, error: { code, message, retryable: false }, truncated: false, continuationAvailable: false,
   });
+  if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
   if (checkModelGovernance(model, options.userConfirmed)) return rejected('POLICY_DENIED', consentRequiredMessage(model));
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
   // The app-server session requests read-only mode per thread and verifies the server's

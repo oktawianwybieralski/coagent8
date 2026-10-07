@@ -874,8 +874,16 @@ Plan:
   integrated into `runDoctor()` and backends under active cooldown are excluded
   from `ready_backends`. Authentication evidence honesty is reopened under
   `DIAGNOSTICS-001`.
-- [ ] Validate `model` identifiers in the schema and in each adapter before they
-  reach argv (AUD-P1-6).
+- [x] Validate `model` identifiers in the schema and in each adapter before they
+  reach argv (AUD-P1-6). On `fix/model-identifier-validation`, not yet merged.
+  The controller rejects an invalid `model` with `INPUT_LIMIT` before resolving a
+  backend, and the Codex, Gemini and Claude adapters repeat the check
+  (`isValidModelIdentifier`, the audit pattern). The pattern is not advertised in
+  the tool schema: it would add about 110 B to the definitions and exceed the
+  3,800 B `CONTEXT-001` budget. Evidence: `tests/backends/model-identifier.test.js`
+  sends `--yolo`, `-m`, `gpt 6` and a newline-joined flag to every adapter and
+  through `executeTask`; all return `INPUT_LIMIT` without running a backend. With
+  the Gemini check removed, the agy fixture accepts `--model --yolo` and completes.
 - [x] Parse Codex configuration with `smol-toml` (top-level `model` only), or
   omit `-m` when no model was requested and govern the model the CLI reports
   (AUD-P1-11). On `fix/codex-config-toml`, not yet merged. `readCodexConfig`

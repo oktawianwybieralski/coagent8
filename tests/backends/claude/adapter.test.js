@@ -83,7 +83,7 @@ test('Claude tolerates unknown events, maps auth and model failures, and require
 
 test('Claude validates the model before argv and keeps top-tier governance',()=>withFixture(async({dir,captured})=>{
   for(const model of ['--dangerously-skip-permissions','sonnet --tools Bash','','x'.repeat(129)]){
-    assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'POLICY_DENIED',model);
+    assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'INPUT_LIMIT',model);
   }
   assert.equal(captured(),null);
   process.env.ANTHROPIC_MODEL='claude-opus-4-6';

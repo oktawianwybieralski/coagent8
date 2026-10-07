@@ -125,7 +125,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     status: 'failed', isError: true, output: '', model, error: { code, message: redactDiagnostic(message), retryable: false }, errorDetail: redactDiagnostic(message), truncated: false, continuationAvailable: false,
   });
   const requested: unknown = options.model ?? undefined;
-  if (requested !== undefined && !isValidModelIdentifier(requested)) return rejected('POLICY_DENIED', 'Invalid Claude model identifier.');
+  if (requested !== undefined && !isValidModelIdentifier(requested)) return rejected('INPUT_LIMIT', 'Invalid Claude model identifier.');
   let model: string;
   try { model = resolveClaudeModel(requested); }
   catch (err) { return rejected('POLICY_DENIED', (err as Error).message); }
