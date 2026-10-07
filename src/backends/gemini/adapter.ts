@@ -3,7 +3,7 @@ import { classifyGeminiError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runCommand, DEFAULT_TIMEOUT_MS } from '../../execution/process.js';
+import { runCommand } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
@@ -156,7 +156,12 @@ function failed(error: ExecutionError): TerminalExecutionResult {
   return { status: 'failed', isError: true, output: '', error, errorDetail: error.message, truncated: false, continuationAvailable: false };
 }
 
-async function executeInternal(prompt: string, options: ExecutionOptions): Promise<TerminalExecutionResult> {
+/**
+ * Runs one agy turn in its read-only sandbox.
+ * @remarks The deadline and cancellation are `runCommand`'s: it validates `timeoutMs`, stops the
+ * process and reports `timed_out` or `cancelled`, which this result keeps.
+ */
+export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   if (options.model && !isValidModelIdentifier(options.model)) {
     return failed({ code: 'INPUT_LIMIT', message: 'Invalid Gemini model identifier.', retryable: false });
   }
@@ -256,42 +261,6 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
     truncated: processResult.isTruncated || s.truncated || error?.code === 'BUFFER_LIMIT',
     continuationAvailable: !!(s.nativeSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
   };
-}
-
-export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
-  const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  if (!Number.isFinite(timeout) || timeout <= 0) {
-    return failed({ code: 'INPUT_LIMIT', message: 'Invalid execution deadline.', retryable: false });
-  }
-  const controller = new AbortController();
-  let expired = false;
-  const cancel = () => controller.abort();
-  options.abortSignal?.addEventListener('abort', cancel, { once: true });
-  if (options.abortSignal?.aborted) cancel();
-  const timer = setTimeout(() => {
-    expired = true;
-    cancel();
-  }, timeout);
-
-  try {
-    const result = await executeInternal(prompt, { ...options, abortSignal: controller.signal });
-    if (expired || options.abortSignal?.aborted) {
-      return {
-        ...result,
-        isError: true,
-        status: expired ? 'timed_out' : 'cancelled',
-        error: {
-          code: expired ? 'TIMEOUT' : 'ABORTED',
-          message: expired ? 'Gemini execution deadline exceeded.' : 'Gemini request cancelled.',
-          retryable: expired,
-        },
-      };
-    }
-    return result;
-  } finally {
-    clearTimeout(timer);
-    options.abortSignal?.removeEventListener('abort', cancel);
-  }
 }
 
 export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota };
