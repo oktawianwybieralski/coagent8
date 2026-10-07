@@ -1,73 +1,104 @@
 # Current handoff - documentation reconciled on 2026-10-07
 
-## Next steps after the CLI onboarding acceptance (2026-10-07, evening)
+## Next step: release 1.0.0-beta.2 on 2026-10-08
 
 The [CLI setup handoff](CLI_SETUP_HANDOFF.md) is complete for its scope: the
 owner accepted VSIX installation and uninstallation on Windows (see the owner
-acceptance in `INSTALL-001` of the [roadmap](ROADMAP.md)). The roadmap remains
-the single active plan; this section is a copyable prompt, not a second plan.
+acceptance in `INSTALL-001` of the [roadmap](ROADMAP.md)). On 2026-10-07 the
+owner set the target: `1.0.0-beta.2` for invited testers on 2026-10-08. The
+roadmap remains the single active plan; this section is a copyable prompt, not
+a second plan.
 
 ~~~text
-You continue CoAgent8, a client-independent MCP-to-CLI bridge. Work in the main
-checkout C:\Users\Oktawian\Home\oki.dev\coagent8 on branch fix/vsix-presentation,
-starting from the commit that added this prompt to docs/HANDOFF.md. Nothing is
-pushed; release/v1.0.0 still holds only v1.0.0-beta.1.
+You continue CoAgent8, a client-independent MCP-to-CLI bridge. Goal: release
+1.0.0-beta.2 to invited testers on 2026-10-08, before 22:59 UTC (00:59 in
+Poland), so that the npm name placeholder replaces 1.0.0-beta.1 within npm's
+free 72-hour unpublish window (REPO-001). Work in the main checkout
+C:\Users\Oktawian\Home\oki.dev\coagent8, starting on branch
+fix/vsix-presentation at the commit that added this prompt to docs/HANDOFF.md.
+Nothing is pushed yet; release/v1.0.0 holds only v1.0.0-beta.1, and GitHub main
+holds only the initial commit of the recreated repository.
 
-Read first: AGENTS.md and every rule in .agents/rules/, docs/ROADMAP.md (single
-active plan), docs/RUNTIME_CONTRACT.md section 7, docs/PROJECT_REVIEW_2026-10-05.md
-(review at 24052e3) and docs/ANTIGRAVITY_EXTENSION_BACKEND_2026-10-07.md.
+Read first: AGENTS.md and every rule in .agents/rules/ (especially 01, 02
+section 3 and "Prerelease", 03 and 04), docs/ROADMAP.md sections BETA-001,
+REPO-001 and AUDIT-001, docs/RUNTIME_CONTRACT.md section 7 and
+docs/PROJECT_REVIEW_2026-10-05.md (review at 24052e3).
 
 Working rules from the owner:
 - Never create a git worktree or a parallel checkout. Other agents may edit this
   checkout: run git status first, keep unrelated changes, and ask the owner
   before switching or creating branches.
-- No push, pull request, tag, merge or publication without the owner's explicit
-  go-ahead. No AI attribution anywhere. Repository artifacts in English and
-  ASCII only; talk to the owner in Polish.
+- Ask the owner before every push, pull request, merge, tag or publication; the
+  owner runs npm publish/unpublish (2FA). No AI attribution anywhere.
+  Repository artifacts in English and ASCII only; talk to the owner in Polish.
 - Choose checks with .agents/rules/04-quality-gate.md. Give the owner the exact
-  path and SHA-256 of any artifact to install. Never run a model turn that the
-  consent policy would ask for without the owner's approval.
+  path and SHA-256 of every artifact. Never run a model turn that the consent
+  policy would ask for without the owner's approval.
+- Do not lower a gate to meet the date. BETA-001 forbids shipping a beta while a
+  P0 finding is open. If a blocker cannot be closed in time, stop and ask the
+  owner to choose: move the date, or explicitly accept a documented known
+  limitation for this private tester beta and record that decision in the
+  roadmap. Never decide that yourself.
 
-State: beta.2 is BLOCKED. Open release blockers are CUR-001 and CUR-013 (review
-completeness and snapshot binding) and CUR-002 (inherited MCP isolation for
-Codex and agy). The local stack is not integrated into release/v1.0.0 and has
-no six-job CI run. Onboarding, agy discovery from ~/.gemini/bin and silent agy
-sign-in detection are done and owner-accepted.
+Current gate status: beta.2 BLOCKED by CUR-002 (inherited MCP isolation for
+Codex and agy, P0 safety), CUR-001 and CUR-013 (review completeness and snapshot
+binding), no integration into release/v1.0.0 and no six-job CI run. Done and
+owner-accepted: VS Code onboarding, agy discovery from ~/.gemini/bin, silent agy
+sign-in detection, install/uninstall/cleanup.
 
-Work in this order and update the roadmap with evidence after each step:
+Plan for the day, in this order; update the roadmap with evidence after each
+step and report PASS/FAIL/NOT_RUN with commands:
 
-0. Deadline, owner action only: before 2026-10-08 22:59 UTC (REPO-001), beta.2
-   cannot be ready, so the owner publishes the 0.0.1 name placeholder, then runs
-   npm unpublish coagent8@1.0.0-beta.1 and checks npm view coagent8 dist-tags.
-   Prepare the placeholder package and the exact commands; do not publish.
-1. CUR-002, P0. Prove or enforce that a CoAgent8 turn cannot use MCP servers
-   inherited from the user's Codex or agy configuration, including a recursive
-   CoAgent8 registration. For Codex, find a supported app-server override that
-   disables inherited MCP servers and verify it from thread/start evidence. For
-   agy (1.3.1 has mcp/plugin management subcommands but no per-turn switch to
-   disable them), determine with isolated fixture configurations whether
-   --sandbox turns load ~/.gemini/config/mcp_config.json and plugins, and
-   whether agent tools receive
-   ANTIGRAVITY_LS_ADDRESS/ANTIGRAVITY_CSRF_TOKEN. Never touch the owner's live
-   MCP services. If isolation cannot be enforced, fail closed or document the
-   blocker for an owner decision; do not weaken rule 01.
-2. CUR-001 and CUR-013. Carry omitted or truncated review input as structured
-   completeness, bind the expected snapshot, treat FAIL/NOT_RUN honestly, and
-   review a non-checkout commit from that commit's tree instead of the live
-   workspace. Acceptance is in AUDIT-001.
-3. BETA-001 preparation that needs no publication: GitHub bug-report issue
-   template, a short tester guide in README, beta.2 release-note draft from
-   RUNTIME_CONTRACT section 7, and a real Windows check that consult and review
-   open no visible windows (count helper launches).
-4. Integration plan: the ordered pull-request stack from the local branches into
-   release/v1.0.0 with Conventional Commit titles and regenerated changelog,
-   ready for the owner's go-ahead. Then the full local gate on a clean checkout.
-5. INSTALL-001 leftovers: implement the owner's choice for the welcome
-   notification (recommended: show until a CLI is ready or Don't Show Again),
-   and accept native-host calls from Claude Code and Antigravity chats.
+1. Blockers, time-boxed (report within about two hours each):
+   a. CUR-002. Prove or enforce that a CoAgent8 turn cannot use MCP servers or
+      plugins inherited from the user's Codex or agy configuration, including a
+      recursive CoAgent8 registration. Codex: find a supported app-server
+      override that disables inherited MCP servers and verify it from
+      thread/start evidence. agy 1.3.1 has mcp/plugin management subcommands but
+      no per-turn switch: determine with isolated fixture configurations whether
+      --sandbox turns load ~/.gemini/config/mcp_config.json and plugins and
+      whether agent tools receive ANTIGRAVITY_LS_ADDRESS/ANTIGRAVITY_CSRF_TOKEN.
+      Never touch the owner's live MCP services. If agy cannot be isolated,
+      propose failing closed for agy review/consult and ask the owner.
+   b. CUR-001 and CUR-013. Carry omitted or truncated review input as structured
+      completeness, bind the expected snapshot, keep FAIL/NOT_RUN honest, and
+      review a non-checkout commit from that commit's tree, not the live
+      workspace. Acceptance is in AUDIT-001.
+2. Tester material (BETA-001, no publication): a GitHub bug-report issue
+   template asking for issue/doctor output, OS, Node and CLI versions; a short
+   tester guide in README (install the VSIX or npm package, run
+   CoAgent8: Set Up Coding CLIs, report a bug); a beta.2 release-note draft
+   with known issues and security notes from RUNTIME_CONTRACT section 7; a real
+   Windows check that consult and review open no visible windows (record the
+   helper launch count).
+3. Integration: propose the smallest pull-request plan from the local stack into
+   release/v1.0.0 that satisfies 02-git-workflow (Conventional Commit titles,
+   npm run changelog before every push, changelog:check for each PR title, no
+   MIT-era history). After the owner's go-ahead: push, open the PRs, get the
+   six CI jobs green and an independent Reviewer review (03-author-reviewer)
+   with no open P1/P2, then squash-merge.
+4. Full local gate on a clean checkout of the release branch: typecheck, build,
+   test, npm pack --dry-run, test:consumer, package:vscode.
+5. Release (02-git-workflow "Prerelease"), each step after the owner's go-ahead:
+   release PR chore(release): v1.0.0-beta.2 with the regenerated changelog; CI
+   on the merged commit; annotated tag v1.0.0-beta.2; npm tarball and VSIX built
+   from a clean checkout of the tag with SHA-256 digests; GitHub pre-release with
+   the release notes and digests; owner runs npm publish --tag next (never
+   latest).
+6. npm name (REPO-001), owner only, after beta.2 is on next: publish the 0.0.1
+   placeholder from C:\Users\Oktawian\Home\oki.dev\coagent8-npm-placeholder as
+   latest, then npm unpublish coagent8@1.0.0-beta.1, then check
+   npm view coagent8 dist-tags (expected: latest 0.0.1, next 1.0.0-beta.2).
+   Order matters: never unpublish the only version. If beta.2 slips past the
+   window, the placeholder steps can still run alone; after 72 hours npm allows
+   unpublishing only with no dependents, under 300 weekly downloads and a single
+   maintainer.
 
-Report each step with commands, results (PASS/FAIL/NOT_RUN with reasons),
-changed files and open owner decisions. Local checks are not independent
+Deferred until after beta.2 unless the owner says otherwise: the welcome
+notification behavior and native-host call acceptance (INSTALL-001).
+
+Report at each owner checkpoint: what is done, the evidence, the exact next
+command needing approval, and open decisions. Local checks are not independent
 review or release approval.
 ~~~
 

@@ -2334,6 +2334,13 @@ The structural migration is implemented; final release validation remains pendin
 so no beta ships while a P0 finding is open. `1.0.0-beta.1` is the npm name
 placeholder, not a release for testers (`REPO-001`).
 
+**Owner target (2026-10-07):** release `1.0.0-beta.2` on 2026-10-08, before the
+free npm unpublish window for `1.0.0-beta.1` closes (`REPO-001`). The gate below
+is unchanged: a blocker that cannot be closed in time goes back to the owner,
+who either moves the date or records an explicit decision to ship a documented
+known limitation to the private tester circle. The day plan is the prompt in
+[HANDOFF.md](HANDOFF.md).
+
 Beta 2 gate (first release for testers):
 - [ ] Execution order 1 is complete: every audit blocker is closed in its owning
   milestone with a regression test, and the audit reproductions pass against the
@@ -2502,7 +2509,12 @@ Work items:
 ### `REPO-001` - history from beta 1, npm name placeholder
 
 **Status:** History rewritten locally (2026-10-06). The npm steps are due before
-the unpublish window closes on 2026-10-08 22:59 UTC.
+npm's free 72-hour unpublish window for `1.0.0-beta.1` closes on 2026-10-08
+22:59 UTC. Afterwards npm still allows unpublishing a package with no
+dependents, fewer than 300 downloads in the past week and a single maintainer
+([npm unpublish policy](https://docs.npmjs.com/policies/unpublish), checked
+2026-10-07: one maintainer, one version), so the deadline is a convenience, not
+a hard limit.
 
 Decisions (owner, 2026-10-06):
 - The license stays GPL-3.0-only. Developers may use CoAgent8 freely, including
