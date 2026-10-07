@@ -12,10 +12,10 @@ export function createProgressReporter(
   let pendingTimeout: NodeJS.Timeout | undefined;
   let pendingMessage: string | null = null;
 
-  function dispatch(rawMessage: string) {
+  // Receives only messages `report` has already redacted.
+  function dispatch(clean: string) {
     if (closed || progressToken == null) return;
-    const clean = redactDiagnostic(rawMessage, 512).trim();
-    if (!clean || clean === lastMessage) return;
+    if (clean === lastMessage) return;
     lastSent = Date.now();
     lastMessage = clean;
     void server.notification({
@@ -28,6 +28,7 @@ export function createProgressReporter(
     if (closed || progressToken == null) return;
     const raw = typeof info === 'string' ? info : info.message || '';
     if (!raw) return;
+    // The single redaction of a progress message, where it leaves for the client.
     const msg = redactDiagnostic(raw, 512).trim();
     if (!msg) return;
     const now = Date.now();

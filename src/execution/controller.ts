@@ -168,7 +168,8 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   let lastEvent = Date.now();
   let lastPhase = 'Initialization';
   const adapterWarnings = new Set<string>();
-  const report = (message: string) => onProgress?.({ message: redactDiagnostic(message, 512) });
+  // The progress reporter redacts each message once, where it leaves for the client.
+  const report = (message: string) => onProgress?.({ message });
   const receive = (event: AdapterEvent) => {
     if (event.type === 'user_message' || event.type === 'turn_started' || event.type === 'turn_finished') return;
     lastEvent = Date.now();
