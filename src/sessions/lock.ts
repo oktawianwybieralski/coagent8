@@ -241,8 +241,7 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
         if (current?.owner?.token === myToken) await fs.rm(leaseFile, { force: true });
       } catch (err) {
         // The critical section's result stands; an unreleased lease expires after LEASE_MAX_AGE_MS.
-        process.stderr.write(`Warning: could not release storage lease ${path.basename(leaseFile)}: ${(err as Error).message}
-`);
+        process.stderr.write(`Warning: could not release storage lease ${path.basename(leaseFile)}: ${(err as Error).message}\n`);
       }
     }
     releaseInProcess();
