@@ -15,7 +15,7 @@ import { parse as parseToml } from 'smol-toml';
 import { parse, parseTree, modify, applyEdits, type ParseError, type Node as JsonNode } from 'jsonc-parser';
 import { readBoundedFileSync } from '../execution/stream.js';
 import { runCommand } from '../execution/process.js';
-import { resolveCliCommand, resolveBundledClaude, type CliCommand } from '../execution/cli-resolver.js';
+import { resolveCliCommand, type CliCommand } from '../execution/cli-resolver.js';
 import { redactDiagnostic } from '../redaction.js';
 import { withFileLock } from '../sessions/lock.js';
 import { object, withStdioRpc } from './rpc.js';
@@ -119,8 +119,7 @@ export function resolveSetupClient(client: SetupClient, home = os.homedir(), env
   catch (error) {
     if (override || errorCodeOf(error) !== 'CLI_NOT_FOUND') throw new Error('Configured client executable cannot be resolved.');
   }
-  if (client !== 'claude') return null;
-  return resolveBundledClaude(home, env);
+  return null;
 }
 
 function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: string, globalFile: string, home: string): void {

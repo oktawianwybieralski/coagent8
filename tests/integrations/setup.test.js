@@ -119,6 +119,27 @@ test('Claude extension fallback resolves newest usable installed version on each
   fs.rmSync(file('2.1.10'));
   assert.equal(resolveSetupClient('claude', home, env).command, file('2.1.9'));
 });
+
+test('Codex extension fallback works without PATH, follows updates, and preserves explicit overrides', t => {
+  const { home } = profile(t);
+  const family = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
+  const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
+  const executable = process.platform === 'win32' ? 'codex.exe' : 'codex';
+  const file = version => path.join(home, '.vscode/extensions', `openai.chatgpt-${version}`, 'bin', `${family}-${arch}`, executable);
+  for (const version of ['26.9.99', '26.10.1']) { write(file(version), 'synthetic'); fs.chmodSync(file(version), 0o755); }
+  const env = { PATH: '', PATHEXT: '.EXE' };
+  assert.equal(resolveSetupClient('codex', home, env).command, file('26.10.1'));
+  const { resolveCliCommand } = require('../../src/execution/cli-resolver.ts');
+  assert.equal(resolveCliCommand('codex', { env: { ...env, HOME: home, USERPROFILE: home } }).command, file('26.10.1'), 'runtime resolution uses the same fallback');
+  const standalone = path.join(home, 'standalone', executable);
+  write(standalone, 'synthetic'); fs.chmodSync(standalone, 0o755);
+  assert.equal(resolveSetupClient('codex', home, { ...env, PATH: path.dirname(standalone) }).command, standalone, 'PATH wins over bundled extensions');
+  fs.rmSync(file('26.10.1'));
+  assert.equal(resolveSetupClient('codex', home, env).command, file('26.9.99'));
+  assert.throws(() => resolveSetupClient('codex', home, { ...env, CODEX_PATH: path.join(home, 'missing.exe') }), /cannot be resolved/);
+  fs.rmSync(file('26.9.99'));
+  assert.equal(resolveSetupClient('codex', home, env), null);
+});
 test('VS Code provider yields discovery to the active profile manual registration without deleting it', t => {
   const { home, cwd } = profile(t);
   const storage = path.join(home, 'User/profiles/selected/globalStorage/coagent8');

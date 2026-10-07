@@ -117,6 +117,26 @@ const MAX_CLI_CACHE_ENTRIES = 128;
  * @remarks Candidates are read on each fallback so updates do not pin a removed version.
  */
 export function resolveBundledClaude(home = os.homedir(), env = process.env): CliCommand | null {
+  return resolveBundledExtension('claude', home, env);
+}
+
+/**
+ * Resolves Codex from installed VS Code extensions without pinning a version directory.
+ * @param home - Local profile root containing standard extension directories.
+ * @param env - Resolution environment for the selected executable.
+ * @returns A shell-free command, or null when no bundled executable is usable.
+ */
+export function resolveBundledCodex(home = os.homedir(), env = process.env): CliCommand | null {
+  return resolveBundledExtension('codex', home, env);
+}
+
+function resolveBundledExtension(client: 'codex' | 'claude', home: string, env: NodeJS.ProcessEnv): CliCommand | null {
+  const family = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : null;
+  const arch = process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : null;
+  if (client === 'codex' && (!family || !arch)) return null;
+  const pattern = client === 'codex' ? /^openai\.chatgpt-(\d+)\.(\d+)\.(\d+)(?:-|$)/ : /^anthropic\.claude-code-(\d+)\.(\d+)\.(\d+)(?:-|$)/;
+  const executable = process.platform === 'win32' ? `${client}.exe` : client;
+  const relative = client === 'codex' ? path.join('bin', `${family}-${arch}`, executable) : path.join('resources', 'native-binary', executable);
   const candidates: { file: string; version: number[] }[] = [];
   for (const profile of ['.vscode', '.vscode-insiders']) {
     const dir = path.join(home, profile, 'extensions');
@@ -124,12 +144,12 @@ export function resolveBundledClaude(home = os.homedir(), env = process.env): Cl
     try { names = fs.readdirSync(dir); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw new CliResolutionError('CLI_UNSUPPORTED', 'Claude extension directory is unreadable.');
+      throw new CliResolutionError('CLI_UNSUPPORTED', 'Coding CLI extension directory is unreadable.');
     }
     for (const name of names) {
-      const match = /^anthropic\.claude-code-(\d+)\.(\d+)\.(\d+)(?:-|$)/.exec(name);
+      const match = pattern.exec(name);
       if (!match) continue;
-      const file = path.join(dir, name, 'resources', 'native-binary', process.platform === 'win32' ? 'claude.exe' : 'claude');
+      const file = path.join(dir, name, relative);
       if (fs.statSync(file, { throwIfNoEntry: false })?.isFile()) candidates.push({ file, version: match.slice(1).map(Number) });
     }
   }
@@ -200,9 +220,9 @@ export function resolveCliCommand(command: string, options: { env?: NodeJS.Proce
     });
     return resolved;
   }
-  if (!explicit && command === 'claude') {
+  if (!explicit && (command === 'claude' || command === 'codex') && platform === process.platform) {
     const home = platform === 'win32' ? env.USERPROFILE || os.homedir() : env.HOME || os.homedir();
-    const bundled = resolveBundledClaude(home, env);
+    const bundled = command === 'claude' ? resolveBundledClaude(home, env) : resolveBundledCodex(home, env);
     if (bundled) return bundled;
   }
   throw new CliResolutionError('CLI_NOT_FOUND', `CLI '${path.basename(command)}' is not installed or executable; configure its *_PATH or PATH.`);

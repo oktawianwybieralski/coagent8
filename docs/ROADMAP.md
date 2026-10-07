@@ -1886,9 +1886,20 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   Acceptance: isolated install -> setup -> uninstall -> restart leaves no owned
   callable registration; manual and edited entries survive; partial failure is
   reported and recoverable; cleanup is idempotent and does not touch other clients.
+- [x] Fix bundled Codex discovery and missing-CLI onboarding (2026-10-07).
+  The shared resolver scans standard VS Code/Insiders extension directories on
+  each fallback, selects the newest usable platform/architecture binary, prefers
+  PATH and preserves explicit overrides. The VSIX picker lists all three CLI
+  clients, preselects remembered choices, and offers official installer commands
+  for missing clients in a visible terminal without executing them. Missing
+  clients are not registered; install/sign-in, reload and rerun setup are explicit.
+  Local empty-PATH discovery finds both actual Codex and Claude extension binaries;
+  Antigravity remains missing. Typecheck, documentation lint/build, focused
+  resolver/setup/provider/Codex/doctor/package tests and VSIX packaging passed on
+  Windows. Installed VS Code picker/terminal acceptance is still pending.
 - [ ] Prefer compatible existing CLI installations, including bundled extension
   binaries, before offering a separate CLI installation. Claude's bundled-binary
-  fallback already exists; add equivalent Codex discovery with fresh resolution
+  fallback and equivalent Codex discovery now exist with fresh resolution
   after extension updates and no persisted version-directory paths. Keep explicit
   executable overrides authoritative and check required versions/protocols.
   Local Windows probes on 2026-10-07: `--help` and `--version` exited 0 for

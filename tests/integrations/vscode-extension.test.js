@@ -4,8 +4,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 const esbuild = require('esbuild');
 
-test('setup picker displays full CLI names and retains internal client IDs', async () => {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], install = false, remembered } = {}) {
   let setupCommand, selectedClients;
+  const terminals = [];
   const dispose = () => {};
   const vscode = {
     env: {},
@@ -20,7 +21,17 @@ test('setup picker displays full CLI names and retains internal client IDs', asy
     window: {
       async showQuickPick(items) {
         assert.deepEqual(Array.from(items, item => item.label), ['Codex CLI', 'Claude Code CLI', 'Antigravity CLI']);
-        return [items[2]];
+        for (const item of items) {
+          assert.match(item.description, installed.includes(item.client) ? /^Available/ : /^Missing/);
+          assert.equal(item.picked, remembered?.includes(item.client) ?? false);
+        }
+        return selected === null ? undefined : items.filter(item => selected.includes(item.client));
+      },
+      async showInformationMessage(message, action) { return install ? action : undefined; },
+      createTerminal(options) {
+        const terminal = { options, dispose, show() {}, sendText(command, execute) { Object.assign(this, { command, execute }); } };
+        terminals.push(terminal);
+        return terminal;
       },
       createOutputChannel() { return { dispose, appendLine() {}, show() {} }; },
       async showErrorMessage(message) { assert.fail(message); },
@@ -31,25 +42,49 @@ test('setup picker displays full CLI names and retains internal client IDs', asy
     bundle: true, write: false, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
     plugins: [{ name: 'isolated-setup', setup(build) {
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
-        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; export function resolveSetupClient() { return 'fixture'; } export async function setupClients(options) { globalThis.recordClients(options.clients); return []; }",
+        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; export function resolveSetupClient(client) { return globalThis.installed.includes(client) ? 'fixture' : null; } export async function setupClients(options) { globalThis.recordClients(options.clients); return []; }",
         loader: 'js',
       }));
     } }],
   });
   const module = { exports: {} };
   vm.runInNewContext(output.outputFiles[0].text, {
-    module, exports: module.exports, process, Buffer,
+    module, exports: module.exports, process, Buffer, installed,
     recordClients(clients) { selectedClients = Array.from(clients); },
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
   const context = {
     subscriptions: [],
-    globalState: { get(key) { return key === 'setupOffered' ? true : undefined; }, async update() {} },
+    globalState: { get(key) { return key === 'setupOffered' ? true : remembered; }, async update() {} },
     asAbsolutePath(relative) { return path.resolve(relative); },
   };
   module.exports.activate(context);
   await setupCommand();
+  return { selectedClients, terminals };
+}
+
+test('setup picker displays full CLI names and retains internal client IDs', async () => {
+  const { selectedClients } = await runSetupPicker();
   assert.deepEqual(selectedClients, ['agy']);
+});
+
+test('missing CLI selection offers installation without registering an absent client', async () => {
+  const { selectedClients, terminals } = await runSetupPicker({ installed: ['claude'], selected: ['agy'], install: true });
+  assert.equal(selectedClients, undefined);
+  assert.equal(terminals.length, 1);
+  assert.equal(terminals[0].options.name, 'Install Antigravity CLI');
+  assert.match(terminals[0].command, /https:\/\/antigravity\.google\/cli\/install\.(ps1|sh)/);
+  assert.equal(terminals[0].execute, false, 'the user reviews the command and presses Enter');
+  assert.equal(terminals[0].options.shellPath, process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+});
+
+test('repair shows remembered selections and cancellation never opens an installer', async () => {
+  const { selectedClients, terminals } = await runSetupPicker({ installed: ['claude'], selected: null, remembered: ['codex', 'claude'] });
+  assert.equal(selectedClients, undefined);
+  assert.equal(terminals.length, 0);
+  const declined = await runSetupPicker({ installed: ['claude'], selected: ['codex', 'claude'], install: false });
+  assert.deepEqual(declined.selectedClients, ['claude']);
+  assert.equal(declined.terminals.length, 0);
 });
 
 test('VS Code provider uses bundled server, updates Node configuration, and disposes registrations', () => {

@@ -203,9 +203,19 @@ read the text. Codex reports no workspace roots, so its results carry the
 `> Workspace: <path> (server directory)` line.
 
 The VSIX offers **CoAgent8: Set Up or Repair Chat Clients** on first local
-activation and in the Command Palette. Select installed standalone Codex, Claude
-Code, and agy clients once; repair remembers the selection. The CLI uses the same
-implementation:
+activation and in the Command Palette. The picker lists Codex CLI, Claude Code
+CLI and Antigravity CLI, marks availability, and preselects remembered clients
+on repair. PATH installations take precedence; Codex and Claude can also use
+binaries bundled in local `.vscode` or `.vscode-insiders` extensions. Discovery
+is refreshed on setup and does not persist version-directory paths. Explicit
+executable overrides remain authoritative.
+
+Selecting a missing CLI offers its official installation command in a visible
+terminal: npm for Codex and the native installer for Claude or Antigravity.
+The command is inserted without execution; press Enter to install, sign in to
+the CLI, reload VS Code to refresh PATH, and rerun setup. Missing clients are not
+registered before installation. The standalone setup command registers existing
+clients and does not download CLI binaries:
 
 ```bash
 coagent8 setup --clients=codex,claude,agy
