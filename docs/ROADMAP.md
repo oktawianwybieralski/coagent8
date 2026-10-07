@@ -2334,12 +2334,11 @@ The structural migration is implemented; final release validation remains pendin
 so no beta ships while a P0 finding is open. `1.0.0-beta.1` is the npm name
 placeholder, not a release for testers (`REPO-001`).
 
-**Owner target (2026-10-07):** release `1.0.0-beta.2` on 2026-10-08, before the
-free npm unpublish window for `1.0.0-beta.1` closes (`REPO-001`). The gate below
-is unchanged: a blocker that cannot be closed in time goes back to the owner,
-who either moves the date or records an explicit decision to ship a documented
-known limitation to the private tester circle. The day plan is the prompt in
-[HANDOFF.md](HANDOFF.md).
+**Owner decision (2026-10-07):** agents prepare the beta.2 candidate locally:
+blockers, tester material and the local gate (prompt in
+[HANDOFF.md](HANDOFF.md)). The owner personally handles Git cleanup,
+integration, release steps and any npm publication, including the `REPO-001`
+npm steps; agents do not plan or perform them. The gate below is unchanged.
 
 Beta 2 gate (first release for testers):
 - [ ] Execution order 1 is complete: every audit blocker is closed in its owning
