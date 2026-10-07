@@ -128,8 +128,11 @@ An unpublished local VSIX can show the publisher ID in its header when no
 Marketplace display-name metadata is available; `author.name` does not control
 that header.
 
-The Details README uses compact HTTPS badges linking to the author's website,
-GitHub source and issue reports. It contains no large logo or embedded data URI:
+The Details README uses compact HTTPS shields.io badges in two rows: links to
+the author's website, GitHub source and issue reports, then the preview status
+(linking to known limitations), MCP stdio, Node.js 24+ and GPL-3.0-only. Every
+badge has a label and a value; logos are limited to ones shields.io serves
+(GitHub, MCP, Node.js), since an unknown logo is silently dropped. It contains no large logo or embedded data URI:
 the owner reported that the embedded PNG did not render after installation.
 The separate packaged `assets/logo.png` remains the extension's main icon.
 Standard vsce link rewriting and image validation are enabled.
