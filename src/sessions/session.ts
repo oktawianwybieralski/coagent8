@@ -41,7 +41,7 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (s.schemaVersion != null && s.schemaVersion !== 2) return null;
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
   if (s.turnCount != null && (!Number.isSafeInteger(s.turnCount) || s.turnCount < 0)) return null;
-  for (const value of [s.model, s.cliVersion, s.safetyProfile, s.lastErrorCode]) if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
+  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode]) if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   return { ...s, schemaVersion: 2, state: s.state || (s.activePid ? 'running' : 'idle'), activePid: s.activePid ?? null, activeTurnAt: s.activeTurnAt ?? null, threadId: s.threadId ?? null, turnToken: s.turnToken ?? null, turnCount: s.turnCount ?? 0 };
 }
 function readRecord(file: string, handle: string): SessionRecord | null {
@@ -95,7 +95,7 @@ export async function updateSession(handle: string, updates: Partial<SessionReco
   const locked = await withSessionLock(handle, async file => {
     const s = readRecord(file, handle); if (!s) return null;
     if (active(s) && (!token || token !== s.turnToken)) throw new Error('Turn ownership mismatch.');
-    const allowed = ['threadId', 'model', 'cliVersion', 'safetyProfile', 'lastErrorCode', 'state'] as const;
+    const allowed = ['threadId', 'model', 'reasoningEffort', 'cliVersion', 'safetyProfile', 'lastErrorCode', 'state'] as const;
     for (const key of Object.keys(updates)) if (!allowed.includes(key as typeof allowed[number])) throw new Error(`Immutable session field: ${key}`);
     const updated = parseSession({ ...s, ...updates, lastUsedAt: new Date().toISOString() }, handle);
     if (!updated) throw new Error('Invalid session update.');

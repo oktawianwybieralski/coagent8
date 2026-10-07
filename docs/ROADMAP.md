@@ -1135,6 +1135,19 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   three points, a description for every parameter a caller chooses, the budget) and
   `tests/diagnostics/doctor.test.js` (model lines); both fail on the previous
   source.
+- [x] A continuation keeps the session's reasoning effort. Found by the headless
+  AX retest of 2026-10-07 (Codex 0.160.1 host, `gpt-5.6-luna` low): after a
+  successful agy turn with `gemini-3.8-flash` and `reasoning_effort: low`, the
+  continuation with only `session_handle` reached agy as `--model
+  "gemini-3.8-flash" --effort ""` and failed after 5.0 s with
+  `MODEL_UNAVAILABLE`; the host had to repeat the effort. The session stored the
+  model but not the effort. On `fix/session-effort-continuation` the session
+  record keeps `reasoningEffort`, and a continuation reuses it unless the call
+  names an effort, or names a model other than the session's. Evidence:
+  `tests/execution/controller-history.test.js` (a turn with an effort, then
+  continuations without one, with another effort and with another model); it
+  fails on the previous controller with `effort: undefined`. Full suite: 267
+  tests, 264 pass, 0 fail, 3 skipped (POSIX only).
 
 ## 3. Smaller execution path, robust sessions and honest routing
 

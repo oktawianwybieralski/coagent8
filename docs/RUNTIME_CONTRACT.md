@@ -244,7 +244,8 @@ must verify complete scope and evidence; the gate alone is insufficient.
 
 Execution always acquires a workspace/provider-bound disk session and turn lease.
 An explicit handle resumes native context if available; invalid/busy handles
-fail closed. Idle session records expire after two hours, separate from seven-day
+fail closed. A continuation keeps the session's model and reasoning effort; a
+call that names another model does not inherit the effort. Idle session records expire after two hours, separate from seven-day
 archive retention. There is no implicit auto-resume or ephemeral mode today.
 Closing keeps archived history unless `delete_history: true` was requested.
 

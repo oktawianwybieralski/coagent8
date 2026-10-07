@@ -49,7 +49,8 @@ pushed. The ledger up to `24052e3` is in the
 | Branch | Commit | Content |
 | --- | --- | --- |
 | `docs/audit-reconciliation` | `5d0c9f5` | Documentation reconciled with the review at `24052e3` (`CUR-001` to `CUR-012`); rule 01 wording confirmed by the owner |
-| `fix/explicit-consent` | this change | `CUR-003`: only an accepted form with `approve: true` is consent |
+| `fix/explicit-consent` | `d811099` | `CUR-003`: only an accepted form with `approve: true` is consent |
+| `fix/session-effort-continuation` | this change | A continuation keeps the session's reasoning effort (found by the headless AX retest) |
 
 ## Next work
 

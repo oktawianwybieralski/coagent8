@@ -7,6 +7,8 @@ export interface SessionRecord {
   turnToken?: string | null;
   turnCount?: number;
   model?: string;
+  /** Reasoning effort of the last turn; a continuation reuses it with the session's model. */
+  reasoningEffort?: string;
   cliVersion?: string;
   safetyProfile?: string;
   lastErrorCode?: string;

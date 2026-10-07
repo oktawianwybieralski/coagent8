@@ -133,6 +133,8 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   const config = backend.probe.config as { defaultModel?: string } | undefined;
   const model = args.model || previous?.model || config?.defaultModel;
+  // A continuation keeps its session's selection: the effort follows the model it was chosen for.
+  const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
   // Consent covers the model the backend will run, defaults and aliases applied, and is asked on every turn.
   const effectiveModel = backend.adapter.resolveModel ? backend.adapter.resolveModel(model) : model;
   // An explicit model or effort is checked against the CLI's own catalog before the user is
@@ -230,7 +232,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
       }
     }, 5000);
     flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
-    const options: ExecutionOptions = { cwd, model, reasoningEffort: args.reasoning_effort, nativeSessionId: session.threadId, threadId: session.threadId,
+    const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
       consentedModel, timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
     const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
     // Validate terminal results defensively, including adapters supplied at runtime.
@@ -259,6 +261,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
       await updateSession(handle, {
         threadId: raw.nativeSessionId || raw.threadId || null,
         model: raw.model || model,
+        reasoningEffort,
         cliVersion: backend.probe.version,
         safetyProfile: backend.id === 'gemini' ? `gemini-${backend.probe.version}-read-only` : undefined,
       }, token);

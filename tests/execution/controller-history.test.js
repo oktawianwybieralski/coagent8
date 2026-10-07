@@ -317,3 +317,30 @@ test("consent is asked from the user for the backend's effective default model a
     adapterRegistry.gemini = original;
   }
 });
+
+test('a continuation reuses the model and effort of its session unless the call names a model', async () => {
+  const original = adapterRegistry.gemini;
+  const seen = [];
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+    execute: async (_prompt, options) => {
+      seen.push({ model: options.model, effort: options.reasoningEffort });
+      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
+    } };
+  try {
+    const first = readResult(await executeTask('p', 'q', { backend: 'gemini', model: 'gemini-3.8-flash', reasoning_effort: 'low' }, tempDir));
+    for (const args of [{}, { reasoning_effort: 'high' }, {}, { model: 'gemini-3.1-pro' }]) {
+      assert.equal(readResult(await executeTask('p', 'q', { session_handle: first.sessionHandle, ...args }, tempDir)).error, null);
+    }
+    assert.deepEqual(seen, [
+      { model: 'gemini-3.8-flash', effort: 'low' },
+      // AX retest of 2026-10-07: the continuation reached agy with --effort "" and failed.
+      { model: 'gemini-3.8-flash', effort: 'low' },
+      { model: 'gemini-3.8-flash', effort: 'high' },
+      { model: 'gemini-3.8-flash', effort: 'high' },
+      // Another model does not inherit an effort it may not accept.
+      { model: 'gemini-3.1-pro', effort: undefined },
+    ]);
+  } finally {
+    adapterRegistry.gemini = original;
+  }
+});
