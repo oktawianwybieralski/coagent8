@@ -65,10 +65,13 @@ such as `const token = getToken();` is a defect, not a privacy feature.
 This rule is implemented in `REDACTION-002` (AUD-P0-2, AUD-P2-13).
 
 **Current enforcement limits:** Claude disables hooks and inherited MCP servers;
-Codex disables and verifies them per thread. agy does not yet isolate inherited
-external MCP tools or plugins (`CUR-002`); its shell sandbox flag alone cannot
-establish the required read-only capability boundary. This gap blocks safety
-acceptance rather than weakening this rule.
+Codex disables and verifies them per thread. agy cannot isolate inherited
+external MCP tools or plugins (`CUR-002`); its shell sandbox flag alone does not
+establish the read-only capability boundary. Owner decision (2026-10-08): this
+is a documented limitation of a third-party CLI. CoAgent8 runs agy only with
+`--sandbox`, refuses turns from a CoAgent8 started inside a turn
+(`COAGENT8_NESTED_TURN`), names agy's inherited servers and plugins in doctor,
+and must not describe agy turns as isolated from them.
 
 **Consent transport:** implemented in `EXEC-001` (AUD-P1-7); the explicit
 `approve: true` requirement closed `CUR-003`. The contract is in

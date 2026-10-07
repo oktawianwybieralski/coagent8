@@ -322,7 +322,7 @@ It adds no separate work.
   handling for FAIL/NOT_RUN without turning prose checks into fabricated PASS.
   Acceptance: over-budget diffs/untracked omissions cannot receive READY; wrong
   snapshots and failed required checks block approval.
-- [ ] `CUR-002`: prove read-only capability isolation beyond shell flags for
+- [x] `CUR-002`: prove read-only capability isolation beyond shell flags for
   Codex/agy, including inherited MCP tools and recursive CoAgent8 calls. Use
   isolated fixture configurations, never a user's live writable MCP services.
   Also verify whether an agy `--sandbox` turn exposes a language-server address
@@ -352,7 +352,36 @@ It adds no separate work.
     `turn/start` for a server that stays enabled, an enabled feature or a Codex
     without the requests). Versions before 0.162 were not measured; one
     without these requests fails closed.
-  - agy: open; see the owner decision below.
+  - agy: not isolated; closed as a documented limitation by owner decision
+    (2026-10-08): CoAgent8 runs agy in agy's own `--sandbox` and does not answer
+    for defects of that third-party sandbox, but never describes agy turns as
+    isolated from inherited tools. Measured on agy 1.3.1 with an isolated home
+    (`USERPROFILE`/`HOME` in a scratch directory) and HTTP fixture MCP servers,
+    using `-p /usage`, which makes no model call: `--sandbox` runs connected the
+    server of `config/mcp_config.json` and the server of an enabled plugin in
+    `config/plugins/<dir>` (with `plugin.json`), listed their tools and cached
+    them. A workspace `.agents/mcp_config.json` and a workspace
+    `.agents/plugins/<dir>` were not loaded by `/usage`; whether a conversation
+    loads them was not measured. `agy plugin list` reported "No imported
+    plugins" while such a plugin was active; on the owner's machine it omits
+    four enabled marketplace plugins, one with its own MCP servers. agy's
+    built-in `plugin` skill states that the agent shell carries
+    `ANTIGRAVITY_LS_ADDRESS` and `ANTIGRAVITY_CSRF_TOKEN` and calls language
+    server methods such as `JetboxWriteState` and `InstallCustomization`; a stdio
+    MCP server started by agy did not receive them (measured); the agent shell
+    was not measured. The isolated home kept agy signed in (Windows Credential
+    Manager), so the first probe, sent as a prompt, ran one unplanned
+    `gemini-3.8-flash` (low) turn: 14,067 input tokens, 1 output token.
+    CoAgent8's own measures, on `fix/vsix-presentation`:
+    - every backend turn runs with `COAGENT8_NESTED_TURN=1`; agy passed it to a
+      stdio MCP server it started (measured), and a CoAgent8 started with it
+      refuses execution with `POLICY_DENIED` before any probe or turn
+      (`tests/execution/pipeline.test.js`; the variable in each adapter's turn
+      environment in the Claude, Codex and agy adapter tests);
+    - doctor names the enabled agy MCP servers (`agy mcp list`) and the enabled
+      plugins of `~/.gemini/config/plugins` without changing its status
+      (`tests/diagnostics/doctor.test.js`, `tests/backends/gemini/adapter.test.js`).
+      On the owner's machine it reported `context7` and four plugins.
 - [x] `CUR-003`: require `approve` and accept only explicit boolean true for an
   accepted elicitation. Cover missing/empty/false content and every governed
   default/session model through the real MCP request boundary. On

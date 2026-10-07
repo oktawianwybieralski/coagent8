@@ -8,7 +8,8 @@ import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { isValidModelIdentifier } from '../model-identifier.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
-import type { AdapterProbeResult, CatalogModel, ExecutionOptions, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
+import { turnEnvironment } from '../../execution/nested-turn.js';
+import type { AdapterProbeResult, CatalogModel, ExecutionOptions, InheritedTools, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
 import { errorCodeOf, type ExecutionError } from '../../conversation.js';
 
 export const id = 'gemini';
@@ -211,7 +212,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
 
   const processResult = await runCommand(resolved.command, args, {
     cwd: options.cwd ? path.resolve(options.cwd) : process.cwd(),
-    env: agyEnvironment(),
+    env: turnEnvironment(agyEnvironment()),
     stdinInput: prompt,
     abortSignal: options.abortSignal,
     timeoutMs: options.timeoutMs,
@@ -297,5 +298,59 @@ export async function listModels(): Promise<ModelCatalog | undefined> {
   return models.length ? { models, source: 'agy models' } : undefined;
 }
 
-export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota, listModels };
+/** Names of the enabled servers in an `agy mcp list` table (`NAME  TYPE  STATUS  COMMAND/URL`). */
+export function parseAgyMcpList(stdout: string): string[] {
+  return stdout.split(/\r?\n/).map(line => line.trim().split(/\s{2,}/))
+    .filter(columns => columns.length >= 3 && columns[0] !== 'NAME' && columns[2] === 'enabled')
+    .map(columns => columns[0]);
+}
+
+function readJsonObject(file: string): Record<string, unknown> | undefined {
+  try { return asRecord(JSON.parse(fs.readFileSync(file, 'utf8'))); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Plugin directories agy discovers in the global customization root and keeps enabled: a
+ * `plugins` entry in `config.json` wins, otherwise the plugin's own `disabled` declaration.
+ * @remarks `agy plugin list` names only imported plugins, not discovered ones (agy 1.3.1).
+ */
+export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config')): string[] {
+  const root = path.join(configDir, 'plugins');
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); }
+  catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  const settings = asRecord(readJsonObject(path.join(configDir, 'config.json'))?.plugins);
+  return entries.filter(entry => entry.isDirectory()).map(entry => entry.name).filter(dir => {
+    const manifest = readJsonObject(path.join(root, dir, 'plugin.json'));
+    if (!manifest) return false;
+    const enabled = asRecord(settings?.[dir])?.enabled;
+    return typeof enabled === 'boolean' ? enabled : manifest.disabled !== true;
+  });
+}
+
+/**
+ * Reads the MCP servers and plugins agy offers its model in every turn, `--sandbox` included,
+ * without a model call. CoAgent8 cannot disable them (CUR-002); doctor names them.
+ * @returns The inherited tools, or undefined when agy cannot be run or read.
+ */
+export async function inheritedTools(): Promise<InheritedTools | undefined> {
+  let resolved: ReturnType<typeof resolveCliCommand>;
+  try { resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy'); }
+  catch { return undefined; }
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], { timeoutMs: 10_000, env: agyEnvironment() });
+  if (res.exitCode !== 0) return undefined;
+  let plugins: string[];
+  try { plugins = listAgyPlugins(); }
+  catch { return undefined; }
+  return { mcpServers: parseAgyMcpList(res.stdout), plugins };
+}
+
+export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota, listModels, inheritedTools };
 export default geminiAdapter;

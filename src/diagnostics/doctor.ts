@@ -7,7 +7,8 @@ import { selectModel, type ModelSelection, type ModelSource } from '../backends/
 import { redactDiagnostic } from '../redaction.js';
 import { readPrices } from '../backends/prices.js';
 import { decideConsent } from '../backends/governance.js';
-import type { AdapterProbeResult, BackendQuota, CatalogModel } from '../backends/types.js';
+import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools } from '../backends/types.js';
+import { adapterRegistry } from '../backends/registry.js';
 
 /** Native per-window quota details reused by the exported doctor report. */
 export type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['buckets'];
@@ -52,6 +53,11 @@ export interface DoctorReport {
   ready_backends: ProviderId[];
   /** Why the configuration file is unusable; the report then shows the defaults and execution is refused. */
   configError?: string;
+  /**
+   * MCP servers and plugins of the user's CLI configuration that a backend's turns offer the
+   * model and CoAgent8 cannot disable (agy, `CUR-002`); only backends that report any.
+   */
+  inheritedTools: Partial<Record<ProviderId, InheritedTools>>;
 }
 
 export interface DoctorOptions {
@@ -66,12 +72,18 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
   const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await probeBackend(id, { fresh: true })]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
   const measuredNow = new Set<ProviderId>();
-  const [cached, catalogs, prices] = await Promise.all([
+  const [cached, catalogs, prices, inherited] = await Promise.all([
     inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow }),
     Promise.all(selected.map(id => readModelCatalog(id, { fresh: true }))),
     // A list older than a week is read again; prices change rarely and approximate is enough.
     readPrices({ refresh: true }),
+    Promise.all(selected.map(id => probes[id]!.installed ? adapterRegistry[id].inheritedTools?.() : undefined)),
   ]);
+  const inheritedTools: DoctorReport['inheritedTools'] = {};
+  selected.forEach((id, index) => {
+    const tools = inherited[index];
+    if (tools && (tools.mcpServers.length || tools.plugins.length)) inheritedTools[id] = tools;
+  });
 
   const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
   const ready = active.filter(id => {
@@ -102,6 +114,11 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       return [`${id}: installation detected; authentication/execution/read-only readiness has not been fully verified.`];
     }
     return [];
+  });
+  // A known limitation, not a configuration problem: it leaves the status unchanged.
+  const inheritedNotes = (Object.entries(inheritedTools) as [ProviderId, InheritedTools][]).map(([id, tools]) => {
+    const named = [tools.mcpServers.length ? `MCP servers ${tools.mcpServers.join(', ')}` : '', tools.plugins.length ? `plugins ${tools.plugins.join(', ')}` : ''].filter(Boolean).join(' and ');
+    return `${id}: turns run in the CLI's sandbox but can use ${named} from your ${id === 'gemini' ? 'agy' : id} configuration; CoAgent8 cannot disable them. Keep only servers you trust there.`;
   });
 
   // The default model of each installed backend. One the CLI does not state itself (the first
@@ -144,8 +161,9 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     quotas,
     defaultModels,
     prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: prices.entries.length } : null,
-    recommendations: configError ? [configError, ...recommendations] : recommendations,
+    recommendations: [...(configError ? [configError] : []), ...recommendations, ...inheritedNotes],
     ...(configError ? { configError } : {}),
+    inheritedTools,
   };
 }
 

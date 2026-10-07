@@ -404,7 +404,16 @@ Inherited MCP servers (`CUR-002`):
   (`mcpServerStatus/list`, all pages). Anything else, including a Codex without
   these requests, fails with `SANDBOX_UNAVAILABLE` and no turn starts. A
   recursive CoAgent8 registration is disabled like any other server.
-- agy does not disable inherited MCP servers; see section 7.
+- agy (1.3.1) has no switch for this. Its `--sandbox` turns load the servers of
+  `~/.gemini/config/mcp_config.json` and of enabled plugins (measured
+  2026-10-07). By owner decision (2026-10-08) this is a documented limitation:
+  CoAgent8 runs agy in agy's own sandbox and does not answer for that third-party
+  sandbox. Two measures are CoAgent8's own. Every backend turn runs with
+  `COAGENT8_NESTED_TURN=1`, which agy passes to the MCP servers it starts
+  (measured), so a CoAgent8 registered in agy refuses to start a turn
+  (`POLICY_DENIED`) instead of recursing. `doctor` names the enabled agy MCP
+  servers (`agy mcp list`) and the enabled plugins of `~/.gemini/config/plugins`,
+  which `agy plugin list` omits.
 
 Sandbox denial evidence
 in agy is a warning and requires a real terminal result; a completed answer and
@@ -438,7 +447,7 @@ These are open implementation issues, not relaxed security requirements.
 | ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
 | CUR-001 | Truncated/omitted review input can still receive READY; snapshot and failing checks are not bound to approval | `AUDIT-001` / `SURFACE-001` |
-| CUR-002 | agy inherits MCP servers from `~/.gemini/config/mcp_config.json` and enabled plugins in `--sandbox` turns and can recursively call CoAgent8; its agent shell receives the language-server address and CSRF token. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
+| CUR-002 | Accepted limitation for agy (owner decision 2026-10-08): `--sandbox` turns can use the MCP servers of `~/.gemini/config/mcp_config.json` and of enabled plugins; agy's built-in documentation states that its agent shell receives the language-server address and CSRF token (not measured). Recursion into CoAgent8 is refused and doctor names the inherited tools. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
 | CUR-004 | Automatic routing fails on quota-cache writes; old measurements can retain routing weight | `ROUTING-MIGRATE-001` |
 | CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
 | CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |

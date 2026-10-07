@@ -45,6 +45,7 @@ import { ToolError, errorCodeOf, type AdapterEvent } from '../conversation.js';
 import { formatExecutionResult } from '../tools/result.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
+import { assertNotNestedTurn } from './nested-turn.js';
 
 /**
  * Universal execution parameters accepted by execution tools and the run gateway.
@@ -128,6 +129,8 @@ export async function executeTask(prompt: string, publicInput: string, args: Exe
 }
 
 async function executeTaskInternal(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: TaskOptions = {}) {
+  // A server started by a backend inside a turn never starts another one (CUR-002).
+  assertNotNestedTurn();
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
   // The model reaches CLI argv; option-like or whitespace values are rejected before any backend runs.
   if (args.model !== undefined && !isValidModelIdentifier(args.model)) throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');

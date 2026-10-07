@@ -138,6 +138,20 @@ export interface CliAdapter {
    * caller names a model or effort, and by doctor; undefined when the CLI cannot say.
    */
   listModels?(): Promise<ModelCatalog | undefined>;
+  /**
+   * Reads, without a model call, the MCP servers and plugins of the user's CLI configuration
+   * that its turns offer the model and the adapter cannot disable (`CUR-002`). Called only
+   * by doctor; undefined when the CLI cannot say.
+   */
+  inheritedTools?(): Promise<InheritedTools | undefined>;
+}
+
+/** Tools a backend's turns inherit from the user's CLI configuration. */
+export interface InheritedTools {
+  /** Enabled MCP servers. */
+  mcpServers: string[];
+  /** Enabled plugins, which can bring further MCP servers and hooks. */
+  plugins: string[];
 }
 
 /** One model a CLI offers. */

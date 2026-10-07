@@ -34,7 +34,7 @@ const notify = (method, params) => send({ method, params });
 function capture() {
   if (!process.env.CODEX_FIXTURE_CAPTURE) return;
   const turn = records.find(record => record.method === 'turn/start');
-  fs.writeFileSync(process.env.CODEX_FIXTURE_CAPTURE, JSON.stringify({ args, records, prompt: turn ? turn.params.input[0].text : null }));
+  fs.writeFileSync(process.env.CODEX_FIXTURE_CAPTURE, JSON.stringify({ args, records, prompt: turn ? turn.params.input[0].text : null, nested: process.env.COAGENT8_NESTED_TURN ?? null }));
 }
 const item = (method, value) => notify(method, { threadId, turnId: TURN, item: value });
 function completeTurn(status, error = null) {

@@ -16,6 +16,21 @@ const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
+test('a server started inside a CoAgent8 turn refuses to start another turn before any backend work (CUR-002)',async()=>{
+  const original=adapterRegistry.gemini;
+  let calls=0;
+  adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>{calls++;return {installed:true,version:'fixture',config:{defaultModel:'fixture-model'}};},execute:async()=>{calls++;return {status:'completed',isError:false,output:'x',truncated:false,continuationAvailable:false};}};
+  process.env.COAGENT8_NESTED_TURN='1';
+  try {
+    saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});
+    await assert.rejects(executeTask('x','x',{backend:'gemini'},tempDir),{code:'POLICY_DENIED',message:/inside a CoAgent8 turn/});
+    assert.equal(calls,0,'no probe and no turn');
+  } finally {
+    delete process.env.COAGENT8_NESTED_TURN;
+    adapterRegistry.gemini=original;
+  }
+});
+
 test('one pipeline pins provider, persists two turns and canonical messages, preserves Markdown, activity and errors',async()=>{
   const original=adapterRegistry.gemini;
   adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>({installed:true,version:'fixture',config:{defaultModel:'fixture-model'}}),execute:async(prompt,options)=>{

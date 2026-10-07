@@ -12,6 +12,7 @@ import { listCodexModels } from './models.js';
 import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
 import { readBoundedFileSync } from '../../execution/stream.js';
+import { turnEnvironment } from '../../execution/nested-turn.js';
 
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
@@ -154,7 +155,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const app = createCodexAppSession({ collector, threadId: requestedThread, model, effort,
     cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent });
   const result = await runCommand(process.env.CODEX_PATH || CODEX_EXE, args, {
-    cwd: options.cwd, stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
+    cwd: options.cwd, env: turnEnvironment(), stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
     maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine: app.line,
   });
   const snapshot = collector.snapshot();

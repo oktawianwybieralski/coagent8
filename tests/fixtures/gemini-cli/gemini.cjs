@@ -4,6 +4,13 @@ if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
   fs.appendFileSync(process.env.coagent8_FIXTURE_LAUNCH_LOG, JSON.stringify({ args, autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null }) + '\n');
 }
 if (args.includes('--version')) { console.log('1.2.16'); process.exit(0); }
+if (args[0] === 'mcp' && args[1] === 'list') {
+  // `agy mcp list` of agy 1.3.1 (2026-10-07); coagent8_FIXTURE_AGY_MCP lists [name, status] rows.
+  const rows = JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]');
+  if (!rows.length) { console.log('No MCP servers configured.'); process.exit(0); }
+  console.log(['NAME          TYPE   STATUS    COMMAND/URL', ...rows.map(([name, status]) => `${name.padEnd(12)}  stdio  ${status.padEnd(8)}  npx.cmd -y ${name}`)].join('\n'));
+  process.exit(0);
+}
 if (args.includes('models')) {
   // `agy models` of agy 1.3.1 (2026-10-07), abridged: a progress line, then `<id>\t<name>`.
   console.log(['Fetching available models...', 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)', 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
@@ -28,7 +35,7 @@ if (args.includes('-p')) {
 function run() {
   const mode = process.env.coagent8_FIXTURE_MODE || 'success';
   if (prompt === '/usage') {
-    if (process.env.coagent8_FIXTURE_CAPTURE) fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt }));
+    if (process.env.coagent8_FIXTURE_CAPTURE) fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }));
     if (mode === 'unauthenticated' || mode === 'auth') {
       console.log(JSON.stringify({ status: 'ERROR', error: 'Authentication required' }));
       return;
@@ -65,7 +72,7 @@ function run() {
     return;
   }
   if (process.env.coagent8_FIXTURE_CAPTURE) {
-    fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt }));
+    fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }));
   }
   const send = event => console.log(JSON.stringify(event));
   if (mode === 'malformed') { console.log('{invalid}'); return; }

@@ -23,7 +23,7 @@ test('Claude runs restricted read-only print mode with streaming, a pinned sessi
   const result=await executeClaude('Reply with OK',{cwd:dir,model:MODEL,reasoningEffort:'low',onEvent:e=>events.push(e)});
   assert.equal(result.status,'completed');assert.equal(result.output,'OK');
   assert.equal(result.model,'claude-haiku-4-5-20251001','the model reported by system/init, not the requested alias');
-  const {argv,stdin,records}=captured();assert.equal(stdin,'Reply with OK');assert.equal(argv[argv.indexOf('--model')+1],MODEL,'the model the controller selected');
+  const {argv,stdin,records,nested}=captured();assert.equal(stdin,'Reply with OK');assert.equal(nested,'1','the turn carries the nested-turn guard');assert.equal(argv[argv.indexOf('--model')+1],MODEL,'the model the controller selected');
   assert.deepEqual(records,[{type:'user',message:{role:'user',content:'Reply with OK'}}],'one user message, then stdin is closed');
   assert.equal(argv[argv.indexOf('--input-format')+1],'stream-json');
   assert.ok(argv.includes('--restricted'));assert.ok(!argv.includes('--bare'));assert.equal(argv[argv.indexOf('--tools')+1],'Read,Glob,Grep');

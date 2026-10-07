@@ -43,6 +43,7 @@ test('Gemini resolves relative primary and legacy data directories before enteri
     const capture = JSON.parse(fs.readFileSync(process.env.coagent8_FIXTURE_CAPTURE, 'utf8'));
     assert.ok(capture.args.includes('--add-dir'));
     assert.equal(capture.args[capture.args.indexOf('--add-dir') + 1], tempDir);
+    assert.equal(capture.nested, '1', 'agy passes the nested-turn guard to the MCP servers it starts (CUR-002)');
   } finally {
     process.env.coagent8_DIR = tempDir;
     process.env.GEMINI_PATH = cli;
@@ -494,5 +495,30 @@ test('every agy launch disables its auto-updater, whose console window takes the
     if (inherited === undefined) delete process.env.AGY_CLI_DISABLE_AUTO_UPDATE;
     else process.env.AGY_CLI_DISABLE_AUTO_UPDATE = inherited;
     fs.rmSync(log, { force: true });
+  }
+});
+
+test('agy inherited tools: enabled MCP servers from `agy mcp list` and enabled discovered plugins (CUR-002)', async () => {
+  const { parseAgyMcpList, listAgyPlugins, inheritedTools } = require('../../../src/backends/gemini/adapter.ts');
+  // Recorded from agy 1.3.1 (2026-10-07), plus a disabled row.
+  assert.deepEqual(parseAgyMcpList('NAME      TYPE   STATUS    COMMAND/URL\ncontext7  stdio  enabled   npx.cmd -y @upstash/context7-mcp\nold       http   disabled  http://127.0.0.1:9/mcp\n'), ['context7']);
+  assert.deepEqual(parseAgyMcpList('No MCP servers configured.\n'), []);
+
+  const config = path.join(tempDir, 'agy-config');
+  const plugin = (dir, manifest) => { fs.mkdirSync(path.join(config, 'plugins', dir), { recursive: true }); if (manifest) fs.writeFileSync(path.join(config, 'plugins', dir, 'plugin.json'), JSON.stringify(manifest)); };
+  assert.deepEqual(listAgyPlugins(config), [], 'no plugins directory');
+  plugin('kit', { name: 'kit' });
+  plugin('shipped-off', { disabled: true });
+  plugin('turned-on', { disabled: true });
+  plugin('turned-off', {});
+  plugin('not-a-plugin', null);
+  fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({ plugins: { 'turned-on': { enabled: true }, 'turned-off': { enabled: false } } }));
+  assert.deepEqual(listAgyPlugins(config).sort(), ['kit', 'turned-on']);
+
+  process.env.coagent8_FIXTURE_AGY_MCP = JSON.stringify([['coagent8', 'enabled'], ['context7', 'disabled']]);
+  try {
+    assert.deepEqual(await inheritedTools(), { mcpServers: ['coagent8'], plugins: [] });
+  } finally {
+    delete process.env.coagent8_FIXTURE_AGY_MCP;
   }
 });

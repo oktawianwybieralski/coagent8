@@ -7,6 +7,7 @@ import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../conversation.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
+import { turnEnvironment } from '../../execution/nested-turn.js';
 export const id = 'claude', name = 'Claude Code CLI';
 const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
@@ -150,7 +151,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     try { collector.line(line); }
     finally { if (collector.isTerminal()) channel?.close(); }
   };
-  const result = await runCommand(claudeCommand(), args, { cwd: options.cwd, stdinInput: prompt, session, abortSignal: options.abortSignal,
+  const result = await runCommand(claudeCommand(), args, { cwd: options.cwd, env: turnEnvironment(), stdinInput: prompt, session, abortSignal: options.abortSignal,
     timeoutMs: options.timeoutMs, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine });
   const snapshot = collector.snapshot();
   let error = result.error || snapshot.error;

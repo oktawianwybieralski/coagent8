@@ -49,7 +49,7 @@ let pending = '', answered = false, interruptible = null;
 function capture() {
   if (!env.CLAUDE_FIXTURE_CAPTURE) return;
   const user = records.find(record => record.type === 'user');
-  fs.writeFileSync(env.CLAUDE_FIXTURE_CAPTURE, JSON.stringify({ argv, stdin: user ? user.message.content : '', records }));
+  fs.writeFileSync(env.CLAUDE_FIXTURE_CAPTURE, JSON.stringify({ argv, stdin: user ? user.message.content : '', records, nested: env.COAGENT8_NESTED_TURN ?? null }));
 }
 function answer() {
   const lines = fs.readFileSync(path.join(__dirname, 'recordings', `${file}.jsonl`), 'utf8').trim().split('\n').map(line => JSON.parse(line));

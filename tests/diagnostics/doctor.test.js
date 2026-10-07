@@ -152,3 +152,29 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('doctor names the MCP servers and plugins agy turns inherit, without changing the status (CUR-002)', async () => {
+  const original = { ...adapterRegistry };
+  try {
+    for (const id of ['codex', 'claude', 'gemini']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        inspectQuota: async () => undefined,
+        listModels: undefined,
+        observeModel: id === 'claude' ? async requested => requested : undefined,
+        inheritedTools: id === 'gemini' ? async () => ({ mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] }) : undefined,
+        probe: async () => ({ id, installed: true, version: '1.0.0', executionSupported: true, authStatus: 'authenticated',
+          config: { defaultModel: `${id}-model` }, capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }),
+      };
+    }
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] }, backends: { codex: {}, claude: {}, gemini: {} } });
+    const report = await runDoctor({ quota: false });
+    assert.deepEqual(report.inheritedTools, { gemini: { mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] } });
+    const note = report.recommendations.find(text => text.startsWith('gemini: turns run'));
+    assert.match(note, /MCP servers context7, coagent8 and plugins team-kit from your agy configuration; CoAgent8 cannot disable them/);
+    const withoutNote = report.recommendations.filter(text => text !== note);
+    assert.equal(report.status, withoutNote.length ? 'partially_configured' : 'operational', 'the note alone does not change the status');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});

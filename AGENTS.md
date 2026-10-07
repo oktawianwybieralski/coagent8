@@ -26,8 +26,8 @@ MCP use. Historical plans and RFCs do not override this direction.
    - Mandatory read-only profiles: Codex app-server verifies readOnly/never and
      every inherited MCP server disabled per thread;
      Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
-     agy receives native --sandbox. Inherited MCP isolation for agy remains
-     an open deviation, not an exemption from this invariant.
+     agy receives native --sandbox; its inherited MCP servers and plugins are a
+     documented limitation (owner decision 2026-10-08), with recursion refused.
    - Models priced as expensive (at least 2x the backend default, or 20 USD per
      million output tokens), unknown or approximately priced require explicit user
      approval (`approve: true`) through server MCP elicitation; a calling agent

@@ -96,6 +96,7 @@ test('Codex turns run only after the thread reports every inherited MCP server d
   assert.equal(result.status,'completed');
   const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8'));
   for (const feature of ['apps','plugins','browser_use','computer_use','hooks','multi_agent']) assert.ok(capture.args.includes(`features.${feature}=false`),feature);
+  assert.equal(capture.nested,'1','the turn carries the nested-turn guard');
   const methods = capture.records.map(r=>r.method);
   assert.deepEqual(methods,['initialize','initialized','config/read','thread/start','experimentalFeature/list','mcpServerStatus/list','mcpServerStatus/list','turn/start']);
   assert.equal(capture.records[2].params.cwd,path.resolve(directory),'project configuration layers of the turn directory are read');
