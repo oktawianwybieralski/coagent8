@@ -1,5 +1,8 @@
 const fs = require('node:fs');
 const args = process.argv.slice(2);
+if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
+  fs.appendFileSync(process.env.coagent8_FIXTURE_LAUNCH_LOG, JSON.stringify({ args, autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null }) + '\n');
+}
 if (args.includes('--version')) { console.log('1.2.16'); process.exit(0); }
 if (args.includes('models')) {
   // `agy models` of agy 1.3.1 (2026-10-07), abridged: a progress line, then `<id>\t<name>`.

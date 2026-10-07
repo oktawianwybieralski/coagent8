@@ -471,3 +471,28 @@ test('gemini-adapter: a window without remaining_fraction is unmeasured, not ful
   assert.equal(partial.buckets.length, 1, 'the unmeasured window is not reported');
   assert.equal(parseGeminiUsage('not a payload'), undefined);
 });
+
+test('every agy launch disables its auto-updater, whose console window takes the focus on Windows (WINDOWS-001)', async () => {
+  const { listModels } = require('../../../src/backends/gemini/adapter.ts');
+  const log = path.join(tempDir, 'launches.jsonl');
+  const inherited = process.env.AGY_CLI_DISABLE_AUTO_UPDATE;
+  // agy 1.3.1 honours only 'true'; an inherited '1' must not leave the updater on.
+  process.env.AGY_CLI_DISABLE_AUTO_UPDATE = '1';
+  process.env.coagent8_FIXTURE_LAUNCH_LOG = log;
+  try {
+    const probed = await probeGemini();
+    await inspectGeminiQuota(probed);
+    assert.ok(await listModels());
+    const result = await executeGemini('question', { model: MODEL, cwd: tempDir, onEvent: () => {} });
+    assert.equal(result.status, 'completed', JSON.stringify(result.error));
+    const launches = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(launches.length, 4, 'probe, quota read, catalog and turn');
+    for (const launch of launches) assert.equal(launch.autoUpdate, 'true', JSON.stringify(launch.args));
+    assert.equal(process.env.AGY_CLI_DISABLE_AUTO_UPDATE, '1', 'the server environment is not changed');
+  } finally {
+    delete process.env.coagent8_FIXTURE_LAUNCH_LOG;
+    if (inherited === undefined) delete process.env.AGY_CLI_DISABLE_AUTO_UPDATE;
+    else process.env.AGY_CLI_DISABLE_AUTO_UPDATE = inherited;
+    fs.rmSync(log, { force: true });
+  }
+});

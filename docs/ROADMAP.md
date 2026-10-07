@@ -552,6 +552,52 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
   decide on isolation (owner decision).
 - [ ] Add a POSIX parent-death strategy for detached groups. Do not rely on
   stdin EOF: Claude did not exit on EOF mid-turn (see the evidence above).
+- [x] Focus-stealing console window on the first agy launch (P0, beta 2 blocker),
+  reported by the owner on 2026-10-07: after restarting VS Code, the first task
+  in the Codex chat showed a terminal window for about a second, and it took the
+  keyboard focus. Windows 11 Pro 26200, VS Code with the Codex extension (Codex
+  0.162.0-alpha.2 host, Codex CLI 0.160.1), agy 1.3.1, Windows Terminal 1.24 as
+  the default terminal, Node 26.10, built server `57e803f7`.
+  - Source: agy's auto-updater. On its first launch after 15 minutes agy logs
+    `auto_updater.go:334] Spawned background update process`. That process starts
+    another `agy.exe`, which gets a new console. Windows Terminal shows the console
+    and takes the foreground for about 400 ms, even though CoAgent8 starts agy
+    with `windowsHide`. The owner's window matches the update spawn at
+    17:46:09.720 in the agy log of the Codex chat's first Gemini call.
+  - Evidence without process auditing (no administrator rights, no Sysmon): a
+    compiled observer built on `SetWinEventHook` (window create, show and
+    foreground events, each with the owning process, its image and its parent
+    chain). It does not poll, launch PowerShell or stop processes. A hidden-console
+    control child was recorded, so the observer sees console windows; that control
+    child was itself shown by Windows Terminal, which ignores `SW_HIDE`. One
+    reproduction through the built server (`gemini-3.8-flash`, then
+    `gemini-3.8-flash-low`) recorded the window as
+    `agy.exe <- agy.exe (updater) <- agy.exe <- node.exe (server)`. A direct
+    `agy models` launch did the same as soon as the 15-minute check was due.
+  - Ruled out with evidence: no PowerShell 5.1 process started at the VS Code
+    restart (PowerShell Operational log 40961, `Windows PowerShell` log 400). The
+    PowerShell consoles of the day ran as `CodexSandboxOffline`, and each one
+    matched a Codex `exec_command` in `~/.codex/.sandbox/sandbox.*.log`
+    (`codex.exe` -> `codex-windows-sandbox-setup.exe` -> GUI
+    `codex-command-runner.exe` -> `powershell.exe` with `CREATE_NO_WINDOW`). A
+    real Codex turn through the built server that read `package.json` in that
+    sandbox showed no window. CoAgent8 resolves `codex` to `node codex.js` and
+    agy and Claude to native executables; it never runs `.ps1` or `.cmd`. The agy
+    host's own toast (`powershell.exe -WindowStyle Hidden`, `AGY_NOTIFY_*`) runs
+    after its conversation ends, not on a CoAgent8 launch.
+  - Fix on `fix/agy-quiet-updater`: every agy launch (probe, `models`, `/usage`
+    and turns) gets `AGY_CLI_DISABLE_AUTO_UPDATE=true`; agy 1.3.1 ignores `1`. agy
+    checks the variable (`auto_updater.go:247`) before its 15-minute rule, so no
+    updater starts. agy then updates only when the user runs it. Evidence:
+    `tests/backends/gemini/adapter.test.js` (the four launches with an inherited
+    `1`; fails on the previous adapter). Full suite: 278 tests, 275 pass, 0 fail,
+    3 skipped; typecheck, `lint:docs`, `npm run docs`, build (`5a97ef5c`) and
+    consumer smoke pass. Live check with the check due: agy logged "Auto-update
+    disabled via environment variable", its check timestamp did not change, the
+    turn answered `391`, and the observer recorded no window.
+  - Upstream: agy should start its updater without a console
+    (`CREATE_NO_WINDOW`). A launch of agy by the agy host itself is outside
+    CoAgent8 and may still show the window.
 
 ### `REDACTION-002` - output integrity versus diagnostic redaction
 

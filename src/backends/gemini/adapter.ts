@@ -35,6 +35,16 @@ export function resolveModelAndEffort(
   return { model, effort: undefined };
 }
 
+/**
+ * Environment of every agy launch, with agy's auto-updater disabled.
+ * @remarks agy 1.3.1 starts a background updater on its first launch after 15 minutes. On
+ * Windows that updater starts another agy with a new console window, which takes the keyboard
+ * focus for about half a second (WINDOWS-001, measured 2026-10-07). agy honours only `true`.
+ */
+function agyEnvironment(): NodeJS.ProcessEnv {
+  return { ...process.env, AGY_CLI_DISABLE_AUTO_UPDATE: 'true' };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
@@ -72,7 +82,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   let version = 'unknown';
 
   // runCommand resolves the command and reports a missing or failing CLI in its result.
-  const res = await runCommand(rawCommand, ['--version'], { timeoutMs: 5000 });
+  const res = await runCommand(rawCommand, ['--version'], { timeoutMs: 5000, env: agyEnvironment() });
   if (res.exitCode === 0) {
     installed = true;
     version = res.stdout.trim() || 'installed';
@@ -129,7 +139,7 @@ export async function probe(): Promise<AdapterProbeResult> {
 export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
   if (!probe?.installed) return undefined;
   const resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy');
-  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: 5000 });
+  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: 5000, env: agyEnvironment() });
   if (usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
   let parsed: unknown;
   try { parsed = JSON.parse(usageRes.stdout); } catch { return undefined; }
@@ -201,6 +211,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
 
   const processResult = await runCommand(resolved.command, args, {
     cwd: options.cwd ? path.resolve(options.cwd) : process.cwd(),
+    env: agyEnvironment(),
     stdinInput: prompt,
     abortSignal: options.abortSignal,
     timeoutMs: options.timeoutMs,
@@ -280,7 +291,7 @@ export async function listModels(): Promise<ModelCatalog | undefined> {
     // Without a resolvable agy there is no catalog; the turn itself reports why agy cannot run.
     return undefined;
   }
-  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], { timeoutMs: 10_000 });
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], { timeoutMs: 10_000, env: agyEnvironment() });
   if (res.exitCode !== 0 || !res.stdout) return undefined;
   const models = parseAgyModels(res.stdout);
   return models.length ? { models, source: 'agy models' } : undefined;

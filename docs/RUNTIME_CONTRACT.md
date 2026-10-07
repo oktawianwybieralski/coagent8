@@ -373,7 +373,7 @@ apply before the independent history-message maximum.
 | Backend | Execution profile and protocol |
 | --- | --- |
 | Codex | `app-server -c sandbox_mode="read-only" -c approval_policy="never"`; initialize, thread start/resume, turn start; verify thread `readOnly` and `never`; reject server approval requests; interrupt with `turn/interrupt` |
-| agy / Gemini | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; unknown event types warn; known malformed events fail |
+| agy / Gemini | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; unknown event types warn; known malformed events fail; every launch sets `AGY_CLI_DISABLE_AUTO_UPDATE=true`, because agy's updater opens a console window that takes the focus on Windows |
 | Claude Code | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none` with hooks disabled and strict empty MCP configuration; stream-json input/output; verify startup tools/no MCP/dontAsk before content; native session UUID/resume and control interrupt |
 
 Codex and agy do not disable inherited MCP servers. Claude's restricted profile
