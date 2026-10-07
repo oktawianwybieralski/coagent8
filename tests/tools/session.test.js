@@ -148,7 +148,7 @@ test('cancelSession respects external live processes and protects replacement tu
     currentRecord.turnToken = turn2Token;
     currentRecord.state = 'running';
     fs.writeFileSync(file2, JSON.stringify(currentRecord));
-    return true;
+    return 'settled';
   });
 
   const cancelRes = await cancelSession(handle2, tempDir);
@@ -172,7 +172,7 @@ test('cancelSession respects external live processes and protects replacement tu
     currentRecord.turnToken = turn3Token;
     currentRecord.state = 'running';
     fs.writeFileSync(file3, JSON.stringify(currentRecord));
-    return true;
+    return 'settled';
   });
 
   const cancelRes3 = await cancelSession(handle3, tempDir);
@@ -184,7 +184,7 @@ test('cancelSession respects external live processes and protects replacement tu
 
   // 4. Cancellation timeout must fail cleanly without releasing ownership
   setExecutionCanceller(async () => {
-    return false; // Timed out
+    return 'timed_out';
   });
   await assert.rejects(
     async () => cancelSession(handle3, tempDir),
@@ -239,4 +239,14 @@ test('formatExecutionResult produces clean Markdown with answer at top, and hand
   assert.ok(page2.content[0].text.includes('**Assistant (codex):**\n\nTurn 2 response'));
   // Verify Turn 2 is NOT mislabeled as Turn 1 on page 2!
   assert.ok(!page2.content[0].text.includes('### Turn 1'));
+});
+
+test('cancel reports cancelled: false when the session has no running turn (SIMPLIFY-001)', async () => {
+  const { cancelSession, setExecutionCanceller } = require('../../src/sessions/session.ts');
+  const { composeExecutionCancellation } = require('../../src/execution/controller.ts');
+  composeExecutionCancellation();
+  const idle = createSession('gemini', tempDir);
+  const result = await cancelSession(idle.sessionHandle, tempDir);
+  assert.equal(result.cancelled, false);
+  assert.match(result.message, /nothing to cancel/);
 });

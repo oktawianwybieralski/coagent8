@@ -290,7 +290,8 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
     { signal: null }
   );
   assert.equal(cancelCall.isError, undefined);
-  assert.ok(cancelCall.content[0].text.includes('cancelled and resources released'));
+  assert.equal(cancelCall.structuredContent.cancelled, false, 'the session had no running turn');
+  assert.ok(cancelCall.content[0].text.includes('nothing to cancel'));
 });
 
 test('CONTEXT-001 budgets: one-sentence server instructions and compact model-visible tool definitions', () => {

@@ -39,7 +39,9 @@ Workspace selection, per call:
 
 Execution results carry `workspace` and `workspaceSource`, and the text notes the
 server-directory fallback. `session` history and close use the same workspace;
-`cancel` without `workspace_path` stays unscoped.
+`cancel` without `workspace_path` stays unscoped. `cancel` returns
+`cancelled: true` only when it stopped a running turn or released one left
+running; otherwise `cancelled: false` with "nothing to cancel".
 
 ### Tool Surface
 Every client is offered the six core tools:

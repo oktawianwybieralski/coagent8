@@ -26,7 +26,7 @@
 import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
 import { consentDeclinedMessage, consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../backends/governance.js';
-import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller } from '../sessions/session.js';
+import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, BufferLimitError } from './stream.js';
@@ -73,15 +73,13 @@ const MAX_ADAPTER_WARNINGS = 5;
  * Cancels active CLI execution for a specific session handle, aborting the process tree.
  *
  * @param handle - Session handle to abort.
- * @returns Resolves true if execution settled cleanly within the timeout window.
+ * @returns `none` when no turn of this handle runs here, `settled` when it ended within the timeout, `timed_out` otherwise.
  */
-async function cancelSessionExecution(handle: string): Promise<boolean> {
+async function cancelSessionExecution(handle: string): Promise<CancelOutcome> {
   const entry = activeSessionAborts.get(handle);
-  if (entry) {
-    entry.abort();
-    return await entry.wait();
-  }
-  return true;
+  if (!entry) return 'none';
+  entry.abort();
+  return await entry.wait() ? 'settled' : 'timed_out';
 }
 /** Composes session cancellation explicitly at the server/application lifecycle owner. */
 export function composeExecutionCancellation(): void {

@@ -131,8 +131,11 @@ export function resolveOrInitSession(handle?: string | null, backend = 'codex', 
   return s ? { session: s } : { error: 'Invalid or expired session handle.' };
 }
 
-let executionCanceller: ((handle: string) => Promise<boolean> | boolean) | null = null;
-export function setExecutionCanceller(fn: (handle: string) => Promise<boolean> | boolean): void {
+/** Result of cancelling a session's execution in this process: none running, settled, or still running at the deadline. */
+export type CancelOutcome = 'none' | 'settled' | 'timed_out';
+type ExecutionCanceller = (handle: string) => Promise<CancelOutcome> | CancelOutcome;
+let executionCanceller: ExecutionCanceller | null = null;
+export function setExecutionCanceller(fn: ExecutionCanceller): void {
   executionCanceller = fn;
 }
 
@@ -155,12 +158,11 @@ export async function cancelSession(handle: string, workspace?: string): Promise
   const targetToken = stored.turnToken;
 
   // 1. Cancel active execution in this process and wait for clean turn release
-  if (executionCanceller) {
-    const settled = await executionCanceller(sanitized);
-    if (!settled) {
-      throw new Error(`Session '${sanitized}' execution cancellation timed out; active processes may still be running.`);
-    }
+  const outcome = executionCanceller ? await executionCanceller(sanitized) : 'none';
+  if (outcome === 'timed_out') {
+    throw new Error(`Session '${sanitized}' execution cancellation timed out; active processes may still be running.`);
   }
+  let released = false;
 
   // 2. Validate external process and reset running state under session lock
   const locked = await withSessionLock(sanitized, async f => {
@@ -171,22 +173,14 @@ export async function cancelSession(handle: string, workspace?: string): Promise
       throw new Error(`Cannot cancel session '${sanitized}': actively running in another process (PID ${s.activePid}).`);
     }
 
-    if (targetToken) {
-      if (s.turnToken === targetToken) {
-        s.state = 'idle';
-        s.activePid = null;
-        s.turnToken = null;
-        s.activeTurnAt = null;
-        s.lastUsedAt = new Date().toISOString();
-        await atomicWrite(f, JSON.stringify(s));
-      }
-    } else if (!s.turnToken && (s.state === 'running' || s.activePid)) {
+    if (targetToken ? s.turnToken === targetToken : !s.turnToken && (s.state === 'running' || s.activePid)) {
       s.state = 'idle';
       s.activePid = null;
       s.turnToken = null;
       s.activeTurnAt = null;
       s.lastUsedAt = new Date().toISOString();
       await atomicWrite(f, JSON.stringify(s));
+      released = true;
     }
 
     if (targetToken && ownedTurns.get(sanitized) === targetToken) {
@@ -199,10 +193,9 @@ export async function cancelSession(handle: string, workspace?: string): Promise
     throw new Error(`Failed to lock session during cancellation: ${locked.error}`);
   }
 
-  return {
-    cancelled: true,
-    message: `Session '${sanitized}' execution cancelled and resources released.`,
-  };
+  return outcome === 'settled' || released
+    ? { cancelled: true, message: `Session '${sanitized}' execution cancelled and resources released.` }
+    : { cancelled: false, message: `Session '${sanitized}' has no running turn; nothing to cancel.` };
 }
 
 /**
