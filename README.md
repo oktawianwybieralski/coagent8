@@ -116,6 +116,21 @@ See the
 [integration guide](docs/VSCODE_INTEGRATION.md)
 for ownership, rollback and host acceptance limits.
 
+### VS Code commands
+
+The VSIX adds these commands. Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on
+macOS), type `CoAgent8` and select one:
+
+| Command | What it does | Changes |
+| --- | --- | --- |
+| `CoAgent8: Set Up Coding CLIs` | Checks Codex CLI, Claude Code CLI and Antigravity CLI. For a missing CLI it offers the vendor extension or the official standalone installer, waits until the CLI is found, then offers its sign-in command | Installs only what you choose, in the vendor's own location; registers no MCP server |
+| `CoAgent8: Refresh CLI Status` | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
+| `CoAgent8: Register or Repair Native Chat Hosts` | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
+| `CoAgent8: Preview and Remove Owned Registrations` | Previews the CoAgent8 registrations it owns and removes them after a confirmation | Removes only unchanged CoAgent8-owned entries |
+
+The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
+`CoAgent8` starts, stops or restarts it and shows its output.
+
 ## Current tools
 
 | Tool | Purpose |

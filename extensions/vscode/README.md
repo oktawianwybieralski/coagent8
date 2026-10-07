@@ -123,15 +123,28 @@ normally `~/.coagent8/config.json`. The extension does not provide a model picke
 or a separate backend settings UI. See the
 [runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#configuration-and-routing).
 
-**CoAgent8: Set Up Coding CLIs** checks existing Codex CLI, Claude Code CLI and
-Antigravity CLI installations and offers explicit installation/sign-in actions.
-Codex/Claude can reuse their vendor extension's compatible bundled CLI, including
-custom extension roots. Missing clients offer a vendor extension or standalone
-install command; Antigravity needs standalone `agy`. Terminal commands are
-inserted without execution. Press Enter, then use **CoAgent8: Refresh CLI Status**;
-reload VS Code first if PATH is stale. At least one compatible signed-in CLI is
-needed for useful execution. Antigravity authentication remains unverified by
-this metadata-only status check.
+Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on macOS), type `CoAgent8` and
+select a command:
+
+| Command | What it does | Changes |
+| --- | --- | --- |
+| **CoAgent8: Set Up Coding CLIs** | Checks Codex CLI, Claude Code CLI and Antigravity CLI; offers installation and sign-in for the CLIs you select | Installs only what you choose; registers no MCP server |
+| **CoAgent8: Refresh CLI Status** | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
+| **CoAgent8: Register or Repair Native Chat Hosts** | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
+| **CoAgent8: Preview and Remove Owned Registrations** | Previews the CoAgent8 registrations it owns and removes them after a confirmation | Removes only unchanged CoAgent8-owned entries |
+
+**CoAgent8: Set Up Coding CLIs** opens its list at once and fills it when the
+checks finish. Existing CLIs are reused: Codex and Claude Code from their vendor
+extensions (including custom extension roots), and Antigravity CLI from the copy
+the Google Antigravity extension downloads to `~/.gemini/bin`. For a missing CLI
+you choose **Install Vendor Extension** or **Install Standalone CLI** (the
+vendor's official installer). Every CLI stays in its vendor's own location;
+CoAgent8 does not download or store CLI binaries. After an extension install the
+command waits until the CLI is found; standalone installer commands are inserted
+in a terminal without execution, so press Enter, then choose **Check Now**, or
+**Reload Window** if the installer changed PATH. Sign-in commands are offered the
+same way. At least one compatible signed-in CLI is needed for useful execution.
+Antigravity authentication remains unverified by this metadata-only status check.
 
 Installation/check selections do not register external MCP servers. Optional
 **CoAgent8: Register or Repair Native Chat Hosts** has a separate selection and
