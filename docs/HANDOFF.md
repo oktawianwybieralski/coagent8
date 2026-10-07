@@ -108,7 +108,8 @@ is pushed:
 | `fix/cancel-reports-outcome` | `21e6bab` | `SIMPLIFY-001` (P3): `cancel` reports `cancelled: false` when nothing ran |
 | `fix/session-list-home-paths` | `26ac5fd` | `SIMPLIFY-001` (P3): session lists show the home directory as `~` |
 | `ci/coverage-once` | `1c4949c` | `VERIFY-SCOPE-001` (AUD-P2-15): the suite runs once per CI job, under coverage; API docs in one job |
-| `docs/simplify-evidence` | this change | Roadmap evidence for `SIMPLIFY-001`; handoff update |
+| `docs/simplify-evidence` | `05bad84` | Roadmap evidence for `SIMPLIFY-001`; handoff update |
+| `build/artifacts-from-tarball` | `917924f`, this change | `PACKAGE-001`: plugin directory and VSIX built from the packed tarball (`npm run package:artifacts`) |
 
 ## Verification
 
@@ -159,4 +160,8 @@ results in the project review before requesting an independent review by the Rev
      (`CONTEXT-001`);
    - every agy turn starts the user's agy MCP servers, CoAgent8 itself included,
      and the user's allow rules let the backend model call CoAgent8 (`WINDOWS-001`).
-9. `PACKAGE-001`: build the plugin and VSIX artifacts from the packed tarball.
+9. Done on `build/artifacts-from-tarball`: `PACKAGE-001` plugin and VSIX artifacts
+   built from the packed tarball.
+10. Before beta 2: push the stack and open one PR per branch in stack order (owner
+    go-ahead required), with `npm run changelog` before each push; run the CI
+    matrix, which also gives the first Linux and macOS runs of the POSIX tests.
