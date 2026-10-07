@@ -198,6 +198,36 @@ lifecycle, sessions own continuation/ownership, and integrations own host
 registration. Each refactored module must have a named scope that covers all of
 its behavior without absorbing another owner's responsibility.
 
+### Repository layout observations (2026-10-07)
+
+**Status:** Optional maintenance observations, not accepted implementation work
+or additional release gates. Recorded after comparing the current repository
+with a screenshot of another project's responsibility-based layout and colocated
+tests. The screenshot does not establish that project's dependency boundaries
+or code quality.
+
+- Preserve the current product boundaries: `backends/`, `execution/`, `sessions/`,
+  `tools/`, `diagnostics/` and `integrations/`. They already group code by
+  responsibility; copying another project's directory tree is not a goal.
+- Keep the separate `tests/` layout established by `TESTS-001`. Consider making
+  source-to-test correspondence more consistent where useful, while identifying
+  tests that intentionally cover multiple modules. Colocated tests are an
+  alternative convention, not an automatic improvement or a planned migration.
+- During `HISTORY-002` or `SIMPLIFY-001`, inspect `sessions/history.ts` for
+  separable responsibilities. Its size is a review signal, not evidence of a
+  defect or a sufficient reason to split it. Extract only coherent owners with
+  clear interfaces and preserve storage compatibility.
+- Consider per-tool folders, such as `tools/review/`, only when related handlers,
+  scope preparation and review policy form a substantial cohesive module. Avoid
+  adding a directory around each small tool file.
+- Keep descriptive filenames. Use `index.ts` for a module entrypoint when useful;
+  do not replace explicit names with repeated generic entrypoint names or add
+  re-export layers solely for visual uniformity.
+
+Any implementation proposal should demonstrate a navigation, dependency or
+maintenance benefit, fit the existing owning milestone and preserve behavior.
+Prioritize active audit and desktop-safety work before cosmetic reorganization.
+
 ## Documentation ownership
 
 | Document | Owns |
