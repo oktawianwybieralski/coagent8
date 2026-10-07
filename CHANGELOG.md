@@ -29,6 +29,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`16aca5c`](https://github.com/oktawianwybieralski/coagent8/commit/16aca5c5c6875efba64fd1a4305127007248e5d7) **mcp:** Resolve the workspace from client roots and report it
 - [`49387f8`](https://github.com/oktawianwybieralski/coagent8/commit/49387f8c322b624da4d965fe009acc98d9468d0d) **tools:** Say how to call CoAgent8 right on the first attempt
 - [`e414ea8`](https://github.com/oktawianwybieralski/coagent8/commit/e414ea81d00b04b90618e74b3e28ac8f4b304c08) **branding:** Support dark themes and record MCP observations
+- [`b64413b`](https://github.com/oktawianwybieralski/coagent8/commit/b64413b772b4e1817dcd788c62f36ac04d5dd3cd) **setup:** Separate CLI readiness, host registration and cleanup
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
@@ -92,6 +93,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`7028da8`](https://github.com/oktawianwybieralski/coagent8/commit/7028da85fe3a05d1473fe9518e8bef153963458c) **vscode:** Use the new okidev publisher
 - [`505cc77`](https://github.com/oktawianwybieralski/coagent8/commit/505cc7724ef4a37d1d755834c0866829bc8bd9c2) **vscode:** Replace broken Details logo with compact links
 - [`075e264`](https://github.com/oktawianwybieralski/coagent8/commit/075e264efb6567e36135c92641dee65f3334558e) **vscode:** Discover bundled Codex and offer CLI installation
+- [`a500347`](https://github.com/oktawianwybieralski/coagent8/commit/a500347b010173c838973430abb9fd0dd8acbfd0) **setup:** Preserve CLI evidence and verify owned cleanup
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
