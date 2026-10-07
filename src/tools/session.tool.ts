@@ -5,6 +5,8 @@ import { WORKSPACE_PARAMETER } from './schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../sessions/history.js';
 import { resolveWorkspacePath } from '../paths.js';
 import { ToolError } from '../conversation.js';
+import { redactDiagnostic } from '../redaction.js';
+import type { SessionRecord } from '../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
@@ -37,13 +39,18 @@ export const cancelToolDefinition = {
 };
 
 /** @param workspace - The workspace the server resolved for this call; history and close are scoped to it. */
+/** A session record as shown to clients: the workspace path with the home directory as `~`. */
+export function publicSessionRecord(record: SessionRecord): SessionRecord {
+  return { ...record, workspace: redactDiagnostic(record.workspace, 1024) };
+}
+
 export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
   if (!action || !['list', 'history', 'close'].includes(action)) {
     throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "close".');
   }
   if (action === 'list') {
-    const sessions = listSessions(workspace);
+    const sessions = listSessions(workspace).map(publicSessionRecord);
     if (!sessions.length) {
       return {
         content: [{ type: 'text' as const, text: '> CoAgent8: No active sessions found.' }],

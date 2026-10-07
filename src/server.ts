@@ -15,7 +15,7 @@ import { redactDiagnostic } from './redaction.js';
 import { BRAND, CANONICAL_TOOL_NAMES } from './constants.js';
 import { SERVER_ICON } from './generated/server-icon.js';
 import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
-import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession } from './tools/session.tool.js';
+import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession, publicSessionRecord } from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
 import { getCanonicalConsultToolDefinition, handleConsult } from './tools/consult.tool.js';
 import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js';
@@ -263,7 +263,7 @@ export function createServer(): Server {
     const uri = request.params.uri;
     const workspace = (await resolveWorkspace(undefined)).path;
     if (uri === 'coagent8://sessions') {
-      const sessions = listSessions(workspace);
+      const sessions = listSessions(workspace).map(publicSessionRecord);
       return {
         contents: [
           {

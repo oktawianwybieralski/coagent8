@@ -250,3 +250,33 @@ test('cancel reports cancelled: false when the session has no running turn (SIMP
   assert.equal(result.cancelled, false);
   assert.match(result.message, /nothing to cancel/);
 });
+
+test('session list and the sessions resource show a workspace under the home directory as ~ (SIMPLIFY-001)', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.homedir(), 'coagent8-list-'));
+  try {
+    const created = createSession('gemini', workspace);
+    const listed = await handleSession({ action: 'list' }, workspace);
+    const record = listed.structuredContent.sessions.find(s => s.sessionHandle === created.sessionHandle);
+    // Windows stores the canonical lower-case path.
+    assert.equal(record.workspace.toLowerCase(), `~${path.sep}${path.basename(workspace)}`.toLowerCase());
+    assert.ok(!JSON.stringify(listed).toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()), 'no absolute home path');
+    const { createServer } = require('../../src/server.ts');
+    const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+    const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+    const { pathToFileURL } = require('node:url');
+    const server = createServer(), client = new Client({ name: 'list-client', version: '1' }, { capabilities: { roots: {} } });
+    // Resources are scoped to the client's root.
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: [{ uri: pathToFileURL(workspace).href }] }));
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      const text = (await client.readResource({ uri: 'coagent8://sessions' })).contents[0].text;
+      const resource = JSON.parse(text).find(s => s.sessionHandle === created.sessionHandle);
+      assert.equal(resource.workspace.toLowerCase(), record.workspace.toLowerCase());
+      assert.ok(!text.toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()), 'no absolute home path');
+    } finally { await client.close(); await server.close(); }
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
