@@ -50,28 +50,32 @@ pushed. The ledger up to `24052e3` is in the
 | --- | --- | --- |
 | `docs/audit-reconciliation` | `5d0c9f5` | Documentation reconciled with the review at `24052e3` (`CUR-001` to `CUR-012`); rule 01 wording confirmed by the owner |
 | `fix/explicit-consent` | `d811099` | `CUR-003`: only an accepted form with `approve: true` is consent |
-| `fix/session-effort-continuation` | this change | A continuation keeps the session's reasoning effort (found by the headless AX retest) |
+| `fix/session-effort-continuation` | `690b3d0` | A continuation keeps the session's reasoning effort (found by the headless AX retest) |
+| `docs/ax-retest` | this change | Headless AX retest in fresh Codex and agy sessions recorded in `CONTEXT-001` |
 
 ## Next work
 
-1. Close approval/sandbox findings in `AUDIT-001` and `EXEC-001`, with committed
-   regressions derived from the current review. Missing approval is closed
-   (`CUR-003`); continue with review input completeness/snapshot binding and
-   inherited MCP isolation.
-2. Resolve the execution/cache/session work in the owning roadmap milestones.
-   Preserve the owner's catalog/price direction while resolving the explicit
-   design questions and policy approval requirement.
-3. Restart existing clients before fresh-session AX retests. Rebuilding does
-   not reload their server process or tool catalog. Interactive consent and
-   native/UI acceptance remain separate from headless protocol measurements.
-4. Integrate the stack through the required PR/review workflow; validate the
+Order decided by the owner on 2026-10-07: `CUR-003` first (done), then:
+
+1. `refactor/model-catalog-cache` (`EXEC-001`). Owner decision: when
+   `config.json` has no Claude default, the first doctor records the model
+   Claude Code reports in `system/init` for a local `/usage` run without
+   `--model` (no model turn, no cost), writes it and reports it.
+2. `feat/price-based-consent` (`EXEC-001`); the owner confirms the new rule 01
+   text before it is committed.
+3. Close `CUR-001` (review input completeness/snapshot binding) and `CUR-002`
+   (inherited MCP isolation), then the execution/cache/session work in the
+   owning roadmap milestones.
+4. The owner retests in VS Code chat hosts after restarting them; rebuilding
+   does not reload a running server process or tool catalog. Interactive
+   consent and native/UI acceptance remain separate from headless measurements.
+5. Integrate the stack through the required PR/review workflow; validate the
    exact candidate on all six CI jobs before tester publication. The roadmap
    owns beta gates, release artifacts and the owner's npm-placeholder deadline.
 
-The owner previously requested an AX retest in fresh Codex/agy sessions covering
-wrong models/efforts, a tool-using Codex question, continuation and a review of
-`2437d98`. That remains unrecorded acceptance; these documentation edits do not
-claim it ran or authorize new paid model calls/publication.
+The headless AX retest in fresh Codex and agy sessions ran on 2026-10-07 and is
+recorded in `CONTEXT-001`; its one CoAgent8 defect is fixed on
+`fix/session-effort-continuation`.
 
 ## Verification and invariants
 

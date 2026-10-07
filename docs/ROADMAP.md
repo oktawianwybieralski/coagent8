@@ -778,7 +778,8 @@ execution responses supersede the earlier structured result.
 
 **Status:** Implemented across the local context/Markdown/agent-experience
 branches (2026-10-07), with the headless client measurements recorded below.
-Fresh-session AX retests and interactive UI acceptance remain open. The following
+The headless AX retests in fresh Codex and agy sessions are recorded below;
+the retest in VS Code chat hosts and interactive UI acceptance remain open. The following
 is chronological evidence: earlier schemas, budgets and result channels are
 superseded by later entries. First measurements on the built stdio server:
 - `tools/list`: 27.4 KB to 5.7 KB, model-visible part 9.6 KB to 3.7 KB;
@@ -1147,7 +1148,45 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   `tests/execution/controller-history.test.js` (a turn with an effort, then
   continuations without one, with another effort and with another model); it
   fails on the previous controller with `effort: undefined`. Full suite: 267
-  tests, 264 pass, 0 fail, 3 skipped (POSIX only).
+  tests, 264 pass, 0 fail, 3 skipped (POSIX only). Live on 2026-10-07 through
+  the built server at `690b3d0` (fresh stdio client, agy 1.3.1): the turn with
+  `gemini-3.8-flash` and `low` answered `391`, the continuation with only the
+  handle answered `400` (turn 2).
+- [x] Headless AX retest, 2026-10-07: fresh `codex exec --json` (Codex 0.160.1,
+  `gpt-5.6-luna` low) and `agy -p` (agy 1.3.1, `gemini-3.8-flash-low`) processes
+  against the built server at `5d0c9f5`. Each host got deliberate wrong models
+  and efforts, a question that makes the backend read a file, a continuation and,
+  for Codex, a review of `2437d98`, with the instruction not to read files itself.
+  Codex host, eight calls:
+  - `gemini-3.8-flash` without effort: `INPUT_LIMIT` with the three efforts in
+    0.0 s; the retry with `low` answered `391` in 7.1 s;
+  - the continuation with only the handle failed (`MODEL_UNAVAILABLE`, agy got
+    `--effort ""`); the host repeated the effort and got `400`. Fixed on
+    `fix/session-effort-continuation` (item above);
+  - `luna` with `minimal` on Codex: `MODEL_UNAVAILABLE` listing the seven models,
+    then `gpt-6-luna` with `minimal`: `INPUT_LIMIT` naming the accepted efforts,
+    both in 0.0 s; with `low` the backend read `package.json` (1 op) and the answer
+    was only `"test": "node tests/run.cjs"`, without commentary;
+  - `review` of `2437d98` on Claude `haiku`: findings and `> Verdict: READY` in
+    63.4 s, 14 ops;
+  - Codex has no MCP roots, so every result named the server-directory workspace.
+
+  agy host, seven calls in 84 s, each under its 180 s limit:
+  - `luna` on Codex: `MODEL_UNAVAILABLE` with the list; the retry with
+    `gpt-6-luna` answered `391`; the continuation answered `400` (turn 2);
+  - the host then sent the continuation a second time (`409`, turn 3) and reported
+    the second result as the first. A host-side repeat; the footer's turn number
+    shows it, and CoAgent8 behaved as specified;
+  - Claude `haiku` with `minimal`: `Warsaw` and the footer warning that the
+    effort is ignored;
+  - `gemini-3.8-flash` without effort: `INPUT_LIMIT`; the retry named
+    `gemini-3.8-flash-low` and quoted the test script (1 op, 12.2 s);
+  - before the first call agy read its own cached tool definition
+    (`~/.gemini/antigravity-cli/mcp/coagent8/consult.json`, 2,004 B), not source.
+
+  Every wrong model or effort was corrected from the error in one retry, without
+  reading source. The same steps, plus a governed-model consent dialog, are the
+  owner's retest in VS Code chat hosts.
 
 ## 3. Smaller execution path, robust sessions and honest routing
 
