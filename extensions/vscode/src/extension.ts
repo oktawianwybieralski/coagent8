@@ -288,6 +288,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }));
   }
   register('coagent8.refreshCliStatus', async () => { await summarize(await status('Refresh CLI Status')); });
+  register('coagent8.resetSetupState', async () => {
+    const choice = await vscode.window.showWarningMessage('Reset the remembered CLI selection and welcome dismissal? Configuration files, registrations and CLI sign-ins will be retained.', { modal: true }, 'Reset Setup State');
+    if (choice !== 'Reset Setup State') return;
+    for (const key of ['setupClients', 'setupOffered', 'setupDismissed']) await context.globalState.update(key, undefined);
+    await showWelcome();
+    await vscode.window.showInformationMessage('CoAgent8 setup state reset. The welcome notification appears only when no compatible signed-in CLI is ready.');
+  });
   register('coagent8.openConfiguration', async () => {
     const file = configurationFile();
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -345,12 +352,12 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!result.stateError && !result.results.some(item => item.action === 'blocked' || item.action === 'preserved')) await context.globalState.update('setupClients', []);
     await vscode.window.showInformationMessage('Cleanup results are in CoAgent8 Setup. Restart native hosts to refresh cached catalogs. Uninstall the VSIX separately to remove its provider; profile databases and other extensions are retained.');
   });
-  if (!vscode.env.remoteName && !context.globalState.get<boolean>('setupDismissed')) {
-    void (async () => {
-      if ((await status('Welcome CLI Check')).some(result => result.ready)) return;
-      const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible signed-in coding CLI. Check existing CLIs or choose an installation.', 'Set Up CLIs', "Don't Show Again");
-      if (choice === "Don't Show Again") await context.globalState.update('setupDismissed', true);
-      if (choice === 'Set Up CLIs') await vscode.commands.executeCommand('coagent8.setup');
-    })().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`); });
+  async function showWelcome(): Promise<void> {
+    if (vscode.env.remoteName || context.globalState.get<boolean>('setupDismissed')) return;
+    if ((await status('Welcome CLI Check')).some(result => result.ready)) return;
+    const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible signed-in coding CLI. Check existing CLIs or choose an installation.', 'Set Up CLIs', "Don't Show Again");
+    if (choice === "Don't Show Again") await context.globalState.update('setupDismissed', true);
+    if (choice === 'Set Up CLIs') await vscode.commands.executeCommand('coagent8.setup');
   }
+  void showWelcome().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`); });
 }

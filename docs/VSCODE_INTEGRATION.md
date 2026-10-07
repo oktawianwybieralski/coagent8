@@ -410,6 +410,11 @@ and desktop behavior after the new provider refresh remain unverified. A one-off
 owner-requested reset removes only CoAgent8 profile state after the editor closes,
 with backups; it is not production cleanup and does not delete shared databases.
 
+**CoAgent8: Reset Setup State** clears remembered CLI choices and welcome dismissal
+through the public VS Code storage API and rechecks readiness without restarting
+the editor. Configuration, registrations and sign-ins remain intact. Use
+[the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md) for native lifecycle acceptance.
+
 Setup currently supports local default standalone profiles. Remote VS Code hosts
 continue to use the bundled provider but do not run external-client setup on the
 local machine. Custom standalone configuration roots are rejected. Workspace

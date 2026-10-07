@@ -30,6 +30,7 @@
       { "command": "coagent8.openConfiguration", "title": "CoAgent8: Open Configuration (config.json)" },
       { "command": "coagent8.setup", "title": "CoAgent8: Set Up Coding CLIs" },
       { "command": "coagent8.refreshCliStatus", "title": "CoAgent8: Refresh CLI Status" },
+      { "command": "coagent8.resetSetupState", "title": "CoAgent8: Reset Setup State" },
       { "command": "coagent8.registerNativeHosts", "title": "CoAgent8: Register or Repair Native Chat Hosts" },
       { "command": "coagent8.cleanup", "title": "CoAgent8: Preview and Remove Owned Registrations" }
     ],

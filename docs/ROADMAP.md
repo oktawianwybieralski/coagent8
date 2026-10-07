@@ -2199,6 +2199,16 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   remains separate from native UI acceptance. Reset preview finds five targeted
   keys in each profile database copy; its fixture proves backups and retention of
   unrelated bytes. Actual reset awaits editor shutdown; it has not been applied.
+- [x] Reset Setup State clears remembered CLI selection, legacy setupOffered and
+  welcome dismissal using the public VS Code Memento API. It checks readiness
+  again without restarting the editor; a ready CLI still suppresses welcome.
+  Cancellation preserves state, and configuration/registrations/sign-ins remain
+  intact. Historical extension IDs require the separately previewed offline
+  reset; the owner confirmed this session runs in VS Code, so it is still pending.
+  Local typecheck, 19 provider/onboarding fixtures, build, VSIX inspection and
+  exact-tarball consumer smoke pass (96 files, Node v26.10.0, Windows). No real
+  backend turn was run. Native acceptance is
+  listed in [the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md).
 - No `vscode:uninstall` cleanup is currently implemented: the integration guide keeps the
   explicit preview/confirm cleanup command as the only path, and such a hook
   could not reach `globalState` either. Documentation tells users to run cleanup

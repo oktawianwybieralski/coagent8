@@ -14,6 +14,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const cleanupCalls = [];
   const notifications = [], stateUpdates = [], openedFiles = [];
   let selections;
+  const storedState = new Map([['setupClients', remembered], ['setupOffered', true], ['setupDismissed', dismissed], ['unrelatedFutureState', 'retained']]);
   let savedListener, configurationListener;
   let definitionChanges = 0;
   const dispose = () => {};
@@ -112,7 +113,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const context = {
     subscriptions: [],
     globalStorageUri: { fsPath: path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp') },
-    globalState: { get(key) { return key === 'setupDismissed' ? dismissed : key === 'setupOffered' ? true : remembered; }, async update(key, value) { stateUpdates.push({ key, value }); if (key === 'setupClients') selections = Array.from(value); } },
+    globalState: { get(key) { return storedState.get(key); }, async update(key, value) { stateUpdates.push({ key, value }); if (value === undefined) storedState.delete(key); else storedState.set(key, value); if (key === 'setupClients') selections = value === undefined ? undefined : Array.from(value); } },
     asAbsolutePath(relative) { return path.join(extensionRoot, relative); },
   };
   try {
@@ -126,7 +127,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
       savedListener();
     }
     await new Promise(resolve => setImmediate(resolve));
-    return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, stateUpdates, openedFiles, definitionChanges };
+    return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, stateUpdates, storedState, openedFiles, definitionChanges };
   } finally { fs.rmSync(extensionRoot, { recursive: true, force: true }); }
 }
 
@@ -145,6 +146,30 @@ test('welcome persists across legacy setupOffered profiles until ready or explic
   assert.equal(ready.notifications.length, 0);
   assert.equal(ready.terminals.length, 0);
   assert.equal(ready.reveals.length, 0);
+});
+
+test('setup reset clears only remembered choices and dismissal, rechecks readiness, and cancellation preserves state', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-setup-reset-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'config.json');
+  const bytes = '{ "schemaVersion": 1, "defaultBackend": "codex" }\n';
+  fs.writeFileSync(file, bytes);
+  const options = { command: 'coagent8.resetSetupState', remembered: ['codex'], installed: [], configPath: file };
+  const cancelled = await runSetupPicker(options);
+  assert.deepEqual(cancelled.stateUpdates, []);
+  assert.equal(cancelled.storedState.get('setupDismissed'), true);
+  assert.deepEqual(cancelled.storedState.get('setupClients'), ['codex']);
+  const reset = await runSetupPicker({ ...options, action: 'Reset Setup State' });
+  assert.deepEqual(reset.stateUpdates, ['setupClients', 'setupOffered', 'setupDismissed'].map(key => ({ key, value: undefined })));
+  assert.deepEqual([...reset.storedState], [['unrelatedFutureState', 'retained']]);
+  assert.ok(reset.notifications.some(item => item.actions.includes("Don't Show Again")), 'reset offers welcome again when no CLI is ready');
+  assert.deepEqual(reset.registrations, []);
+  assert.deepEqual(reset.cleanupCalls, []);
+  assert.deepEqual(reset.requests, [], 'no editor restart');
+  assert.equal(reset.terminals.length, 0);
+  assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+  const ready = await runSetupPicker({ ...options, installed: ['codex'], action: 'Reset Setup State' });
+  assert.equal(ready.notifications.some(item => item.actions.includes("Don't Show Again")), false, 'a ready CLI suppresses welcome after reset');
 });
 
 test('Open Configuration creates defaults only when absent and opens malformed existing JSON unchanged', async () => {
@@ -388,5 +413,5 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   extensionListener();
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 13);
+  assert.equal(disposed, 14);
 });

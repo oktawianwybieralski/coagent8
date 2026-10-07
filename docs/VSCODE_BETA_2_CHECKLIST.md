@@ -1,0 +1,24 @@
+# Local beta.2 VS Code acceptance
+
+Install the replacement VSIX and record its SHA-256 from the owner's handoff.
+These checks require the actual editor; passing fixtures do not establish them.
+Record PASS, FAIL or NOT_RUN for each item, with the exact action and observed
+result. No test requires deleting vendor extensions, credentials or histories.
+
+| Check | Action | Expected result |
+| --- | --- | --- |
+| Installation | Install from VSIX in a trusted workspace. If the Extensions view requests Restart Extensions, use that action. | One CoAgent8 extension, the new commands, and no remaining Restart Required after the native action. Record a persistent banner as FAIL; do not hide it with a window reload. |
+| Configuration path | In User Settings, search for CoAgent8 and set Config Path to an absolute path with spaces. Run Open Configuration. Then clear the setting and open again. | The first action opens the chosen file; the second opens the default/environment path. New files have defaults. Existing contents survive. Backend/model/consent settings remain in config.json. |
+| JSON schema | In the newly created config, request completion and temporarily enter the wrong type for a known field. Undo the edit. | Completion and validation work; the configuration returns to valid JSON. |
+| Setup reset | Run Reset Setup State, cancel once, then confirm. Run Set Up Coding CLIs. | Cancellation changes nothing. Confirmation clears remembered choices and welcome dismissal without restarting. CLIs retain their sign-ins; no registrations are written. |
+| Welcome | After reset, observe readiness. For a profile with no ready CLI, dismiss welcome normally, reactivate, then choose Don't Show Again and reactivate. | A ready CLI suppresses welcome. Otherwise it repeats on activation until ready or explicitly dismissed. No model turn runs during readiness checks. A profile with ready CLIs cannot verify the missing-CLI branch. |
+| MCP refresh | Start CoAgent8 from MCP: List Servers and call doctor. Change Config Path, restart only CoAgent8 from that list, and call doctor again. | Exactly one server definition and six tools; the server uses the selected file. Other MCP servers remain available. Capture server output if startup fails. |
+| Manual MCP definition | If testing a manual registration, use the editor's MCP UI to add it and then remove only that test entry. | The manual definition takes precedence over the extension provider; removal restores the provider. No duplicate CoAgent8 definition. |
+| Quiet operation | Run consultation and current-workspace review while typing in another application. Approve model consent only if you choose to spend that turn. | No visible console or focus loss. Record backend/version, completion or timeout, and observed review verdict. BLOCKED/PARTIAL is not review approval. |
+| Uninstallation | Optionally preview/remove unchanged owned registrations first. Uninstall the extension and use the native Extensions view restart if requested. | Extension and its provider disappear. Other extensions, MCP entries and CLI sign-ins survive. A persistent Restart Required banner is FAIL. Shared CLI configuration/history are retained; no automatic shared-data deletion is implemented. |
+
+The one-off reset of historical CoAgent8 IDs in the owner's Default profile is
+separate from Reset Setup State. Run the prepared offline script only after
+closing every VS Code window, from an external PowerShell. It backs up the exact
+changed rows and preserves unrelated profile values; it does not delete profile
+databases. This session cannot continue inside an editor that has been closed.

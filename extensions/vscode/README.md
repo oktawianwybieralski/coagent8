@@ -166,6 +166,12 @@ extensions survive. Restart native hosts to refresh their cached catalogs.
 Uninstalling the VSIX or restarting alone does not remove external registrations.
 No production command deletes VS Code profile databases or cache tables.
 
+**CoAgent8: Reset Setup State** clears the remembered CLI selection and welcome
+dismissal through VS Code's storage API, then checks readiness again. Use it to
+repeat onboarding without reinstalling or restarting the editor. It preserves
+configuration files, native-host registrations, histories and CLI sign-ins.
+The welcome appears only when no compatible signed-in CLI is ready.
+
 External-client setup is unavailable on remote extension hosts. In a multi-root
 window, use `coagent8 setup` from the intended project directory instead.
 Details are in the

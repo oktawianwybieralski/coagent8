@@ -115,6 +115,18 @@ The owner already deleted ~/.coagent8; installed extension and native/MCP
 registration inventories are empty. Fresh native lifecycle/desktop acceptance
 remains NOT_RUN; use the replacement VSIX path and digest reported in chat.
 
+Further reinstall follow-up: Reset Setup State clears only setupClients,
+setupOffered and setupDismissed through VS Code's public Memento API and repeats
+the readiness check without restarting the editor. Configuration, registrations
+and sign-ins are preserved. The targeted offline reset of historical extension
+IDs remains pending because this session itself runs inside VS Code. The owner
+can perform that one-off reset in an external PowerShell after closing all
+editor windows. Native UI checks are listed in
+[the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md).
+Typecheck, 19 provider/onboarding fixtures, build, VSIX inspection and exact
+tarball consumer smoke pass (96 files, Node v26.10.0, Windows). No real backend
+turn was run for this follow-up. Logs: .artifacts/setup-reset-*.
+
 ~~~yaml
 task_id: DOCS-001
 mode: documentation

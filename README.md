@@ -127,6 +127,7 @@ macOS), type `CoAgent8` and select one:
 | `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
 | `CoAgent8: Set Up Coding CLIs` | Checks Codex CLI, Claude Code CLI and Antigravity CLI. For a missing CLI it offers the vendor extension or the official standalone installer, waits until the CLI is found, then offers its sign-in command | Installs only what you choose, in the vendor's own location; registers no MCP server |
 | `CoAgent8: Refresh CLI Status` | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
+| `CoAgent8: Reset Setup State` | Repeats onboarding after confirmation and checks readiness without restarting | Clears remembered CLI choices and welcome dismissal; preserves configuration and sign-ins |
 | `CoAgent8: Register or Repair Native Chat Hosts` | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
 | `CoAgent8: Preview and Remove Owned Registrations` | Previews the CoAgent8 registrations it owns and removes them after a confirmation | Removes only unchanged CoAgent8-owned entries |
 
@@ -152,6 +153,8 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
    versus actual behavior. Review pasted diagnostics before submitting.
 
 See the [local release-note draft](docs/BETA_2_RELEASE_NOTES.md) for known issues.
+The [VS Code acceptance checklist](docs/VSCODE_BETA_2_CHECKLIST.md) covers reinstall,
+configuration selection, onboarding reset and native MCP lifecycle testing.
 Apply VS Code's native Extensions view restart action when requested after
 installation/update. Use **MCP: List Servers** to restart CoAgent8 after a changed
 MCP definition; a running process keeps its old bundle. Review accepts staged/revision scopes only when their
