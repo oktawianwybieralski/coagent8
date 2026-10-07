@@ -182,7 +182,8 @@ export function createServer(): Server {
       websiteUrl: `https://github.com/${BRAND.GITHUB_OWNER}/${BRAND.GITHUB_REPO}`,
       icons: [{ ...SERVER_ICON, sizes: [...SERVER_ICON.sizes] }],
     },
-    { capabilities: { tools: {}, resources: { listChanged: true } }, instructions: SERVER_INSTRUCTIONS }
+    // No resources/list_changed notifications are sent, so listChanged is not declared.
+    { capabilities: { tools: {}, resources: {} }, instructions: SERVER_INSTRUCTIONS }
   );
 
   server.oninitialized = () => setCallerProvider(providerForClient(server.getClientVersion()?.name));

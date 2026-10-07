@@ -217,3 +217,21 @@ test('execution errors carry the code raised at their source; an unknown failure
     adapterRegistry.gemini = original;
   }
 });
+
+test('the server declares no resource list notifications it never sends (AUD-P2-8)', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const server = createServer();
+  const client = new Client({ name: 'capabilities-client', version: '1' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const capabilities = client.getServerCapabilities();
+    assert.ok(capabilities.resources, 'resources are offered');
+    assert.notEqual(capabilities.resources.listChanged, true);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});

@@ -1218,7 +1218,11 @@ preserved or explicitly migrated; deletion is not a contract change unless state
 - [ ] Replace the three deprecated `*.tool.ts` files and the duplicated `run`
   mapping with one alias table. Merge the Codex and Gemini structured-error
   extractors. Validate arguments once at the server boundary (AUD-P2-4).
-- [ ] Drop the Gemini adapter's second timeout (AUD-P2-5).
+- [x] Drop the Gemini adapter's second timeout (AUD-P2-5). On
+  `refactor/simplify-timeouts-capabilities`, not yet merged: `execute` relies on
+  `runCommand`'s deadline, whose `timed_out`/`cancelled` status the result keeps;
+  the deadline and cancellation tests in `tests/backends/gemini/adapter.test.js`
+  pass unchanged.
 - [x] Delete dead code (AUD-P2-6):
   - the unused half of `StreamReducer` (`pushChunk`, `flush`, `recordActivity`,
     `recordError`, `recordFallbackLine` and the state, options and getters only
@@ -1245,7 +1249,9 @@ preserved or explicitly migrated; deletion is not a contract change unless state
   `doctor.workspace_path` and the hardcoded doctor `security_policy` claims
   (AUD-P2-8; delivered by `CONTEXT-001`, verified in
   `tests/diagnostics/doctor.test.js`).
-- [ ] Remove or implement the phantom `resources.listChanged` capability (AUD-P2-8).
+- [x] Remove or implement the phantom `resources.listChanged` capability (AUD-P2-8).
+  Removed on `refactor/simplify-timeouts-capabilities`; `tests/server.test.js`
+  checks the declared capabilities.
 - [ ] Stop banner stripping for JSON-backed adapters. Redact progress messages
   once. Correct stale model names in tool descriptions. Make `cancel` report
   whether anything was cancelled. Redact home paths in `session list` (P3).

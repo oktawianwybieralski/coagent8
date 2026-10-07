@@ -95,7 +95,8 @@ is pushed:
 | `fix/unmeasured-quota` | `d88c07d` | `ROUTING-MIGRATE-001` (AUD-P2-2, order 3): unmeasured agy windows are not full headroom; no `any` in `src/` |
 | `fix/empty-catches` | `96ebcfd` | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
 | `fix/malformed-config` | `8b43688`..`c85c775` | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
-| `fix/history-empty-catches` | `07db345`.. | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
+| `fix/history-empty-catches` | `07db345`..`040eb58` | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
+| `refactor/simplify-timeouts-capabilities` | this change | `SIMPLIFY-001` (AUD-P2-5, AUD-P2-8): one Gemini deadline; no phantom `resources.listChanged` |
 
 ## Verification
 
