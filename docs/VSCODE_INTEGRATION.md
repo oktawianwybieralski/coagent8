@@ -231,20 +231,35 @@ running MCP server if the host still retains an earlier definition/environment.
 Native-host launches outside VS Code need their own discoverable CLI environment;
 setup does not persist the editor's version directories into their registrations.
 
-For missing Codex/Claude, onboarding offers **Install Vendor Extension** or
-**Open Install Command**. Extension installation uses VS Code's documented
-`workbench.extensions.installExtension` action after the user's choice; its
-bundled CLI must still pass the subsequent check. CoAgent8 has no unconditional
-vendor extension dependencies or extension pack. The Google extension
-ships no `agy` in its VSIX but downloads one when its backend starts;
-without it, Antigravity uses its official standalone installer.
-Standalone commands are inserted in a visible terminal without execution:
-press Enter to install. Cancellation/failure is reported per client, with a
-refresh/retry path. A terminal command offer is not installation evidence.
+For each selected missing CLI, onboarding asks how to install it:
+**Install Vendor Extension** (`openai.chatgpt`, `anthropic.claude-code` or
+`google.google-antigravity`; it updates itself and adds its own chat) or
+**Install Standalone CLI** (the vendor's official installer; lighter and usable
+in terminals). Either way the CLI stays in its vendor's own location; CoAgent8
+never downloads or stores CLI binaries. Extension installation uses VS Code's
+documented `workbench.extensions.installExtension` action after the user's
+choice. Onboarding then waits, with a cancellable progress notification of at
+most three minutes, until the CLI is discoverable, and the CLI must still pass
+the readiness check. CoAgent8 has no unconditional vendor extension
+dependencies or extension pack.
 
-Onboarding can offer an explicit sign-in terminal command (`codex login`,
-`claude auth login`, or interactive `agy`). It never executes sign-in. Refresh
-status after completion. If PATH is stale, reload VS Code first; a terminal's
+The Google extension ships no `agy` in its VSIX; it downloads one to
+`~/.gemini/bin` when it starts its backend. If that extension is installed but
+its CLI has not appeared yet, the picker shows Antigravity CLI as
+**Downloading** and onboarding waits for it instead of offering a second
+installation. If the wait ends first, open the Antigravity view once so the
+extension starts its backend, then refresh.
+
+Standalone installers are inserted in a visible terminal without execution:
+press Enter to install, then choose **Check Now**. An installer that changes
+PATH affects new processes only; when the CLI is not found with the window's
+current PATH, onboarding offers **Reload Window**. Cancellation/failure is
+reported per client, with a refresh/retry path. A terminal command offer is not
+installation evidence.
+
+After a CLI appears, onboarding can offer an explicit sign-in terminal command
+(`codex login`, `claude auth login`, or interactive `agy`). It never executes
+sign-in. Refresh status after completion. If PATH is stale, reload VS Code first; a terminal's
 new PATH does not update the existing extension host. CLI presence alone does
 not establish authentication. Claude must meet the adapter's shared minimum
 2.1.289 and advertise the required restricted/streaming controls. Codex also

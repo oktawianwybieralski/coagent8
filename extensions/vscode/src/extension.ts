@@ -8,7 +8,17 @@ import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-pr
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 
 const LABELS: Record<SetupClient, string> = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravity CLI' };
+/** Extensions whose bundled CLI paths the runtime receives through `coagent8_EXTENSION_PATHS`. */
 const EXTENSIONS = { codex: 'openai.chatgpt', claude: 'anthropic.claude-code' };
+/** Vendor extensions offered as an installation method; Antigravity's downloads agy to `~/.gemini/bin`. */
+const VENDOR_EXTENSIONS: Record<SetupClient, { id: string; name: string }> = {
+  codex: { id: 'openai.chatgpt', name: 'Codex (OpenAI)' },
+  claude: { id: 'anthropic.claude-code', name: 'Claude Code (Anthropic)' },
+  agy: { id: 'google.google-antigravity', name: 'Google Antigravity' },
+};
+/** A new vendor extension can take minutes to appear or, for Antigravity, to download its CLI. */
+const CLI_WAIT_MS = 180_000;
+const CLI_POLL_MS = 2_000;
 
 /** Supplies actual installed paths to the independent runtime, never durable overrides. */
 function discoveryEnvironment(): NodeJS.ProcessEnv {
@@ -19,31 +29,63 @@ function discoveryEnvironment(): NodeJS.ProcessEnv {
   }
   return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations) };
 }
+/** The Google extension is installed but has not downloaded agy yet; installing again would duplicate it. */
+function antigravityDownloadPending(result: SetupStatus): boolean {
+  return result.client === 'agy' && !result.installed && result.action !== 'blocked' && vscode.extensions.getExtension(VENDOR_EXTENSIONS.agy.id) !== undefined;
+}
+function describe(result: SetupStatus): string {
+  if (result.installed) return `Available - ${result.compatibility}; sign-in ${result.authentication}`;
+  if (antigravityDownloadPending(result)) return 'Downloading - the Google Antigravity extension installs this CLI when its backend starts';
+  return `${result.action === 'blocked' ? 'Blocked' : 'Missing'} - ${result.message}`;
+}
 function quote(value: string): string {
   return process.platform === 'win32' ? `'${value.replace(/'/g, "''")}'` : `'${value.replace(/'/g, "'\\''")}'`;
 }
+/** Official standalone installers; each installs to its vendor's own location. */
+function installCommand(client: SetupClient): string {
+  const windows = process.platform === 'win32';
+  return client === 'codex' ? 'npm install -g @openai/codex'
+    : client === 'claude' ? (windows ? 'irm https://claude.ai/install.ps1 | iex' : 'curl -fsSL https://claude.ai/install.sh | bash')
+      : (windows ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash');
+}
 /** Inserts an explicitly chosen action for review; the user presses Enter to run it. */
-async function offerTerminal(command: string, name: string, context: vscode.ExtensionContext): Promise<void> {
+function offerTerminal(command: string, name: string, context: vscode.ExtensionContext): void {
   const windows = process.platform === 'win32';
   const terminal = vscode.window.createTerminal({ name, shellPath: windows ? 'powershell.exe' : '/bin/bash', shellArgs: windows ? ['-NoProfile'] : [] });
   context.subscriptions.push(terminal);
   terminal.show();
   terminal.sendText(command, false);
-  await vscode.window.showInformationMessage('Press Enter to run the command. When it finishes, use CoAgent8: Refresh CLI Status. If PATH is stale, reload VS Code first; terminal completion alone does not verify installation.');
 }
-/** Offers a vendor extension or standalone CLI; installation never authorizes MCP registration. */
-async function offerCliInstallation(client: SetupClient, context: vscode.ExtensionContext): Promise<void> {
-  const windows = process.platform === 'win32';
-  const command = client === 'codex' ? 'npm install -g @openai/codex'
-    : client === 'claude' ? (windows ? 'irm https://claude.ai/install.ps1 | iex' : 'curl -fsSL https://claude.ai/install.sh | bash')
-      : (windows ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash');
-  const actions = client === 'agy' ? ['Open Install Command'] : ['Install Vendor Extension', 'Open Install Command'];
-  const choice = await vscode.window.showInformationMessage(`${LABELS[client]} is missing. Choose an installation method.`, ...actions);
-  if (choice === 'Install Vendor Extension' && client !== 'agy') {
-    await vscode.commands.executeCommand('workbench.extensions.installExtension', EXTENSIONS[client]);
-    clearCliResolverCache();
-    await vscode.window.showInformationMessage('Extension installation finished. Refresh CLI Status to verify its bundled CLI; reload the window if the extension is not yet visible.');
-  } else if (choice === 'Open Install Command') await offerTerminal(command, `Install ${LABELS[client]}`, context);
+/**
+ * Waits until an installation the user started makes the CLI discoverable.
+ * @param found - Re-resolves the CLI; called after clearing the resolver cache.
+ * @returns False on timeout or cancellation; nothing is installed or retried here.
+ */
+async function waitForCli(title: string, found: () => boolean): Promise<boolean> {
+  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (_progress, token) => {
+    const deadline = Date.now() + CLI_WAIT_MS;
+    while (!token.isCancellationRequested) {
+      clearCliResolverCache();
+      if (found()) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise<void>(resolve => {
+        let settled = false;
+        let listener: vscode.Disposable | undefined;
+        const timer = setTimeout(done, CLI_POLL_MS);
+        listener = token.onCancellationRequested(done);
+        // A token may call the listener during subscription, before it is assigned.
+        if (settled) listener.dispose();
+        function done(): void {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          listener?.dispose();
+          resolve();
+        }
+      });
+    }
+    return false;
+  });
 }
 /** Registers the independent MCP provider and explicit onboarding/registration/cleanup actions. */
 export function activate(context: vscode.ExtensionContext): void {
@@ -78,15 +120,66 @@ export function activate(context: vscode.ExtensionContext): void {
     clearCliResolverCache();
     return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment() };
   }
-  async function status(): Promise<SetupStatus[]> {
-    const results = await setupClients({ ...options(), clients: [...SETUP_CLIENTS], statusOnly: true });
+  async function status(clients: SetupClient[] = [...SETUP_CLIENTS]): Promise<SetupStatus[]> {
+    const results = await setupClients({ ...options(), clients, statusOnly: true });
     report(results);
     return results;
+  }
+  function discoverable(client: SetupClient): boolean {
+    const opts = options();
+    return resolveSetupClient(client, opts.home, opts.env, opts.nodePath) !== null;
   }
   async function summarize(results: SetupStatus[]): Promise<void> {
     await vscode.window.showInformationMessage(results.some(result => result.ready)
       ? 'At least one CLI has compatible controls and local sign-in. The VS Code MCP provider is available independently of native-host registration.'
       : 'No CLI has verified compatibility and sign-in yet. Inspect CoAgent8 Setup, install/update or sign in, then refresh. Antigravity sign-in requires separate native acceptance.');
+  }
+  /** Reports a CLI that did not appear in time; the user's installation itself may still finish. */
+  async function waited(client: SetupClient, found: boolean, viaAntigravity: boolean): Promise<boolean> {
+    if (!found) {
+      await vscode.window.showWarningMessage(viaAntigravity
+        ? `${LABELS[client]} is not available yet. Open the Antigravity view once so the extension starts its backend and downloads the CLI, then run CoAgent8: Refresh CLI Status.`
+        : `${LABELS[client]} is not available yet. If the extension is not visible, reload the window, then run CoAgent8: Refresh CLI Status.`);
+    }
+    return found;
+  }
+  /**
+   * Offers the vendor extension or the official standalone installer for a missing CLI.
+   * @returns Whether the CLI became discoverable; installation never authorizes MCP registration.
+   */
+  async function installCli(client: SetupClient): Promise<boolean> {
+    const vendor = VENDOR_EXTENSIONS[client];
+    if (client === 'agy' && vscode.extensions.getExtension(vendor.id)) {
+      return waited(client, await waitForCli('Waiting for the Google Antigravity extension to download Antigravity CLI...', () => discoverable(client)), true);
+    }
+    const choice = await vscode.window.showInformationMessage(
+      `${LABELS[client]} is not installed. Install it with the ${vendor.name} VS Code extension (updates itself and adds its own chat) or as the standalone CLI from the official installer (lighter, also usable in terminals)?`,
+      'Install Vendor Extension', 'Install Standalone CLI');
+    if (choice === 'Install Vendor Extension') {
+      await vscode.commands.executeCommand('workbench.extensions.installExtension', vendor.id);
+      return waited(client, await waitForCli(`Waiting for ${LABELS[client]} from the ${vendor.name} extension...`, () => discoverable(client)), client === 'agy');
+    }
+    if (choice !== 'Install Standalone CLI') return false;
+    offerTerminal(installCommand(client), `Install ${LABELS[client]}`, context);
+    const next = await vscode.window.showInformationMessage(`Press Enter in the terminal to install ${LABELS[client]}. When it finishes, check it here.`, 'Check Now', 'Reload Window');
+    if (next === 'Reload Window') { await vscode.commands.executeCommand('workbench.action.reloadWindow'); return false; }
+    if (next !== 'Check Now') return false;
+    clearCliResolverCache();
+    if (discoverable(client)) return true;
+    // An installer updates PATH for new processes only; this extension host keeps its old PATH.
+    const reload = await vscode.window.showWarningMessage(`${LABELS[client]} was not found with this window's PATH. Reload the window after the installer finishes, then run CoAgent8: Set Up Coding CLIs again.`, 'Reload Window');
+    if (reload === 'Reload Window') await vscode.commands.executeCommand('workbench.action.reloadWindow');
+    return false;
+  }
+  async function offerSignIn(result: SetupStatus): Promise<void> {
+    const client = result.client;
+    const choice = await vscode.window.showInformationMessage(`${LABELS[client]} sign-in is ${result.authentication}. Open a sign-in command?`, 'Open Sign-in Command');
+    if (choice !== 'Open Sign-in Command') return;
+    const opts = options(), cli = resolveSetupClient(client, opts.home, opts.env, opts.nodePath);
+    if (!cli) throw new Error('CLI disappeared; refresh discovery.');
+    const args = client === 'codex' ? ['login'] : client === 'claude' ? ['auth', 'login'] : [];
+    offerTerminal(`${process.platform === 'win32' ? '& ' : ''}${[cli.command, ...cli.argsPrefix, ...args].map(quote).join(' ')}`, `Sign in to ${LABELS[client]}`, context);
+    await vscode.window.showInformationMessage('Press Enter in the terminal to sign in. When it finishes, run CoAgent8: Refresh CLI Status.');
   }
   function register(name: string, action: () => Promise<void>): void {
     context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
@@ -100,26 +193,20 @@ export function activate(context: vscode.ExtensionContext): void {
     const results = await status();
     const remembered = context.globalState.get<SetupClient[]>('setupClients');
     const picked = await vscode.window.showQuickPick(results.map(result => ({
-      label: LABELS[result.client], client: result.client, picked: remembered?.includes(result.client) ?? false,
-      description: result.installed ? `Available - ${result.compatibility}; sign-in ${result.authentication}` : `${result.action === 'blocked' ? 'Blocked' : 'Missing'} - ${result.message}`,
+      label: LABELS[result.client], client: result.client, picked: remembered?.includes(result.client) ?? false, description: describe(result),
     })), { canPickMany: true, title: 'Choose CLIs to install or check (native-host registration is separate)' });
     if (!picked?.length) return;
     const selected = picked.map(item => item.client);
     await context.globalState.update('setupClients', selected);
     for (const client of selected) {
-      const result = results.find(item => item.client === client)!;
+      let result = results.find(item => item.client === client)!;
       // An override error is not absence: do not install around an authoritative setting.
       try {
-        if (!result.installed && result.action !== 'blocked') await offerCliInstallation(client, context);
-        else if (result.installed && result.compatibility === 'supported' && result.authentication !== 'authenticated') {
-          const choice = await vscode.window.showInformationMessage(`${LABELS[client]} sign-in is ${result.authentication}. Open a sign-in command?`, 'Open Sign-in Command');
-          if (choice === 'Open Sign-in Command') {
-            const opts = options(), cli = resolveSetupClient(client, opts.home, opts.env, opts.nodePath);
-            if (!cli) throw new Error('CLI disappeared; refresh discovery.');
-            const args = client === 'codex' ? ['login'] : client === 'claude' ? ['auth', 'login'] : [];
-            await offerTerminal(`${process.platform === 'win32' ? '& ' : ''}${[cli.command, ...cli.argsPrefix, ...args].map(quote).join(' ')}`, `Sign in to ${LABELS[client]}`, context);
-          }
+        if (!result.installed && result.action !== 'blocked') {
+          if (!await installCli(client)) continue;
+          result = (await status([client])).find(item => item.client === client)!;
         }
+        if (result.installed && result.compatibility === 'supported' && result.authentication !== 'authenticated') await offerSignIn(result);
       } catch (error) {
         await vscode.window.showErrorMessage(`${LABELS[client]}: ${redactDiagnostic(error instanceof Error ? error.message : 'Installation failed or was cancelled.')} Refresh CLI Status to retry.`);
       }

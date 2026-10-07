@@ -1965,8 +1965,9 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   installs in `~/.gemini/bin` when present (2026-10-07 correction: the VSIX
   ships none, the extension downloads it); otherwise offer the official
   standalone `agy` installer. Installing the Google extension alone does not
-  establish the executable before its backend first starts. Consider a separate optional extension pack, while
-  using `extensionDependencies` only for a real functional extension dependency.
+  establish the executable before its backend first starts. Consider a separate
+  optional extension pack, while using `extensionDependencies` only for a real
+  functional extension dependency.
   Verify current documentation through Context7 before selecting the mechanism.
   Finish compatibility/authentication diagnostics, discovery from actual active
   extension paths (including custom installation roots), and explicit recovery
@@ -1983,6 +1984,17 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   owner's AI extensions and histories/authentication during acceptance testing.
   Installed VS Code UI acceptance and native backend/host checks remain open;
   source/fixture tests do not close them. Beta.2 remains private and unpublished.
+  Progress on `feat/antigravity-extension-probe` (2026-10-07, owner decision:
+  install CLIs only through vendor extensions or official installers in their
+  vendors' locations, never into a CoAgent8 directory): onboarding asks per
+  missing CLI for **Install Vendor Extension** (now including
+  `google.google-antigravity`) or **Install Standalone CLI**, waits with a
+  cancellable bounded progress notification until the CLI is discoverable, then
+  offers sign-in. An installed Google extension whose agy is not downloaded yet
+  shows **Downloading** and is awaited instead of installed twice. Standalone
+  installs offer **Check Now** and **Reload Window** for a stale PATH. Fixture
+  tests in `vscode-extension.test.js` cover these paths; installed VS Code UI
+  acceptance is still open.
 - [ ] Never remove a working registration to test a replacement. Use isolated
   profiles, verify the replacement in that host, and retain/restore the original
   on failure. Do not rely on uninstall callbacks for external settings.

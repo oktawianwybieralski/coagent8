@@ -4,14 +4,18 @@ const path = require('node:path');
 const vm = require('node:vm');
 const esbuild = require('esbuild');
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [] } = {}) {
-  const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [];
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [] } = {}) {
+  const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [];
+  // Each prompt answers with the first scripted action it offers. A CLI in
+  // `discoverable` becomes installed once the extension resolves it after an installation.
+  const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
   const cleanupCalls = [];
   let selections;
   const dispose = () => {};
   const vscode = {
     env: {},
-    extensions: { getExtension() {}, onDidChange() { return { dispose }; } },
+    extensions: { getExtension(id) { return vendorExtensions.includes(id) ? { extensionPath: path.resolve('vendor', id), extensionUri: { scheme: 'file' } } : undefined; }, onDidChange() { return { dispose }; } },
+    ProgressLocation: { Notification: 15 },
     EventEmitter: class { event = () => {}; dispose() {} },
     workspace: {
       onDidChangeConfiguration() { return { dispose }; },
@@ -27,14 +31,21 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
         if (command === 'coagent8.setup') {
           assert.deepEqual(Array.from(items, item => item.label), ['Codex CLI', 'Claude Code CLI', 'Antigravity CLI']);
           for (const item of items) {
-            assert.match(item.description, blocked.includes(item.client) ? /^Blocked/ : installed.includes(item.client) ? /^Available/ : /^Missing/);
+            const pending = item.client === 'agy' && vendorExtensions.includes('google.google-antigravity');
+            assert.match(item.description, blocked.includes(item.client) ? /^Blocked/ : installed.includes(item.client) ? /^Available/ : pending ? /^Downloading/ : /^Missing/);
             assert.equal(item.picked, remembered?.includes(item.client) ?? false);
           }
         }
         return selected === null ? undefined : items.filter(item => selected.includes(item.client));
       },
-      async showInformationMessage(_message, ...actions) { return actions.includes(action) ? action : undefined; },
-      async showWarningMessage(_message, _options, offered) { return action === offered ? offered : undefined; },
+      async showInformationMessage(_message, ...actions) { return answer(actions); },
+      async showWarningMessage(message, ...rest) { warnings.push(message); return answer(rest.filter(item => typeof item === 'string')); },
+      // The user cancels a wait that does not succeed on its first check.
+      async withProgress(options, task) {
+        progress.push(options.title);
+        let cancelled = false;
+        return task({ report() {} }, { get isCancellationRequested() { return cancelled; }, onCancellationRequested(listener) { setImmediate(() => { cancelled = true; listener(); }); return { dispose }; } });
+      },
       createTerminal(options) {
         const terminal = { options, dispose, show() {}, sendText(command, execute) { Object.assign(this, { command, execute }); } };
         terminals.push(terminal); return terminal;
@@ -51,14 +62,14 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
         contents: "export async function cleanupClients(options) { globalThis.recordCleanup(options.apply); return { token: 'fixture-preview', results: [{client:'claude',action:options.apply?'removed':'remove',message:'fixture'}] }; }", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
-        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; export function resolveSetupClient() { return null; } export async function setupClients(options) { if (!options.statusOnly) globalThis.recordClients(options.clients); return globalThis.statuses; }", loader: 'js',
+        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: 'fixture-' + client, argsPrefix: [], source: 'native' }; } export async function setupClients(options) { if (!options.statusOnly) globalThis.recordClients(options.clients); return globalThis.statuses.map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
       }));
     } }],
   });
   const module = { exports: {} };
   const statuses = ['codex', 'claude', 'agy'].map(client => ({ client, installed: installed.includes(client), compatibility: installed.includes(client) ? 'supported' : 'unknown', authentication: 'authenticated', ready: installed.includes(client), registered: false, action: blocked.includes(client) ? 'blocked' : 'missing', message: 'fixture' }));
   vm.runInNewContext(output.outputFiles[0].text, {
-    module, exports: module.exports, process, Buffer, statuses,
+    module, exports: module.exports, process, Buffer, statuses, discoverable, setTimeout, clearTimeout,
     recordClients(clients) { registrations.push(Array.from(clients)); },
     recordCleanup(apply) { cleanupCalls.push(apply); },
     require(name) { return name === 'vscode' ? vscode : require(name); },
@@ -70,7 +81,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   };
   module.exports.activate(context);
   await handlers[command]();
-  return { selections, registrations, terminals, requests, errors, reports, cleanupCalls };
+  return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings };
 }
 
 test('CLI selection remembers full-label backend choices without authorizing external registration', async () => {
@@ -79,7 +90,7 @@ test('CLI selection remembers full-label backend choices without authorizing ext
   assert.deepEqual(result.registrations, []);
 });
 test('missing Antigravity offers official installer without running it or registering a host', async () => {
-  const result = await runSetupPicker({ installed: ['claude'], selected: ['agy'], action: 'Open Install Command' });
+  const result = await runSetupPicker({ installed: ['claude'], selected: ['agy'], action: 'Install Standalone CLI' });
   assert.deepEqual(result.registrations, []);
   assert.equal(result.terminals.length, 1);
   assert.match(result.terminals[0].command, /https:\/\/antigravity\.google\/cli\/install\.(ps1|sh)/);
@@ -93,9 +104,44 @@ test('vendor extension installation is explicit; cancellation/failure and overri
   const failed = await runSetupPicker({ installed: [], selected: ['codex', 'claude'], action: 'Install Vendor Extension', failInstall: true });
   assert.equal(failed.errors.length, 2);
   assert.equal(failed.requests.length, 2, 'one failure must not suppress another backend action');
-  const overridden = await runSetupPicker({ installed: ['claude'], blocked: ['codex'], selected: ['codex', 'agy'], action: 'Open Install Command' });
+  const overridden = await runSetupPicker({ installed: ['claude'], blocked: ['codex'], selected: ['codex', 'agy'], action: 'Install Standalone CLI' });
   assert.equal(overridden.terminals.length, 1);
   assert.match(overridden.terminals[0].options.name, /Antigravity/);
+});
+test('an installed Google Antigravity extension is awaited instead of installing agy again', async () => {
+  const ready = await runSetupPicker({ installed: [], selected: ['agy'], vendorExtensions: ['google.google-antigravity'], discoverable: ['agy'], action: 'Open Sign-in Command' });
+  assert.deepEqual(ready.requests, [], 'no extension or standalone installation is offered');
+  assert.match(ready.progress[0], /Google Antigravity extension to download Antigravity CLI/);
+  assert.equal(ready.terminals.length, 1, 'only the sign-in command follows');
+  assert.match(ready.terminals[0].options.name, /^Sign in to Antigravity CLI/);
+  assert.equal(ready.terminals[0].execute, false);
+  assert.deepEqual(ready.registrations, []);
+  const pending = await runSetupPicker({ installed: [], selected: ['agy'], vendorExtensions: ['google.google-antigravity'] });
+  assert.deepEqual(pending.requests, []);
+  assert.equal(pending.terminals.length, 0);
+  assert.match(pending.warnings.at(-1), /Open the Antigravity view once/);
+});
+test('missing agy offers the Google extension, then waits for its CLI before sign-in', async () => {
+  const result = await runSetupPicker({ installed: [], selected: ['agy'], discoverable: ['agy'], action: ['Install Vendor Extension', 'Open Sign-in Command'] });
+  assert.deepEqual(result.requests, [['workbench.extensions.installExtension', 'google.google-antigravity']]);
+  assert.match(result.progress[0], /Antigravity CLI from the Google Antigravity extension/);
+  assert.equal(result.terminals.length, 1);
+  assert.match(result.terminals[0].options.name, /^Sign in to Antigravity CLI/);
+  assert.deepEqual(result.registrations, []);
+});
+test('a standalone installer is checked on request and a stale PATH asks for a reload', async () => {
+  const stale = await runSetupPicker({ installed: [], selected: ['claude'], action: ['Install Standalone CLI', 'Check Now'] });
+  assert.equal(stale.terminals.length, 1);
+  assert.match(stale.terminals[0].command, /https:\/\/claude\.ai\/install\.(ps1|sh)/);
+  assert.equal(stale.terminals[0].execute, false);
+  assert.match(stale.warnings.at(-1), /not found with this window's PATH/);
+  assert.deepEqual(stale.requests, []);
+  const reloaded = await runSetupPicker({ installed: [], selected: ['claude'], action: ['Install Standalone CLI', 'Reload Window'] });
+  assert.deepEqual(reloaded.requests, [['workbench.action.reloadWindow']]);
+  const found = await runSetupPicker({ installed: [], selected: ['claude'], discoverable: ['claude'], action: ['Install Standalone CLI', 'Check Now', 'Open Sign-in Command'] });
+  assert.equal(found.terminals.length, 2, 'installer, then sign-in');
+  assert.match(found.terminals[1].options.name, /^Sign in to Claude Code CLI/);
+  assert.deepEqual(found.registrations, []);
 });
 test('remembered selections and picker/installer cancellation do not change registrations', async () => {
   const cancelled = await runSetupPicker({ installed: ['claude'], selected: null, remembered: ['codex', 'claude'] });

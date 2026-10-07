@@ -5,6 +5,12 @@ This is a scoped context record and copyable prompt for the next coding agent.
 remains the single active plan. Read [AGENTS.md](../AGENTS.md), its linked rules,
 and [the integration guide](VSCODE_INTEGRATION.md) before changing behavior.
 
+**Correction (2026-10-07, `ANTIGRAVITY-HUB-001`):** statements below that the
+Google extension supplies no `agy` describe only its VSIX contents. The
+extension downloads and updates `agy` in `~/.gemini/bin` when it starts its
+backend; CoAgent8 now discovers that copy, and onboarding offers the Google
+extension as an installation method for Antigravity CLI.
+
 ## Established context
 
 - The product is a client-independent stdio MCP bridge to local coding CLIs.
