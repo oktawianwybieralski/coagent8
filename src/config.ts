@@ -119,35 +119,41 @@ export function validateConfig(value: unknown): CoAgent8Config {
   return validated;
 }
 
+function defaultConfig(): CoAgent8Config {
+  return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] } };
+}
+
+/**
+ * Loads and validates the configuration file, or the defaults when there is none.
+ * @throws `ToolError` (`POLICY_DENIED`) when the file exists but cannot be read, parsed or
+ * validated: its routing policy (for example `allowedBackends`) cannot be applied, and
+ * executing with the defaults instead could run a backend the user disabled.
+ */
 export function loadConfig(): CoAgent8Config {
   const configFile = getConfigFile();
-  const targetFile = fs.existsSync(configFile) ? configFile : null;
+  if (!fs.existsSync(configFile)) return defaultConfig();
+  const unusable = (reason: string, cause: unknown) =>
+    new ToolError('POLICY_DENIED', `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`, { cause });
+  let raw: string;
+  try { raw = readBoundedFileSync(configFile); }
+  catch (err) { throw unusable(`the file cannot be read: ${(err as Error).message}`, err); }
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch (err) { throw unusable('Malformed JSON in the configuration file', err); }
+  try { return validateConfig(parsed); }
+  catch (err) { throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err); }
+}
 
-  let cfg: CoAgent8Config;
-  if (!targetFile) {
-    cfg = {
-      ...DEFAULT_CONFIG,
-      routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] },
-    };
-  } else {
-    let raw: string;
-    try {
-      raw = readBoundedFileSync(targetFile);
-    } catch {
-      throw new Error('Configuration Error: Failed to read the configuration file.');
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new Error('Configuration Error: Malformed JSON in the configuration file.');
-    }
-
-    cfg = validateConfig(parsed);
+/**
+ * Loads the configuration for diagnostics: an unusable file yields the defaults and the
+ * error, so doctor can still report the backends.
+ */
+export function loadConfigForDiagnostics(): { config: CoAgent8Config; error?: string } {
+  try { return { config: loadConfig() }; }
+  catch (err) {
+    if (err instanceof ToolError && err.message.startsWith('Configuration Error:')) return { config: defaultConfig(), error: err.message };
+    throw err;
   }
-
-  return cfg;
 }
 
 export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {

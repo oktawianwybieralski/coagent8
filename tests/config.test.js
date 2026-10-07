@@ -206,3 +206,23 @@ test('a configuration directory that cannot be created is reported, not ignored 
     process.env.coagent8_CONFIG = saved;
   }
 });
+
+test('a malformed configuration hides no tool, is reported by doctor and refuses execution (AUD-P2-11)', async () => {
+  const { createToolDefinitions } = require('../src/server.ts');
+  const { runDoctor } = require('../src/diagnostics/doctor.ts');
+  const { resolveBackend } = require('../src/backends/routing.ts');
+  const saved = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(testTempDir, 'malformed-config.json');
+  fs.writeFileSync(process.env.coagent8_CONFIG, '{"routing": {"allowedBackends": ["claude"]');
+  try {
+    assert.equal(createToolDefinitions().length, 6, 'every tool is listed');
+    const report = await runDoctor({ quota: false });
+    assert.equal(report.status, 'configuration_error');
+    assert.match(report.configError, /^Configuration Error: Malformed JSON/);
+    assert.equal(report.recommendations[0], report.configError);
+    // The defaults would allow every backend; the user's file restricts them, so execution is refused.
+    await assert.rejects(resolveBackend('codex'), { code: 'POLICY_DENIED', message: /fix or delete the file/ });
+  } finally {
+    process.env.coagent8_CONFIG = saved;
+  }
+});

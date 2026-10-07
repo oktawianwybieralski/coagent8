@@ -598,8 +598,17 @@ execution order.
   Verified generic stdio call boundary in `tests/e2e/generic-mcp.test.js` and `tests/e2e/mcp.test.js`.
 - [x] Keep startup independent of optional archive maintenance failures, without
   concealing errors that affect execution safety or active session ownership.
-- [ ] A malformed `config.json` must not hide tools. Fall back to defaults and
-  report the configuration error in `doctor` and on execution (AUD-P2-11).
+- [x] A malformed `config.json` must not hide tools. Fall back to defaults and
+  report the configuration error in `doctor` and on execution (AUD-P2-11). On
+  `fix/malformed-config`, not yet merged. `tools/list` no longer reads the
+  configuration (the tool profile was removed in `CONTEXT-001`). Decision:
+  execution does not fall back to the defaults. They allow every backend, so a
+  broken file that restricted `allowedBackends` would silently run a disabled
+  backend; execution fails with `POLICY_DENIED` naming the file instead. Doctor
+  falls back to the defaults for its report, sets `status: configuration_error`
+  and `configError`, and lists the error first among the recommendations.
+  Evidence: `tests/config.test.js` writes a truncated file: six tools are listed,
+  doctor reports the error, and resolving `codex` is refused.
 - [x] Resolve the workspace from MCP roots when `workspace_path` is absent, or
   require it. Never default silently to the server's working directory
   (AUD-P2-9). Delivered by `CONTEXT-001`; verified in `tests/workspace.test.js`

@@ -1,5 +1,5 @@
 import { probeBackend } from '../backends/probe-cache.js';
-import { loadConfig } from '../config.js';
+import { loadConfigForDiagnostics } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
 import type { AdapterProbeResult, BackendQuota } from '../backends/types.js';
@@ -21,6 +21,8 @@ export interface DoctorReport {
   recommendations: string[];
   installed_backends: ProviderId[];
   ready_backends: ProviderId[];
+  /** Why the configuration file is unusable; the report then shows the defaults and execution is refused. */
+  configError?: string;
 }
 
 export interface DoctorOptions {
@@ -31,7 +33,7 @@ export interface DoctorOptions {
 }
 
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
-  const config = loadConfig();
+  const { config, error: configError } = loadConfigForDiagnostics();
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
   const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await probeBackend(id, { fresh: true })]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
   const measuredNow = new Set<ProviderId>();
@@ -77,7 +79,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   }
 
   return {
-    status: !active.length ? 'degraded_no_active_backends' : recommendations.length ? 'partially_configured' : 'operational',
+    status: configError ? 'configuration_error' : !active.length ? 'degraded_no_active_backends' : recommendations.length ? 'partially_configured' : 'operational',
     active_backends: active,
     installed_backends: selected.filter(id => probes[id]!.installed),
     ready_backends: ready,
@@ -86,7 +88,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     default_backend: effective || 'auto',
     backends,
     quotas,
-    recommendations,
+    recommendations: configError ? [configError, ...recommendations] : recommendations,
+    ...(configError ? { configError } : {}),
   };
 }
 

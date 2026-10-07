@@ -93,7 +93,8 @@ is pushed:
 | `perf/bounded-probes` | `ec7844f`..`1b49856` | `EXEC-001` (AUD-P1-4, order 2): cached probes, agy `/usage` only in doctor and sandboxed, no re-probe in `execute` |
 | `fix/error-classification` | `cb0f723` | `ROUTING-MIGRATE-001` (AUD-P2-1, order 3): anchored rate-limit and auth phrases; `ms` and decimal resets |
 | `fix/unmeasured-quota` | `d88c07d` | `ROUTING-MIGRATE-001` (AUD-P2-2, order 3): unmeasured agy windows are not full headroom; no `any` in `src/` |
-| `fix/empty-catches` | this change | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
+| `fix/empty-catches` | `96ebcfd` | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
+| `fix/malformed-config` | this change | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
 
 ## Verification
 
