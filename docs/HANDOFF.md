@@ -50,7 +50,7 @@ Small independent fixes may land as separate PRs into the target branch.
 - Do not mark a roadmap item `[x]` without a reference to evidence that measures
   it. Do not repeat the previous handoff's unsupported claims.
 
-## Status (2026-10-07)
+## Status (2026-10-07, updated after execution order 3)
 
 Branch `fix/windows-process-identity` (from `release/v1.0.0`, not pushed):
 
@@ -98,6 +98,17 @@ is pushed:
 | `fix/history-empty-catches` | `07db345`..`040eb58` | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
 | `refactor/simplify-timeouts-capabilities` | `8d2c56b`..`967a0e5` | `SIMPLIFY-001` (AUD-P2-5, AUD-P2-8): one Gemini deadline; no phantom `resources.listChanged` |
 | `refactor/maintenance-injection` | `68be8a2`..`cb6d4c4` | `SIMPLIFY-001` (AUD-P2-3): maintenance injected through `serveStdio`; no test hooks in production |
+| `feat/caller-proof-consent` | `3480af4` | `EXEC-001` (AUD-P1-7, order 2, breaking): consent asked from the user through MCP elicitation for the effective model of every backend; `user_confirmed` removed; agy always gets `--model` |
+| `fix/posix-group-signal-errors` | `ee51b52` | `ERRORS-001` (AUD-P2-7): no POSIX kill fallbacks; `ESRCH` ends the teardown without the grace, other failures go to stderr |
+| `docs/live-acceptance` | `30ef1c5`..`c2eb228` | Live runs of 2026-10-07: Codex turn, resume and interrupt (`WINDOWS-001`), Claude interrupt, agy `/usage`, AUD-P0-1 re-run, agy 180 s tool-call limit, `CONTEXT-001` client measurements, no crash orphans on Windows (AUD-P2-14) |
+| `refactor/legacy-alias-table` | `c1ed6e7` | `SIMPLIFY-001` (AUD-P2-4): one alias table for the deprecated tools and `run` actions |
+| `refactor/structured-error-extractor` | `cb8c30b` | `SIMPLIFY-001` (AUD-P2-4): one structured-error extractor with a dialect per backend |
+| `fix/answer-banner-stripping` | `cc95c1e` | `SIMPLIFY-001` (P3): answers keep lines that quote npm notices or update banners |
+| `refactor/progress-redaction-once` | `651df5f` | `SIMPLIFY-001` (P3): progress messages redacted once |
+| `fix/cancel-reports-outcome` | `21e6bab` | `SIMPLIFY-001` (P3): `cancel` reports `cancelled: false` when nothing ran |
+| `fix/session-list-home-paths` | `26ac5fd` | `SIMPLIFY-001` (P3): session lists show the home directory as `~` |
+| `ci/coverage-once` | `1c4949c` | `VERIFY-SCOPE-001` (AUD-P2-15): the suite runs once per CI job, under coverage; API docs in one job |
+| `docs/simplify-evidence` | this change | Roadmap evidence for `SIMPLIFY-001`; handoff update |
 
 ## Verification
 
@@ -115,11 +126,9 @@ results in the project review before requesting an independent review by the Rev
    - run the CI matrix (first macOS run of the new layers) and an independent
      review per [03-author-reviewer](../.agents/rules/03-author-reviewer.md);
    - write the PR title as the user-facing changelog entry.
-2. Close `WINDOWS-001` acceptance:
-   - one live Codex app-server turn, resume and `turn/interrupt` (owner
-     authorizes the model calls);
-   - re-run the AUD-P0-1 audit reproduction and record it in the project review
-     (`AUDIT-001`).
+2. Done on `docs/live-acceptance`: the `WINDOWS-001` acceptance (a live Codex
+   app-server turn, resume and `turn/interrupt`) and the AUD-P0-1 re-run, recorded
+   in the roadmap and the project review.
 3. Execution order 1 blockers are all implemented on the stacked branches above;
    merge them in stack order, one PR each, with a regression test from the audit
    reproduction. `PACKAGE-001` still lacks plugin and VSIX artifacts built from
@@ -135,24 +144,19 @@ results in the project review before requesting an independent review by the Rev
    - release PR with `npm run changelog -- --tag v1.0.0-beta.2`;
    - release notes from `npm run release-notes`, plus known issues by hand;
    - verify the GitHub API path of the release notes.
-6. Execution order 2 is implemented except the items below. Owner decisions of
-   2026-10-07:
-   - `EXEC-001` caller-proof consent (AUD-P1-7): approved. MCP elicitation where
-     the client supports it, otherwise `POLICY_DENIED` with instructions; govern
-     the effective default model of every backend, including agy's; an
-     agent-set `user_confirmed` no longer grants consent. This is a breaking
-     contract change (`!` in the commit and PR title).
-   - Live calls to every backend (agy, Codex, Claude Code) are authorized. Use
-     the cheapest model that answers; top-tier models still need the user's
-     consent. Verify:
-     - agy: `/usage` with `--sandbox` (`perf/bounded-probes`) and the agy
-       tool-call limit;
-     - Codex: one app-server turn, resume and `turn/interrupt` (`WINDOWS-001`
-       acceptance), then the AUD-P0-1 reproduction recorded in the project
-       review;
-     - Claude Code: the interrupt path still works on the current stack.
-   - `CONTEXT-001` client acceptance: repeat the measurements in Claude Code and agy.
-7. Execution order 3 remainder: the POSIX kill fallbacks in `process.ts`
-   (`ERRORS-001`), orphans after a server crash (AUD-P2-14, `WINDOWS-001`),
-   `SIMPLIFY-001` (one alias table for the deprecated tools, merged structured
-   error extractors, P3 nits), CI duplication (AUD-P2-15).
+6. Execution order 2 is complete on the stack (`feat/caller-proof-consent`), and the
+   live checks the owner authorized on 2026-10-07 are recorded (`docs/live-acceptance`).
+   Not verified: the interactive consent prompt in a real client (headless
+   `claude -p` and `agy -p` answer every elicitation with `cancel`), and the
+   POSIX-only tests, which need Linux (Docker was not running).
+7. Execution order 3 is implemented on the stack except the POSIX parent-death
+   strategy for crash orphans (AUD-P2-14), which needs a design and a Linux host.
+   `ci/coverage-once` closes AUD-P2-15 after its first green CI matrix.
+8. Owner decisions needed, recorded in the roadmap:
+   - Claude Code 2.1.289 gives the model only `structuredContent`, so CoAgent8's
+     markdown `content` reaches agy but not Claude Code (`CONTEXT-001`);
+   - agy cancels an MCP tool call after 180 s, which cancels longer reviews
+     (`CONTEXT-001`);
+   - every agy turn starts the user's agy MCP servers, CoAgent8 itself included,
+     and the user's allow rules let the backend model call CoAgent8 (`WINDOWS-001`).
+9. `PACKAGE-001`: build the plugin and VSIX artifacts from the packed tarball.

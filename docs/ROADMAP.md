@@ -1292,7 +1292,8 @@ configuration was removed or replaced during the real acceptance checks.
 
 ### `SIMPLIFY-001` - deletions and deduplication
 
-**Status:** Open (AUD-P2-3 to AUD-P2-6, AUD-P2-8 and P3 nits). Behavior must be
+**Status:** Implemented on stacked branches, not yet merged (AUD-P2-3 to AUD-P2-6,
+AUD-P2-8 and P3 nits). Behavior must be
 preserved or explicitly migrated; deletion is not a contract change unless stated.
 
 - [x] Remove production test hooks `coagent8_MAINTENANCE_GATE` and
@@ -1304,9 +1305,20 @@ preserved or explicitly migrated; deletion is not a contract change unless state
   maintenance function. Evidence: the e2e shutdown test passes; the bundle
   contains no `MAINTENANCE` string; consumer smoke and full suite (244 pass)
   pass.
-- [ ] Replace the three deprecated `*.tool.ts` files and the duplicated `run`
+- [x] Replace the three deprecated `*.tool.ts` files and the duplicated `run`
   mapping with one alias table. Merge the Codex and Gemini structured-error
   extractors. Validate arguments once at the server boundary (AUD-P2-4).
+  - On `refactor/legacy-alias-table`: `src/tools/legacy.ts` holds one table that
+    drives the definitions, the mapping to `consult` and the notices of the tools
+    and the `run` actions; `consult` no longer repeats the proposal check of the
+    schema, `run` and the aliases. Evidence: the backend prompt, warnings and
+    errors of 36 calls (three aliases, both entry points, six argument sets) are
+    identical before and after; `tests/tools/surface.test.js` covers the mapping.
+  - On `refactor/structured-error-extractor`: `extractStructuredError` with one
+    dialect per backend (`src/backends/structured-error.ts`). Evidence: over 5,104
+    payloads the code and `retryable` flag of both backends are unchanged; a Codex
+    payload without a message now reads "Rate limit or quota exhausted (429)" and
+    "Model unavailable (404)", as agy's already did.
 - [x] Drop the Gemini adapter's second timeout (AUD-P2-5). On
   `refactor/simplify-timeouts-capabilities`, not yet merged: `execute` relies on
   `runCommand`'s deadline, whose `timed_out`/`cancelled` status the result keeps;
@@ -1341,9 +1353,26 @@ preserved or explicitly migrated; deletion is not a contract change unless state
 - [x] Remove or implement the phantom `resources.listChanged` capability (AUD-P2-8).
   Removed on `refactor/simplify-timeouts-capabilities`; `tests/server.test.js`
   checks the declared capabilities.
-- [ ] Stop banner stripping for JSON-backed adapters. Redact progress messages
+- [x] Stop banner stripping for JSON-backed adapters. Redact progress messages
   once. Correct stale model names in tool descriptions. Make `cancel` report
   whether anything was cancelled. Redact home paths in `session list` (P3).
+  - `fix/answer-banner-stripping`: every backend returns its answer from JSON, so
+    the answer only loses escape sequences. A test answer quoting `npm notice` and
+    an update box lost three lines with the old code and is unchanged now
+    (`tests/execution/cli-output.test.js`).
+  - `refactor/progress-redaction-once`: the progress reporter redacts each message
+    once; the controller and the dispatch no longer repeat it
+    (`tests/execution/progress.test.js`).
+  - Tool descriptions no longer name models: the consent rule left the schema with
+    `user_confirmed` (`feat/caller-proof-consent`).
+  - `fix/cancel-reports-outcome`: `cancel` of an idle session returned
+    `cancelled: true` with the old code and returns `false` with "nothing to
+    cancel" now (`tests/tools/session.test.js`, `tests/tools/surface.test.js`).
+  - `fix/session-list-home-paths`: `session list` and `coagent8://sessions` show a
+    workspace under the home directory as `~`; the old code returned the absolute
+    path (`tests/tools/session.test.js`, through an MCP client with roots).
+
+  Full suite on the stack tip: 254 tests, 251 pass, 0 fail, 3 skipped (POSIX only).
 
 ## Existing completed work and remaining correctness
 
