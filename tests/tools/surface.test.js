@@ -279,7 +279,7 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
       method: 'tools/call',
       params: {
         name: 'session',
-        arguments: { action: 'list' },
+        arguments: { action: 'list', workspace_path: tempDir },
       },
     },
     { signal: null }
