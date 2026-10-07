@@ -14,7 +14,7 @@ import type { TerminalExecutionResult } from '../backends/types.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
-import { evaluateStateEnvelopeGate } from './review-gate.js';
+import { evaluateStateEnvelopeGate, type ReviewGateContext } from './review-gate.js';
 import type { ResolvedWorkspace } from '../paths.js';
 
 /**
@@ -57,7 +57,7 @@ const FOOTER_LINE_BREAK = '\n>\n';
  * @returns MCP CallToolResult with the markdown answer and footer as its only content.
  */
 export async function formatExecutionResult(provider: string | null, res: TerminalExecutionResult, defaultText = '', sessionHandle: string | null = null,
-  meta = { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, options: { requireEnvelope?: boolean; warnings?: string[] } = {}) {
+  meta = { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, options: { requireEnvelope?: boolean; warnings?: string[]; reviewContext?: ReviewGateContext } = {}) {
   const error = res.error ? { ...res.error, message: redactDiagnostic(res.error.message) } : undefined;
   const warnings = (options.warnings || []).map(warning => redactDiagnostic(warning, 512));
   const rawOutput = res.output || defaultText;
@@ -73,7 +73,7 @@ export async function formatExecutionResult(provider: string | null, res: Termin
       verdict = 'BLOCKED';
       reason = error?.message || 'Execution error';
     } else {
-      const evalResult = evaluateStateEnvelopeGate(cleaned, res.truncated, true);
+      const evalResult = evaluateStateEnvelopeGate(cleaned, res.truncated, true, options.reviewContext);
       gated = evalResult.output;
       verdict = evalResult.verdict;
       reason = evalResult.reason;
@@ -93,12 +93,12 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   }
 
   const durationSec = (meta.durationMs / 1000).toFixed(1);
-  const ops = meta.toolCount > 0 ? ` · ${meta.toolCount} ${meta.toolCount === 1 ? 'op' : 'ops'}` : '';
+  const ops = meta.toolCount > 0 ? ` \u{b7} ${meta.toolCount} ${meta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = meta.turn > 1 ? `turn ${meta.turn}, ` : '';
   const history = meta.historyAvailable ? '' : ', no history';
-  const session = sessionHandle ? ` · ${sessionHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
+  const session = sessionHandle ? ` \u{b7} ${sessionHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
   const footerLines: string[] = [
-    `> CoAgent8: ${provider || 'CLI'} · ${res.model || 'provider default'} · ${durationSec}s${ops}${session}`,
+    `> CoAgent8: ${provider || 'CLI'} \u{b7} ${res.model || 'provider default'} \u{b7} ${durationSec}s${ops}${session}`,
   ];
   if (verdict !== 'NOT_APPLICABLE') {
     // A failed run states its reason in the error line already.

@@ -28,17 +28,27 @@ export interface StateEnvelopeEvaluation {
   reason?: string;
 }
 
+/** Server-collected review input and scope-based requirements, never caller approval. */
+export interface ReviewGateContext {
+  expectedSnapshot: string;
+  inputComplete: boolean;
+  requiredChecks: readonly ('typecheck' | 'tests')[];
+  invalidatedReason?: string;
+}
+
 /**
  * Gates reported review text on unique nonempty envelope fields and coverage/verdict.
  * @param output - Model-written review text.
- * @param truncated - Public output truncation, not review-input completeness.
+ * @param truncated - Public output truncation.
  * @param requireEnvelope - Require an envelope even when none is detected in the answer.
+ * @param context - Server-collected snapshot, input completeness and required checks.
  * @returns Text with a normalized verdict and optional blocking reason.
  * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
- * SNAPSHOT and CHECKS need only be nonempty; this function does not compare the expected
- * snapshot, validate check outcomes, execute tests or bind a release artifact.
+ * With context, SNAPSHOT must match and input must be complete and unchanged. Failed
+ * checks always block; required checks must report PASS. This does not execute tests,
+ * verify a reported PASS or bind a release artifact.
  */
-export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false): StateEnvelopeEvaluation {
+export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false, context?: ReviewGateContext): StateEnvelopeEvaluation {
   const rawLines = output.split(/\r?\n/);
   const nonEmptyLines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
 
@@ -113,7 +123,14 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       && checksCount === 1 && checksVal.length > 0
       && endReviewCount === 1 && isEndReviewLast;
 
-    const shouldBlock = !isCompleteEnvelope || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY';
+    const checks = /^typecheck=(PASS|FAIL|NOT_RUN);\s*tests=(PASS|FAIL|NOT_RUN)$/i.exec(checksVal);
+    const checkValues = checks ? { typecheck: checks[1].toUpperCase(), tests: checks[2].toUpperCase() } : undefined;
+    const failedChecks = checkValues && Object.values(checkValues).includes('FAIL');
+    const missingChecks = context?.requiredChecks.some(check => checkValues?.[check] !== 'PASS');
+    const wrongSnapshot = context && snapshotVal !== context.expectedSnapshot;
+    const incompleteInput = context && !context.inputComplete;
+    const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || missingChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
+      || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY';
 
     if (shouldBlock) {
       let reason = 'Review requirements not satisfied';
@@ -121,6 +138,12 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       else if (coverageVal === 'PARTIAL') reason = 'Review coverage is partial';
       else if (truncated) reason = 'Output was truncated';
       else if (!isCompleteEnvelope) reason = 'Incomplete State Envelope';
+      else if (context?.invalidatedReason) reason = context.invalidatedReason;
+      else if (incompleteInput) reason = 'Review input is incomplete';
+      else if (wrongSnapshot) reason = 'Review snapshot does not match the collected input';
+      else if (!checks) reason = 'Invalid CHECKS outcomes';
+      else if (failedChecks) reason = 'A reported check failed';
+      else if (missingChecks) reason = 'Required checks were not run';
 
       if (verdictCount > 0) {
         let replaced = false;

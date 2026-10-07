@@ -11,6 +11,7 @@ const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { handleReview } = require('../../src/tools/review.tool.ts');
 const { saveConfig } = require('../../src/config.ts');
 const { readResult } = require('../helpers/result.cjs');
+const { collectReviewInput } = require('../../src/tools/review-input.ts');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('review prompt names the snapshot, asks for the bounded envelope, and a matching answer passes the gate', async () => {
@@ -27,13 +28,13 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
     execute: async received => {
       prompt = received;
       return { status: 'completed', isError: false, truncated: false, continuationAvailable: true, nativeSessionId: '11111111-2222-3333-4444-555555555555', model: 'gemini-test',
-        output: ['REVIEW: 1', `SNAPSHOT: ${head}+uncommitted`, 'COVERAGE: COMPLETE', 'VERDICT: READY', '[P3] a.ts:1', 'Problem: The constant name is short.', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n') };
+        output: ['REVIEW: 1', received.match(/^SNAPSHOT: .+$/m)[0], 'COVERAGE: COMPLETE', 'VERDICT: READY', '[P3] a.ts:1', 'Problem: The constant name is short.', 'CHECKS: typecheck=PASS; tests=PASS', 'END_REVIEW'].join('\n') };
     } };
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
     const result = await handleReview('review', {}, repo);
     assert.ok(prompt.startsWith('Review this diff: Uncommitted working changes'), prompt.slice(0, 80));
-    assert.ok(prompt.includes(`SNAPSHOT: ${head}+uncommitted\n`), 'the snapshot is given, not looked up');
+    assert.match(prompt, new RegExp(`SNAPSHOT: ${head}\\+uncommitted#[0-9a-f]{64}\\n`));
     for (const line of ['REVIEW: <turn>', 'COVERAGE: COMPLETE | PARTIAL', 'VERDICT: READY | BLOCKED', 'Evidence: <at most two sentences, citing file:line>', 'Fix: <one sentence>', 'END_REVIEW', 'DIFF:']) {
       assert.ok(prompt.includes(line), line);
     }
@@ -42,4 +43,106 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
   } finally {
     adapterRegistry.gemini = original;
   }
+});
+
+test('CUR-001 reproductions cannot turn fake COMPLETE/READY into approval', async () => {
+  const repo = path.join(tempDir, 'reproductions');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'README.md'), 'Base prose.\n'); git('add', '.'); git('commit', '-qm', 'base');
+  const original = adapterRegistry.gemini;
+  let wrongSnapshot = false, checks = 'typecheck=PASS; tests=PASS', mutate = false;
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async prompt => {
+      const snapshot = wrongSnapshot ? 'not-the-requested-snapshot' : prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      if (mutate) fs.appendFileSync(path.join(repo, 'README.md'), 'Changed during review.\n');
+      return { status: 'completed', isError: false, truncated: false, continuationAvailable: false,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW` };
+    } };
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    fs.appendFileSync(path.join(repo, 'README.md'), 'Prose change.\n');
+    checks = 'typecheck=NOT_RUN; tests=NOT_RUN';
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'READY', 'prose-only checks may be NOT_RUN');
+    fs.writeFileSync(path.join(repo, 'new-prose.md'), 'New prose.\n');
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'READY', 'new prose does not require runtime checks');
+    fs.unlinkSync(path.join(repo, 'new-prose.md'));
+    fs.writeFileSync(path.join(repo, 'source-\u017b.ts'), 'export const value = 1;\n'); git('add', '.');
+    const quoted = await collectReviewInput('uncommitted', repo, null);
+    assert.ok(quoted.info.changedPaths.includes('source-\u017b.ts'));
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED', 'quoted source paths still require executed checks');
+    git('commit', '-qm', 'source fixture');
+    git('mv', 'source-\u017b.ts', 'renamed.md');
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED', 'rename sources remain in check classification');
+    git('commit', '-qm', 'rename fixture');
+    wrongSnapshot = true;
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED');
+    wrongSnapshot = false; checks = 'typecheck=FAIL; tests=PASS';
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED');
+    checks = 'typecheck=PASS; tests=PASS'; mutate = true;
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED', 'changes during the turn invalidate the snapshot');
+    mutate = false;
+    fs.writeFileSync(path.join(repo, 'oversized.md'), 'x'.repeat(256 * 1024 + 1));
+    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED', 'omitted untracked input must block');
+    fs.unlinkSync(path.join(repo, 'oversized.md'));
+    fs.writeFileSync(path.join(repo, 'large.ts'), 'export const item = 1;\n'.repeat(170000)); git('add', 'large.ts');
+    git('add', 'README.md');
+    const input = await collectReviewInput('staged', repo, null);
+    assert.equal(input.context.inputComplete, false);
+    assert.equal(readResult(await handleReview('review', { scope: 'staged' }, repo)).verdict, 'BLOCKED', 'over-budget diff must block');
+  } finally { adapterRegistry.gemini = original; }
+});
+
+test('CUR-013 refuses another tree and staged overlays before any backend probe', async () => {
+  const repo = path.join(tempDir, 'tree-binding');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'README.md'), 'First tree.\n'); git('add', '.'); git('commit', '-qm', 'first');
+  const first = git('rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(repo, 'README.md'), 'Current tree.\n'); git('commit', '-qam', 'current');
+  const original = adapterRegistry.gemini;
+  let probes = 0;
+  adapterRegistry.gemini = { ...original, probe: async () => { probes++; throw new Error('must not probe'); } };
+  try {
+    for (const scope of [first, 'HEAD~1', `HEAD..${first}`]) {
+      await assert.rejects(handleReview('review', { scope, backend: 'gemini' }, repo), error => error.code === 'POLICY_DENIED' && /current workspace/.test(error.message));
+    }
+    fs.writeFileSync(path.join(repo, 'README.md'), 'Staged version.\n'); git('add', '.');
+    fs.writeFileSync(path.join(repo, 'README.md'), 'Another working version.\n');
+    await assert.rejects(handleReview('review', { scope: 'staged', backend: 'gemini' }, repo), error => error.code === 'POLICY_DENIED');
+    git('reset', '--hard', 'HEAD');
+    for (const flag of ['assume-unchanged', 'skip-worktree']) {
+      git('update-index', `--${flag}`, 'README.md');
+      fs.writeFileSync(path.join(repo, 'README.md'), 'Hidden working change.\n');
+      for (const scope of ['uncommitted', 'HEAD']) await assert.rejects(handleReview('review', { scope, backend: 'gemini' }, repo),
+        error => error.code === 'POLICY_DENIED' && /Index flags/.test(error.message));
+      git('update-index', `--no-${flag}`, 'README.md');
+      fs.writeFileSync(path.join(repo, 'README.md'), 'Current tree.\n');
+    }
+    assert.equal(probes, 0);
+  } finally { adapterRegistry.gemini = original; }
+});
+
+test('gitlink summaries never establish complete review input, even when dirty contents change without a new summary', async () => {
+  const repo = path.join(tempDir, 'gitlinks'), child = path.join(repo, 'module');
+  fs.mkdirSync(child, { recursive: true });
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).trim();
+  for (const cwd of [repo, child]) {
+    git(cwd, 'init', '-q'); git(cwd, 'config', 'user.name', 'Fixture'); git(cwd, 'config', 'user.email', 'fixture@example.invalid');
+  }
+  fs.writeFileSync(path.join(child, 'code.ts'), 'export const value = 1;\n'); git(child, 'add', '.'); git(child, 'commit', '-qm', 'module');
+  const revision = git(child, 'rev-parse', 'HEAD');
+  git(repo, 'update-index', '--add', '--cacheinfo', `160000,${revision},module`); git(repo, 'commit', '-qm', 'gitlink');
+  fs.writeFileSync(path.join(child, 'code.ts'), 'export const value = 2;\n');
+  const before = await collectReviewInput('uncommitted', repo, null);
+  fs.writeFileSync(path.join(child, 'code.ts'), 'export const value = 3;\n');
+  const after = await collectReviewInput('uncommitted', repo, null);
+  assert.equal(before.info.diff, after.info.diff, 'Git summarizes both dirty versions identically');
+  assert.equal(before.context.inputComplete, false);
+  assert.equal(after.context.inputComplete, false);
+  const { evaluateStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
+  const output = `REVIEW: 1\nSNAPSHOT: ${after.context.expectedSnapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`;
+  assert.equal(evaluateStateEnvelopeGate(output, false, true, after.context).verdict, 'BLOCKED');
 });

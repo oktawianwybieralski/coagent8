@@ -4,6 +4,23 @@ const assert = require('node:assert/strict');
 const { enforceStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
 const { readResult } = require('../helpers/result.cjs');
 
+test('CUR-001 rejects incomplete input, mismatched snapshots, invalid and failed or required unrun checks', () => {
+  const { evaluateStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
+  const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
+  const envelope = (snapshot, checks) => `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW`;
+  for (const [snapshot, checks, binding] of [
+    ['wrong', 'typecheck=PASS; tests=PASS', context],
+    ['fixture#digest', 'typecheck=PASS; tests=PASS', { ...context, inputComplete: false }],
+    ['fixture#digest', 'typecheck=FAIL; tests=PASS', context],
+    ['fixture#digest', 'typecheck=PASS; tests=FAIL', context],
+    ['fixture#digest', 'typecheck=NOT_RUN; tests=PASS', context],
+    ['fixture#digest', 'typecheck=PASS; tests=NOT_RUN', context],
+    ['fixture#digest', 'all good', context],
+  ]) assert.equal(evaluateStateEnvelopeGate(envelope(snapshot, checks), false, true, binding).verdict, 'BLOCKED');
+  assert.equal(evaluateStateEnvelopeGate(envelope('fixture#digest', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true,
+    { ...context, requiredChecks: [] }).verdict, 'READY', 'prose checks remain honestly NOT_RUN');
+});
+
 test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue is reported', () => {
   const reviewOutput = [
     'REVIEW: 1',

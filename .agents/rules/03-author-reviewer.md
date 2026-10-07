@@ -43,9 +43,9 @@ Before merging significant architectural changes, refactors, or creating Release
    END_REVIEW
    ```
 3. Verify expected scope/snapshot and actual check evidence outside the text gate.
-   The current runtime gate checks envelope structure/reported findings, but can
-   accept truncated input, a wrong snapshot and failed CHECKS (`CUR-001`). Those
-   outputs are not valid approval. Required checks that failed block readiness;
+   The runtime gate blocks incomplete input, a wrong snapshot, changed workspace
+   and failed CHECKS (`CUR-001`, fixed locally). It validates reported outcomes
+   but does not prove a model's PASS claim or bind a release artifact. Required checks that failed block readiness;
    inapplicable checks stay NOT_RUN with an explanation.
 4. **Severity Thresholds:**
    * **P1 (Critical / Security / Correctness)**: MUST be remediated immediately. Blocks PR merge.

@@ -288,22 +288,41 @@ END_REVIEW
 ~~~
 
 The prompt supplies HEAD with staged/uncommitted suffix, a commit/range,
-branch merge-base range or `no-commit`. Generated files marked `-diff` in
-`.gitattributes` contribute binary-diff notices rather than textual contents.
+branch merge-base range or `no-commit`, followed by a SHA-256 digest of the
+collected diff, workspace input and omissions. Generated files marked `-diff`
+in `.gitattributes` contribute binary notices and make input incomplete.
 
 The gate requires the envelope fields and terminator, recognized coverage/verdict,
 no response truncation, and no literal `[P1]` or `[P2]` anywhere in the answer.
 A reported partial review or BLOCKED verdict stays blocked. Quoted severity
 markers can also block.
 
-**Limits:** `SNAPSHOT` and `CHECKS` are checked for presence, not correctness.
-A mismatched snapshot or `CHECKS: ...FAIL...` can still produce READY.
-The gate does not execute tests, compare a tree/artifact hash or prove coverage.
+`SNAPSHOT` must exactly match the supplied identity. CHECKS must name
+typecheck/tests as PASS, FAIL or NOT_RUN; any FAIL blocks. Runtime scopes require
+both PASS; prose-only scopes allow honest NOT_RUN. A check unavailable in the
+restricted backend is NOT_RUN, not FAIL. The workspace/input is collected again
+after the turn; changes or failed verification block READY.
+
+**Limits:** the gate does not execute tests, verify a model's PASS claim, compare
+release artifact hashes or prove coverage beyond the collected scope. Dist,
+maps and lockfiles remain deliberately excluded; release review must verify
+its complete scope separately. Required independent check evidence still applies.
 
 Git stdout is bounded to 4 MiB per command, the composed snapshot to 3 MiB, and
 individual untracked contents to 256 KiB. Omitted/truncated input is marked in
-prompt text but does not automatically block READY. Independent release review
+prompt text and structured completeness; any omission blocks READY. Independent release review
 must verify complete scope and evidence; the gate alone is insufficient.
+
+Review reads the current workspace. Commit/range/branch targets must match its
+tracked files; staged review requires working files to match the index. Untracked
+files prevent readiness for these scopes. A mismatch returns POLICY_DENIED before
+any backend probe or turn. No additional checkout is created. Use uncommitted
+review for the current working tree; full other-tree review remains unavailable.
+Git path classification uses NUL-delimited names, including rename sources;
+quoted filenames cannot hide runtime changes. Binary/gitlink contents and
+unmerged entries make input incomplete. Submodules are not recursively collected.
+assume-unchanged/skip-worktree flags refuse review because Git can hide working
+changes behind them.
 
 ## 4. Sessions, events and archival history
 
@@ -446,7 +465,6 @@ These are open implementation issues, not relaxed security requirements.
 
 | ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
-| CUR-001 | Truncated/omitted review input can still receive READY; snapshot and failing checks are not bound to approval | `AUDIT-001` / `SURFACE-001` |
 | CUR-002 | Accepted limitation for agy (owner decision 2026-10-08): `--sandbox` turns can use the MCP servers of `~/.gemini/config/mcp_config.json` and of enabled plugins; agy's built-in documentation states that its agent shell receives the language-server address and CSRF token (not measured). Recursion into CoAgent8 is refused and doctor names the inherited tools. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
 | CUR-004 | Automatic routing fails on quota-cache writes; old measurements can retain routing weight | `ROUTING-MIGRATE-001` |
 | CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
@@ -456,9 +474,11 @@ These are open implementation issues, not relaxed security requirements.
 | CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |
 | CUR-011 | POSIX unexpected-parent-death cleanup is not implemented | `WINDOWS-001` |
 | CUR-012 | Snapshot bytes are accounted after writing; the archive budget is not a strict instantaneous disk ceiling | `HISTORY-002` |
-| CUR-013 | A review of a commit other than the checkout runs in the live workspace, so the reviewer reads files of another revision; Claude's restricted tools cannot read the commit's tree, and an unrunnable check can be reported as FAIL | `AUDIT-001` / `SURFACE-001` |
+| CUR-013 | Current-workspace guard implemented locally: other-tree review is refused before a turn; full review of another tree remains unavailable | `AUDIT-001` / `SURFACE-001` |
 
 The original `c265cdf` audit remains historical evidence. Its process-identity,
 answer-redaction, archive-integrity, typed-error and workspace-resource fixes are
 present in this local stack; their presence does not close newer findings or
-establish matrix/release acceptance.
+establish matrix/release acceptance. CUR-001 is closed locally by structured
+input completeness, exact snapshot matching, check-outcome validation and a
+post-turn workspace recheck; independent evidence remains mandatory.

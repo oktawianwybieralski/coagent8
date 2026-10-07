@@ -20,7 +20,8 @@
  *   Contradictory or missing results fail safely as `PROTOCOL_ERROR`, discarding untrusted output.
  * - **State Envelope Gate Enforcement**: Calls `formatExecutionResult` with `requireEnvelope`,
  *   gating review-only reported verdicts to `BLOCKED` for malformed envelopes or findings.
- *   This does not independently verify input completeness, snapshot identity or CHECKS.
+ *   The review handler supplies completeness, snapshot identity and check requirements;
+ *   this does not independently prove a model's PASS claim or release artifact hashes.
  * - **Timing Scope**: Preparation and consent precede session acquisition and the duration
  *   timer. The adapter receives its process timeout, not a remaining end-to-end budget.
  *
@@ -46,6 +47,7 @@ import { formatExecutionResult } from '../tools/result.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { assertNotNestedTurn } from './nested-turn.js';
+import type { ReviewGateContext } from '../tools/review-gate.js';
 
 /**
  * Universal execution parameters accepted by execution tools and the run gateway.
@@ -74,6 +76,10 @@ export interface TaskOptions {
   warnings?: string[];
   /** Absent when the client cannot ask the user; a model that needs approval is then refused. */
   askConsent?: ConsentPrompt;
+  /** Input binding supplied by the review handler. */
+  reviewContext?: ReviewGateContext;
+  /** Rechecks the workspace after the turn; a change or failed read blocks readiness. */
+  verifyReviewSnapshot?: () => Promise<string | undefined>;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -339,6 +345,10 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
   }
 
+  if (options.reviewContext && options.verifyReviewSnapshot) {
+    try { options.reviewContext.invalidatedReason = await options.verifyReviewSnapshot(); }
+    catch (error) { options.reviewContext.invalidatedReason = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`; }
+  }
   return formatExecutionResult(
     backend.id,
     result,
