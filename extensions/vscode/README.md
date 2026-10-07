@@ -4,14 +4,14 @@
 
 By [Oktawian Wybieralski](https://oki.dev)
 
-[![Author: oki.dev](https://img.shields.io/badge/author-oki.dev-0078D4?style=flat-square)](https://oki.dev)
-[![Source: GitHub](https://img.shields.io/badge/source-GitHub-24292F?style=flat-square&logo=github)](https://github.com/oktawianwybieralski/coagent8)
-[![Issues: report a problem](https://img.shields.io/badge/issues-report_a_problem-0078D4?style=flat-square&logo=github)](https://github.com/oktawianwybieralski/coagent8/issues)
+[![Website: oki.dev](https://img.shields.io/badge/%F0%9F%8C%90%20website-oki.dev-0078D4?style=flat)](https://oki.dev)
+[![Source: GitHub](https://img.shields.io/badge/source-GitHub-24292F?style=flat&logo=github)](https://github.com/oktawianwybieralski/coagent8)
+[![Issues: report a problem](https://img.shields.io/badge/issues-report_a_problem-0078D4?style=flat&logo=github)](https://github.com/oktawianwybieralski/coagent8/issues)
 
-[![Status: preview](https://img.shields.io/badge/status-preview-F59E0B?style=flat-square)](#known-limitations)
-![MCP: stdio](https://img.shields.io/badge/MCP-stdio-1F262E?style=flat-square&logo=modelcontextprotocol)
-![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)
-[![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-3DA639?style=flat-square)](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/LICENSE)
+[![Status: preview](https://img.shields.io/badge/status-preview-F59E0B?style=flat)](#known-limitations)
+![MCP: stdio](https://img.shields.io/badge/MCP-stdio-1F262E?style=flat&logo=modelcontextprotocol)
+![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-5FA04E?style=flat&logo=nodedotjs&logoColor=white)
+[![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-3DA639?style=flat)](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/LICENSE)
 
 CoAgent8 connects VS Code's native MCP chat to **OpenAI Codex**, **Claude Code**
 and **Google Antigravity** (`agy`). Ask another agent to examine a design,

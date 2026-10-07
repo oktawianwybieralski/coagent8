@@ -128,7 +128,7 @@ An unpublished local VSIX can show the publisher ID in its header when no
 Marketplace display-name metadata is available; `author.name` does not control
 that header.
 
-The Details README uses compact HTTPS shields.io badges in two rows: links to
+The Details README uses rounded (`style=flat`) shields.io badges in two rows: links to
 the author's website, GitHub source and issue reports, then the preview status
 (linking to known limitations), MCP stdio, Node.js 24+ and GPL-3.0-only. Every
 badge has a label and a value; logos are limited to ones shields.io serves
