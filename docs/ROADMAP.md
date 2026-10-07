@@ -1170,16 +1170,25 @@ These statuses summarize prior implementation; they are not fresh test results.
   every backend. Reopened: Codex reports `authenticated` from file presence or
   environment variables (AUD-P2-2). Claude reports the CLI's own `claude auth status`
   login state and states that token validity is proven only by an execution.
-- [ ] `ERRORS-001`: one typed error protocol (AUD-P1-2, order 1):
+- [x] `ERRORS-001`: one typed error protocol (AUD-P1-2, order 1), on
+  `fix/typed-tool-errors`, not yet merged:
   - a `ToolError` class carries an `ErrorCode`;
   - no `CODE:` string prefixes and no prefix parsing in `server.ts`;
   - an unknown failure maps to `PROCESS_ERROR`, never `INPUT_LIMIT`;
   - `ONBOARDING_REQUIRED` no longer occurs: an ambiguous `auto` selects a backend
     (`EXEC-001`).
 
-  Also review the 37 empty `catch {}` blocks individually and distinguish
-  expected absence from actionable I/O errors, including `ensureConfigDir`
-  (AUD-P2-7).
+  Evidence: `tests/server.test.js` calls `consult` through an MCP client. A plain
+  `Error` from a probe returns `PROCESS_ERROR` (with the old default reinjected the
+  test reports `INPUT_LIMIT`, the audit finding); a disallowed backend returns
+  `POLICY_DENIED` without a code prefix in the message; an unknown session handle
+  returns `SESSION_INVALID`; an empty proposal keeps `INPUT_LIMIT`. "All permitted
+  providers have observed rate limits" is `RATE_LIMITED`. Adapter errors that set
+  `code` by `Object.assign` and `CliResolutionError`/`BufferLimitError` are
+  `ToolError`s now. Full suite: 227 pass, 0 fail (Windows, Node 24).
+- [ ] `ERRORS-001` remainder (AUD-P2-7, order 3): review the 37 empty `catch {}`
+  blocks individually and distinguish expected absence from actionable I/O
+  errors, including `ensureConfigDir`.
 - [ ] `DOCS-001`: expand compressed logic and document meaningful exported contracts.
 - [ ] `VERIFY-001`: record repeatable validation without retroactively assigning
   the historical unexplained 133/134 failure to a later discovered race. Two

@@ -4,6 +4,7 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { handleConsult } from './consult.tool.js';
 import { handleReview } from './review.tool.js';
 import { handleIssue } from './issue.tool.js';
+import { ToolError } from '../conversation.js';
 
 export const runToolDefinition = {
   name: CANONICAL_TOOL_NAMES.RUN,
@@ -88,7 +89,7 @@ export async function handleRun(
   switch (action) {
     case 'consult': {
       if (typeof args.proposal !== 'string' || !args.proposal.trim()) {
-        throw new Error('Validation Error: proposal must be a non-empty string for action "consult".');
+        throw new ToolError('INPUT_LIMIT', 'Validation Error: proposal must be a non-empty string for action "consult".');
       }
       return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, args, workspaceCwd, abortSignal, onProgress);
     }
@@ -100,7 +101,7 @@ export async function handleRun(
     }
     case 'analyze': {
       if (typeof args.task !== 'string' || !args.task.trim()) {
-        throw new Error('Validation Error: task must be a non-empty string for action "analyze".');
+        throw new ToolError('INPUT_LIMIT', 'Validation Error: task must be a non-empty string for action "analyze".');
       }
       const mappedArgs: ToolArguments = {
         ...args,
@@ -114,7 +115,7 @@ export async function handleRun(
     }
     case 'debug': {
       if (typeof args.error_message !== 'string' || !args.error_message.trim()) {
-        throw new Error('Validation Error: error_message must be a non-empty string for action "debug".');
+        throw new ToolError('INPUT_LIMIT', 'Validation Error: error_message must be a non-empty string for action "debug".');
       }
       const mappedArgs: ToolArguments = {
         ...args,
@@ -129,7 +130,7 @@ export async function handleRun(
     }
     case 'implement': {
       if (typeof args.specification !== 'string' || !args.specification.trim()) {
-        throw new Error('Validation Error: specification must be a non-empty string for action "implement".');
+        throw new ToolError('INPUT_LIMIT', 'Validation Error: specification must be a non-empty string for action "implement".');
       }
       const mappedArgs: ToolArguments = {
         ...args,
@@ -143,7 +144,7 @@ export async function handleRun(
       return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning] });
     }
     default:
-      throw new Error(`Validation Error: Unknown action "${action}". Allowed: "consult", "review", "issue", "analyze", "debug", "implement".`);
+      throw new ToolError('INPUT_LIMIT', `Validation Error: Unknown action "${action}". Allowed: "consult", "review", "issue", "analyze", "debug", "implement".`);
   }
 }
 

@@ -13,7 +13,7 @@
  * @packageDocumentation
  */
 import { BRAND } from '../../constants.js';
-import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';
@@ -34,8 +34,8 @@ const REQUEST = { initialize: 1, thread: 2, turn: 3, interrupt: 4 } as const;
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
-function typed(code: ExecutionError['code'], message: string): Error {
-  return Object.assign(new Error(message), { code });
+function typed(code: ExecutionError['code'], message: string): ToolError {
+  return new ToolError(code, message);
 }
 
 /**

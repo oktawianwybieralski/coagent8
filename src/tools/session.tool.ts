@@ -4,6 +4,7 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from './schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../sessions/history.js';
 import { resolveWorkspacePath } from '../paths.js';
+import { ToolError } from '../conversation.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
@@ -39,7 +40,7 @@ export const cancelToolDefinition = {
 export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
   if (!action || !['list', 'history', 'close'].includes(action)) {
-    throw new Error('Validation Error: action must be one of "list", "history", "close".');
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "close".');
   }
   if (action === 'list') {
     const sessions = listSessions();
@@ -60,22 +61,22 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
   }
   if (action === 'history') {
     if (!args.session_handle || typeof args.session_handle !== 'string') {
-      throw new Error('Validation Error: session_handle is required for action "history".');
+      throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "history".');
     }
     return await handleSessionHistory({ ...args, session_handle: args.session_handle }, workspace);
   }
   if (action === 'close') {
     if (!args.session_handle || typeof args.session_handle !== 'string') {
-      throw new Error('Validation Error: session_handle is required for action "close".');
+      throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "close".');
     }
     return await handleCloseSession(args, workspace);
   }
-  throw new Error(`Unknown action: ${action}`);
+  throw new ToolError('INPUT_LIMIT', `Unknown action: ${action}`);
 }
 
 export async function handleCancelSession(args: { session_handle: string; workspace_path?: string }) {
   if (!args?.session_handle || typeof args.session_handle !== 'string') {
-    throw new Error('Validation Error: session_handle is required and must be a string.');
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required and must be a string.');
   }
   const workspace = args.workspace_path ? resolveWorkspacePath(args.workspace_path) : undefined;
   const result = await cancelSession(args.session_handle, workspace);
@@ -96,7 +97,7 @@ export async function handleCancelSession(args: { session_handle: string; worksp
 }
 
 export async function handleCloseSession(args: ToolArguments, workspace = resolveWorkspacePath(args.workspace_path)) {
-  if (typeof args.session_handle !== 'string' || !args.session_handle) throw new Error('Validation Error: session_handle is required for action "close".');
+  if (typeof args.session_handle !== 'string' || !args.session_handle) throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "close".');
   const closed = await closeSession(args.session_handle, workspace);
   if (args.delete_history) await deleteHistory(args.session_handle, workspace);
   return {

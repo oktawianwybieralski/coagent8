@@ -24,9 +24,9 @@ test('auto and smart_quota ignore an installed but unsupported provider; explici
     saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','gemini']}});
     assert.equal((await resolveBackend('auto')).id,'claude');assert.equal(loadConfig().defaultBackend,null);
     assert.equal((await resolveBackend('smart_quota')).id,'claude');
-    await assert.rejects(resolveBackend('gemini'),/CLI_UNSUPPORTED/);
-    saveConfig({defaultBackend:'gemini'});await assert.rejects(resolveBackend(),/CLI_UNSUPPORTED/);
-    saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['codex']}});await assert.rejects(resolveBackend(),/CLI_NOT_FOUND/);
+    await assert.rejects(resolveBackend('gemini'),{code:'CLI_UNSUPPORTED'});
+    saveConfig({defaultBackend:'gemini'});await assert.rejects(resolveBackend(),{code:'CLI_UNSUPPORTED'});
+    saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['codex']}});await assert.rejects(resolveBackend(),{code:'CLI_NOT_FOUND'});
     saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','gemini']}});
     adapterRegistry.gemini.probe=async()=>({installed:true,executionSupported:true});
     const chosen=await resolveBackend();assert.equal(chosen.id,'gemini','without a default, auto chooses like smart_quota in provider order');assert.equal(chosen.isSmartQuota,true);

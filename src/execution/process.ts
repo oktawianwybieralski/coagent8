@@ -30,7 +30,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { resolveCliCommand } from './cli-resolver.js';
 import { createLineDecoder, truncateToByteLength } from './stream.js';
 import type { ExecutionError, TerminalStatus } from '../conversation.js';
-import { ERROR_CODES } from '../conversation.js';
+import { errorCodeOf } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
 
 /** Default buffer ceiling per output channel (stdout/stderr) in bytes (512 KiB). */
@@ -54,8 +54,7 @@ const teardowns = new WeakMap<ChildProcess, Promise<void>>();
 
 let shuttingDown = false;
 function callbackErrorCode(err: unknown): ExecutionError['code'] {
-  const code = (err as { code?: ExecutionError['code'] })?.code;
-  return code && ERROR_CODES.includes(code) ? code : 'PROTOCOL_ERROR';
+  return errorCodeOf(err, 'PROTOCOL_ERROR');
 }
 
 function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {

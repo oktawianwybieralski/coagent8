@@ -28,7 +28,7 @@ regression test derived from the audit reproduction:
 | AUD-P0-3 | `HISTORY-002` | Streamed answers persist within a small constant factor of their size; archive failures are warnings; a full archive never blocks a CLI launch | Implemented on `fix/history-archive-integrity`, not yet merged |
 | AUD-P1-3 | `HISTORY-002` | Bookkeeping failures never discard a successful answer | Implemented on `fix/history-archive-integrity`, not yet merged |
 | AUD-P1-1 | `ROUTING-MIGRATE-001` | One cooldown write per rate-limited turn, verified through the controller sequence | Implemented on `fix/cooldown-single-write`, not yet merged |
-| AUD-P1-2 | `ERRORS-001` | Typed `ToolError`; no prefix parsing; unknown failures map to `PROCESS_ERROR` | Open |
+| AUD-P1-2 | `ERRORS-001` | Typed `ToolError`; no prefix parsing; unknown failures map to `PROCESS_ERROR` | Implemented on `fix/typed-tool-errors`, not yet merged |
 | AUD-P1-10 | `PACKAGE-001` | No build output in Git; packed bundle matches packed source | Open |
 
 Small independent fixes may land as separate PRs into the target branch.
@@ -82,7 +82,8 @@ is pushed:
 | `perf/tsdown-bundle-comparison` | `a36a267`..`991b7e4` | Server bundle built with tsdown; no comments in the bundle; `dist/THIRD_PARTY_NOTICES.txt`; build tooling needs Node 24.11 (`devEngines`). Evidence: [BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md) |
 | `fix/history-archive-integrity` | `3dac0d6`..`0cddde5` | `HISTORY-002`: bounded append-only delta storage, split-credential tail buffering, best-effort archival, LRU capacity eviction, fail-closed leases |
 | `feat/context-budget` | `46fa155`..`ed1c141` | `CONTEXT-001`: resolved model, agy denial kept, compact tool surface and results, client roots, shorter prompts |
-| `fix/cooldown-single-write` | this change | `ROUTING-MIGRATE-001` (AUD-P1-1): one cooldown write per rate-limited turn, regression through `executeTask` |
+| `fix/cooldown-single-write` | `abcff7d`..`6b0ecba` | `ROUTING-MIGRATE-001` (AUD-P1-1): one cooldown write per rate-limited turn, regression through `executeTask` |
+| `fix/typed-tool-errors` | this change | `ERRORS-001` (AUD-P1-2): `ToolError` with an `ErrorCode`; unknown failures are `PROCESS_ERROR` |
 
 ## Verification
 
@@ -111,7 +112,7 @@ results in the project review before requesting an independent review by the Rev
    - `HISTORY-002` (AUD-P0-3, AUD-P1-3, AUD-P2-12), implemented on
      `fix/history-archive-integrity`;
    - `ROUTING-MIGRATE-001` (AUD-P1-1), implemented on `fix/cooldown-single-write`;
-   - `ERRORS-001` (AUD-P1-2);
+   - `ERRORS-001` (AUD-P1-2), implemented on `fix/typed-tool-errors`;
    - `PACKAGE-001` (AUD-P1-10; it also removes the non-reproducible `dist/`
      diffs).
 4. Make the Codex `probe` test independent of local Codex credentials, so that

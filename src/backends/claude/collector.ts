@@ -2,7 +2,7 @@
 import { BufferLimitError, truncateToByteLength } from '../../execution/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { classifyClaudeFailure } from './errors.js';
 import { isValidModelIdentifier } from '../governance.js';
@@ -26,7 +26,7 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 function fail(code: 'PROTOCOL_ERROR' | 'SANDBOX_UNAVAILABLE', message: string): never {
-  throw Object.assign(new Error(message), { code });
+  throw new ToolError(code, message);
 }
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;

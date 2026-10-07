@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ToolError } from './conversation.js';
 export function getDataDir(): string {
   return path.resolve(process.env.coagent8_DIR || path.join(os.homedir(), '.coagent8'));
 }
@@ -12,11 +13,11 @@ export function resolveWorkspacePath(rawPath?: string | null): string {
   if (typeof rawPath === 'string' && rawPath.trim()) {
     const cleanPath = rawPath.trim();
     if (!fs.existsSync(cleanPath)) {
-      throw new Error(`Validation Error: The specified workspace path does not exist: '${cleanPath}'`);
+      throw new ToolError('INPUT_LIMIT', `Validation Error: The specified workspace path does not exist: '${cleanPath}'`);
     }
     const stat = fs.statSync(cleanPath);
     if (!stat.isDirectory()) {
-      throw new Error(`Validation Error: The specified workspace path is not a directory: '${cleanPath}'`);
+      throw new ToolError('INPUT_LIMIT', `Validation Error: The specified workspace path is not a directory: '${cleanPath}'`);
     }
     return path.resolve(cleanPath);
   }
@@ -62,10 +63,10 @@ export function chooseWorkspace(rawPath: string | null | undefined, roots: reado
   if (directories.length > 1) {
     const containing = directories.filter(root => sameOrInside(path.resolve(serverDirectory), root));
     if (containing.length) return { path: containing.sort((a, b) => b.length - a.length)[0], source: 'client_root' };
-    throw new Error(`Validation Error: The client reports ${directories.length} workspace roots; pass workspace_path.`);
+    throw new ToolError('INPUT_LIMIT', `Validation Error: The client reports ${directories.length} workspace roots; pass workspace_path.`);
   }
   if (isUnsuitableImplicitWorkspace(serverDirectory)) {
-    throw new Error('Validation Error: No client workspace root and the server directory is the home or a system directory; pass workspace_path.');
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: No client workspace root and the server directory is the home or a system directory; pass workspace_path.');
   }
   return { path: path.resolve(serverDirectory), source: 'server_directory' };
 }

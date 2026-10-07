@@ -24,7 +24,7 @@ import { getCanonicalImplementToolDefinition, handleImplement } from './tools/im
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { executionOutputSchema, runOutputSchema, formatExecutionResult, withWorkspace } from './tools/result.js';
-import { ERROR_CODES } from './conversation.js';
+import { ToolError, errorCodeOf } from './conversation.js';
 import { listSessions } from './sessions/session.js';
 import { sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
@@ -126,7 +126,7 @@ export type Schema = {
 
 export function validateToolArguments(value: unknown, schema: Schema, field = 'arguments'): Record<string, unknown> {
   function validate(v: unknown, s: Schema, name: string): void {
-    if (s.enum && !s.enum.includes(v)) throw new Error(`Invalid ${name}: expected one of ${s.enum.join(', ')}.`);
+    if (s.enum && !s.enum.includes(v)) throw new ToolError('INPUT_LIMIT', `Invalid ${name}: expected one of ${s.enum.join(', ')}.`);
     const types = Array.isArray(s.type) ? s.type : [s.type];
     if (
       s.type &&
@@ -142,18 +142,18 @@ export function validateToolArguments(value: unknown, schema: Schema, field = 'a
           : typeof v === t
       )
     )
-      throw new Error(`Invalid ${name}: expected ${types.join(' or ')}.`);
-    if (typeof v === 'string' && !v.trim() && s.minLength !== 0) throw new Error(`Invalid ${name}: string must not be empty.`);
-    if (typeof v === 'string' && s.minLength && v.length < s.minLength) throw new Error(`Invalid ${name}: string too short.`);
+      throw new ToolError('INPUT_LIMIT', `Invalid ${name}: expected ${types.join(' or ')}.`);
+    if (typeof v === 'string' && !v.trim() && s.minLength !== 0) throw new ToolError('INPUT_LIMIT', `Invalid ${name}: string must not be empty.`);
+    if (typeof v === 'string' && s.minLength && v.length < s.minLength) throw new ToolError('INPUT_LIMIT', `Invalid ${name}: string too short.`);
     if (typeof v === 'number' && (!Number.isFinite(v) || (s.minimum != null && v < s.minimum) || (s.maximum != null && v > s.maximum)))
-      throw new Error(`Invalid ${name}: outside allowed range.`);
+      throw new ToolError('INPUT_LIMIT', `Invalid ${name}: outside allowed range.`);
     if (Array.isArray(v) && s.items) v.forEach((entry, i) => validate(entry, s.items!, `${name}[${i}]`));
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       const obj = v as Record<string, unknown>;
-      for (const key of s.required || []) if (obj[key] == null) throw new Error(`Missing required ${name}.${key}.`);
+      for (const key of s.required || []) if (obj[key] == null) throw new ToolError('INPUT_LIMIT', `Missing required ${name}.${key}.`);
       for (const [key, entry] of Object.entries(obj)) {
         if (!s.properties?.[key]) {
-          if (s.additionalProperties === false) throw new Error(`Unknown ${name}.${key}.`);
+          if (s.additionalProperties === false) throw new ToolError('INPUT_LIMIT', `Unknown ${name}.${key}.`);
         } else validate(entry, s.properties[key], `${name}.${key}`);
       }
     }
@@ -194,7 +194,7 @@ export function createServer(): Server {
     if (!server.getClientCapabilities()?.roots) return null;
     clientRoots ??= server.listRoots(undefined, { timeout: ROOTS_TIMEOUT_MS })
       .then(result => result.roots.filter(root => root.uri.startsWith('file:')).map(root => fileURLToPath(root.uri)))
-      .catch((cause: unknown) => { clientRoots = null; throw new Error('Validation Error: The client did not answer roots/list; pass workspace_path.', { cause }); });
+      .catch((cause: unknown) => { clientRoots = null; throw new ToolError('INPUT_LIMIT', 'Validation Error: The client did not answer roots/list; pass workspace_path.', { cause }); });
     return clientRoots;
   }
   async function resolveWorkspace(rawPath: string | undefined): Promise<ResolvedWorkspace> {
@@ -274,7 +274,7 @@ export function createServer(): Server {
     const progress = createProgressReporter(server, request.params._meta?.progressToken);
     try {
       const definition = getAllCallableToolDefinitions().find(tool => tool.name === name);
-      if (!definition) throw new Error(`Unknown tool: ${name}`);
+      if (!definition) throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
       // The canonical schemas validate each declared primitive/array field here;
       // handlers receive the corresponding narrowed contributor type.
       const args = validateToolArguments(request.params.arguments, definition.inputSchema as Schema) as ToolArguments;
@@ -307,14 +307,14 @@ export function createServer(): Server {
         case CANONICAL_TOOL_NAMES.IMPLEMENT:
           return withWorkspace(await handleImplement(args, cwd, extra.signal, progress), workspace);
         default:
-          throw new Error(`Unknown tool: ${name}`);
+          throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
       }
     } catch (err) {
       const message = redactDiagnostic((err as Error).message);
       if (executionNames.has(name)) {
         const raw = request.params.arguments;
         const provider = typeof raw?.backend === 'string' && ['codex', 'gemini', 'claude'].includes(raw.backend) ? raw.backend : null;
-        const code = ERROR_CODES.find(code => message.startsWith(code + ':')) || 'INPUT_LIMIT';
+        const code = errorCodeOf(err);
         return formatExecutionResult(
           provider,
           {

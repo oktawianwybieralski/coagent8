@@ -5,7 +5,7 @@ import { loadConfig } from '../config.js';
 import { QuotaReport, QuotaCacheRecord } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../sessions/lock.js';
-import { PROVIDERS, type ProviderId } from '../conversation.js';
+import { PROVIDERS, ToolError, type ProviderId } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
 import { readBoundedFileSync } from '../execution/stream.js';
 import type { AdapterProbeResult } from './types.js';
@@ -188,7 +188,7 @@ export async function selectSmartQuotaBackend(candidates: ProviderId[] | null = 
   const installed = (candidates || PROVIDERS).filter(id =>
     config.routing.allowedBackends.includes(id) && quotas[id]?.installed &&
     quotas[id].executionSupported !== false && options.probesOverride?.[id]?.executionSupported !== false);
-  if (!installed.length) throw new Error('No active permitted CLI installed for smart_quota.');
+  if (!installed.length) throw new ToolError('CLI_NOT_FOUND', 'No active permitted CLI installed for smart_quota.');
   // A second opinion comes from another CLI than the caller's own when one is available.
   const others = installed.filter(id => id !== options.callerProvider);
   const headroom = (id: ProviderId) => quotas[id].measured && quotas[id].headroomPercent !== null ? quotas[id].headroomPercent as number : UNMEASURED_HEADROOM_PERCENT;
@@ -198,5 +198,5 @@ export async function selectSmartQuotaBackend(candidates: ProviderId[] | null = 
     if (ready.length) return ready[0];
   }
   const times = installed.map(id => quotas[id].cooldownUntil || quotas[id].resetsAt).filter(Boolean).sort();
-  throw new Error('All permitted providers have observed rate limits.' + (times.length ? ' Earliest recovery cooldown resets at: ' + times[0] : ''));
+  throw new ToolError('RATE_LIMITED', 'All permitted providers have observed rate limits.' + (times.length ? ' Earliest recovery cooldown resets at: ' + times[0] : ''));
 }

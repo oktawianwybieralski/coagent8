@@ -5,7 +5,7 @@ import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } 
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
-import type { ExecutionError } from '../../conversation.js';
+import { ToolError, type ExecutionError } from '../../conversation.js';
 export const id = 'claude', name = 'Claude Code CLI';
 const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
@@ -21,7 +21,7 @@ const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-
 const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
 
 function resolveClaudeModel(requested = 'sonnet'): string {
-  if (requested === 'default') throw Object.assign(new Error('Claude model=default has unknown cost; choose an explicit model or sonnet/haiku alias.'), { code: 'POLICY_DENIED' });
+  if (requested === 'default') throw new ToolError('POLICY_DENIED', 'Claude model=default has unknown cost; choose an explicit model or sonnet/haiku alias.');
   const match = /^(sonnet|haiku|opus)(\[1m\])?$/.exec(requested);
   const override = match && process.env[`ANTHROPIC_DEFAULT_${match[1].toUpperCase()}_MODEL`];
   return override ? override + (match![2] || '') : requested;

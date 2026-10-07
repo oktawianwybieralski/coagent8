@@ -30,7 +30,7 @@ import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, BufferLimitError } from './stream.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
-import { ERROR_CODES, type ErrorCode, type AdapterEvent } from '../conversation.js';
+import { ToolError, errorCodeOf, type AdapterEvent } from '../conversation.js';
 import { formatExecutionResult } from '../tools/result.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
@@ -102,19 +102,19 @@ export async function executeTask(prompt: string, publicInput: string, args: Exe
 }
 
 async function executeTaskInternal(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: { requireEnvelope?: boolean; warnings?: string[] } = {}) {
-  if (abortSignal?.aborted) throw new Error('ABORTED: Request cancelled before provider resolution.');
+  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
   const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
-  if (args.session_handle && !previous) throw new Error('SESSION_INVALID: Session is expired, invalidated, closed or belongs to another workspace.');
-  if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new Error('SESSION_INVALID: A session cannot switch provider.');
+  if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
+  if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
   const backend = await resolveBackend(previous?.backend || args.backend);
-  if (abortSignal?.aborted) throw new Error('ABORTED: Request cancelled before acquiring the session.');
-  if (previous && !previous.threadId) throw new Error('SESSION_INVALID: Native continuation is unavailable for this session; history remains accessible.');
+  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
+  if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   const config = backend.probe.config as { defaultModel?: string } | undefined;
   const model = args.model || previous?.model || config?.defaultModel;
-  if (checkModelGovernance(model, args.user_confirmed)) throw new Error(`POLICY_DENIED: ${consentRequiredMessage(model)}`);
+  if (checkModelGovernance(model, args.user_confirmed)) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model));
   await pruneExpiredSessions();
   const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
-  if (!acquired.session) throw new Error(`SESSION_BUSY: ${acquired.error}`);
+  if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
   const session = acquired.session, handle = session.sessionHandle, token = session.turnToken!;
   const writer = createHistoryWriter(handle, cwd, backend.id, randomUUID());
   const cancelController = new AbortController();
@@ -204,8 +204,8 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
       error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
   } catch (err) {
-    const code = (err as { code?: ErrorCode })?.code;
-    result = { isError: true, status: 'failed', output: '', error: { code: code && ERROR_CODES.includes(code) ? code : 'PROCESS_ERROR', message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
+    const code = errorCodeOf(err);
+    result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
   } finally {
     if (heartbeat) clearInterval(heartbeat); if (flushTimer) clearInterval(flushTimer);
     if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);

@@ -1,6 +1,7 @@
 import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
+import { ToolError } from '../conversation.js';
 
 /**
  * Truncates a UTF-8 string to a maximum byte length without splitting multi-byte characters.
@@ -23,7 +24,7 @@ export function truncateToByteLength(str: string, maxBytes: number, suffix = '..
   return buf.toString('utf8', 0, written) + suffix;
 }
 
-export class BufferLimitError extends Error { readonly code = 'BUFFER_LIMIT'; }
+export class BufferLimitError extends ToolError { constructor(message: string) { super('BUFFER_LIMIT', message); } }
 export function readBoundedFileSync(file: string, limit = 64 * 1024): string {
   const fd = fsSync.openSync(file, 'r');
   try {

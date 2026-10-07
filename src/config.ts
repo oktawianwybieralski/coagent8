@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { ProviderId } from './conversation.js';
+import { ToolError, type ProviderId } from './conversation.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './execution/stream.js';
@@ -177,7 +177,8 @@ export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
 
 export function setDefaultBackend(backend: unknown): CoAgent8Config {
   if (typeof backend !== 'string' || !VALID_BACKENDS.includes(backend.toLowerCase() as BackendId)) {
-    throw new Error(
+    throw new ToolError(
+      'INPUT_LIMIT',
       `Validation Error: backend must be one of: ${VALID_BACKENDS.join(', ')}. Received: '${backend}'`
     );
   }

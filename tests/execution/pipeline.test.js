@@ -60,10 +60,10 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
   }};
   try {
     saveConfig({defaultBackend:'codex',routing:{strategy:'fixed',allowedBackends:['codex']}});
-    const cancelled=new AbortController();cancelled.abort();await assert.rejects(executeTask('x','x',{},tempDir,cancelled.signal),/ABORTED/);assert.equal(calls,0);
-    await assert.rejects(executeTask('x','x',{},tempDir),/POLICY_DENIED/);assert.equal(calls,0);
+    const cancelled=new AbortController();cancelled.abort();await assert.rejects(executeTask('x','x',{},tempDir,cancelled.signal),{code:'ABORTED'});assert.equal(calls,0);
+    await assert.rejects(executeTask('x','x',{},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,0);
     const first=await executeTask('x','first',{user_confirmed:true},tempDir),handle=first.structuredContent.sessionHandle;
-    await assert.rejects(executeTask('x','second',{session_handle:handle},tempDir),/POLICY_DENIED/);assert.equal(calls,1);
+    await assert.rejects(executeTask('x','second',{session_handle:handle},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,1);
     mode='rate';const rate=await executeTask('x','rate',{session_handle:handle,user_confirmed:true},tempDir);assert.equal(rate.structuredContent.error.code,'RATE_LIMITED');assert.equal(getSession(handle).threadId,'native_fixture');
     assert.equal(require('../../src/backends/availability.ts').readQuotaCache().data.codex.status,'rate_limited');
     mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle,user_confirmed:true},tempDir);assert.equal(invalid.structuredContent.error.code,'SESSION_INVALID');assert.equal(invalid.structuredContent.continuationAvailable,undefined);assert.equal(getSession(handle),null);

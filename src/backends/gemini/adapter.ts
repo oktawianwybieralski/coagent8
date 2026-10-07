@@ -9,7 +9,7 @@ import { redactDiagnostic } from '../../redaction.js';
 import { checkModelGovernance, consentRequiredMessage } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
-import type { ExecutionError } from '../../conversation.js';
+import { errorCodeOf, type ExecutionError } from '../../conversation.js';
 
 export const id = 'gemini';
 export const name = 'Google Gemini (Antigravity agy)';
@@ -183,7 +183,7 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
     resolved = resolveCliCommand(rawCommand);
   } catch (err) {
     return failed({
-      code: (err as { code?: string }).code === 'CLI_UNSUPPORTED' ? 'CLI_UNSUPPORTED' : 'CLI_NOT_FOUND',
+      code: errorCodeOf(err) === 'CLI_UNSUPPORTED' ? 'CLI_UNSUPPORTED' : 'CLI_NOT_FOUND',
       message: redactDiagnostic((err as Error).message),
       retryable: false,
     });

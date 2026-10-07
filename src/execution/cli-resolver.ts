@@ -2,12 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { readBoundedFileSync } from './stream.js';
+import { ToolError } from '../conversation.js';
 export interface CliCommand { command: string; argsPrefix: string[]; source: 'native' | 'node' | 'npm-shim' }
-class CliResolutionError extends Error {
-  readonly code: 'CLI_NOT_FOUND' | 'CLI_UNSUPPORTED';
+class CliResolutionError extends ToolError {
   constructor(code: 'CLI_NOT_FOUND' | 'CLI_UNSUPPORTED', message: string) {
-    super(message);
-    this.code = code;
+    super(code, message);
   }
 }
 function extractEntrypoints(content: string, dir: string, extPattern: RegExp): string[] {

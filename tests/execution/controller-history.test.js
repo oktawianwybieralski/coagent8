@@ -276,7 +276,7 @@ test('a top-tier model without consent is refused with a one-line instruction fo
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
     await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'gemini', model: 'claude-opus-4-6-thinking' }, tempDir),
-      /^Error: POLICY_DENIED: Model 'claude-opus-4-6-thinking' is top-tier: ask the user, then retry with user_confirmed: true\.$/);
+      { name: 'ToolError', code: 'POLICY_DENIED', message: "Model 'claude-opus-4-6-thinking' is top-tier: ask the user, then retry with user_confirmed: true." });
     assert.equal(executed, false);
   } finally {
     adapterRegistry.gemini = original;

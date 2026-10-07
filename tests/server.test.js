@@ -163,3 +163,35 @@ test('execution results report a workspace taken from client roots; roots are re
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('execution errors carry the code raised at their source; an unknown failure is PROCESS_ERROR, not INPUT_LIMIT (AUD-P1-2)', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const { saveConfig } = require('../src/config.ts');
+  const original = adapterRegistry.gemini;
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => { throw new Error('Lock timeout on probe cache.'); },
+    execute: async () => { throw new Error('must not run'); } };
+  const server = createServer();
+  const client = new Client({ name: 'errors-client', version: '1' });
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const call = async args => (await client.callTool({ name: 'consult', arguments: { workspace_path: tempDir, ...args } })).structuredContent.error;
+    const unknown = await call({ proposal: 'x' });
+    assert.equal(unknown.code, 'PROCESS_ERROR');
+    assert.equal(unknown.message, 'Lock timeout on probe cache.');
+    const denied = await call({ proposal: 'x', backend: 'codex' });
+    assert.equal(denied.code, 'POLICY_DENIED');
+    assert.ok(!denied.message.startsWith('POLICY_DENIED'), 'the message carries no code prefix');
+    assert.equal((await call({ proposal: 'x', session_handle: 'syn_sess_0000000000000000' })).code, 'SESSION_INVALID');
+    const invalid = await client.callTool({ name: 'consult', arguments: { proposal: '', workspace_path: tempDir } });
+    assert.equal(invalid.structuredContent.error.code, 'INPUT_LIMIT', 'rejected input keeps INPUT_LIMIT');
+  } finally {
+    await client.close();
+    await server.close();
+    adapterRegistry.gemini = original;
+  }
+});

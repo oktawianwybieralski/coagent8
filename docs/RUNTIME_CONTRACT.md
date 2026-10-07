@@ -117,8 +117,10 @@ errors, and a consent refusal says in one line to ask the user and retry with
 ### Typed Error Codes (`ERROR_CODES`)
 `CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`, `RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`, `ABORTED`, `TIMEOUT`, `SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`, `INPUT_LIMIT`, `PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`.
 
-`INPUT_LIMIT` is intended for rejected input. The current mapping of unknown
-failures to it is a known deviation (section 7).
+Each code is raised where the cause is known, as a `ToolError` carrying the code;
+messages carry no code prefix. `INPUT_LIMIT` means rejected input (schema
+validation, an unknown action, an unusable workspace path). Any other failure is
+reported as `PROCESS_ERROR`.
 
 ---
 
@@ -264,8 +266,6 @@ when its fix lands with a regression test.
 | ID | Intended contract | Current behavior |
 | --- | --- | --- |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
-| AUD-P1-1 | A rate limit records the provider's reset time | The controller writes a second, tiered cooldown that replaces the parsed reset (3 days becomes 45 s) |
-| AUD-P1-2 | Error codes identify the cause | Errors without a known `CODE:` prefix, including lock timeouts, are returned as `INPUT_LIMIT` |
 | AUD-P1-4 | agy runs with native `--sandbox` | The `/usage` quota probe runs on every Gemini request without `--sandbox` |
 | AUD-P1-5 | Native stream parsing tolerates CLI evolution | An unknown agy event type fails the call with `PROTOCOL_ERROR` |
 | AUD-P1-7 | Top-tier models require the user's consent | `user_confirmed` is asserted by the caller; agy's default model is not governed |

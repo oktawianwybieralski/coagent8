@@ -19,6 +19,7 @@ import { resolveCliCommand, resolveBundledClaude, type CliCommand } from '../exe
 import { redactDiagnostic } from '../redaction.js';
 import { withFileLock } from '../sessions/lock.js';
 import { object, withStdioRpc } from './rpc.js';
+import { errorCodeOf } from '../conversation.js';
 
 export const SETUP_CLIENTS = ['codex', 'claude', 'agy'] as const;
 export type SetupClient = typeof SETUP_CLIENTS[number];
@@ -116,7 +117,7 @@ export function resolveSetupClient(client: SetupClient, home = os.homedir(), env
   const override = client === 'codex' ? env.CODEX_PATH : client === 'claude' ? env.CLAUDE_PATH : env.AGY_PATH || env.GEMINI_PATH;
   try { return resolveCliCommand(override || client, { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
   catch (error) {
-    if (override || (error as { code?: string }).code !== 'CLI_NOT_FOUND') throw new Error('Configured client executable cannot be resolved.');
+    if (override || errorCodeOf(error) !== 'CLI_NOT_FOUND') throw new Error('Configured client executable cannot be resolved.');
   }
   if (client !== 'claude') return null;
   return resolveBundledClaude(home, env);
