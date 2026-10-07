@@ -46,30 +46,26 @@ export async function handleConsult(
   const files = rawFiles.filter(f => typeof f === 'string' && f.trim().length > 0);
   const filesBlock = files.length > 0 ? `\nTarget files:\n${files.join('\n')}` : '';
 
-  let header: string;
-  let defaultQuestions: string;
-  if (taskType === 'architecture') {
-    header = '[TASK: ARCHITECTURAL & CODE ANALYSIS]';
-    defaultQuestions = 'Architectural evaluation, dependency structure, and code design.';
-  } else if (taskType === 'debug') {
-    header = '[TASK: ROOT CAUSE ANALYSIS]';
-    defaultQuestions = 'Root cause diagnosis, stack trace analysis, and step-by-step fix recommendation.';
-  } else if (taskType === 'implementation') {
-    header = '[TASK: CODE IMPLEMENTATION]';
-    defaultQuestions = 'Implementation design, component architecture, and interface specifications.';
-  } else {
-    header = '[TASK: TECHNICAL ADVICE & CONSULTATION]';
-    defaultQuestions = 'General evaluation, trade-offs, and technical advice.';
-  }
+  // A task type is the caller's request for a specific kind of analysis. Without one the
+  // question is passed on as asked: a default focus such as "trade-offs and technical
+  // advice" made backends append engineering sections to plain questions (CONTEXT-001).
+  const focus = taskType === 'architecture'
+    ? { header: '[TASK: ARCHITECTURAL & CODE ANALYSIS]', questions: 'Architectural evaluation, dependency structure, and code design.' }
+    : taskType === 'debug'
+      ? { header: '[TASK: ROOT CAUSE ANALYSIS]', questions: 'Root cause diagnosis, stack trace analysis, and step-by-step fix recommendation.' }
+      : taskType === 'implementation'
+        ? { header: '[TASK: CODE IMPLEMENTATION]', questions: 'Implementation design, component architecture, and interface specifications.' }
+        : null;
+  const questions = args.specific_questions || focus?.questions;
 
   const prompt = [
-    header,
+    focus?.header,
     // The answer is read in the caller's context and saved to a file by agy above about 4 KB.
-    'Answer with the conclusion first, concisely, without preamble.',
-    'PROPOSAL / SPECIFICATION:',
+    'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.',
+    focus ? 'PROPOSAL / SPECIFICATION:' : '',
     args.proposal,
-    'QUESTIONS / FOCUS:',
-    args.specific_questions || defaultQuestions,
+    questions ? 'QUESTIONS / FOCUS:' : '',
+    questions,
     filesBlock,
   ].filter(Boolean).join('\n');
 

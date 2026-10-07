@@ -46,7 +46,9 @@ running; otherwise `cancelled: false` with "nothing to cancel".
 ### Tool Surface
 Every client is offered the six core tools:
 * Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
-  `implementation`), `review`.
+  `implementation`), `review`. Without `task_type`, `consult` passes the question on
+  as asked, with only an instruction to answer it concisely; a task type adds its
+  header and default focus.
 * Management: `doctor`, `session`, `cancel`.
 * Feedback & Diagnostics: `issue`.
 

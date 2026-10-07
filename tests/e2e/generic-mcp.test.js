@@ -119,7 +119,9 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
   // Verify that the prompt sent to the backend CLI completely excluded State Envelope formatting instructions
   assert.ok(fs.existsSync(captureFile), 'Fixture must have captured the executed prompt');
   const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
-  assert.ok(captured.prompt.includes('[TASK: TECHNICAL ADVICE & CONSULTATION]'), 'Prompt must use technical advice header');
+  // A plain consult passes the question on as asked (CONTEXT-001): Gemini added trade-off and
+  // recommendation sections to plain questions while the prompt asked for "trade-offs and technical advice".
+  assert.equal(captured.prompt, 'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?');
   assert.ok(!captured.prompt.includes('FORMAT REQUIREMENTS:'), 'Prompt must not contain State Envelope FORMAT REQUIREMENTS');
   assert.ok(!captured.prompt.includes('State Envelope protocol'), 'Prompt must not mention State Envelope protocol');
   assert.ok(!captured.prompt.includes('END_REVIEW'), 'Prompt must not contain END_REVIEW header');

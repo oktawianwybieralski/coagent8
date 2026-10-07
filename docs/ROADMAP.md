@@ -1015,7 +1015,16 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   (`result`) and agy (`response`) already return only their final text. Evidence:
   `tests/backends/codex/collector.test.js` (fails on the previous collector). A live
   Codex turn with a tool call is part of the live acceptance below.
-- [ ] Neutral consult prompt: no added trade-off or recommendation sections.
+- [x] Neutral consult prompt: no added trade-off or recommendation sections.
+  Without `task_type` the prompt was `[TASK: TECHNICAL ADVICE & CONSULTATION]` with
+  the default focus "General evaluation, trade-offs, and technical advice", and
+  Gemini answered a percentage question and an MCP question with trade-off and
+  recommendation sections. Now a plain consult is one instruction ("Answer what
+  is asked, conclusion first, concisely, without preamble or sections nobody asked
+  for.") and the question, plus `specific_questions` and files when given; a task
+  type keeps its header and focus. Evidence: `tests/e2e/generic-mcp.test.js` checks
+  the exact prompt (fails on the previous prompt). The effect on answers is part of
+  the live acceptance below.
 - [ ] Agent-facing contract within about 5 KB:
   - server instructions say when to use CoAgent8 and when not, and point to `doctor`;
   - `model`, `reasoning_effort`, `proposal`, `specific_questions`,
