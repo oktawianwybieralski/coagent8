@@ -6,16 +6,16 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 export function getCanonicalConsultToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.CONSULT,
-    description: 'Second opinion from another coding agent: advice, design, debugging or implementation.',
+    description: 'Second opinion from another coding agent on a question, design, bug or plan. Returns the answer, then "> CoAgent8:" lines: backend, model, seconds, session handle.',
     inputSchema: {
       type: 'object',
       properties: {
-        proposal: { type: 'string', description: 'Question or plan, with context.' },
-        task_type: { type: 'string', enum: ['architecture', 'debug', 'implementation'] },
-        context_files: { type: 'array', items: { type: 'string' } },
+        proposal: { type: 'string', description: 'Self-contained question or plan; the agent sees only this and files it reads. Good: "Is this retry loop safe with concurrent writers? <code>". Bad: "thoughts?".' },
+        task_type: { type: 'string', enum: ['architecture', 'debug', 'implementation'], description: 'Omit for a plain question; set to ask for that kind of analysis.' },
+        context_files: { type: 'array', items: { type: 'string' }, description: 'Workspace paths the agent reads itself; only the paths are sent.' },
         // Accepted alias of context_files.
         file_paths: { type: 'array', items: { type: 'string' } },
-        specific_questions: { type: 'string' },
+        specific_questions: { type: 'string', description: 'Extra questions or criteria the answer must cover.' },
         ...EXECUTION_PARAMETERS,
       },
       required: ['proposal'],

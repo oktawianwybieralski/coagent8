@@ -763,7 +763,8 @@ Plan:
   client pays for it on every turn: "Second opinion or code review from another
   local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox."
   Rules needed only at call time go into parameter descriptions, which are loaded
-  only with the tool: continuation in `session_handle`. Consent is no longer a
+  only with the tool: continuation in `session_handle`. Superseded on 2026-10-07 by
+  the agent-facing contract below (482 characters). Consent is no longer a
   parameter: the server asks the user (`EXEC-001`, AUD-P1-7).
 - [x] **Tool definitions:** model-visible definitions 3.7 KB against 9.6 KB, and
   `tools/list` 6.1 KB against 27.4 KB:
@@ -902,7 +903,8 @@ Plan:
 - [x] **Budgets as regression tests:**
   - server instructions at most 512 characters (`tests/tools/surface.test.js`);
   - model-visible tool definitions at most 3,800 B, measured 3,728 B (the 3 KB
-    target assumed renamed parameters);
+    target assumed renamed parameters); raised to 5,300 B by the owner's decision
+    of 2026-10-07 for described parameters;
   - doctor summary at most 1 KB (`tests/diagnostics/doctor.test.js`);
   - every execution result reports the resolved `model` (adapter and collector
     tests) and `workspace` (`tests/server.test.js`).
@@ -1025,12 +1027,26 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   type keeps its header and focus. Evidence: `tests/e2e/generic-mcp.test.js` checks
   the exact prompt (fails on the previous prompt). The effect on answers is part of
   the live acceptance below.
-- [ ] Agent-facing contract within about 5 KB:
-  - server instructions say when to use CoAgent8 and when not, and point to `doctor`;
-  - `model`, `reasoning_effort`, `proposal`, `specific_questions`,
-    `context_files`, `task_type` and `backend` described with examples;
-  - `doctor` lists the models and effort levels each backend accepts;
-  - `consult` says that its answer is an opinion to verify.
+- [x] Agent-facing contract within about 5 KB:
+  - server instructions (482 characters, within the 512 Codex reads on their own)
+    say when to use `consult` and `review` and when not, that the answer is
+    another model's opinion to verify, and that `doctor` lists the models and
+    efforts;
+  - `backend` (what `auto` and `smart_quota` do), `model` (an example per backend
+    and where the list is), `reasoning_effort` (the agy requirement),
+    `proposal` (a good and a bad example), `specific_questions`, `context_files`
+    (only paths are sent), `task_type`, `session_handle` and `workspace_path` (the
+    fallback is named in the footer) are described; the `consult` and `review`
+    descriptions name the footer lines;
+  - the `doctor` summary lists each backend's models and efforts. Live on
+    2026-10-07 against the installed CLIs: 888 B (budget 1 KB), with the seven
+    Codex models, the seven agy model groups and the Claude aliases.
+
+  Model-visible tool definitions: 5,222 B against 3,492 B (budget 5,300 B);
+  `tools/list` 5,389 B. Evidence: `tests/tools/surface.test.js` (the instructions'
+  three points, a description for every parameter a caller chooses, the budget) and
+  `tests/diagnostics/doctor.test.js` (model lines); both fail on the previous
+  source.
 
 ## 3. Smaller execution path, robust sessions and honest routing
 

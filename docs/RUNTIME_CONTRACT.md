@@ -61,10 +61,14 @@ Callable but not advertised:
 The former `toolProfile` configuration key is ignored. Its compact profile
 measured more model-visible bytes than the six tools.
 
-The server sends one sentence of `instructions` in `initialize` and declares its
-icon once, in `serverInfo`; tools carry no icon. Execution parameters are defined
-once (`src/tools/schema.ts`) with descriptions only where the name and enum leave
-them unclear. There is no consent parameter: the server asks the user (see
+The server sends `instructions` in `initialize`, within the 512 characters Codex
+reads on their own: when to use `consult` and `review` and when not, that the
+answer is another model's opinion to verify, and that `doctor` lists the models and
+efforts each backend accepts. It declares its icon once, in `serverInfo`; tools
+carry no icon. Execution parameters are defined once (`src/tools/schema.ts`); each
+parameter a calling model must choose has a description with an example or the
+place that lists its values. The model-visible definitions stay within 5,300 B.
+There is no consent parameter: the server asks the user (see
 [Top-tier model consent](#top-tier-model-consent)). The icon is
 sent for every negotiated protocol version, because the SDK offers no supported
 per-version server info; clients of protocol 2025-06-18 ignore the unknown field.

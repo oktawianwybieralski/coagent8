@@ -22,6 +22,16 @@ export function describeModels(models: CatalogModel[]): string {
   return models.length > LISTED_MODELS ? `${shown.join(', ')}, and ${models.length - LISTED_MODELS} more (doctor lists all)` : shown.join(', ');
 }
 
+/**
+ * Renders a catalog for the doctor summary: the efforts once when every model accepts the
+ * same ones (Codex), otherwise per model (agy).
+ */
+export function summarizeModels(models: CatalogModel[]): string {
+  const efforts = models[0]?.efforts.join('|') ?? '';
+  const uniform = efforts !== '' && models.every(model => model.efforts.join('|') === efforts && !model.effortRequired);
+  return uniform ? `${models.map(model => model.id).join(', ')}; reasoning_effort ${efforts}` : models.map(model => model.efforts.length ? `${model.id} (${model.efforts.join('|')})` : model.id).join(', ');
+}
+
 /** Finds the entry for `model`, also in agy's suffixed form `<id>-<effort>`. */
 function findModel(catalog: ModelCatalog, model: string): { entry: CatalogModel; suffixEffort?: string } | undefined {
   const exact = catalog.models.find(entry => entry.id === model);

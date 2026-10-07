@@ -7,7 +7,7 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
-    description: 'Code review of git changes by another coding agent; returns VERDICT READY or BLOCKED.',
+    description: 'Independent review of Git changes by another coding agent. Returns findings, then "> Verdict: READY" or "> Verdict: BLOCKED (reason)".',
     inputSchema: {
       type: 'object',
       properties: {

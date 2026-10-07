@@ -118,7 +118,9 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
 
     const report = await runDoctor();
     const summary = formatDoctorSummary(report);
-    assert.equal(summary.split('\n').length, 4, summary);
+    assert.equal(summary.split('\n').length, 7, summary);
+    assert.match(summary, /\ngemini: ready[^\n]*\n {2}models: gemini-3\.8-flash \(high\|low\)(\n|$)/, 'the catalog the CLI lists, with the efforts a model needs');
+    assert.match(summary, /\n {2}models: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
     assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto/);
     assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model · 5h 60% left, resets 2026-10-07T12:00:00Z/);
     assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model · weekly 81% left/);

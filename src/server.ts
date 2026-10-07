@@ -151,16 +151,22 @@ export function validateToolArguments(value: unknown, schema: Schema, field = 'a
   return args as Record<string, unknown>;
 }
 
-/**
- * Server-wide guidance for the client model. Every client includes it on every turn, so it
- * stays one sentence; call-time rules live in the parameter descriptions (`schema.ts`).
- */
 /** Bound on the client's answer to roots/list. */
 const ROOTS_TIMEOUT_MS = 5000;
 /** Time the user has to answer a top-tier model approval request. */
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
 
-export const SERVER_INSTRUCTIONS = 'Second opinion or code review from another local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox.';
+/**
+ * Server-wide guidance for the client model, read on every turn: when to use CoAgent8 and
+ * when not, and where the accepted models are listed. Codex reads the first 512 characters
+ * on their own, so it stays within them; call-time rules live in the parameter descriptions
+ * (`schema.ts`).
+ */
+export const SERVER_INSTRUCTIONS = 'Asks another local coding agent (Codex, Claude Code or Antigravity) in a read-only sandbox. '
+  + 'Use consult for a second opinion on a question, design, bug or plan, and review for an independent review of Git changes. '
+  + 'Not for reading files, running commands or what the workspace already answers. '
+  + 'The answer is another model\'s opinion: verify facts before acting on them. '
+  + 'Leave backend and model unset unless the user names one; doctor lists the models and efforts each backend accepts.';
 
 export function createServer(): Server {
   composeExecutionCancellation();

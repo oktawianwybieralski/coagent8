@@ -5,7 +5,7 @@ import type { ProviderId } from '../conversation.js';
 
 export const doctorToolDefinition = {
   name: CANONICAL_TOOL_NAMES.DOCTOR,
-  description: 'Backend install, sign-in, quota and model status.',
+  description: 'Backends: install, sign-in, quota, and the models and reasoning efforts each accepts.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -2,6 +2,7 @@ import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfigForDiagnostics } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
+import { summarizeModels } from '../backends/model-catalog.js';
 import type { AdapterProbeResult, BackendQuota, CatalogModel } from '../backends/types.js';
 
 type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['buckets'];
@@ -119,6 +120,9 @@ export function formatDoctorSummary(report: DoctorReport): string {
     const state = report.ready_backends.includes(id) ? 'ready' : !report.active_backends.includes(id) ? 'not allowed' : probe.authStatus === 'unauthenticated' ? 'signed out' : 'not ready';
     const model = probe.config && typeof (probe.config as { defaultModel?: unknown }).defaultModel === 'string' ? ` · model ${(probe.config as { defaultModel: string }).defaultModel}` : '';
     lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${model} · ${formatQuota(report.quotas[id])}`);
+    // The discovery step before an explicit model: what the CLI offers, or the aliases it takes.
+    if (probe.models?.length) lines.push(`  models: ${summarizeModels(probe.models)}`);
+    else if (probe.availableModels?.length) lines.push(`  models: ${probe.availableModels.join(', ')}, or a full model id`);
   }
   if (report.recommendations.length) lines.push(...report.recommendations.map(text => `- ${text}`));
   return lines.join('\n');

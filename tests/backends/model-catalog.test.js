@@ -94,3 +94,9 @@ test('the controller refuses an unoffered model before any model call, and the d
     adapterRegistry.gemini = original;
   }
 });
+
+test('doctor summarizes a catalog: efforts once when every model shares them, per model otherwise', () => {
+  const { summarizeModels } = require('../../src/backends/model-catalog.ts');
+  assert.equal(summarizeModels([{ id: 'gpt-6.1-sol', efforts: ['low', 'high'] }, { id: 'gpt-5.6-luna', efforts: ['low', 'high'] }]), 'gpt-6.1-sol, gpt-5.6-luna; reasoning_effort low|high');
+  assert.equal(summarizeModels([{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }, { id: 'claude-sonnet-4-6', efforts: [] }]), 'gemini-3.8-flash (high|low), claude-sonnet-4-6');
+});

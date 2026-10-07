@@ -295,13 +295,21 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
   assert.ok(cancelCall.content[0].text.includes('nothing to cancel'));
 });
 
-test('CONTEXT-001 budgets: one-sentence server instructions and compact model-visible tool definitions', () => {
+test('CONTEXT-001 budgets: server instructions and model-visible tool definitions that say how to call on the first attempt', () => {
   const { SERVER_INSTRUCTIONS } = require('../../src/server.ts');
   assert.ok(SERVER_INSTRUCTIONS.length <= 512, 'every client reads the first 512 characters; Claude Code truncates at 2,048');
+  // The owner's use cases (2026-10-07): models did not know when not to call, where the models are listed, or that the answer is an opinion.
+  for (const part of ['Not for', 'doctor lists the models', 'verify facts']) assert.ok(SERVER_INSTRUCTIONS.includes(part), part);
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 3800, `model-visible tool definitions: ${visible} B (was 9.6 KB before CONTEXT-001)`);
+  assert.ok(visible <= 5300, `model-visible tool definitions: ${visible} B (owner budget of about 5 KB, 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
+  for (const name of ['backend', 'model', 'reasoning_effort', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle']) {
+    assert.ok(consultProperties[name].description, `consult.${name} is described`);
+  }
+  assert.match(consultProperties.model.description, /gpt-5\.6-luna.*haiku.*gemini-3\.8-flash-low.*doctor/, 'model gives an example per backend and the place that lists them');
+  assert.match(consultProperties.reasoning_effort.description, /gemini-3\.8-flash: low/, 'the agy effort requirement is stated before a call fails');
   const consult = tools.find(t => t.name === 'consult');
   assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
   assert.deepEqual(consult.inputSchema.properties.reasoning_effort.enum, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
