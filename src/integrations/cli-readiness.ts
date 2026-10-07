@@ -37,7 +37,9 @@ export async function inspectCli(client: SetupClient, cli: CliCommand, env: Node
     ? ['--restricted', '--tools', '--permission-mode', '--permission-prompts', '--strict-mcp-config', '--mcp-config', '--output-format', '--input-format', '--no-session-persistence']
     : ['--sandbox', '--output-format', '--input-format', '--conversation'];
   const recentClaude = client !== 'claude' || supportsClaudeVersion(parsedVersion[0]);
-  result.compatibility = recentClaude && flags.every(flag => help.stdout.includes(flag)) ? 'supported' : 'unsupported';
+  // agy 1.3.1 prints its help to stderr with exit code 0; Codex and Claude use stdout.
+  const helpText = `${help.stdout}\n${help.stderr}`;
+  result.compatibility = recentClaude && flags.every(flag => helpText.includes(flag)) ? 'supported' : 'unsupported';
   if (result.compatibility !== 'supported') {
     result.diagnostic = `Required CLI controls are missing (Claude requires ${MIN_CLAUDE_VERSION.join('.')}+). Update explicitly and retry.`;
     return result;

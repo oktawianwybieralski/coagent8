@@ -4,7 +4,7 @@ const { createInterface } = require('node:readline');
 const args = process.argv.slice(2);
 if (process.env.SETUP_FIXTURE_PROBE_LOG) fs.appendFileSync(process.env.SETUP_FIXTURE_PROBE_LOG, JSON.stringify(args) + '\n');
 if (args.includes('--version')) { console.log(process.env.SETUP_FIXTURE_VERSION || '2.1.292'); process.exit(0); }
-if (args.includes('--help')) { console.log(process.env.SETUP_FIXTURE_HELP || 'app-server --sandbox --restricted --tools --permission-mode --permission-prompts --strict-mcp-config --mcp-config --output-format --input-format --no-session-persistence --conversation'); process.exit(0); }
+if (args.includes('--help')) { (process.env.SETUP_FIXTURE_HELP_STDERR ? console.error : console.log)(process.env.SETUP_FIXTURE_HELP || 'app-server --sandbox --restricted --tools --permission-mode --permission-prompts --strict-mcp-config --mcp-config --output-format --input-format --no-session-persistence --conversation'); process.exit(0); }
 if (args[0] === 'login' && args[1] === 'status') { console.log(process.env.SETUP_FIXTURE_SIGNED_OUT === '1' ? 'Not logged in' : 'Logged in using ChatGPT'); process.exit(process.env.SETUP_FIXTURE_SIGNED_OUT === '1' ? 1 : 0); }
 if (args[0] === 'auth' && args[1] === 'status') { console.log(JSON.stringify({ loggedIn: process.env.SETUP_FIXTURE_SIGNED_OUT !== '1' })); process.exit(process.env.SETUP_FIXTURE_SIGNED_OUT === '1' ? 1 : 0); }
 if (args[0] === 'mcp' && ['add', 'remove'].includes(args[1])) {

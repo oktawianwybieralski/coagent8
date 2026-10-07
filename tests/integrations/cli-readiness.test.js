@@ -52,6 +52,9 @@ test('Antigravity-only installation checks controls without guessing authenticat
   assert.equal(results[2].authentication, 'unknown');
   assert.equal(results[2].ready, false);
   assert.deepEqual(fs.readFileSync(p.log, 'utf8').trim().split('\n').map(JSON.parse), [['--version'], ['--help']]);
+  // agy 1.3.1 writes its help to stderr with exit code 0.
+  const stderrHelp = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture, SETUP_FIXTURE_HELP_STDERR: '1' } });
+  assert.equal(stderrHelp[2].compatibility, 'supported');
 });
 test('Codex-only readiness initializes app-server without a thread/model turn and separates sign-in', async t => {
   const p = profile(t);
