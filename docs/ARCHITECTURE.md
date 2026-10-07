@@ -87,14 +87,18 @@ read-only. Normative requirements remain in the
 
 ## Optional integrations
 
-Setup runs only for explicit commands, but remains imported and bundled through
-the runtime entrypoint. It owns selected-host configuration, immutable runtime
-copies, private backups and registration fingerprints. VSIX/plugin payloads are
-assembled from the npm tarball. Package checks are separate from native
-host/UI acceptance; see the [integration guide](VSCODE_INTEGRATION.md).
+Recognized explicit setup commands load a separate sibling `dist/setup.cjs`;
+the core bundle excludes installer code and JSONC. Unknown host arguments retain
+stdio MCP startup. Setup owns selected-host configuration, immutable runtime
+copies, private backups and registration fingerprints. Cleanup shares its lease
+and removes only unchanged owned entries after a matching preview. CLI metadata
+readiness is separate from registration, direct-runtime and native-host evidence.
+The VS Code provider supplies current installed extension paths to the shared
+resolver through an environment contract; runtime discovery uses no editor APIs.
+VSIX/plugin payloads are assembled from the npm tarball. Package checks are
+separate from native host/UI acceptance; see the [integration guide](VSCODE_INTEGRATION.md).
 
-Splitting setup is planned. The core still needs a TOML parser for Codex backend
-configuration; installer separation alone cannot remove that dependency.
+The core retains a TOML parser for Codex backend configuration.
 
 ## Names define responsibility
 
@@ -107,4 +111,5 @@ integrations edit host registrations.
 Move misplaced behavior, split a mixed responsibility, or precisely rename a
 coherent owner. The ordinary target path is request, execution, adapter,
 supervised CLI and public answer. Per-call ephemeral execution, price-based
-consent and a separate installer are proposals in the roadmap. Changes must preserve safety and stored data or define a migration.
+consent improvements remain proposals in the roadmap. Optional installation has
+a separate bundle. Changes must preserve safety and stored data or define a migration.

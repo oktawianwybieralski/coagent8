@@ -104,9 +104,13 @@ remains open. Hosts control tool visibility, approval, refresh and icons.
 
 ### Optional setup and editor integrations
 
-`setup`, `repair` and `status` support selected local-default Codex, Claude Code
-and agy registrations. The VS Code extension provides native MCP registration
-and an optional shared setup flow. Existing manual registrations are preserved.
+`setup` and `repair` explicitly register selected local-default native hosts;
+`status` checks all three CLIs and reports readiness separately from registration.
+The VS Code provider works independently. Its CLI onboarding offers installation
+and sign-in actions, while external MCP registration requires a separate choice.
+`cleanup` previews unchanged owned registrations; `cleanup --apply=<preview-token>`
+removes only those entries with private backups. Manual/edited entries, runtime
+files, credentials, histories and vendor extensions are retained.
 See the
 [integration guide](docs/VSCODE_INTEGRATION.md)
 for ownership, rollback and host acceptance limits.

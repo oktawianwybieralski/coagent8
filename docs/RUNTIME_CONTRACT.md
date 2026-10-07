@@ -8,6 +8,15 @@ remain in the [security rule](../.agents/rules/01-security-and-sandboxes.md);
 implementation deviations are explicit in [section 7](#7-known-limitations-and-deviations).
 [ROADMAP.md](ROADMAP.md) owns proposals and acceptance.
 
+The CLI onboarding follow-up on `fix/vsix-presentation` isolates recognized setup
+commands in `dist/setup.cjs`; no-argument invocation and unknown host arguments
+start MCP. Shared executable discovery prefers overrides, PATH, then Codex/Claude
+extension binaries. VS Code supplies fresh actual extension paths through
+`coagent8_EXTENSION_PATHS`, without persisting vendor executable version paths.
+These discovery changes do not relax per-turn sandbox or model-consent checks.
+Optional registration/cleanup contracts and their pending native acceptance are
+owned by the [integration guide](VSCODE_INTEGRATION.md).
+
 ## 1. Controller and tool surface
 
 All clients receive `consult`, `review`, `doctor`, `session`, `cancel` and `issue`.
