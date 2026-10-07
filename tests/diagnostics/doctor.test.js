@@ -46,13 +46,16 @@ test('doctor does not classify installation and unverified authentication eviden
   const original = { ...adapterRegistry };
   try {
     for (const id of ['codex', 'claude', 'gemini']) {
-      adapterRegistry[id] = { ...original[id], probe: async () => ({ id, installed: true, executionSupported: true,
+      adapterRegistry[id] = { ...original[id], inspectQuota: async () => undefined, probe: async () => ({ id, installed: true, executionSupported: true,
         authStatus: 'unknown', authEvidence: ['Synthetic auth file present (not verified)'],
         capabilities: { readOnlyVerified: true, resume: false, streaming: false, reasoningEffort: false } }) };
     }
     const report = await runDoctor();
     assert.deepEqual(report.ready_backends, []);
     assert.equal(report.status, 'partially_configured');
+    // A quota the CLI itself measured (agy and Claude `/usage`) proves a signed-in CLI.
+    adapterRegistry.gemini.inspectQuota = async () => ({ measured: true, headroomPercent: 40, usedPercent: 60, window: 'weekly', resetsAt: null });
+    assert.deepEqual((await runDoctor()).ready_backends, ['gemini']);
   } finally { Object.assign(adapterRegistry, original); }
 });
 

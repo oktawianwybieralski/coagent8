@@ -16,6 +16,8 @@ const {
   execute: executeGemini,
   resolveModelAndEffort,
   parseGeminiUsage,
+  probe: probeGemini,
+  inspectQuota: inspectGeminiQuota,
 } = require('../../../src/backends/gemini/adapter.ts');
 const { StreamReducer } = require('../../../src/execution/stream-reducer.ts');
 const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
@@ -408,5 +410,30 @@ test('Gemini falls back to the requested model when agy omits it from init', asy
     assert.equal(result.model, 'gemini-3.8-flash-low');
   } finally {
     delete process.env.coagent8_FIXTURE_MODE;
+  }
+});
+
+test('agy /usage runs only from quota inspection, sandboxed; probe and execute launch no extra process (AUD-P1-4)', async () => {
+  const capture = path.join(tempDir, 'probe-capture.json');
+  process.env.coagent8_FIXTURE_CAPTURE = capture;
+  try {
+    const probed = await probeGemini();
+    assert.equal(probed.installed, true);
+    assert.equal(probed.quota, undefined, 'the probe makes no /usage call');
+    assert.equal(fs.existsSync(capture), false, 'the probe runs only --version, which the fixture answers before capturing');
+    const quota = await inspectGeminiQuota(probed);
+    assert.equal(quota.measured, true);
+    const usageCall = JSON.parse(fs.readFileSync(capture, 'utf8'));
+    assert.equal(usageCall.prompt, '/usage');
+    assert.ok(usageCall.args.includes('--sandbox'), 'the quota read is sandboxed like every agy launch');
+    fs.rmSync(capture);
+    const launches = [];
+    const result = await executeGemini('question', { cwd: tempDir, onEvent: () => {} });
+    assert.equal(result.status, 'completed', JSON.stringify(result.error));
+    launches.push(JSON.parse(fs.readFileSync(capture, 'utf8')));
+    assert.ok(!launches[0].args.includes('--version'), 'execute launches the turn directly');
+  } finally {
+    delete process.env.coagent8_FIXTURE_CAPTURE;
+    fs.rmSync(capture, { force: true });
   }
 });

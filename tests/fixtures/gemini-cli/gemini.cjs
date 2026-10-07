@@ -22,6 +22,7 @@ if (args.includes('-p')) {
 function run() {
   const mode = process.env.coagent8_FIXTURE_MODE || 'success';
   if (prompt === '/usage') {
+    if (process.env.coagent8_FIXTURE_CAPTURE) fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt }));
     if (mode === 'unauthenticated' || mode === 'auth') {
       console.log(JSON.stringify({ status: 'ERROR', error: 'Authentication required' }));
       return;

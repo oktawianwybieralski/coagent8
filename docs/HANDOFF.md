@@ -89,7 +89,8 @@ is pushed:
 | `fix/model-identifier-validation` | `9cdb710` | `EXEC-001` (AUD-P1-6, order 2): `model` validated in the controller and every adapter |
 | `fix/gemini-unknown-events` | `d23ad1b` | `CLI-INTERACT-001` (AUD-P1-5, order 2): unknown agy event types ignored with a warning |
 | `fix/resource-workspace-isolation` | `070ad58` | `SESSION-001` (AUD-P1-8, order 2): resources and `session list` scoped to the workspace |
-| `fix/lease-integrity` | this change | `LOCKS-001` (AUD-P1-9, order 2): atomic, renewed leases; stale by age, dead PID or unreadable content; no lease deletion in the sweep |
+| `fix/lease-integrity` | `35f015c`..`aea0642` | `LOCKS-001` (AUD-P1-9, order 2): atomic, renewed leases; stale by age, dead PID or unreadable content; no lease deletion in the sweep |
+| `perf/bounded-probes` | this change | `EXEC-001` (AUD-P1-4, order 2): cached probes, agy `/usage` only in doctor and sandboxed, no re-probe in `execute` |
 
 ## Verification
 

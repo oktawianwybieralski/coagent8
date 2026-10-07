@@ -94,28 +94,8 @@ export async function probe(): Promise<AdapterProbeResult> {
   if (hasOauth) authEvidence.push('Google OAuth credentials present (not verified)');
   if (authEvidence.length === 0) authEvidence.push('No local auth evidence');
 
-  let authStatus = 'unknown';
-  let quota: AdapterProbeResult['quota'] = undefined;
-
-  if (installed) {
-    try {
-      const usageRes = await runCommand(resolvedCmd, [...resolvedArgsPrefix, '--output-format', 'json', '-p', '/usage'], { timeoutMs: 5000 });
-      if (usageRes.exitCode === 0 && usageRes.stdout) {
-        const parsed = JSON.parse(usageRes.stdout);
-        if (parsed?.status === 'SUCCESS' && parsed?.command?.name === 'usage') {
-          authStatus = 'authenticated';
-          authEvidence.push('Native CLI usage probe successful (authenticated)');
-          quota = parseGeminiUsage(parsed);
-        } else if (parsed?.status === 'ERROR') {
-          if (/auth|login|credential/i.test(parsed?.error || '')) {
-            authStatus = 'unauthenticated';
-          }
-        }
-      } else if (usageRes.stderr && /auth|login|credential/i.test(usageRes.stderr)) {
-        authStatus = 'unauthenticated';
-      }
-    } catch (_) {}
-  }
+  // Authentication is proven only by an execution or the quota read (`inspectQuota`).
+  const authStatus = 'unknown';
 
   return {
     id,
@@ -132,7 +112,6 @@ export async function probe(): Promise<AdapterProbeResult> {
     },
     authStatus,
     authEvidence,
-    quota,
     availableModels: [
       'gemini-3.8-flash-high',
       'gemini-3.8-flash-medium',
@@ -153,6 +132,24 @@ export async function probe(): Promise<AdapterProbeResult> {
     modelSource: 'Antigravity CLI model catalog',
     loginHint: 'agy',
   };
+}
+
+/**
+ * Reads agy's measured quota with `/usage`, which makes no model call.
+ * @param probe - An installed probe result; nothing is read without one.
+ * @returns The measured quota, or undefined when agy does not report one.
+ * @remarks Runs only from quota inspection (doctor), never on the request path, and with
+ * the same `--sandbox` as every other agy launch.
+ */
+export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
+  if (!probe?.installed) return undefined;
+  const resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy');
+  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: 5000 });
+  if (usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(usageRes.stdout); } catch { return undefined; }
+  const payload = parsed as { status?: unknown; command?: { name?: unknown } } | null;
+  return payload?.status === 'SUCCESS' && payload.command?.name === 'usage' ? parseGeminiUsage(payload) : undefined;
 }
 
 function failed(error: ExecutionError): TerminalExecutionResult {
@@ -190,11 +187,6 @@ async function executeInternal(prompt: string, options: ExecutionOptions): Promi
       message: redactDiagnostic((err as Error).message),
       retryable: false,
     });
-  }
-
-  const detected = await runCommand(resolved.command, [...resolved.argsPrefix, '--version'], { abortSignal: options.abortSignal, timeoutMs: 5000 });
-  if (detected.status !== 'completed') {
-    return failed(detected.error || { code: 'CLI_NOT_FOUND', message: 'Install Antigravity CLI (agy) or set AGY_PATH.', retryable: false });
   }
 
   const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(options.model, options.reasoningEffort);
@@ -302,5 +294,5 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   }
 }
 
-export const geminiAdapter: CliAdapter = { id, name, probe, execute };
+export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota };
 export default geminiAdapter;

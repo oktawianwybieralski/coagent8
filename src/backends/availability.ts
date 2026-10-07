@@ -68,8 +68,10 @@ export async function writeQuotaCache(data: QuotaReport): Promise<void> { await 
  * Builds and caches the quota report of every provider.
  * @param options - `nativeQuota` reads provider limits; `only` refreshes just those providers
  * and keeps the cached entries of the others, so a partial probe never marks them uninstalled.
+ * `measuredNow` receives the providers whose quota this call measured, as opposed to a
+ * measurement carried over from the cache.
  */
-export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: { nativeQuota?: boolean; only?: readonly ProviderId[] } = {}): Promise<QuotaReport> {
+export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: { nativeQuota?: boolean; only?: readonly ProviderId[]; measuredNow?: Set<ProviderId> } = {}): Promise<QuotaReport> {
   const cache=readQuotaCache();
   if (!forceRefresh && !probesOverride && cache && Date.now()-cache.timestamp<QUOTA_CACHE_TTL_MS && PROVIDERS.every(id=>cache.data[id])) return cache.data;
   const probes=probesOverride || Object.fromEntries(await Promise.all(PROVIDERS.map(async id=>[id,await adapterRegistry[id].probe()])));
@@ -79,6 +81,7 @@ export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap
     if (probe?.quota || !probe?.installed || !readNative) return [id, probe?.quota];
     return [id, await adapterRegistry[id].inspectQuota?.(probe)];
   }))) as Partial<Record<ProviderId, AdapterProbeResult['quota']>>;
+  for (const id of PROVIDERS) if (native[id]?.measured) options.measuredNow?.add(id);
   return withFileLock(getQuotaCacheFile(), async()=>{
     const latest=readQuotaCache()?.data || {};
     const result: QuotaReport={};

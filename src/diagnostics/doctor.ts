@@ -1,4 +1,4 @@
-import { adapterRegistry } from '../backends/registry.js';
+import { probeBackend } from '../backends/probe-cache.js';
 import { loadConfig } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
@@ -33,14 +33,16 @@ export interface DoctorOptions {
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
   const config = loadConfig();
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
-  const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await adapterRegistry[id].probe()]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
-  const cached = await inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected });
+  const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await probeBackend(id, { fresh: true })]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
+  const measuredNow = new Set<ProviderId>();
+  const cached = await inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow });
 
   const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
   const ready = active.filter(id => {
     const b = probes[id]!;
     const q = cached[id];
-    const isExecutionReady = Boolean(b.executionSupported && b.capabilities?.readOnlyVerified && b.authStatus === 'authenticated');
+    // A quota the CLI measured in this run (agy and Claude `/usage`) also proves a signed-in CLI.
+    const isExecutionReady = Boolean(b.executionSupported && b.capabilities?.readOnlyVerified && (b.authStatus === 'authenticated' || measuredNow.has(id)));
     const isQuotaReady = q ? q.status !== 'rate_limited' && (q.headroomPercent === null || q.headroomPercent > 0) : true;
     return isExecutionReady && isQuotaReady;
   });

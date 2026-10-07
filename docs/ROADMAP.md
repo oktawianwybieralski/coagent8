@@ -862,7 +862,7 @@ Plan:
   - preferring measured headroom.
 
   Verified in `tests/backends/routing.test.js` and `tests/server.test.js`.
-- [ ] Bounded probe caching (AUD-P1-4):
+- [x] Bounded probe caching (AUD-P1-4), on `perf/bounded-probes`, not yet merged:
   - one cached probe per backend, bound to the resolved executable path, mtime,
     version output, relevant environment variables and configuration digests;
   - bounded TTL, with forced refresh in `doctor`;
@@ -870,6 +870,20 @@ Plan:
     longer does, see `CLAUDE-BACKEND-001`);
   - the agy `/usage` call runs only in `doctor`, never on the request path;
   - fail-closed sandbox checks and fresh consent evaluation on every turn.
+
+  `src/backends/probe-cache.ts` keeps one probe per backend for at most 5 minutes,
+  keyed by the resolved executable files (size, mtime), the probe's configuration
+  file and the environment that selects an executable or credentials; doctor
+  probes afresh and replaces it. Configuration is keyed by file stamp, not by a
+  digest. The agy `/usage` read moved to `inspectQuota`, now with `--sandbox`
+  (accepted by the fixture; not yet verified with a live agy). Doctor counts a
+  quota measured in its own run as proof of a signed-in CLI, because the agy probe
+  no longer reports `authenticated`. Sandbox and consent checks stay in `execute`.
+  Evidence: `tests/backends/probe-cache.test.js` (five resolves, one probe; a new
+  executable mtime, a changed configuration or credential variable, and doctor
+  each probe again) and `tests/backends/gemini/adapter.test.js` (the probe makes no
+  `/usage` call; `inspectQuota` passes `--sandbox`; `execute` launches no
+  `--version`). Full suite: 237 pass, 0 fail.
 - [x] Keep doctor as an explicit diagnostic operation; `inspectQuotas()` is
   integrated into `runDoctor()` and backends under active cooldown are excluded
   from `ready_backends`. Authentication evidence honesty is reopened under
