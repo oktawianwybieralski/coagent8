@@ -2,7 +2,7 @@
 
 **Implementation baseline:** `24052e3`, inspected on 2026-10-07, plus the
 working-tree corrections to documentation and two parameter descriptions.
-**Package label:** `1.0.0-beta.1`; not an accepted tester release.
+**Package label:** `1.0.0-beta.2`; not an accepted tester release.
 This document describes current source behavior. Normative security requirements
 remain in the [security rule](../.agents/rules/01-security-and-sandboxes.md);
 implementation deviations are explicit in [section 7](#7-known-limitations-and-deviations).

@@ -115,6 +115,32 @@ suffix from the VSIX version and the packaging command applies VS Code's pre-rel
 marker. The source manifest and bundled MCP retain the full npm version. No package
 is published by these commands.
 
+### Extension presentation and publisher identity
+
+The VSIX identifies its author as **Oktawian Wybieralski** and uses publisher identifier
+`oki-dev`, giving extension ID `oki-dev.coagent8-mcp`. Publisher identifiers
+cannot contain a dot; the Marketplace publisher's display name **Oktawian Wybieralski** is
+configured on the publisher account, not by the manifest. Packaging does not
+create, verify or reserve that account. The GitHub repository URL is unchanged.
+Before publishing, confirm ownership of `oki-dev` and its display name.
+
+This identity differs from the old development ID
+`oktawianwybieralski.coagent8-mcp`. An old installation is not upgraded by the
+new VSIX; uninstall the old development extension before installing the new one
+to avoid duplicate providers. Preserve existing manual MCP registrations.
+
+The extension README supplies the Details page: overview, requirements, quick
+start, example requests, tools, settings, privacy, troubleshooting and current
+limitations. Manifest fields supply website, source, issues/Q&A, keywords,
+Preview status and a dark gallery banner. The package also includes the generated
+project `CHANGELOG.md`, license and bundled dependency notices. Documentation
+links target the active release branch; no Marketplace ratings, verified badge
+or UI acceptance is implied by a local VSIX.
+
+Presentation follows the official
+[extension manifest reference](https://code.visualstudio.com/api/references/extension-manifest)
+and [publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
+
 ## Rendering and acceptance
 
 Each host controls its own chat UI. MCP icon metadata does not force an icon,

@@ -13,9 +13,9 @@ backend) through a stdio MCP server. An agent in a compatible host can request a
 second opinion or a Git review and receive the backend's public answer. The host
 runs your chat; the backend CLI performs the requested task.
 
-The checkout carries `1.0.0-beta.1`, the npm name placeholder. `1.0.0-beta.2` is
-the planned first release for testers. Local implementation does not establish a
-published or accepted release. The
+The checkout carries `1.0.0-beta.2`, the planned first release for testers.
+`1.0.0-beta.1` remains the npm name placeholder. Local implementation does not
+establish a published or accepted release. The
 [roadmap](docs/ROADMAP.md)
 owns the release sequence and remaining work.
 

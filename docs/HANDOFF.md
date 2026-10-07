@@ -27,7 +27,8 @@ Local stacked changes implement owned-process cleanup, separate answer redaction
 bounded best-effort archives, typed errors, workspace isolation, cached probes,
 six tools, Markdown execution results, model catalogs and user elicitation.
 Plugin/VSIX payloads are assembled from the npm tarball. The stack is not a
-merged, matrix-verified or released candidate. Package metadata is beta.1.
+merged, matrix-verified or released candidate. Package metadata is beta.2, an
+unpublished development candidate for private testing.
 
 New open findings concern incomplete review input/approval binding, inherited
 Codex/agy MCP capabilities, automatic-routing cache

@@ -27,6 +27,7 @@ async function buildExtension(serverRoot) {
   fs.copyFileSync(path.join(serverRoot, 'assets/logo.png'), path.join(output, 'assets/logo.png'));
   fs.copyFileSync(path.join(serverRoot, 'LICENSE'), path.join(output, 'LICENSE'));
   fs.copyFileSync(path.join(root, 'extensions/vscode/README.md'), path.join(output, 'README.md'));
+  fs.copyFileSync(path.join(root, 'CHANGELOG.md'), path.join(output, 'CHANGELOG.md'));
   await esbuild.build({
     entryPoints: [path.join(root, 'extensions/vscode/src/extension.ts')],
     outfile: path.join(output, 'dist/extension.cjs'),

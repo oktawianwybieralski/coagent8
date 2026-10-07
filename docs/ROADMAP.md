@@ -1,7 +1,8 @@
 # CoAgent8 roadmap to v1.0.0
 
 **Next release:** `1.0.0-beta.2`, the first release for testers. **Current package
-version:** `1.0.0-beta.1`, the npm name placeholder (`REPO-001`).
+version:** `1.0.0-beta.2`, an unaccepted development candidate. `1.0.0-beta.1`
+remains the npm name placeholder (`REPO-001`).
 **Direction and status reconciled:** 2026-10-07, implementation snapshot
 `24052e3`. **Beta 2 readiness:** BLOCKED. Earlier audit fixes are implemented
 on the local stack, but newer approval/sandbox findings remain open and the
@@ -1822,6 +1823,24 @@ without a model call.
 
 Shared setup exists; its native-host acceptance remains partial as recorded below.
 Do not expand the supported-host list as a prerequisite for core MCP compatibility.
+
+- [x] Expand VSIX Details and package metadata on `fix/vsix-presentation`:
+  Oktawian Wybieralski author, oki.dev brand, `oki-dev` publisher ID, complete extension README,
+  resource links, keywords, Preview/banner metadata and generated project
+  changelog. Document the separate identity and removal of the old development
+  extension. Existing owner version edit to `1.0.0-beta.2` retained and manifests
+  synchronized. Local evidence on 2026-10-07 (Windows, Node 26.10.0): typecheck,
+  `package:vscode`, 15 focused provider/setup/package tests and fixture consumer
+  smoke passed. Archive inspection verified Details sections, changelog links,
+  required assets, pre-release metadata and runtime equality with the npm
+  tarball. VSIX SHA-256:
+  `c96597ca02735215746e3a4d06d2901c36a1a3357088c31ddcee50690ddfbca3`.
+  The recorded hash predates the author's display-name correction. Current
+  beta.2 metadata is for an unpublished private-testing candidate; no registry
+  publication or release tag is created by these edits.
+  Marketplace publisher ownership/display-name configuration and native Details
+  rendering/install/update UI remain unverified. This is local packaging
+  evidence, not release approval.
 
 - [ ] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
   core startup and backend execution. Ship setup as a separate entrypoint and
