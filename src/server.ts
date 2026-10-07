@@ -18,9 +18,7 @@ import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
 import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession } from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
 import { getCanonicalConsultToolDefinition, handleConsult } from './tools/consult.tool.js';
-import { getCanonicalAnalyzeToolDefinition, handleAnalyze } from './tools/analyze.tool.js';
-import { getCanonicalDebugToolDefinition, handleDebugError } from './tools/debug.tool.js';
-import { getCanonicalImplementToolDefinition, handleImplement } from './tools/implement.tool.js';
+import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js';
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { executionOutputSchema, runOutputSchema, formatExecutionResult, withWorkspace } from './tools/result.js';
@@ -82,11 +80,7 @@ export function getCoreCanonicalTools(): ToolDefinition[] {
  * but are not advertised, so their definitions cost no client context.
  */
 export function getLegacyAliasTools(): ToolDefinition[] {
-  return [
-    getCanonicalAnalyzeToolDefinition(),
-    getCanonicalDebugToolDefinition(),
-    getCanonicalImplementToolDefinition(),
-  ];
+  return legacyAliasToolDefinitions();
 }
 
 
@@ -334,11 +328,9 @@ export function createServer(): Server {
         case CANONICAL_TOOL_NAMES.CONSULT:
           return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.ANALYZE:
-          return withWorkspace(await handleAnalyze(name, args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.DEBUG:
-          return withWorkspace(await handleDebugError(args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.IMPLEMENT:
-          return withWorkspace(await handleImplement(args, cwd, extra.signal, progress, consent), workspace);
+          return withWorkspace(await handleLegacyAlias(name, args, cwd, extra.signal, progress, consent), workspace);
         default:
           throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
       }

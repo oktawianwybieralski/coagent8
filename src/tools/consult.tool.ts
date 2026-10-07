@@ -23,6 +23,12 @@ export function getCanonicalConsultToolDefinition() {
   };
 }
 
+/**
+ * Runs a consult turn.
+ * @remarks Callers validate `proposal` once at their boundary: the `consult` schema
+ * requires a non-empty string, and `run` and the deprecated aliases check their own
+ * request argument (AUD-P2-4).
+ */
 export async function handleConsult(
   toolName: string,
   args: ToolArguments,
@@ -31,13 +37,6 @@ export async function handleConsult(
   onProgress: ToolProgress = null,
   options: Pick<TaskOptions, 'warnings' | 'askConsent'> = {}
 ) {
-  if (typeof args.proposal !== 'string' || !args.proposal.trim()) {
-    return {
-      isError: true,
-      content: [{ type: 'text', text: 'Validation Error: proposal must be a non-empty string.' }],
-    };
-  }
-
   const taskType = args.task_type;
   const rawFiles = Array.isArray(args.context_files)
     ? args.context_files

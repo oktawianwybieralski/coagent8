@@ -45,12 +45,3 @@ export const CORE_CANONICAL_TOOL_NAMES = [
   CANONICAL_TOOL_NAMES.ISSUE,
 ] as const;
 
-/**
- * Redundant canonical tools deprecated and aliased to consult through 1.0.x; removal planned for v1.1.0.
- */
-export const DEPRECATED_LEGACY_TOOL_NAMES = [
-  CANONICAL_TOOL_NAMES.ANALYZE,
-  CANONICAL_TOOL_NAMES.DEBUG,
-  CANONICAL_TOOL_NAMES.IMPLEMENT,
-] as const;
-

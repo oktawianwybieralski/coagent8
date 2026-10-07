@@ -5,6 +5,7 @@ import type { TaskOptions } from '../execution/controller.js';
 import { handleConsult } from './consult.tool.js';
 import { handleReview } from './review.tool.js';
 import { handleIssue } from './issue.tool.js';
+import { handleLegacyAlias } from './legacy.js';
 import { ToolError } from '../conversation.js';
 
 export const runToolDefinition = {
@@ -101,50 +102,10 @@ export async function handleRun(
     case 'issue': {
       return await handleIssue(args);
     }
-    case 'analyze': {
-      if (typeof args.task !== 'string' || !args.task.trim()) {
-        throw new ToolError('INPUT_LIMIT', 'Validation Error: task must be a non-empty string for action "analyze".');
-      }
-      const mappedArgs: ToolArguments = {
-        ...args,
-        proposal: args.task,
-        task_type: 'architecture',
-        file_paths: args.file_paths,
-        context_files: args.context_files,
-      };
-      const warning = "Subcommand 'analyze' in run gateway is deprecated. Use action 'consult' with task_type='architecture' instead.";
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
-    }
-    case 'debug': {
-      if (typeof args.error_message !== 'string' || !args.error_message.trim()) {
-        throw new ToolError('INPUT_LIMIT', 'Validation Error: error_message must be a non-empty string for action "debug".');
-      }
-      const mappedArgs: ToolArguments = {
-        ...args,
-        proposal: args.error_message,
-        specific_questions: args.context,
-        task_type: 'debug',
-        file_paths: args.file_paths,
-        context_files: args.context_files,
-      };
-      const warning = "Subcommand 'debug' in run gateway is deprecated. Use action 'consult' with task_type='debug' instead.";
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
-    }
-    case 'implement': {
-      if (typeof args.specification !== 'string' || !args.specification.trim()) {
-        throw new ToolError('INPUT_LIMIT', 'Validation Error: specification must be a non-empty string for action "implement".');
-      }
-      const mappedArgs: ToolArguments = {
-        ...args,
-        proposal: args.specification,
-        specific_questions: args.context,
-        task_type: 'implementation',
-        context_files: args.context_files || args.file_paths,
-        file_paths: args.file_paths,
-      };
-      const warning = "Subcommand 'implement' in run gateway is deprecated. Use action 'consult' with task_type='implementation' instead.";
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
-    }
+    case 'analyze':
+    case 'debug':
+    case 'implement':
+      return await handleLegacyAlias(action, args, workspaceCwd, abortSignal, onProgress, options, 'run');
     default:
       throw new ToolError('INPUT_LIMIT', `Validation Error: Unknown action "${action}". Allowed: "consult", "review", "issue", "analyze", "debug", "implement".`);
   }

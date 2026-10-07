@@ -14,10 +14,8 @@ const {
   getAllCallableToolDefinitions,
   createServer,
 } = require('../../src/server.ts');
-const { CORE_CANONICAL_TOOL_NAMES, DEPRECATED_LEGACY_TOOL_NAMES } = require('../../src/constants.ts');
-const { handleAnalyze } = require('../../src/tools/analyze.tool.ts');
-const { handleDebugError } = require('../../src/tools/debug.tool.ts');
-const { handleImplement } = require('../../src/tools/implement.tool.ts');
+const { CORE_CANONICAL_TOOL_NAMES } = require('../../src/constants.ts');
+const { LEGACY_ALIASES, handleLegacyAlias } = require('../../src/tools/legacy.ts');
 const { handleRun, runToolDefinition } = require('../../src/tools/run.tool.ts');
 const { createSession } = require('../../src/sessions/session.ts');
 
@@ -43,7 +41,7 @@ test('SURFACE-001: legacy aliases define analyze, debug, implement with deprecat
   assert.equal(legacyTools.length, 3);
   const names = legacyTools.map(t => t.name).sort();
   assert.deepEqual(names, ['analyze', 'debug', 'implement']);
-  assert.deepEqual([...DEPRECATED_LEGACY_TOOL_NAMES].sort(), names);
+  assert.deepEqual(Object.keys(LEGACY_ALIASES).sort(), names);
 
   for (const tool of legacyTools) {
     assert.ok(
@@ -120,17 +118,10 @@ test('SURFACE-001: run gateway validates required parameters per action', async 
 test('SURFACE-001: direct legacy handlers validate required parameters', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-surface-direct-'));
   try {
-    const analyzeRes = await handleAnalyze('analyze', { task: '' }, tempDir);
-    assert.equal(analyzeRes.isError, true);
-    assert.ok(analyzeRes.content[0].text.includes('Validation Error: task must be a non-empty string.'));
-
-    const debugRes = await handleDebugError({ error_message: '' }, tempDir);
-    assert.equal(debugRes.isError, true);
-    assert.ok(debugRes.content[0].text.includes('Validation Error: error_message must be a non-empty string.'));
-
-    const implementRes = await handleImplement({ specification: '' }, tempDir);
-    assert.equal(implementRes.isError, true);
-    assert.ok(implementRes.content[0].text.includes('Validation Error: specification must be a non-empty string.'));
+    for (const [name, input] of [['analyze', 'task'], ['debug', 'error_message'], ['implement', 'specification']]) {
+      await assert.rejects(handleLegacyAlias(name, { [input]: ' ' }, tempDir),
+        { code: 'INPUT_LIMIT', message: `Validation Error: ${input} must be a non-empty string.` });
+    }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -312,4 +303,31 @@ test('CONTEXT-001 budgets: one-sentence server instructions and compact model-vi
   const consult = tools.find(t => t.name === 'consult');
   assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
   assert.deepEqual(consult.inputSchema.properties.reasoning_effort.enum, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+});
+
+test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to consult (AUD-P2-4)', async () => {
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { saveConfig } = require('../../src/config.ts');
+  const { randomUUID } = require('node:crypto');
+  const original = adapterRegistry.gemini;
+  let prompt;
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+    execute: async p => { prompt = p; return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'm', truncated: false, continuationAvailable: true }; } };
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    const call = createServer()._requestHandlers.get('tools/call');
+    const expected = { analyze: ['task', 'ARCHITECTURAL', 'SQ'], debug: ['error_message', 'ROOT CAUSE', 'CTX'], implement: ['specification', 'CODE IMPLEMENTATION', 'CTX'] };
+    for (const [name, [input, header, questions]] of Object.entries(expected)) {
+      for (const via of ['tool', 'run']) {
+        const args = { workspace_path: tempDir, [input]: 'REQUEST', file_paths: ['a.ts'], ...(name === 'analyze' ? {} : { context: 'CTX' }), ...(via === 'run' ? { action: name, specific_questions: 'SQ' } : {}) };
+        const result = await call({ method: 'tools/call', params: { name: via === 'tool' ? name : 'run', arguments: args } }, { signal: new AbortController().signal });
+        assert.ok(prompt.includes(header) && prompt.indexOf('REQUEST') > prompt.indexOf(header), `${name} via ${via}: header and request`);
+        assert.ok(prompt.includes('Target files:\na.ts'), `${name} via ${via}: files`);
+        if (via === 'run' || name !== 'analyze') assert.ok(prompt.includes(`QUESTIONS / FOCUS:\n${questions}`), `${name} via ${via}: questions`);
+        assert.match(result.structuredContent.warnings[0], via === 'tool' ? new RegExp(`^Tool '${name}' is deprecated`) : new RegExp(`^Subcommand '${name}' in run gateway is deprecated`));
+      }
+    }
+  } finally {
+    adapterRegistry.gemini = original;
+  }
 });
