@@ -392,8 +392,20 @@ Work items:
     pre-branch revision `0c11032~1`. Without Codex credentials it reports
     `unauthenticated`, which the assertion does not allow. macOS is covered by
     the CI matrix only.
-- [ ] Open acceptance: one live Codex app-server turn, resume and
-  `turn/interrupt` before beta 2. The owner authorizes the model calls.
+- [x] Open acceptance: one live Codex app-server turn, resume and
+  `turn/interrupt` before beta 2. The owner authorized the model calls.
+  Evidence (2026-10-07, Windows 11, Node 26.10, Codex 0.160.1, `gpt-5.6-luna` at
+  `low`, through `execute` of the Codex adapter at `3480af4`):
+  - turn: `completed` in 10.8 s, answer "OK", exit 0, provider usage reported;
+  - resume: the same thread ID, the answer recalls the first turn, 5.6 s;
+  - interrupt: aborted 8.0 s into a long answer; `cancelled` 85 ms after the
+    abort, exit 0 and no signal, so Codex ended the turn and exited by itself;
+  - `codex.exe` processes: 1 before and 1 after (a process this run did not own).
+
+  Claude Code 2.1.289 (haiku) on the same stack: turn `completed` in 2.5 s; an
+  abort 3.7 s into a long answer settled 785 ms later as `cancelled`, exit 1, no
+  signal, as on `ca8cf88`. The AUD-P0-1 reproduction was re-run; see the
+  [project review](PROJECT_REVIEW_2026-10-05.md#re-run-on-the-stack-tip-2026-10-07).
 
 Gemini backend (agy) termination:
 
@@ -677,12 +689,12 @@ surface, the separate `cancel` tool and the existing parameter names stay.
 
 | | Claude Code | agy (VS Code and CLI) | Codex | Other clients |
 | --- | --- | --- | --- | --- |
-| Result channel the model reads | `content` | `content` (agy transcripts) | `structuredContent` serialized as JSON; `content` ignored when it is present (`codex-rs/protocol/src/models.rs`) | usually `content` |
+| Result channel the model reads | `structuredContent` when present, else `content` (2.1.289, measured 2026-10-07) | `content` (agy transcripts; stub measurement 2026-10-07) | `structuredContent` serialized as JSON; `content` ignored when it is present (`codex-rs/protocol/src/models.rs`) | usually `content` |
 | Result saved to a file | above 50,000 characters, or `_meta["anthropic/maxResultSizeChars"]` up to 500,000 (Claude Code MCP docs) | above about 4 KB: results of 3,950 B or less inline, 4,165 B or more saved as `output.txt` and read with an extra `view_file` step (over 200 MCP calls of several servers) | truncation budget of the model (Codex MCP docs) | varies |
 | Tool definitions | deferred; names and server instructions load at start | deferred; cached on disk as name, description and input schema, without `outputSchema` or icons | loaded upfront (`defer_loading: false`) | usually upfront |
 | Server instructions | read; truncated at 2,048 characters | cached as `instructions.md` | read; first 512 characters should stand alone | per specification |
-| MCP roots | `roots/list` answered with the launch directory plus added directories; `CLAUDE_PROJECT_DIR` set | unknown | apparently unsupported | per capability |
-| Tool timeout | long calls move to the background | no documented option; at least 2 minutes observed (a 108 s review completed) | 60 s by default (`tool_timeout_sec`) | varies |
+| MCP roots | `roots/list` answered with the launch directory plus added directories; `CLAUDE_PROJECT_DIR` set | `roots/list` answered with the workspace (measured 2026-10-07) | apparently unsupported | per capability |
+| Tool timeout | long calls move to the background | no documented option; the CLI cancels after 180 s (measured 2026-10-07) | 60 s by default (`tool_timeout_sec`) | varies |
 | Per-server configuration | `.mcp.json`, `~/.claude.json` | `~/.gemini/config/mcp_config.json` or `.agents/mcp_config.json`, with `cwd`, `env`, `disabled` and `disabledTools` (Antigravity MCP docs) | `config.toml` `[mcp_servers.<name>]` with `cwd`, `env` and `tool_timeout_sec` | varies |
 
 Behavior described by the Antigravity docs is limited to configuration. Its result
@@ -831,8 +843,16 @@ Plan:
   no option for it, so setup inserts the key after the table header and verifies
   that the parsed configuration differs by that key alone. Verified in
   `tests/integrations/setup.test.js`.
-- [ ] Measure the agy tool-call limit with a call longer than 5 minutes and
-  document it; the Antigravity docs list no timeout option.
+- [x] Measure the agy tool-call limit with a call longer than 5 minutes and
+  document it; the Antigravity docs list no timeout option. agy 1.3.1 (CLI)
+  cancels an MCP tool call after 180 s ("timed out after 3m0s"); progress
+  notifications every 5 s do not extend it. Measured with a stub `wait` tool of
+  420 s, which received the cancellation after 180,002 ms. Recorded in the
+  [integration guide](VSCODE_INTEGRATION.md#measured-client-behavior). The agy
+  IDE was not measured.
+- [ ] Decide how CoAgent8 handles the 3-minute agy limit: a review that takes
+  longer is cancelled with the client's request. Options: document it, or bound
+  the backend turn below the limit when the client is agy (owner decision).
 - [x] **Owner decision (2026-10-07):** an agy sandbox denial is a warning that
   keeps the answer, as Claude `permission_denials` already are. A denial shows
   that the sandbox works, not that it is missing. Adapter warnings of every
@@ -846,11 +866,25 @@ Plan:
   - doctor summary at most 1 KB (`tests/diagnostics/doctor.test.js`);
   - every execution result reports the resolved `model` (adapter and collector
     tests) and `workspace` (`tests/server.test.js`).
-- [ ] **Client acceptance:** repeat the measurements in Claude Code and agy:
+- [x] **Client acceptance:** repeat the measurements in Claude Code and agy:
   - result channel;
   - inline threshold;
   - instructions visible;
   - roots.
+
+  Measured on 2026-10-07 with `claude -p` (2.1.289) and `agy -p` (1.3.1) and a
+  stub MCP server; results in the
+  [integration guide](VSCODE_INTEGRATION.md#measured-client-behavior). Both show
+  the server instructions, answer `roots/list` with the launch directory, declare
+  form and URL elicitation and cancel it in `-p` mode. Inline limits: Claude
+  between 45,000 and 60,000 B, agy between 3,900 and 4,300 B. The result channel
+  contradicts the table above for Claude Code.
+- [ ] Claude Code 2.1.289 gives the model only `structuredContent` when a result
+  has it (stream-json transcript of a stub result with different markers in
+  `content` and `structuredContent`). CoAgent8's markdown `content` and footer
+  therefore reach agy but not Claude Code, where the answer arrives JSON-escaped
+  in `output`. Decide whether to keep both channels (owner decision); re-measure
+  the token cost in Claude Code first.
 
   Codex is unavailable now. Its behavior is taken from its source and docs and
   needs one live call (`doctor`) with the rollout record inspected when it is
@@ -884,8 +918,10 @@ Plan:
   keyed by the resolved executable files (size, mtime), the probe's configuration
   file and the environment that selects an executable or credentials; doctor
   probes afresh and replaces it. Configuration is keyed by file stamp, not by a
-  digest. The agy `/usage` read moved to `inspectQuota`, now with `--sandbox`
-  (accepted by the fixture; not yet verified with a live agy). Doctor counts a
+  digest. The agy `/usage` read moved to `inspectQuota`, now with `--sandbox`.
+  Verified live on 2026-10-07 with agy 1.3.1: four reads returned a measured
+  weekly window (75% headroom) in 3.3 to 4.7 s. The 5 s timeout leaves little
+  margin; a slower read is reported as unmeasured quota. Doctor counts a
   quota measured in its own run as proof of a signed-in CLI, because the agy probe
   no longer reports `authenticated`. Sandbox and consent checks stay in `execute`.
   Evidence: `tests/backends/probe-cache.test.js` (five resolves, one probe; a new

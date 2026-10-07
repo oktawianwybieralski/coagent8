@@ -177,6 +177,29 @@ export function selectOwnedTree(rows: ProcessRow[], roots: ProcessIdentity[]): P
   `ppid == root pid` but was created before the root must not be selected. Do not
   validate the sweep against a live desktop.
 
+#### Re-run on the stack tip (2026-10-07)
+
+Re-run at `3480af4` (`feat/caller-proof-consent`, stacked on
+`fix/windows-process-identity`), Windows 11, Node 26.10:
+
+- **Selection by PID.** No source file, test runner or test helper references
+  `taskkill`, `Get-CimInstance`, `Win32_Process`, `ParentProcessId` or
+  `Stop-Process`. The only terminations are `proc.kill()` on the handle Node holds
+  since spawn (Windows) and signals to the owned process group (POSIX).
+  `process.kill(pid, 0)` remains only as a liveness test for leases and sessions.
+- **No sweep after every child.** Nothing runs after a child's exit on Windows; a
+  probe or `git diff` launches no helper.
+- **Live check.** Processes whose parent PID is dead or newer than themselves were
+  listed (PID, parent PID, creation time) before and after live runs: a Claude
+  Code turn and an interrupted turn (haiku), an agy turn
+  (`gemini-3.8-flash-low`) and a Codex probe. Before: 10, including
+  `explorer.exe`, `winlogon.exe` and `SEGameTool.exe`. After: the same 10, none
+  terminated, none new. The Codex turn, resume and interrupt ran separately with
+  one `codex.exe` before and after.
+
+Result: the mechanism of AUD-P0-1 no longer exists. Orphans after a server crash
+remain open (AUD-P2-14).
+
 #### AUD-P0-2 Redaction rewrites code in public answers [reproduced]
 
 | Input in a model answer | Returned text |

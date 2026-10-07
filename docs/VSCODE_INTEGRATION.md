@@ -108,6 +108,31 @@ plugin manifest in a checkout does not establish installation in those clients,
 and an existing chat may retain its earlier tool catalog until the host refreshes
 it or starts a new conversation.
 
+### Measured client behavior
+
+Measured on 2026-10-07 (Windows 11, Node 26.10) with headless clients and a stub
+MCP server that logs the client's capabilities and answers. Claude Code 2.1.289
+ran as `claude -p` with haiku; agy 1.3.1 ran as `agy -p --sandbox` with
+`gemini-3.8-flash-low`. Claude Code results were read from its `stream-json`
+transcript, agy results from its answers.
+
+| | Claude Code 2.1.289 | agy 1.3.1 (CLI) |
+| --- | --- | --- |
+| Result channel the model reads | only `structuredContent`, serialized as JSON, when the result has one; `content` is dropped | `content` |
+| Result saved to a file | 45,000 B inline; 60,000 B saved ("Output too large (59.7KB)") | 3,900 B inline; 4,300 B saved as `output.txt` |
+| Server instructions | visible to the model | visible to the model |
+| Roots | declares `roots.listChanged`; `roots/list` returns the launch directory | the same |
+| Elicitation | declares `form` and `url`; in `-p` mode every request is answered `cancel` at once | the same |
+| Tool-call limit | not measured | 180 s: the call is cancelled with "timed out after 3m0s"; progress notifications every 5 s do not extend it |
+| Permission for an MCP tool in `-p` mode | `--allowedTools` | an allow rule `mcp(<server>/<tool>)` in the user settings; a workspace settings file is ignored |
+
+Consequences for CoAgent8:
+- In headless mode both clients cancel the consent request, so a top-tier model
+  always fails with `POLICY_DENIED`. The interactive prompt is not yet verified.
+- agy stops a CoAgent8 call after 3 minutes, which cancels the backend turn.
+- In Claude Code the model sees the JSON `structuredContent` (answer in
+  `output`), not the markdown `content` with its footer.
+
 The VSIX offers **CoAgent8: Set Up or Repair Chat Clients** on first local
 activation and in the Command Palette. Select installed standalone Codex, Claude
 Code, and agy clients once; repair remembers the selection. The CLI uses the same
