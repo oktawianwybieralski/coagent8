@@ -1042,8 +1042,11 @@ without a model call.
 
 ### `SESSION-001` - safe auto-resume and first-class handle exposure
 
-- [ ] Expose `sessionHandle` as a first-class machine-readable field in `structuredContent`
+- [x] Expose `sessionHandle` as a first-class machine-readable field in `structuredContent`
   (when continuation is available) so calling orchestrator models do not need to scrape Markdown blockquotes.
+  `structuredContent.sessionHandle` and `turn` are present whenever a session
+  exists (`runOutputSchema`); evidence: the key assertion in
+  `tests/tools/result.test.js` and the handle reuse in `tests/consumer/smoke.cjs`.
 - [ ] Session continuation controls:
   - Introduce `session_mode: "new" | "auto" | "none"` in execution schemas. The
     audit recommends `"none"` as the default for `consult`, so ordinary advice
