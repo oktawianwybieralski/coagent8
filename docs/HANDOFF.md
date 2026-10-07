@@ -110,7 +110,10 @@ The owner's lingering Restart Required report is not yet reproduced or closed.
 Local checks: 36 integration tests pass, then 18 provider/UI fixtures pass after
 the native-lifecycle change; typecheck, build, documentation lint and package
 checks pass. No new model turn was run. A one-off backed-up profile reset was
-fixture-tested and previewed; applying it awaits the owner closing VS Code.
+fixture-tested and previewed; the owner applied it in an external PowerShell on
+2026-10-08. Five targeted keys in each database copy were cleaned with 314 other
+rows preserved. Two subsequent runs found no reset keys; a read-only recheck also
+finds none. Both row backups exist under .artifacts/coagent8-reset-backup/.
 The owner already deleted ~/.coagent8; installed extension and native/MCP
 registration inventories are empty. Fresh native lifecycle/desktop acceptance
 remains NOT_RUN; use the replacement VSIX path and digest reported in chat.
@@ -119,9 +122,7 @@ Further reinstall follow-up: Reset Setup State clears only setupClients,
 setupOffered and setupDismissed through VS Code's public Memento API and repeats
 the readiness check without restarting the editor. Configuration, registrations
 and sign-ins are preserved. The targeted offline reset of historical extension
-IDs remains pending because this session itself runs inside VS Code. The owner
-can perform that one-off reset in an external PowerShell after closing all
-editor windows. Native UI checks are listed in
+IDs is complete for the owner's Default profile. Native UI checks are listed in
 [the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md).
 Typecheck, 19 provider/onboarding fixtures, build, VSIX inspection and exact
 tarball consumer smoke pass (96 files, Node v26.10.0, Windows). No real backend

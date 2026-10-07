@@ -2198,13 +2198,16 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   updated provider fixtures pass. Exact-artifact consumer/package inspection
   remains separate from native UI acceptance. Reset preview finds five targeted
   keys in each profile database copy; its fixture proves backups and retention of
-  unrelated bytes. Actual reset awaits editor shutdown; it has not been applied.
+  unrelated bytes. Owner-applied reset PASS on 2026-10-08: five targeted keys in
+  each database copy were cleaned, with 314 other rows preserved. Two repeated
+  runs returned empty resetKeys; the subsequent read-only recheck also finds
+  none. Both exact-row backups exist in .artifacts/coagent8-reset-backup/.
 - [x] Reset Setup State clears remembered CLI selection, legacy setupOffered and
   welcome dismissal using the public VS Code Memento API. It checks readiness
   again without restarting the editor; a ready CLI still suppresses welcome.
   Cancellation preserves state, and configuration/registrations/sign-ins remain
-  intact. Historical extension IDs require the separately previewed offline
-  reset; the owner confirmed this session runs in VS Code, so it is still pending.
+  intact. The separately previewed offline reset of historical extension IDs is
+  complete for the owner's Default profile, as recorded above.
   Local typecheck, 19 provider/onboarding fixtures, build, VSIX inspection and
   exact-tarball consumer smoke pass (96 files, Node v26.10.0, Windows). No real
   backend turn was run. Native acceptance is
