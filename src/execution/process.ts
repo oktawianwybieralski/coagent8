@@ -68,12 +68,31 @@ function hasExited(proc: ChildProcess): boolean {
 }
 
 /**
+ * Signals the owned POSIX process group, whose ID is the detached root's PID.
+ * @returns Whether the group may still have members. `ESRCH` means every member has
+ * exited, the usual outcome after a normal exit; any other failure is reported.
+ * @remarks No fallback to the root alone: a group without members has no root either.
+ */
+function signalOwnedGroup(groupId: number, signal: NodeJS.Signals): boolean {
+  try {
+    process.kill(-groupId, signal);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') return false;
+    process.stderr.write(`Warning: could not send ${signal} to owned process group ${groupId}: ${code ?? (err as Error).message}\n`);
+    return true;
+  }
+}
+
+/**
  * Stops a process this supervisor spawned (layer 2) without selecting anything by PID.
  *
  * - On Windows: `proc.kill()` terminates the owned root through its handle, then waits
  *   (bounded) for its exit. Node descendants in the root's libuv job exit with it.
  * - On POSIX: Signals the detached process group (`-proc.pid`) with `SIGTERM`, waits
- *   for the grace period, and escalates to `SIGKILL`.
+ *   for the grace period, and escalates to `SIGKILL`. A group that no longer exists
+ *   ends the teardown at once, without the grace period.
  *
  * Repeated calls for the same process share one teardown.
  *
@@ -94,10 +113,9 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_
       });
       proc.kill();
       await exited;
-    } else {
-      try { process.kill(-proc.pid, 'SIGTERM'); } catch { try { proc.kill('SIGTERM'); } catch {} }
+    } else if (signalOwnedGroup(proc.pid, 'SIGTERM')) {
       await new Promise<void>(resolve => setTimeout(resolve, graceMs));
-      try { process.kill(-proc.pid, 'SIGKILL'); } catch { try { proc.kill('SIGKILL'); } catch {} }
+      signalOwnedGroup(proc.pid, 'SIGKILL');
     }
   })();
   teardowns.set(proc, task);

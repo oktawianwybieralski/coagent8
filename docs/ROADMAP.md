@@ -1334,9 +1334,19 @@ These statuses summarize prior implementation; they are not fresh test results.
   `adjustCapacityMeta` (a missing or torn cache is recomputed; a failed write
   removes it), lock contention during eviction is told apart by the new
   `LockTimeoutError`, and the two rollback catches that keep the original append
-  error say why. Full suite: 243 pass, 0 fail. Remaining: the POSIX kill
-  fallbacks in `src/execution/process.ts` and the test-only maintenance gate in
-  `sweepExpiredSessions` (`SIMPLIFY-001`).
+  error say why. Full suite: 243 pass, 0 fail. On `fix/posix-group-signal-errors`:
+  the POSIX kill fallbacks in `src/execution/process.ts` are gone.
+  `signalOwnedGroup` treats `ESRCH` as an exited group, which also ends the
+  teardown without the grace period, and writes any other failure (for example
+  `EPERM`) to stderr. The fallback to the root alone was dead: a group without
+  members has no root. Evidence: `tests/execution/process.test.js` (mocked
+  `process.kill`, runs on every platform): with the old code a group that had
+  exited still waited the full 5 s grace (`5015 ms`); now one `SIGTERM`, no
+  `SIGKILL`, no warning, and `EPERM` produces one warning per signal. On POSIX the
+  old code held every result for the signal grace after a normal exit (250 ms, or
+  2 s for agy); a POSIX-only test now bounds it. That test runs in CI; Docker was
+  not available locally. The test-only maintenance gate was removed on
+  `refactor/maintenance-injection`.
 - [ ] `DOCS-001`: expand compressed logic and document meaningful exported contracts.
 - [ ] `VERIFY-001`: record repeatable validation without retroactively assigning
   the historical unexplained 133/134 failure to a later discovered race. Two

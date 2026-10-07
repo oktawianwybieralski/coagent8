@@ -234,6 +234,35 @@ test('layer 2 (POSIX): a per-run signal grace lets a SIGTERM handler finish befo
   assert.equal((await runCommand(process.execPath, ['-e', ''], { signalGraceMs: -1 })).error.code, 'INPUT_LIMIT');
 });
 
+test('layer 2 (POSIX): a group that has exited ends teardown at once; other signal failures are reported (ERRORS-001)', async t => {
+  t.mock.property(process, 'platform', 'linux');
+  const calls = [], warnings = [];
+  let failure = 'ESRCH';
+  t.mock.method(process, 'kill', (pid, signal) => { calls.push([pid, signal]); throw Object.assign(new Error(failure), { code: failure }); });
+  t.mock.method(process.stderr, 'write', text => { warnings.push(String(text)); return true; });
+  const started = Date.now();
+  await terminateProcessTree({ pid: 424242, exitCode: null, signalCode: null }, 5000);
+  assert.ok(Date.now() - started < 1000, 'no grace period for a group without members');
+  assert.deepEqual(calls, [[-424242, 'SIGTERM']], 'no SIGKILL and no fallback to the root alone');
+  assert.deepEqual(warnings, [], 'an exited group is the expected outcome, not a warning');
+  failure = 'EPERM';
+  calls.length = 0;
+  await terminateProcessTree({ pid: 434343, exitCode: null, signalCode: null }, 10);
+  assert.deepEqual(calls, [[-434343, 'SIGTERM'], [-434343, 'SIGKILL']]);
+  assert.deepEqual(warnings, [
+    'Warning: could not send SIGTERM to owned process group 434343: EPERM\n',
+    'Warning: could not send SIGKILL to owned process group 434343: EPERM\n',
+  ]);
+});
+
+test('layer 2 (POSIX): a normal exit does not wait for the signal grace', async t => {
+  if (process.platform === 'win32') { t.skip('POSIX process-group signals only'); return; }
+  const started = Date.now();
+  const result = await runCommand(process.execPath, ['-e', ''], { signalGraceMs: 3000 });
+  assert.equal(result.status, 'completed');
+  assert.ok(Date.now() - started < 2500, `a clean exit returned after ${Date.now() - started} ms`);
+});
+
 test('layer 3: a descendant outside the owned tree that holds stdout cannot delay the result', async () => {
   const { PIPE_DRAIN_MS } = require('../../src/execution/process.ts');
   // The leaf escapes the owned tree (a non-Node intermediate on Windows, its own process
