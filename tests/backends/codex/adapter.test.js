@@ -140,14 +140,14 @@ test('readCodexConfig reads only the top-level model keys, never comments, other
     'model = "astra"',
   ].join('\n'));
   const commented = readCodexConfig(file);
-  assert.equal(commented.defaultModel, 'gpt-6.1-sol', 'a commented, review or profile model is not the default model');
+  assert.equal(commented.defaultModel, undefined, 'a commented, review or profile model is not the default model; the catalog default applies');
   assert.equal(commented.defaultReasoningEffort, 'high');
   assert.equal(commented.configError, undefined);
   fs.writeFileSync(file, 'model = "gpt-6.0-sol" # chosen\n[profiles.deep]\nmodel = "astra"\n');
   assert.equal(readCodexConfig(file).defaultModel, 'gpt-6.0-sol');
   fs.writeFileSync(file, 'model = "unterminated\n');
   const invalid = readCodexConfig(file);
-  assert.equal(invalid.defaultModel, 'gpt-6.1-sol');
+  assert.equal(invalid.defaultModel, undefined);
   assert.match(invalid.configError, /^Codex configuration not used: /, 'an invalid file is reported, not silently ignored');
   assert.equal(readCodexConfig(path.join(directory,'missing.toml')).configError, undefined, 'a missing file is the normal default case');
 });

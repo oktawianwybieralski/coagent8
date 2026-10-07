@@ -105,6 +105,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
         ...original[id],
         inspectQuota: async () => { quotaReads.push(id); return { measured: true, window: '5h', usedPercent: 40, headroomPercent: 60, resetsAt: '2026-10-07T12:00:00Z' }; },
         listModels: id === 'gemini' ? async () => ({ source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }) : undefined,
+        observeModel: id === 'claude' ? async requested => requested : undefined,
         probe: async () => ({
           id, installed: true, version: `${id} 1.0.0`, executionSupported: true, authStatus: 'authenticated',
           config: { defaultModel: `${id}-model` }, availableModels: Array.from({ length: 14 }, (_, i) => `${id}-model-${i}`),
@@ -114,7 +115,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
         }),
       };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] } });
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] }, backends: { codex: {}, claude: {}, gemini: {} } });
 
     const report = await runDoctor();
     const summary = formatDoctorSummary(report);
@@ -122,8 +123,8 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.match(summary, /\ngemini: ready[^\n]*\n {2}models: gemini-3\.8-flash \(high\|low\)(\n|$)/, 'the catalog the CLI lists, with the efforts a model needs');
     assert.match(summary, /\n {2}models: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
     assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto/);
-    assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model · 5h 60% left, resets 2026-10-07T12:00:00Z/);
-    assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model · weekly 81% left/);
+    assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
+    assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model \(CLI config\) · weekly 81% left/);
     assert.ok(Buffer.byteLength(summary) < 1024, 'summary budget 1 KB');
 
     assert.equal(report.backends.gemini.quota, undefined, 'quota reported once, under quotas');

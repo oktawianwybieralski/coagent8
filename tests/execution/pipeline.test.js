@@ -18,7 +18,7 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('one pipeline pins provider, persists two turns and canonical messages, preserves Markdown, activity and errors',async()=>{
   const original=adapterRegistry.gemini;
-  adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>({installed:true,version:'fixture'}),execute:async(prompt,options)=>{
+  adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>({installed:true,version:'fixture',config:{defaultModel:'fixture-model'}}),execute:async(prompt,options)=>{
     options.onEvent({type:'user_message',text:'CLI echo must be ignored'});
     options.onEvent({type:'assistant_delta',messageId:'m',text:'Draft'});
     options.onEvent({type:'assistant_message',messageId:'m',text:'Final **answer**\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef'});

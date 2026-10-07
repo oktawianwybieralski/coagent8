@@ -78,7 +78,6 @@ test('the controller refuses an unoffered model before any model call, and the d
   const original = adapterRegistry.gemini;
   let executed = 0, listed = 0;
   adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'gemini-3.8-flash-high' } }),
-    resolveModel: requested => requested || 'gemini-3.8-flash-high',
     listModels: async () => { listed++; return { source: 'fixture', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }; },
     execute: async () => { executed++; return { status: 'completed', isError: false, output: 'ok', model: 'gemini-3.8-flash-high', truncated: false, continuationAvailable: false }; } };
   try {

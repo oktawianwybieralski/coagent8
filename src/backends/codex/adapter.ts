@@ -24,7 +24,8 @@ const CODEX_CONFIG_MAX_BYTES = 256 * 1024;
 export const VALID_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export interface CodexConfig {
-  defaultModel: string;
+  /** Top-level `model` of `config.toml`; absent when the file names none. */
+  defaultModel?: string;
   defaultReasoningEffort: string;
   sandboxMode: string;
   /** Why the configuration file could not be used; the defaults apply. */
@@ -37,11 +38,10 @@ const CODEX_CMD: { command: string; argsPrefix: string[] } = { command: CODEX_EX
  * Reads the top-level `model` and `model_reasoning_effort` keys of Codex's `config.toml`.
  * Comments, tables (`[profiles.*]`) and other keys such as `review_model` are ignored.
  * @param customPath - Configuration file; defaults to `CODEX_CONFIG_PATH`.
- * @returns The configured values, or the defaults with `configError` when the file is unreadable or not valid TOML.
+ * @returns The configured values, or the defaults (no model) with `configError` when the file is unreadable or not valid TOML.
  */
 export function readCodexConfig(customPath?: string): CodexConfig {
   const result: CodexConfig = {
-    defaultModel: 'gpt-6.1-sol',
     defaultReasoningEffort: 'low',
     sandboxMode: 'read-only',
   };
@@ -135,19 +135,15 @@ export async function probe(): Promise<AdapterProbeResult> {
   };
 }
 
-/** Returns the requested model, or the `config.toml` default that `execute` runs without one. */
-export function resolveModel(requested?: string): string {
-  return requested || readCodexConfig().defaultModel;
-}
-
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const config = readCodexConfig();
-  const model = options.model || config.defaultModel;
+  const model = options.model;
   const effort = normalizeReasoningEffort(options.reasoningEffort, config.defaultReasoningEffort);
   const requestedThread = options.nativeSessionId || options.threadId || null;
   const rejected = (code: ExecutionError['code'], message: string): TerminalExecutionResult => ({
     status: 'failed', isError: true, output: '', model, error: { code, message, retryable: false }, truncated: false, continuationAvailable: false,
   });
+  if (model === undefined) return rejected('INPUT_LIMIT', 'No Codex model selected; the controller passes the config.toml model or the catalog default.');
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
   if (isGovernedModel(model) && options.consentedModel !== model) return rejected('POLICY_DENIED', consentRequiredMessage(model));
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
@@ -183,7 +179,6 @@ export const codexAdapter: CliAdapter = {
   id,
   name,
   probe,
-  resolveModel,
   execute,
   listModels: () => listCodexModels(process.env.CODEX_PATH || CODEX_EXE, VALID_REASONING_EFFORTS),
 };

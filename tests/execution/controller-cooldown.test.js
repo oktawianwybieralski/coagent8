@@ -23,7 +23,7 @@ async function rateLimitedTurn(message) {
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => ({
       status: 'failed', isError: true, output: '', model: 'gemini-test', truncated: false, continuationAvailable: false,
       error: { code: 'RATE_LIMITED', message, retryable: true },

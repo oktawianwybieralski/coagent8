@@ -24,7 +24,7 @@ test('full archive never blocks CLI launch, returns successful answer with histo
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       cliExecuted = true;
       options.onEvent({ type: 'assistant_message', messageId: 'm1', text: 'Secured answer from backend' });
@@ -82,7 +82,7 @@ test('per-session limit: 120 KiB streamed answer returns successfully (AUD-P0-3)
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       options.onEvent({ type: 'assistant_delta', messageId: 'm1', text: largeOutput });
       return {
@@ -116,7 +116,7 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       options.onEvent({ type: 'assistant_message', messageId: 'm1', text: 'Important successfully computed answer' });
       return {
@@ -155,7 +155,7 @@ test('lease failure returns fail-closed SESSION_INVALID error (AUD-P0-3 lease in
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, _options) => {
       // Simulate external concurrent process or file mutation invalidating the turn lease
       // We mutate all active session files in sessions dir to have a mismatched turnToken
@@ -206,7 +206,7 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => ({
       status: 'completed',
       isError: false,
@@ -249,7 +249,7 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
   adapterRegistry.gemini = {
     id: 'gemini',
     name: 'fixture',
-    probe: async () => ({ installed: true, version: 'fixture' }),
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       for (let i = 0; i < 2; i++) options.onEvent({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
       for (let i = 0; i < 10; i++) options.onEvent({ type: 'warning', message: `distinct warning ${i}` });
@@ -272,7 +272,7 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
 test('a top-tier model without a way to ask the user is refused in one line; user_confirmed grants nothing (AUD-P1-7)', async () => {
   const original = adapterRegistry.gemini;
   let executed = false;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
@@ -292,8 +292,7 @@ test("consent is asked from the user for the backend's effective default model a
   const original = adapterRegistry.gemini;
   const asked = [], received = [];
   // The fixture's own default is top-tier, as agy's interface selection can be.
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
-    resolveModel: requested => requested || 'claude-opus-4-6-thinking',
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'claude-opus-4-6-thinking' } }),
     execute: async (_prompt, options) => {
       received.push(options.consentedModel);
       return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'claude-opus-4-6-thinking', truncated: false, continuationAvailable: true };
@@ -321,7 +320,7 @@ test("consent is asked from the user for the backend's effective default model a
 test('a continuation reuses the model and effort of its session unless the call names a model', async () => {
   const original = adapterRegistry.gemini;
   const seen = [];
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       seen.push({ model: options.model, effort: options.reasoningEffort });
       return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };

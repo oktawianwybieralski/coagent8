@@ -129,7 +129,7 @@ test('the connected client name sets the caller CLI that auto routing avoids', a
   try {
     for (const id of ['codex', 'claude', 'gemini']) {
       adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
-        probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
+        probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }), execute: async () => { throw new Error('Not executed'); } };
     }
     saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'gemini'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -154,7 +154,7 @@ test('execution results report a workspace taken from client roots; roots are re
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-root-'));
   const original = adapterRegistry.gemini;
   const seen = [];
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true }),
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => { seen.push(options.cwd); return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'gemini-test', truncated: false, continuationAvailable: true }; } };
   const server = createServer();
   const client = new Client({ name: 'roots-client', version: '1' }, { capabilities: { roots: { listChanged: true } } });
@@ -249,8 +249,8 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   const { saveConfig } = require('../src/config.ts');
   const original = adapterRegistry.gemini;
   const consented = [];
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
-    resolveModel: requested => requested || 'gemini-3.8-flash-high',
+  const withDefault = defaultModel => async () => ({ installed: true, version: 'fixture', config: { defaultModel } });
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: withDefault('gemini-3.8-flash-high'),
     execute: async (_prompt, options) => {
       consented.push(options.consentedModel);
       return { status: 'completed', isError: false, output: 'approved answer', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
@@ -307,10 +307,10 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     assert.equal(readResult(resumed).error.code, 'POLICY_DENIED');
 
     // A governed default model is asked for like a requested one.
-    adapterRegistry.gemini = { ...adapterRegistry.gemini, resolveModel: requested => requested || 'claude-opus-4-6-thinking' };
+    adapterRegistry.gemini = { ...adapterRegistry.gemini, probe: withDefault('claude-opus-4-6-thinking') };
     assert.equal(readResult(await call(asking.client, undefined)).error.code, 'POLICY_DENIED');
     assert.deepEqual(consented, ['claude-opus-4-6-thinking'], 'no declined turn ran');
-    adapterRegistry.gemini = { ...adapterRegistry.gemini, resolveModel: requested => requested || 'gemini-3.8-flash-high' };
+    adapterRegistry.gemini = { ...adapterRegistry.gemini, probe: withDefault('gemini-3.8-flash-high') };
 
     // A default-tier model never prompts the user.
     const plainTurn = await call(asking.client, undefined);

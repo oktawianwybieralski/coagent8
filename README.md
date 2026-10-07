@@ -26,7 +26,7 @@ A model's `READY` verdict requires independent verification before release.
 
 Use Node.js 24+ and at least one separately installed and authenticated backend
 CLI. Building a checkout requires Node 24.11+ or Node 26+. Claude Code execution
-requires 2.1.259+; its restricted profile supports subscription login or an API
+requires 2.1.289+; its restricted profile supports subscription login or an API
 key. Codex and agy must support the adapter protocols; their minimum versions are
 not currently enforced by the bridge.
 

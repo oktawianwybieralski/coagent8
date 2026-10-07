@@ -30,6 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../backends/model-catalog.js';
+import { selectModel } from '../backends/model-selection.js';
 import { consentDeclinedMessage, consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../backends/governance.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
@@ -131,25 +132,26 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   const backend = await resolveBackend(previous?.backend || args.backend);
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
   if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
-  const config = backend.probe.config as { defaultModel?: string } | undefined;
-  const model = args.model || previous?.model || config?.defaultModel;
+  // The model comes from the call, the session, the configuration or the CLI, never from the
+  // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
+  // every turn) and the turn name the same model.
+  const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model });
+  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
   // A continuation keeps its session's selection: the effort follows the model it was chosen for.
   const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
-  // Consent covers the model the backend will run, defaults and aliases applied, and is asked on every turn.
-  const effectiveModel = backend.adapter.resolveModel ? backend.adapter.resolveModel(model) : model;
   // An explicit model or effort is checked against the CLI's own catalog before the user is
-  // asked for consent and before a model call; the default selection needs no catalog read.
+  // asked for consent and before a model call.
   if (args.model !== undefined || args.reasoning_effort !== undefined) {
-    const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), effectiveModel, args.reasoning_effort);
+    const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), model, args.reasoning_effort);
     if (rejected) throw new ToolError(rejected.code, rejected.message);
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
   }
   let consentedModel: string | undefined;
-  if (isGovernedModel(effectiveModel)) {
-    if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(effectiveModel));
-    if (!(await options.askConsent({ backend: backend.id, model: effectiveModel! }))) throw new ToolError('POLICY_DENIED', consentDeclinedMessage(effectiveModel));
+  if (isGovernedModel(model)) {
+    if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model));
+    if (!(await options.askConsent({ backend: backend.id, model }))) throw new ToolError('POLICY_DENIED', consentDeclinedMessage(model));
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
-    consentedModel = effectiveModel;
+    consentedModel = model;
   }
   await pruneExpiredSessions();
   const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);

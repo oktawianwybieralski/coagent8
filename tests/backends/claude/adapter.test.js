@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {executeClaude,probe}=require('../../../src/backends/claude/adapter.ts');
+const MODEL='claude-sonnet-4-6';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 async function withFixture(run){
@@ -19,10 +20,10 @@ async function withFixture(run){
 
 test('Claude runs restricted read-only print mode with streaming, a pinned session and the prompt as a stream-json message',()=>withFixture(async({dir,captured})=>{
   const events=[];
-  const result=await executeClaude('Reply with OK',{cwd:dir,reasoningEffort:'low',onEvent:e=>events.push(e)});
+  const result=await executeClaude('Reply with OK',{cwd:dir,model:MODEL,reasoningEffort:'low',onEvent:e=>events.push(e)});
   assert.equal(result.status,'completed');assert.equal(result.output,'OK');
   assert.equal(result.model,'claude-haiku-4-5-20251001','the model reported by system/init, not the requested alias');
-  const {argv,stdin,records}=captured();assert.equal(stdin,'Reply with OK');assert.equal(argv[argv.indexOf('--model')+1],'sonnet');
+  const {argv,stdin,records}=captured();assert.equal(stdin,'Reply with OK');assert.equal(argv[argv.indexOf('--model')+1],MODEL,'the model the controller selected');
   assert.deepEqual(records,[{type:'user',message:{role:'user',content:'Reply with OK'}}],'one user message, then stdin is closed');
   assert.equal(argv[argv.indexOf('--input-format')+1],'stream-json');
   assert.ok(argv.includes('--restricted'));assert.ok(!argv.includes('--bare'));assert.equal(argv[argv.indexOf('--tools')+1],'Read,Glob,Grep');
@@ -38,64 +39,78 @@ test('Claude runs restricted read-only print mode with streaming, a pinned sessi
 
 test('Claude continues a native session with --resume and rejects malformed or unknown sessions',()=>withFixture(async({dir,captured})=>{
   const session='859bbd7d-81ae-440c-b76a-a80e596d0fa5';
-  const resumed=await executeClaude('What did I ask?',{cwd:dir,nativeSessionId:session});
+  const resumed=await executeClaude('What did I ask?',{cwd:dir,model:MODEL,nativeSessionId:session});
   assert.equal(resumed.status,'completed');assert.match(resumed.output,/OK/);assert.equal(resumed.nativeSessionId,session);
   const {argv}=captured();assert.equal(argv[argv.indexOf('--resume')+1],session);assert.ok(!argv.includes('--session-id'));
-  const upper=await executeClaude('What did I ask?',{cwd:dir,nativeSessionId:session.toUpperCase()});
+  const upper=await executeClaude('What did I ask?',{cwd:dir,model:MODEL,nativeSessionId:session.toUpperCase()});
   assert.equal(upper.status,'completed');assert.equal(upper.nativeSessionId,session);captured();
-  const malformed=await executeClaude('x',{cwd:dir,nativeSessionId:'--dangerously-skip-permissions'});
+  const malformed=await executeClaude('x',{cwd:dir,model:MODEL,nativeSessionId:'--dangerously-skip-permissions'});
   assert.equal(malformed.error.code,'SESSION_INVALID');assert.equal(captured(),null);
   process.env.CLAUDE_FIXTURE_SCENARIO='resume-unknown';
-  const unknown=await executeClaude('x',{cwd:dir,nativeSessionId:'00000000-0000-4000-8000-000000000000'});
+  const unknown=await executeClaude('x',{cwd:dir,model:MODEL,nativeSessionId:'00000000-0000-4000-8000-000000000000'});
   assert.equal(unknown.error.code,'SESSION_INVALID');assert.equal(unknown.continuationAvailable,false);
 }));
 
 test('Claude returns a refused write as an answer and fails closed when write tools are exposed',()=>withFixture(async({dir})=>{
   process.env.CLAUDE_FIXTURE_SCENARIO='readonly-refusal';
-  const events=[];const refused=await executeClaude('create a file',{cwd:dir,onEvent:e=>events.push(e)});
+  const events=[];const refused=await executeClaude('create a file',{cwd:dir,model:MODEL,onEvent:e=>events.push(e)});
   assert.equal(refused.status,'completed');assert.match(refused.output,/FAILED/);
   assert.ok(events.some(e=>e.type==='tool_started'&&e.name==='Read'));assert.ok(events.some(e=>e.type==='tool_finished'&&e.success));
   process.env.CLAUDE_FIXTURE_SCENARIO='write-tools';
-  const exposed=await executeClaude('x',{cwd:dir});
+  const exposed=await executeClaude('x',{cwd:dir,model:MODEL});
   assert.equal(exposed.status,'failed');assert.equal(exposed.error.code,'SANDBOX_UNAVAILABLE');assert.equal(exposed.output,'');assert.equal(exposed.continuationAvailable,false);
   process.env.CLAUDE_FIXTURE_SCENARIO='missing-init';
-  const noInit=await executeClaude('x',{cwd:dir});
+  const noInit=await executeClaude('x',{cwd:dir,model:MODEL});
   assert.equal(noInit.status,'failed');assert.equal(noInit.error.code,'SANDBOX_UNAVAILABLE');assert.equal(noInit.continuationAvailable,false);
 }));
 
 test('Claude tolerates unknown events, maps auth and model failures, and requires a result event',()=>withFixture(async({dir})=>{
   process.env.CLAUDE_FIXTURE_SCENARIO='unknown-events';
-  const events=[];const tolerated=await executeClaude('x',{cwd:dir,onEvent:e=>events.push(e)});
+  const events=[];const tolerated=await executeClaude('x',{cwd:dir,model:MODEL,onEvent:e=>events.push(e)});
   assert.equal(tolerated.status,'completed');assert.equal(events.filter(e=>e.type==='warning').length,2);
   process.env.CLAUDE_FIXTURE_SCENARIO='auth-failed';
-  const auth=await executeClaude('x',{cwd:dir});assert.equal(auth.error.code,'AUTH_REQUIRED');assert.equal(auth.output,'');assert.equal(auth.continuationAvailable,false);
+  const auth=await executeClaude('x',{cwd:dir,model:MODEL});assert.equal(auth.error.code,'AUTH_REQUIRED');assert.equal(auth.output,'');assert.equal(auth.continuationAvailable,false);
   process.env.CLAUDE_FIXTURE_SCENARIO='model-not-found';
   assert.equal((await executeClaude('x',{cwd:dir,model:'claude-sonnet-unknown'})).error.code,'MODEL_UNAVAILABLE');
   process.env.CLAUDE_FIXTURE_SCENARIO='no-result';
-  assert.equal((await executeClaude('x',{cwd:dir})).error.code,'PROTOCOL_ERROR');
+  assert.equal((await executeClaude('x',{cwd:dir,model:MODEL})).error.code,'PROTOCOL_ERROR');
   process.env.CLAUDE_FIXTURE_SCENARIO='startup-failure';
-  const startup=await executeClaude('x',{cwd:dir});
+  const startup=await executeClaude('x',{cwd:dir,model:MODEL});
   assert.equal(startup.status,'failed');
   assert.equal(startup.error.code,'PROCESS_ERROR');
   assert.match(startup.error.message,/failed to initialize/);
   assert.equal(startup.continuationAvailable,false);
 }));
 
-test('Claude validates the model before argv and keeps top-tier governance',()=>withFixture(async({dir,captured})=>{
+test('Claude validates the model before argv, runs only the model it is given and keeps top-tier governance',()=>withFixture(async({dir,captured})=>{
   for(const model of ['--dangerously-skip-permissions','sonnet --tools Bash','','x'.repeat(129)]){
     assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'INPUT_LIMIT',model);
   }
+  assert.equal((await executeClaude('x',{cwd:dir})).error.code,'INPUT_LIMIT','without a selected model the CLI never chooses one');
   assert.equal(captured(),null);
-  process.env.ANTHROPIC_MODEL='claude-opus-4-6';
-  assert.equal((await executeClaude('x',{cwd:dir})).status,'completed');assert.equal(captured().argv.includes('sonnet'),true);
-  process.env.ANTHROPIC_DEFAULT_SONNET_MODEL='claude-opus-4-6';
-  assert.equal((await executeClaude('x',{cwd:dir})).error.code,'POLICY_DENIED');assert.equal(captured(),null);
-  assert.equal((await executeClaude('x',{cwd:dir,consentedModel:'claude-opus-4-7'})).error.code,'POLICY_DENIED','consent covers one exact model');assert.equal(captured(),null);
-  const confirmed=await executeClaude('x',{cwd:dir,consentedModel:'claude-opus-4-6'});assert.equal(confirmed.status,'completed');assert.equal(captured().argv.includes('claude-opus-4-6'),true);
-  process.env.ANTHROPIC_DEFAULT_SONNET_MODEL='--tools=Bash';
-  assert.equal((await executeClaude('x',{cwd:dir})).error.code,'POLICY_DENIED');delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
-  for(const model of ['opus','opusplan','opus[1m]','best','default'])assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'POLICY_DENIED',model);
+  const governed='claude-opus-4-6';
+  assert.equal((await executeClaude('x',{cwd:dir,model:governed})).error.code,'POLICY_DENIED');assert.equal(captured(),null);
+  assert.equal((await executeClaude('x',{cwd:dir,model:governed,consentedModel:'claude-opus-4-7'})).error.code,'POLICY_DENIED','consent covers one exact model');assert.equal(captured(),null);
+  const confirmed=await executeClaude('x',{cwd:dir,model:governed,consentedModel:governed});assert.equal(confirmed.status,'completed');
+  const {argv}=captured();assert.equal(argv[argv.indexOf('--model')+1],governed);
+  for(const model of ['opus','opusplan','opus[1m]','best'])assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'POLICY_DENIED',model);
   assert.equal(captured(),null);
+}));
+
+test('Claude reports the model a name or its default runs from a local /usage run, without a model turn',()=>withFixture(async({captured})=>{
+  const {observeModel}=require('../../../src/backends/claude/adapter.ts');
+  assert.equal(await observeModel(),'claude-sonnet-4-6','the account default, from system/init');
+  let {argv}=captured();assert.equal(argv.at(-1),'/usage');assert.ok(!argv.includes('--model'));assert.ok(argv.includes('--restricted'));
+  assert.equal(argv[argv.indexOf('--tools')+1],'');assert.equal(argv[argv.indexOf('--output-format')+1],'stream-json');
+  // An environment override such as ANTHROPIC_DEFAULT_SONNET_MODEL maps an alias to another model; the CLI says which.
+  process.env.CLAUDE_FIXTURE_MODELS=JSON.stringify({sonnet:'claude-opus-4-6'});
+  assert.equal(await observeModel('sonnet'),'claude-opus-4-6');({argv}=captured());assert.equal(argv[argv.indexOf('--model')+1],'sonnet');
+  process.env.CLAUDE_FIXTURE_USAGE='model-turn';assert.equal(await observeModel('sonnet'),undefined,'a run that reached a model is not trusted');captured();
+  process.env.CLAUDE_FIXTURE_USAGE='no-init';assert.equal(await observeModel('sonnet'),undefined,'no system/init, no model');captured();
+  delete process.env.CLAUDE_FIXTURE_USAGE;
+  assert.equal(await observeModel('--tools=Bash'),undefined);assert.equal(captured(),null,'an invalid name never reaches argv');
+  process.env.CLAUDE_FIXTURE_VERSION='2.1.288 (Claude Code)';
+  assert.equal(await observeModel(),undefined,'older CLI versions are not asked');assert.equal(captured(),null);
 }));
 
 test('Claude probe reads version and login state without a model call',()=>withFixture(async({captured})=>{
@@ -112,7 +127,7 @@ test('Claude reads subscription quota from /usage without a model turn and feeds
   const {inspectQuota}=require('../../../src/backends/claude/adapter.ts');
   const quota=await inspectQuota();
   assert.equal(quota.measured,true);assert.equal(quota.usedPercent,67);assert.equal(quota.window,'session');
-  const {argv}=captured();assert.equal(argv.at(-1),'/usage');assert.equal(argv[argv.indexOf('--model')+1],'haiku');assert.equal(argv[argv.indexOf('--tools')+1],'');assert.ok(argv.includes('--restricted'));
+  const {argv}=captured();assert.equal(argv.at(-1),'/usage');assert.ok(!argv.includes('--model'),'no model is named for a local command');assert.equal(argv[argv.indexOf('--tools')+1],'');assert.ok(argv.includes('--restricted'));
   process.env.CLAUDE_FIXTURE_USAGE='api-key';assert.equal(await inspectQuota(),undefined);captured();
   process.env.CLAUDE_FIXTURE_USAGE='model-turn';assert.equal(await inspectQuota(),undefined,'a model turn is never reported as quota');captured();
   delete process.env.CLAUDE_FIXTURE_USAGE;
@@ -120,7 +135,6 @@ test('Claude reads subscription quota from /usage without a model turn and feeds
   assert.equal(await inspectQuota(),undefined,'unverified older CLI versions skip local /usage');
   assert.equal(captured(),null);
   delete process.env.CLAUDE_FIXTURE_VERSION;
-  process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL='claude-opus-4-6';assert.equal(await inspectQuota(),undefined);assert.equal(captured(),null);delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   process.env.coagent8_QUOTA_CACHE=path.join(dir,'quota-cache.json');
   const {inspectQuotas}=require('../../../src/backends/availability.ts');const {adapterRegistry}=require('../../../src/backends/registry.ts');
   const original={...adapterRegistry};
@@ -138,7 +152,7 @@ test('Claude cancellation and deadlines interrupt the turn over stream-json befo
   for(const [mode,expected] of [['abort','cancelled'],['deadline','timed_out']]){
     process.env.CLAUDE_FIXTURE_SCENARIO='interruptible';
     const controller=new AbortController();const events=[];const startedAt=Date.now();
-    const result=await executeClaude('Count slowly',{cwd:dir,abortSignal:controller.signal,timeoutMs:mode==='deadline'?1500:30000,
+    const result=await executeClaude('Count slowly',{cwd:dir,model:MODEL,abortSignal:controller.signal,timeoutMs:mode==='deadline'?1500:30000,
       onEvent:e=>{events.push(e);if(mode==='abort'&&e.type==='assistant_message')controller.abort();}});
     assert.equal(result.status,expected,mode);assert.equal(result.error.code,mode==='abort'?'ABORTED':'TIMEOUT');
     assert.equal(result.exitCode,1,`${mode}: Claude exited by itself after the interrupted result`);
@@ -150,7 +164,7 @@ test('Claude cancellation and deadlines interrupt the turn over stream-json befo
   }
   process.env.CLAUDE_FIXTURE_SCENARIO='ignore-interrupt';
   const controller=new AbortController();const startedAt=Date.now();
-  const stuck=await executeClaude('x',{cwd:dir,abortSignal:controller.signal,onEvent:e=>{if(e.type==='assistant_message')controller.abort();}});
+  const stuck=await executeClaude('x',{cwd:dir,model:MODEL,abortSignal:controller.signal,onEvent:e=>{if(e.type==='assistant_message')controller.abort();}});
   assert.equal(stuck.status,'cancelled');assert.ok(Date.now()-startedAt>=3000,'a CLI that ignores the interrupt is stopped after the grace period');
   assert.notEqual(stuck.exitCode,1,'the stuck CLI did not exit by itself');
 }));

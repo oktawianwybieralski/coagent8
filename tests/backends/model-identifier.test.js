@@ -29,7 +29,7 @@ test('every adapter rejects an option-like model before it reaches argv (AUD-P1-
 test('the controller rejects an option-like model before any backend runs (AUD-P1-6)', async () => {
   const original = adapterRegistry.gemini;
   let executed = false;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });

@@ -1,8 +1,10 @@
 import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
-import { loadConfigForDiagnostics } from '../config.js';
+import { loadConfigForDiagnostics, recordDefaultModel } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
 import { summarizeModels } from '../backends/model-catalog.js';
+import { selectModel, type ModelSelection, type ModelSource } from '../backends/model-selection.js';
+import { redactDiagnostic } from '../redaction.js';
 import type { AdapterProbeResult, BackendQuota, CatalogModel } from '../backends/types.js';
 
 /** Native per-window quota details reused by the exported doctor report. */
@@ -10,6 +12,13 @@ export type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['bucket
 
 /** Quota of one provider; `buckets` carries the per-window detail some probes report. */
 export type DoctorQuota = BackendQuota & { buckets?: ProbeQuotaBuckets };
+
+/** The model a turn runs when the call names none, where it came from, and whether doctor recorded it now. */
+export interface DoctorDefaultModel {
+  model: string;
+  source: ModelSource;
+  recorded?: boolean;
+}
 
 export interface DoctorReport {
   status: string;
@@ -23,6 +32,8 @@ export interface DoctorReport {
    */
   backends: Partial<Record<ProviderId, Omit<AdapterProbeResult, 'quota'> & { models?: CatalogModel[] }>>;
   quotas: Partial<Record<ProviderId, DoctorQuota>>;
+  /** Default model per installed backend; absent when none is known. */
+  defaultModels: Partial<Record<ProviderId, DoctorDefaultModel>>;
   recommendations: string[];
   installed_backends: ProviderId[];
   ready_backends: ProviderId[];
@@ -78,6 +89,24 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     return [];
   });
 
+  // The default model of each installed backend. One the CLI does not state itself (the first
+  // model agy lists, the model Claude Code reports) is recorded in config.json once, so a later
+  // catalog order or account change cannot switch it silently (owner decision of 2026-10-07).
+  const defaultModels: DoctorReport['defaultModels'] = {};
+  if (!configError) {
+    await Promise.all(selected.filter(id => probes[id]!.installed).map(async id => {
+      let selection: ModelSelection;
+      try { selection = await selectModel(id, probes[id]!, {}, { observeAfresh: true }); }
+      catch (err) { recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`); return; }
+      let recorded = false;
+      if (selection.source === 'first-listed' || selection.source === 'observed') {
+        try { recorded = await recordDefaultModel(id, selection.model); }
+        catch (err) { recommendations.push(`${id}: default model ${selection.model} not recorded in config.json: ${redactDiagnostic((err as Error).message, 256)}`); }
+      }
+      defaultModels[id] = recorded ? { ...selection, recorded } : selection;
+    }));
+  }
+
   const backends: DoctorReport['backends'] = {};
   const quotas: DoctorReport['quotas'] = {};
   for (const id of selected) {
@@ -97,10 +126,17 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     default_backend: effective || 'auto',
     backends,
     quotas,
+    defaultModels,
     recommendations: configError ? [configError, ...recommendations] : recommendations,
     ...(configError ? { configError } : {}),
   };
 }
+
+/** How the summary names where a default model came from. */
+const MODEL_SOURCE_LABELS: Record<ModelSource, string> = {
+  request: 'requested', session: 'session', config: 'config.json', 'cli-config': 'CLI config',
+  catalog: 'CLI default', 'first-listed': 'first listed', observed: 'CLI reports',
+};
 
 function formatQuota(quota: DoctorQuota | undefined): string {
   if (!quota) return 'quota unknown';
@@ -120,11 +156,13 @@ export function formatDoctorSummary(report: DoctorReport): string {
     const probe = report.backends[id]!;
     if (!probe.installed) { lines.push(`${id}: not installed`); continue; }
     const state = report.ready_backends.includes(id) ? 'ready' : !report.active_backends.includes(id) ? 'not allowed' : probe.authStatus === 'unauthenticated' ? 'signed out' : 'not ready';
-    const model = probe.config && typeof (probe.config as { defaultModel?: unknown }).defaultModel === 'string' ? ` · model ${(probe.config as { defaultModel: string }).defaultModel}` : '';
+    const selected = report.defaultModels?.[id];
+    const model = selected ? ` · model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''})` : '';
     lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${model} · ${formatQuota(report.quotas[id])}`);
-    // The discovery step before an explicit model: what the CLI offers, or the aliases it takes.
+    // The discovery step before an explicit model: what the CLI offers.
     if (probe.models?.length) lines.push(`  models: ${summarizeModels(probe.models)}`);
     else if (probe.availableModels?.length) lines.push(`  models: ${probe.availableModels.join(', ')}, or a full model id`);
+    else lines.push('  models: any name the CLI accepts');
   }
   if (report.recommendations.length) lines.push(...report.recommendations.map(text => `- ${text}`));
   return lines.join('\n');

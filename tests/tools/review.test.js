@@ -23,7 +23,7 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
   const head = git('rev-parse', '--short', 'HEAD');
   const original = adapterRegistry.gemini;
   let prompt = '';
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true }),
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async received => {
       prompt = received;
       return { status: 'completed', isError: false, truncated: false, continuationAvailable: true, nativeSessionId: '11111111-2222-3333-4444-555555555555', model: 'gemini-test',

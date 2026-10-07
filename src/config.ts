@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import { ToolError, type ProviderId } from './conversation.js';
+import { PROVIDERS, ToolError, type ProviderId } from './conversation.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './execution/stream.js';
+import { withFileLock } from './sessions/lock.js';
+import { isValidModelIdentifier } from './backends/governance.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
 export type BackendId = ProviderId | 'smart_quota';
@@ -14,10 +16,18 @@ export interface RoutingConfig {
   allowedBackends: ProviderId[];
 }
 
+/** User settings of one backend. */
+export interface BackendSettings {
+  /** Model a turn runs when neither the call nor its session names one. */
+  defaultModel?: string;
+}
+
 export interface CoAgent8Config {
   schemaVersion: number;
   defaultBackend: BackendId | null;
   routing: RoutingConfig;
+  /** Per-backend settings; doctor records a default model here when it finds none. */
+  backends: Partial<Record<ProviderId, BackendSettings>>;
 }
 
 function getConfigFile(): string {
@@ -34,6 +44,7 @@ const DEFAULT_CONFIG: CoAgent8Config = {
     strategy: 'fixed',
     allowedBackends: ['codex', 'claude', 'gemini'],
   },
+  backends: {},
 };
 
 function ensureConfigDir(): void {
@@ -45,7 +56,7 @@ function ensureConfigDir(): void {
  * Validates configuration from disk or an update before routing uses it.
  * @param value - Untrusted JSON value; schema version 1 is required when supplied.
  * @returns A normalized configuration with independent routing arrays and defaults.
- * @throws On invalid version, backend, strategy or allowed providers.
+ * @throws On invalid version, backend, strategy, allowed providers or backend settings.
  * @remarks The legacy toolProfile and other unrecognized properties are ignored;
  * the returned object contains only the supported configuration fields.
  */
@@ -108,6 +119,26 @@ export function validateConfig(value: unknown): CoAgent8Config {
     }
   }
 
+  const backends: CoAgent8Config['backends'] = {};
+  if (config.backends !== undefined && config.backends !== null) {
+    if (typeof config.backends !== 'object' || Array.isArray(config.backends)) {
+      throw new Error('Configuration Error: backends must be an object keyed by backend.');
+    }
+    for (const [id, value] of Object.entries(config.backends as Record<string, unknown>)) {
+      if (!(PROVIDERS as readonly string[]).includes(id)) {
+        throw new Error(`Configuration Error: Invalid backends entry '${id}'. Supported: ${PROVIDERS.join(', ')}.`);
+      }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`Configuration Error: backends.${id} must be an object.`);
+      }
+      const { defaultModel } = value as Record<string, unknown>;
+      if (defaultModel !== undefined && !isValidModelIdentifier(defaultModel)) {
+        throw new Error(`Configuration Error: backends.${id}.defaultModel is not a valid model identifier.`);
+      }
+      backends[id as ProviderId] = defaultModel === undefined ? {} : { defaultModel };
+    }
+  }
+
   const validated: CoAgent8Config = {
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
@@ -115,6 +146,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
       strategy,
       allowedBackends,
     },
+    backends,
   };
 
   // A legacy `toolProfile` key is ignored: one tool list now serves every client.
@@ -122,7 +154,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
 }
 
 function defaultConfig(): CoAgent8Config {
-  return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] } };
+  return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] }, backends: {} };
 }
 
 /**
@@ -158,9 +190,17 @@ export function loadConfigForDiagnostics(): { config: CoAgent8Config; error?: st
   }
 }
 
-export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
+function writeConfig(config: CoAgent8Config): void {
   const configFile = getConfigFile();
   ensureConfigDir();
+  const tmpPath = `${configFile}.tmp.${crypto.randomUUID()}`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmpPath, configFile);
+  } finally { fs.rmSync(tmpPath, { force: true }); }
+}
+
+export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
   const current = loadConfig();
   const merged = validateConfig({
     ...current,
@@ -169,14 +209,27 @@ export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
       ...current.routing,
       ...(updates.routing || {}),
     },
+    backends: { ...current.backends, ...(updates.backends || {}) },
   });
-
-  const tmpPath = `${configFile}.tmp.${crypto.randomUUID()}`;
-  try {
-    fs.writeFileSync(tmpPath, JSON.stringify(merged, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    fs.renameSync(tmpPath, configFile);
-  } finally { fs.rmSync(tmpPath, { force: true }); }
+  writeConfig(merged);
   return merged;
+}
+
+/**
+ * Records a backend's default model unless the configuration already names one.
+ * @param id - Backend.
+ * @param model - The model to record.
+ * @returns Whether the model was written.
+ * @throws When the configuration cannot be locked, read, validated or written.
+ */
+export async function recordDefaultModel(id: ProviderId, model: string): Promise<boolean> {
+  ensureConfigDir();
+  return withFileLock(getConfigFile(), async () => {
+    const current = loadConfig();
+    if (current.backends[id]?.defaultModel) return false;
+    writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }));
+    return true;
+  });
 }
 
 export function setDefaultBackend(backend: unknown): CoAgent8Config {

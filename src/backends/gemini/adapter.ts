@@ -16,12 +16,6 @@ export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-/**
- * Model passed when the caller names none. agy keeps the model last selected in its
- * interface in internal state, so its own default is unknown before a turn and could be
- * top-tier; an explicit default keeps every agy turn governable (AUD-P1-7).
- */
-export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash-high';
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
@@ -120,8 +114,7 @@ export async function probe(): Promise<AdapterProbeResult> {
     authEvidence,
     // Models come from `agy models` (`listModels`), read on demand.
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
-    config: { defaultModel: GEMINI_DEFAULT_MODEL },
-    modelSource: 'agy models; the bridge defaults to ' + GEMINI_DEFAULT_MODEL,
+    modelSource: 'agy models; the default is the configured one, else the first model agy lists',
     loginHint: 'agy',
   };
 }
@@ -150,19 +143,19 @@ function failed(error: ExecutionError): TerminalExecutionResult {
 
 /**
  * Runs one agy turn in its read-only sandbox.
- * @remarks The deadline and cancellation are `runCommand`'s: it validates `timeoutMs`, stops the
- * process and reports `timed_out` or `cancelled`, which this result keeps.
+ * @remarks Every turn passes `--model`: agy keeps the model last selected in its interface
+ * in internal state, so its own choice is unknown before the turn and could be top-tier
+ * (AUD-P1-7). The deadline and cancellation are `runCommand`'s: it validates `timeoutMs`,
+ * stops the process and reports `timed_out` or `cancelled`, which this result keeps.
  */
-/** Returns the requested model, or the bridge default {@link GEMINI_DEFAULT_MODEL}. */
-export function resolveModel(requested?: string): string {
-  return requested || GEMINI_DEFAULT_MODEL;
-}
-
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
-  if (options.model && !isValidModelIdentifier(options.model)) {
+  const model = options.model;
+  if (model === undefined) {
+    return failed({ code: 'INPUT_LIMIT', message: 'No agy model selected; the controller passes the configured model or the first one agy lists.', retryable: false });
+  }
+  if (!isValidModelIdentifier(model)) {
     return failed({ code: 'INPUT_LIMIT', message: 'Invalid Gemini model identifier.', retryable: false });
   }
-  const model = resolveModel(options.model);
   if (isGovernedModel(model) && options.consentedModel !== model) {
     return failed({ code: 'POLICY_DENIED', message: consentRequiredMessage(model), retryable: false });
   }
@@ -296,5 +289,5 @@ export async function listModels(): Promise<ModelCatalog | undefined> {
   return models.length ? { models, source: 'agy models' } : undefined;
 }
 
-export const geminiAdapter: CliAdapter = { id, name, probe, resolveModel, execute, inspectQuota, listModels };
+export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota, listModels };
 export default geminiAdapter;

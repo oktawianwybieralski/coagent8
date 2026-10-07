@@ -5,45 +5,29 @@ import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from 
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
-import { ToolError, type ExecutionError } from '../../conversation.js';
+import type { ExecutionError } from '../../conversation.js';
 export const id = 'claude', name = 'Claude Code CLI';
 const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
 export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-/** Claude Code `--model` aliases the bridge offers; the CLI resolves each to a concrete model. */
-const CLAUDE_MODEL_ALIASES = Object.freeze(['sonnet', 'haiku', 'opus', 'sonnet[1m]', 'opus[1m]']);
-/** `--restricted` needs 2.1.248 and `--permission-prompts` 2.1.259 (Claude Code CLI reference). */
-const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 259];
-/** Local /usage execution in print mode was verified live on 2.1.289; versions older than 2.1.289 skip /usage; a reported model turn or cost is discarded. */
-const MIN_CLAUDE_USAGE_VERSION: readonly [number, number, number] = [2, 1, 289];
+/**
+ * `--restricted` needs 2.1.248 and `--permission-prompts` 2.1.259 (Claude Code CLI
+ * reference). A local `/usage` in print mode, which reports the model in `system/init`
+ * without a model turn, was verified live on 2.1.289; the bridge needs it to know which
+ * model a name runs before consent.
+ */
+const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 289];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
 
-/** Resolves a requested alias to the model Claude Code runs; the bridge defaults to `sonnet`. */
-function resolveClaudeModel(requested = 'sonnet'): string {
-  if (requested === 'default') throw new ToolError('POLICY_DENIED', 'Claude model=default has unknown cost; choose an explicit model or sonnet/haiku alias.');
-  const match = /^(sonnet|haiku|opus)(\[1m\])?$/.exec(requested);
-  const override = match && process.env[`ANTHROPIC_DEFAULT_${match[1].toUpperCase()}_MODEL`];
-  return override ? override + (match![2] || '') : requested;
-}
-
-function supportsVersion(versionOutput: string, min: readonly [number, number, number]): boolean {
+/** Returns whether a `claude --version` output meets {@link MIN_CLAUDE_VERSION}. */
+function supportsVersion(versionOutput: string): boolean {
   const match = /^(\d+)\.(\d+)\.(\d+)/.exec(versionOutput.trim());
   if (!match) return false;
   const actual = match.slice(1, 4).map(Number);
-  for (let i = 0; i < 3; i++) if (actual[i] !== min[i]) return actual[i] > min[i];
+  for (let i = 0; i < 3; i++) if (actual[i] !== MIN_CLAUDE_VERSION[i]) return actual[i] > MIN_CLAUDE_VERSION[i];
   return true;
-}
-
-/** Returns whether a `claude --version` output meets {@link MIN_CLAUDE_VERSION}. */
-function supportsRestrictedMode(versionOutput: string): boolean {
-  return supportsVersion(versionOutput, MIN_CLAUDE_VERSION);
-}
-
-/** Returns whether a `claude --version` output meets {@link MIN_CLAUDE_USAGE_VERSION}. */
-function supportsLocalUsage(versionOutput: string): boolean {
-  return supportsVersion(versionOutput, MIN_CLAUDE_USAGE_VERSION);
 }
 
 /**
@@ -57,7 +41,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   const res = await runCommand(command, ['--version'], { timeoutMs: 5000 });
   const installed = res.status === 'completed';
   const version = res.stdout.trim() || 'unknown';
-  const executionSupported = installed && supportsRestrictedMode(version);
+  const executionSupported = installed && supportsVersion(version);
   let authStatus = 'unknown', authMethod: string | undefined;
   const authEvidence: string[] = [];
   if (installed) {
@@ -75,41 +59,67 @@ export async function probe(): Promise<AdapterProbeResult> {
       authEvidence.push(`claude auth status: loggedIn=${parsed.loggedIn}${authMethod ? `, authMethod=${authMethod}` : ''}; token validity is proven only by an execution.`);
     }
   } else authEvidence.push('Claude Code CLI not found.');
-  if (installed && !executionSupported) authEvidence.push(`Claude Code ${version} predates --restricted/--permission-prompts (requires ${MIN_CLAUDE_VERSION.join('.')}).`);
+  if (installed && !executionSupported) authEvidence.push(`Claude Code ${version} is older than ${MIN_CLAUDE_VERSION.join('.')}, which the restricted profile and model reporting need.`);
   return { id, name, installed, version, command, authStatus, authMethod, authEvidence, loginHint: 'claude auth login',
-    availableModels: [...CLAUDE_MODEL_ALIASES], supportedReasoningEfforts: VALID_REASONING_EFFORTS, config: { defaultModel: resolveClaudeModel() },
-    modelSource: 'Claude Code model aliases; the bridge defaults to sonnet; account availability not probed', executionSupported,
+    supportedReasoningEfforts: VALID_REASONING_EFFORTS,
+    modelSource: 'any Claude Code model or alias; the CLI reports the concrete model in system/init', executionSupported,
     capabilities: { resume: true, streaming: true, readOnlyVerified: executionSupported, reasoningEffort: true } };
 }
 
 /**
- * Reads subscription limits from `claude -p /usage`, a local command that makes no model call.
- * @param probe - Optional probe result with pre-collected version to avoid re-invoking `--version`.
- * @returns Measured quota, or `undefined` when the CLI version is not verified to run
- * `/usage` locally (predates 2.1.289), prints no limits (API-key billing), fails,
- * or reports any model turn or cost.
- * @remarks `/usage` is passed as the argument. `--model haiku` bounds the cost should an
- * unverified CLI version forward it to a model; a governed alias override skips the read.
+ * Runs `claude -p /usage`, a local command, in the restricted profile with stream-json output.
+ * @param model - The `--model` to pass; omitted for the model Claude Code runs without one.
+ * @param probe - Probe result whose version is checked; `--version` runs when it has none.
+ * @returns The model `system/init` reports and the usage text, or undefined when the CLI is
+ * older than {@link MIN_CLAUDE_VERSION}, fails, or reports any model turn or cost.
+ * @remarks Nothing reaches a model on a verified version; a turn or cost a later version
+ * might report discards the run.
  */
-export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
+async function runLocalUsage(model: string | undefined, probe?: AdapterProbeResult): Promise<{ model?: string; usage: string } | undefined> {
   let version = probe?.version;
   if (!version || version === 'unknown') {
     const verRes = await runCommand(claudeCommand(), ['--version'], { timeoutMs: 5000 });
     if (verRes.status !== 'completed') return undefined;
     version = verRes.stdout.trim();
   }
-  if (!supportsLocalUsage(version)) return undefined;
-  const model = resolveClaudeModel('haiku');
-  if (!isValidModelIdentifier(model) || isGovernedModel(model)) return undefined;
+  if (!supportsVersion(version)) return undefined;
   const res = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
     '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
-    '--model', model, '--output-format', 'json', '/usage'], { timeoutMs: 15000 });
+    ...(model ? ['--model', model] : []), '--output-format', 'stream-json', '--verbose', '/usage'], { timeoutMs: 15000 });
   if (res.status !== 'completed') return undefined;
-  let result: Record<string, unknown>;
-  try { result = JSON.parse(res.stdout) as Record<string, unknown>; }
-  catch { return undefined; }
+  let reported: unknown, result: Record<string, unknown> | undefined;
+  for (const line of res.stdout.split(/\r?\n/)) {
+    let event: Record<string, unknown>;
+    try { event = JSON.parse(line) as Record<string, unknown>; }
+    catch { continue; }
+    if (event?.type === 'system' && event.subtype === 'init') reported = event.model;
+    else if (event?.type === 'result') result = event;
+  }
   if (result?.is_error !== false || result.local_command !== 'usage' || result.num_turns !== 0 || result.total_cost_usd !== 0 || typeof result.result !== 'string') return undefined;
-  return parseClaudeUsage(result.result);
+  return { ...(isValidModelIdentifier(reported) ? { model: reported } : {}), usage: result.result };
+}
+
+/**
+ * Reads subscription limits from `claude -p /usage`, a local command that makes no model call.
+ * @param probe - Optional probe result with pre-collected version to avoid re-invoking `--version`.
+ * @returns Measured quota, or `undefined` when the CLI is older than the verified version,
+ * the run reports a model turn or cost, or it prints no limits (API-key billing).
+ */
+export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
+  const run = await runLocalUsage(undefined, probe);
+  return run ? parseClaudeUsage(run.usage) : undefined;
+}
+
+/**
+ * Asks Claude Code which concrete model it runs for a name or alias, or without one (its
+ * account default, as the restricted profile sees it), from `system/init` of a local
+ * `/usage` run: no model turn and no cost.
+ * @param requested - The model or alias; omitted for the default.
+ * @param probe - Probe result whose version is checked.
+ */
+export async function observeModel(requested?: string, probe?: AdapterProbeResult): Promise<string | undefined> {
+  if (requested !== undefined && !isValidModelIdentifier(requested)) return undefined;
+  return (await runLocalUsage(requested, probe))?.model;
 }
 
 /**
@@ -125,12 +135,9 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   const rejected = (code: ExecutionError['code'], message: string, model?: string): TerminalExecutionResult => ({
     status: 'failed', isError: true, output: '', model, error: { code, message: redactDiagnostic(message), retryable: false }, errorDetail: redactDiagnostic(message), truncated: false, continuationAvailable: false,
   });
-  const requested: unknown = options.model ?? undefined;
-  if (requested !== undefined && !isValidModelIdentifier(requested)) return rejected('INPUT_LIMIT', 'Invalid Claude model identifier.');
-  let model: string;
-  try { model = resolveClaudeModel(requested); }
-  catch (err) { return rejected('POLICY_DENIED', (err as Error).message); }
-  if (!isValidModelIdentifier(model)) return rejected('POLICY_DENIED', 'Invalid Claude model identifier from the environment alias override.');
+  const model: unknown = options.model;
+  if (model === undefined) return rejected('INPUT_LIMIT', 'No Claude model selected; the controller passes the model Claude Code reported.');
+  if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Claude model identifier.');
   if (isGovernedModel(model) && options.consentedModel !== model) return rejected('POLICY_DENIED', consentRequiredMessage(model), model);
   const resumeRaw = options.nativeSessionId || options.threadId || null;
   const resumeId = typeof resumeRaw === 'string' ? resumeRaw.trim().toLowerCase() : null;
@@ -182,5 +189,5 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     continuationAvailable };
 }
 export const execute = executeClaude;
-export const claudeAdapter: CliAdapter = { id, name, probe, resolveModel: resolveClaudeModel, execute, inspectQuota };
+export const claudeAdapter: CliAdapter = { id, name, probe, observeModel, execute, inspectQuota };
 export default claudeAdapter;

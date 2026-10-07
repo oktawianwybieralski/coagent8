@@ -20,6 +20,8 @@ const {
   inspectQuota: inspectGeminiQuota,
 } = require('../../../src/backends/gemini/adapter.ts');
 const { StreamReducer } = require('../../../src/execution/stream-reducer.ts');
+/** The model the controller would select; the adapter never chooses one. */
+const MODEL = 'gemini-3.8-flash-high';
 const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
 const { readResult } = require('../../helpers/result.cjs');
 
@@ -36,7 +38,7 @@ test('Gemini resolves relative primary and legacy data directories before enteri
     assert.equal(getDataDir(), tempDir);
     process.env.GEMINI_PATH = path.relative(process.cwd(), cli);
     process.env.coagent8_FIXTURE_CAPTURE = path.join(tempDir, 'relative-capture.json');
-    const result = await execute('relative directory', { cwd: relative });
+    const result = await execute('relative directory', { model: MODEL, cwd: relative });
     assert.equal(result.status, 'completed', JSON.stringify(result));
     const capture = JSON.parse(fs.readFileSync(process.env.coagent8_FIXTURE_CAPTURE, 'utf8'));
     assert.ok(capture.args.includes('--add-dir'));
@@ -61,7 +63,7 @@ test('Gemini production adapter uses runner, isolated read-only sandbox, streami
   assert.ok(events.some(e => e.type === 'tool_finished' && e.success));
   assert.ok(!JSON.stringify(events).includes('SYNTHETIC_SECRET'));
 
-  const second = await execute('second turn', { cwd: tempDir, nativeSessionId: first.nativeSessionId });
+  const second = await execute('second turn', { model: MODEL, cwd: tempDir, nativeSessionId: first.nativeSessionId });
   assert.equal(second.status, 'completed');
   assert.equal(second.nativeSessionId, first.nativeSessionId);
 
@@ -86,7 +88,7 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
     ['exit-failed', 'AUTH_REQUIRED'],
   ]) {
     process.env.coagent8_FIXTURE_MODE = mode;
-    const result = await execute('request', { cwd: tempDir });
+    const result = await execute('request', { model: MODEL, cwd: tempDir });
     assert.equal(result.status, 'failed', mode);
     assert.equal(result.error.code, code, mode);
     assert.equal(result.isError, true);
@@ -94,23 +96,23 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   }
 
   process.env.coagent8_FIXTURE_MODE = 'wrong-session';
-  assert.equal((await execute('request', { cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' })).error.code, 'SESSION_INVALID');
+  assert.equal((await execute('request', { model: MODEL, cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' })).error.code, 'SESSION_INVALID');
 
   process.env.coagent8_FIXTURE_MODE = 'rate-before-init';
-  const resumedRate = await execute('request', { cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' });
+  const resumedRate = await execute('request', { model: MODEL, cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' });
   assert.equal(resumedRate.error.code, 'RATE_LIMITED');
   assert.equal(resumedRate.continuationAvailable, true);
   delete process.env.coagent8_FIXTURE_MODE;
 
-  assert.equal((await execute('request', { nativeSessionId: 'latest' })).error.code, 'SESSION_INVALID');
-  assert.equal((await execute('request', { reasoningEffort: 'invalid-effort' })).error.code, 'CLI_UNSUPPORTED');
+  assert.equal((await execute('request', { model: MODEL, nativeSessionId: 'latest' })).error.code, 'SESSION_INVALID');
+  assert.equal((await execute('request', { model: MODEL, reasoningEffort: 'invalid-effort' })).error.code, 'CLI_UNSUPPORTED');
 
-  const validEffort = await execute('request', { cwd: tempDir, reasoningEffort: 'high' });
+  const validEffort = await execute('request', { model: MODEL, cwd: tempDir, reasoningEffort: 'high' });
   assert.equal(validEffort.status, 'completed');
 
   process.env.coagent8_FIXTURE_MODE = 'sandbox-denied';
   const warnings = [];
-  const deniedRes = await execute('request', { cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+  const deniedRes = await execute('request', { model: MODEL, cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
   assert.equal(deniedRes.status, 'completed', 'a denial shows the sandbox works; the answer stays');
   assert.equal(deniedRes.output, 'Answer from the files agy could read.');
   assert.equal(deniedRes.continuationAvailable, true);
@@ -120,7 +122,7 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
 
 test('Gemini deadline preserves a partial public answer (fixture)', async () => {
   process.env.coagent8_FIXTURE_MODE = 'hang';
-  const result = await execute('request', { cwd: tempDir, timeoutMs: 4000 });
+  const result = await execute('request', { model: MODEL, cwd: tempDir, timeoutMs: 4000 });
   assert.equal(result.status, 'timed_out');
   assert.equal(result.error.code, 'TIMEOUT');
   assert.ok(result.output.includes('Markdown'));
@@ -196,7 +198,7 @@ test('Gemini production adapter reports a denial independently of terminal order
     for (const mode of ['sandbox-denied-stderr-first', 'sandbox-denied-stdout-first']) {
       process.env.coagent8_FIXTURE_MODE = mode;
       const warnings = [];
-      const result = await execute('synthetic denial request', { cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+      const result = await execute('synthetic denial request', { model: MODEL, cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
       assert.equal(result.status, 'completed', mode);
       assert.equal(result.output, 'Answer from the files agy could read.', mode);
       assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, mode);
@@ -204,7 +206,7 @@ test('Gemini production adapter reports a denial independently of terminal order
       assert.equal(result.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
     }
     process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-duplicate';
-    const duplicate = await execute('synthetic duplicate request', { cwd: tempDir });
+    const duplicate = await execute('synthetic duplicate request', { model: MODEL, cwd: tempDir });
     assert.equal(duplicate.error.code, 'PROTOCOL_ERROR');
     assert.equal(duplicate.continuationAvailable, false);
   } finally { delete process.env.coagent8_FIXTURE_MODE; }
@@ -217,7 +219,7 @@ test('Gemini (agy) gets a 2 s SIGTERM grace on POSIX to shut down its own comman
   process.env.coagent8_FIXTURE_MARKER = marker;
   try {
     const controller = new AbortController();
-    const result = await execute('request', { cwd: tempDir, timeoutMs: 15000, abortSignal: controller.signal, onEvent: event => { if (event.type === 'assistant_delta' || event.type === 'assistant_message') controller.abort(); } });
+    const result = await execute('request', { model: MODEL, cwd: tempDir, timeoutMs: 15000, abortSignal: controller.signal, onEvent: event => { if (event.type === 'assistant_delta' || event.type === 'assistant_message') controller.abort(); } });
     assert.equal(result.status, 'cancelled');
     assert.equal(fs.readFileSync(marker, 'utf8'), 'clean', 'agy finished its SIGTERM cleanup before SIGKILL');
   } finally {
@@ -231,7 +233,7 @@ test('prompt is delivered via STDIN and omitted from CLI args', async () => {
   process.env.coagent8_FIXTURE_CAPTURE = capturePath;
 
   const testPrompt = 'Synthesize architecture and audit diff boundaries.';
-  const result = await executeGemini(testPrompt, { cwd: tempDir });
+  const result = await executeGemini(testPrompt, { model: MODEL, cwd: tempDir });
 
   assert.equal(result.status, 'completed', JSON.stringify(result));
   assert.ok(fs.existsSync(capturePath), 'Fixture capture must exist');
@@ -251,7 +253,7 @@ test('large prompts exceeding 32KB pass safely via STDIN without CreateProcessW 
 
   // 64KB prompt - exceeds Windows 32767 chars CreateProcessW command line limit
   const largePrompt = 'A'.repeat(64 * 1024);
-  const result = await executeGemini(largePrompt, { cwd: tempDir });
+  const result = await executeGemini(largePrompt, { model: MODEL, cwd: tempDir });
 
   assert.equal(result.status, 'completed', JSON.stringify(result));
   assert.ok(fs.existsSync(capturePath));
@@ -414,15 +416,17 @@ test('Gemini falls back to the requested model when agy omits it from init', asy
   }
 });
 
-test('agy runs an explicit default model, and a top-tier model only with consent for that model (AUD-P1-7)', async () => {
-  const { GEMINI_DEFAULT_MODEL } = require('../../../src/backends/gemini/adapter.ts');
+test('agy always runs the selected model, and a top-tier model only with consent for that model (AUD-P1-7)', async () => {
   const capturePath = path.join(tempDir, 'governed-capture.json');
   process.env.coagent8_FIXTURE_CAPTURE = capturePath;
   try {
-    const plain = await execute('request', { cwd: tempDir });
+    const unselected = await execute('request', { cwd: tempDir });
+    assert.equal(unselected.error.code, 'INPUT_LIMIT', "agy's interface selection never decides the model");
+    assert.equal(fs.existsSync(capturePath), false, 'agy is not launched without a model');
+    const plain = await execute('request', { model: MODEL, cwd: tempDir });
     assert.equal(plain.status, 'completed', JSON.stringify(plain));
     const args = JSON.parse(fs.readFileSync(capturePath, 'utf8')).args;
-    assert.equal(args[args.indexOf('--model') + 1], GEMINI_DEFAULT_MODEL, "agy's interface selection never decides the model");
+    assert.equal(args[args.indexOf('--model') + 1], MODEL);
     fs.rmSync(capturePath);
     const governed = 'claude-opus-4-6-thinking';
     for (const consentedModel of [undefined, 'claude-opus-4-7']) {
@@ -452,7 +456,7 @@ test('agy /usage runs only from quota inspection, sandboxed; probe and execute l
     assert.ok(usageCall.args.includes('--sandbox'), 'the quota read is sandboxed like every agy launch');
     fs.rmSync(capture);
     const launches = [];
-    const result = await executeGemini('question', { cwd: tempDir, onEvent: () => {} });
+    const result = await executeGemini('question', { model: MODEL, cwd: tempDir, onEvent: () => {} });
     assert.equal(result.status, 'completed', JSON.stringify(result.error));
     launches.push(JSON.parse(fs.readFileSync(capture, 'utf8')));
     assert.ok(!launches[0].args.includes('--version'), 'execute launches the turn directly');

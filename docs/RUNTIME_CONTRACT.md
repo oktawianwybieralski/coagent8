@@ -88,11 +88,16 @@ Storage root: `coagent8_DIR` or `~/.coagent8`.
   "routing": {
     "strategy": "fixed",
     "allowedBackends": ["codex", "claude", "gemini"]
+  },
+  "backends": {
+    "gemini": { "defaultModel": "<model the first doctor recorded>" }
   }
 }
 ~~~
 
 `defaultBackend` accepts a concrete provider or `smart_quota`.
+`backends.<id>.defaultModel` is the model a turn runs when neither the call nor
+its session names one; it must be a valid model identifier.
 `routing.strategy` accepts `fixed` or `smart_quota`. For `auto`, a configured
 smart strategy takes precedence over the fixed default. An explicit provider
 wins, subject to `allowedBackends`, installation and execution support.
@@ -113,36 +118,56 @@ Explicit fixed-provider resolution bypasses that quota-cache requirement.
 Missing configuration uses defaults. An existing unreadable, malformed or invalid
 file refuses execution with `POLICY_DENIED`. Discovery remains available;
 doctor reports the error using diagnostic defaults. Unsupported configuration
-properties are ignored; proposed `backends`/price settings have no runtime effect.
+properties are ignored and dropped when CoAgent8 writes the file; proposed price
+settings have no runtime effect.
 
 ## 2. Models, consent, results and errors
 
 ### Model and effort selection
 
-Explicit model or effort triggers a best-effort CLI catalog check before a
+The source names no model. A turn runs, in this order: the call's `model`; the
+continued session's model; `backends.<id>.defaultModel` in `config.json`; the
+CLI's own configured default (Codex top-level `model` in `config.toml`); the
+default the CLI catalog declares (Codex `isDefault`); the first model the catalog
+lists (agy, with its effort suffix); the model the CLI reports it runs without
+one (Claude). With none of these the call fails with `MODEL_UNAVAILABLE` before
+any model turn. Every adapter refuses a turn without a selected model, so agy's
+interface state or Claude's account default never decides silently.
+
+Claude Code resolves names itself (aliases, `ANTHROPIC_DEFAULT_*_MODEL`,
+`[1m]` variants, its account default). Before consent the bridge asks it which
+concrete model a name runs, from `system/init` of a local `/usage` run (no model
+turn, zero cost; verified on 2.1.289, the minimum version). Consent and the turn
+use that concrete model. A name Claude Code does not resolve is refused with
+`MODEL_UNAVAILABLE` rather than governed by its spelling.
+
+Explicit model or effort also triggers a best-effort CLI catalog check before a
 model turn and before consent:
 
 - Codex: visible `app-server` `model/list` entries and accepted efforts.
 - agy: `agy models` entries grouped by effort suffix.
-- Claude: no catalog; aliases and full identifiers pass to the adapter.
+- Claude: no catalog.
 
 When a usable catalog exists, an unknown model yields `MODEL_UNAVAILABLE`;
 unsupported or missing required effort yields `INPUT_LIMIT` with accepted values.
-Unavailable/empty catalogs permit the CLI to decide. Calls without explicit
-model/effort skip catalog reads. Claude warns and ignores unsupported efforts.
+Unavailable/empty catalogs permit the CLI to decide. Claude warns and ignores
+unsupported efforts.
 
-Completed probes/catalog reads, including an unavailable catalog, are cached
-for five minutes. Keys include adapter identity, executable/config file stamps
-and selected environment variables. Doctor refreshes them. Concurrent misses
-can duplicate processes, and keys do not cover every provider setting.
-Catalogs are not persisted in `models.json` today.
+Completed probes are cached in memory for five minutes. Catalogs and observed
+models are cached in memory for five minutes and in `~/.coagent8/models.json`
+(observed state, not configuration) for a day, so a new server process does not
+ask the CLI again. Keys hash the executable/config file stamps, `PATH`/home
+variables and every variable with a provider prefix (`ANTHROPIC_`, `CLAUDE_`,
+`CODEX_`, `OPENAI_`, `GEMINI_`, `AGY_`); the store holds only the hash. An
+unreadable store is reported and rebuilt; a failed write is reported and never
+fails the call. Doctor refreshes everything. Concurrent misses can still
+duplicate processes, and the keys do not cover every provider setting.
 
-Defaults remain source-defined where provider configuration supplies none:
-Codex `gpt-6.1-sol`, agy `gemini-3.8-flash-high` and Claude `sonnet`.
-Codex reads top-level model/effort from TOML; Claude resolves its known aliases
-and `ANTHROPIC_DEFAULT_*_MODEL` overrides. agy always receives `--model`.
-Descriptions still include model examples. Persisted defaults/catalogs and
-price-based consent are proposals, not configuration supported by this snapshot.
+Doctor reports each backend's default and its source. When the default is one
+the CLI does not state itself (the first model agy lists, the model Claude Code
+reports), the first doctor records it in `config.json` and says so, so a later
+catalog order or account change cannot switch it silently. Price-based consent is
+a proposal, not configuration supported by this snapshot.
 
 ### Top-tier model consent
 
@@ -363,7 +388,7 @@ These are open implementation issues, not relaxed security requirements.
 | CUR-007 | Timeout and duration omit preparation; agy headless host has a measured 180-second limit | `CLI-INTERACT-001` / `CONTEXT-001` |
 | CUR-008 | Sessions remain mandatory with archival disabled; first active handle is unavailable until return | `SESSION-001` / `HISTORY-002` |
 | CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |
-| CUR-010 | Model defaults/aliases and governance families remain literals; no price catalog exists | `EXEC-001` |
+| CUR-010 | Governance families remain name literals; no price catalog exists (defaults and aliases come from the CLIs and `config.json`) | `EXEC-001` |
 | CUR-011 | POSIX unexpected-parent-death cleanup is not implemented | `WINDOWS-001` |
 | CUR-012 | Snapshot bytes are accounted after writing; the archive budget is not a strict instantaneous disk ceiling | `HISTORY-002` |
 

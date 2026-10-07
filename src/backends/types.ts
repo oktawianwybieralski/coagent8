@@ -16,7 +16,10 @@ export interface AdapterProbeResult {
   version?: string;
   /** Filesystem path to CLI executable. */
   path?: string;
-  /** Adapter-specific configuration metadata. */
+  /**
+   * Adapter-specific configuration metadata; `defaultModel` only when the CLI's own
+   * configuration names one (Codex `config.toml`).
+   */
   config?: { defaultModel?: string; defaultReasoningEffort?: string; sandboxMode?: string };
   /** Path to local CLI configuration directory or file. */
   configPath?: string;
@@ -118,12 +121,16 @@ export interface CliAdapter {
   /** Probes the environment to verify CLI presence, version, and auth status. */
   probe(): Promise<AdapterProbeResult>;
   /**
-   * Returns the model `execute` would run for a requested model, defaults and aliases applied,
-   * so the controller can ask for consent before launch. Throws `POLICY_DENIED` for a model
-   * the adapter refuses outright.
+   * Asks the CLI, without a model turn, which concrete model it runs for a requested name, or
+   * without one, for CLIs that resolve names themselves (Claude Code aliases, its account
+   * default). The controller passes the answer to `execute`, so consent and the turn name
+   * the same model. Undefined when the CLI cannot say.
    */
-  resolveModel?(requested?: string): string | undefined;
-  /** Executes a prompt in a read-only sandboxed CLI process. */
+  observeModel?(requested?: string, probe?: AdapterProbeResult): Promise<string | undefined>;
+  /**
+   * Executes a prompt in a read-only sandboxed CLI process. `options.model` is the model the
+   * controller selected; an adapter refuses a turn without one rather than let the CLI choose.
+   */
   execute(prompt: string, options?: ExecutionOptions): Promise<TerminalExecutionResult>;
   /**
    * Reads measured native quota without a model call, for adapters whose probe does not include it.

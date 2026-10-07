@@ -1257,8 +1257,9 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   - otherwise the turn fails with `POLICY_DENIED` and a one-line instruction;
   - the controller governs the model the backend would run
     (`CliAdapter.resolveModel`: Codex `config.toml` default, Claude alias and
-    `ANTHROPIC_DEFAULT_*_MODEL` override, agy bridge default), and adapters run a
-    governed model only when it equals the approved `consentedModel`;
+    `ANTHROPIC_DEFAULT_*_MODEL` override, agy bridge default; replaced by model
+    selection on `refactor/model-catalog-cache`), and adapters run a governed
+    model only when it equals the approved `consentedModel`;
   - agy's own default lives in its interface state, so agy always gets `--model`
     (`gemini-3.8-flash-high` unless the caller names one);
   - `user_confirmed` is removed from the schema and rejected as unknown.
@@ -1279,30 +1280,59 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   Headless cancellation was measured later. `CUR-003` (an accepted response
   without the checkbox passed) is closed on `fix/explicit-consent`, see
   `AUDIT-001`.
-- [ ] **Model catalog without model literals** (owner decision of 2026-10-07:
-  "hardcoding is bad"). This is a proposal, not implemented config. `src/`
-  still names models in:
-  - `src/backends/codex/adapter.ts` (`gpt-6.1-sol` when `config.toml` has no `model`);
-  - `src/backends/gemini/adapter.ts` (`GEMINI_DEFAULT_MODEL`);
-  - `src/backends/claude/adapter.ts` (alias list, `sonnet` default, `haiku` for the
-    `/usage` read, which needs a model flag but makes no model call);
-  - `src/tools/schema.ts` (description examples);
-  - `src/backends/governance.ts` (consent families, see the next item).
+- [x] **Model catalog without model literals** (owner decision of 2026-10-07:
+  "hardcoding is bad"). `src/` named models in the Codex adapter (`gpt-6.1-sol`
+  when `config.toml` has no `model`), the agy adapter (`GEMINI_DEFAULT_MODEL`),
+  the Claude adapter (alias list, `sonnet` default, `haiku` for `/usage`, an
+  `ANTHROPIC_DEFAULT_*_MODEL` alias regex) and the parameter descriptions.
+  Claude default, owner decision of 2026-10-07: the model Claude Code reports in
+  `system/init`. Measured live the same day (Claude Code 2.1.289): a local
+  `claude -p --output-format stream-json --verbose /usage` reports the model with
+  `num_turns: 0` and `total_cost_usd: 0`; without `--model` it reported
+  `claude-opus-5-5` (the bridge ran `sonnet`), `sonnet` `claude-sonnet-5-5`,
+  `fable` `claude-fable-5-1`, and with `ANTHROPIC_DEFAULT_SONNET_MODEL` set,
+  `sonnet` and `sonnet[1m]` the overriding model (`[1m]` kept). `--restricted`
+  ignores user settings, so this is what the restricted profile runs.
 
-  Target:
-  - the catalogs (Codex `model/list`, `agy models`) persist in
-    `~/.coagent8/models.json`, keyed by executable stamp and CLI version, written
-    by doctor and by the first explicit-model check. It is observed state, not
-    user intent, so it stays out of `config.json`;
-  - the Codex default comes from `config.toml`, else the catalog's `isDefault`;
-  - agy and Claude need a concrete default before launch for consent. When
-    `config.json` has none, the first doctor writes `backends.<id>.defaultModel`
-    and says so in its summary: agy, the first model `agy models` lists; Claude,
-    the `model` of the user's Claude Code settings if set. A Claude default
-    without either is still to be designed: ask once, or record the model
-    `system/init` reports;
-  - descriptions name no model; they point to doctor. The live Codex run fixed an
-    unknown model in one retry from the error's list.
+  On `refactor/model-catalog-cache`:
+  - `backends/model-selection.ts` picks the call's model, the session's,
+    `config.json` `backends.<id>.defaultModel`, the CLI's configured default
+    (Codex `config.toml`), the catalog's declared default (Codex `isDefault`),
+    the first model the catalog lists (agy) or the model the CLI reports (Claude),
+    else `MODEL_UNAVAILABLE`. Adapters refuse a turn without a model;
+  - Claude names are resolved through `system/init` before consent, so consent
+    and `--model` name the concrete model; an unresolved name is refused. The
+    alias list and regex are gone; the Claude minimum is 2.1.289;
+  - catalogs and observed models persist in `~/.coagent8/models.json` for a day,
+    keyed by a hash of file stamps and the provider-prefixed environment
+    (`ANTHROPIC_`, `CLAUDE_`, `CODEX_`, `OPENAI_`, `GEMINI_`, `AGY_`), which also
+    widens the probe key (`CUR-006` in part). Failed reads and writes are reported,
+    never fatal;
+  - doctor reports each default and its source, and records one the CLI does not
+    state itself (agy's first listed, Claude's reported) in `config.json` once;
+  - the `model` and `reasoning_effort` descriptions name no model. Model-visible
+    tool definitions: 5,194 B (5,256 B before, budget 5,300 B).
+
+  Evidence: `tests/backends/model-literals.test.js` strips comments with esbuild
+  and finds no model name in `src/` code except `backends/governance.ts` (the next
+  item); on the previous source it lists 16. `tests/backends/model-selection.test.js`:
+  the store answers a later process without a CLI read, holds no credential, is
+  re-read for another installation, after a day and when unreadable; the selection
+  order; doctor records agy's first listed and Claude's reported default once and a
+  reversed catalog no longer moves it; a Claude alias the CLI maps to a top-tier
+  model is refused without consent. Against the previous source that alias ran as
+  `--model sonnet` without consent, and a Claude turn without a model ran the
+  literal `sonnet`. Full suite: 273 tests, 270 pass, 0 fail, 3 skipped; typecheck,
+  `lint:docs`, `npm run docs`, build and consumer smoke pass.
+
+  Live on 2026-10-07 through the built server with a temporary data directory: doctor
+  recorded `gemini-3.8-flash-high` (first listed) and `claude-opus-5-5` (reported)
+  and kept Codex's `config.toml` model; agy without a model ran
+  `gemini-3.8-flash-high` (`OK`, 8.6 s); Claude `haiku` ran as
+  `claude-haiku-4-5-20251001`; Claude without a model was refused before launch,
+  because the recorded default `claude-opus-5-5` is governed by the current name
+  rule and the client offered no elicitation. Until consent by relative price lands,
+  a headless client must name a Claude model.
 
   Test fixtures may keep model names: they reproduce recorded CLI output.
 - [ ] **Consent by relative price instead of name families** (owner direction of

@@ -1,6 +1,7 @@
 /**
- * Probe results reused across requests, so routing does not launch `--version` processes
- * on every call. @packageDocumentation
+ * Probe results and model observations reused across requests, so routing does not launch
+ * `--version`, catalog or model-name processes on every call. Catalogs and observed models
+ * are also kept in `models.json` for later server processes. @packageDocumentation
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,13 +9,20 @@ import { createHash } from 'node:crypto';
 import { adapterRegistry } from './registry.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
 import type { ProviderId } from '../conversation.js';
+import { readObservedModels, recordObservedModels } from './model-store.js';
 import type { AdapterProbeResult, CliAdapter, ModelCatalog } from './types.js';
 
 /** Upper bound for reusing a probe; doctor always probes afresh. */
 const PROBE_TTL_MS = 5 * 60 * 1000;
-/** Selected environment inputs for the cache key; not a complete provider-settings fingerprint. */
-const PROBE_ENVIRONMENT = ['PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE', 'CODEX_PATH', 'CODEX_CONFIG_PATH', 'OPENAI_API_KEY',
-  'CODEX_API_KEY', 'AGY_PATH', 'GEMINI_PATH', 'GEMINI_CLI_HOME', 'GEMINI_API_KEY', 'CLAUDE_PATH', 'ANTHROPIC_API_KEY'] as const;
+/** Upper bound for reusing a catalog or an observed model from `models.json`; doctor reads afresh. */
+const STORED_TTL_MS = 24 * 60 * 60 * 1000;
+/** Environment that locates an executable or its home. */
+const PROBE_ENVIRONMENT = ['PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE'] as const;
+/**
+ * Prefixes of the variables the CLIs read: executables, homes, credentials and model
+ * overrides such as Claude Code's alias variables. Only a hash of their values is kept.
+ */
+const PROVIDER_ENVIRONMENT_PREFIXES = ['ANTHROPIC_', 'CLAUDE_', 'CODEX_', 'OPENAI_', 'GEMINI_', 'AGY_'] as const;
 
 interface CachedProbe { adapter: CliAdapter; probeFn: CliAdapter['probe']; probe: AdapterProbeResult; key: string; at: number }
 const cache = new Map<ProviderId, CachedProbe>();
@@ -31,10 +39,12 @@ function fileStamp(file: string): string {
 
 /**
  * Identifies what a probe observed: the resolved executable files, the configuration file
- * and selected environment variables. Changes outside these stamps are not detected.
+ * and the provider environment. Changes outside these stamps are not detected.
+ * @returns A SHA-256 hash, so a key never holds a credential.
  */
 function probeKey(probe: AdapterProbeResult): string {
-  const parts: string[] = PROBE_ENVIRONMENT.map(name => `${name}=${process.env[name] ?? ''}`);
+  const providerVariables = Object.keys(process.env).filter(name => PROVIDER_ENVIRONMENT_PREFIXES.some(prefix => name.startsWith(prefix))).sort();
+  const parts: string[] = [...PROBE_ENVIRONMENT, ...providerVariables].map(name => `${name}=${process.env[name] ?? ''}`);
   if (probe.command) {
     let files: string[];
     try {
@@ -71,12 +81,14 @@ interface CachedCatalog { listFn: CliAdapter['listModels']; catalog: ModelCatalo
 const catalogs = new Map<ProviderId, CachedCatalog>();
 
 /**
- * Returns a completed CLI catalog cached for up to five minutes when its key matches.
- * Concurrent misses can perform duplicate reads; no catalog is persisted to disk.
+ * Returns the CLI's catalog: from memory for up to five minutes, else from `models.json`
+ * for up to a day, else read from the CLI and recorded in both. Keys must match the
+ * current installation. Concurrent misses can perform duplicate reads.
  * @param id - Backend whose catalog to read.
- * @param options - `fresh` reads again (doctor).
+ * @param options - `fresh` reads the CLI again (doctor).
  * @returns The catalog, or undefined when the CLI is not installed, has no catalog or
- * did not answer; an unanswered read is also kept, so a slow CLI is not asked on every call.
+ * did not answer; an unanswered read is kept in memory only, so a slow CLI is not asked on
+ * every call and a later process asks again.
  */
 export async function readModelCatalog(id: ProviderId, options: { fresh?: boolean } = {}): Promise<ModelCatalog | undefined> {
   const adapter = adapterRegistry[id];
@@ -86,7 +98,47 @@ export async function readModelCatalog(id: ProviderId, options: { fresh?: boolea
   const key = probeKey(probe);
   const cached = catalogs.get(id);
   if (!options.fresh && cached && cached.listFn === adapter.listModels && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) return cached.catalog;
+  const stored = options.fresh ? undefined : readObservedModels(id, key)?.catalog;
+  if (stored && Date.now() - stored.observedAt < STORED_TTL_MS) {
+    const catalog: ModelCatalog = { models: stored.models, source: stored.source };
+    catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
+    return catalog;
+  }
   const catalog = await adapter.listModels();
   catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
+  if (catalog) await recordObservedModels(id, key, { catalog });
   return catalog;
+}
+
+interface CachedObservation { observeFn: CliAdapter['observeModel']; model: string | undefined; key: string; at: number }
+const observations = new Map<string, CachedObservation>();
+
+/**
+ * Returns the concrete model the CLI reports for a requested name, or for no name: from
+ * memory for up to five minutes, else from `models.json` for up to a day, else asked from
+ * the CLI (`observeModel`) and recorded in both.
+ * @param id - Backend to ask.
+ * @param requested - The requested name; omitted for the model the CLI runs without one.
+ * @param options - `fresh` asks the CLI again (doctor).
+ * @returns The model, or undefined when the adapter cannot observe one or the CLI did not say.
+ */
+export async function readObservedModel(id: ProviderId, requested?: string, options: { fresh?: boolean } = {}): Promise<string | undefined> {
+  const adapter = adapterRegistry[id];
+  if (!adapter.observeModel) return undefined;
+  const probe = await probeBackend(id);
+  if (!probe.installed) return undefined;
+  const key = probeKey(probe);
+  const name = requested ?? '';
+  const memoryKey = `${id}:${name}`;
+  const cached = observations.get(memoryKey);
+  if (!options.fresh && cached && cached.observeFn === adapter.observeModel && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) return cached.model;
+  const stored = options.fresh ? undefined : readObservedModels(id, key)?.resolved?.[name];
+  if (stored && Date.now() - stored.observedAt < STORED_TTL_MS) {
+    observations.set(memoryKey, { observeFn: adapter.observeModel, model: stored.model, key, at: Date.now() });
+    return stored.model;
+  }
+  const model = await adapter.observeModel(requested, probe);
+  observations.set(memoryKey, { observeFn: adapter.observeModel, model, key, at: Date.now() });
+  if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
+  return model;
 }

@@ -308,8 +308,10 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   for (const name of ['backend', 'model', 'reasoning_effort', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
   }
-  assert.match(consultProperties.model.description, /gpt-5\.6-luna.*haiku.*gemini-3\.8-flash-low.*doctor/, 'model gives an example per backend and the place that lists them');
-  assert.match(consultProperties.reasoning_effort.description, /gemini-3\.8-flash: low/, 'the agy effort requirement is stated before a call fails');
+  // No model names in descriptions (owner decision of 2026-10-07): doctor lists them, and a
+  // wrong name fails before any model call with the accepted ones.
+  assert.match(consultProperties.model.description, /doctor lists each backend's models and default/, 'model points to the place that lists them');
+  assert.match(consultProperties.reasoning_effort.description, /listed with efforts needs one/, 'the effort requirement is stated before a call fails');
   const consult = tools.find(t => t.name === 'consult');
   assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
   assert.deepEqual(consult.inputSchema.properties.reasoning_effort.enum, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -321,7 +323,7 @@ test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to 
   const { randomUUID } = require('node:crypto');
   const original = adapterRegistry.gemini;
   let prompt;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async p => { prompt = p; return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'm', truncated: false, continuationAvailable: true }; } };
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });

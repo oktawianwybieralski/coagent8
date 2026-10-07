@@ -10,15 +10,22 @@ if (argv[0] === 'auth' && argv[1] === 'status') {
   console.log(JSON.stringify({ loggedIn, authMethod: loggedIn ? 'claude.ai' : 'none', apiProvider: 'firstParty' }, null, 2));
   process.exit(loggedIn ? 0 : 1);
 }
+const valueOf = flag => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
 if (argv.at(-1) === '/usage') {
   if (env.CLAUDE_FIXTURE_CAPTURE) fs.writeFileSync(env.CLAUDE_FIXTURE_CAPTURE, JSON.stringify({ argv, stdin: '' }));
   const usage = JSON.parse(fs.readFileSync(path.join(__dirname, 'recordings', 'usage-subscription.json'), 'utf8'));
   if (env.CLAUDE_FIXTURE_USAGE === 'api-key') usage.result = 'You are currently using API billing.';
   if (env.CLAUDE_FIXTURE_USAGE === 'model-turn') { usage.num_turns = 1; usage.total_cost_usd = 0.001; }
-  console.log(JSON.stringify(usage));
+  // stream-json (2.1.289, recorded 2026-10-07): `system/init` names the model a name runs,
+  // or the account default without `--model`; aliases and CLAUDE_FIXTURE_MODELS map names.
+  const requested = valueOf('--model') ?? '';
+  const models = { '': 'claude-sonnet-4-6', sonnet: 'claude-sonnet-4-6', haiku: 'claude-haiku-4-5-20251001', opus: 'claude-opus-4-6', ...JSON.parse(env.CLAUDE_FIXTURE_MODELS || '{}') };
+  if (valueOf('--output-format') === 'stream-json') {
+    if (env.CLAUDE_FIXTURE_USAGE !== 'no-init') console.log(JSON.stringify({ type: 'system', subtype: 'init', model: models[requested] ?? requested, tools: [], mcp_servers: [], permissionMode: 'dontAsk' }));
+    console.log(JSON.stringify({ ...usage, type: 'result' }));
+  } else console.log(JSON.stringify(usage));
   process.exit(0);
 }
-const valueOf = flag => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
 const sessionId = valueOf('--session-id') || valueOf('--resume');
 const scenario = env.CLAUDE_FIXTURE_SCENARIO || (valueOf('--resume') ? 'resume' : 'success-partial');
 const recordings = {

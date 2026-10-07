@@ -60,8 +60,11 @@ acquisition/pruning and lease release remain required and can fail a call.
 Post-turn metadata failures preserve secured output and disable continuation.
 Cooldowns are recorded once per rate-limited turn.
 
-Completed probes and catalogs are cached in memory for up to five minutes,
-with selected environment and file stamps. Concurrent misses are not coalesced.
+Completed probes are cached in memory for up to five minutes. Catalogs and the
+models a CLI reports for a name are also kept in `models.json` for a day; keys
+hash file stamps and provider-prefixed environment. Concurrent misses are not
+coalesced. `backends/model-selection.ts` chooses the model of a turn from the
+call, session, configuration or CLI; the source names no model.
 Routing reads cached quota and cooldowns; `doctor` performs native quota reads.
 Automatic selection still writes the quota cache synchronously, so cache failure
 can prevent execution.
@@ -103,6 +106,5 @@ integrations edit host registrations.
 
 Move misplaced behavior, split a mixed responsibility, or precisely rename a
 coherent owner. The ordinary target path is request, execution, adapter,
-supervised CLI and public answer. Per-call ephemeral execution, persisted model
-catalogs, price-based consent and a separate installer are proposals in the
-roadmap. Changes must preserve safety and stored data or define a migration.
+supervised CLI and public answer. Per-call ephemeral execution, price-based
+consent and a separate installer are proposals in the roadmap. Changes must preserve safety and stored data or define a migration.
