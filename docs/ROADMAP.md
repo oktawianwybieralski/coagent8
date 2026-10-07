@@ -325,6 +325,11 @@ It adds no separate work.
 - [ ] `CUR-002`: prove read-only capability isolation beyond shell flags for
   Codex/agy, including inherited MCP tools and recursive CoAgent8 calls. Use
   isolated fixture configurations, never a user's live writable MCP services.
+  Also verify whether an agy `--sandbox` turn exposes a language-server address
+  and CSRF token to its tools: agy 1.3.1 carries `ANTIGRAVITY_LS_ADDRESS` and
+  `ANTIGRAVITY_CSRF_TOKEN` for agent tool environments (static evidence in
+  `ANTIGRAVITY-HUB-001`), which would let a command reconfigure or start
+  sessions outside the sandbox profile.
 - [x] `CUR-003`: require `approve` and accept only explicit boolean true for an
   accepted elicitation. Cover missing/empty/false content and every governed
   default/session model through the real MCP request boundary. On
@@ -1940,7 +1945,9 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   from `openai.chatgpt`. Help advertises the streaming/tool controls for Claude
   and `app-server`, MCP and sandbox controls for Codex. This is executable/help
   evidence only, not authenticated execution or adapter compatibility acceptance.
-  No usable agy executable was found in the inspected Antigravity extension.
+  The Antigravity VSIX contains no agy executable, but the extension downloads
+  and updates one in `~/.gemini/bin` before starting its backend
+  (`ANTIGRAVITY-HUB-001`); `agy` now falls back to that copy after PATH.
   Evaluate an optional VS Code extension pack separately from core MCP setup;
   do not introduce unconditional dependencies on every backend's extension.
 - [ ] Complete the clean-environment CLI onboarding described in the owner's
@@ -1954,9 +1961,11 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   MCP usable without VS Code or every provider's extension.
   For Codex and Claude, verify the binaries supplied by `openai.chatgpt` and
   `anthropic.claude-code`; do not assume installation implies compatibility or
-  sign-in. For Antigravity, offer the official standalone `agy` installer;
-  the inspected Google extension supplies no usable CLI and does not satisfy
-  the backend prerequisite. Consider a separate optional extension pack, while
+  sign-in. For Antigravity, reuse the `agy` that `google.google-antigravity`
+  installs in `~/.gemini/bin` when present (2026-10-07 correction: the VSIX
+  ships none, the extension downloads it); otherwise offer the official
+  standalone `agy` installer. Installing the Google extension alone does not
+  establish the executable before its backend first starts. Consider a separate optional extension pack, while
   using `extensionDependencies` only for a real functional extension dependency.
   Verify current documentation through Context7 before selecting the mechanism.
   Finish compatibility/authentication diagnostics, discovery from actual active
@@ -2049,6 +2058,40 @@ Selected local-default clients are remembered. Immutable runtime bundles are
 published under `~/.coagent8/runtime/<sha256>/index.cjs`. The repaired manual
 `~/.coagent8/runtime/index.cjs` registrations are preserved. No user host
 configuration was removed or replaced during the real acceptance checks.
+
+### `ANTIGRAVITY-HUB-001` - Antigravity extension backend reuse
+
+**Status:** Investigated 2026-10-07; execution through the extension is not
+adopted. Outside 1.0.0 scope. Evidence, protocol map and method are in the
+[investigation record](ANTIGRAVITY_EXTENSION_BACKEND_2026-10-07.md).
+
+**Verdict:** technically reachable but incompatible with the execution
+contract. `google.google-antigravity` 1.7.0 exports only `csrfToken` and a
+`port` getter. Execution exists only in the hub's private Connect service
+`exa.language_server_pb.LanguageServerService`, without a compatibility
+contract. The hub is not a capability boundary: its unauthenticated web page
+embeds the CSRF token (live), and agent tool environments carry the hub address
+and token (static). Read-only controls are optional request fields without a
+verified read-back, and the hub loads the user's global MCP servers, including a
+CoAgent8 registration. Commands such as `addContext`/`triggerSend` drive the
+user's chat view and are UI automation.
+
+- [x] Map the exported API, commands, iframe RPC and hub protocol from the
+  installed extension and the `agy` 1.3.1 descriptors; confirm hub health and
+  CSRF rejection live without a token or a model turn.
+- [x] Reuse only the executable: `resolveCliCommand('agy')` falls back to the
+  extension-managed `~/.gemini/bin/agy` after PATH; explicit overrides never
+  fall back. Typecheck and focused resolver/setup/process tests passed apart
+  from four pre-existing `vscode-extension.test.js` failures; live resolution,
+  version probe and `agy models` passed on Windows without a model turn.
+- [ ] Accept a model turn through the managed executable (consent applies) and
+  observe its Windows launches. Not run.
+- [ ] Revisit the hub only if Google publishes a supported, versioned API with
+  an enforced and verifiable per-session read-only profile, MCP isolation, no
+  route from agent tools back to the hub, verified model selection before the
+  turn and conversations isolated from the user's state. Until then no companion
+  bridge, token handling or hub transport is added. The preferred future shape
+  and its lifecycle/cancellation constraints are in the investigation record.
 
 ### `SIMPLIFY-001` - deletions and deduplication
 
