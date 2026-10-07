@@ -20,10 +20,13 @@ Review scope and executed checks follow [04-quality-gate.md](04-quality-gate.md)
 Ordinary documentation edits do not require launching a backend AI or runtime
 tests merely to populate an envelope. Independent review requirements before
 merge remain applicable; record unexecuted checks honestly. The repository's
-release review format is separate from the planned ordinary consult response.
+release review format is separate from the implemented plain consult response.
 
 Before merging significant architectural changes, refactors, or creating Release Candidates:
-1. Invoke `review` (or `consult` with `backend: "codex"`) against the uncommitted diff in read-only sandbox mode.
+1. Invoke `review` against the complete relevant diff in read-only sandbox mode.
+   A plain `consult` is advisory and does not request or enforce an envelope.
+   An explicitly assigned advisory consultation cannot substitute for bound
+   independent release approval.
 2. The auditor produces a structured **State Envelope**:
    ```text
    REVIEW: <turn>
@@ -36,10 +39,15 @@ Before merging significant architectural changes, refactors, or creating Release
    Evidence: <reproducible detail>
    Fix: <actionable remedy>
 
-   CHECKS: typecheck=<PASS|FAIL>; tests=<PASS|FAIL>
+   CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
    END_REVIEW
    ```
-3. **Severity Thresholds:**
+3. Verify expected scope/snapshot and actual check evidence outside the text gate.
+   The current runtime gate checks envelope structure/reported findings, but can
+   accept truncated input, a wrong snapshot and failed CHECKS (`CUR-001`). Those
+   outputs are not valid approval. Required checks that failed block readiness;
+   inapplicable checks stay NOT_RUN with an explanation.
+4. **Severity Thresholds:**
    * **P1 (Critical / Security / Correctness)**: MUST be remediated immediately. Blocks PR merge.
    * **P2 (Robustness / Resource Leaks / Edge Cases)**: MUST be remediated before PR merge.
    * **P3 (Style / Minor Nits)**: Optional recommendations that do not block the gate.

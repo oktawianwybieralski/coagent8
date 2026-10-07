@@ -1,218 +1,93 @@
-# Handoff: audit blockers (`AUDIT-001`, execution order 1)
+# Current handoff - documentation reconciled on 2026-10-07
 
-```yaml
-standard_version: "1.0.0"
-task_id: "AUDIT-001"
-role: "Author (Authoring Agent)"
-mode: "implementation"
-topic_branch: "fix/audit-blockers"   # create from release/v1.0.0
-target_branch: "release/v1.0.0"       # PR with Squash and Merge
-base_sha: null                       # first commit of release/v1.0.0; runtime logic equals the audited c265cdf (only comments and version metadata differ)
-candidate_sha: null                  # no candidate yet
-```
+~~~yaml
+task_id: DOCS-001
+mode: documentation
+topic_branch: docs/audit-reconciliation
+target_branch: release/v1.0.0
+implementation_sha: 24052e3fc99de404cfb81c24f58e302c90a29cd8
+accepted_release_candidate: null
+documentation_candidate: docs/audit-reconciliation
+release_approval: not_granted
+~~~
 
-This handoff points to the plan; it is not a second plan. The
-[roadmap](ROADMAP.md#audit-remediation-index) owns scope, order and acceptance.
-The [independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
-owns the findings, reproductions and proposed fixes.
+The owner confirmed the reworded security rule 01 (P0) on 2026-10-07: consent
+precedes session acquisition and any model turn, metadata probes may start CLIs
+before it, and only an explicit `approve: true` is consent.
 
-## Objective
+[ROADMAP.md](ROADMAP.md#current-snapshot-status) is the single active plan.
+[RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) describes the source snapshot;
+[the review](PROJECT_REVIEW_2026-10-05.md#review-at-24052e3-2026-10-07)
+records newer findings and test provenance. The previous detailed branch ledger
+is preserved as [historical evidence](archive/HANDOFF_STACK_2026-10-07.md).
 
-Close execution order 1. Each finding lands in its owning milestone, with a
-regression test derived from the audit reproduction:
+## Current state
 
-| Finding | Milestone | Done when | Status |
-| --- | --- | --- | --- |
-| AUD-P0-1 | `WINDOWS-001` | Layered teardown: protocol interrupt (Claude, Codex), then the owned root handle or POSIX group; no PID, PPID, snapshot or polling anywhere; see the decision record in `WINDOWS-001` | Implemented on `fix/windows-process-identity`, not yet merged |
-| AUD-P0-2 | `REDACTION-002` | Ordinary code in answers round-trips unchanged; credential formats are still redacted | Implemented on `fix/redaction-output-integrity` (`8555d0c`), not yet merged |
-| AUD-P0-3 | `HISTORY-002` | Streamed answers persist within a small constant factor of their size; archive failures are warnings; a full archive never blocks a CLI launch | Implemented on `fix/history-archive-integrity`, not yet merged |
-| AUD-P1-3 | `HISTORY-002` | Bookkeeping failures never discard a successful answer | Implemented on `fix/history-archive-integrity`, not yet merged |
-| AUD-P1-1 | `ROUTING-MIGRATE-001` | One cooldown write per rate-limited turn, verified through the controller sequence | Implemented on `fix/cooldown-single-write`, not yet merged |
-| AUD-P1-2 | `ERRORS-001` | Typed `ToolError`; no prefix parsing; unknown failures map to `PROCESS_ERROR` | Implemented on `fix/typed-tool-errors`, not yet merged |
-| AUD-P1-10 | `PACKAGE-001` | No build output in Git; packed bundle matches packed source | Implemented on `build/untrack-dist`, not yet merged |
+Local stacked changes implement owned-process cleanup, separate answer redaction,
+bounded best-effort archives, typed errors, workspace isolation, cached probes,
+six tools, Markdown execution results, model catalogs and user elicitation.
+Plugin/VSIX payloads are assembled from the npm tarball. The stack is not a
+merged, matrix-verified or released candidate. Package metadata is beta.1.
 
-Small independent fixes may land as separate PRs into the target branch.
+New open findings concern incomplete review input/approval binding, inherited
+Codex/agy MCP capabilities, missing checkbox consent, automatic-routing cache
+failures, sticky commentary limits, concurrent cache misses and request-budget
+scope. The runtime contract lists these as `CUR-001` through `CUR-012` (the last is source-inspected capacity accounting).
 
-## Constraints
+Archival off does not mean session-free execution. Catalog validation is
+best-effort. Current consent uses model-name families; persisted models/defaults
+and relative-price consent are proposals. Do not document them as existing
+configuration or weaken the P0 policy while implementing them.
 
-- Follow the [core invariants](../.agents/rules/00-core-invariants.md),
-  [security rules](../.agents/rules/01-security-and-sandboxes.md),
-  [Git workflow](../.agents/rules/02-git-workflow.md) and
-  [cross-platform rules](../.agents/rules/05-cross-platform.md). Teardown
-  terminates only owned handles and owned process groups, after a protocol
-  interrupt where the backend supports one.
-- Do not test process teardown by sweeping a live Windows desktop. Use owned
-  fixture trees.
-- Fix root causes. Do not add name lists, larger limits or retries that hide a
-  finding.
-- Preserve stored histories, sessions and host registrations. Any storage-format
-  change needs an explicit migration.
-- Do not mark a roadmap item `[x]` without a reference to evidence that measures
-  it. Do not repeat the previous handoff's unsupported claims.
+## Next work
 
-## Status (2026-10-07, updated after execution order 3)
+1. Close approval/sandbox findings in `AUDIT-001` and `EXEC-001`, with committed
+   regressions derived from the current review. Start with missing approval,
+   review input completeness/snapshot binding, and inherited MCP isolation.
+2. Resolve the execution/cache/session work in the owning roadmap milestones.
+   Preserve the owner's catalog/price direction while resolving the explicit
+   design questions and policy approval requirement.
+3. Restart existing clients before fresh-session AX retests. Rebuilding does
+   not reload their server process or tool catalog. Interactive consent and
+   native/UI acceptance remain separate from headless protocol measurements.
+4. Integrate the stack through the required PR/review workflow; validate the
+   exact candidate on all six CI jobs before tester publication. The roadmap
+   owns beta gates, release artifacts and the owner's npm-placeholder deadline.
 
-Branch `fix/windows-process-identity` (from `release/v1.0.0`, not pushed):
+The owner previously requested an AX retest in fresh Codex/agy sessions covering
+wrong models/efforts, a tool-using Codex question, continuation and a review of
+`2437d98`. That remains unrecorded acceptance; these documentation edits do not
+claim it ran or authorize new paid model calls/publication.
 
-| Commit | Change |
-| --- | --- |
-| `0c11032`, `2b6a4d0` | Earlier (PID, creation time) snapshot design and denser polling, by another author; superseded by `ca8cf88` |
-| `ca8cf88` | `WINDOWS-001`: three-layer termination. Protocol interrupt for Claude (`stream-json` `control_request`) and Codex (`codex app-server`, `turn/interrupt`, per-run read-only verification); forced stop of the owned root only; `process-tree.ts`, CIM polling and PID kills removed; rule 05 rewritten |
-| `cd62aaf` | agy: 2 s `SIGTERM` grace on POSIX (`signalGraceMs`) |
-| `31dd8c4` | agy `--print-timeout` rejected after six live turns |
-| this change | `CHANGELOG-001`: `CHANGELOG.md` generated by git-cliff (commit-first entries); GitHub release notes in the PrestaShop layout (`npm run release-notes`) |
+## Verification and invariants
 
-Evidence is recorded in the roadmap under `WINDOWS-001` and `CHANGELOG-001`:
-- Windows: full suite, typecheck, build, consumer smoke and `lint:docs` pass.
-- Linux (Docker `node:22`): the process and adapter suites pass. The Codex
-  `probe` test fails without Codex credentials, also before this branch.
-- Live: Claude interrupt (haiku) and six agy turns.
-- Not verified: a live Codex turn and `turn/interrupt`, macOS, and the GitHub
-  API path of the release notes.
+Use the [quality gate](../.agents/rules/04-quality-gate.md). Markdown changes need
+content/link review and `git diff --check`. Source-comment changes additionally
+need `npm run lint:docs` and `npm run docs`. Two executable parameter descriptions
+were corrected in this task; run typecheck and the focused surface/budget suite.
+No routing, model-validation or consent logic changed.
 
-Later topic branches are stacked linearly on it, each from the previous one. None
-is pushed:
+The preceding runtime review ran 266 tests (263 pass, zero fail, three skips),
+then a fresh build and fixture-backed consumer smoke. Source unit/e2e evidence,
+pre-existing-dist setup evidence and fresh-tarball evidence are distinguished in
+the review. Those are historical results, not validation of this documentation
+candidate. Validation of this documentation candidate: typecheck, documentation lint/API
+generation, 15 source surface tests and local link/diff checks pass. The API gate
+initially caught three private types in exported signatures and a private-constant
+link; type-only exports/link repair resolved them without disabling warnings.
+No full runtime suite, dist build or consumer smoke was rerun for this task.
 
-| Branch | Commits | Change |
-| --- | --- | --- |
-| `fix/redaction-output-integrity` | `82bdc9a`..`8555d0c` | `REDACTION-002`: credential-format redaction split from diagnostic redaction |
-| `chore/source-layout` | `6ccfd91`..`b99782d` | Source and test layout per module, `tooling/`, `.artifacts/`, dead code removed |
-| `build/node-24-minimum` | `c0c030f` | Node.js 24 minimum; CI on Node 24.x and 26.x |
-| `fix/hermetic-test-environment` | `076b59d` | `tests/run.cjs` runs the suite in a hermetic environment without real backend CLIs |
-| `perf/tsdown-bundle-comparison` | `a36a267`..`991b7e4` | Server bundle built with tsdown; no comments in the bundle; `dist/THIRD_PARTY_NOTICES.txt`; build tooling needs Node 24.11 (`devEngines`). Evidence: [BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md) |
-| `fix/history-archive-integrity` | `3dac0d6`..`0cddde5` | `HISTORY-002`: bounded append-only delta storage, split-credential tail buffering, best-effort archival, LRU capacity eviction, fail-closed leases |
-| `feat/context-budget` | `46fa155`..`ed1c141` | `CONTEXT-001`: resolved model, agy denial kept, compact tool surface and results, client roots, shorter prompts |
-| `fix/cooldown-single-write` | `abcff7d`..`6b0ecba` | `ROUTING-MIGRATE-001` (AUD-P1-1): one cooldown write per rate-limited turn, regression through `executeTask` |
-| `fix/typed-tool-errors` | `e1f83e2`..`d727fc8` | `ERRORS-001` (AUD-P1-2): `ToolError` with an `ErrorCode`; unknown failures are `PROCESS_ERROR` |
-| `build/untrack-dist` | `891875b`..`e93125a` | `PACKAGE-001` (AUD-P1-10): `dist/` out of Git, LF checkouts, consumer smoke compares the packed bundle with a fresh build |
-| `fix/codex-config-toml` | `bc04df9` | `EXEC-001` (AUD-P1-11, order 2): Codex `config.toml` parsed with `smol-toml`, top-level keys only |
-| `fix/model-identifier-validation` | `9cdb710` | `EXEC-001` (AUD-P1-6, order 2): `model` validated in the controller and every adapter |
-| `fix/gemini-unknown-events` | `d23ad1b` | `CLI-INTERACT-001` (AUD-P1-5, order 2): unknown agy event types ignored with a warning |
-| `fix/resource-workspace-isolation` | `070ad58` | `SESSION-001` (AUD-P1-8, order 2): resources and `session list` scoped to the workspace |
-| `fix/lease-integrity` | `35f015c`..`aea0642` | `LOCKS-001` (AUD-P1-9, order 2): atomic, renewed leases; stale by age, dead PID or unreadable content; no lease deletion in the sweep |
-| `perf/bounded-probes` | `ec7844f`..`1b49856` | `EXEC-001` (AUD-P1-4, order 2): cached probes, agy `/usage` only in doctor and sandboxed, no re-probe in `execute` |
-| `fix/error-classification` | `cb0f723` | `ROUTING-MIGRATE-001` (AUD-P2-1, order 3): anchored rate-limit and auth phrases; `ms` and decimal resets |
-| `fix/unmeasured-quota` | `d88c07d` | `ROUTING-MIGRATE-001` (AUD-P2-2, order 3): unmeasured agy windows are not full headroom; no `any` in `src/` |
-| `fix/empty-catches` | `96ebcfd` | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
-| `fix/malformed-config` | `8b43688`..`c85c775` | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
-| `fix/history-empty-catches` | `07db345`..`040eb58` | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
-| `refactor/simplify-timeouts-capabilities` | `8d2c56b`..`967a0e5` | `SIMPLIFY-001` (AUD-P2-5, AUD-P2-8): one Gemini deadline; no phantom `resources.listChanged` |
-| `refactor/maintenance-injection` | `68be8a2`..`cb6d4c4` | `SIMPLIFY-001` (AUD-P2-3): maintenance injected through `serveStdio`; no test hooks in production |
-| `feat/caller-proof-consent` | `3480af4` | `EXEC-001` (AUD-P1-7, order 2, breaking): consent asked from the user through MCP elicitation for the effective model of every backend; `user_confirmed` removed; agy always gets `--model` |
-| `fix/posix-group-signal-errors` | `ee51b52` | `ERRORS-001` (AUD-P2-7): no POSIX kill fallbacks; `ESRCH` ends the teardown without the grace, other failures go to stderr |
-| `docs/live-acceptance` | `30ef1c5`..`c2eb228` | Live runs of 2026-10-07: Codex turn, resume and interrupt (`WINDOWS-001`), Claude interrupt, agy `/usage`, AUD-P0-1 re-run, agy 180 s tool-call limit, `CONTEXT-001` client measurements, no crash orphans on Windows (AUD-P2-14) |
-| `refactor/legacy-alias-table` | `c1ed6e7` | `SIMPLIFY-001` (AUD-P2-4): one alias table for the deprecated tools and `run` actions |
-| `refactor/structured-error-extractor` | `cb8c30b` | `SIMPLIFY-001` (AUD-P2-4): one structured-error extractor with a dialect per backend |
-| `fix/answer-banner-stripping` | `cc95c1e` | `SIMPLIFY-001` (P3): answers keep lines that quote npm notices or update banners |
-| `refactor/progress-redaction-once` | `651df5f` | `SIMPLIFY-001` (P3): progress messages redacted once |
-| `fix/cancel-reports-outcome` | `21e6bab` | `SIMPLIFY-001` (P3): `cancel` reports `cancelled: false` when nothing ran |
-| `fix/session-list-home-paths` | `26ac5fd` | `SIMPLIFY-001` (P3): session lists show the home directory as `~` |
-| `ci/coverage-once` | `1c4949c` | `VERIFY-SCOPE-001` (AUD-P2-15): the suite runs once per CI job, under coverage; API docs in one job |
-| `docs/simplify-evidence` | `05bad84` | Roadmap evidence for `SIMPLIFY-001`; handoff update |
-| `build/artifacts-from-tarball` | `917924f`, `f40bd6d` | `PACKAGE-001`: plugin directory and VSIX built from the packed tarball (`npm run package:artifacts`) |
-| `feat/markdown-result` | `5a14941` | `CONTEXT-001` (owner decision, breaking): execution results are markdown only, no `outputSchema` or `structuredContent`; the footer carries verdict, `retryable` and `no history`; tests read results through `tests/helpers/result.cjs` |
-| `fix/failed-run-output` | `e5a89f0` | `CONTEXT-001`: rejected models are `MODEL_UNAVAILABLE` (Codex raw response body, agy "invalid model selection"), no issue link; no invented "Task completed cleanly" answer |
-| `fix/model-effort-validation` | `8d12ee6` | `CONTEXT-001`: model and effort checked before launch against the CLI's catalog (Codex `model/list`, `agy models`); the static model tables are gone; doctor reports the catalogs |
-| `fix/final-answer-only` | `50f2146` | `CONTEXT-001`: Codex `commentary` messages leave the answer once a `final_answer` arrives |
-| `fix/neutral-consult-prompt` | `bf73c79` | `CONTEXT-001`: a plain consult passes the question on as asked |
-| `feat/agent-facing-contract` | `49387f8` | `CONTEXT-001`: instructions say when to use CoAgent8 and point to doctor; every chosen parameter described (5,222 B, budget 5,300 B); doctor summary lists models |
-| `fix/refused-call-footer` | `2437d98` | A call refused before launch names the requested model in its footer |
-| `docs/agent-experience-acceptance` | `148a071` | Live acceptance of the markdown result in Claude Code, Codex and agy; handoff update |
-| `docs/model-governance-plan` | this change | Plan and measured facts for the catalog without model literals and consent by relative price (OpenRouter) |
+Follow [core invariants](../.agents/rules/00-core-invariants.md),
+[security](../.agents/rules/01-security-and-sandboxes.md) and
+[Git governance](../.agents/rules/02-git-workflow.md).
+Do not hand-edit CHANGELOG, push to main, modify working host registrations,
+sweep a live desktop, or infer release approval from a model-written envelope.
+For release review bind base, candidate, tree and artifact SHA-256. For a dirty
+review capture the diff digest and untracked inventory; HEAD alone is insufficient.
 
-## Verification
+## Windows working notes
 
-Select checks with the [quality gate](../.agents/rules/04-quality-gate.md):
-typecheck plus focused behavioral tests for each changed runtime area, plus build
-and package checks for `PACKAGE-001`. Re-run the audit reproductions and record
-results in the project review before requesting an independent review by the Reviewer.
-
-## Next steps, in order
-
-1. Merge `fix/windows-process-identity`:
-   - push it and open a PR into `release/v1.0.0`;
-   - before the review, agree with the author of `2b6a4d0` that its polling is
-     removed;
-   - run the CI matrix (first macOS run of the new layers) and an independent
-     review per [03-author-reviewer](../.agents/rules/03-author-reviewer.md);
-   - write the PR title as the user-facing changelog entry.
-2. Done on `docs/live-acceptance`: the `WINDOWS-001` acceptance (a live Codex
-   app-server turn, resume and `turn/interrupt`) and the AUD-P0-1 re-run, recorded
-   in the roadmap and the project review.
-3. Execution order 1 blockers are all implemented on the stacked branches above;
-   merge them in stack order, one PR each, with a regression test from the audit
-   reproduction. `PACKAGE-001` still lacks plugin and VSIX artifacts built from
-   the tarball. Note for the merge: from `build/untrack-dist` on, `dist/` is not
-   tracked, and an existing checkout needs one fresh checkout of its tracked files
-   to get LF sources (`.gitattributes`).
-4. Done: the Codex `probe` test runs with an empty home and no API key
-   (`aae1a2a`, on `fix/windows-process-identity` and every later branch). Not yet
-   re-run on Linux.
-5. Beta 2, the first release for testers (`BETA-001`; beta 1 is the npm name
-   placeholder, `REPO-001`):
-   - feedback channel and tester guide;
-   - release PR with `npm run changelog -- --tag v1.0.0-beta.2`;
-   - release notes from `npm run release-notes`, plus known issues by hand;
-   - verify the GitHub API path of the release notes.
-6. Execution order 2 is complete on the stack (`feat/caller-proof-consent`), and the
-   live checks the owner authorized on 2026-10-07 are recorded (`docs/live-acceptance`).
-   Not verified: the interactive consent prompt in a real client (headless
-   `claude -p` and `agy -p` answer every elicitation with `cancel`), and the
-   POSIX-only tests, which need Linux (Docker was not running).
-7. Execution order 3 is implemented on the stack except the POSIX parent-death
-   strategy for crash orphans (AUD-P2-14), which needs a design and a Linux host.
-   `ci/coverage-once` closes AUD-P2-15 after its first green CI matrix.
-8. Owner decisions needed, recorded in the roadmap (the result channel was
-   decided on 2026-10-07: markdown only, done on `feat/markdown-result`):
-   - agy cancels an MCP tool call after 180 s, which cancels longer reviews
-     (`CONTEXT-001`);
-   - every agy turn starts the user's agy MCP servers, CoAgent8 itself included,
-     and the user's allow rules let the backend model call CoAgent8 (`WINDOWS-001`).
-9. Done on `build/artifacts-from-tarball`: `PACKAGE-001` plugin and VSIX artifacts
-   built from the packed tarball.
-10. Before beta 2: push the stack and open one PR per branch in stack order (owner
-    go-ahead required), with `npm run changelog` before each push; run the CI
-    matrix, which also gives the first Linux and macOS runs of the POSIX tests.
-11. Agent experience (`CONTEXT-001`, owner use cases of 2026-10-07) is done on the
-    branches from `feat/markdown-result` to `docs/agent-experience-acceptance`.
-    Full suite at the tip: 266 tests, 263 pass, 0 fail, 3 skipped; consumer smoke
-    passes. Open:
-    - running Claude Code, Codex and VS Code sessions keep the CoAgent8 bundle
-      they started with; restart them after `npm run build` to get the new tools;
-    - owner decision: `auto` ran `gpt-6.1-sol` for 52.8 s from agy, so a plain
-      consult can be slow and costly (a faster default tier for `consult`, or only
-      a description);
-    - `reasoning_effort` still offers `none` and `minimal`, which no model in the
-      Codex 0.160 catalog accepts (the catalog check refuses them);
-    - the Claude alias list (`sonnet`, `haiku`, `opus`, `[1m]` variants) omits
-      `fable`, which `claude --help` names as an alias; not verified;
-    - doctor reports agy as "not ready" while its quota is measured, because the
-      probe no longer reports `authenticated` (`DIAGNOSTICS-001`).
-12. Next, in this order (plan and measured facts in the roadmap, `EXEC-001`):
-    1. Owner: restart Claude Code, Codex and VS Code, then run the AX retest
-       prompts in fresh Codex and agy sessions (no source reading, cheap models,
-       deliberate wrong models and efforts, a tool-using Codex question, session
-       continuation, Codex also a review of `2437d98`). Record their results in
-       `CONTEXT-001` and turn any new defect into its own branch.
-    2. `refactor/model-catalog-cache`: no model literals in `src/`; catalogs in
-       `~/.coagent8/models.json`; defaults from `config.toml`, the catalog or
-       `config.json` (written by the first doctor when absent); descriptions
-       without model names. Design the Claude default first.
-    3. `feat/price-based-consent` (breaking for governance): OpenRouter prices in
-       doctor, consent at 2× the default's output price, unknown models asked
-       once with "remember", name families removed, rule 01 updated; owner
-       confirmation of the rule text before merge.
-    4. Then the owner decisions still open: `auto` cost, agy 180 s, agy MCP
-       recursion; then the push of the stack.
-
-Working notes from the 2026-10-07 session (Windows):
-- The Bash tool is Git Bash: an argument starting with `/` becomes a Windows path
-  (`agy -p /usage` ran a model turn). Use `MSYS_NO_PATHCONV=1` or Node `spawn`.
-- Heredocs collapse backslashes, Python on Windows writes CRLF, and
-  `String.replace` expands `$` patterns in the replacement: edit code with the
-  Edit or Write tools, or use replacement functions.
-- Running MCP clients keep the bundle they started with; `npm run build` alone
-  does not update them. Test new server code in fresh headless clients
-  (`claude -p`, `codex exec --json`, `agy -p`).
-- Every execution assertion goes through `tests/helpers/result.cjs`; a regression
-  test is shown failing with `git stash push -- src` before the commit.
+Use PowerShell or Node spawn for `/usage` probes; Git Bash can rewrite a leading
+slash into a Windows path. Hide independently launched descendants and await
+owned cleanup. Use exact file writes/replacement functions for Markdown and
+literal dollar signs. Keep failure logs and report unexecuted checks as NOT_RUN.

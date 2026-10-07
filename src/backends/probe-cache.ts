@@ -12,7 +12,7 @@ import type { AdapterProbeResult, CliAdapter, ModelCatalog } from './types.js';
 
 /** Upper bound for reusing a probe; doctor always probes afresh. */
 const PROBE_TTL_MS = 5 * 60 * 1000;
-/** Environment that selects an executable, its configuration or its credentials. */
+/** Selected environment inputs for the cache key; not a complete provider-settings fingerprint. */
 const PROBE_ENVIRONMENT = ['PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE', 'CODEX_PATH', 'CODEX_CONFIG_PATH', 'OPENAI_API_KEY',
   'CODEX_API_KEY', 'AGY_PATH', 'GEMINI_PATH', 'GEMINI_CLI_HOME', 'GEMINI_API_KEY', 'CLAUDE_PATH', 'ANTHROPIC_API_KEY'] as const;
 
@@ -31,7 +31,7 @@ function fileStamp(file: string): string {
 
 /**
  * Identifies what a probe observed: the resolved executable files, the configuration file
- * and the environment. A changed CLI, configuration or variable invalidates the probe.
+ * and selected environment variables. Changes outside these stamps are not detected.
  */
 function probeKey(probe: AdapterProbeResult): string {
   const parts: string[] = PROBE_ENVIRONMENT.map(name => `${name}=${process.env[name] ?? ''}`);
@@ -51,7 +51,8 @@ function probeKey(probe: AdapterProbeResult): string {
 
 /**
  * Returns the backend's probe, reusing a cached result while its CLI, configuration and
- * environment are unchanged and it is younger than {@link PROBE_TTL_MS}.
+ * selected environment stamps are unchanged and it is younger than the five-minute TTL.
+ * Concurrent misses are not coalesced; the cache stores completed probes only.
  * @param id - Backend to probe.
  * @param options - `fresh` always probes and replaces the cached result (doctor).
  */
@@ -70,7 +71,8 @@ interface CachedCatalog { listFn: CliAdapter['listModels']; catalog: ModelCatalo
 const catalogs = new Map<ProviderId, CachedCatalog>();
 
 /**
- * Returns the models the backend CLI offers, read at most once per probe lifetime.
+ * Returns a completed CLI catalog cached for up to five minutes when its key matches.
+ * Concurrent misses can perform duplicate reads; no catalog is persisted to disk.
  * @param id - Backend whose catalog to read.
  * @param options - `fresh` reads again (doctor).
  * @returns The catalog, or undefined when the CLI is not installed, has no catalog or

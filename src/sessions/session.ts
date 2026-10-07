@@ -133,7 +133,8 @@ export function resolveOrInitSession(handle?: string | null, backend = 'codex', 
 
 /** Result of cancelling a session's execution in this process: none running, settled, or still running at the deadline. */
 export type CancelOutcome = 'none' | 'settled' | 'timed_out';
-type ExecutionCanceller = (handle: string) => Promise<CancelOutcome> | CancelOutcome;
+/** Owned cancellation callback installed by the execution lifecycle owner. */
+export type ExecutionCanceller = (handle: string) => Promise<CancelOutcome> | CancelOutcome;
 let executionCanceller: ExecutionCanceller | null = null;
 export function setExecutionCanceller(fn: ExecutionCanceller): void {
   executionCanceller = fn;

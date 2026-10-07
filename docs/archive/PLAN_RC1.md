@@ -1,10 +1,17 @@
 # CoAgent8 - RC1 Execution Plan & Agent Handoff
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 **Date:** October 3, 2026. **Release Target:** `1.0.0-rc.1`, upon fulfilling all quality gates below. Current development version remains `0.9.0-dev` until release artifacts are finalized.
 
 **Initial Work Division:** Gemini agent owns Codex CLI adapter; Codex agent owns Gemini CLI adapter and shared integration. **Update 2026-10-03:** Primary Codex execution path, shared runner contract, live progress reporting, and trailing throttle have been implemented and verified. Message history, live progress visibility, and clean chat rendering remain in active RC1 scope.
 
-Technical foundation: [AUDIT_CODEX.md](../AUDIT_CODEX.md), findings F01-F25. This document serves as the active execution plan. [PLAN_V1.0.0.md](PLAN_V1.0.0.md) preserves historical roadmap context; checkmarks there do not constitute release sign-off.
+Technical foundation: [AUDIT_CODEX.md](AUDIT_CODEX.md), findings F01-F25. This document serves as the active execution plan. [PLAN_V1.0.0.md](PLAN_V1.0.0.md) preserves historical roadmap context; checkmarks there do not constitute release sign-off.
 
 Implementation progress and local evidence are tracked in [RC1_STATUS.md](RC1_STATUS.md). Acceptance criteria remain binding; test suite and fixtures alone do not substitute for live smoke tests, host UI checks, or CI matrix verification.
 

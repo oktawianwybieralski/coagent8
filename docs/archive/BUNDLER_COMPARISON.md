@@ -1,5 +1,12 @@
 # Bundler Comparison: esbuild vs tsdown for the MCP Server
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 Date: 2026-10-06. Branch: `perf/tsdown-bundle-comparison`, based on
 `fix/hermetic-test-environment` (`076b59d`). Candidates: esbuild 0.25.12 and
 tsdown 0.23.0 (rolldown 1.2.12). The first version of this report (`a36a267`)

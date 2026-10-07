@@ -10,15 +10,18 @@
  * - **Turn Mutual Exclusion & Lease Tokens**: Sessions are acquired with unique turn tokens
  *   (`acquireAndResolveSession`). A single session handle cannot execute concurrent turns; attempts
  *   receive `SESSION_BUSY`.
- * - **Streaming Event Bus & Durability**: Emits normalized `AdapterEvent` updates to an append-only
+ * - **Streaming Events & Best-Effort Archive**: Emits normalized `AdapterEvent` updates to an append-only
  *   `HistoryWriter` flushed periodically every 250ms and finalized on `turn_finished`.
- * - **Progress & Inactivity Heartbeats**: Reports granular activity updates (`onProgress`).
+ * - **Progress Heartbeats**: Reports granular activity updates (`onProgress`).
  *   If no events arrive within 10 seconds, background heartbeats notify the orchestrator with
  *   elapsed seconds and active phase.
  * - **Defensive Protocol Validation**: Validates adapter terminal results (`TerminalExecutionResult`).
  *   Contradictory or missing results fail safely as `PROTOCOL_ERROR`, discarding untrusted output.
  * - **State Envelope Gate Enforcement**: Calls `formatExecutionResult` with `requireEnvelope`,
- *   programmatically gating review/consult verdicts to `BLOCKED` if high-severity issues are found.
+ *   gating review-only reported verdicts to `BLOCKED` for malformed envelopes or findings.
+ *   This does not independently verify input completeness, snapshot identity or CHECKS.
+ * - **Timing Scope**: Preparation and consent precede session acquisition and the duration
+ *   timer. The adapter receives its process timeout, not a remaining end-to-end budget.
  *
  * @packageDocumentation
  */

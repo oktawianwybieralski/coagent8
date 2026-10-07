@@ -24,7 +24,8 @@ trunk-plus-release-branch model with squash-merged pull requests.
 
 * The **active release branch** for the 1.0.0 cycle is `release/v1.0.0`.
 * Release stages are **tags on the release branch**, not branches:
-  `v1.0.0-beta.1` → `v1.0.0-beta.2` → `v1.0.0-rc.1` → `v1.0.0-rc.N` → `v1.0.0`
+  `v1.0.0-beta.1` -> `v1.0.0-beta.2` -> `v1.0.0-beta.3` ->
+  `v1.0.0-rc.1` -> `v1.0.0-rc.N` -> `v1.0.0`
   (the final tag is on `main`). A tag freezes the exact state of a stage forever.
 * `v1.0.0-beta.1` is the source of the npm name placeholder and the first commit
   of the history. The first release for testers is `v1.0.0-beta.2`.
@@ -131,7 +132,7 @@ become the final commit, so they must meet this section.
   and lockfiles; split larger work into reviewable steps.
 * **Description** (English) with these sections:
   1. **Summary** - what changes and why.
-  2. **Links** - `Fixes #…` / `Refs #…`, roadmap item and audit finding IDs.
+  2. **Links** - `Fixes #...` / `Refs #...`, roadmap item and audit finding IDs.
   3. **Changes** - notable behavior, contract or migration effects, and the
      `pending` changelog entry from the title preview (section 6).
   4. **Verification** - the commands run, platform and Node version, and each
@@ -161,7 +162,7 @@ become the final commit, so they must meet this section.
   gh pr merge <number> --squash --delete-branch
   ```
   Before confirming, edit the squash message so that it complies with section 2
-  (keep footers such as `Fixes #…` and `BREAKING CHANGE:`; remove any AI
+  (keep footers such as `Fixes #...` and `BREAKING CHANGE:`; remove any AI
   attribution).
 
 ---
@@ -169,7 +170,7 @@ become the final commit, so they must meet this section.
 ## 4. Versioning
 
 * Versions follow SemVer 2.0.0. Prerelease identifiers are `beta.N` and `rc.N`;
-  SemVer ordering is `1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0-rc.1 < 1.0.0`.
+  SemVer ordering is `1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0-beta.3 < 1.0.0-rc.1 < 1.0.0`.
 * **Beta**: feature-incomplete or not fully hardened; distributed to invited
   testers. **Release candidate**: scope frozen; only release-blocking fixes.
   The roadmap's [release sequence](../../docs/ROADMAP.md#release-sequence) defines
@@ -334,7 +335,7 @@ The agent does this itself, without being asked.
   * `found-in:v1.0.0-beta.2` (the version where the bug was observed);
   * status: `needs-repro`, `confirmed`, `wontfix`, `duplicate`.
 * P0 and P1 issues block the next stage tag. Every closed bug references the PR
-  that fixed it (`Fixes #…` in the PR).
+  that fixed it (`Fixes #...` in the PR).
 * Never paste credentials, configuration files or private code into issues;
   maintainers redact any that appear.
 

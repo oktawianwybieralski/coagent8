@@ -24,7 +24,7 @@ export function resolveWorkspacePath(rawPath?: string | null): string {
   return process.cwd();
 }
 
-/** Where an execution's workspace came from; reported with every result so no fallback is silent. */
+/** Workspace origin used internally; only server-directory fallback is reported in the Markdown footer. */
 export type WorkspaceSource = 'argument' | 'client_root' | 'server_directory';
 
 export interface ResolvedWorkspace {
@@ -52,7 +52,7 @@ function isUnsuitableImplicitWorkspace(directory: string, env: NodeJS.ProcessEnv
  * @param rawPath - The caller's `workspace_path`, which always wins.
  * @param roots - Directories from the client's MCP roots, or `null` when the client does not provide roots.
  * @param serverDirectory - The server's working directory, used only when it is a plausible project.
- * @throws `Validation Error` when several roots are ambiguous or no plausible workspace remains.
+ * @throws `ToolError` with INPUT_LIMIT when roots are ambiguous or no plausible workspace remains.
  * @remarks Several roots, as Claude Code reports after `--add-dir`, resolve to the one that
  * contains the server's working directory (its launch directory).
  */

@@ -2,9 +2,10 @@
 
 **Next release:** `1.0.0-beta.2`, the first release for testers. **Current package
 version:** `1.0.0-beta.1`, the npm name placeholder (`REPO-001`).
-**Direction updated:** 2026-10-06. **Beta 2 readiness:** Blocked by the
-[independent audit at `c265cdf`](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
-(3 P0 and 11 P1 findings).
+**Direction and status reconciled:** 2026-10-07, implementation snapshot
+`24052e3`. **Beta 2 readiness:** BLOCKED. Earlier audit fixes are implemented
+on the local stack, but newer approval/sandbox findings remain open and the
+integrated candidate has no completed six-job CI/release approval.
 
 This is the single active implementation and acceptance plan for the 1.0.0
 release train. The current version label is development metadata. It does not
@@ -16,6 +17,36 @@ not interrupt desktop work. After the audit, the first obligation is that it can
 harm the desktop or the user's data. Process identity, output integrity and storage
 availability come before new features. This direction supersedes the
 installation-first sequence in the earlier review and handoff.
+
+## Current snapshot status
+
+This remains the single active plan. `[x]` below means implementation with the
+cited local evidence, not merged, published, matrix-verified or release-approved.
+Historical measurements retain their date and snapshot. Later decisions supersede
+earlier prototypes, especially the compact profile and dual-channel result.
+The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pending.
+
+| Area | Implemented locally | Remaining |
+| --- | --- | --- |
+| Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup | Inherited MCP isolation, POSIX parent-death cleanup, fresh candidate matrix |
+| Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection | Sticky commentary truncation/count budgets, review completeness |
+| Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, cache-failure tolerance, end-to-end budget |
+| Discovery/models | Six tools, roots, cached probes, best-effort catalogs, current effective-model elicitation | Missing-approval rejection, coalesced misses, fuller invalidation, catalog/default redesign |
+| Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
+| Governance | Current astra/opus/best name rules | Persisted catalog and price policy remain proposals; resolve safety/design questions before implementation |
+
+The [review at `24052e3`](PROJECT_REVIEW_2026-10-05.md#review-at-24052e3-2026-10-07)
+defines `CUR-*` findings. Their owning items below take precedence over
+historical completion summaries. `CUR-012` was added during documentation/source
+alignment, from inspection of snapshot-capacity accounting, without a runtime probe. Start with approval correctness and inherited
+MCP isolation, then the execution/cache/session work. Source inspection and
+temporary probes are not committed regression coverage.
+
+Evidence from that review: `npm test` 266 total, 263 pass, zero fail, three
+POSIX skips (Windows, source-loaded unit/e2e tests; setup used pre-existing dist
+of unproven freshness). Typecheck passed. A later fresh build and fixture-backed
+consumer check passed; the source and bundle matched that tarball. The artifact
+hash and limits are in the review. These results predate this documentation edit.
 
 ## Release sequence
 
@@ -43,8 +74,8 @@ are defined in [Git governance](../.agents/rules/02-git-workflow.md).
 
 Every stage publishes the exact artifact that passed its gate:
 - prerelease versions are published as GitHub prereleases and, optionally, under
-  the npm dist-tag `next`, never `latest`, which holds the `0.0.1` name
-  placeholder until 1.0.0;
+  the npm dist-tag `next`, never `latest`. The `0.0.1` name-placeholder
+  arrangement is planned in `REPO-001`; current registry tags require verification;
 - a content change after a gate passes produces the next version number, not a
   replacement artifact under the same version.
 
@@ -90,18 +121,20 @@ serves autonomous AI agents (in Cursor, Claude Desktop, Antigravity, VS Code, Ze
 1. **Agent-to-agent delegation.** Host models lack arbitrary shell execution
    privileges and knowledge of each CLI's invocation syntax; MCP standardizes
    peer invocation.
-2. **Mandatory read-only sandboxing (P0).** CLI execution is locked down:
-   `--sandbox read-only` on Codex, native `--sandbox` on agy, read-only tools on
-   Claude. Auditing models cannot mutate repositories.
+2. **Read-only execution policy (P0).** Codex app-server verifies its thread's
+   readOnly/never profile; Claude verifies restricted read-only tools and empty
+   MCP configuration; agy receives native `--sandbox`. External MCP tools in
+   Codex/agy remain an open safety boundary (`CUR-002`), so this is not proof
+   that every inherited capability is read-only.
 3. **Protocol normalization.** Codex JSONL, agy NDJSON stream-json and Claude text
-   become standard MCP tool responses with sanitized diagnostic errors and token
-   metrics.
+   become MCP text/data responses with sanitized diagnostics. Internal usage
+   measurements are not promised as public execution-result token fields.
 4. **Owned process supervision.** Owned child trees (`codex.exe`, `conhost.exe`)
    are torn down with bounded I/O. Teardown interrupts the backend's turn first
    and then targets only the owned handle or process group (`WINDOWS-001`).
-5. **Routing and failover (`smart_quota`).** Work is redirected away from a
-   provider with an observed rate-limit cooldown, for example from rate-limited
-   Codex to Gemini agy.
+5. **Routing (`smart_quota`).** Subsequent calls can select a provider without
+   an observed cooldown, using cached quota headroom. A failed turn is not
+   automatically retried or failed over.
 
 Generic stdio configuration is the primary integration contract. A client does
 not need a CoAgent8-specific installer adapter to discover tools. Setup commands,
@@ -109,8 +142,9 @@ VSIX/plugin packaging and branding are optional conveniences. Preserve existing
 registrations and their rollback safeguards while separating those integrations.
 
 The runtime enforces the State Envelope for `review` only; `consult` returns a
-plain answer with `verdict: "NOT_APPLICABLE"`. Every execution currently persists
-conversation history. The canonical profile advertises six core tools; the
+plain Markdown answer without a public verdict field. Every execution currently
+requires a disk session; archival history is best-effort and can be disabled
+with `coagent8_HISTORY=off`. The canonical profile advertises six core tools; the
 deprecated aliases (`analyze`, `debug`, `implement`) stay callable but are not
 advertised (`CONTEXT-001`). The compact profile was removed (`CONTEXT-001`). No new runtime option is implied by this plan unless an item
 says so.
@@ -183,6 +217,10 @@ evidence that measures the claim; source inspection alone is not runtime evidenc
 
 ## Audit remediation index
 
+This index preserves findings at the historical `c265cdf` tree. Implementation
+status belongs to each milestone and the current snapshot summary above; the
+index is not a list of still-unfixed defects.
+
 Every P0/P1 finding from the
 [independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf) has
 exactly one owning milestone below. P2 findings are owned as listed; P3 nits are
@@ -247,6 +285,18 @@ It adds no separate work.
   `model` line and the synthetic stale-PPID process snapshot.
 - [ ] Re-run the audit probes against the candidate and record the results in the
   project review before requesting Reviewer approval.
+
+- [ ] `CUR-001`: propagate omitted/truncated Git input as structured completeness
+  state into the review gate. Bind the expected snapshot and define approval
+  handling for FAIL/NOT_RUN without turning prose checks into fabricated PASS.
+  Acceptance: over-budget diffs/untracked omissions cannot receive READY; wrong
+  snapshots and failed required checks block approval.
+- [ ] `CUR-002`: prove read-only capability isolation beyond shell flags for
+  Codex/agy, including inherited MCP tools and recursive CoAgent8 calls. Use
+  isolated fixture configurations, never a user's live writable MCP services.
+- [ ] `CUR-003`: require `approve` and accept only explicit boolean true for an
+  accepted elicitation. Cover missing/empty/false content and every governed
+  default/session model through the real MCP request boundary.
 
 ### `WINDOWS-001` - process windows, supervision and process identity
 
@@ -461,8 +511,9 @@ Live agy evidence (2026-10-06, agy 1.2.17, `gemini-3.8-flash`, effort `low`,
     itself.
 
 Supervision cost (AUD-P1-4, order 2):
-- [ ] Resolved by layer 3: no descendant polling exists. Record in the project
-  review that a consult launches no helper process.
+- [x] Descendant polling and teardown helper processes were removed by the
+  owned-handle/group design (`ca8cf88`, evidence above). Native backends can
+  still launch their own MCP/helper processes; this is not a zero-child claim.
 
 Crash orphans and Job Objects (AUD-P2-14, order 3):
 - On Windows the server's own libuv job already kills its direct children when
@@ -571,11 +622,14 @@ packaging from the tarball on `build/artifacts-from-tarball`; neither merged.
   still finds the full inventory; selected files do not append other tests.
   Preserves portable arguments, bounded concurrency (`--test-concurrency=2` default with CLI override),
   and awaited cleanup. Tested via `tests/discovery.test.js` and `node tests/run.cjs tests/execution/stream-reducer.test.js`.
-- [ ] Group tests by behavior/cost rather than historical phase numbers. Retain
-  meaningful behavioral coverage; use an explicit migration when a contract changes.
-- [ ] Run coverage once per applicable CI matrix job instead of separately
-  repeating the same full suite (AUD-P2-15). Scope documentation and VSIX jobs to
-  relevant changes while preserving required status checks and the full release matrix.
+- [x] Group tests under module/behavior directories; portable inventory and
+  exclusions are implemented (`TESTS-001`). Some historical case IDs remain
+  as labels; they do not control discovery.
+- [x] Configure one coverage run per matrix job rather than a duplicate full
+  suite (AUD-P2-15), on `ci/coverage-once`. This marks the workflow change,
+  not remote acceptance.
+- [ ] Accept that workflow on the first green matrix. Scope documentation/VSIX
+  jobs only through an explicit workflow change preserving required checks.
   On `ci/coverage-once`, not yet run in CI: each matrix job runs the suite once,
   through `npm run test:coverage` in place of `npm test`, and only the Ubuntu
   Node 24 job generates the API documentation. Job names, and with them the
@@ -648,8 +702,8 @@ execution order.
   Verified generic stdio call boundary in `tests/e2e/generic-mcp.test.js` and `tests/e2e/mcp.test.js`.
 - [x] Keep startup independent of optional archive maintenance failures, without
   concealing errors that affect execution safety or active session ownership.
-- [x] A malformed `config.json` must not hide tools. Fall back to defaults and
-  report the configuration error in `doctor` and on execution (AUD-P2-11). On
+- [x] A malformed `config.json` must not hide tools. Doctor uses diagnostic
+  defaults; execution refuses unsafe fallback (AUD-P2-11). On
   `fix/malformed-config`, not yet merged. `tools/list` no longer reads the
   configuration (the tool profile was removed in `CONTEXT-001`). Decision:
   execution does not fall back to the defaults. They allow every backend, so a
@@ -697,10 +751,11 @@ execution order.
 
 ### `CONSULT-001` - separate advice from release approval and structured verdict output
 
-**Status:** Implemented; consult decoupled from State Envelope and structured verdict exposed.
+**Status:** Implemented; plain consult and a review-only verdict. Markdown-only
+execution responses supersede the earlier structured result.
 
 - [x] Ordinary-advice mode for consult: no State Envelope instructions or gate;
-  `verdict: "NOT_APPLICABLE"`.
+  no public verdict field (the internal formatting value is NOT_APPLICABLE).
 - [x] Audit status exposed to the caller; tool errors (`isError`) are distinct from
   audit conclusions. Since `CONTEXT-001` (markdown result) the verdict and reason are
   the footer line `> Verdict: ...` instead of `structuredContent`.
@@ -712,8 +767,11 @@ execution order.
 
 ### `CONTEXT-001` - token cost and single-call success across MCP clients
 
-**Status:** Implemented on `feat/context-budget` (2026-10-07); client acceptance
-and the agy timeout measurement remain. Measured on the built stdio server:
+**Status:** Implemented across the local context/Markdown/agent-experience
+branches (2026-10-07), with the headless client measurements recorded below.
+Fresh-session AX retests and interactive UI acceptance remain open. The following
+is chronological evidence: earlier schemas, budgets and result channels are
+superseded by later entries. First measurements on the built stdio server:
 - `tools/list`: 27.4 KB to 5.7 KB, model-visible part 9.6 KB to 3.7 KB;
 - `doctor`: 5.4 KB to a 310 B summary;
 - server instructions: 119 characters.
@@ -860,8 +918,8 @@ Plan:
     and without `security_policy`.
 
   A filtered run refreshes only that provider's cached quota and keeps the
-  others (`inspectQuotas` `only`). The agy probe still reads its quota as part of
-  the probe. This delivers the doctor phantom fields of AUD-P2-8 (owned by
+  others (`inspectQuotas` `only`). Since `perf/bounded-probes`, native agy
+  quota is read separately in doctor; `quota: false` skips it. This delivers the doctor phantom fields of AUD-P2-8 (owned by
   `SIMPLIFY-001`). Verified in `tests/diagnostics/doctor.test.js`.
 - [x] **Workspace:**
   1. explicit `workspace_path`;
@@ -875,9 +933,9 @@ Plan:
   3. the server working directory (owner decision of 2026-10-07), but never the
      home, a filesystem root or a system directory.
 
-  Every execution result reports `workspace` and `workspaceSource` in structured
-  content. Only the server-directory fallback also adds a line to the text, so no
-  fallback is silent. `session` history and close use the same workspace. This
+  Earlier structured results exposed workspace/source fields. The current
+  Markdown result exposes only the server-directory fallback line; explicit
+  paths/client roots add no workspace field or line. `session` history and close use the same workspace. This
   delivers AUD-P2-9 (owned by `MCP-001`).
 - [x] **Host setup:** CoAgent8 registration for Codex sets `tool_timeout_sec` to
   1800, so reviews longer than the 60 s default can complete. `codex mcp add` has
@@ -906,8 +964,8 @@ Plan:
     target assumed renamed parameters); raised to 5,300 B by the owner's decision
     of 2026-10-07 for described parameters;
   - doctor summary at most 1 KB (`tests/diagnostics/doctor.test.js`);
-  - every execution result reports the resolved `model` (adapter and collector
-    tests) and `workspace` (`tests/server.test.js`).
+  - results report the resolved model when available; source tests cover
+    explicit/client-root resolution and the server-directory fallback line.
 - [x] **Client acceptance:** repeat the measurements in Claude Code and agy:
   - result channel;
   - inline threshold;
@@ -1011,7 +1069,8 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   messages (`luna` on Codex 0.160, `gemini-3.8-flash` without effort on agy
   1.3.1) and `tests/execution/stream-reducer.test.js`; both fail on the previous
   source. Full suite: 256 pass, 0 fail, 3 skipped.
-- [x] Model and effort validated before the CLI runs, with the accepted values in
+- [x] Explicit model and effort checked before the model turn when a usable CLI
+  catalog is available (Claude has none), with the accepted values in
   the error. The probes listed models from a static table that did not match the
   CLIs: Codex offered `gpt-6.0-sol`, `luna` and `astra`, while Codex 0.160 lists
   `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`,
@@ -1084,8 +1143,8 @@ definition budget from 3,800 B to about 5 KB for described parameters.
 
   Verified in `tests/backends/routing.test.js` and `tests/server.test.js`.
 - [x] Bounded probe caching (AUD-P1-4), on `perf/bounded-probes`, not yet merged:
-  - one cached probe per backend, bound to the resolved executable path, mtime,
-    version output, relevant environment variables and configuration digests;
+  - one completed cached probe per backend, keyed by executable/configuration
+    file size/mtime and selected environment variables, not configuration digests;
   - bounded TTL, with forced refresh in `doctor`;
   - adapters do not re-probe inside `execute` (Gemini `--version`; Claude no
     longer does, see `CLAUDE-BACKEND-001`);
@@ -1155,10 +1214,12 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   `tests/backends/gemini/adapter.test.js` and `tests/backends/claude/adapter.test.js`
   (consent for another model does not count). Model-visible tool definitions
   3,492 B against 3,728 B before (budget 3,800 B). Full suite: 247 pass, 0 fail,
-  2 skipped. Not yet verified: a live elicitation prompt in a real client
-  (`CONTEXT-001` client acceptance).
+  2 skipped. Not yet verified: a live interactive approval prompt in a real client.
+  Headless cancellation was measured later. `CUR-003` reopens fail-closed consent:
+  accepted responses with a missing checkbox can pass.
 - [ ] **Model catalog without model literals** (owner decision of 2026-10-07:
-  "hardcoding is bad"). `src/` still names models in:
+  "hardcoding is bad"). This is a proposal, not implemented config. `src/`
+  still names models in:
   - `src/backends/codex/adapter.ts` (`gpt-6.1-sol` when `config.toml` has no `model`);
   - `src/backends/gemini/adapter.ts` (`GEMINI_DEFAULT_MODEL`);
   - `src/backends/claude/adapter.ts` (alias list, `sonnet` default, `haiku` for the
@@ -1185,15 +1246,18 @@ definition budget from 3,800 B to about 5 KB for described parameters.
 - [ ] **Consent by relative price instead of name families** (owner direction of
   2026-10-07). Approximate prices are enough: the decision is only whether to ask
   the user, and the tiers differ by up to 100×. The name rule is already stale:
-  `claude-fable-5-1`, Anthropic's most expensive model at 10/50 USD per million
-  tokens, runs without consent because only `opus` and `astra` are governed.
-  Facts measured on 2026-10-07:
+  the recorded `claude-fable-5-1` example (then quoted at 10/50 USD per million
+  tokens) would not match the current astra/opus/best rules. That illustrates a
+  name-based policy gap; the price/name is a historical observation.
+  Recorded observations and pricing assumptions from 2026-10-07 (not fresh
+  pricing guarantees; vendor availability and prices must be rechecked):
   - no CLI reports prices. Codex `model/list` has descriptions, `isDefault`,
     efforts and service tiers; `agy models` has names; Claude Code lists nothing.
     As far as known, OpenAI, Anthropic and Google publish no price API;
   - agy's `/usage` states that "Quota is consumed proportionally to the cost of
-    the tokens", with groups "Gemini Models" and "Claude and GPT models", so API
-    price is the right measure on subscriptions too;
+    the tokens", with groups "Gemini Models" and "Claude and GPT models", so the
+    API price was proposed as a subscription-cost proxy. Its accuracy is an
+    inference, not an enforced or independently verified billing equivalence;
   - OpenRouter `GET https://openrouter.ai/api/v1/models`: public, no key, 79 KB
     gzip, 465 models, `pricing.prompt` and `pricing.completion` per token,
     `reasoning.supported_efforts`, `canonical_slug`, `created`; no `ETag`,
@@ -1205,7 +1269,7 @@ definition budget from 3,800 B to about 5 KB for described parameters.
     rejected: it is larger, and it prices `gpt-5.6-sol` at 4/20 where OpenRouter
     bills 2/10.
 
-  Plan:
+  Proposed plan (requires implementation and the stated policy approval):
   - doctor reads OpenRouter at most weekly (10 s timeout, size bound, field
     validation) and stores the output price with each catalog model in
     `models.json`, flagging approximate ID matches;
@@ -1221,6 +1285,25 @@ definition budget from 3,800 B to about 5 KB for described parameters.
     confirmation required before merge);
   - tests: `fable` asks, `luna` does not, `astra` asks, an unknown model asks once
     and is remembered, no price data at all asks for anything not remembered.
+
+  Design questions before implementation:
+  - an expensive default has a ratio of one to itself: decide an independent
+    expensive-model threshold without weakening explicit consent;
+  - define missing/stale/approximate prices, provider aliases, changes in a
+    remembered model and the scope of remembered approval;
+  - validate first-listed agy defaults against catalog order changes, and
+    design Claude's default before writing user configuration;
+  - keep metadata fetches bounded and offline-safe. Do not infer subscription
+    billing equivalence or a model's safety from approximate API price alone.
+
+- [ ] `CUR-006`: coalesce concurrent probe/catalog misses; expand invalidation
+  for actual provider configuration/env selectors (including Codex home and
+  Claude default aliases). Define refresh/failure behavior; acceptance measures
+  process counts under concurrent calls and changes to those settings.
+- [x] Correct the model/backend description promises: catalog validation is
+  best-effort and quota is cached evidence. The documentation reconciliation
+  measured 5,256 B against the 5,300 B budget; 15 source-loaded surface tests pass.
+  Model-name examples remain until the catalog/default redesign.
 
 ### `CLAUDE-BACKEND-001` - Claude Code in restricted read-only mode
 
@@ -1274,20 +1357,16 @@ without a model call.
   the prompt on stdin, used only `Read` and `Glob`, refused file creation and a
   shell command, and created no file; turn 2 resumed the session and recalled
   the file content.
-- [x] Native quota before backend selection: optional `CliAdapter.inspectQuota()`,
+- [x] Native quota for diagnostics: optional `CliAdapter.inspectQuota()`,
   implemented for Claude through `claude -p /usage` on verified CLI versions (>= 2.1.289;
   versions older than 2.1.289 skip inspection to prevent prompt leakage to models; zero cost and
   no turn verified live and on every read) and called by `inspectQuotas` for
-  `doctor` and `smart_quota`. Window summarizing is shared with Gemini
-  (`src/backends/quota.ts`). Gemini still reads `/usage` inside its probe;
-  moving it to `inspectQuota` belongs to `EXEC-001`. Ranking by measured
-  headroom (not only exhaustion) is a separate routing decision.
-- [ ] `inspectQuota` latency and timeout optimization (Opus audit note): when the
-  60 s quota cache expires, `smart_quota` routing can block for up to 5 s on `--version`
-  plus 15 s on `/usage` without an abort signal before selecting a backend.
-  Mitigations: shorten the `/usage` timeout (e.g. 3-5 s), pass through `AbortSignal`,
-  or restrict synchronous native reads to `doctor` while routing relies strictly on
-  cached or asynchronously refreshed measurements.
+  `doctor`. Window summarizing is shared with Gemini (`src/backends/quota.ts`).
+  Native reads are now off the routing path; routing uses existing measurements.
+  This supersedes the earlier smart_quota latency note (5 s version + 15 s usage).
+- [ ] Bound/cancel diagnostic native quota reads consistently. Review latency
+  without weakening version checks that prevent a local /usage command from
+  becoming a paid model prompt.
 - [ ] Skills for audits: decide how workspace skills reach the Reviewer. The
   profile exposes no `Skill` tool, and `--restricted` ignores project settings;
   extend `CLAUDE_READ_ONLY_TOOLS` only with live evidence that the profile stays
@@ -1332,12 +1411,17 @@ without a model call.
   returns no quota when none is measured. Evidence:
   `tests/backends/gemini/adapter.test.js` (a payload whose only window lacks the
   field yields no quota; with one measured window of 0.3, headroom is 30%).
-- [ ] Claude Code status: distinguish unauthenticated or logged-out states from
-  runtime process errors without stderr substring guesses. Not implemented;
-  `authStatus` is always `unknown`.
-- [ ] Rebrand and document the circuit breaker: clearly distinguish observed
-  cooldown states from native quota meters. `smart_quota` selects the first
-  permitted backend without an observed cooldown; it does not score headroom.
+- [x] Claude login state comes from native `claude auth status` JSON; execution
+  failures use structured/anchored classification (`CLAUDE-BACKEND-001`).
+  Login evidence does not prove token validity for a model turn.
+- [x] Document observed cooldowns separately from native quota. Current selection
+  ranks cached measured headroom and prefers a different CLI (`CONTEXT-001`);
+  unknown headroom uses 50 only as a sorting heuristic.
+- [ ] `CUR-004`: make optional quota-cache failure non-blocking for automatic
+  selection, with a bounded warning and deterministic safe fallback. Keep policy
+  and observed limits fail-closed. Track measurement freshness separately from
+  cache rewrite time; stale measurements must not silently retain fresh weight.
+  Acceptance: unwritable/file-parent cache and stale-data routing regressions.
 
 ### `SESSION-001` - safe auto-resume and first-class handle exposure
 
@@ -1405,6 +1489,15 @@ without a model call.
 
 ### `CLI-INTERACT-001` - stream activity liveness and backend failure modes
 
+- [ ] `CUR-005`: preserve final-answer completeness when Codex drops commentary.
+  Track current-message truncation/count pressure separately; acceptance includes
+  large/over-count commentary followed by a small complete final answer.
+- [ ] `CUR-007`: define an end-to-end request budget and truthful timing
+  scope across Git, probes, catalogs, consent, acquisition, execution and cleanup.
+  Decide consent wait accounting explicitly; never extend a caller's absolute
+  execution budget by restarting a timer. Test preparation and cancellation.
+
+
 - [ ] Specify an activity-aware inactivity policy for subprocess supervision in `src/execution/process.ts`:
   track stdout/stderr data events and tool progress (`lastDataAt = Date.now()`) while explicitly accommodating provider-appropriate
   silent reasoning intervals; classify idle expiration as an inactivity timeout (not a proven freeze).
@@ -1437,8 +1530,9 @@ without a model call.
 **Status:** Implemented (AUD-P0-3, AUD-P1-3, AUD-P2-12).
 
 - [x] Persist streamed answers as append-only deltas. A final `assistant_message`
-  replaces the deltas on load, and the `.json` snapshot is materialized once, on
-  `turn_finished`. Acceptance: persisted bytes stay within a small constant factor
+  replaces the deltas on load. JSON snapshots are materialized on turn finish
+  and nonstreaming message batches, including the initial user-message flush;
+  streaming deltas do not rewrite snapshots. Acceptance: persisted bytes stay within a small constant factor
   of the answer size (<= 3×). Tested in `tests/sessions/history.test.js` (60 KiB stream
   in 40-byte deltas measured at 1.05× persisted bytes ratio vs audit's 112×). Legacy
   snapshot logs load and paginate with identical semantics (`tests/sessions/history.test.js`).
@@ -1461,15 +1555,21 @@ without a model call.
   Tested in `tests/execution/controller-history.test.js`.
 - [x] With archival history disabled (`coagent8_HISTORY=off`), a one-shot call must not require history files.
   Tested in `tests/execution/controller-history.test.js`.
-- [x] Replace the global `history/store` lock and per-flush `.capacity.meta`
-  rewrite with per-session locking and lazily computed capacity (AUD-P2-12).
+- [x] Replace whole-flush global serialization with per-session appends and
+  cached capacity accounting (AUD-P2-12). A short global capacity lock remains,
+  including updates per appended batch; this is not a lock-free archive.
   Tested in `tests/sessions/history.test.js` (concurrent flushes across different sessions succeed independently).
-- [x] Retain simple file-based `.jsonl` / `.json` sessions or ephemeral turns;
-  SQLite is deferred.
+- [x] Retain file-based `.jsonl` / `.json` archives; SQLite is deferred.
+- [ ] `CUR-008`: remove mandatory disk-session work for the proposed ephemeral
+  mode (`SESSION-001`). Archive off currently disables archive files only.
 - [x] Define retention, default mode, resource/tool behavior and migration before
   altering storage. Preserve existing histories, recovery and pagination
   consistency. Do not delete user data outside the documented retention.
-  Retention rules documented in `docs/RUNTIME_CONTRACT.md` §4.
+  Retention rules documented in `docs/RUNTIME_CONTRACT.md`, section 4.
+- [ ] `CUR-012`: enforce or explicitly specify snapshot capacity accounting.
+  Source writes materialized JSON before adding its byte delta, so the 100 MiB
+  archive budget is not a strict instantaneous ceiling. Add a near-capacity
+  snapshot regression before claiming the stronger bound.
 
 ### `INSTALL-001` / `MIGRATION-001` - optional setup and presentation
 
@@ -1478,7 +1578,8 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
 
 - [ ] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
   core startup and backend execution. Ship setup as a separate entrypoint and
-  bundle, so the core server no longer carries the TOML/JSONC parsers. Unknown
+  bundle, so installer-only code and JSONC handling leave the core. Codex
+  backend config still requires TOML parsing. Unknown
   arguments must not terminate a server started by a host (AUD-P2-10).
 - [ ] Retain selected-client consent, idempotence, stable owned runtime paths,
   conflict detection, preservation of unrelated settings and private backups.
@@ -1597,7 +1698,7 @@ These statuses summarize prior implementation; they are not fresh test results.
 - [x] `GEMINI-001`: production denial-stream handling and regressions for both
   orders preserve typed sandbox denial and reject genuine duplicate terminals.
 - [x] `REDACTION-001`: escaped/structured home paths and synthetic secret bounds.
-  Output integrity is a separate open item (`REDACTION-002`).
+  Output integrity was implemented separately in `REDACTION-002`.
 - [x] `ARCH-001/002`: identity primitives break the session/history cycle;
   cancellation is composed explicitly; cooldown writes moved out of rendering.
 - [x] `PARSER-001`: live Codex collector coverage replaces the unused parser path.
@@ -1654,7 +1755,14 @@ These statuses summarize prior implementation; they are not fresh test results.
   2 s for agy); a POSIX-only test now bounds it. That test runs in CI; Docker was
   not available locally. The test-only maintenance gate was removed on
   `refactor/maintenance-injection`.
-- [ ] `DOCS-001`: expand compressed logic and document meaningful exported contracts.
+- [x] `DOCS-001` documentation reconciliation: active manuals, contributor
+  instructions, source TSDoc and archive status/link repairs. Content/link review,
+  202 local links in 32 Markdown documents, documentation lint/generation,
+  typecheck and 15 surface tests pass; details in `CODE_DOCUMENTATION.md`.
+- [ ] `DOCS-001` remainder: expand compressed executable logic where it obscures
+  ownership/error paths. The current documentation reconciliation covers active
+  Markdown, contributor instructions and misleading TSDoc; it does not implement
+  the proposed runtime/model/cache changes.
 - [ ] `VERIFY-001`: record repeatable validation without retroactively assigning
   the historical unexplained 133/134 failure to a later discovered race. Two
   reproduced failures (a 10 ms lock-queue assumption and fixture startup
@@ -1703,7 +1811,7 @@ Beta 2 gate (first release for testers):
   - a short tester guide in the README (install, register in a host, report a bug).
 - [ ] Write the beta 2 GitHub release notes with known issues and security
   notes. These come from the open audit findings in
-  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf);
+  [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-limitations-and-deviations);
   the changelog does not carry them (`CHANGELOG-001`).
 - [x] Create `CHANGELOG.md` (Keep a Changelog) with an Unreleased section.
 - [x] `CHANGELOG.md` is generated from the commit history (`CHANGELOG-001`).
@@ -1729,8 +1837,8 @@ as for any PR. The hash-bound release approval applies from RC 1.
 
 ### `CHANGELOG-001` - changelog generated from the commit history
 
-**Status:** Done on `fix/windows-process-identity` (2026-10-06). The first
-release commit (beta 2) is the first real generation.
+**Status:** Generated changelog/release-note tooling implemented; the policy now
+requires regeneration before every push. The first tester release remains beta 2.
 
 Rationale:
 - Squash-merged PR titles and bodies on `release/v1.0.0` are Conventional
@@ -1738,7 +1846,8 @@ Rationale:
   hold one entry per change.
 - A hand-written `CHANGELOG.md` duplicates that record and drifts from it. An
   entry is easy to forget, and the review does not see the omission.
-- All 28 commits in the history were checked and conform. No tag exists yet.
+- The initial 28-commit pre-rewrite history was checked; that is historical
+  evidence. The current repository has the beta.1 base tag.
 
 Decision:
 - Generate `CHANGELOG.md` with [git-cliff](https://git-cliff.org/), pinned as a
@@ -1937,7 +2046,7 @@ Work on topic branches. This plan does not authorize push, merge or publication.
 
 Interactive auto-confirm, SQLite, generated diff UI and multi-backend consensus
 remain deferred. Activity-based inactivity supervision is scheduled under
-`CLI-INTERACT-001`; structured consult output is implemented (`CONSULT-001`).
+`CLI-INTERACT-001`; plain Markdown consult is implemented (`CONSULT-001`).
 The [interactive CLI RFC](archive/RFC_INTERACTIVE_CLI_AND_TIMEOUTS.md) is historical discussion,
 not an instruction to implement or weaken consent.
 

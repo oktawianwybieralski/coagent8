@@ -1,5 +1,12 @@
 # RC1 - Implementation & Acceptance Status
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 Date: 2026-10-03. Current branch: `feat/chat-progress-ui`, integration base: `bb4b406` -> `fee1380`. Development version remains `0.9.0-dev`; `1.0.0-rc.1` is not declared ready until all release gates in [PLAN_RC1](PLAN_RC1.md) are satisfied. Scope of current work: progress UI enhancement, Author-Reviewer review, documentation translation, and local commits. No push, PR, merge, tag, or publication has occurred.
 
 History: `43969b0` - audit/plan; `7f01e72` - shared foundation; `bb4b406` - Gemini, pipeline, and history; `fee1380` - Codex execution restoration; `3da6d09` - safe live phase progress, trailing throttle, and contextual heartbeat. [Handoff GEMINI](HANDOFF_GEMINI_RC01_RC02.md) documents initial delegation.

@@ -1,5 +1,12 @@
 # Handoff: Shared Foundations → Codex Adapter Author (GEMINI Agent)
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 **Historical Document.** Per user instructions, the primary execution path of the Codex adapter has been migrated on `fix/codex-execution-contract`, following the `bb4b406` integration. The registry now requires `TerminalExecutionResult`, the adapter uses the shared runner, and `test/codex.adapter.test.js` along with consumer smoke tests verify multi-turn execution and history persistence. Do not cherry-pick just the foundation commit as a new base, and do not duplicate adapter implementations. Current remaining scope: [PLAN_RC1.md](PLAN_RC1.md); evidence: [RC1_STATUS.md](RC1_STATUS.md). Remaining notes below document the original handoff context.
 
 Base checkpoint: `43969b0`. Integrator branch: `feat/rc1-shared-gemini`.

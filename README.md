@@ -1,58 +1,46 @@
-# CoAgent8 - Cross-Agent CLI Bridge for Model Context Protocol (MCP)
+# CoAgent8 - MCP bridge to local coding CLIs
 
 <p align="center">
   <img src="assets/logo.svg" width="128" height="128" alt="CoAgent8" />
 </p>
 
+CoAgent8 exposes Codex, Claude Code and Antigravity (`agy`, the `gemini`
+backend) through a stdio MCP server. An agent in a compatible host can request a
+second opinion or a Git review and receive the backend's public answer. The host
+runs your chat; the backend CLI performs the requested task.
 
-CoAgent8 exposes local coding CLIs through a stdio MCP server. An agent in a
-compatible MCP host can ask Codex, Claude Code or Antigravity (`agy`, the Gemini
-adapter) for help and receive public output through a read-only execution profile.
-Use **CoAgent8 Review** to get an independent code review from a separate agent in a read-only sandbox.
+The checkout carries `1.0.0-beta.1`, the npm name placeholder. `1.0.0-beta.2` is
+the planned first release for testers. Local implementation does not establish a
+published or accepted release. The
+[roadmap](docs/ROADMAP.md)
+owns the release sequence and remaining work.
 
-The npm package `1.0.0-beta.1` only reserves the package name; the first release
-for testers is `1.0.0-beta.2`. Releases follow beta 2, beta 3, release candidates
-and then 1.0.0; see the
-[release sequence](docs/ROADMAP.md#release-sequence).
-The [roadmap](docs/ROADMAP.md) prioritizes quiet Windows operation, ordinary MCP
-use and a smaller execution path. `consult` returns plain answers; optional
-durable history is a planned change, not a current runtime option.
-
-> **Known issues.** An [independent audit](docs/PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
-> of `c265cdf` found release blockers:
-> - Windows process teardown can match unrelated processes through stale parent PIDs.
-> - Secret redaction rewrites ordinary code in answers.
-> - Long streamed answers can fill the history archive and block executions.
->
-> See the [runtime contract's known deviations](docs/RUNTIME_CONTRACT.md#7-known-deviations-audit-at-c265cdf)
-> and the [roadmap](docs/ROADMAP.md#audit-remediation-index).
+Read-only CLI profiles, model consent, bounded buffers, credential redaction and
+owned-process cleanup are implemented. Release blockers remain: the review gate
+can accept incomplete input, omitted consent fields can be accepted, and Codex
+and agy can inherit external MCP tools. See the
+[runtime limitations](docs/RUNTIME_CONTRACT.md#7-known-limitations-and-deviations).
+A model's `READY` verdict requires independent verification before release.
 
 ## Connect through MCP
 
-Use Node.js 24+ and at least one separately installed/authenticated backend CLI.
-The **host** runs the chat and connects to CoAgent8; the **backend** CLI performs
-the requested task. Installing one does not configure or authenticate the other.
-Claude Code runs in restricted read-only print mode (`--restricted`, tools
-`Read,Glob,Grep`), works with a claude.ai subscription login or an API key, and
-supports native resume and public event streaming. It requires Claude Code 2.1.259
-or later.
+Use Node.js 24+ and at least one separately installed and authenticated backend
+CLI. Building a checkout requires Node 24.11+ or Node 26+. Claude Code execution
+requires 2.1.259+; its restricted profile supports subscription login or an API
+key. Codex and agy must support the adapter protocols; their minimum versions are
+not currently enforced by the bridge.
 
-To build a local checkout:
-
-```bash
+~~~bash
 npm ci
 npm run build
-```
+~~~
 
-`dist/` is not in Git: run `npm run build` again after every pull.
+`dist/` is ignored by Git. Rebuild after pulling source changes. A running MCP
+process retains the bundle it started with; restart it after rebuilding.
 
-Add a stdio server definition to your host's MCP configuration. Codex stops an MCP
-tool call after 60 seconds by default, so for Codex also set
-`tool_timeout_sec = 1800` in its `[mcp_servers.coagent8]` table (`coagent8 setup`
-does this). The following JSON shape is used by many hosts; follow your host's
-configuration format:
+Add a stdio definition to your host's MCP configuration:
 
-```json
+~~~json
 {
   "mcpServers": {
     "coagent8": {
@@ -61,121 +49,133 @@ configuration format:
     }
   }
 }
-```
+~~~
 
-No setup command, recognized client name or VSIX is required for this path.
-CoAgent8 advertises tools independently of the calling client's name. Backend
-availability is checked when executing tasks or explicit diagnostics. A call
-may name `backend`, and `defaultBackend` sets a fixed choice. Otherwise, with
-several eligible backends, `auto` prefers a CLI other than the calling client's
-own and the most measured quota headroom, as `smart_quota` does.
+Use your host's configuration format. Codex registrations should include
+`tool_timeout_sec = 1800` in `[mcp_servers.coagent8]`; optional `coagent8 setup`
+adds it. Host deadlines can be shorter than the bridge deadline. A measured agy
+1.3.1 headless client stopped calls after 180 seconds even with progress
+notifications; interactive IDE behavior has not been measured.
 
-The backend executables resolve from PATH. Set `CODEX_PATH`, `CLAUDE_PATH`, or
-`GEMINI_PATH`/`AGY_PATH` in the server environment for custom locations. Without
-`workspace_path`, the workspace comes from the client's MCP roots, or else from the
-server's working directory, except the home, a filesystem root or a system
-directory. Each result reports the workspace it used.
+No setup command, recognized client name or VSIX is required for ordinary MCP
+use. Backends resolve from PATH; override with `CODEX_PATH`, `CLAUDE_PATH` or
+`GEMINI_PATH`/`AGY_PATH`. The workspace comes from `workspace_path`, client
+roots, or an eligible server working directory. Only the server-directory
+fallback adds a workspace line to the result.
 
-For a locally built package, `npm pack` creates a tarball that can be installed
-with `npm install --omit=dev <tarball-path>`. Both `coagent8` and `coagent8-mcp`
-start the stdio server with no arguments. A published registry version can also
-be launched with `npx -y coagent8@<published-version>`; registry availability is
-not established by the version in this checkout.
+Set `backend` for a predictable provider. Otherwise `auto` uses configuration,
+or selects among eligible providers using cached quota and cooldown evidence,
+preferring another CLI than the calling client's own. It does not retry a failed
+turn on another provider. Quota measurements can be stale; `doctor` can refresh
+them. The automatic route currently requires a writable quota cache.
+
+To install a locally built package:
+
+~~~bash
+npm pack
+npm install --omit=dev <tarball-path>
+~~~
+
+Both `coagent8` and `coagent8-mcp` start stdio with no arguments. Launch a
+published version with `npx -y coagent8@<published-version>`; registry
+availability is independent of the checkout's version label.
 
 ### Continue
 
-Continue accepts stdio MCP definitions and exposes MCP tools in Agent mode. Its
-absence from CoAgent8's setup-client list is not a server compatibility block.
-For example, merge this block into the active Continue configuration:
+Continue supports stdio MCP in Agent mode. Merge a server block into its active
+configuration, following
+[Continue's MCP guide](https://docs.continue.dev/customize/deep-dives/mcp):
 
-```yaml
+~~~yaml
 mcpServers:
   - name: CoAgent8
     type: stdio
     command: node
     args:
       - "<absolute-path-to-coagent8>/dist/index.cjs"
-```
+~~~
 
-Follow [Continue's MCP guide](https://docs.continue.dev/customize/deep-dives/mcp)
-for configuration placement and standalone-file metadata. This configuration is
-based on the documented protocol path; real Continue UI acceptance is still open
-in the roadmap. Each host controls tool visibility, approval, refresh and icons.
+This is the documented protocol configuration. Real Continue UI acceptance
+remains open. Hosts control tool visibility, approval, refresh and icons.
 
 ### Optional setup and editor integrations
 
-The CLI provides `setup`, `repair` and `status` for selected local-default Codex,
-Claude Code and agy host profiles. The VS Code extension registers its native MCP
-provider and offers the same optional setup flow. These conveniences do not define
-the list of compatible MCP clients. See the [integration guide](docs/VSCODE_INTEGRATION.md)
-for installation, ownership, rollback and current host-verification limits.
+`setup`, `repair` and `status` support selected local-default Codex, Claude Code
+and agy registrations. The VS Code extension provides native MCP registration
+and an optional shared setup flow. Existing manual registrations are preserved.
+See the
+[integration guide](docs/VSCODE_INTEGRATION.md)
+for ownership, rollback and host acceptance limits.
 
 ## Current tools
 
 | Tool | Purpose |
 | --- | --- |
-| consult | Second opinion with a plain answer; optional `task_type` (`architecture`, `debug`, `implementation`) |
-| review | CoAgent8 Review: Git diff review with a structured audit envelope; mark generated files `-diff` in `.gitattributes` to keep their content out of the prompt |
-| doctor | Backend installation, version, quota/cooldown, authentication evidence and the models and reasoning efforts each CLI offers: a few-line summary by default, `detail: "full"` for the complete report, `backend` to check one provider, `quota: false` to skip quota reads |
-| session | List, read history or close sessions |
-| cancel | Cancel a session's active execution |
-| issue | Generate a sanitized report and issue link |
-| analyze, debug, implement | Deprecated aliases of `consult` with the matching `task_type`; callable but not advertised |
+| `consult` | Plain second opinion; optional architecture, debugging or implementation analysis |
+| `review` | Git changes reviewed with a State Envelope and a server-derived verdict |
+| `doctor` | Installation, versions, auth evidence, models, efforts and quota/cooldowns; summary by default, `detail: "full"` for data |
+| `session` | List sessions, page archived history or close a session |
+| `cancel` | Cancel the active turn of a known session |
+| `issue` | Prepare a sanitized report and prefilled issue link |
 
-Every client gets these six tools, with one-sentence server instructions and short
-descriptions so clients spend few tokens on them. The legacy `run` gateway and the
-deprecated aliases remain callable; the former `toolProfile` setting is ignored.
+The deprecated `analyze`, `debug` and `implement` aliases and the legacy `run`
+gateway remain callable but are not advertised. `toolProfile` is ignored. All
+clients receive the same six tools and short initialization instructions.
 
-Example consult arguments:
-
-```json
+~~~json
 {
-  "proposal": "Review the trade-offs of this design",
+  "proposal": "Is this retry loop safe with concurrent writers? <code>",
   "backend": "codex",
   "workspace_path": "<absolute-path-to-project>"
 }
-```
+~~~
 
-Execution responses are markdown: the answer, then a quoted footer with the
-backend, model, duration and, where available, a session handle for continuation;
-a failure starts with its error code, and a review ends with its verdict. Read-only profiles, explicit top-tier model consent,
-secret redaction, bounded buffers and owned-process cleanup apply. See the
-[runtime contract](docs/RUNTIME_CONTRACT.md) for options, errors, history and limits.
-A model-generated review verdict does not establish independently verified results.
+`context_files` sends paths for the backend to read, not file contents.
+Implementation analysis proposes changes within the read-only profile.
+Execution tools return Markdown: answer or typed error, then backend, model,
+duration and session handle where available. `review` adds its verdict.
+Continuation uses `session_handle` from a prior footer.
+
+Archival history is enabled by default and best-effort. `coagent8_HISTORY=off`
+disables archive files, but executions still require session records and leases.
+Per-call history controls and execution without disk sessions are planned.
+Governed models require MCP form elicitation; headless clients measured on
+2026-10-07 cancel those requests, so governed turns fail there.
 
 ## Documentation and contributing
 
+The npm package does not ship `docs/` or the contributor rules; these relative
+links resolve in the repository.
+
 | Need | Document |
 | --- | --- |
-| Implementation priorities and acceptance | [Roadmap](docs/ROADMAP.md) |
-| Current component responsibilities | [Architecture](docs/ARCHITECTURE.md) |
-| Current protocol and execution behavior | [Runtime contract](docs/RUNTIME_CONTRACT.md) |
-| Audit findings, evidence and historical reviews | [Project review](docs/PROJECT_REVIEW_2026-10-05.md) |
-| Optional VSIX, plugin and client setup | [Integration guide](docs/VSCODE_INTEGRATION.md) |
+| Priorities and acceptance | [Roadmap](docs/ROADMAP.md) |
+| Component responsibilities | [Architecture](docs/ARCHITECTURE.md) |
+| Tools, configuration, errors and limits | [Runtime contract](docs/RUNTIME_CONTRACT.md) |
+| Snapshot-bound findings and evidence | [Project review](docs/PROJECT_REVIEW_2026-10-05.md) |
+| Optional host setup | [Integration guide](docs/VSCODE_INTEGRATION.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
-| Branches, commits, pull requests and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
-| Release history | [Changelog](CHANGELOG.md) |
-| Local checks by change scope | [Quality gate](.agents/rules/04-quality-gate.md) |
-| TSDoc and generated API reference | [Code documentation](docs/CODE_DOCUMENTATION.md) |
+| Branches, PRs and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
+| Generated release history | [Changelog](CHANGELOG.md) |
+| Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
+| TSDoc and API reference | [Code documentation](docs/CODE_DOCUMENTATION.md) |
 
-Prose-only edits require content/link review and diff checks, not runtime tests.
-Code changes require relevant verification; releases require full package and
-cross-platform validation. The quality-gate rule is the authoritative checklist.
-The current CI still runs its full matrix; scoped CI and quieter Windows test
-fixtures remain implementation work tracked in the roadmap.
+Markdown edits require content/link review and `git diff --check`. TSDoc edits
+also require documentation lint and generation. Runtime changes need focused
+behavioral checks; releases need a fresh build, exact-package consumer checks,
+coverage, all six OS/Node CI jobs and independent review. The suite uses hermetic
+CLI fixtures. Most tests load `src/`; setup tests use `dist/`, and consumer smoke
+checks the installed tarball. A green suite alone does not prove bundle freshness
+or live backend compatibility.
 
----
-
-## 📄 License
+## License
 
 Copyright (c) 2026 Oktawian Wybieralski (oki.dev).
 
-CoAgent8 is licensed under the [GNU General Public License, version 3 only](LICENSE)
-(`GPL-3.0-only`). You may use, modify, and redistribute it, including commercially,
-under the terms of that license. Distributed derivative works must remain under
-GPLv3, with the corresponding source code made available as required by the license.
-CoAgent8 is provided without any warranty; see [LICENSE](LICENSE) for the full terms.
+Licensed under [GNU General Public License, version 3 only](LICENSE)
+(`GPL-3.0-only`). Distributed derivative works must comply with GPLv3 and its
+source-distribution requirements. See LICENSE for the full terms and warranty
+disclaimer. Copies previously distributed under MIT retain those terms.
 
-Copies previously distributed under the MIT License remain available under those terms.
-
-Created by [Oktawian Wybieralski](https://oki.dev) · [GitHub Repository](https://github.com/oktawianwybieralski/coagent8)
+Created by [Oktawian Wybieralski](https://oki.dev).
+[GitHub repository](https://github.com/oktawianwybieralski/coagent8).

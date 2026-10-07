@@ -38,12 +38,16 @@ export const cancelToolDefinition = {
   },
 };
 
-/** @param workspace - The workspace the server resolved for this call; history and close are scoped to it. */
 /** A session record as shown to clients: the workspace path with the home directory as `~`. */
 export function publicSessionRecord(record: SessionRecord): SessionRecord {
   return { ...record, workspace: redactDiagnostic(record.workspace, 1024) };
 }
 
+/**
+ * Lists, pages history or closes sessions owned by the resolved workspace.
+ * @param args - Validated session-tool arguments.
+ * @param workspace - Workspace resolved by the server; direct callers default from the argument/cwd.
+ */
 export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
   if (!action || !['list', 'history', 'close'].includes(action)) {

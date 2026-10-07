@@ -4,9 +4,11 @@
  * @remarks
  * ## Architecture & Concurrency Contract
  * - **Append-Only Streaming**: Streaming assistant deltas append directly to a `.jsonl` log file
- *   without rewriting snapshots per delta. Serialization/copying scales with batch bytes; recovery and storage accounting can read history.
+ *   without rewriting snapshots per delta. Serialized log batches contain new deltas;
+ *   in-memory message assembly and recovery/accounting can still scan accumulated text.
  * - **Monolithic Snapshots**: Materialized `.json` snapshots are written atomically via temporary
- *   files only when a message completes or the turn finishes (`turn_finished`).
+ *   files on turn finish or nonstreaming user/assistant batches; streaming deltas
+ *   do not rewrite the JSON snapshot.
  * - **Crash Resilience & Torn-Tail Repair**: Abrupt process terminations mid-write may leave an
  *   unterminated or invalid trailing line. Under file lock, `createHistoryWriter` detects torn tails,
  *   verifies workspace ownership, and executes an in-place `fs.truncate` to the last valid byte offset.
@@ -588,8 +590,10 @@ export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
  * Creates an append-only history writer for an active conversation turn.
  *
  * ### Streaming & Persistence Guarantees:
- * - Appends bounded JSONL batches; serialization and copying scale with batch bytes.
- * - Under store lock, verifies the session's workspace ownership to prevent cross-workspace contamination.
+ * - Appends coalesced new delta batches; in-memory assembly/redaction can revisit
+ *   accumulated message text, so this is not a universal linear CPU guarantee.
+ * - Under the per-session lock, verifies workspace ownership. Capacity accounting
+ *   uses a separate short directory lock; JSON snapshots are accounted after write.
  * - Detects torn/partial trailing lines caused by unexpected process crashes and executes
  *   an in-place `fs.truncate` byte boundary repair to the last valid newline.
  * - Materializes the consolidated `.json` snapshot only upon message completion or `turn_finished`.

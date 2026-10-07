@@ -1,5 +1,12 @@
 # Audyt CoAgent8 przed RC 1 / Beta 1
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 **Data:** 3 października 2026, Europe/Warsaw. **Werdykt:** wydanie z deklarowaną obsługą Codex CLI + Gemini CLI jest obecnie zablokowane.
 
 Obecne testy przechodzą w 100%: **20/20 na Windows, zarówno Node 22.20.0, jak i Node 20.20.2**. Paczka z lokalnego tarballa instaluje się i poprawnie uruchamia MCP. Nie oznacza to pełnego pokrycia ani gotowości produktu: Gemini nie wykonuje zadań, część komunikacji z Codex jest niezgodna z CLI, a obsługa procesów i sesji ma odtworzone błędy.
@@ -16,7 +23,7 @@ Audyt obejmuje wszystkie **33 pliki w `src/`**, **5 plików w `test/`**, README,
 - Dokumentację CLI i SDK pobrano przez Context7. Sporne zachowania porównano z oficjalną dokumentacją i lokalnym `--help`; dla Gemini odczytano również oficjalne typy zdarzeń.
 - Nie uruchomiono zdalnej macierzy GitHub Actions ani testów na Ubuntu/macOS. Lokalny wynik nie jest potwierdzeniem `6/6` CI.
 
-**Priorytety w raporcie:** P0 - blokuje podstawowy cel wydania; P1 - istotny błąd bezpieczeństwa, poprawności albo niezawodności do naprawy przed wydaniem; P2 - dług, odporność lub spójność wymagająca uporządkowania. Zgodnie z [regułą author-reviewer](.agents/rules/author-reviewer.md) również ustalenia P2 wymagają remediacji przed scaleniem PR do `main`.
+**Priorytety w raporcie:** P0 - blokuje podstawowy cel wydania; P1 - istotny błąd bezpieczeństwa, poprawności albo niezawodności do naprawy przed wydaniem; P2 - dług, odporność lub spójność wymagająca uporządkowania. Zgodnie z `regułą author-reviewer` (`.agents/rules/author-reviewer.md`) również ustalenia P2 wymagają remediacji przed scaleniem PR do `main`.
 
 ## 2. Weryfikacja wykonana podczas audytu
 
@@ -80,32 +87,32 @@ Skan `rg -n -i --hidden ... 'omni'` poza `.git/`, `node_modules/` i wygenerowany
 
 | Plik i linie | Pozostałość | Zalecenie |
 | --- | --- | --- |
-| [src/types/config.types.ts](src/types/config.types.ts):9 | `OmniAgentConfig` | Zmienić na `CoAgent8Config`; deprecated alias tylko jeśli istnieje wspierany odbiorca tego typu |
-| [src/services/config.service.ts](src/services/config.service.ts):4,24,42,109,137,160 | Import, typy zwrotne i `Partial<OmniAgentConfig>` | Zmienić wewnętrzne użycia razem z interfejsem |
+| `src/types/config.types.ts` (`src/types/config.types.ts`):9 | `OmniAgentConfig` | Zmienić na `CoAgent8Config`; deprecated alias tylko jeśli istnieje wspierany odbiorca tego typu |
+| `src/services/config.service.ts` (`src/services/config.service.ts`):4,24,42,109,137,160 | Import, typy zwrotne i `Partial<OmniAgentConfig>` | Zmienić wewnętrzne użycia razem z interfejsem |
 | `config.service.ts:112` | `OMNIAGENT_CONFIG` w warunku legacy fallback | Zachować fallback, korzystać z centralnych stałych |
-| [src/services/router.service.ts](src/services/router.service.ts):52,108-109,122-123,140,160 | `omniagent_doctor`, `omniagent_set_default`, marka OmniAgent w aktywnych błędach | Nowe komunikaty kierować do `coagent8_*` i CoAgent8 |
-| [src/adapters/gemini.adapter.ts](src/adapters/gemini.adapter.ts):45 | `Use omniagent_doctor` w błędzie atrapy | Zastąpić podczas wdrożenia adaptera |
-| [src/tools/review.tool.ts](src/tools/review.tool.ts):208 | `[OmniAgent]` w logu zwalniania sesji | Używać centralnego loggera i `BRAND.NAME` |
-| [src/tools/consult.tool.ts](src/tools/consult.tool.ts):187 | `[OmniAgent]` | Jak wyżej |
-| [src/tools/analyze.tool.ts](src/tools/analyze.tool.ts):192 | `[OmniAgent]` | Jak wyżej |
-| [src/services/process.service.ts](src/services/process.service.ts):51 | OmniAgent w komentarzu | Zaktualizować komentarz |
-| [src/services/quota.service.ts](src/services/quota.service.ts):10 | `OMNIAGENT_QUOTA_CACHE`, aktywny domyślny katalog `.omniagent` | Wprowadzić `coagent8_QUOTA_CACHE` i nową lokalizację; legacy wyłącznie fallback |
-| [src/services/session.service.ts](src/services/session.service.ts):25-26 | `OMNIAGENT_SESSIONS` | Świadomy fallback; ujednolicić rozwiązywanie katalogu danych |
-| [src/constants/index.ts](src/constants/index.ts):18,21,23,25,30 | `.omniagent`, legacy env vars i `omni_sess_` | Zachować jako jednoznaczne stałe kompatybilności |
+| `src/services/router.service.ts` (`src/services/router.service.ts`):52,108-109,122-123,140,160 | `omniagent_doctor`, `omniagent_set_default`, marka OmniAgent w aktywnych błędach | Nowe komunikaty kierować do `coagent8_*` i CoAgent8 |
+| `src/adapters/gemini.adapter.ts` (`src/adapters/gemini.adapter.ts`):45 | `Use omniagent_doctor` w błędzie atrapy | Zastąpić podczas wdrożenia adaptera |
+| `src/tools/review.tool.ts` (`src/tools/review.tool.ts`):208 | `[OmniAgent]` w logu zwalniania sesji | Używać centralnego loggera i `BRAND.NAME` |
+| `src/tools/consult.tool.ts` (`src/tools/consult.tool.ts`):187 | `[OmniAgent]` | Jak wyżej |
+| `src/tools/analyze.tool.ts` (`src/tools/analyze.tool.ts`):192 | `[OmniAgent]` | Jak wyżej |
+| `src/services/process.service.ts` (`src/services/process.service.ts`):51 | OmniAgent w komentarzu | Zaktualizować komentarz |
+| `src/services/quota.service.ts` (`src/services/quota.service.ts`):10 | `OMNIAGENT_QUOTA_CACHE`, aktywny domyślny katalog `.omniagent` | Wprowadzić `coagent8_QUOTA_CACHE` i nową lokalizację; legacy wyłącznie fallback |
+| `src/services/session.service.ts` (`src/services/session.service.ts`):25-26 | `OMNIAGENT_SESSIONS` | Świadomy fallback; ujednolicić rozwiązywanie katalogu danych |
+| `src/constants/index.ts` (`src/constants/index.ts`):18,21,23,25,30 | `.omniagent`, legacy env vars i `omni_sess_` | Zachować jako jednoznaczne stałe kompatybilności |
 | `src/constants/index.ts:34,47-55` | Komentarze i 8 nazw `omniagent_*` | Aliasom nadać status deprecated i wskazać zamiennik |
-| [src/server.ts](src/server.ts):127-135 | Rejestracja legacy aliasów i komentarze | Zachować kompatybilność; rejestracja przez wspólny katalog narzędzi |
-| [src/tools/config.tool.ts](src/tools/config.tool.ts):39 | `handleOmniagentSetDefault` | Deprecated export albo usunięcie po sprawdzeniu odbiorców |
-| [src/tools/doctor.tool.ts](src/tools/doctor.tool.ts):38 | `handleOmniagentDoctor` | Jak wyżej |
-| [src/tools/issue.tool.ts](src/tools/issue.tool.ts):47 | `handleOmniagentReportBug` | Jak wyżej |
-| [src/tools/quota.tool.ts](src/tools/quota.tool.ts):37 | `handleOmniagentQuotaStatus` | Jak wyżej |
-| [src/tools/session.tool.ts](src/tools/session.tool.ts):40 | `handleOmniagentCloseSession` | Jak wyżej |
-| [test/config.test.js](test/config.test.js):10,14-15 | Prefiks temp i legacy zmienne config/quota | Główne testy na `coagent8_*`; osobne testy zgodności legacy |
-| [test/session_and_issue.test.js](test/session_and_issue.test.js):9,11,156,243 | Prefiks temp, legacy env, `omni_sess_expired123`, stara nazwa w kontekście raportu | Zachować fixture legacy sesji; resztę przenieść na Syn |
-| [package.json](package.json):10; [package-lock.json](package-lock.json):15 | Bin `omniagent` | Świadomy alias CLI, z określoną polityką wycofania |
+| `src/server.ts` (`src/server.ts`):127-135 | Rejestracja legacy aliasów i komentarze | Zachować kompatybilność; rejestracja przez wspólny katalog narzędzi |
+| `src/tools/config.tool.ts` (`src/tools/config.tool.ts`):39 | `handleOmniagentSetDefault` | Deprecated export albo usunięcie po sprawdzeniu odbiorców |
+| `src/tools/doctor.tool.ts` (`src/tools/doctor.tool.ts`):38 | `handleOmniagentDoctor` | Jak wyżej |
+| `src/tools/issue.tool.ts` (`src/tools/issue.tool.ts`):47 | `handleOmniagentReportBug` | Jak wyżej |
+| `src/tools/quota.tool.ts` (`src/tools/quota.tool.ts`):37 | `handleOmniagentQuotaStatus` | Jak wyżej |
+| `src/tools/session.tool.ts` (`src/tools/session.tool.ts`):40 | `handleOmniagentCloseSession` | Jak wyżej |
+| `test/config.test.js` (`test/config.test.js`):10,14-15 | Prefiks temp i legacy zmienne config/quota | Główne testy na `coagent8_*`; osobne testy zgodności legacy |
+| `test/session_and_issue.test.js` (`test/session_and_issue.test.js`):9,11,156,243 | Prefiks temp, legacy env, `omni_sess_expired123`, stara nazwa w kontekście raportu | Zachować fixture legacy sesji; resztę przenieść na Syn |
+| `package.json` (`package.json`):10; `package-lock.json` (`package-lock.json`):15 | Bin `omniagent` | Świadomy alias CLI, z określoną polityką wycofania |
 | [README.md](README.md):75-82 | 8 legacy nazw narzędzi w tabeli | To poprawna dokumentacja kompatybilności; nie usuwać mechanicznie |
-| [docs/PLAN_V1.0.0.md](docs/PLAN_V1.0.0.md) | Stara marka, paczka `omniagent-mcp`, MCP ID, config path, repo i narzędzia | Zaktualizować dokument zgodnie z zestawieniem 4.2 |
-| [.agents/rules/author-reviewer.md](.agents/rules/author-reviewer.md):3,13 | OmniAgent i `omniagent_review` jako główna komenda | CoAgent8 i `coagent8_review` |
-| [.agents/rules/cross-platform.md](.agents/rules/cross-platform.md):3 | OmniAgent | CoAgent8 |
+| [docs/PLAN_V1.0.0.md](PLAN_V1.0.0.md) | Stara marka, paczka `omniagent-mcp`, MCP ID, config path, repo i narzędzia | Zaktualizować dokument zgodnie z zestawieniem 4.2 |
+| `.agents/rules/author-reviewer.md` (`.agents/rules/author-reviewer.md`):3,13 | OmniAgent i `omniagent_review` jako główna komenda | CoAgent8 i `coagent8_review` |
+| `.agents/rules/cross-platform.md` (`.agents/rules/cross-platform.md`):3 | OmniAgent | CoAgent8 |
 
 Nie wykryto dodatkowego starego nazewnictwa w `plugin.json`, `.github/`, `.gitignore`, `index.js`, `LICENSE` ani tekstowym SVG. Binarny PNG nie był analizowany pod kątem metadanych osadzonych w obrazie. `AGENTS.md` i nazwa umiejętności projektu są już CoAgent8.
 

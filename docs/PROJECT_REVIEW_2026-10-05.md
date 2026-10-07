@@ -5,17 +5,101 @@ it inspected. [ROADMAP.md](ROADMAP.md) owns the resulting work items, order and
 acceptance; it references the `AUD-*` finding IDs defined here. A finding describes
 its snapshot, not later trees, and a historical result is not fresh validation.
 
-The snapshots in this document predate `v1.0.0-beta.1`, the first commit of the
-repository history. Their commits are kept in the owner's offline archive of the
-earlier development history, not in this repository.
+The earlier snapshots (`c265cdf`, `2e87bc4`, `4b2c72b`) predate the rewritten
+`v1.0.0-beta.1` history and are kept in the owner's offline archive. The newer
+`24052e3` snapshot is in this repository. Historical source references below are
+plain paths/line numbers from their audited tree; deleted modules are not links
+to today's source.
 
 | Section | Snapshot | Status |
 | --- | --- | --- |
-| [Independent audit](#independent-audit-at-c265cdf) | `c265cdf` on `feat/routing-migrate-quota` | Current; verdict `BLOCKED` |
+| [Current snapshot review](#review-at-24052e3-2026-10-07) | `24052e3` | Open findings; release not approved |
+| [Independent audit](#independent-audit-at-c265cdf) | `c265cdf` on `feat/routing-migrate-quota` | Historical BLOCKED verdict; many fixes implemented locally |
 | [Product reassessment](#product-reassessment-at-2e87bc4) | `2e87bc4` | Superseded where the audit disagrees |
 | [Earlier review](archive/PROJECT_REVIEW_4b2c72b.md) | `4b2c72b` | Archived historical evidence |
 
+## Review at 24052e3 (2026-10-07)
+
+**Scope:** current source, architecture, tool descriptions, documentation,
+repository plans, tests and packaging. Findings below remain open. This was a
+source/fixture review, not a release-bound backend Reviewer approval.
+
+### Method and test provenance
+
+Controlled reproductions imported current `src/` with `node -r tsx/cjs`.
+They used disposable storage, fake adapter registry entries and, for consent,
+a real in-memory MCP client/server transport. No paid/live model turn or native
+sandbox attack was performed. The probes were temporary and are not committed
+regression tests; implement those in each owning milestone.
+
+The preceding full suite used `npm test`: 266 tests, 263 passed, zero failed,
+three POSIX-only skips on Windows; about 51.2 seconds. Unit and MCP e2e tests
+loaded `src/` through tsx. Setup tests loaded a pre-existing `dist/index.cjs`;
+its freshness before that run was not established. That suite therefore cannot
+be reported as a complete test of a freshly built dist.
+
+`npm run typecheck` passed. A later `npm run build` and consumer smoke passed
+on Windows, Node `v26.10.0`. The consumer check verified an installed tarball
+with fixture CLIs, packed source matching the checkout, and the bundle matching
+a fresh build. Manifest: `.artifacts/consumer/coagent8-1.0.0-beta.1.tgz.manifest.json`.
+Artifact: 77 files, SHA-256
+`e4e8fc8c6d097e7ec24e37b4a85f9cd6e3d978292dec3f6946c37f76443594d6`.
+This hash binds to that earlier artifact, not to later documentation edits.
+Real CLI compatibility, macOS/Linux and the six-job candidate matrix were not
+verified by these checks. Older live recordings are separate evidence.
+
+### Open findings
+
+| ID | Evidence at this snapshot | Consequence |
+| --- | --- | --- |
+| CUR-001 | A staged input of 3,610,039 bytes produced a 3,146,472-byte prompt containing an incomplete-snapshot marker; its final line was absent. A fake COMPLETE/READY backend answer still returned READY. A nonempty wrong snapshot with failing CHECKS also passed. | Review input completeness and snapshot/check approval are not enforced by the gate. |
+| CUR-002 | Codex verifies its thread sandbox but does not clear inherited MCP configuration. agy starts configured MCP servers, including CoAgent8, as recorded in earlier live evidence. | External tools and recursion are outside the claimed shell sandbox boundary. No live malicious write was attempted here. |
+| CUR-003 | A real in-memory MCP client answered elicitation with `{action: "accept", content: {}}`. A fake governed Claude adapter then executed. | Missing checkbox approval is accepted; explicit consent is not fail-closed. |
+| CUR-004 | Making the owned quota-cache parent a file produced EEXIST during automatic routing; explicit Codex resolution succeeded. | A cache write is a prerequisite for an ordinary auto call. Cached measured headroom can also outlive its measurement. |
+| CUR-005 | With an 80-byte collector budget, 100-byte commentary followed by final `OK` left output `OK` but `truncated: true` and `BUFFER_LIMIT`. | Discarded commentary can invalidate a small complete final answer; message-count pressure can fail before it arrives. |
+| CUR-006 | Eight concurrent catalog reads with delayed fake adapters yielded eight probes and eight catalog reads. | Completed caching does not coalesce in-flight work; some provider environment/settings are also outside its key. |
+| CUR-007 | Delayed fake probe/catalog preparation with `timeout_ms: 100` completed successfully after about 405 ms. Source starts the timer after acquisition and passes a fresh process budget. | Timeout/footer duration do not represent the whole call. The independent agy headless-host 180-second limit remains a separate constraint. |
+| CUR-008 | Controller acquires/prunes a disk session before every execution, even with archive off; its handle is returned after completion. | No ephemeral ordinary consult or first-call handle-based cancellation yet. |
+| CUR-009 | Codex diagnostic auth derives from file/env presence; several native host/UI/elicitation checks are still pending. | Diagnostic readiness and protocol fixtures cannot be presented as live execution/security acceptance. |
+| CUR-010 | Source still defines defaults, known aliases, model examples and name-family governance. | Persisted catalogs and price-based consent remain proposals. New expensive names need a policy decision. |
+| CUR-011 | POSIX detached groups have no unexpected-parent-death cleanup strategy. | Windows crash-fixture evidence does not establish POSIX crash cleanup. |
+| CUR-012 | Documentation-alignment source inspection: materialized JSON is written before its size delta enters capacity accounting. No adversarial runtime reproduction was run. | The 100 MiB archive budget is not a proven instantaneous disk ceiling. |
+
+The npm README also links to ten documentation/rule files excluded by the package
+file list. The links stay relative: they resolve in the repository, not inside an
+installed package. Absolute links to `release/v1.0.0` were tried and rejected,
+because that branch is not on the remote and would outlive the final release.
+
+### Assessment
+
+The local stack materially improves the earlier process identity, redaction,
+history, errors, package provenance and MCP surface. Its strongest boundaries are
+provider protocol parsing, owned process handles, explicit workspace identity and
+typed failures. Remaining release risk concentrates in approval semantics,
+external MCP capabilities, incomplete review input and mandatory storage/caches.
+
+Model-visible descriptions are executable strings, not TSDoc. The current model
+description promises an unknown model fails before any call; actual rejection
+depends on a usable catalog, and Claude has none. Routing's "most quota left"
+description omits measurement age and the unknown-value ranking heuristic.
+This documentation task corrected the model/backend strings to state best-effort
+catalog checking and cached quota. The budget now measures 5,256 bytes; 15 focused
+source surface tests pass. The behavior of routing/validation remains unchanged.
+
+The roadmap preserves the owner's catalog and price-governance proposal. Before
+implementation, resolve expensive defaults (a ratio to themselves is always
+one), approximate model matching, missing/stale prices, first-listed default
+instability and remembered approval scope. Do not replace the current P0 consent
+rule merely by documenting a proposal.
+
+Current verdict: **BLOCKED for release approval**. The owning milestones and
+acceptance criteria are in [ROADMAP.md](ROADMAP.md#current-snapshot-status).
+
 ## Independent audit at c265cdf
+
+This section describes the audited historical tree. Its findings and original
+recommendations are preserved; current status is in the roadmap and the newer
+review above. A historical proposed fix is not active implementation policy.
 
 **Date:** 2026-10-05. **Auditor:** Claude Code in the Reviewer role, at the owner's
 request. **Snapshot:** `c265cdf` with a clean working tree.
@@ -60,7 +144,7 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
 - Optional features can fail a successful execution: history persistence and
   session metadata updates convert a completed CLI answer into an error. The same
   controller already handles cooldown-cache failures correctly, as a warning
-  ([controller.ts:221-226](../src/execution/controller.ts#L221-L226)).
+  (`controller.ts:221-226` (`src/execution/controller.ts#L221-L226`)).
 - Process documentation (about 2,100 lines of rules, roadmap, review and handoff)
   outweighs verification. Several roadmap and handoff completion claims are false
   (see [corrected claims](#documentation-claims-corrected-by-this-audit)). Some
@@ -95,20 +179,20 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
 #### AUD-P0-1 Windows teardown can terminate unrelated processes
 
 1. **How descendants are found.** The breadth-first searches in both PowerShell
-   scripts ([process.ts:185](../src/execution/process.ts#L185),
-   [process.ts:362](../src/execution/process.ts#L362)) treat every process with
+   scripts (`process.ts:185` (`src/execution/process.ts#L185`),
+   `process.ts:362` (`src/execution/process.ts#L362`)) treat every process with
    `ParentProcessId == curr` as a child.
    - Windows does not clear `ParentProcessId` when a parent exits, and PIDs are
      reused.
    - If a CoAgent8 child receives the PID of a long-dead process, every orphan of
      that dead process becomes its "descendant".
    - The tracking poll records them, and the fallback sweep runs
-     `Stop-Process -Force` on them ([process.ts:378](../src/execution/process.ts#L378)).
+     `Stop-Process -Force` on them (`process.ts:378` (`src/execution/process.ts#L378`)).
 2. **The sweep runs after practically every child.** On the `exit` event
-   ([process.ts:556](../src/execution/process.ts#L556)) the supervisor runs
+   (`process.ts:556` (`src/execution/process.ts#L556`)) the supervisor runs
    `taskkill /PID <dead pid> /T /F`. For a PID that no longer exists, `taskkill`
    returns **128** (observed). `code !== 0` then starts the CIM fallback
-   ([process.ts:417](../src/execution/process.ts#L417)). This happens after every
+   (`process.ts:417` (`src/execution/process.ts#L417`)). This happens after every
    `--version` probe and every `git diff`.
 3. **Real candidates exist.** The audit machine had 21 processes whose parent PID
    was dead, including `nextcloud.exe`, `Focusrite Notifier.exe`,
@@ -117,12 +201,12 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
    because its parent, `userinit.exe`, exits at logon. Commit `ab04a59` starts its
    denylist with `explorer`, which is consistent with this mechanism.
 4. **The name denylist treats the symptom**
-   ([process.ts:177](../src/execution/process.ts#L177),
-   [process.ts:353](../src/execution/process.ts#L353)). It does not protect any
+   (`process.ts:177` (`src/execution/process.ts#L177`),
+   `process.ts:353` (`src/execution/process.ts#L353`)). It does not protect any
    user application.
 5. **Scope.** The same tracker and sweep run in the test runner
-   ([tests/run.cjs](../tests/run.cjs)) and the MCP test harness
-   ([tests/helpers/stdio.cjs](../tests/helpers/stdio.cjs)), so running the suite
+   (`tests/run.cjs` (`tests/run.cjs`)) and the MCP test harness
+   (`tests/helpers/stdio.cjs` (`tests/helpers/stdio.cjs`)), so running the suite
    on a developer desktop has the same exposure.
 6. **Unverified part.** Whether `taskkill /T` itself validates creation time was
    not checked. If it does not, the timeout and cancel paths share the hazard.
@@ -210,10 +294,10 @@ remain open (AUD-P2-14).
 | `const auth = useAuth();` | `const auth = ***[REDACTED]***` |
 
 - **Where.** The keyword=value rules in
-  [redaction.ts:24-31](../src/redaction.ts#L24-L31) are applied to the public
-  answer at [controller.ts:188](../src/execution/controller.ts#L188) and
-  [common.ts:295](../src/tools/common.ts#L295), and to stored history at
-  [history.ts:82](../src/sessions/history.ts#L82).
+  `redaction.ts:24-31` (`src/redaction.ts#L24-L31`) are applied to the public
+  answer at `controller.ts:188` (`src/execution/controller.ts#L188`) and
+  `common.ts:295` (`src/tools/common.ts#L295`), and to stored history at
+  `history.ts:82` (`src/sessions/history.ts#L82`).
 - **Impact.** For a code-consultation tool this silently corrupts the main
   product. A host agent can receive mangled code and apply it.
 
@@ -235,8 +319,8 @@ key inside an answer is still replaced.
 #### AUD-P0-3 The history archive disables the tool [reproduced]
 
 - **Quadratic growth.** For every delta, `accept()` builds a snapshot of the whole
-  message so far ([history.ts:414-419](../src/sessions/history.ts#L414-L419)). The
-  250 ms flush ([controller.ts:177](../src/execution/controller.ts#L177)) appends
+  message so far (`history.ts:414-419` (`src/sessions/history.ts#L414-L419`)). The
+  250 ms flush (`controller.ts:177` (`src/execution/controller.ts#L177`)) appends
   that full snapshot to the JSONL log.
 - **Measurements** (40-byte deltas, one flush per 250 ms):
 
@@ -247,15 +331,15 @@ key inside an answer is still replaced.
   | 120 KiB | 90 s | 10.00 MiB | `History session limit reached.` |
 
   In the last case the controller returns a successful Gemini answer as
-  `HISTORY_ERROR` ([controller.ts:213-214](../src/execution/controller.ts#L213-L214)).
+  `HISTORY_ERROR` (`controller.ts:213-214` (`src/execution/controller.ts#L213-L214`)).
 - **Whole-tool lockout.** With about 105 MiB of history younger than seven days,
   the first flush of a **new** session fails with `History total limit reached.`
   (reproduced). That flush is the first statement in the controller's `try`
   block, before the CLI is launched
-  ([controller.ts:169](../src/execution/controller.ts#L169)). Every call to every
+  (`controller.ts:169` (`src/execution/controller.ts#L169`)). Every call to every
   backend then ends in `PROCESS_ERROR`, with a "report on GitHub" link, until the
   files are older than seven days.
-- **Tests cement it.** [v1_phase2.test.js:289](../tests/v1_phase2.test.js#L289)
+- **Tests cement it.** `v1_phase2.test.js:289` (`tests/v1_phase2.test.js#L289`)
   states ".jsonl MUST have grown with O(1) appends" but only checks
   `includes('delta-5')`.
 
@@ -286,8 +370,8 @@ factor of the answer size, and a full archive never prevents a CLI launch.
 
 #### AUD-P1-1 Cooldown recorded twice [reproduced]
 
-- **Where.** [controller.ts:193](../src/execution/controller.ts#L193) records the
-  parsed reset, then [controller.ts:222](../src/execution/controller.ts#L222)
+- **Where.** `controller.ts:193` (`src/execution/controller.ts#L193`) records the
+  parsed reset, then `controller.ts:222` (`src/execution/controller.ts#L222`)
   records it again without a duration.
 - **Effect.** The second call takes the next backoff tier.
 - **Measured.** `"…try again in 3 days."` yields 4,320 minutes after the first
@@ -305,7 +389,7 @@ if (result.error?.code === 'RATE_LIMITED') {
 
 #### AUD-P1-2 Error codes misreport causes
 
-- **Default code.** [server.ts:311](../src/server.ts#L311) reports any exception
+- **Default code.** `server.ts:311` (`src/server.ts#L311`) reports any exception
   without a known `CODE:` prefix as `INPUT_LIMIT`.
 - **First-run example.** `ONBOARDING_REQUIRED` is not in `ERROR_CODES`, so every
   user with two or more CLIs and no configured default receives `INPUT_LIMIT`.
@@ -326,10 +410,10 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 
 #### AUD-P1-3 A metadata failure discards a successful answer
 
-- **Where.** `updateSession` ([controller.ts:189](../src/execution/controller.ts#L189))
+- **Where.** `updateSession` (`controller.ts:189` (`src/execution/controller.ts#L189`))
   runs inside the same `try` as the CLI call.
 - **Effect.** If it throws (for example a 5 s lock timeout), the `catch`
-  ([controller.ts:198](../src/execution/controller.ts#L198)) replaces the result
+  (`controller.ts:198` (`src/execution/controller.ts#L198`)) replaces the result
   with `output: ''`.
 - **Fix.** Move post-processing out of the `try`. A failure becomes a warning with
   `continuationAvailable: false`.
@@ -337,26 +421,26 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 #### AUD-P1-4 Subprocess churn contradicts the quiet-Windows priority
 
 - **Probes on every request.** Routing probes on every call
-  ([routing.ts:15](../src/backends/routing.ts#L15)).
+  (`routing.ts:15` (`src/backends/routing.ts#L15`)).
   - Gemini: `--version` plus `/usage` - a network call made **without**
-    `--sandbox` ([gemini.adapter.ts:119](../src/backends/gemini.adapter.ts#L119)) -
+    `--sandbox` (`gemini.adapter.ts:119` (`src/backends/gemini.adapter.ts#L119`)) -
     and `execute` repeats `--version`
-    ([gemini.adapter.ts:209](../src/backends/gemini.adapter.ts#L209)).
+    (`gemini.adapter.ts:209` (`src/backends/gemini.adapter.ts#L209`)).
   - Claude: `--version` plus `--bare --help`, and `execute` repeats
-    `--bare --help` ([claude.adapter.ts:19](../src/backends/claude.adapter.ts#L19),
-    [claude.adapter.ts:35](../src/backends/claude.adapter.ts#L35)).
+    `--bare --help` (`claude.adapter.ts:19` (`src/backends/claude.adapter.ts#L19`),
+    `claude.adapter.ts:35` (`src/backends/claude.adapter.ts#L35`)).
   - Review adds four or five `git` processes.
 - **Cost per process on Windows.** Each one costs `taskkill` plus a hidden
   `powershell.exe` CIM query, and `close` awaits them before resolving
-  ([process.ts:565](../src/execution/process.ts#L565)). One CIM helper launch
+  (`process.ts:565` (`src/execution/process.ts#L565`)). One CIM helper launch
   measured about 400 ms.
 - **Polling.** Each live child is polled every 500 ms
-  ([process.ts:258](../src/execution/process.ts#L258)), so a 10-minute Codex run
+  (`process.ts:258` (`src/execution/process.ts#L258`)), so a 10-minute Codex run
   launches PowerShell on the order of a thousand times.
 - **The `/usage` result is unused for routing.** An explicit backend ignores it,
   and `selectSmartQuotaBackend` ignores headroom
-  ([availability.ts:176](../src/backends/availability.ts#L176)). The handoff
-  claimed "proactive headroom scoring"; [config.test.js:128](../tests/config.test.js#L128)
+  (`availability.ts:176` (`src/backends/availability.ts#L176`)). The handoff
+  claimed "proactive headroom scoring"; `config.test.js:128` (`tests/config.test.js#L128`)
   asserts the opposite: Gemini with 90% headroom loses to Codex.
 - **Fix.**
   - Cache probe evidence per backend, keyed by resolved path and mtime, with a TTL.
@@ -367,7 +451,7 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 
 #### AUD-P1-5 Gemini parser fails on unknown event types
 
-- **Where.** [gemini.collector.ts:254](../src/backends/gemini.collector.ts#L254)
+- **Where.** `gemini.collector.ts:254` (`src/backends/gemini.collector.ts#L254`)
   throws for an unknown event type.
 - **Effect.** Any agy release that adds an event type turns every Gemini call into
   `PROTOCOL_ERROR`. The Codex collector already ignores unknown types.
@@ -377,11 +461,11 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 #### AUD-P1-6 Unvalidated model in argv
 
 - **Where.** `-m model` / `--model model` reaches argv unvalidated
-  ([codex.adapter.ts:153](../src/backends/codex.adapter.ts#L153),
-  [gemini.adapter.ts:222](../src/backends/gemini.adapter.ts#L222),
-  [claude.adapter.ts:43](../src/backends/claude.adapter.ts#L43)).
+  (`codex.adapter.ts:153` (`src/backends/codex.adapter.ts#L153`),
+  `gemini.adapter.ts:222` (`src/backends/gemini.adapter.ts#L222`),
+  `claude.adapter.ts:43` (`src/backends/claude.adapter.ts#L43`)).
 - **Inconsistency.** The Codex thread ID is checked for a leading `-`
-  ([codex.adapter.ts:148](../src/backends/codex.adapter.ts#L148)); the model is
+  (`codex.adapter.ts:148` (`src/backends/codex.adapter.ts#L148`)); the model is
   not.
 - **Risk.** The value comes from a calling agent, which is a prompt-injection
   surface. Whether a value such as `--yolo` becomes a flag depends on each CLI's
@@ -393,7 +477,7 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 #### AUD-P1-7 Consent is an agent assertion
 
 - **Where.** `user_confirmed: true` is a boolean set by the calling model
-  ([policy.ts:14](../src/backends/policy.ts#L14)). The server cannot distinguish a
+  (`policy.ts:14` (`src/backends/policy.ts#L14`)). The server cannot distinguish a
   user decision from a fabricated one.
 - **Gap.** The default Gemini model (no `model` argument) is not governed at all.
 - **Fix.** MCP provides `elicitation/create` for exactly this. When the client
@@ -404,7 +488,7 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 
 - **Where.** `coagent8://sessions` lists the sessions of every workspace.
   `ReadResource` returns the full history of any handle without a workspace check
-  ([server.ts:254](../src/server.ts#L254)).
+  (`server.ts:254` (`src/server.ts#L254`)).
 - **Contradiction.** The `session` tool enforces workspace ownership, so one of
   the two contracts is false.
 - **Fix.** Either scope resources to the server's roots or document resources as
@@ -413,14 +497,14 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 #### AUD-P1-9 Lease integrity
 
 - **Empty lease.** A crash between `open('wx')` and `writeFile`
-  ([lock.ts:130-131](../src/sessions/lock.ts#L130-L131)) leaves an empty lease
+  (`lock.ts:130-131` (`src/sessions/lock.ts#L130-L131`)) leaves an empty lease
   that is never reclaimed, because an unparsable owner skips reclamation
-  ([lock.ts:145](../src/sessions/lock.ts#L145)). For `history/store` that blocks
+  (`lock.ts:145` (`src/sessions/lock.ts#L145`)). For `history/store` that blocks
   every execution.
 - **PID-only liveness.** Owner liveness is checked by PID alone, so a reused PID
   keeps a stale lease alive.
 - **Sweep race.** `sweepExpiredSessions` deletes `.lease` files outside the token
-  protocol ([session.ts:243-248](../src/sessions/session.ts#L243-L248)). It can read
+  protocol (`session.ts:243-248` (`src/sessions/session.ts#L243-L248`)). It can read
   an old lease and delete a newer one.
 - **Fix.**
   - Write leases atomically (temporary file, then link or rename).
@@ -436,13 +520,13 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 - **What depends on it.** It is what `index.js`, `mcp.json`
   (`${PLUGIN_ROOT}/dist/index.cjs`) and `package.json` `bin` execute.
 - **Review gap.** Review diffs exclude `dist/**`
-  ([git.ts:14](../src/execution/git.ts#L14)).
+  (`git.ts:14` (`src/execution/git.ts#L14`)).
 - **Fix.** Remove `dist/` from Git and build it in `prepack` and CI. Distribute
   plugins from the built tarball.
 
 #### AUD-P1-11 Codex configuration parsed with a regex [reproduced]
 
-- **Where.** [codex.adapter.ts:45](../src/backends/codex.adapter.ts#L45) takes
+- **Where.** `codex.adapter.ts:45` (`src/backends/codex.adapter.ts#L45`) takes
   `# model = "o3"` from a comment as the default model, so every call passes
   `-m o3`. The same regex also matches `review_model = …`.
 - **Fix.** `smol-toml` is already a dependency. Parse the top-level `model` key
@@ -453,28 +537,28 @@ const code = err instanceof ToolError ? err.code : 'PROCESS_ERROR';
 
 | ID | Finding | Location | Proposed direction |
 | --- | --- | --- | --- |
-| AUD-P2-1 | Heuristic classification [reproduced]: `"line 429"` → `RATE_LIMITED`; `"author field"` → `AUTH_REQUIRED`; `"disk quota check"` → `RATE_LIMITED`; `"try again in 20ms"` → 20 minutes; `"1.5s"` not parsed. `smart_quota` then avoids a healthy backend | [codex-errors.ts:6](../src/backends/codex-errors.ts#L6), [rate-limit.ts:66](../src/backends/rate-limit.ts#L66) | Classify structured payloads; for stderr use anchored provider phrases; parse `ms` before `m` and decimals |
-| AUD-P2-2 | Fabricated data: `"Task completed cleanly with no textual output."` returned and stored as the model's answer; missing `remaining_fraction` treated as 100% headroom; Codex `authStatus: 'authenticated'` from file presence | [stream-reducer.ts:358](../src/execution/stream-reducer.ts#L358), [gemini.adapter.ts:48](../src/backends/gemini.adapter.ts#L48), [codex.adapter.ts:90](../src/backends/codex.adapter.ts#L90) | Empty stays empty; missing data is `null`; file presence is unverified evidence |
-| AUD-P2-3 | Test hooks in production: a 5 s busy-wait and a file write to an environment-supplied path (`coagent8_MAINTENANCE_GATE`), plus `coagent8_MAINTENANCE_DELAY_MS` | [session.ts:222-240](../src/sessions/session.ts#L222-L240) | Remove; inject the maintenance dependency in tests |
-| AUD-P2-4 | Duplication: two error extractors are about 90% copies with dead `codeVal`/`typeVal`; deprecated alias mapping exists twice (three `*.tool.ts` files and `run`); arguments are validated three times | [codex-errors.ts:17-18](../src/backends/codex-errors.ts#L17-L18), [run.tool.ts:130-173](../src/tools/run.tool.ts#L130-L173) | One parameterized extractor; aliases as one table; validate once at the server boundary |
-| AUD-P2-5 | Gemini has a second timeout around `runCommand`'s own timeout | [gemini.adapter.ts:289](../src/backends/gemini.adapter.ts#L289) | Keep only the `runCommand` deadline |
-| AUD-P2-6 | Dead code: half of `StreamReducer` (`pushChunk`, `recordActivity`, `recordError`, `recordFallbackLine`); `killProcessSafely` ("for the adapter being migrated by the other author", no callers); `getProgressStage`; `getToolProfile`; `CONFIG_FILE`; `DEFAULT_CONFIG_DIR`; `resolveCodexCommand`; `SessionLockData`; a check for a truncation string `runCommand` never produces | [process.ts:438](../src/execution/process.ts#L438), [git.ts:57](../src/execution/git.ts#L57) | Delete; move remaining test-only behavior into tests |
-| AUD-P2-7 | 37 empty `catch {}` blocks; `ensureConfigDir` still swallows errors (`ERRORS-001`) | [config.ts:39](../src/config.ts#L39) | Review individually; distinguish absence from I/O failure |
-| AUD-P2-8 | Contract fiction: `doctor` advertises `repair` and `workspace_path` but ignores them; `resources.listChanged: true` is never emitted; doctor hardcodes `read_only_sandbox_guard: true` | [doctor.tool.ts:12](../src/tools/doctor.tool.ts#L12), [server.ts:199](../src/server.ts#L199) | Remove from the contract or implement |
-| AUD-P2-9 | No MCP roots: without `workspace_path` the CLI runs in the server's working directory (Codex also with `--skip-git-repo-check`) | [policy.ts](../src/backends/policy.ts) | Use `roots/list` or require `workspace_path` |
-| AUD-P2-10 | The installer (375 lines plus RPC, TOML and JSONC parsers) is bundled into the core server; any argument other than `setup`, `repair` or `status` exits the server with code 1 | [setup-cli.ts](../src/integrations/setup-cli.ts) | Separate entrypoint and bundle |
-| AUD-P2-11 | A malformed `config.json` makes `tools/list` throw, hiding every tool (contradicts `MCP-001`) | [config.ts](../src/config.ts) | Fall back to defaults with a visible warning |
-| AUD-P2-12 | One global `history/store` lock plus an atomic `.capacity.meta` rewrite every 250 ms per active execution | [history.ts:426](../src/sessions/history.ts#L426) | Per-session lock; compute capacity lazily |
-| AUD-P2-13 | Redaction gaps: `gho_`, `ghu_`, `ghs_`, `glpat-`, `ya29.`, bare JWT `eyJ…`, `sk_live_`, `npm_`, `hf_` | [redaction.ts](../src/redaction.ts) | Add formats to the credential-format list |
-| AUD-P2-14 | Orphans after a server crash: POSIX `detached: true` and no Windows Job Object. The stdin-EOF and SIGTERM paths are handled | [process.ts](../src/execution/process.ts) | Job Object (Windows); parent-death handling (POSIX) |
+| AUD-P2-1 | Heuristic classification [reproduced]: `"line 429"` → `RATE_LIMITED`; `"author field"` → `AUTH_REQUIRED`; `"disk quota check"` → `RATE_LIMITED`; `"try again in 20ms"` → 20 minutes; `"1.5s"` not parsed. `smart_quota` then avoids a healthy backend | `codex-errors.ts:6` (`src/backends/codex-errors.ts#L6`), `rate-limit.ts:66` (`src/backends/rate-limit.ts#L66`) | Classify structured payloads; for stderr use anchored provider phrases; parse `ms` before `m` and decimals |
+| AUD-P2-2 | Fabricated data: `"Task completed cleanly with no textual output."` returned and stored as the model's answer; missing `remaining_fraction` treated as 100% headroom; Codex `authStatus: 'authenticated'` from file presence | `stream-reducer.ts:358` (`src/execution/stream-reducer.ts#L358`), `gemini.adapter.ts:48` (`src/backends/gemini.adapter.ts#L48`), `codex.adapter.ts:90` (`src/backends/codex.adapter.ts#L90`) | Empty stays empty; missing data is `null`; file presence is unverified evidence |
+| AUD-P2-3 | Test hooks in production: a 5 s busy-wait and a file write to an environment-supplied path (`coagent8_MAINTENANCE_GATE`), plus `coagent8_MAINTENANCE_DELAY_MS` | `session.ts:222-240` (`src/sessions/session.ts#L222-L240`) | Remove; inject the maintenance dependency in tests |
+| AUD-P2-4 | Duplication: two error extractors are about 90% copies with dead `codeVal`/`typeVal`; deprecated alias mapping exists twice (three `*.tool.ts` files and `run`); arguments are validated three times | `codex-errors.ts:17-18` (`src/backends/codex-errors.ts#L17-L18`), `run.tool.ts:130-173` (`src/tools/run.tool.ts#L130-L173`) | One parameterized extractor; aliases as one table; validate once at the server boundary |
+| AUD-P2-5 | Gemini has a second timeout around `runCommand`'s own timeout | `gemini.adapter.ts:289` (`src/backends/gemini.adapter.ts#L289`) | Keep only the `runCommand` deadline |
+| AUD-P2-6 | Dead code: half of `StreamReducer` (`pushChunk`, `recordActivity`, `recordError`, `recordFallbackLine`); `killProcessSafely` ("for the adapter being migrated by the other author", no callers); `getProgressStage`; `getToolProfile`; `CONFIG_FILE`; `DEFAULT_CONFIG_DIR`; `resolveCodexCommand`; `SessionLockData`; a check for a truncation string `runCommand` never produces | `process.ts:438` (`src/execution/process.ts#L438`), `git.ts:57` (`src/execution/git.ts#L57`) | Delete; move remaining test-only behavior into tests |
+| AUD-P2-7 | 37 empty `catch {}` blocks; `ensureConfigDir` still swallows errors (`ERRORS-001`) | `config.ts:39` (`src/config.ts#L39`) | Review individually; distinguish absence from I/O failure |
+| AUD-P2-8 | Contract fiction: `doctor` advertises `repair` and `workspace_path` but ignores them; `resources.listChanged: true` is never emitted; doctor hardcodes `read_only_sandbox_guard: true` | `doctor.tool.ts:12` (`src/tools/doctor.tool.ts#L12`), `server.ts:199` (`src/server.ts#L199`) | Remove from the contract or implement |
+| AUD-P2-9 | No MCP roots: without `workspace_path` the CLI runs in the server's working directory (Codex also with `--skip-git-repo-check`) | `policy.ts` (`src/backends/policy.ts`) | Use `roots/list` or require `workspace_path` |
+| AUD-P2-10 | The installer (375 lines plus RPC, TOML and JSONC parsers) is bundled into the core server; any argument other than `setup`, `repair` or `status` exits the server with code 1 | `setup-cli.ts` (`src/integrations/setup-cli.ts`) | Separate entrypoint and bundle |
+| AUD-P2-11 | A malformed `config.json` makes `tools/list` throw, hiding every tool (contradicts `MCP-001`) | `config.ts` (`src/config.ts`) | Fall back to defaults with a visible warning |
+| AUD-P2-12 | One global `history/store` lock plus an atomic `.capacity.meta` rewrite every 250 ms per active execution | `history.ts:426` (`src/sessions/history.ts#L426`) | Per-session lock; compute capacity lazily |
+| AUD-P2-13 | Redaction gaps: `gho_`, `ghu_`, `ghs_`, `glpat-`, `ya29.`, bare JWT `eyJ…`, `sk_live_`, `npm_`, `hf_` | `redaction.ts` (`src/redaction.ts`) | Add formats to the credential-format list |
+| AUD-P2-14 | Orphans after a server crash: POSIX `detached: true` and no Windows Job Object. The stdin-EOF and SIGTERM paths are handled | `process.ts` (`src/execution/process.ts`) | Job Object (Windows); parent-death handling (POSIX) |
 | AUD-P2-15 | CI runs the full suite twice per job; about 2,100 lines of process documentation with false completion marks | [ci.yml](../.github/workflows/ci.yml) | Coverage once; short status and changelog |
 
 ### P3 findings
 
 - `.filter(l => l.length > 0 || l === '')` is a no-op
-  ([common.ts:228](../src/tools/common.ts#L228)).
+  (`common.ts:228` (`src/tools/common.ts#L228`)).
 - `formatExecutionResult` is `async` without `await`
-  ([common.ts:268](../src/tools/common.ts#L268)).
+  (`common.ts:268` (`src/tools/common.ts#L268`)).
 - Progress messages are redacted three times.
 - `stripCliBanners` runs on text extracted from JSON events and can drop a
   legitimate answer line starting with `npm notice`.
@@ -568,15 +652,15 @@ Preserve process safety and privacy while making these responsibilities explicit
 
 | Finding | Source evidence | Consequence / roadmap item |
 | --- | --- | --- |
-| Generic clients are not rejected by name | [server.ts](../src/server.ts) handles tools/list without client-name checks; [setup.ts](../src/integrations/setup.ts) limits only automatic registration targets | Distinguish installer support from protocol compatibility (`MCP-001`). No real Continue UI connection was verified. |
-| Windows tests can create visible descendants | [v1_phase1.test.js](../tests/v1_phase1.test.js) uses nested Start-Process without WindowStyle Hidden and execSync probes without windowsHide | Strong source explanation for reported windows, not a reproduced focus-stealing incident (`WINDOWS-001`). |
-| Process supervision is duplicated | [process.ts](../src/execution/process.ts) polls CIM through PowerShell with recurring 500 ms opportunities and an in-flight guard; [run.cjs](../tests/run.cjs) and the [MCP helper](../tests/helpers/stdio.cjs) also create trackers | Hidden helpers still have launch/scan cost; measure and consolidate ownership without losing teardown guarantees (`WINDOWS-001`). |
+| Generic clients are not rejected by name | `server.ts` (`src/server.ts`) handles tools/list without client-name checks; `setup.ts` (`src/integrations/setup.ts`) limits only automatic registration targets | Distinguish installer support from protocol compatibility (`MCP-001`). No real Continue UI connection was verified. |
+| Windows tests can create visible descendants | `v1_phase1.test.js` (`tests/v1_phase1.test.js`) uses nested Start-Process without WindowStyle Hidden and execSync probes without windowsHide | Strong source explanation for reported windows, not a reproduced focus-stealing incident (`WINDOWS-001`). |
+| Process supervision is duplicated | `process.ts` (`src/execution/process.ts`) polls CIM through PowerShell with recurring 500 ms opportunities and an in-flight guard; `run.cjs` (`tests/run.cjs`) and the `MCP helper` (`tests/helpers/stdio.cjs`) also create trackers | Hidden helpers still have launch/scan cost; measure and consolidate ownership without losing teardown guarantees (`WINDOWS-001`). |
 | Local rules required a full gate for any push/PR | Earlier quality-gate text had no prose-only exception; [CI](../.github/workflows/ci.yml) runs npm test and then the coverage suite on all six jobs | Scope local checks by risk and separately implement CI/runner selection (`VERIFY-SCOPE-001`). Rules are revised by this consolidation; CI is unchanged. |
-| Focused runner file selection is missing | [run.cjs](../tests/run.cjs) appends discoverTests() after caller arguments | Passing a file does not replace the full inventory; implement explicit selection rather than repeat all tests. |
-| Advice is forced into release-style reporting | [consult.tool.ts](../src/tools/consult.tool.ts) requires SNAPSHOT/COVERAGE/VERDICT/CHECKS; [common.ts](../src/tools/common.ts) checks envelope text | A normal question should not require an audit report or imply checks ran (`CONSULT-001`). |
-| Archive persistence is on every execution path | [controller.ts](../src/execution/controller.ts) creates and flushes history and can return HISTORY_ERROR after successful backend execution | Separate optional archive failures from ownership/lease safety (`HISTORY-002`). |
-| Capability probes repeat before work | [routing.ts](../src/backends/routing.ts) probes the adapter; [claude.adapter.ts](../src/backends/claude.adapter.ts) checks bare help in both probe and execution | Deduplicate with bounded, correctly invalidated capability evidence (`EXEC-001`). |
-| Installer correctness has become a broad product obligation | [setup.ts](../src/integrations/setup.ts) owns native checks, configuration parsing, runtime copies and rollback | Keep safeguards in optional setup; do not require more installer adapters for ordinary MCP use (`INSTALL-001`). |
+| Focused runner file selection is missing | `run.cjs` (`tests/run.cjs`) appends discoverTests() after caller arguments | Passing a file does not replace the full inventory; implement explicit selection rather than repeat all tests. |
+| Advice is forced into release-style reporting | `consult.tool.ts` (`src/tools/consult.tool.ts`) requires SNAPSHOT/COVERAGE/VERDICT/CHECKS; `common.ts` (`src/tools/common.ts`) checks envelope text | A normal question should not require an audit report or imply checks ran (`CONSULT-001`). |
+| Archive persistence is on every execution path | `controller.ts` (`src/execution/controller.ts`) creates and flushes history and can return HISTORY_ERROR after successful backend execution | Separate optional archive failures from ownership/lease safety (`HISTORY-002`). |
+| Capability probes repeat before work | `routing.ts` (`src/backends/routing.ts`) probes the adapter; `claude.adapter.ts` (`src/backends/claude.adapter.ts`) checks bare help in both probe and execution | Deduplicate with bounded, correctly invalidated capability evidence (`EXEC-001`). |
+| Installer correctness has become a broad product obligation | `setup.ts` (`src/integrations/setup.ts`) owns native checks, configuration parsing, runtime copies and rollback | Keep safeguards in optional setup; do not require more installer adapters for ordinary MCP use (`INSTALL-001`). |
 
 Continue documents stdio registration and Agent-mode MCP use in its
 [MCP guide](https://docs.continue.dev/customize/deep-dives/mcp). The

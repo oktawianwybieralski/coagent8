@@ -1,5 +1,12 @@
 # CoAgent8 earlier project review - snapshot `4b2c72b` (archived)
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 > **Archived historical evidence.** This review was moved verbatim from
 > [PROJECT_REVIEW_2026-10-05.md](../PROJECT_REVIEW_2026-10-05.md) during the
 > post-audit documentation consolidation on 2026-10-05. Only relative links were

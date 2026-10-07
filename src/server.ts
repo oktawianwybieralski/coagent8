@@ -158,7 +158,8 @@ const ROOTS_TIMEOUT_MS = 5000;
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
- * Server-wide guidance for the client model, read on every turn: when to use CoAgent8 and
+ * Server-wide initialization guidance; the host controls its visibility on model turns.
+ * It explains when to use CoAgent8 and
  * when not, and where the accepted models are listed. Codex reads the first 512 characters
  * on their own, so it stays within them; call-time rules live in the parameter descriptions
  * (`schema.ts`).

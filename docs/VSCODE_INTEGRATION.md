@@ -15,7 +15,7 @@ surfaces share the same logo source:
 
 | Surface | Metadata | Asset |
 | --- | --- | --- |
-| MCP server and tools | `serverInfo.icons`, `tools/list` icons | Embedded `assets/logo64.png` |
+| MCP server | `serverInfo.icons`; tools carry no icons | Embedded `assets/logo64.png` |
 | Codex plugin | `plugin.json` / `extensions.com.openai.interface` | `logo32.png` for composer, `logo.png` for logo |
 | Native VS Code extension | `icon`, `mcpServerDefinitionProviders` | `logo.png` |
 
@@ -122,6 +122,8 @@ it or starts a new conversation.
 
 ### Measured client behavior
 
+These measurements are historical evidence, not acceptance of the current
+uncommitted documentation or a newly built release artifact.
 Measured on 2026-10-07 (Windows 11, Node 26.10) with headless clients and a stub
 MCP server that logs the client's capabilities and answers. Claude Code 2.1.289
 ran as `claude -p` with haiku; agy 1.3.1 ran as `agy -p --sandbox` with
@@ -141,7 +143,8 @@ transcript, agy results from its answers.
 Consequences for CoAgent8:
 - In headless mode both clients cancel the consent request, so a top-tier model
   always fails with `POLICY_DENIED`. The interactive prompt is not yet verified.
-- agy stops a CoAgent8 call after 3 minutes, which cancels the backend turn.
+- In the measured headless agy version, the 3-minute host limit cancels the
+  backend turn. Interactive Antigravity IDE timing was not measured.
 - Claude Code showed the model the JSON `structuredContent` (answer in
   `output`), not the markdown `content` with its footer, and showed `content` only
   for a result with `isError: true` (a live consult, 2026-10-07). Execution tools
@@ -199,13 +202,16 @@ lifecycle/UI acceptance remain tracked in [ROADMAP.md](ROADMAP.md).
 Status separates registration, direct-runtime `doctor` calls, and native-host
 calls. Codex's app-server probe discovers the server and invokes `doctor` without
 an LLM turn. Claude and agy native-host calls are reported as unverified. Runtime
-probes do not prove authentication or execution readiness. Restart the server or
+probes are diagnostic evidence, not proof of a successful model turn or complete
+capability isolation. Doctor can mark agy ready when native quota was measured in
+that run; its version-only probe still reports unknown authentication. Restart the server or
 start a new chat when the host caches its prior catalog; setup cannot refresh an
 already open conversation or force a host to render icon metadata.
 
 Automated checks cover the source handshake, tool metadata, installed-package logo
 references, and a standalone handshake after PNG removal. Before claiming visual
-support, install the relevant plugin/VSIX in the target chat and invoke `doctor`.
+support, install the relevant plugin/VSIX in the target chat and invoke `doctor`. A passing
+fixture/packaging check is not this UI acceptance.
 Check the name and icon in light and dark themes and ensure only one server entry
 is present. This manual UI acceptance is separate from the automated package tests.
 

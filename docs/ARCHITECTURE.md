@@ -1,120 +1,108 @@
 # CoAgent8 architecture
 
-This document describes the current implementation. [ROADMAP.md](ROADMAP.md)
-owns the proposed simplification and migration sequence; [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md)
-owns tool schemas, execution guarantees and storage behavior.
+This describes the local implementation inspected at `24052e3` on 2026-10-07,
+including the documentation-only description corrections in the working tree.
+It is not release acceptance. [ROADMAP.md](ROADMAP.md) owns future changes;
+[RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) owns behavior and limitations.
 
-CoAgent8 is a stdio MCP bridge to local read-only CLI backends. The calling host
-and executing backend are separate roles. Server tool discovery does not check
-client names. The setup command's recognized-client list belongs to optional
-registration automation, not the MCP compatibility boundary.
+CoAgent8 is a client-independent stdio MCP bridge to local CLI backends. The host
+and backend are separate roles. MCP discovery does not require a recognized
+client name. Optional setup's host list controls registration automation only.
 
-## Current request path
+## Request path
 
-```mermaid
+~~~mermaid
 flowchart TD
-    Host["MCP host"] --> Server["server.ts: schemas and handlers"]
-    Server --> Tools["tools/: task prompts and Git scope"]
-    Tools --> Controller["execution/controller.ts: task lifecycle"]
-    Controller --> Routing["backends/: selection and model governance"]
-    Controller --> Adapter["backends/<cli>/: adapter, parser and errors"]
-    Adapter --> Process["execution/process.ts: bounded subprocess"]
+    Host["MCP host"] --> Server["server.ts: schemas, roots, consent and resources"]
+    Server --> Tools["tools/: task prompts, Git scope and responses"]
+    Tools --> Controller["execution/controller.ts: turn lifecycle"]
+    Controller --> Routing["backends/: probes, catalogs, routing and governance"]
+    Controller --> Adapter["backends/provider/: native CLI translation"]
+    Adapter --> Process["execution/process.ts: bounded owned process"]
     Process --> CLI["Local coding CLI"]
-    Controller --> Sessions["sessions/: ownership, leases and history"]
-    Controller --> Result["tools/result.ts: output and envelope formatting"]
+    Controller --> Sessions["sessions/: records and turn leases"]
+    Controller --> History["sessions/history.ts: best-effort archive"]
+    Controller --> Result["tools/result.ts: redaction, review gate and Markdown"]
     Result --> Host
-    Server --> Resources["Session/history MCP resources"]
-```
+~~~
 
 | Owner | Current responsibility |
 | --- | --- |
-| src/index.ts | Dispatch explicit setup commands, otherwise serve stdio |
-| src/stdio-server.ts | Connect stdio, start background maintenance (session pruning by default, injectable for tests) and coordinate shutdown |
-| src/server.ts, src/tools/ | Advertise profiles, validate requests, build prompts/diffs, serve resources and format responses |
-| src/execution/ | Coordinate turns, progress and cancellation; resolve CLI commands; supervise subprocesses; collect bounded streams, normalize CLI output and Git context |
-| src/backends/ | One folder per CLI (adapter, stream collector, error classification); shared registry, routing, model governance, quota and observed cooldowns |
-| src/sessions/ | Workspace/provider identity, native continuation records, turn leases, locks, history and pagination |
-| src/integrations/ | Optional host setup/repair, bounded RPC probes and VS Code registration detection |
-| src/diagnostics/ | Backend evidence and sanitized issue reports |
-| Conversation, config, paths, redaction | Shared provider/event/error model, named configuration, storage and workspace paths, and privacy behavior |
-| extensions/vscode/ | Native MCP provider and optional shared setup UI |
+| `src/index.ts` | Dispatch explicit CLI subcommands or start stdio |
+| `src/stdio-server.ts` | Connect transport, start background maintenance and coordinate shutdown |
+| `src/server.ts` | Register six tools, validate arguments, resolve roots, request consent and serve workspace-scoped resources |
+| `src/tools/` | Prompts, Git review scope, management handlers, legacy mappings and formatting |
+| `src/execution/` | Turn lifecycle, cancellation, progress, subprocesses, stream bounds, CLI resolution and Git context |
+| `src/backends/` | Registry, probes/catalogs, routing, governance, quota/cooldowns and native adapters/collectors/error mappings |
+| `src/sessions/` | Workspace/provider identity, continuation, mutual exclusion, renewed locks, archive retention and pagination |
+| `src/config.ts`, `src/paths.ts`, `src/conversation.ts`, `src/redaction.ts` | Configuration, canonical paths, event/error types and distinct answer/diagnostic redaction |
+| `src/diagnostics/` | Evidence and sanitized issue reports |
+| `src/integrations/` | Optional host configuration, runtime copies, backups, conflict checks and native acceptance probes |
+| `extensions/vscode/` | Native MCP definition provider and optional setup UI |
 
-## Coupling that remains
+## Lifecycle and current boundaries
 
-The [independent audit at c265cdf](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
-found boundary defects in the current implementation. The
-[roadmap](ROADMAP.md#audit-remediation-index) tracks their removal.
+A review first collects bounded Git input. The controller resolves any supplied
+session, validates configuration, selects a backend, checks an explicit model or
+effort when a catalog is available, and requests consent for the effective model.
+Metadata probes can launch CLIs before consent, without a model turn.
 
-Every task currently acquires a session and uses the history writer. History
-flushes occur during execution, and the first flush runs before the CLI starts.
-History, session-metadata or lease-release failures can mark a successful result
-failed or prevent execution (AUD-P0-3, AUD-P1-3). Session pruning runs in the
-background after the transport connects. Making archival history optional must
-not weaken ownership or turn mutual exclusion.
+After pruning and session acquisition, the controller creates a history writer
+and starts its execution timer. It streams public events, reports progress,
+validates the terminal result, and performs session/cooldown bookkeeping.
+The adapter owns native translation and per-run profile verification; the
+process runner owns protocol interruption and bounded forced cleanup. Typed
+`ToolError` values cross boundaries without error-prefix parsing.
 
-`execution/controller.ts` owns turn execution, but it also writes archive
-records, session metadata and rate-limit cooldowns inside the same error path.
-The result: one cooldown is written twice (AUD-P1-1), and failures in
-bookkeeping are reported as execution failures. Errors cross module boundaries as
-`CODE: message` strings that `server.ts` parses back (AUD-P1-2).
+Every execution requires a disk session and lease. `coagent8_HISTORY=off`
+disables archive files; otherwise archive failures become warnings. Session
+acquisition/pruning and lease release remain required and can fail a call.
+Post-turn metadata failures preserve secured output and disable continuation.
+Cooldowns are recorded once per rate-limited turn.
 
-Review requests the State Envelope and the server gates its format; consult
-returns a plain answer with `verdict: "NOT_APPLICABLE"`. The envelope gate is
-application policy, not an MCP requirement or proof of test execution.
+Completed probes and catalogs are cached in memory for up to five minutes,
+with selected environment and file stamps. Concurrent misses are not coalesced.
+Routing reads cached quota and cooldowns; `doctor` performs native quota reads.
+Automatic selection still writes the quota cache synchronously, so cache failure
+can prevent execution.
 
-Routing probes backends before every execution, and some adapters repeat
-capability/version probes inside `execute` (AUD-P1-4). Process supervision no
-longer polls: termination interrupts the backend's turn over its protocol, then
-stops only the owned root handle or POSIX process group, and never selects a
-process by PID or parent PID (`WINDOWS-001`).
+`consult` has a plain prompt and no audit gate. `review` requests a State
+Envelope and gates reported structure/findings. It does not verify input
+completeness, the expected snapshot, or reported test results. Review input
+truncation reaches the model as text rather than structured controller state.
 
-Secret redaction is shared between diagnostics and public answers, so
-diagnostic keyword rules also rewrite code in model answers (AUD-P0-2). MCP
-resources list and read sessions across workspaces while the `session` tool
-enforces workspace ownership (AUD-P1-8).
+Credential-format redaction applies to answers and archived assistant text.
+Keyword and home-path rules additionally apply to diagnostics. MCP resources and
+session tools enforce workspace ownership. These replace the redaction and
+cross-workspace defects recorded in the earlier audit.
 
-Setup is dispatched only by explicit CLI subcommands, although it is imported
-through the same entrypoint and bundled with the runtime, together with its TOML
-and JSONC parsers (AUD-P2-10). It maintains selected
-hosts, runtime copies, backups and registration fingerprints. Existing safeguards
-remain necessary for commands that write another application's configuration.
-The VSIX offers setup separately from its native provider registration.
+Codex verifies `readOnly`/`never` on its thread; Claude verifies read-only tools,
+no MCP servers and `dontAsk` at startup. Codex and agy still inherit user MCP
+configuration. A verified shell profile does not prove external MCP tools are
+read-only. Normative requirements remain in the
+[security rule](../.agents/rules/01-security-and-sandboxes.md).
 
-## Target boundary
+## Optional integrations
 
-### Names define responsibility
+Setup runs only for explicit commands, but remains imported and bundled through
+the runtime entrypoint. It owns selected-host configuration, immutable runtime
+copies, private backups and registration fingerprints. VSIX/plugin payloads are
+assembled from the npm tarball. Package checks are separate from native
+host/UI acceptance; see the [integration guide](VSCODE_INTEGRATION.md).
 
-Use conventional TypeScript/MCP organization with clearly named owners. A
-directory, module, class or function must not perform work outside the scope
-described by its name. Names are boundaries, not labels applied after unrelated
-behavior has accumulated.
+Splitting setup is planned. The core still needs a TOML parser for Codex backend
+configuration; installer separation alone cannot remove that dependency.
 
-An owner may call another owner's public interface to complete its operation;
-it must not absorb or duplicate that owner's logic. For example, a tool handler
-delegates task execution, an adapter delegates process supervision, and a session
-manager delegates archival persistence. Those calls do not make the caller the
-owner of process management or archive storage. Response formatting must not
-write routing state or install host registrations.
+## Names define responsibility
 
-When scope and name disagree, move the misplaced behavior, split the mixed
-responsibility, or rename a coherent owner precisely. Broad names such as common
-or utils do not authorize arbitrary responsibilities. Audit the existing layout
-against this rule during the roadmap's refactors; no source migration is implied
-by this documentation change.
+Use conventional TypeScript/MCP organization with clearly named owners.
+Calling another owner's interface does not transfer ownership or justify
+duplicating its implementation. Tools compose requests, adapters translate CLI
+protocols, execution manages turns/processes, sessions protect continuation, and
+integrations edit host registrations.
 
-### Execution boundary
-
-The core remains MCP request -> execution -> concrete adapter -> supervised CLI
--> public result. Optional host installation, durable archives and strict audit
-formatting must not become prerequisites for an ordinary consultation. No generic
-plugin framework, new database or additional controller/repository hierarchy is
-required by this target.
-
-Preserve read-only execution, model consent, redaction, bounds, typed failures,
-session ownership and cleanup. Cleanup terminates only owned handles and owned
-process groups. Redaction protects credentials
-without altering the content of public answers. Optional bookkeeping (archive,
-cooldown cache, session metadata) reports warnings and never changes an
-execution's outcome. Public names, configuration, stored histories and
-registration ownership need explicit migration when their contracts change.
-Acceptance belongs in the roadmap rather than a second architecture checklist.
+Move misplaced behavior, split a mixed responsibility, or precisely rename a
+coherent owner. The ordinary target path is request, execution, adapter,
+supervised CLI and public answer. Per-call ephemeral execution, persisted model
+catalogs, price-based consent and a separate installer are proposals in the
+roadmap. Changes must preserve safety and stored data or define a migration.

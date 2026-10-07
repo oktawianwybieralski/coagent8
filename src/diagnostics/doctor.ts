@@ -5,7 +5,8 @@ import { inspectQuotas } from '../backends/availability.js';
 import { summarizeModels } from '../backends/model-catalog.js';
 import type { AdapterProbeResult, BackendQuota, CatalogModel } from '../backends/types.js';
 
-type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['buckets'];
+/** Native per-window quota details reused by the exported doctor report. */
+export type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['buckets'];
 
 /** Quota of one provider; `buckets` carries the per-window detail some probes report. */
 export type DoctorQuota = BackendQuota & { buckets?: ProbeQuotaBuckets };
@@ -110,7 +111,8 @@ function formatQuota(quota: DoctorQuota | undefined): string {
 
 /**
  * Renders a doctor report as a few lines: overall status, one line per backend and the recommendations.
- * @remarks The default `doctor` answer; it stays far below the 4 KB above which agy saves a result to a file.
+ * @remarks The tool applies a 4,096-byte diagnostic bound to this summary. Catalog size
+ * can grow, so this formatter alone does not guarantee an inline host result.
  */
 export function formatDoctorSummary(report: DoctorReport): string {
   const lines = [`CoAgent8 doctor: ${report.status} · default backend: ${report.default_backend}`];

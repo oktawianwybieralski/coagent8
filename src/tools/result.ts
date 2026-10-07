@@ -22,7 +22,8 @@ import type { ResolvedWorkspace } from '../paths.js';
  * @remarks No `structuredContent` and no `outputSchema` (CONTEXT-001, owner decision of
  * 2026-10-07): Claude Code shows the model only `structuredContent` when a result has one,
  * agy reads `content`, and Codex reads `content` when no structured content is present.
- * The footer therefore carries every field a caller acts on.
+ * The footer carries backend/model, duration, continuation handle/state and warnings;
+ * it does not expose every internal execution field.
  */
 export interface ExecutionToolResult {
   [key: string]: unknown;
@@ -39,7 +40,7 @@ const FOOTER_LINE_BREAK = '\n>\n';
 /**
  * Formats a terminal execution result into the canonical MCP response envelope.
  *
- * - Sanitizes ANSI escape codes and update banners from output.
+ * - Strips ANSI escape codes and outer whitespace; preserves quoted update banners.
  * - Evaluates State Envelope gates when applicable.
  * - Redacts secrets and credentials before public return.
  * - Includes execution-owned cooldown warnings without writing persistent state.

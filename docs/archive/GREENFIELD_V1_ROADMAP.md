@@ -1,5 +1,12 @@
 # CoAgent8 v1.0 Architecture & Greenfield Refactoring Roadmap
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 > **Status:** Approved Architecture Plan  
 > **Target Release:** v1.0.0  
 > **Auditors:** Codex Sol (`gpt-6.1-sol`), Google Antigravity (`agy 1.2.16`), Antigravity Lead Architect  

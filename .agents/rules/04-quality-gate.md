@@ -45,6 +45,22 @@ or unresolved risks. Static inspection is not a runtime reproduction. Never labe
 an unexecuted check PASS. Retain complete failure logs; an unexplained green retry
 is not a root-cause fix.
 
+## Source, bundle and artifact provenance
+
+Most unit tests import `src/` through tsx. MCP e2e fixtures also launch source.
+Setup/integration checks can execute `dist/index.cjs`; build first when testing
+those against current runtime changes. `npm test` itself does not rebuild dist.
+A source-loaded pass does not establish the provenance of a pre-existing bundle.
+
+Consumer smoke installs a tarball in an isolated environment and uses fixture
+CLIs. It verifies package contents/source and compares the supplied bundle with
+freshly built source. Keep the manifest and artifact SHA-256; record whether
+smoke packed a new artifact or checked a supplied one. Fixtures establish
+protocol behavior, not native CLI authentication, sandbox isolation or host UI.
+
+A build after a suite run cannot retroactively make that run fresh-dist evidence.
+Restart MCP clients that retain an old bundle before live integration acceptance.
+
 ## Full release gate
 
 For a release candidate, shared-runtime overhaul or other change whose risk spans

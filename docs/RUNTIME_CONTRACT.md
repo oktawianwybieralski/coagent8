@@ -1,205 +1,215 @@
-# CoAgent8 Runtime Contract (v1.0.0 Specification)
+# CoAgent8 runtime contract
 
-> **Status:** Authoritative Runtime Contract  
-> **Release Target:** CoAgent8 v1.0.0  
-> **Applicability:** All CLI adapters (`codex`, `gemini`, `claude`), shared controller, process runners, and storage services.
+**Implementation baseline:** `24052e3`, inspected on 2026-10-07, plus the
+working-tree corrections to documentation and two parameter descriptions.
+**Package label:** `1.0.0-beta.1`; not an accepted tester release.
+This document describes current source behavior. Normative security requirements
+remain in the [security rule](../.agents/rules/01-security-and-sandboxes.md);
+implementation deviations are explicit in [section 7](#7-known-limitations-and-deviations).
+[ROADMAP.md](ROADMAP.md) owns proposals and acceptance.
 
-This describes current implementation, not the proposed simplified API.
-[ROADMAP.md](ROADMAP.md) owns migration and acceptance for optional durable
-history, reduced supervision and audit remediation. Where the implementation
-violates this contract, the deviation is listed in
-[section 7](#7-known-deviations-audit-at-c265cdf) rather than silently assumed
-away. Local contributor verification is defined separately in the
-[quality gate](../.agents/rules/04-quality-gate.md).
+## 1. Controller and tool surface
 
----
+All clients receive `consult`, `review`, `doctor`, `session`, `cancel` and `issue`.
+The deprecated `analyze`, `debug` and `implement` aliases and legacy `run`
+gateway remain callable without appearing in `tools/list`. `run` accepts
+`consult`, `review`, `issue` and the deprecated action aliases. `toolProfile`
+is ignored.
 
-## 1. Controller & Tool Surface
+| Tool | Inputs and behavior |
+| --- | --- |
+| `consult` | Required nonempty `proposal`; optional `task_type` (`architecture`, `debug`, `implementation`), `context_files`/`file_paths` and `specific_questions` |
+| `review` | `scope`/`target`: uncommitted (default), staged, commit, branch or range; optional `instructions` |
+| `doctor` | `detail`: summary (default) or full; optional concrete `backend` and `quota` (default true) |
+| `session` | Required `action`: list, history or close; history/close need `session_handle`; history accepts `cursor`/`limit` (1-100, default 50); close accepts `delete_history` |
+| `cancel` | Required `session_handle`; optional `workspace_path` |
+| `issue` | Optional `error_message`, `context`, `include_doctor` (default true); prepare a report/link, never submit it |
 
-The central execution controller is [`src/execution/controller.ts`](../src/execution/controller.ts). Tool handlers supply a composed internal prompt and a sanitized public user message. Dynamic routing chooses an active CLI adapter; the adapter handles command arguments and native event parsing. Process execution, storage, progress telemetry, heartbeats, and Markdown rendering are completely shared.
+Without a task type, consult passes a plain question with concise-answer
+instructions. Task types add their analysis focus. Implementation analysis
+does not grant write access. Context files are paths, not embedded contents.
 
-Backend selection: an explicit `backend` or the configured `defaultBackend` is used as given. Otherwise `auto` with one eligible backend uses it, and with several it selects like `smart_quota`:
-* it skips the calling client's own CLI, derived from `clientInfo.name` (`claude` → Claude Code, `codex` → Codex, `antigravity`/`agy`/`gemini` → agy), unless only that CLI is available;
-* it skips providers with an observed rate limit;
-* it prefers the largest measured headroom, counting an unmeasured quota as 50%;
-* ties keep the provider order `codex`, `gemini`, `claude`.
+Common execution arguments (`consult`/`review` and compatibility mappings):
 
-The client name is self-reported and only steers this preference; it never relaxes a policy.
+| Argument | Current contract |
+| --- | --- |
+| `backend` | `auto` (default), `codex`, `claude`, `gemini` or `smart_quota` |
+| `model` | Optional validated identifier; defaults and aliases are resolved per adapter |
+| `reasoning_effort` | Schema union `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; actual support is model/provider dependent |
+| `session_handle` | Explicit continuation; cannot switch workspace/provider |
+| `timeout_ms` | Integer 100-1,800,000; adapter default 900,000 ms |
+| `workspace_path` | Optional existing directory, canonicalized before execution |
 
-Workspace selection, per call:
-1. an explicit `workspace_path`;
-2. the client's MCP roots, when the client declares the `roots` capability:
-   - one root is used;
-   - with several, the root containing the server's working directory is used,
-     otherwise the call asks for `workspace_path`;
-   - roots are read once per connection and again after
-     `notifications/roots/list_changed`;
-3. the server's working directory, unless it is the home, a filesystem root or a
-   system directory.
+Unknown arguments, including removed `user_confirmed` and proposed
+`session_mode`, are rejected. There is no per-call history or price-governance
+parameter.
 
-Execution results carry `workspace` and `workspaceSource`, and the text notes the
-server-directory fallback. `session` history and close use the same workspace;
-`cancel` without `workspace_path` stays unscoped. `cancel` returns
-`cancelled: true` only when it stopped a running turn or released one left
-running; otherwise `cancelled: false` with "nothing to cancel".
+Initialization instructions explain when to consult/review, verification and
+doctor's catalogs. The checked source budget is 512 instruction characters and
+5,300 model-visible tool-definition bytes, excluding server icon metadata.
+At the reviewed baseline these measured 482 characters and 5,222 bytes;
+the corrected descriptions measure 5,256 bytes with the same instructions.
+The offline icon is declared in `serverInfo` only; tools have no icons.
+Host rendering and whether instructions enter a model's context are host policy.
 
-### Tool Surface
-Every client is offered the six core tools:
-* Core execution: `consult` (optional `task_type`: `architecture`, `debug`,
-  `implementation`), `review`. Without `task_type`, `consult` passes the question on
-  as asked, with only an instruction to answer it concisely; a task type adds its
-  header and default focus.
-* Management: `doctor`, `session`, `cancel`.
-* Feedback & Diagnostics: `issue`.
+### Workspace and resources
 
-Callable but not advertised:
-* the deprecated aliases of `consult`: `analyze`, `debug`, `implement`. Each maps
-  its arguments to `consult` and returns a deprecation warning;
-* the legacy `run` gateway (actions: `consult`, `review`, `issue`; deprecated
-  `analyze`, `debug`, `implement`).
+Resolution order:
 
-The former `toolProfile` configuration key is ignored. Its compact profile
-measured more model-visible bytes than the six tools.
+1. Explicit `workspace_path`.
+2. Client roots: one root, or the root containing the server working directory
+   when several exist. Ambiguity asks for an explicit path.
+3. Server working directory, excluding home, filesystem roots and system directories.
 
-The server sends `instructions` in `initialize`, within the 512 characters Codex
-reads on their own: when to use `consult` and `review` and when not, that the
-answer is another model's opinion to verify, and that `doctor` lists the models and
-efforts each backend accepts. It declares its icon once, in `serverInfo`; tools
-carry no icon. Execution parameters are defined once (`src/tools/schema.ts`); each
-parameter a calling model must choose has a description with an example or the
-place that lists its values. The model-visible definitions stay within 5,300 B.
-There is no consent parameter: the server asks the user (see
-[Top-tier model consent](#top-tier-model-consent)). The icon is
-sent for every negotiated protocol version, because the SDK offers no supported
-per-version server info; clients of protocol 2025-06-18 ignore the unknown field.
+Roots are cached per connection and refreshed on `roots/list_changed`.
+Execution responses add a workspace line only for the server-directory fallback;
+they expose no `workspace` or `workspaceSource` fields.
 
----
+`session` list/history/close enforce the resolved workspace. Session resources
+`coagent8://sessions` and `coagent8://sessions/{id}/history` use the connection's
+workspace, resolved with the same roots/fallback rules. An unresolved workspace
+leaves only the index resource advertised; reading it fails validation.
+Resource history reads are not the paginated `session history` interface.
 
-## 2. Options, Results & Typed Error Codes
+`cancel` without `workspace_path` remains unscoped. It reports
+`cancelled: true` only when an active or abandoned turn was stopped/released;
+an idle session returns false with "nothing to cancel". A first call's handle
+arrives in its terminal footer; use host request cancellation while it runs.
 
-### Execution Parameters (`ExecutionOptions`)
-* `cwd`: Absolute canonical workspace path.
-* `model`: Optional model override.
-* `reasoningEffort`: Reasoning depth level where supported (`low`, `medium`, `high`, `xhigh`, `max`).
-* `nativeSessionId`: CLI-native thread/conversation UUID for multi-turn resume.
-* `timeoutMs`: Execution deadline in milliseconds.
-* `abortSignal`: AbortController signal for in-flight cancellation.
-* `consentedModel`: The top-tier model the user approved for this turn. Set only by the
-  controller after the user's answer, never from tool arguments; an adapter refuses a
-  top-tier model unless it equals this value.
-* `onEvent`: Callback streaming normalized `AdapterEvent` updates to the history writer.
+### Configuration and routing
 
-### Terminal Results (`TerminalExecutionResult`)
-* `status`: `completed` | `failed` | `cancelled` | `timed_out`.
-* `isError`: Boolean error indicator.
-* `output`: Public sanitized Markdown response text.
-* `error`: Optional typed error envelope `{ code, message, retryable }`.
-* `continuationAvailable`: True if native multi-turn resume is supported and thread ID is valid.
-* `truncated`: True if output reached capacity buffer limits.
+Default file: `~/.coagent8/config.json`; override with `coagent8_CONFIG`.
+Storage root: `coagent8_DIR` or `~/.coagent8`.
 
-### Execution Tool Result
-`consult`, `review`, `run` and the deprecated aliases return one markdown text
-block and `isError`. They declare no `outputSchema` and send no
-`structuredContent` (breaking change in 1.0.0, `CONTEXT-001`): Claude Code 2.1.289
-shows the model only `structuredContent` when a result has one, agy reads
-`content`, and Codex reads `structuredContent` when present and `content`
-otherwise (its source, `codex-rs/protocol/src/models.rs`). One
-channel keeps every client on the same text and avoids JSON escaping.
+~~~json
+{
+  "schemaVersion": 1,
+  "defaultBackend": null,
+  "routing": {
+    "strategy": "fixed",
+    "allowedBackends": ["codex", "claude", "gemini"]
+  }
+}
+~~~
 
-The text has three parts:
-1. On failure, a first line `> Error [<CODE>]: <message>`, or
-   `> Error [<CODE>, retryable]: <message>` when the same request may succeed
-   later (for example `RATE_LIMITED` or `TIMEOUT`). The status follows from the
-   code: `ABORTED` is cancelled, `TIMEOUT` timed out, any other code failed. Any
-   answer the backend produced follows under `Partial response:`; text the
-   backend did not produce is never added.
-2. The answer, unchanged apart from escape-sequence stripping, the review gate and
-   credential redaction. It is the backend's final answer: Codex messages marked
-   `phase: "commentary"` leave it once a `final_answer` arrives (the session
-   history keeps them).
-3. The footer, quoted paragraphs separated by an empty `>` line so markdown
-   renderers keep each on its own line:
-   * always `> CoAgent8: <backend> · <model> · <seconds>s`, then ` · <n> ops` when
-     non-zero and ` · <handle> (<state>)` when a session exists. The model is the
-     one the backend resolved, or `provider default`. The state is `ready` (the
-     handle continues the conversation) or `finished`, preceded by `turn <n>, `
-     from turn 2 and followed by `, no history` when the turn was not archived;
-   * `review` only: `> Verdict: READY` or `> Verdict: BLOCKED (<reason>)`, the
-     State Envelope gate's verdict; a failed run gives its reason in the error line;
-   * `> Notice: Output reached buffer limit.` when truncated;
-   * `> Warning: <text>` per warning, adapter warnings such as sandbox denials
-     included;
-   * `> Report this issue: [...](<url>)` for `PROCESS_ERROR`, `CLI_UNSUPPORTED`
-     and `PROTOCOL_ERROR`;
-   * `> Workspace: <path> (server directory)` when the server directory was the
-     fallback workspace. An explicit `workspace_path` or a client root adds no line.
+`defaultBackend` accepts a concrete provider or `smart_quota`.
+`routing.strategy` accepts `fixed` or `smart_quota`. For `auto`, a configured
+smart strategy takes precedence over the fixed default. An explicit provider
+wins, subject to `allowedBackends`, installation and execution support.
 
-Example: `> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 2, ready)`.
+With no fixed default, auto uses the single eligible backend directly; with
+several it selects like smart_quota. Selection excludes observed rate limits,
+prefers an eligible CLI other than the caller's own, and ranks by cached measured
+headroom. Unknown headroom uses 50 as a ranking value, not a measurement.
+Equal values retain `codex`, `gemini`, `claude` order. The caller's self-reported
+name only influences preference.
 
-Tool errors (`isError`) are distinct from audit conclusions (`Verdict`). Input
-validation failures are tool execution errors, and a consent refusal says in one
-line to retry without the top-tier model or with a non-top-tier one. `doctor`
-with `detail: "full"`, `session` and `issue` return data, not an answer, and keep
-`structuredContent`.
+Routing does not mutate user configuration or retry a failed turn on another
+provider. Native quota reads run in diagnostics, not automatic selection.
+Selection writes a quota report to disk; write/lock failure currently rejects
+the route. Carried-over measured values have no independent freshness limit.
+Explicit fixed-provider resolution bypasses that quota-cache requirement.
+
+Missing configuration uses defaults. An existing unreadable, malformed or invalid
+file refuses execution with `POLICY_DENIED`. Discovery remains available;
+doctor reports the error using diagnostic defaults. Unsupported configuration
+properties are ignored; proposed `backends`/price settings have no runtime effect.
+
+## 2. Models, consent, results and errors
 
 ### Model and effort selection
-When a call names `model` or `reasoning_effort`, the controller checks the model the
-backend would run against the catalog the CLI reports, before consent and before any
-model call:
-* Codex: `codex app-server` `model/list` (visible models, each with its efforts);
-* agy: `agy models`, grouped by effort: `gemini-3.8-flash-high` is
-  `gemini-3.8-flash` with effort `high`; a model listed only with efforts needs one,
-  either as `reasoning_effort` or in its name;
-* Claude Code lists no models; its aliases and full identifiers are passed on.
 
-A model the CLI does not offer is `MODEL_UNAVAILABLE`; an effort the model does not
-accept, or a missing required one, is `INPUT_LIMIT`. Both messages name the
-accepted values. Efforts the adapter does not pass on (Codex `ultra`) are not
-offered. The catalog is read at most once per probe lifetime (5 minutes, same
-executable and environment); when it cannot be read, nothing is refused and the CLI
-decides. A call without `model` and `reasoning_effort` reads no catalog. The
-`doctor` summary adds a `models:` line per backend (the catalog, or Claude Code's
-aliases), and `detail: "full"` reports each catalog under `backends.<id>.models`.
+Explicit model or effort triggers a best-effort CLI catalog check before a
+model turn and before consent:
+
+- Codex: visible `app-server` `model/list` entries and accepted efforts.
+- agy: `agy models` entries grouped by effort suffix.
+- Claude: no catalog; aliases and full identifiers pass to the adapter.
+
+When a usable catalog exists, an unknown model yields `MODEL_UNAVAILABLE`;
+unsupported or missing required effort yields `INPUT_LIMIT` with accepted values.
+Unavailable/empty catalogs permit the CLI to decide. Calls without explicit
+model/effort skip catalog reads. Claude warns and ignores unsupported efforts.
+
+Completed probes/catalog reads, including an unavailable catalog, are cached
+for five minutes. Keys include adapter identity, executable/config file stamps
+and selected environment variables. Doctor refreshes them. Concurrent misses
+can duplicate processes, and keys do not cover every provider setting.
+Catalogs are not persisted in `models.json` today.
+
+Defaults remain source-defined where provider configuration supplies none:
+Codex `gpt-6.1-sol`, agy `gemini-3.8-flash-high` and Claude `sonnet`.
+Codex reads top-level model/effort from TOML; Claude resolves its known aliases
+and `ANTHROPIC_DEFAULT_*_MODEL` overrides. agy always receives `--model`.
+Descriptions still include model examples. Persisted defaults/catalogs and
+price-based consent are proposals, not configuration supported by this snapshot.
 
 ### Top-tier model consent
 
-A top-tier model (`astra`, `opus` and `best` families) runs only after the user
-approves it (AUD-P1-7). The calling agent cannot grant consent: `user_confirmed`
-was removed in 1.0.0-beta.2 and is rejected as an unknown argument.
+Current governance matches `astra`/`opus` families, `opusplan` and exact
+`best`. It is a name rule, not a price comparison. Requested, resumed and
+effective default models are governed on every turn.
 
-* The controller governs the model the backend would run, defaults and aliases
-  applied (`CliAdapter.resolveModel`): the requested model, the session's model, or
-  the backend default. Codex reads the `config.toml` default, Claude Code resolves
-  its alias (default `sonnet`, `ANTHROPIC_DEFAULT_*_MODEL` overrides applied), and
-  agy runs `gemini-3.8-flash-high` unless a model is given. agy keeps its own
-  default in internal interface state, so the bridge always passes `--model`.
-* When the client declares form elicitation, the server sends one
-  `elicitation/create` request per governed turn, with an `approve` checkbox. The
-  turn runs only when the user accepts with the box checked. Declining, cancelling
-  or unchecking returns `POLICY_DENIED`. The user has five minutes to answer; a
-  failed request is `POLICY_DENIED` and a cancelled tool call is `ABORTED`.
-* Without elicitation the turn fails with `POLICY_DENIED`, before any session is
-  acquired or process launched.
-* Consent covers one turn and one exact model. Continuing a session on a governed
-  model asks again.
+The intended rule requires explicit user approval through MCP form elicitation.
+The calling agent cannot grant consent. Unsupported elicitation, decline,
+cancel or unchecked approval yields `POLICY_DENIED`. The request has a
+five-minute timeout and follows caller cancellation. Consent binds to one model
+and one turn; acquisition of a session and model execution follow consent.
+Version, auth and catalog probes may launch metadata CLI processes first.
 
-### Typed Error Codes (`ERROR_CODES`)
-`CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`, `RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`, `ABORTED`, `TIMEOUT`, `SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`, `INPUT_LIMIT`, `PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`.
+**Deviation:** the schema does not require `approve` and the acceptance predicate
+allows `{action: "accept", content: {}}`. Missing approval can therefore pass.
+This violates the normative explicit-consent rule; it is not valid approval.
+Interactive UI approval remains unverified. Measured Claude/agy headless clients
+cancel form requests.
 
-Each code is raised where the cause is known, as a `ToolError` carrying the code;
-messages carry no code prefix. `INPUT_LIMIT` means rejected input (schema
-validation, an unknown action, an unusable workspace path). Any other failure is
-reported as `PROCESS_ERROR`.
+### Execution results
 
----
+Execution tools return one Markdown text block plus `isError`, with no
+`outputSchema` or `structuredContent`. Full doctor, session list/history, cancel and issue return data with
+`structuredContent`; session close is text-only. Consult has no public verdict field.
 
-## 3. State Envelope Contract & Verification Gate
+Execution text contains:
 
-`review` (and `run` with `action: "review"`) enforces the structured **State
-Envelope**. `consult` and its aliases return a plain answer with
-`verdict: "NOT_APPLICABLE"` and no envelope instructions:
+1. On failure, `> Error [CODE]: message`, with `, retryable` where applicable,
+   followed by any secured partial answer under `Partial response:`.
+2. Public answer with ANSI stripping and credential-format redaction. Update
+   banners quoted in answers remain. An empty completion says
+   `CLI completed with no public text.`
+3. Quoted footer paragraphs: backend, resolved model (or provider default),
+   seconds, nonzero operation count and session handle/state where available.
+   A ready handle supports continuation; a finished handle does not.
+   Turns after the first show their number. Unarchived turns add "no history".
+4. For review, `> Verdict: READY` or `> Verdict: BLOCKED (reason)`;
+   failures carry their reason in the error line.
+5. Truncation notice, warnings, selected diagnostic issue links and the optional
+   server-directory workspace fallback.
 
-```text
+Codex commentary leaves the public answer when a final answer arrives; history
+keeps it. Current truncation state can remain sticky after that replacement.
+
+Footer duration starts after session acquisition. It excludes Git collection,
+workspace resolution, probes, catalog reads, consent and pruning. `timeout_ms`
+bounds the backend process phase, not the entire MCP call; preparation and
+cleanup can make total elapsed time longer. Progress heartbeats are not an
+inactivity timeout and cannot extend a host's deadline.
+
+### Typed errors
+
+`CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`,
+`RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`, `ABORTED`, `TIMEOUT`,
+`SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`, `INPUT_LIMIT`,
+`PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`.
+
+`ToolError` carries the code. Validation uses `INPUT_LIMIT`; unknown failures
+use `PROCESS_ERROR`. `ABORTED` means cancelled, `TIMEOUT` timed out, other
+error codes failed. Error status and a review conclusion are separate concepts.
+
+## 3. State Envelope and review gate
+
+`review` composes bounded Git context and asks for:
+
+~~~text
 REVIEW: <turn>
 SNAPSHOT: <snapshot>
 COVERAGE: COMPLETE | PARTIAL
@@ -210,138 +220,154 @@ Evidence: <at most two sentences, citing file:line>
 Fix: <one sentence>
 CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
 END_REVIEW
-```
+~~~
 
-The server fills in `SNAPSHOT`:
-* the short HEAD with `+uncommitted` or `+staged`;
-* the reviewed commit;
-* the range;
-* `<base>...<HEAD>`;
-* `no-commit`.
+The prompt supplies HEAD with staged/uncommitted suffix, a commit/range,
+branch merge-base range or `no-commit`. Generated files marked `-diff` in
+`.gitattributes` contribute binary-diff notices rather than textual contents.
 
-P3 findings take one line without Evidence and Fix. The answer starts with the
-envelope, without a preamble. A file marked `-diff` in `.gitattributes` (for
-example a generated `CHANGELOG.md`) appears in the diff only as `Binary files ...
-differ`, which keeps generated content out of the review prompt.
+The gate requires the envelope fields and terminator, recognized coverage/verdict,
+no response truncation, and no literal `[P1]` or `[P2]` anywhere in the answer.
+A reported partial review or BLOCKED verdict stays blocked. Quoted severity
+markers can also block.
 
-### Server-Side Gate Evaluation
-In `formatExecutionResult` / `enforceStateEnvelopeGate`:
-* Any reported `P1` or `P2` finding programmatically forces `VERDICT: BLOCKED`.
-* Incomplete envelopes, missing `END_REVIEW`, partial coverage, or response truncation automatically overrides `VERDICT` to `BLOCKED`.
-* Only complete reviews with 0 blockers (`P1`/`P2`) and complete coverage receive `VERDICT: READY`.
+**Limits:** `SNAPSHOT` and `CHECKS` are checked for presence, not correctness.
+A mismatched snapshot or `CHECKS: ...FAIL...` can still produce READY.
+The gate does not execute tests, compare a tree/artifact hash or prove coverage.
 
-This gate validates reported text and envelope structure. It does not independently
-execute or verify the reported CHECKS, inspect the named snapshot, or approve a
-release. The `verdict` field is derived from model-written text: any `[P1]` or
-`[P2]` string in the output blocks, including one quoted in prose.
+Git stdout is bounded to 4 MiB per command, the composed snapshot to 3 MiB, and
+individual untracked contents to 256 KiB. Omitted/truncated input is marked in
+prompt text but does not automatically block READY. Independent release review
+must verify complete scope and evidence; the gate alone is insufficient.
 
----
+## 4. Sessions, events and archival history
 
-## 4. Public Event Streaming & Storage
+Execution always acquires a workspace/provider-bound disk session and turn lease.
+An explicit handle resumes native context if available; invalid/busy handles
+fail closed. Idle session records expire after two hours, separate from seven-day
+archive retention. There is no implicit auto-resume or ephemeral mode today.
+Closing keeps archived history unless `delete_history: true` was requested.
 
-### Event Model
-Adapters emit validated payloads: `assistant_delta`, `assistant_message`, `tool_started`, `tool_finished`, `status`, `warning`, `error`. The controller manages `turn_started`, `user_message`, and `turn_finished`. Identifiers and tool names are bounded to 256 UTF-8 bytes without control characters.
+Public events include assistant deltas/messages, tool start/finish, status,
+warning and error. The controller adds turn/user events. Private reasoning and
+raw tool stdout/stderr are excluded. Identifiers/tool names have bounded validated
+metadata.
 
-### Append-Only Storage, Retention & Torn-Tail Resilience
+Archive history is best-effort. Initial, periodic (250 ms) and final flush failures
+produce redacted warnings and `historyAvailable: false` without blocking the CLI
+or discarding its answer. `coagent8_HISTORY=off` suppresses archive files but
+does not remove session storage/pruning/lease dependencies. Lease release failure
+remains a hard `SESSION_INVALID` error. Metadata failure preserves output with a
+warning and unavailable continuation.
 
-Session archival history is best-effort and bounded. Initial, periodic and final flush errors emit redacted warnings with `historyAvailable: false` and never fail the turn, block CLI invocation, or overwrite successful responses. Session turn leases remain fail-closed: a failure in `releaseSessionTurn` yields a hard session error (`SESSION_INVALID`), not `HISTORY_ERROR`. Post-execution session metadata and cooldown bookkeeping run outside the execution block; a metadata failure returns the secured output with a warning and `continuationAvailable: false`.
+Storage uses append-only coalesced deltas in `.jsonl` and atomic `.json`
+snapshots on turn finish or nonstreaming batches containing user/assistant messages.
+An initial user-message flush can materialize a snapshot before the backend turn. Torn log tails are repaired under a session lock; legacy snapshot logs
+still load. Credential redaction buffers an uncommitted tail across stream batches.
 
-#### Retention and Capacity Policy
-* **Capacity Bounds**: Each individual session's history log (`.jsonl`) is bounded by `SESSION_LIMIT` (10 MiB). Global history storage across all sessions is bounded by `TOTAL_LIMIT` (100 MiB).
-* **Expiry Retention**: Sessions inactive for longer than 7 days (based on file `mtime` and `updatedAt`) are automatically pruned during directory retention maintenance.
-* **Capacity Retention (LRU Eviction)**: When total history storage exceeds `TOTAL_LIMIT` or when writing a new batch would exceed it, the storage engine evicts whole inactive sessions in order of least recently used (LRU by `updatedAt` / `mtime`) until storage is within limits.
-* **Active Session Immunity**: Sessions with an active turn lease (`activePid != null` or active turn lock) are strictly protected and are never evicted.
-* **Oversized Output Handling**: If an answer or cumulative session exceeds `SESSION_LIMIT` (10 MiB), the full response is returned to the caller; archival persistence is truncated or skipped with a warning (`historyAvailable: false`).
-* **Disabled Archival**: Setting `coagent8_HISTORY=off` disables history persistence completely; one-shot executions do not create or require history directories or files.
+| Bound | Behavior |
+| --- | --- |
+| Per-session log | 10 MiB |
+| Global archive budget | 100 MiB, accounting for logs and materialized snapshots |
+| Retention | Inactive sessions older than seven days pruned |
+| Capacity | Evict oldest inactive whole archives; protect active turns |
+| Unavailable capacity | Skip/fail archival with a warning; output retains its own independent byte bounds |
+| History page | At most 100 events and 240 KiB |
+| Fragmentation | UTF-8 boundaries with offset, total bytes and completion state |
 
-#### Streaming Deltas & Crash Resilience
-* Streaming assistant deltas append to `.jsonl` as coalesced deltas per flush. Copying and serialization scale with new delta bytes, keeping persisted bytes within a small constant factor (<= 3×) of the response text size. Materialized `.json` snapshots are written atomically once, upon `turn_finished`.
-* Secret redaction buffers an uncommitted tail across deltas so that credentials split across stream batches never reach disk unredacted.
-* Under session file lock, `createHistoryWriter` inspects the log tail for torn or partial records from unexpected process crashes, repairing byte boundaries via in-place `fs.truncate`.
-* Legacy logs with full snapshots continue to load, paginate, and resume with identical semantics.
+Cursors are opaque and revision-bound; writes between pages yield
+`HISTORY_CHANGED`. Resource reads are separate from pagination.
+Per-session append locking coexists with a short global capacity-accounting lock.
+The append budget is checked before writing. Materialized JSON is written before
+its byte delta is accounted, so 100 MiB is not a strict instantaneous disk ceiling
+(`CUR-012`, source inspection).
+The 60 KiB streaming regression measured about 1.05 times response bytes on
+disk; it does not prove a universal CPU/memory complexity bound.
 
-### Pagination & Revisions
-* `session` (`action: "history"`) returns at most 100 events and a 240 KiB page budget.
-* Large messages are split at UTF-8 code point boundaries with `{ offsetBytes, totalBytes, complete }`.
-* Cursors are opaque base64url structures bound to a specific snapshot revision. Concurrent writes trigger `HISTORY_CHANGED` to prevent skipping final response texts.
+## 5. Processes and bounds
 
-### Workspace Scope
-Sessions and histories are visible only in the workspace that created them. The
-`session` tool (`list`, `history`, `close`) uses the call's workspace. The MCP
-resources `coagent8://sessions` and `coagent8://sessions/{id}/history` use the
-connection's workspace: its single client root, or the server directory without
-roots. When no single workspace resolves, `resources/list` returns only the
-`coagent8://sessions` index and reading it fails with the validation error.
+CLI processes use `shell: false`. Prompts use stdin. Cancellation/deadlines
+interrupt Codex/Claude through their native protocol, then stop the owned process
+if needed. agy has no supported headless interrupt and is force-stopped.
 
----
+- Protocol grace: three seconds.
+- Windows: kill only the owned root handle. Native backend descendants rely on
+  backend cleanup; Windows Node-chain termination has fixture evidence.
+- POSIX: own detached process group, SIGTERM then SIGKILL after 250 ms by
+  default, or two seconds for agy.
+- After root exit, inherited output pipes receive at most two seconds to drain.
+- No PID/parent-PID/name selection, process snapshots or descendant polling.
 
-## 5. Subprocess Execution & Supervision
+Unexpected parent death on POSIX still needs a strategy. Fixtures do not prove
+every native backend's descendant cleanup.
 
-* `runCommand(command, args, options)` runs strictly with `shell: false`.
-* Termination is layered. Only the spawned process is ever targeted, through the handle Node holds or the process group it created; nothing is selected by PID or parent PID, and no process snapshot or polling exists.
-  1. **Protocol interrupt**: a run with a stdin protocol session (Claude, Codex) keeps stdin open. Cancellation, deadlines and server shutdown ask the CLI to end its turn; the session closes stdin on the terminal event and the CLI exits by itself.
-  2. **Forced stop**: when the CLI has not exited within the grace period (3 s), or for runs without a session, the root is stopped. **Windows**: `proc.kill()` (`TerminateProcess` on the owned handle). **POSIX**: the detached process group (`detached: true`) receives `SIGTERM`, then `SIGKILL` after 250ms by default (2 s for agy, which has no headless interrupt and shuts down its own commands on `SIGTERM`).
-  3. **Descendants**: on Windows, libuv's `KILL_ON_JOB_CLOSE` job ends a chain of Node processes with its root; descendants of native backends are the backend's responsibility. After the root exits, a descendant still holding stdout/stderr cannot delay the result by more than 2 s.
-* **Buffer Capacities**: Prompts up to 4 MiB (via stdin), diagnostics up to 512 KiB per channel, public output up to 1 MiB. StringDecoder preserves split UTF-8 code points across chunks.
+| Data | Bound |
+| --- | --- |
+| Process input | 4 MiB |
+| Diagnostic channel | 512 KiB |
+| Codex collector | 512 KiB total/per message, 50 messages |
+| Claude collector | 512 KiB total/per message, 200 messages |
+| agy collector | 512 KiB total, 256 KiB per message, 50 messages |
+| History message assembly | 1 MiB per message, independent of smaller adapter bounds |
+| Git stdout | 4 MiB per command; snapshot limits described above |
 
----
+UTF-8 decoders retain split code points. A lower provider/collector bound can
+apply before the independent history-message maximum.
 
-## 6. Provider Contracts
+## 6. Provider and diagnostic contracts
 
-### Google Antigravity (`agy` / Gemini Adapter)
-* Invokes `agy` binary in headless mode with native `--sandbox` for read-only isolation.
-* Prompts are delivered via standard input (stdin) to eliminate Windows 32 KiB command-line overflows.
-* Real-time events stream via `--output-format stream-json`.
-* Multi-turn resume uses `--conversation <uuid>`.
-* Always passes `--model`: the requested model or `gemini-3.8-flash-high`, so a model selected in agy's interface never runs ungoverned.
-* agy 1.2.17 has no headless interrupt; cancellation and deadlines force-stop it (POSIX: `SIGTERM` with a 2 s grace, then `SIGKILL`).
+| Backend | Execution profile and protocol |
+| --- | --- |
+| Codex | `app-server -c sandbox_mode="read-only" -c approval_policy="never"`; initialize, thread start/resume, turn start; verify thread `readOnly` and `never`; reject server approval requests; interrupt with `turn/interrupt` |
+| agy / Gemini | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; unknown event types warn; known malformed events fail |
+| Claude Code | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none` with hooks disabled and strict empty MCP configuration; stream-json input/output; verify startup tools/no MCP/dontAsk before content; native session UUID/resume and control interrupt |
 
-### OpenAI Codex (`codex`)
-* Runs `codex app-server -c sandbox_mode="read-only" -c approval_policy="never"` (JSON-RPC over stdio, Codex 0.160) for one turn: `initialize`/`initialized`, `thread/start` or `thread/resume` (`excludeTurns`), `turn/start`; stdin is closed on `turn/completed`.
-* Every run fails closed with `SANDBOX_UNAVAILABLE` unless the thread response reports a `readOnly` sandbox and `approvalPolicy: "never"`. Server-initiated requests are answered with a JSON-RPC error; nothing is approved.
-* Cancellation and deadlines send `turn/interrupt`. Notifications of other threads (sub-agents) are ignored. Turn usage sums `tokenUsage.last` over the turn's `thread/tokenUsage/updated` notifications.
-* Discards private model thoughts and raw tool stdout/stderr.
-* Resumes multi-turn context via native thread IDs; an unknown thread is `SESSION_INVALID`.
+Codex and agy do not disable inherited MCP servers. Claude's restricted profile
+is the only adapter with explicit empty MCP configuration. Sandbox denial evidence
+in agy is a warning and requires a real terminal result; a completed answer and
+continuation can remain. Duplicate terminals and missing terminals still fail.
 
-### Claude Code (`claude`)
-* Runs `claude -p --restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none` with `--settings {"disableAllHooks":true} --strict-mcp-config --mcp-config {"mcpServers":{}}`. `--restricted` removes code-running tools and WebFetch, confines file tools to the working directory, ignores user, project and local settings files and keeps subscription (OAuth) authentication; API keys also work.
-* Every run fails closed with `SANDBOX_UNAVAILABLE` unless `system/init` reports only the read-only tools, no MCP server and `dontAsk`; any execution that emits content or completes without a verified `system/init` is rejected.
-* The prompt is one user message on stdin (`--input-format stream-json`); stdin stays open until the terminal `result`, and cancellation and deadlines send a `control_request` `interrupt` first. Events stream via `--output-format stream-json --verbose --include-partial-messages`; thinking blocks, tool inputs and tool results are discarded. Unknown event types and `system` subtypes produce one warning each.
-* A new session pins `--session-id <uuid>`; continuation uses `--resume <uuid>`. UUID comparison is case-insensitive. Reasoning effort maps to `--effort` (`low`, `medium`, `high`, `xhigh`, `max`). Model identifiers are validated before argv.
-* Failures are typed from `assistant.error`, `result.api_error_status` and anchored `result.errors` prefixes through the table in `src/backends/claude/errors.ts`; stderr is not classified.
-* Probe: `claude --version` (minimum 2.1.259) and `claude auth status`, without a model call.
-* Quota: `inspectQuota` runs `claude -p /usage` on verified CLI versions (minimum 2.1.289; versions older than 2.1.289 skip inspection to ensure no prompt is sent to a model; a reported model turn or cost is discarded) and parses the `Current session` and `Current week (all models)` lines into measured windows; the bottleneck sets headroom and reset. Model-specific weekly limits are ignored. API billing prints no limits and stays unmeasured. Quota inspection (`doctor`, `smart_quota`, 60 s cache) calls it; `execute` never does.
+Claude probes version/auth status without a model turn. Its native local `/usage`
+inspection is enabled only on verified versions 2.1.289+, rejects reported model
+usage/cost, and keeps unavailable/API-billing quota unmeasured. agy native
+`/usage` is sandboxed and runs only in diagnostics. Codex quota may be unavailable.
+Quota cache reuse has a 60-second path, but automatic routing uses supplied probes
+and refreshes the stored report without native reads.
 
+Doctor's summary is bounded to 4,096 UTF-8 bytes; full structured data retains
+catalogs and detailed evidence, with diagnostic redaction and a 2,048-byte bound
+per string. It is not an unmodified dump of provider data. A quota measured in that doctor call can mark agy
+ready even though its probe auth status is unknown. Claude reports native login
+state; Codex currently infers authentication from credentials/file presence.
+Readiness is diagnostic evidence, not proof of a successful model turn or a
+complete security boundary.
 
-## Host setup and diagnostic evidence
+Setup/native-host status is separate from backend readiness. Native Codex
+registration checks have recorded acceptance. Managed Claude/agy updates and
+VSIX/UI acceptance remain partial; see [VSCODE_INTEGRATION.md](VSCODE_INTEGRATION.md).
 
-`setup`/`repair` select local-default host registrations independently of backend
-execution. Direct runtime calls and native host discovery/calls are separate
-status fields. Managed replacements require native acceptance; manual or changed
-entries are preserved. Native Claude/agy acceptance is pending, so their managed
-updates are deferred. Auth files/keys are evidence, not proof of authenticated
-model execution. Claude reports the login state of `claude auth status` (token validity is proven only by an execution), and Gemini reports
-`authenticated` only after a successful native `/usage` call. Codex currently
-reports `authenticated` from file presence or environment variables (section 7).
+## 7. Known limitations and deviations
 
-Setup's recognized clients are codex, claude and agy. This list does not constrain
-MCP initialization or tools/list, which do not inspect the calling client's name.
-Ordinary stdio registration is documented in the README; setup lifecycle and
-presentation acceptance are owned by the integration guide.
+Evidence and reproduction provenance are in the
+[current snapshot review](PROJECT_REVIEW_2026-10-05.md#review-at-24052e3-2026-10-07).
+These are open implementation issues, not relaxed security requirements.
 
-Gemini stderr sandbox-denial evidence does not create a terminal result. A real
-terminal remains required and real duplicate terminals still fail the protocol.
-Denial produces `SANDBOX_UNAVAILABLE` with continuation disabled.
-
-## 7. Known deviations (audit at c265cdf)
-
-The [independent audit](PROJECT_REVIEW_2026-10-05.md#independent-audit-at-c265cdf)
-found these differences between the intended contract and the implementation.
-Each is owned by a roadmap milestone (see the
-[remediation index](ROADMAP.md#audit-remediation-index)). Remove an entry only
-when its fix lands with a regression test.
-
-| ID | Intended contract | Current behavior |
+| ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
-| AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
-| AUD-P2-2 | Missing data is reported as unknown | An empty Gemini answer is returned as "Task completed cleanly with no textual output."; missing quota fractions count as 100% headroom |
+| CUR-001 | Truncated/omitted review input can still receive READY; snapshot and failing checks are not bound to approval | `AUDIT-001` / `SURFACE-001` |
+| CUR-002 | Codex/agy inherit MCP tools outside the verified shell/tool profile; agy can recursively call CoAgent8 | `WINDOWS-001` / `EXEC-001` |
+| CUR-003 | Accepted elicitation without an approve field can authorize a governed model turn | `EXEC-001` |
+| CUR-004 | Automatic routing fails on quota-cache writes; old measurements can retain routing weight | `ROUTING-MIGRATE-001` |
+| CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
+| CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |
+| CUR-007 | Timeout and duration omit preparation; agy headless host has a measured 180-second limit | `CLI-INTERACT-001` / `CONTEXT-001` |
+| CUR-008 | Sessions remain mandatory with archival disabled; first active handle is unavailable until return | `SESSION-001` / `HISTORY-002` |
+| CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |
+| CUR-010 | Model defaults/aliases and governance families remain literals; no price catalog exists | `EXEC-001` |
+| CUR-011 | POSIX unexpected-parent-death cleanup is not implemented | `WINDOWS-001` |
+| CUR-012 | Snapshot bytes are accounted after writing; the archive budget is not a strict instantaneous disk ceiling | `HISTORY-002` |
+
+The original `c265cdf` audit remains historical evidence. Its process-identity,
+answer-redaction, archive-integrity, typed-error and workspace-resource fixes are
+present in this local stack; their presence does not close newer findings or
+establish matrix/release acceptance.

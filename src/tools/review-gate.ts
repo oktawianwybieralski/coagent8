@@ -10,7 +10,7 @@
  * COVERAGE: COMPLETE | PARTIAL
  * VERDICT: READY | BLOCKED
  * [P1/P2/P3] <file>:<line>
- * CHECKS: typecheck=<PASS|FAIL>; tests=<PASS|FAIL>
+ * CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
  * END_REVIEW
  * ```
  *
@@ -21,24 +21,23 @@
  * @packageDocumentation
  */
 
-/**
- * Programmatically enforces the State Envelope VERDICT gate:
- * - Parses individual lines using horizontal whitespace only to ensure non-empty field values.
- * - Validates unique required headers: REVIEW, SNAPSHOT, COVERAGE (COMPLETE|PARTIAL), CHECKS, and END_REVIEW as the final non-empty line.
- * - Validates exactly one unique VERDICT line with exact values (READY|BLOCKED); rejects malformed values like READY_BOGUS or READY BLOCKED.
- * - Forces VERDICT: BLOCKED for missing, malformed, incomplete, or truncated responses, or if COVERAGE is PARTIAL, or if P1/P2 blockers exist.
- *
- * @param output - Raw review or consult output text.
- * @param truncated - True if execution was cut short by output buffer limits.
- * @param requireEnvelope - True if State Envelope format is mandatory for this tool.
- * @returns Processed output with gate-enforced VERDICT.
- */
+/** Public text and reported verdict after evaluating envelope structure and severity markers. */
 export interface StateEnvelopeEvaluation {
   output: string;
   verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
   reason?: string;
 }
 
+/**
+ * Gates reported review text on unique nonempty envelope fields and coverage/verdict.
+ * @param output - Model-written review text.
+ * @param truncated - Public output truncation, not review-input completeness.
+ * @param requireEnvelope - Require an envelope even when none is detected in the answer.
+ * @returns Text with a normalized verdict and optional blocking reason.
+ * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
+ * SNAPSHOT and CHECKS need only be nonempty; this function does not compare the expected
+ * snapshot, validate check outcomes, execute tests or bind a release artifact.
+ */
 export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false): StateEnvelopeEvaluation {
   const rawLines = output.split(/\r?\n/);
   const nonEmptyLines = rawLines.map(l => l.trim()).filter(l => l.length > 0);

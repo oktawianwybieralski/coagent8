@@ -12,7 +12,7 @@
  * @packageDocumentation
  */
 
-/** Every reasoning effort a backend accepts; each adapter rejects or ignores the ones its CLI lacks. */
+/** Bridge schema union; catalog checks or adapter warnings determine per-model/provider support. */
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 export const WORKSPACE_PARAMETER = {
@@ -21,9 +21,9 @@ export const WORKSPACE_PARAMETER = {
 
 export const EXECUTION_PARAMETERS = {
   backend: { type: 'string', enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-    description: 'codex: Codex CLI; claude: Claude Code; gemini: Antigravity (agy). auto (default): the configured one, else as smart_quota: most quota left, not your own CLI.' },
+    description: 'codex: Codex CLI; claude: Claude Code; gemini: agy. auto (default): configured provider, else as smart_quota: prefer another CLI, rank cached quota.' },
   model: { type: 'string',
-    description: 'Omit for the default. E.g. codex gpt-5.6-luna, claude haiku, gemini gemini-3.8-flash-low. doctor lists them; an unknown one fails before any call.' },
+    description: 'Omit for the default. E.g. codex gpt-5.6-luna, claude haiku, gemini gemini-3.8-flash-low. doctor lists models; a usable catalog rejects unknown names, else the CLI decides.' },
   reasoning_effort: { type: 'string', enum: [...REASONING_EFFORTS],
     description: 'Omit for the default; per-model values in doctor. agy models listed with efforts need one (gemini-3.8-flash: low).' },
   session_handle: { type: 'string', minLength: 1, description: 'Handle from a result footer, to continue that conversation.' },

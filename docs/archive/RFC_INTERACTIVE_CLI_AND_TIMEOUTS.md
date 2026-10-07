@@ -1,5 +1,12 @@
 # RFC: Interactive CLI Prompt Handling, Adaptive Timeouts & Release Architecture
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 **Date:** 2026-10-04  
 **Status:** DEFERRED / HISTORICAL DISCUSSION
 **Target Branch:** `release/v1.0.0-rc`  
@@ -13,8 +20,8 @@ This RFC is not an active implementation plan or permission to auto-confirm CLI
 prompts. [ROADMAP.md](../ROADMAP.md) owns prioritization; interactive confirmation and
 adaptive timeouts remain deferred. Historical latency statements below were not
 remeasured in the product reassessment. The earlier workflow proposals are consolidated in section 4;
-current Git policy is [02-git-workflow.md](../.agents/rules/02-git-workflow.md) and
-local verification is [04-quality-gate.md](../.agents/rules/04-quality-gate.md).
+current Git policy is [02-git-workflow.md](../../.agents/rules/02-git-workflow.md) and
+local verification is [04-quality-gate.md](../../.agents/rules/04-quality-gate.md).
 In particular, packaging, dependency, test-harness and integration changes can
 require tests even when no TypeScript logic under src/ changed.
 
@@ -93,8 +100,8 @@ Cutting off a model at 120s when it was about to finish at 130s wastes the first
 ## 4. Superseded workflow proposals
 
 The earlier branching and local-gate prescriptions have been consolidated into
-[Git governance](../.agents/rules/02-git-workflow.md) and the
-[quality gate](../.agents/rules/04-quality-gate.md). This RFC does not maintain a
+[Git governance](../../.agents/rules/02-git-workflow.md) and the
+[quality gate](../../.agents/rules/04-quality-gate.md). This RFC does not maintain a
 second checklist. Prose-only changes need document checks; runtime, dependency,
 packaging, integration and harness changes need verification matching their risk.
 Full exact-artifact validation remains required for a release.

@@ -1,5 +1,12 @@
 # Independent Review of RC1 Preparation
 
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
 Date: 2026-10-03. Author: Codex Integrator. Reviewer: Independent local executions of Codex Sol (`gpt-6.1-sol`), `--sandbox read-only --ephemeral`, without models requiring explicit approval. The Codex adapter was initially excluded from this passed snapshot: it was owned by the GEMINI agent and tracked as a separate release blocker.
 
 The initial execution against the live working tree could not read files: execution policy rejected `Get-Content`/`git diff` in the sandbox. Permissions were not escalated. Subsequent reviews received a complete numbered snapshot of sources, tests, scripts, fixtures, and the Windows supervisor via stdin. The reviewer performed a **static review** without direct tools, test runs, or live smoke tests. This does not replace independent test execution or formal RC acceptance.

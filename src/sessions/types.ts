@@ -12,13 +12,13 @@ export interface SessionRecord {
   lastErrorCode?: string;
   /** Public session handle identifier. */
   sessionHandle: string;
-  /** CLI backend used for this session ('codex' or 'claude'). */
+  /** Concrete CLI provider used for this session: codex, claude or gemini. */
   backend: string;
   /** CLI-native thread ID or conversation token for resuming turns. */
   threadId: string | null;
   /** Canonical workspace path bound to this session. */
   workspace: string;
-  /** PID of the worker process currently executing an active turn. */
+  /** CoAgent8 owner-process PID for the active turn, not the native CLI child's PID. */
   activePid: number | null;
   /** Timestamp when the currently active turn started execution. */
   activeTurnAt: number | null;

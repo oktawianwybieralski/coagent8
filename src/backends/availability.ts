@@ -57,19 +57,13 @@ export function readQuotaCache(): QuotaCacheRecord | null {
 async function store(data: QuotaReport): Promise<void> { await atomicWrite(getQuotaCacheFile(), JSON.stringify({timestamp:Date.now(),data})); }
 export async function writeQuotaCache(data: QuotaReport): Promise<void> { await withFileLock(getQuotaCacheFile(), () => store(data)); }
 /**
- * Inspects installation, native measured quota (when available), and observed cooldowns.
- * @param forceRefresh - Bypass the cache, which is otherwise reused for {@link QUOTA_CACHE_TTL_MS}.
- * @param probesOverride - Probe results already gathered by the caller.
- * @param options - `nativeQuota` reads quota through each adapter's `inspectQuota` when its probe has none;
- * it defaults to true only when this function runs the probes itself.
- * @returns The quota report, also written to the cache.
- */
-/**
- * Builds and caches the quota report of every provider.
- * @param options - `nativeQuota` reads provider limits; `only` refreshes just those providers
- * and keeps the cached entries of the others, so a partial probe never marks them uninstalled.
- * `measuredNow` receives the providers whose quota this call measured, as opposed to a
- * measurement carried over from the cache.
+ * Builds a provider quota report and writes it under the cache lock.
+ * @param forceRefresh - Bypass the 60-second complete-cache reuse path.
+ * @param probesOverride - Existing probes; their presence bypasses cache reuse.
+ * @param options - Native quota reads default on only without supplied probes. A provider
+ * filter preserves other cached entries; measuredNow distinguishes newly measured quota.
+ * @returns The report, including carried-over native measurements and observed cooldowns.
+ * @throws On cache write/lock failure; automatic routing currently inherits that failure.
  */
 export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: { nativeQuota?: boolean; only?: readonly ProviderId[]; measuredNow?: Set<ProviderId> } = {}): Promise<QuotaReport> {
   const cache=readQuotaCache();
@@ -175,15 +169,14 @@ export async function resetQuotaCooldown(id: string): Promise<void> {
   });
 }
 /**
- * Selects the first permitted executable provider without an observed cooldown.
- * @param candidates - Stable preference order; defaults to the concrete registry order.
- * @param options - Configuration and observed probe/cache records, optionally supplied by routing.
- * @returns A permitted installed provider with supported execution and no active cooldown.
- * @throws When no provider is executable or all candidates have observed rate limits.
- * @remarks
- * `smart_quota` remains the configuration/MCP compatibility name. Selection now
- * uses observed availability and cooldowns; synthetic account percentages do not
- * change ranking. Existing caches retain null percentages and measured=false.
+ * Selects an installed permitted provider using cooldowns and cached headroom.
+ * @param candidates - Stable tie-break order; defaults to the provider registry.
+ * @param options - Configuration, probes, quota report and optional caller identity.
+ * @returns An eligible different CLI when possible, otherwise the caller's own provider.
+ * @throws When no provider is executable, all eligible providers have observed limits,
+ * or the quota report cannot be cached.
+ * @remarks Measured headroom sorts descending; unknown quota uses 50 as a ranking
+ * heuristic, not account telemetry. Measurement freshness is not independently enforced.
  */
 export async function selectSmartQuotaBackend(candidates: ProviderId[] | null = null, options: AvailabilitySelectionOptions = {}): Promise<ProviderId> {
   const config = options.config || loadConfig();

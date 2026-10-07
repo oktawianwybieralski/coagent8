@@ -45,7 +45,9 @@ function ensureConfigDir(): void {
  * Validates configuration from disk or an update before routing uses it.
  * @param value - Untrusted JSON value; schema version 1 is required when supplied.
  * @returns A normalized configuration with independent routing arrays and defaults.
- * @throws On invalid version, backend, strategy, allowed providers or tool profile.
+ * @throws On invalid version, backend, strategy or allowed providers.
+ * @remarks The legacy toolProfile and other unrecognized properties are ignored;
+ * the returned object contains only the supported configuration fields.
  */
 export function validateConfig(value: unknown): CoAgent8Config {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {

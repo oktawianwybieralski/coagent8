@@ -6,11 +6,12 @@
 ---
 
 ## 1. Supported CI Environment Matrix
-CoAgent8 is verified across a 6-job matrix:
+Release acceptance requires all six jobs for the exact candidate; the configured
+matrix is:
 * **Operating Systems:** Ubuntu (`ubuntu-latest`), macOS (`macos-latest`), Windows (`windows-latest`).
 * **Node.js Versions:** Node 24.x (LTS) and Node 26.x. The minimum supported
   version is 24.0 (`engines` in `package.json`); older release lines are not
-  supported.
+  supported. Building a checkout requires Node 24.11+ (or Node 26+).
 
 ---
 
@@ -43,6 +44,9 @@ guarantees for window suppression.
      descendants (`WINDOWS-001` in the [roadmap](../../docs/ROADMAP.md)).
    - After the root exits, stop waiting for inherited stdout/stderr after a bounded
      drain period instead of searching for the holder.
+   - Windows fixture/live observations are snapshot-specific. POSIX unexpected
+     parent death remains open (`CUR-011`); do not infer crash cleanup from normal
+     cancellation or Windows evidence.
    - Test teardown with owned fixture trees only, never by sweeping a live desktop.
 3. **Memory Limits & Stream Safety:**
    - Always enforce strict `maxBufferBytes` (512 KiB in `runCommand`, 4 MiB in `runGit`) and `StringDecoder` to prevent split UTF-8 corruption and memory exhaustion.

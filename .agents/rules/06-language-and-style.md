@@ -5,7 +5,7 @@
 
 ---
 
-## 🌐 Universal English Standard
+## Universal English Standard
 
 To maintain international open-source maintainability, clean CI automation, and seamless multi-agent collaboration across AI systems (Antigravity, Codex Sol, Claude Code), this repository enforces strict English language standards:
 
@@ -28,12 +28,12 @@ To maintain international open-source maintainability, clean CI automation, and 
 
 ---
 
-## 🔤 Strict ASCII Punctuation & Character Encoding Standard
+## Strict ASCII Punctuation & Character Encoding Standard
 
 To prevent terminal mojibake, encoding mismatches across Windows (CP1250/CP1252), Linux, and macOS, and subtle search/parsing breakages in CI, CLIs, regexes, and Markdown renderers:
 
 1. **Strict ASCII Hyphens Only (`-`, U+002D)**:
-   - Strictly **FORBIDDEN**: Unicode em dashes (`—`, U+2014), en dashes (`–`, U+2013), horizontal bars (`―`), and figure dashes (`‒`).
+   - Strictly **FORBIDDEN**: Unicode em dashes (U+2014), en dashes (U+2013), horizontal bars (U+2015), and figure dashes (U+2012).
    - Strictly **MANDATORY**: Standard ASCII hyphen-minus (`-`, U+002D) exclusively.
 
 2. **Strict ASCII Quotes & Apostrophes**:

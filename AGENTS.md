@@ -11,9 +11,9 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 ---
 
-## 🧭 Prioritized Rule Index (`.agents/rules/`)
+## Prioritized Rule Index (`.agents/rules/`)
 
-### 🔴 P0 - Critical System & Security Invariants
+### P0 - Critical System & Security Invariants
 *Must never be bypassed under any circumstances.*
 
 0. **[P0: Core Invariants, Code Quality & Engineering Integrity (`00-core-invariants.md`)](./.agents/rules/00-core-invariants.md)**:
@@ -23,8 +23,14 @@ MCP use. Historical plans and RFCs do not override this direction.
    - **Production reliability**: Strict TypeScript strict mode, leak-free process management, defensive schema validation.
 
 1. **[P0: Security & Read-Only Sandboxes (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
-   - Mandatory read-only sandboxes (`--sandbox read-only` on Codex, `--permission-mode dontAsk --tools Read,Glob,Grep` on Claude, native `--sandbox` on agy).
-   - Top-tier models (`astra`, `opus`) run only after the user approves them through MCP elicitation, which the server asks for; a calling agent cannot grant consent.
+   - Mandatory read-only profiles: Codex app-server verifies readOnly/never;
+     Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
+     agy receives native --sandbox. Inherited MCP isolation for Codex/agy remains
+     an open deviation, not an exemption from this invariant.
+   - Governed models (currently astra/opus families and best) require explicit
+     user approval through server MCP elicitation; a calling agent cannot grant
+     it. Missing-checkbox acceptance is an open defect. Price governance remains
+     a proposal in the roadmap.
    - Automated secret redaction for API keys, tokens, credentials, and user home directory paths, without rewriting ordinary content of public answers.
 
 2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:
@@ -38,14 +44,16 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 ---
 
-### 🟡 P1 - Verification & Engineering Gates
+### P1 - Verification & Engineering Gates
 *Mandatory quality bars that must be satisfied before PR merge.*
 
 3. **[P1: CoAgent8 Review & Independent Audit (`03-author-reviewer.md`)](./.agents/rules/03-author-reviewer.md)**:
    - Strict Author/Reviewer separation: Antigravity acts as Author (writes the change); Codex Sol (`gpt-6.1-sol`) / Claude Code acts as Reviewer (independent review via CoAgent8 Review).
    - Independent verification via `review` in read-only sandbox before merging.
    - Release approval strictly binds to Base SHA, Candidate SHA, Tree SHA, and Artifact SHA-256.
-   - Zero P1 (critical) or P2 (robustness) issues allowed. State Envelope gate must evaluate to `VERDICT: READY`.
+   - Zero P1 (critical) or P2 (robustness) issues allowed. State Envelope must
+     evaluate to `VERDICT: READY` with independently verified scope/checks; the
+     current text gate alone does not establish complete input or release approval.
 
 4. **[P1: Local Quality Verification Gate (`04-quality-gate.md`)](./.agents/rules/04-quality-gate.md)**:
    - Choose local checks by change scope using the linked rule; do not repeat a full gate after every edit.
@@ -55,7 +63,7 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 ---
 
-### 🟢 P2 - Compatibility & Code Standards
+### P2 - Compatibility & Code Standards
 *Operational standards ensuring cross-platform stability and clean communication.*
 
 5. **[P2: Cross-Platform & CI Matrix Guardrails (`05-cross-platform.md`)](./.agents/rules/05-cross-platform.md)**:

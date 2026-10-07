@@ -18,7 +18,8 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
 export type LegacyAliasName = typeof CANONICAL_TOOL_NAMES.ANALYZE | typeof CANONICAL_TOOL_NAMES.DEBUG | typeof CANONICAL_TOOL_NAMES.IMPLEMENT;
 
-interface LegacyAlias {
+/** Mapping contract exposed by LEGACY_ALIASES for deprecated tool compatibility. */
+export interface LegacyAlias {
   /** Argument holding the request; it becomes the consult proposal. */
   input: 'task' | 'error_message' | 'specification';
   taskType: 'architecture' | 'debug' | 'implementation';

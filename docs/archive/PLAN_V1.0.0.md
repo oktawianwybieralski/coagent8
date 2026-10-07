@@ -1,6 +1,13 @@
 # OmniAgent MCP - Architecture & Release Roadmap (v1.0.0 & v1.1.0)
 
-> **Historical roadmap:** Current RC scope, agent ownership, chat/history requirements and release gates are maintained in [PLAN_RC1.md](PLAN_RC1.md). Earlier completion claims below require verification against [AUDIT_CODEX.md](../AUDIT_CODEX.md).
+> Historical snapshot. Original findings, plans, commands and version labels
+> are preserved as evidence; they do not define current policy or release status.
+> Use the [active roadmap](../ROADMAP.md), [runtime contract](../RUNTIME_CONTRACT.md)
+> and [archive index](README.md). Historical source references describe their
+> original tree, including modules that no longer exist.
+
+
+> **Historical roadmap:** Current RC scope, agent ownership, chat/history requirements and release gates are maintained in [PLAN_RC1.md](PLAN_RC1.md). Earlier completion claims below require verification against [AUDIT_CODEX.md](AUDIT_CODEX.md).
 
 > **Update 2026-10-03:** The package is now `coagent8@0.9.0-dev`. Codex execution has been migrated to the shared runner after a reproducible integration regression. Current local verification is 58/58 tests; real CLI safety, independent review and six CI jobs remain open. Consult [RC1_STATUS.md](RC1_STATUS.md) for evidence. The older Claude recommendation below is superseded by the current `--bare` profile; historical checkboxes and release claims are not current acceptance.
 
