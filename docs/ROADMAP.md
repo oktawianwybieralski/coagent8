@@ -467,10 +467,29 @@ Supervision cost (AUD-P1-4, order 2):
 Crash orphans and Job Objects (AUD-P2-14, order 3):
 - On Windows the server's own libuv job already kills its direct children when
   the server dies. Descendants of native backends are not covered.
-- [ ] Only if non-Node descendants are measured to survive: prototype a per-run
+- [x] Only if non-Node descendants are measured to survive: prototype a per-run
   Job Object helper with `KILL_ON_JOB_CLOSE` and without silent breakaway.
   Evaluate compatibility with backend sandboxes, nested jobs, and the cost of
-  distributing and signing a native helper.
+  distributing and signing a native helper. Measured on 2026-10-07 (Windows 11,
+  Node 26.10): they do not survive, so no helper is needed. A Node process
+  standing in for the server ran one long turn through the adapter and was
+  stopped with `TerminateProcess` (no cleanup) once the turn was under way. Every
+  process created after the start, other than service hosts and the observer's
+  PowerShell, was listed by PID, parent and command line at the crash and 1, 10
+  and 30 s later:
+  - Claude Code (haiku): `claude.exe`; gone after 1 s;
+  - Codex (`gpt-5.6-luna`): `node.exe` (npm shim), then the native `codex.exe`;
+    gone after 1 s;
+  - agy (`gemini-3.8-flash-low`): `agy.exe` with the user's MCP servers
+    (CoAgent8's own `dist/index.cjs`, and `cmd.exe`, `node.exe` (npx), `cmd.exe`,
+    `node.exe` for Context7); all gone after 1 s.
+- [ ] agy turns start every MCP server of the user's agy configuration, here
+  CoAgent8 itself and Context7 through `npx`, on every turn. That costs startup
+  time and console helpers, and the user's allow rules
+  (`mcp(coagent8/consult)`, `mcp(coagent8/review)`) let the backend model call
+  CoAgent8 recursively. agy 1.3.1 has no option to start without MCP servers.
+  Measure whether the model can reach these tools in `--sandbox` print mode and
+  decide on isolation (owner decision).
 - [ ] Add a POSIX parent-death strategy for detached groups. Do not rely on
   stdin EOF: Claude did not exit on EOF mid-turn (see the evidence above).
 
