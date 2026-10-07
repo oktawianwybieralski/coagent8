@@ -1872,6 +1872,33 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   arguments must not terminate a server started by a host (AUD-P2-10).
 - [ ] Retain selected-client consent, idempotence, stable owned runtime paths,
   conflict detection, preservation of unrelated settings and private backups.
+- [ ] Implement explicit uninstall/cleanup for managed external-client registrations.
+  Owner reproduction on 2026-10-07: uninstalling the VSIX left CoAgent8 entries in
+  Codex, Claude Code and Antigravity configuration, VS Code extension state,
+  cached MCP definitions and the extension's auto-update exclusion. Reloading
+  VS Code does not remove persistent external-client registrations. The manual
+  cleanup is evidence of the gap, not an implemented uninstall feature.
+  Remove only entries whose current fingerprint matches recorded setup ownership;
+  preserve manual registrations, independent edits, other MCP servers and user
+  history/authentication. Provide an explicit cleanup command with a preview,
+  private backup and conflict reporting. Evaluate `vscode:uninstall` as a
+  best-effort entrypoint after restart, never the sole cleanup mechanism.
+  Acceptance: isolated install -> setup -> uninstall -> restart leaves no owned
+  callable registration; manual and edited entries survive; partial failure is
+  reported and recoverable; cleanup is idempotent and does not touch other clients.
+- [ ] Prefer compatible existing CLI installations, including bundled extension
+  binaries, before offering a separate CLI installation. Claude's bundled-binary
+  fallback already exists; add equivalent Codex discovery with fresh resolution
+  after extension updates and no persisted version-directory paths. Keep explicit
+  executable overrides authoritative and check required versions/protocols.
+  Local Windows probes on 2026-10-07: `--help` and `--version` exited 0 for
+  Claude Code 2.1.292 from `anthropic.claude-code` and Codex CLI 0.162.0-alpha.2
+  from `openai.chatgpt`. Help advertises the streaming/tool controls for Claude
+  and `app-server`, MCP and sandbox controls for Codex. This is executable/help
+  evidence only, not authenticated execution or adapter compatibility acceptance.
+  No usable agy executable was found in the inspected Antigravity extension.
+  Evaluate an optional VS Code extension pack separately from core MCP setup;
+  do not introduce unconditional dependencies on every backend's extension.
 - [ ] Never remove a working registration to test a replacement. Use isolated
   profiles, verify the replacement in that host, and retain/restore the original
   on failure. Do not rely on uninstall callbacks for external settings.
