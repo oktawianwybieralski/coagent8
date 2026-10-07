@@ -32,7 +32,7 @@ import { resolveBackend } from '../backends/routing.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../backends/model-catalog.js';
 import { selectModel } from '../backends/model-selection.js';
-import { consentDeclinedMessage, consentRequiredMessage } from '../backends/governance.js';
+import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../backends/governance.js';
 import { isValidModelIdentifier } from '../backends/model-identifier.js';
 import { consentFor } from '../backends/consent.js';
 import { rememberApprovedModel } from '../config.js';
@@ -59,10 +59,11 @@ export interface ExecutionRequest {
 
 /**
  * Asks the user, not the calling agent, to approve a model; `approved` is true only on the
- * user's approval, and `remember` only when the request offered it and the user chose it.
+ * user's approval, `unanswered` when the client cancelled the request without a decision, and
+ * `remember` only when the request offered it and the user chose it.
  * The server implements it with MCP elicitation when the client supports it (AUD-P1-7).
  */
-export type ConsentPrompt = (request: { backend: string; model: string; reason: string; offerRemember: boolean }) => Promise<{ approved: boolean; remember?: boolean }>;
+export type ConsentPrompt = (request: { backend: string; model: string; reason: string; offerRemember: boolean }) => Promise<{ approved: boolean; unanswered?: boolean; remember?: boolean }>;
 
 /** Per-call options of {@link executeTask} set by the server and tool handlers, never by tool arguments. */
 export interface TaskOptions {
@@ -156,7 +157,9 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   if (decision.ask) {
     if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));
     const answer = await options.askConsent({ backend: backend.id, model, reason: decision.reason, offerRemember: decision.offerRemember });
-    if (!answer.approved) throw new ToolError('POLICY_DENIED', consentDeclinedMessage(model));
+    if (!answer.approved) {
+      throw new ToolError('POLICY_DENIED', answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model));
+    }
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
     if (decision.offerRemember && answer.remember) {
       // The approval stands even when it cannot be stored; the next turn asks again.

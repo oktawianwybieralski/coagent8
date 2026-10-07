@@ -68,7 +68,16 @@ export function consentRequiredMessage(model: string, reason: string): string {
   return `Model '${model}' needs the user's approval, which this client cannot ask for (no MCP elicitation). ${reason} Retry with another model.`;
 }
 
-/** One-line refusal when the user declined or did not answer the approval request. */
+/** One-line refusal when the user declined the approval request or left the box unchecked. */
 export function consentDeclinedMessage(model: string): string {
   return `The user did not approve model '${model}'; retry with another model.`;
+}
+
+/**
+ * One-line refusal when the client cancelled the approval request.
+ * @remarks A cancel is not the user's decision: Codex 0.160.1 declares form elicitation but
+ * cancels every request without showing it (measured 2026-10-07).
+ */
+export function consentUnansweredMessage(model: string, reason: string): string {
+  return `The client closed the approval request for model '${model}' without an answer, possibly without showing it to the user. ${reason} Retry with another model.`;
 }

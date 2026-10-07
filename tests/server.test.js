@@ -281,6 +281,13 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const declined = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(declined.code, 'POLICY_DENIED');
     assert.match(declined.message, /did not approve/);
+    // Codex 0.160.1 declares form elicitation but answers `cancel` in 3 ms without showing a
+    // form (measured 2026-10-07), so a cancel must not be reported as the user's decision.
+    answer = { action: 'cancel' };
+    const unanswered = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
+    assert.equal(unanswered.code, 'POLICY_DENIED');
+    assert.match(unanswered.message, /^The client closed the approval request for model 'claude-opus-4-6-thinking' without an answer, possibly without showing it to the user\. Its price is known only approximately/);
+    assert.match(unanswered.message, /Retry with another model\.$/);
     // Only an explicit `approve: true` is consent (CUR-003): an accepted form without the
     // field, with an empty or a non-boolean value, or unchecked, declines.
     const notConsent = [{ action: 'accept' }, { action: 'accept', content: {} }, { action: 'accept', content: { approve: 'true' } },
@@ -314,7 +321,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     // A default model the policy does not price as expensive never prompts the user.
     const plainTurn = await call(asking.client, undefined);
     assert.equal(plainTurn.isError, false, plainTurn.content[0].text);
-    assert.equal(requests.length, 8);
+    assert.equal(requests.length, 9);
     assert.deepEqual(consented, ['claude-opus-4-6-thinking', 'gemini-3.8-flash-high']);
 
     // An expensive priced model asks on every turn, without remember.

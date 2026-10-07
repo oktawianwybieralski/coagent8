@@ -204,7 +204,10 @@ billing and say nothing about a model's safety.
 
 The rule requires explicit user approval through MCP form elicitation.
 The calling agent cannot grant consent. Unsupported elicitation, decline,
-cancel or unchecked approval yields `POLICY_DENIED`. The request has a
+cancel or unchecked approval yields `POLICY_DENIED`. Only a decline or an
+unchecked box is reported as the user's refusal; a cancel is reported as a
+request the client closed without an answer, because some clients cancel without
+showing the form (Codex 0.160.1, measured 2026-10-07). The request has a
 five-minute timeout and follows caller cancellation. Consent binds to one model
 and one turn; acquisition of a session and model execution follow consent.
 Version, auth, catalog and model-resolution probes may launch metadata CLI

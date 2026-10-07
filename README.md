@@ -143,7 +143,9 @@ A model priced at or above 20 USD per million output tokens, at least twice its
 backend default, or without a known price runs only after the user approves it
 through MCP form elicitation; `governance` in `config.json` tunes this. Prices
 are read from OpenRouter's public model list (no key, no user data). Headless
-clients measured on 2026-10-07 cancel elicitation, so such turns fail there.
+clients measured on 2026-10-07 cancel elicitation, so such turns fail there. The
+Codex and Antigravity chats in VS Code also answered without showing the form on
+2026-10-07; name a cheaper model there.
 
 ## Documentation and contributing
 

@@ -1469,6 +1469,26 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   above the limit) and agy's `claude-opus-4-6-thinking` (approximate price); doctor
   marked Claude's default `claude-opus-5-5` (20 USD) as asking on every turn.
 
+- [x] A cancelled approval request is not reported as the user's refusal. In the
+  owner's VS Code retest of 2026-10-07 neither the Codex nor the Antigravity chat
+  showed a consent form for Claude `opus`, and both results read "The user did not
+  approve model 'claude-opus-5-5'". The Codex log (`logs_2.sqlite`) records no
+  elicitation request sent to the VS Code client during that call. A stub MCP
+  server measured Codex 0.160.1 (`codex exec`): it declares
+  `elicitation: {form, url}` and answers `elicitation/create` with
+  `{"action":"cancel"}` after 3 ms, without asking anyone. On
+  `fix/consent-unanswered` a cancel yields "The client closed the approval request
+  for model '...' without an answer, possibly without showing it to the user",
+  followed by the price reason and "Retry with another model."; a decline or an
+  unchecked box still reads "did not approve". Evidence: `tests/server.test.js` (a
+  real MCP client answering `cancel`; fails on the previous server). Full suite:
+  278 tests, 275 pass, 0 fail, 3 skipped. One earlier full run failed once on
+  `tests/sessions/lock.test.js` (competing processes); it passed alone three times
+  and in the repeated full run. Typecheck, `lint:docs`, `npm run docs`, build
+  (`6609623f`) and consumer smoke pass. Live: a fresh `codex exec` (0.160.1) run
+  from outside the repository got the new message for `opus`. Run inside the
+  repository, Codex's `auto_review` approval reviewer rejected the MCP call itself,
+  citing rule 01, before it reached CoAgent8.
 - [ ] `CUR-006`: coalesce concurrent probe/catalog misses; expand invalidation
   for actual provider configuration/env selectors (including Codex home and
   Claude default aliases). Define refresh/failure behavior; acceptance measures

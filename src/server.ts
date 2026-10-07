@@ -220,7 +220,7 @@ export function createServer(): Server {
       }
       // Only an accepted form with the box checked is consent (CUR-003); a missing field is not.
       const approved = answer.action === 'accept' && answer.content?.approve === true;
-      return { approved, remember: approved && offerRemember && answer.content?.remember === true };
+      return { approved, unanswered: answer.action === 'cancel', remember: approved && offerRemember && answer.content?.remember === true };
     };
   }
 
