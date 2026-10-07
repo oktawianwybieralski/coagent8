@@ -97,7 +97,7 @@ is pushed:
 | `fix/malformed-config` | `8b43688`..`c85c775` | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
 | `fix/history-empty-catches` | `07db345`..`040eb58` | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
 | `refactor/simplify-timeouts-capabilities` | `8d2c56b`..`967a0e5` | `SIMPLIFY-001` (AUD-P2-5, AUD-P2-8): one Gemini deadline; no phantom `resources.listChanged` |
-| `refactor/maintenance-injection` | this change | `SIMPLIFY-001` (AUD-P2-3): maintenance injected through `serveStdio`; no test hooks in production |
+| `refactor/maintenance-injection` | `68be8a2`..`cb6d4c4` | `SIMPLIFY-001` (AUD-P2-3): maintenance injected through `serveStdio`; no test hooks in production |
 
 ## Verification
 
@@ -135,15 +135,21 @@ results in the project review before requesting an independent review by the Rev
    - release PR with `npm run changelog -- --tag v1.0.0-beta.2`;
    - release notes from `npm run release-notes`, plus known issues by hand;
    - verify the GitHub API path of the release notes.
-6. Execution order 2 is implemented except two items that need the owner:
-   - `EXEC-001` caller-proof consent (AUD-P1-7): MCP elicitation where the
-     client supports it, otherwise `POLICY_DENIED`. This removes the agent-set
-     `user_confirmed` path, so it changes how top-tier models are reached; owner
-     decision first.
-   - `CONTEXT-001` client acceptance (Claude Code, agy) and the agy tool-call
-     limit: live clients and model calls.
-   Not verified live: agy `/usage` with `--sandbox` (`perf/bounded-probes`).
+6. Execution order 2 is implemented except the items below. Owner decisions of
+   2026-10-07:
+   - `EXEC-001` caller-proof consent (AUD-P1-7): approved. MCP elicitation where
+     the client supports it, otherwise `POLICY_DENIED` with instructions; govern
+     the effective default model of every backend, including agy's; an
+     agent-set `user_confirmed` no longer grants consent. This is a breaking
+     contract change (`!` in the commit and PR title).
+   - Live agy (Gemini) calls are authorized: verify `/usage` with `--sandbox`
+     (`perf/bounded-probes`), the agy part of `CONTEXT-001` client acceptance and
+     the agy tool-call limit. Use the cheapest model that answers.
+   - Live Codex calls are deferred: do not run them. Record the Codex acceptance
+     (app-server turn, resume, `turn/interrupt`, `WINDOWS-001`) as a future test
+     in the roadmap.
+   - `CONTEXT-001` acceptance in Claude Code stays open.
 7. Execution order 3 remainder: the POSIX kill fallbacks in `process.ts`
    (`ERRORS-001`), orphans after a server crash (AUD-P2-14, `WINDOWS-001`),
-   `SIMPLIFY-001` (test hooks such as the maintenance gate, duplication, double
-   timeout, dead code), CI duplication (AUD-P2-15).
+   `SIMPLIFY-001` (one alias table for the deprecated tools, merged structured
+   error extractors, P3 nits), CI duplication (AUD-P2-15).
