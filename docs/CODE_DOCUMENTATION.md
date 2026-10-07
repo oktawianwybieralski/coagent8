@@ -21,7 +21,9 @@ npm run docs
 The linter checks all TypeScript files under `src/` with `tsdoc/syntax` configured
 as an error. TypeDoc expands `src/` into module entry points and writes HTML to
 `.artifacts/api-docs/index.html`. Generation fails on warnings, including broken
-documentation links. CI runs both commands in every supported OS/Node matrix job.
+documentation links. CI runs the linter in every supported OS/Node matrix job and
+generates the documentation in the Ubuntu Node 24 job; the output does not depend
+on the platform.
 Generated HTML is ignored by Git and excluded from the published package.
 
 ## Toolchain compatibility

@@ -564,6 +564,13 @@ plugin/VSIX packaging from the tarball remains.
 - [ ] Run coverage once per applicable CI matrix job instead of separately
   repeating the same full suite (AUD-P2-15). Scope documentation and VSIX jobs to
   relevant changes while preserving required status checks and the full release matrix.
+  On `ci/coverage-once`, not yet run in CI: each matrix job runs the suite once,
+  through `npm run test:coverage` in place of `npm test`, and only the Ubuntu
+  Node 24 job generates the API documentation. Job names, and with them the
+  required status checks, are unchanged; the VSIX stays on the three Node 24 jobs.
+  Locally (Windows, Node 26.10) `test:coverage` ran the full inventory: 254 tests,
+  251 pass, 0 fail, 3 skipped (POSIX only), lines 92.4%, branches 82.3%,
+  functions 96.2%. Close after the first green CI matrix.
 - [ ] Keep complete failure logs. Rerun only to investigate a failure or validate
   a new change; do not treat an unexplained passing retry as a fix (`VERIFY-001`).
 - [x] Replace tests that cement defects. Example: replaced the "O(1) appends" history

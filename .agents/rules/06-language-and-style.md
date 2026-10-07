@@ -60,5 +60,5 @@ comments and TypeDoc module introductions. Document meaningful behavior and
 contracts without duplicating TypeScript types. Run `npm run lint:docs` and
 `npm run docs` when source comments or documentation tooling change, as specified
 in [04-quality-gate.md](04-quality-gate.md). Ordinary Markdown edits do not need
-these commands. Current CI still runs both checks. Syntax validation does not
+these commands. CI runs both checks (generation in one job). Syntax validation does not
 replace reviewing comments against implementation.

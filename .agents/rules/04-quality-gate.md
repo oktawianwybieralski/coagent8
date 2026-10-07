@@ -32,7 +32,8 @@ history, so they apply to prose-only changes too.
 arguments it discovers the full inventory. Concurrency defaults to two test files
 and can be overridden with `--test-concurrency=N`. Do not replace a focused check
 with repeated full runs by habit. Coverage executes tests; avoid a redundant
-identical suite run unless distinct evidence is needed. Current CI still runs both.
+identical suite run unless distinct evidence is needed. CI runs the suite once,
+under coverage.
 
 A test that passes is evidence only for the property it measures. When a fix
 addresses a measured defect, such as an audit reproduction, the regression test

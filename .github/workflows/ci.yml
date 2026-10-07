@@ -42,14 +42,19 @@ jobs:
       - name: Validate TSDoc comments
         run: npm run lint:docs
 
+      # The generated documentation does not depend on the platform: one job checks it.
       - name: Generate source API documentation
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
         run: npm run docs
 
       - name: Build bundle
         run: npm run build
 
-      - name: Run test suite
-        run: npm test
+      # The full suite runs once, under coverage (AUD-P2-15). Development regression floor:
+      # statements/lines/branches >=70%, functions >=75%; all src modules, no exclusions.
+      # This is not the RC safety-branch acceptance gate.
+      - name: Run test suite with source coverage
+        run: npm run test:coverage
 
       - name: Verify package bundle integrity
         run: npm pack --dry-run
@@ -64,11 +69,6 @@ jobs:
       - name: Package VS Code development extension (Node 24)
         if: matrix.node-version == '24.x'
         run: npm run package:vscode
-
-      # Development regression floor: statements/lines/branches >=70%, functions >=75%.
-      # All src modules are included; no source exclusions. This is not the RC safety-branch acceptance gate.
-      - name: Source coverage (all modules; enforce documented regression floor)
-        run: npm run test:coverage
 
       - name: Upload consumer and coverage evidence
         uses: actions/upload-artifact@v4
