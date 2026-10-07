@@ -165,7 +165,7 @@ Host support for the approval form varies; see the limitations below.
 | `CLI_NOT_FOUND` or `AUTH_REQUIRED` | Install or authenticate the reported backend on the same machine as the server, then run `doctor` again |
 | `POLICY_DENIED` | The model needs approval and the host did not supply it; use a host that supports the form or choose a model allowed by your governance configuration |
 | Tools look outdated after an update | Restart CoAgent8 through **MCP: List Servers** and refresh the tool list or start a new chat |
-| Duplicate CoAgent8 extensions | Remove the old development extension `oktawianwybieralski.coagent8-mcp`; this package uses `oki-dev.coagent8-mcp` |
+| Duplicate CoAgent8 extensions | Remove old development extensions `oktawianwybieralski.coagent8-mcp` and `oki-dev.coagent8-mcp`; this package uses `okidev.coagent8-mcp` |
 | A standalone client cannot see CoAgent8 | Run the setup command for that client; the VS Code provider alone does not register it there |
 
 For startup errors, inspect the server output available from VS Code's MCP
@@ -199,12 +199,12 @@ the bundled server retains its full npm prerelease version. Restart the MCP
 server after replacing a development VSIX. The **Changelog** tab contains the
 generated CoAgent8 project history, including changes shared with the server.
 
-The extension's identifier is `oki-dev.coagent8-mcp`. **Oktawian Wybieralski** is
+The extension's identifier is `okidev.coagent8-mcp`. **Oktawian Wybieralski** is
 the author; **oki.dev** is the brand and website. The GitHub repository remains
 under `oktawianwybieralski`.
 Changing the publisher identifier creates a separate extension identity, so an
 old development installation is not automatically replaced by this VSIX.
-For an unpublished VSIX, VS Code can show the publisher ID `oki-dev` in the
+For an unpublished VSIX, VS Code can show the publisher ID `okidev` in the
 header. The author's name above is separate from the publisher display name,
 which is configured in the Marketplace account.
 

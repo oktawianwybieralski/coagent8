@@ -3,7 +3,7 @@
   "displayName": "CoAgent8 - MCP bridge to coding CLIs",
   "description": "Ask Codex, Claude Code and Antigravity for second opinions and Git reviews from VS Code chat through MCP.",
   "version": "1.0.0-beta.2",
-  "publisher": "oki-dev",
+  "publisher": "okidev",
   "author": { "name": "Oktawian Wybieralski", "url": "https://oki.dev" },
   "homepage": "https://oki.dev",
   "bugs": { "url": "https://github.com/oktawianwybieralski/coagent8/issues" },

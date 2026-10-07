@@ -1852,6 +1852,11 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   the unpublished VSIX can still display `oki-dev`. Actual Details rendering
   remains unverified; public packaging requires HTTPS-hosted README images.
 
+- [x] Publisher identity updated to `okidev` on 2026-10-07 following the owner's
+  creation of a new publisher named oki.dev. The extension ID is now
+  `okidev.coagent8-mcp`; author metadata remains Oktawian Wybieralski. Earlier
+  `oki-dev` packaging evidence above is historical. No publication is performed.
+
 - [ ] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
   core startup and backend execution. Ship setup as a separate entrypoint and
   bundle, so installer-only code and JSONC handling leave the core. Codex

@@ -118,11 +118,12 @@ is published by these commands.
 ### Extension presentation and publisher identity
 
 The VSIX identifies its author as **Oktawian Wybieralski** and uses publisher identifier
-`oki-dev`, giving extension ID `oki-dev.coagent8-mcp`. Publisher identifiers
-cannot contain a dot; the Marketplace publisher's display name **Oktawian Wybieralski** is
+`okidev`, giving extension ID `okidev.coagent8-mcp`. Publisher identifiers
+cannot contain a dot; the Marketplace publisher's display name **oki.dev** is
 configured on the publisher account, not by the manifest. Packaging does not
 create, verify or reserve that account. The GitHub repository URL is unchanged.
-Before publishing, confirm ownership of `oki-dev` and its display name.
+The owner reports creating this publisher on 2026-10-07. Before publishing,
+confirm ownership of `okidev` and its display name.
 An unpublished local VSIX can show the publisher ID in its header when no
 Marketplace display-name metadata is available; `author.name` does not control
 that header.
@@ -134,7 +135,7 @@ the staging build makes the changelog's repository link absolute. Marketplace
 publication requires an HTTPS image source and a separate presentation check.
 
 This identity differs from the old development ID
-`oktawianwybieralski.coagent8-mcp`. An old installation is not upgraded by the
+`oktawianwybieralski.coagent8-mcp` and `oki-dev.coagent8-mcp`. An old installation is not upgraded by the
 new VSIX; uninstall the old development extension before installing the new one
 to avoid duplicate providers. Preserve existing manual MCP registrations.
 
