@@ -503,7 +503,13 @@ plugin/VSIX packaging from the tarball remains.
   Fixed with `.gitattributes` `* text=auto eol=lf`: every checkout, including
   Windows with `core.autocrlf=true`, gets LF sources, so `sourcesContent` no
   longer depends on the platform. The map keeps `sourcesContent` because it also
-  maps bundled `node_modules` files that the package does not ship.
+  maps bundled `node_modules` files that the package does not ship. Evidence:
+  this Windows checkout (`core.autocrlf=true`) and a fresh clone built
+  byte-identical `dist/index.cjs` and `dist/index.cjs.map` (SHA-256 `03611bfc…`
+  and `a41615e8…`). Before the files were checked out again the maps differed in
+  the `sourcesContent` of 32 `src/` files (CRLF). Git does not rewrite existing
+  working-tree files when attributes change: an existing checkout needs one fresh
+  checkout of its tracked files.
 - [x] Acceptance: a fresh clone cannot run a stale bundle. The consumer smoke test
   verifies the packed bundle matches a build of the packed source. Evidence: a
   fresh clone has no `dist/`. `tests/consumer/smoke.cjs` compares every packed
