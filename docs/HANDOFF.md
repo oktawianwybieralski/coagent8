@@ -88,7 +88,8 @@ is pushed:
 | `fix/codex-config-toml` | `bc04df9` | `EXEC-001` (AUD-P1-11, order 2): Codex `config.toml` parsed with `smol-toml`, top-level keys only |
 | `fix/model-identifier-validation` | `9cdb710` | `EXEC-001` (AUD-P1-6, order 2): `model` validated in the controller and every adapter |
 | `fix/gemini-unknown-events` | `d23ad1b` | `CLI-INTERACT-001` (AUD-P1-5, order 2): unknown agy event types ignored with a warning |
-| `fix/resource-workspace-isolation` | this change | `SESSION-001` (AUD-P1-8, order 2): resources and `session list` scoped to the workspace |
+| `fix/resource-workspace-isolation` | `070ad58` | `SESSION-001` (AUD-P1-8, order 2): resources and `session list` scoped to the workspace |
+| `fix/lease-integrity` | this change | `LOCKS-001` (AUD-P1-9, order 2): atomic, renewed leases; stale by age, dead PID or unreadable content; no lease deletion in the sweep |
 
 ## Verification
 

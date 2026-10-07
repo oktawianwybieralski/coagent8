@@ -1039,16 +1039,30 @@ without a model call.
 
 ### `LOCKS-001` - lease integrity
 
-**Status:** Open (AUD-P1-9).
+**Status:** Implemented on `fix/lease-integrity`, not yet merged (AUD-P1-9).
 
-- [ ] Create lease files atomically (write a temporary file, then link or rename),
-  so no lease is ever observable empty.
-- [ ] Reclaim an empty or unparsable lease older than a bounded age. Add a maximum
+- [x] Create lease files atomically (write a temporary file, then link or rename),
+  so no lease is ever observable empty. `publishLease` writes a temporary file and
+  publishes it with `link`, which fails when a lease exists.
+- [x] Reclaim an empty or unparsable lease older than a bounded age. Add a maximum
   age based on `createdAt` so a reused PID cannot keep a dead owner's lease alive.
-- [ ] Remove lease deletion from `sweepExpiredSessions`; reclamation belongs to
+  Decision: the maximum age counts from the last renewal, not from `createdAt`.
+  The holder renews the lease's modification time every 2 s, and a lease not
+  renewed for 30 s is stale whatever its PID reports. A fixed age from
+  `createdAt` would either let another process take the lease of a legitimately
+  long critical section (setup) or keep a dead owner's lease for minutes. An
+  unreadable lease is stale after 2 s, which covers an older release that still
+  creates leases with `open` and `write`.
+- [x] Remove lease deletion from `sweepExpiredSessions`; reclamation belongs to
   `withFileLock` and its token protocol.
-- [ ] Acceptance: crash-between-open-and-write, reused-PID and concurrent-sweep
-  regressions.
+- [x] Acceptance: crash-between-open-and-write, reused-PID and concurrent-sweep
+  regressions. Evidence: `tests/sessions/lock.test.js` (an empty lease 10 s old is
+  reclaimed, a fresh one is not; a 60 s old lease of a live PID is reclaimed, a
+  renewed one is not; the holder renews; a reader polling during 20 acquisitions
+  never sees an empty lease) and `tests/sessions/session.test.js` (the sweep
+  deletes no lease by name). All five fail against the previous `lock.ts` and
+  `session.ts`. A failed release no longer replaces the critical section's result;
+  it is written to stderr and the lease expires.
 
 ### `CLI-INTERACT-001` - stream activity liveness and backend failure modes
 

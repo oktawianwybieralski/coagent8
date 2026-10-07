@@ -243,17 +243,6 @@ async function sweepExpiredSessions(dir: string): Promise<void> {
   }
   try {
     for (const name of await fsp.readdir(dir)) {
-      if (/^syn_sess_[A-Za-z0-9_-]{6,80}\.json\.lease$/.test(name)) {
-        try {
-          const raw = await fsp.readFile(path.join(dir, name), 'utf8');
-          const lease = JSON.parse(raw);
-          if (lease?.pid && !isProcessAlive(lease.pid)) {
-            await fsp.rm(path.join(dir, name), { force: true });
-          }
-        } catch {}
-        continue;
-      }
-
       if (!name.endsWith('.json') || !sanitizeHandle(name.slice(0, -5))) continue;
       const handle = name.slice(0, -5);
       await withSessionLock(handle, async file => {

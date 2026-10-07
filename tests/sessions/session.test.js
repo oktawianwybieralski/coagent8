@@ -69,15 +69,19 @@ test('stale lease with dead process is atomically reclaimed', async () => {
   assert.ok(!fs.existsSync(leaseFile), 'Lease file must be cleaned up');
 });
 
-test('session pruner cleans up stale .lease files', async () => {
-  const sess = createSession('gemini', tempDir);
-  const leasePath = path.join(getSessionsDir(), `${sess.sessionHandle}.json.lease`);
-
-  fs.writeFileSync(leasePath, JSON.stringify({ token: randomUUID(), pid: 99999999, createdAt: Date.now() }));
-  assert.ok(fs.existsSync(leasePath), 'Simulated stale lease file exists');
-
+test('the session sweep leaves leases to the lease protocol (AUD-P1-9)', async () => {
+  // The sweep once deleted every dead owner's `.json.lease` by name, outside the token
+  // protocol, and could delete a newer lease that replaced it meanwhile. It now reaches
+  // leases only through withFileLock on a session record, which verifies the owner.
+  createSession('gemini', tempDir);
+  const handle = 'syn_sess_0123456789abcdef01234567';
+  const leasePath = path.join(getSessionsDir(), `${handle}.json.lease`);
+  const lease = JSON.stringify({ token: randomUUID(), pid: 99999999, createdAt: Date.now() });
+  fs.writeFileSync(leasePath, lease);
   await pruneExpiredSessions(true);
-  assert.ok(!fs.existsSync(leasePath), 'Stale lease file must be pruned when owner is dead');
+  assert.equal(fs.readFileSync(leasePath, 'utf8'), lease, 'the sweep deletes no lease by name');
+  await withFileLock(path.join(getSessionsDir(), `${handle}.json`), async () => {});
+  assert.equal(fs.existsSync(leasePath), false, 'withFileLock reclaims the lease of the dead owner');
 });
 
 test('stale lease recovery does not steal replacement lease of a live owner', async () => {

@@ -149,3 +149,58 @@ test('atomic lease lock serializes contender and recovers cleanly upon release',
   assert.equal(contenderEntered, true);
   assert.equal(fs.existsSync(resource + '.lease'), false, 'Lease file must be cleaned up after release');
 });
+
+function writeLease(resource, content, ageMs) {
+  const file = `${resource}.lease`;
+  fs.writeFileSync(file, content);
+  const at = new Date(Date.now() - ageMs);
+  fs.utimesSync(file, at, at);
+  return file;
+}
+
+test('an empty lease left by a crash between open and write is reclaimed after its grace period (AUD-P1-9)', async () => {
+  const resource = path.join(tempDir, 'empty-lease');
+  writeLease(resource, '', 10000);
+  assert.equal(await withFileLock(resource, async () => 'acquired', 1000), 'acquired');
+  assert.equal(fs.existsSync(`${resource}.lease`), false);
+  // A fresh unreadable lease may still be in creation by an older release: it is not taken.
+  writeLease(resource, '', 0);
+  await assert.rejects(withFileLock(resource, async () => 'stolen', 300), /Timed out/);
+  fs.rmSync(`${resource}.lease`, { force: true });
+});
+
+test('a lease not renewed for the maximum age is reclaimed even when its PID is alive (reused PID, AUD-P1-9)', async () => {
+  const resource = path.join(tempDir, 'reused-pid-lease');
+  const token = 'dead-owner-token';
+  writeLease(resource, JSON.stringify({ token, pid: process.pid, createdAt: Date.now() - 60000 }), 60000);
+  assert.equal(await withFileLock(resource, async () => JSON.parse(fs.readFileSync(`${resource}.lease`, 'utf8')).token !== token, 1000), true);
+  // A renewed lease of a live PID is respected.
+  writeLease(resource, JSON.stringify({ token, pid: process.pid, createdAt: Date.now() }), 0);
+  await assert.rejects(withFileLock(resource, async () => 'stolen', 300), /Timed out/);
+  fs.rmSync(`${resource}.lease`, { force: true });
+});
+
+test('the holder renews its lease, so a long critical section is not reclaimed', async () => {
+  const resource = path.join(tempDir, 'renewed-lease');
+  await withFileLock(resource, async () => {
+    const before = fs.statSync(`${resource}.lease`).mtimeMs;
+    await new Promise(resolve => setTimeout(resolve, 2600));
+    assert.ok(fs.statSync(`${resource}.lease`).mtimeMs > before, 'the lease modification time advances while held');
+  });
+});
+
+test('a lease is published complete: no contender ever reads an empty or partial lease', async () => {
+  const resource = path.join(tempDir, 'complete-lease');
+  const observed = [];
+  let holding = true;
+  const reader = (async () => {
+    while (holding) {
+      try { observed.push(fs.readFileSync(`${resource}.lease`, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  })();
+  for (let i = 0; i < 20; i++) await withFileLock(resource, async () => {});
+  holding = false;
+  await reader;
+  for (const content of observed) assert.equal(typeof JSON.parse(content).token, 'string');
+});

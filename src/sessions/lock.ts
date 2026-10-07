@@ -3,14 +3,15 @@
  *
  * @remarks
  * ## Architecture & Concurrency Guarantees
- * - **Atomic `.lease` Protocol**: Uses exclusive file creation flags (`O_CREAT | O_EXCL` via `wx`)
- *   to establish cross-process mutual exclusion. Replaces legacy `.claims/` Lamport tickets.
+ * - **Atomic `.lease` Protocol**: A lease is written to a temporary file and published with
+ *   `link`, which fails when the lease exists. A lease is therefore never observable empty.
  * - **Ownership Tokens**: Every lease file contains `{ token: UUID, pid: number, createdAt: number }`.
  *   Token checks ensure a process releases or reclaims only the lease it genuinely owns.
- * - **Stale Process Reclamation**: If an existing lease holder's PID is dead (`process.kill(pid, 0)` fails
- *   with ESRCH), stale reclamation is attempted via atomic rename (`.lease.reclaim.<uuid>`).
- *   If the token matches the verified dead owner, the lease is safely cleaned up; if a race
- *   replaces the lease with a live owner in the interim, the lease is immediately restored.
+ * - **Renewal**: The holder renews the lease's modification time every `LEASE_RENEW_MS`.
+ * - **Stale Reclamation**: A lease is stale when its owner PID is dead, when it was not renewed
+ *   for `LEASE_MAX_AGE_MS` (a reused PID cannot keep a dead owner's lease alive), or when it is
+ *   unreadable and older than `UNREADABLE_LEASE_GRACE_MS`. Reclamation renames the lease aside,
+ *   confirms it is the one judged stale and otherwise restores it.
  * - **In-Process Queue Serialization**: Serializes async operations targeting the same canonical
  *   resource path within the Node runtime using promise chaining, preventing unnecessary OS filesystem thrashing.
  *
@@ -22,6 +23,40 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readBoundedFile } from '../execution/stream.js';
+
+/** Interval at which a holder renews its lease's modification time. */
+const LEASE_RENEW_MS = 2000;
+/** A lease not renewed for this long is stale whatever its PID reports. */
+const LEASE_MAX_AGE_MS = 30000;
+/** An unreadable lease (from a crash in an older release) is stale after this age. */
+const UNREADABLE_LEASE_GRACE_MS = 2000;
+
+interface LeaseOwner { token?: string; pid?: number; createdAt?: number }
+
+/** Reads a lease's owner and modification time; `owner` is null when the content is not a lease. */
+async function inspectLease(file: string): Promise<{ owner: LeaseOwner | null; mtimeMs: number } | null> {
+  let mtimeMs: number;
+  try { mtimeMs = (await fs.stat(file)).mtimeMs; }
+  catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null; throw err; }
+  let owner: LeaseOwner | null = null;
+  try {
+    const parsed: unknown = JSON.parse(await readBoundedFile(file, 1024));
+    if (parsed && typeof parsed === 'object' && typeof (parsed as LeaseOwner).token === 'string') owner = parsed as LeaseOwner;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return null;
+    // Unparsable or oversized content is judged by age below; other I/O errors propagate.
+    if (!(err instanceof SyntaxError) && code !== 'BUFFER_LIMIT') throw err;
+  }
+  return { owner, mtimeMs };
+}
+
+function isStale(lease: { owner: LeaseOwner | null; mtimeMs: number }, now = Date.now()): boolean {
+  const age = now - lease.mtimeMs;
+  if (!lease.owner) return age > UNREADABLE_LEASE_GRACE_MS;
+  if (age > LEASE_MAX_AGE_MS) return true;
+  return typeof lease.owner.pid === 'number' && !alive(lease.owner.pid);
+}
 
 /**
  * Checks whether an OS process with the given PID is currently active.
@@ -74,6 +109,52 @@ export async function atomicWrite(file: string, text: string): Promise<void> {
 export const inProcessLocks = new Map<string, Promise<void>>();
 
 /**
+ * Publishes a complete lease file, or reports that a lease already exists.
+ * @returns True when this call created the lease.
+ */
+async function publishLease(leaseFile: string, payload: string): Promise<boolean> {
+  const temp = `${leaseFile}.tmp.${randomUUID()}`;
+  await fs.writeFile(temp, payload, { flag: 'wx', mode: 0o600 });
+  try {
+    await fs.link(temp, leaseFile);
+    return true;
+  } catch (err) {
+    // EEXIST: another owner holds the lease. Windows reports EPERM/EBUSY for a lease being deleted.
+    if (['EEXIST', 'EPERM', 'EBUSY'].includes((err as NodeJS.ErrnoException).code || '')) return false;
+    throw err;
+  } finally {
+    await fs.rm(temp, { force: true });
+  }
+}
+
+/**
+ * Removes a lease judged stale, unless it was replaced after the judgement.
+ * @returns True when the stale lease was removed.
+ * @remarks The lease is renamed aside first; a different lease found there is linked back.
+ */
+async function reclaimStaleLease(leaseFile: string, judged: { owner: LeaseOwner | null; mtimeMs: number }): Promise<boolean> {
+  const reclaimFile = `${leaseFile}.reclaim.${randomUUID()}`;
+  try { await fs.rename(leaseFile, reclaimFile); }
+  catch (err) {
+    // Another process reclaimed or released it first, or Windows is still deleting it.
+    if (['ENOENT', 'EPERM', 'EBUSY'].includes((err as NodeJS.ErrnoException).code || '')) return false;
+    throw err;
+  }
+  try {
+    const moved = await inspectLease(reclaimFile);
+    const same = moved !== null && moved.mtimeMs === judged.mtimeMs && moved.owner?.token === judged.owner?.token;
+    if (moved && !same) {
+      // A live owner's lease was caught in a race; put it back unless a newer lease exists.
+      await fs.link(reclaimFile, leaseFile).catch((err: NodeJS.ErrnoException) => { if (err.code !== 'EEXIST') throw err; });
+      return false;
+    }
+    return true;
+  } finally {
+    await fs.rm(reclaimFile, { force: true });
+  }
+}
+
+/**
  * Executes an asynchronous function within an exclusive file lease lock.
  *
  * Combines in-process FIFO promise queuing with OS-level `.lease` file acquisition.
@@ -109,7 +190,8 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
   const leasePayload = JSON.stringify({ token: myToken, pid: process.pid, createdAt: Date.now() });
 
   let acquiredInProcess = false;
-  let fileHandle: fs.FileHandle | null = null;
+  let owned = false;
+  let renewal: NodeJS.Timeout | null = null;
   try {
     const queueTimeout = Math.max(1, timeoutMs - (Date.now() - started));
     let timerHandle: NodeJS.Timeout | null = null;
@@ -124,54 +206,16 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
     }
 
     let collisionAttempt = 0;
+    await fs.mkdir(path.dirname(leaseFile), { recursive: true, mode: 0o700 });
     for (;;) {
-      try {
-        await fs.mkdir(path.dirname(leaseFile), { recursive: true, mode: 0o700 });
-        fileHandle = await fs.open(leaseFile, 'wx', 0o600);
-        await fileHandle.writeFile(leasePayload, 'utf8');
-        break;
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== 'EEXIST' && code !== 'EPERM' && code !== 'EBUSY') throw err;
-      }
-
-      // Check existing lease owner
-      let owner: { token?: string; pid?: number; createdAt?: number } | null = null;
-      try {
-        const raw = await readBoundedFile(leaseFile, 1024);
-        owner = JSON.parse(raw);
-      } catch {}
-
-      if (owner?.pid && !alive(owner.pid)) {
-        // Stale owner process died; atomically reclaim via rename with token verification
-        const reclaimFile = `${leaseFile}.reclaim.${randomUUID()}`;
-        try {
-          await fs.rename(leaseFile, reclaimFile);
-          let movedOwner: { token?: string; pid?: number } | null = null;
-          try {
-            const raw = await readBoundedFile(reclaimFile, 1024);
-            movedOwner = JSON.parse(raw);
-          } catch {}
-
-          if (movedOwner?.token === owner.token && movedOwner?.pid === owner.pid) {
-            await fs.rm(reclaimFile, { force: true });
-            continue;
-          } else {
-            // A live owner's lease was caught in a race; restore it immediately
-            try {
-              await fs.rename(reclaimFile, leaseFile);
-            } catch {
-              await fs.rm(reclaimFile, { force: true }).catch(() => {});
-            }
-          }
-        } catch {}
-      }
+      if (await publishLease(leaseFile, leasePayload)) break;
+      const lease = await inspectLease(leaseFile);
+      if (lease && isStale(lease) && await reclaimStaleLease(leaseFile, lease)) continue;
 
       const elapsed = Date.now() - started;
       if (elapsed >= timeoutMs) {
         throw new Error('Timed out waiting for local storage lock.');
       }
-
       // Jittered exponential backoff: 5ms -> 10ms -> 25ms -> 50ms, mitigating NTFS lock contention
       const baseDelay = 5;
       const maxDelay = 50;
@@ -181,21 +225,25 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
       collisionAttempt++;
       await delay(waitTime);
     }
+    owned = true;
+    renewal = setInterval(() => {
+      const now = new Date();
+      fs.utimes(leaseFile, now, now).catch(() => { /* A lease removed or replaced meanwhile is not renewed. */ });
+    }, LEASE_RENEW_MS);
+    renewal.unref();
 
     return await fn();
   } finally {
-    if (fileHandle) {
-      try { await fileHandle.close(); } catch {}
+    if (renewal) clearInterval(renewal);
+    if (owned) {
       try {
-        let current: { token?: string } | null = null;
-        try {
-          const raw = await readBoundedFile(leaseFile, 1024);
-          current = JSON.parse(raw);
-        } catch {}
-        if (current?.token === myToken) {
-          await fs.rm(leaseFile, { force: true });
-        }
-      } catch {}
+        const current = await inspectLease(leaseFile);
+        if (current?.owner?.token === myToken) await fs.rm(leaseFile, { force: true });
+      } catch (err) {
+        // The critical section's result stands; an unreleased lease expires after LEASE_MAX_AGE_MS.
+        process.stderr.write(`Warning: could not release storage lease ${path.basename(leaseFile)}: ${(err as Error).message}
+`);
+      }
     }
     releaseInProcess();
     if (acquiredInProcess && inProcessLocks.get(canonical) === chainedLock) {
