@@ -88,6 +88,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`690b3d0`](https://github.com/oktawianwybieralski/coagent8/commit/690b3d022364eba3c063bd91db89f5d5803bf06f) **session:** Keep the session's reasoning effort on a continuation
 - [`dcf9a90`](https://github.com/oktawianwybieralski/coagent8/commit/dcf9a90f3605419f0465cc7e9005c30dee4b481b) **gemini:** Disable agy's auto-updater, whose console window takes the focus
 - [`0c89f70`](https://github.com/oktawianwybieralski/coagent8/commit/0c89f7063f8351012be36e821eb158ecfed62b6c) **consent:** Report a cancelled approval request as unanswered, not declined
+- [`84bd6cf`](https://github.com/oktawianwybieralski/coagent8/commit/84bd6cf9ca13de348ae9536ac01ef4c86f7e8afc) **vscode:** Clarify CLI names and embed private preview logo
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
