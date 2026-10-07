@@ -954,7 +954,8 @@ Plan:
   the text through `tests/helpers/result.cjs`, which rejects an unknown footer
   line. Full suite: 254 pass, 0 fail, 3 skipped.
 - [ ] Predictable cost of a plain consult (owner decision): `auto` chose
-  `gpt-6.1-sol` for 52.8 s from agy. Options: a faster default tier for `consult`,
+  `gpt-6.1-sol` for 52.8 s from agy. Once prices are stored (`EXEC-001`, consent by
+  relative price), `auto` could also prefer a cheaper model. Options: a faster default tier for `consult`,
   or only stating in the `backend` description that `auto` may run a large model.
 - [x] Live acceptance of the markdown result, 2026-10-07, built server at
   `fix/refused-call-footer`, each client a fresh headless process:
@@ -1156,6 +1157,70 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   3,492 B against 3,728 B before (budget 3,800 B). Full suite: 247 pass, 0 fail,
   2 skipped. Not yet verified: a live elicitation prompt in a real client
   (`CONTEXT-001` client acceptance).
+- [ ] **Model catalog without model literals** (owner decision of 2026-10-07:
+  "hardcoding is bad"). `src/` still names models in:
+  - `src/backends/codex/adapter.ts` (`gpt-6.1-sol` when `config.toml` has no `model`);
+  - `src/backends/gemini/adapter.ts` (`GEMINI_DEFAULT_MODEL`);
+  - `src/backends/claude/adapter.ts` (alias list, `sonnet` default, `haiku` for the
+    `/usage` read, which needs a model flag but makes no model call);
+  - `src/tools/schema.ts` (description examples);
+  - `src/backends/governance.ts` (consent families, see the next item).
+
+  Target:
+  - the catalogs (Codex `model/list`, `agy models`) persist in
+    `~/.coagent8/models.json`, keyed by executable stamp and CLI version, written
+    by doctor and by the first explicit-model check. It is observed state, not
+    user intent, so it stays out of `config.json`;
+  - the Codex default comes from `config.toml`, else the catalog's `isDefault`;
+  - agy and Claude need a concrete default before launch for consent. When
+    `config.json` has none, the first doctor writes `backends.<id>.defaultModel`
+    and says so in its summary: agy, the first model `agy models` lists; Claude,
+    the `model` of the user's Claude Code settings if set. A Claude default
+    without either is still to be designed: ask once, or record the model
+    `system/init` reports;
+  - descriptions name no model; they point to doctor. The live Codex run fixed an
+    unknown model in one retry from the error's list.
+
+  Test fixtures may keep model names: they reproduce recorded CLI output.
+- [ ] **Consent by relative price instead of name families** (owner direction of
+  2026-10-07). Approximate prices are enough: the decision is only whether to ask
+  the user, and the tiers differ by up to 100×. The name rule is already stale:
+  `claude-fable-5-1`, Anthropic's most expensive model at 10/50 USD per million
+  tokens, runs without consent because only `opus` and `astra` are governed.
+  Facts measured on 2026-10-07:
+  - no CLI reports prices. Codex `model/list` has descriptions, `isDefault`,
+    efforts and service tiers; `agy models` has names; Claude Code lists nothing.
+    As far as known, OpenAI, Anthropic and Google publish no price API;
+  - agy's `/usage` states that "Quota is consumed proportionally to the cost of
+    the tokens", with groups "Gemini Models" and "Claude and GPT models", so API
+    price is the right measure on subscriptions too;
+  - OpenRouter `GET https://openrouter.ai/api/v1/models`: public, no key, 79 KB
+    gzip, 465 models, `pricing.prompt` and `pricing.completion` per token,
+    `reasoning.supported_efforts`, `canonical_slug`, `created`; no `ETag`,
+    `Cache-Control: max-age=120`. It covers every model in today's Codex and agy
+    catalogs and the Claude models. IDs differ: `anthropic/claude-fable-5.1` for
+    `claude-fable-5-1`, `claude-opus-4.6` for agy's `claude-opus-4-6-thinking`,
+    and `google/gemini-3.1-pro-preview` for agy's `gemini-3.1-pro`;
+  - models.dev `api.json` (MIT, community data, 530 KB gzip) was considered and
+    rejected: it is larger, and it prices `gpt-5.6-sol` at 4/20 where OpenRouter
+    bills 2/10.
+
+  Plan:
+  - doctor reads OpenRouter at most weekly (10 s timeout, size bound, field
+    validation) and stores the output price with each catalog model in
+    `models.json`, flagging approximate ID matches;
+  - a model needs consent when its output price is at least 2× the backend
+    default's (`governance.priceMultiplier`, default 2), or when it is on the
+    user's `governance.alwaysAsk` list; `governance.neverAsk` exempts a model.
+    Today this asks for `gpt-6-astra`, `claude-opus-*`, `claude-fable-*`, and
+    `gemini-3.1-pro` and the Claude models through agy;
+  - a model without a price, or with an approximate match, asks once, with a
+    "remember" box in the elicitation that writes the answer to `config.json`;
+  - `GOVERNED_FAMILY` and `GOVERNED_TOP_TIER_MODELS` go away. Rule 01 (P0) names
+    `astra` and `opus`, so its wording changes in the same branch (owner
+    confirmation required before merge);
+  - tests: `fable` asks, `luna` does not, `astra` asks, an unknown model asks once
+    and is remembered, no price data at all asks for anything not remembered.
 
 ### `CLAUDE-BACKEND-001` - Claude Code in restricted read-only mode
 

@@ -117,7 +117,8 @@ is pushed:
 | `fix/neutral-consult-prompt` | `bf73c79` | `CONTEXT-001`: a plain consult passes the question on as asked |
 | `feat/agent-facing-contract` | `49387f8` | `CONTEXT-001`: instructions say when to use CoAgent8 and point to doctor; every chosen parameter described (5,222 B, budget 5,300 B); doctor summary lists models |
 | `fix/refused-call-footer` | `2437d98` | A call refused before launch names the requested model in its footer |
-| `docs/agent-experience-acceptance` | this change | Live acceptance of the markdown result in Claude Code, Codex and agy; handoff update |
+| `docs/agent-experience-acceptance` | `148a071` | Live acceptance of the markdown result in Claude Code, Codex and agy; handoff update |
+| `docs/model-governance-plan` | this change | Plan and measured facts for the catalog without model literals and consent by relative price (OpenRouter) |
 
 ## Verification
 
@@ -187,3 +188,31 @@ results in the project review before requesting an independent review by the Rev
       `fable`, which `claude --help` names as an alias; not verified;
     - doctor reports agy as "not ready" while its quota is measured, because the
       probe no longer reports `authenticated` (`DIAGNOSTICS-001`).
+12. Next, in this order (plan and measured facts in the roadmap, `EXEC-001`):
+    1. Owner: restart Claude Code, Codex and VS Code, then run the AX retest
+       prompts in fresh Codex and agy sessions (no source reading, cheap models,
+       deliberate wrong models and efforts, a tool-using Codex question, session
+       continuation, Codex also a review of `2437d98`). Record their results in
+       `CONTEXT-001` and turn any new defect into its own branch.
+    2. `refactor/model-catalog-cache`: no model literals in `src/`; catalogs in
+       `~/.coagent8/models.json`; defaults from `config.toml`, the catalog or
+       `config.json` (written by the first doctor when absent); descriptions
+       without model names. Design the Claude default first.
+    3. `feat/price-based-consent` (breaking for governance): OpenRouter prices in
+       doctor, consent at 2× the default's output price, unknown models asked
+       once with "remember", name families removed, rule 01 updated; owner
+       confirmation of the rule text before merge.
+    4. Then the owner decisions still open: `auto` cost, agy 180 s, agy MCP
+       recursion; then the push of the stack.
+
+Working notes from the 2026-10-07 session (Windows):
+- The Bash tool is Git Bash: an argument starting with `/` becomes a Windows path
+  (`agy -p /usage` ran a model turn). Use `MSYS_NO_PATHCONV=1` or Node `spawn`.
+- Heredocs collapse backslashes, Python on Windows writes CRLF, and
+  `String.replace` expands `$` patterns in the replacement: edit code with the
+  Edit or Write tools, or use replacement functions.
+- Running MCP clients keep the bundle they started with; `npm run build` alone
+  does not update them. Test new server code in fresh headless clients
+  (`claude -p`, `codex exec --json`, `agy -p`).
+- Every execution assertion goes through `tests/helpers/result.cjs`; a regression
+  test is shown failing with `git stash push -- src` before the commit.
