@@ -2,7 +2,7 @@
  * Canonical MCP result envelope for execution tools.
  *
  * @remarks
- * Raw output is normalized by `cleanCliOutput`, gated by the State Envelope verdict gate when the tool
+ * The answer loses escape sequences (`stripAnsi`), is gated by the State Envelope verdict gate when the tool
  * requires it, and redacted before return. When an unrecoverable process/protocol failure occurs
  * (`PROCESS_ERROR`, `CLI_UNSUPPORTED`, `PROTOCOL_ERROR`), `formatExecutionResult` generates a
  * pre-filled GitHub issue URL in the response footer.
@@ -14,7 +14,7 @@ import type { TerminalExecutionResult } from '../backends/types.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { issueOutputSchema } from './issue.tool.js';
-import { cleanCliOutput } from '../execution/cli-output.js';
+import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate } from './review-gate.js';
 import type { ResolvedWorkspace } from '../paths.js';
 
@@ -80,7 +80,7 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   const error = res.error ? { ...res.error, message: redactDiagnostic(res.error.message) } : undefined;
   const warnings = (options.warnings || []).map(warning => redactDiagnostic(warning, 512));
   const rawOutput = res.output || defaultText;
-  const cleaned = cleanCliOutput(rawOutput);
+  const cleaned = stripAnsi(rawOutput).trim();
 
   let gated: string;
   let verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
