@@ -50,7 +50,7 @@ Small independent fixes may land as separate PRs into the target branch.
 - Do not mark a roadmap item `[x]` without a reference to evidence that measures
   it. Do not repeat the previous handoff's unsupported claims.
 
-## Status (2026-10-06)
+## Status (2026-10-07)
 
 Branch `fix/windows-process-identity` (from `release/v1.0.0`, not pushed):
 
@@ -95,7 +95,7 @@ is pushed:
 | `fix/unmeasured-quota` | `d88c07d` | `ROUTING-MIGRATE-001` (AUD-P2-2, order 3): unmeasured agy windows are not full headroom; no `any` in `src/` |
 | `fix/empty-catches` | `96ebcfd` | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
 | `fix/malformed-config` | `8b43688`..`c85c775` | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
-| `fix/history-empty-catches` | this change | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
+| `fix/history-empty-catches` | `07db345`.. | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
 
 ## Verification
 
@@ -118,15 +118,12 @@ results in the project review before requesting an independent review by the Rev
      authorizes the model calls);
    - re-run the AUD-P0-1 audit reproduction and record it in the project review
      (`AUDIT-001`).
-3. Remaining execution order 1 blockers. Each is a separate topic branch and
-   PR, with a regression test from the audit reproduction:
-   - `REDACTION-002` (AUD-P0-2), implemented on `fix/redaction-output-integrity`;
-   - `HISTORY-002` (AUD-P0-3, AUD-P1-3, AUD-P2-12), implemented on
-     `fix/history-archive-integrity`;
-   - `ROUTING-MIGRATE-001` (AUD-P1-1), implemented on `fix/cooldown-single-write`;
-   - `ERRORS-001` (AUD-P1-2), implemented on `fix/typed-tool-errors`;
-   - `PACKAGE-001` (AUD-P1-10), implemented on `build/untrack-dist`; plugin and
-     VSIX artifacts from the tarball remain.
+3. Execution order 1 blockers are all implemented on the stacked branches above;
+   merge them in stack order, one PR each, with a regression test from the audit
+   reproduction. `PACKAGE-001` still lacks plugin and VSIX artifacts built from
+   the tarball. Note for the merge: from `build/untrack-dist` on, `dist/` is not
+   tracked, and an existing checkout needs one fresh checkout of its tracked files
+   to get LF sources (`.gitattributes`).
 4. Done: the Codex `probe` test runs with an empty home and no API key
    (`aae1a2a`, on `fix/windows-process-identity` and every later branch). Not yet
    re-run on Linux.
@@ -136,7 +133,15 @@ results in the project review before requesting an independent review by the Rev
    - release PR with `npm run changelog -- --tag v1.0.0-beta.2`;
    - release notes from `npm run release-notes`, plus known issues by hand;
    - verify the GitHub API path of the release notes.
-6. Then execution order 2: `EXEC-001`, caller-proof consent,
-   `CLI-INTERACT-001`, `SESSION-001` resource isolation, `LOCKS-001` and
-   `CONTEXT-001` (token cost across MCP clients). The `CONTEXT-001`
-   resolved-model and agy-denial fixes are small and may land earlier.
+6. Execution order 2 is implemented except two items that need the owner:
+   - `EXEC-001` caller-proof consent (AUD-P1-7): MCP elicitation where the
+     client supports it, otherwise `POLICY_DENIED`. This removes the agent-set
+     `user_confirmed` path, so it changes how top-tier models are reached; owner
+     decision first.
+   - `CONTEXT-001` client acceptance (Claude Code, agy) and the agy tool-call
+     limit: live clients and model calls.
+   Not verified live: agy `/usage` with `--sandbox` (`perf/bounded-probes`).
+7. Execution order 3 remainder: the POSIX kill fallbacks in `process.ts`
+   (`ERRORS-001`), orphans after a server crash (AUD-P2-14, `WINDOWS-001`),
+   `SIMPLIFY-001` (test hooks such as the maintenance gate, duplication, double
+   timeout, dead code), CI duplication (AUD-P2-15).
