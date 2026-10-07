@@ -150,16 +150,16 @@ Current governance matches `astra`/`opus` families, `opusplan` and exact
 `best`. It is a name rule, not a price comparison. Requested, resumed and
 effective default models are governed on every turn.
 
-The intended rule requires explicit user approval through MCP form elicitation.
+The rule requires explicit user approval through MCP form elicitation.
 The calling agent cannot grant consent. Unsupported elicitation, decline,
 cancel or unchecked approval yields `POLICY_DENIED`. The request has a
 five-minute timeout and follows caller cancellation. Consent binds to one model
 and one turn; acquisition of a session and model execution follow consent.
 Version, auth and catalog probes may launch metadata CLI processes first.
 
-**Deviation:** the schema does not require `approve` and the acceptance predicate
-allows `{action: "accept", content: {}}`. Missing approval can therefore pass.
-This violates the normative explicit-consent rule; it is not valid approval.
+The form requires `approve`, and only an accepted form with `approve: true` is
+consent. An accepted form without the field, with a non-boolean value or with
+the box unchecked yields `POLICY_DENIED` (`CUR-003`, closed).
 Interactive UI approval remains unverified. Measured Claude/agy headless clients
 cancel form requests.
 
@@ -356,7 +356,6 @@ These are open implementation issues, not relaxed security requirements.
 | --- | --- | --- |
 | CUR-001 | Truncated/omitted review input can still receive READY; snapshot and failing checks are not bound to approval | `AUDIT-001` / `SURFACE-001` |
 | CUR-002 | Codex/agy inherit MCP tools outside the verified shell/tool profile; agy can recursively call CoAgent8 | `WINDOWS-001` / `EXEC-001` |
-| CUR-003 | Accepted elicitation without an approve field can authorize a governed model turn | `EXEC-001` |
 | CUR-004 | Automatic routing fails on quota-cache writes; old measurements can retain routing weight | `ROUTING-MIGRATE-001` |
 | CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
 | CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |

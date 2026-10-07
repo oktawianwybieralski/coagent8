@@ -17,8 +17,8 @@ owns the release sequence and remaining work.
 
 Read-only CLI profiles, model consent, bounded buffers, credential redaction and
 owned-process cleanup are implemented. Release blockers remain: the review gate
-can accept incomplete input, omitted consent fields can be accepted, and Codex
-and agy can inherit external MCP tools. See the
+can accept incomplete input, and Codex and agy can inherit external MCP tools.
+See the
 [runtime limitations](docs/RUNTIME_CONTRACT.md#7-known-limitations-and-deviations).
 A model's `READY` verdict requires independent verification before release.
 

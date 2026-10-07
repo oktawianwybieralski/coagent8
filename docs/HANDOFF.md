@@ -30,20 +30,33 @@ Plugin/VSIX payloads are assembled from the npm tarball. The stack is not a
 merged, matrix-verified or released candidate. Package metadata is beta.1.
 
 New open findings concern incomplete review input/approval binding, inherited
-Codex/agy MCP capabilities, missing checkbox consent, automatic-routing cache
+Codex/agy MCP capabilities, automatic-routing cache
 failures, sticky commentary limits, concurrent cache misses and request-budget
 scope. The runtime contract lists these as `CUR-001` through `CUR-012` (the last is source-inspected capacity accounting).
+`CUR-003` (accepted consent without the checkbox) is closed on `fix/explicit-consent`.
 
 Archival off does not mean session-free execution. Catalog validation is
 best-effort. Current consent uses model-name families; persisted models/defaults
 and relative-price consent are proposals. Do not document them as existing
 configuration or weaken the P0 policy while implementing them.
 
+## Local branches after 24052e3
+
+Stacked in this order on `docs/model-governance-plan` (`24052e3`); nothing is
+pushed. The ledger up to `24052e3` is in the
+[archived handoff](archive/HANDOFF_STACK_2026-10-07.md).
+
+| Branch | Commit | Content |
+| --- | --- | --- |
+| `docs/audit-reconciliation` | `5d0c9f5` | Documentation reconciled with the review at `24052e3` (`CUR-001` to `CUR-012`); rule 01 wording confirmed by the owner |
+| `fix/explicit-consent` | this change | `CUR-003`: only an accepted form with `approve: true` is consent |
+
 ## Next work
 
 1. Close approval/sandbox findings in `AUDIT-001` and `EXEC-001`, with committed
-   regressions derived from the current review. Start with missing approval,
-   review input completeness/snapshot binding, and inherited MCP isolation.
+   regressions derived from the current review. Missing approval is closed
+   (`CUR-003`); continue with review input completeness/snapshot binding and
+   inherited MCP isolation.
 2. Resolve the execution/cache/session work in the owning roadmap milestones.
    Preserve the owner's catalog/price direction while resolving the explicit
    design questions and policy approval requirement.

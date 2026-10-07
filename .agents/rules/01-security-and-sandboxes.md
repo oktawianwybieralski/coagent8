@@ -28,7 +28,7 @@ calling agent cannot grant it. Without an approval the turn fails closed with
 `POLICY_DENIED` before session acquisition or a model turn. Metadata-only
 version/auth/catalog probes can launch CLIs before consent.
 An accepted form must contain an explicit boolean `approve: true`; an omitted
-field is not consent. Current missing-field acceptance is a defect (`CUR-003`).
+field is not consent.
 
 ---
 
@@ -54,6 +54,6 @@ Codex/agy do not yet isolate inherited external MCP tools (`CUR-002`). Their
 shell sandbox flags alone cannot establish the required read-only capability
 boundary. These gaps block safety acceptance rather than weakening this rule.
 
-**Consent transport:** implemented in `EXEC-001` (AUD-P1-7), with `CUR-003`
-reopening fail-closed approval. The contract is in
+**Consent transport:** implemented in `EXEC-001` (AUD-P1-7); the explicit
+`approve: true` requirement closed `CUR-003`. The contract is in
 [RUNTIME_CONTRACT](../../docs/RUNTIME_CONTRACT.md#top-tier-model-consent).

@@ -209,14 +209,14 @@ export function createServer(): Server {
       try {
         answer = await server.elicitInput({
           message: `${BRAND.NAME}: run top-tier model '${model}' on ${backend}? It uses more of your plan or budget than the default model.`,
-          requestedSchema: { type: 'object', properties: { approve: { type: 'boolean', title: `Run ${model}`, default: true } } },
+          requestedSchema: { type: 'object', properties: { approve: { type: 'boolean', title: `Run ${model}`, default: true } }, required: ['approve'] },
         }, { signal, timeout: CONSENT_TIMEOUT_MS });
       } catch (cause) {
         if (signal.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.', { cause });
         throw new ToolError('POLICY_DENIED', `The approval request for top-tier model '${model}' failed: ${(cause as Error).message}`, { cause });
       }
-      // Accepting is the user's explicit action; unchecking the box declines.
-      return answer.action === 'accept' && answer.content?.approve !== false;
+      // Only an accepted form with the box checked is consent (CUR-003); a missing field is not.
+      return answer.action === 'accept' && answer.content?.approve === true;
     };
   }
 

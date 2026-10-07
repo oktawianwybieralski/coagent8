@@ -266,7 +266,8 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   const opened = [];
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
-    const call = (client, model) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...(model && { model }) } });
+    const callWith = (client, args) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...args } });
+    const call = (client, model) => callWith(client, model ? { model } : {});
 
     const plain = await connect({});
     opened.push(plain);
@@ -282,21 +283,39 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const declined = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(declined.code, 'POLICY_DENIED');
     assert.match(declined.message, /did not approve/);
-    answer = { action: 'accept', content: { approve: false } };
-    assert.equal(readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error.code, 'POLICY_DENIED', 'an unchecked box declines');
+    // Only an explicit `approve: true` is consent (CUR-003): an accepted form without the
+    // field, with an empty or a non-boolean value, or unchecked, declines.
+    const notConsent = [{ action: 'accept' }, { action: 'accept', content: {} }, { action: 'accept', content: { approve: 'true' } },
+      { action: 'accept', content: { approve: false } }];
+    for (const reply of notConsent) {
+      answer = reply;
+      assert.equal(readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error?.code, 'POLICY_DENIED', JSON.stringify(reply));
+    }
     assert.deepEqual(consented, [], 'nothing runs before the user approves');
 
     answer = { action: 'accept', content: { approve: true } };
-    const approved = await call(asking.client, 'claude-opus-4-6-thinking');
-    assert.equal(readResult(approved).answer, 'approved answer');
+    const approved = readResult(await call(asking.client, 'claude-opus-4-6-thinking'));
+    assert.equal(approved.answer, 'approved answer');
     assert.deepEqual(consented, ['claude-opus-4-6-thinking']);
     assert.match(requests[0].message, /top-tier model 'claude-opus-4-6-thinking' on gemini/);
     assert.equal(requests[0].requestedSchema.properties.approve.type, 'boolean');
+    assert.deepEqual(requests[0].requestedSchema.required, ['approve']);
+
+    // A continued session asks again on every turn, and an empty form still declines.
+    answer = { action: 'accept', content: {} };
+    const resumed = await callWith(asking.client, { model: 'claude-opus-4-6-thinking', session_handle: approved.sessionHandle });
+    assert.equal(readResult(resumed).error.code, 'POLICY_DENIED');
+
+    // A governed default model is asked for like a requested one.
+    adapterRegistry.gemini = { ...adapterRegistry.gemini, resolveModel: requested => requested || 'claude-opus-4-6-thinking' };
+    assert.equal(readResult(await call(asking.client, undefined)).error.code, 'POLICY_DENIED');
+    assert.deepEqual(consented, ['claude-opus-4-6-thinking'], 'no declined turn ran');
+    adapterRegistry.gemini = { ...adapterRegistry.gemini, resolveModel: requested => requested || 'gemini-3.8-flash-high' };
 
     // A default-tier model never prompts the user.
     const plainTurn = await call(asking.client, undefined);
     assert.equal(plainTurn.isError, false, plainTurn.content[0].text);
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 8);
     assert.deepEqual(consented, ['claude-opus-4-6-thinking', undefined]);
   } finally {
     for (const { client, server } of opened) { await client.close(); await server.close(); }

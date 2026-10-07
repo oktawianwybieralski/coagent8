@@ -28,9 +28,9 @@ MCP use. Historical plans and RFCs do not override this direction.
      agy receives native --sandbox. Inherited MCP isolation for Codex/agy remains
      an open deviation, not an exemption from this invariant.
    - Governed models (currently astra/opus families and best) require explicit
-     user approval through server MCP elicitation; a calling agent cannot grant
-     it. Missing-checkbox acceptance is an open defect. Price governance remains
-     a proposal in the roadmap.
+     user approval (an explicit `approve: true`) through server MCP elicitation;
+     a calling agent cannot grant it. Price governance remains a proposal in the
+     roadmap.
    - Automated secret redaction for API keys, tokens, credentials, and user home directory paths, without rewriting ordinary content of public answers.
 
 2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:

@@ -31,7 +31,7 @@ The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pendin
 | Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup | Inherited MCP isolation, POSIX parent-death cleanup, fresh candidate matrix |
 | Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection | Sticky commentary truncation/count budgets, review completeness |
 | Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, cache-failure tolerance, end-to-end budget |
-| Discovery/models | Six tools, roots, cached probes, best-effort catalogs, current effective-model elicitation | Missing-approval rejection, coalesced misses, fuller invalidation, catalog/default redesign |
+| Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Coalesced misses, fuller invalidation, catalog/default redesign |
 | Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
 | Governance | Current astra/opus/best name rules | Persisted catalog and price policy remain proposals; resolve safety/design questions before implementation |
 
@@ -294,9 +294,18 @@ It adds no separate work.
 - [ ] `CUR-002`: prove read-only capability isolation beyond shell flags for
   Codex/agy, including inherited MCP tools and recursive CoAgent8 calls. Use
   isolated fixture configurations, never a user's live writable MCP services.
-- [ ] `CUR-003`: require `approve` and accept only explicit boolean true for an
+- [x] `CUR-003`: require `approve` and accept only explicit boolean true for an
   accepted elicitation. Cover missing/empty/false content and every governed
-  default/session model through the real MCP request boundary.
+  default/session model through the real MCP request boundary. On
+  `fix/explicit-consent` (2026-10-07): the elicitation schema lists `approve` as
+  required and the server accepts only `approve === true`; the SDK's server-side
+  schema check also refuses an empty or non-boolean answer. Evidence:
+  `tests/server.test.js` drives a real in-memory MCP client through accept
+  without content, with `{}`, with `approve: "true"` and with `approve: false`,
+  a continued session's turn with `{}` and a governed default model with `{}`;
+  each returns `POLICY_DENIED` and nothing runs. On the previous source the first
+  case ran the governed model (`{"action":"accept"}`, no error). Full suite: 266
+  tests, 263 pass, 0 fail, 3 skipped (POSIX only).
 
 ### `WINDOWS-001` - process windows, supervision and process identity
 
@@ -1215,8 +1224,9 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   (consent for another model does not count). Model-visible tool definitions
   3,492 B against 3,728 B before (budget 3,800 B). Full suite: 247 pass, 0 fail,
   2 skipped. Not yet verified: a live interactive approval prompt in a real client.
-  Headless cancellation was measured later. `CUR-003` reopens fail-closed consent:
-  accepted responses with a missing checkbox can pass.
+  Headless cancellation was measured later. `CUR-003` (an accepted response
+  without the checkbox passed) is closed on `fix/explicit-consent`, see
+  `AUDIT-001`.
 - [ ] **Model catalog without model literals** (owner decision of 2026-10-07:
   "hardcoding is bad"). This is a proposal, not implemented config. `src/`
   still names models in:
