@@ -91,6 +91,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`84bd6cf`](https://github.com/oktawianwybieralski/coagent8/commit/84bd6cf9ca13de348ae9536ac01ef4c86f7e8afc) **vscode:** Clarify CLI names and embed private preview logo
 - [`7028da8`](https://github.com/oktawianwybieralski/coagent8/commit/7028da85fe3a05d1473fe9518e8bef153963458c) **vscode:** Use the new okidev publisher
 - [`505cc77`](https://github.com/oktawianwybieralski/coagent8/commit/505cc7724ef4a37d1d755834c0866829bc8bd9c2) **vscode:** Replace broken Details logo with compact links
+- [`075e264`](https://github.com/oktawianwybieralski/coagent8/commit/075e264efb6567e36135c92641dee65f3334558e) **vscode:** Discover bundled Codex and offer CLI installation
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
