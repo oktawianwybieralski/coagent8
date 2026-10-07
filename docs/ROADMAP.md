@@ -1062,7 +1062,10 @@ without a model call.
   never sees an empty lease) and `tests/sessions/session.test.js` (the sweep
   deletes no lease by name). All five fail against the previous `lock.ts` and
   `session.ts`. A failed release no longer replaces the critical section's result;
-  it is written to stderr and the lease expires.
+  it is written to stderr and the lease expires. A stress run of 600 acquisitions
+  with a polling reader observed no empty or partial lease; Windows reported EPERM
+  for 9 reads of a lease being deleted, which the test treats as no observation.
+  Full suite twice: 235 pass, 0 fail (Windows, Node 26.10).
 
 ### `CLI-INTERACT-001` - stream activity liveness and backend failure modes
 

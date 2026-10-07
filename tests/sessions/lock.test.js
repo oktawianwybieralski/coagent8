@@ -195,12 +195,14 @@ test('a lease is published complete: no contender ever reads an empty or partial
   let holding = true;
   const reader = (async () => {
     while (holding) {
-      try { observed.push(fs.readFileSync(`${resource}.lease`, 'utf8')); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+      // Windows reports EPERM for a lease that is being deleted: no content is observed.
+      try { observed.push(fs.readFileSync(`${resource}.lease`, 'utf8')); } catch (err) { if (err.code !== 'ENOENT' && err.code !== 'EPERM') throw err; }
       await new Promise(resolve => setImmediate(resolve));
     }
   })();
   for (let i = 0; i < 20; i++) await withFileLock(resource, async () => {});
   holding = false;
   await reader;
+  assert.ok(observed.length > 0, 'the reader observed held leases');
   for (const content of observed) assert.equal(typeof JSON.parse(content).token, 'string');
 });
