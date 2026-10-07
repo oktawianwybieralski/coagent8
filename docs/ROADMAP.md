@@ -953,10 +953,29 @@ Plan:
   both fail on the previous source (6 failures). Every execution assertion reads
   the text through `tests/helpers/result.cjs`, which rejects an unknown footer
   line. Full suite: 254 pass, 0 fail, 3 skipped.
-- [ ] Live acceptance of the markdown result: one cheap consult from Claude Code,
-  Codex and agy each, and Codex reading `content` without `structuredContent` (its
-  behavior is taken from its source and not yet observed). Record the results in
-  the integration guide.
+- [ ] Predictable cost of a plain consult (owner decision): `auto` chose
+  `gpt-6.1-sol` for 52.8 s from agy. Options: a faster default tier for `consult`,
+  or only stating in the `backend` description that `auto` may run a large model.
+- [x] Live acceptance of the markdown result, 2026-10-07, built server at
+  `fix/refused-call-footer`, each client a fresh headless process:
+  - Claude Code 2.1.289 (`claude -p`, haiku) called `consult` on Codex
+    `gpt-5.6-luna` low: the `tool_result` was the markdown
+    `coagent8\n\n> CoAgent8: codex · gpt-5.6-luna · 13.8s · 1 op · <handle> (ready)`,
+    no JSON;
+  - Codex 0.160.1 (`codex exec`, `gpt-5.6-luna` low) called `consult` on Gemini
+    `gemini-3.8-flash` without effort: `structured_content: null`, and the model
+    read the text `> Error [INPUT_LIMIT]: gemini model 'gemini-3.8-flash' needs
+    reasoning_effort (high, medium, low), ...`, retried once with `low` and got a
+    one-line answer ("-4, or 0 as calculator notation") without added sections;
+  - agy 1.3.1 (`agy -p`, `gemini-3.8-flash` low) called `consult` on Claude
+    `haiku`: `OK` with the footer naming `claude-haiku-4-5-20251001`;
+  - a raw Codex app-server turn (`gpt-5.6-luna` low) sent
+    `phase: "commentary"` ("I will read package.json and tsconfig.json.") and then
+    `phase: "final_answer"`, the shape the collector now filters.
+
+  The Codex run showed `provider default` in the footer of the refused call, fixed
+  on `fix/refused-call-footer` (`tests/server.test.js`). Recorded in the
+  integration guide.
 
 **Agent experience (owner use cases of 2026-10-07).** The owner had Codex, agy
 and Claude Code each solve one task through `consult`, then compare CoAgent8 with

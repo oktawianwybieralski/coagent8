@@ -147,6 +147,13 @@ Consequences for CoAgent8:
   for a result with `isError: true` (a live consult, 2026-10-07). Execution tools
   therefore return markdown only (`CONTEXT-001`).
 
+With the markdown-only result (2026-10-07, one headless consult per client):
+Claude Code 2.1.289 passed the markdown answer and footer to the model as its
+`tool_result`; Codex 0.160.1 (`codex exec`) received `structured_content: null`
+and read the text, including an error line it corrected in one retry; agy 1.3.1
+read the text. Codex reports no workspace roots, so its results carry the
+`> Workspace: <path> (server directory)` line.
+
 The VSIX offers **CoAgent8: Set Up or Repair Chat Clients** on first local
 activation and in the Command Palette. Select installed standalone Codex, Claude
 Code, and agy clients once; repair remembers the selection. The CLI uses the same

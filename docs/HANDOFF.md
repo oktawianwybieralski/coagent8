@@ -109,7 +109,15 @@ is pushed:
 | `fix/session-list-home-paths` | `26ac5fd` | `SIMPLIFY-001` (P3): session lists show the home directory as `~` |
 | `ci/coverage-once` | `1c4949c` | `VERIFY-SCOPE-001` (AUD-P2-15): the suite runs once per CI job, under coverage; API docs in one job |
 | `docs/simplify-evidence` | `05bad84` | Roadmap evidence for `SIMPLIFY-001`; handoff update |
-| `build/artifacts-from-tarball` | `917924f`, this change | `PACKAGE-001`: plugin directory and VSIX built from the packed tarball (`npm run package:artifacts`) |
+| `build/artifacts-from-tarball` | `917924f`, `f40bd6d` | `PACKAGE-001`: plugin directory and VSIX built from the packed tarball (`npm run package:artifacts`) |
+| `feat/markdown-result` | `5a14941` | `CONTEXT-001` (owner decision, breaking): execution results are markdown only, no `outputSchema` or `structuredContent`; the footer carries verdict, `retryable` and `no history`; tests read results through `tests/helpers/result.cjs` |
+| `fix/failed-run-output` | `e5a89f0` | `CONTEXT-001`: rejected models are `MODEL_UNAVAILABLE` (Codex raw response body, agy "invalid model selection"), no issue link; no invented "Task completed cleanly" answer |
+| `fix/model-effort-validation` | `8d12ee6` | `CONTEXT-001`: model and effort checked before launch against the CLI's catalog (Codex `model/list`, `agy models`); the static model tables are gone; doctor reports the catalogs |
+| `fix/final-answer-only` | `50f2146` | `CONTEXT-001`: Codex `commentary` messages leave the answer once a `final_answer` arrives |
+| `fix/neutral-consult-prompt` | `bf73c79` | `CONTEXT-001`: a plain consult passes the question on as asked |
+| `feat/agent-facing-contract` | `49387f8` | `CONTEXT-001`: instructions say when to use CoAgent8 and point to doctor; every chosen parameter described (5,222 B, budget 5,300 B); doctor summary lists models |
+| `fix/refused-call-footer` | `2437d98` | A call refused before launch names the requested model in its footer |
+| `docs/agent-experience-acceptance` | this change | Live acceptance of the markdown result in Claude Code, Codex and agy; handoff update |
 
 ## Verification
 
@@ -153,9 +161,8 @@ results in the project review before requesting an independent review by the Rev
 7. Execution order 3 is implemented on the stack except the POSIX parent-death
    strategy for crash orphans (AUD-P2-14), which needs a design and a Linux host.
    `ci/coverage-once` closes AUD-P2-15 after its first green CI matrix.
-8. Owner decisions needed, recorded in the roadmap:
-   - Claude Code 2.1.289 gives the model only `structuredContent`, so CoAgent8's
-     markdown `content` reaches agy but not Claude Code (`CONTEXT-001`);
+8. Owner decisions needed, recorded in the roadmap (the result channel was
+   decided on 2026-10-07: markdown only, done on `feat/markdown-result`):
    - agy cancels an MCP tool call after 180 s, which cancels longer reviews
      (`CONTEXT-001`);
    - every agy turn starts the user's agy MCP servers, CoAgent8 itself included,
@@ -165,3 +172,18 @@ results in the project review before requesting an independent review by the Rev
 10. Before beta 2: push the stack and open one PR per branch in stack order (owner
     go-ahead required), with `npm run changelog` before each push; run the CI
     matrix, which also gives the first Linux and macOS runs of the POSIX tests.
+11. Agent experience (`CONTEXT-001`, owner use cases of 2026-10-07) is done on the
+    branches from `feat/markdown-result` to `docs/agent-experience-acceptance`.
+    Full suite at the tip: 266 tests, 263 pass, 0 fail, 3 skipped; consumer smoke
+    passes. Open:
+    - running Claude Code, Codex and VS Code sessions keep the CoAgent8 bundle
+      they started with; restart them after `npm run build` to get the new tools;
+    - owner decision: `auto` ran `gpt-6.1-sol` for 52.8 s from agy, so a plain
+      consult can be slow and costly (a faster default tier for `consult`, or only
+      a description);
+    - `reasoning_effort` still offers `none` and `minimal`, which no model in the
+      Codex 0.160 catalog accepts (the catalog check refuses them);
+    - the Claude alias list (`sonnet`, `haiku`, `opus`, `[1m]` variants) omits
+      `fable`, which `claude --help` names as an alias; not verified;
+    - doctor reports agy as "not ready" while its quota is measured, because the
+      probe no longer reports `authenticated` (`DIAGNOSTICS-001`).
