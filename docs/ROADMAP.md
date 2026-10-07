@@ -350,8 +350,8 @@ It adds no separate work.
     `tests/backends/codex/adapter.test.js` (disabled servers in the start and
     resume `config`, checked pages, and `SANDBOX_UNAVAILABLE` without
     `turn/start` for a server that stays enabled, an enabled feature or a Codex
-    without the requests). Codex before 0.162 lacks these requests and now
-    fails closed.
+    without the requests). Versions before 0.162 were not measured; one
+    without these requests fails closed.
   - agy: open; see the owner decision below.
 - [x] `CUR-003`: require `approve` and accept only explicit boolean true for an
   accepted elicitation. Cover missing/empty/false content and every governed

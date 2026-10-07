@@ -1,5 +1,5 @@
 /**
- * One read-only turn over the `codex app-server` JSON-RPC protocol (Codex CLI 0.160; the isolation checks need 0.162).
+ * One read-only turn over the `codex app-server` JSON-RPC protocol (Codex CLI 0.160; the isolation checks were measured on 0.162).
  *
  * @remarks
  * Messages are newline-delimited JSON-RPC 2.0 without the `jsonrpc` field. The session
@@ -213,7 +213,7 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     if (error) {
       const text = typeof error.message === 'string' ? error.message : 'Codex rejected a request.';
       if (id === REQUEST.thread && options.threadId && /no rollout found|not found/i.test(text)) fail(typed('SESSION_INVALID', 'Codex thread not found.'));
-      // A server without these requests (Codex before 0.162) cannot show the turn's tools.
+      // A server without these requests (not verified on versions before 0.162) cannot show the turn's tools.
       if (ISOLATION_REQUESTS.includes(id)) fail(isolationFailure(`the server rejected the check (${text.slice(0, 120)}).`));
       const classified = classifyCodexTurnError({ message: text }, 'Codex rejected a request.');
       fail(typed(classified.code, classified.message));
