@@ -128,11 +128,11 @@ An unpublished local VSIX can show the publisher ID in its header when no
 Marketplace display-name metadata is available; `author.name` does not control
 that header.
 
-Private VSIX packaging embeds the tarball's PNG logo as a data URI in the Details
-README, avoiding an image URL that points at unpublished repository content.
-The packaging command preserves that URI with `rewriteRelativeLinks: false`;
-the staging build makes the changelog's repository link absolute. Marketplace
-publication requires an HTTPS image source and a separate presentation check.
+The Details README uses compact HTTPS badges linking to the author's website,
+GitHub source and issue reports. It contains no large logo or embedded data URI:
+the owner reported that the embedded PNG did not render after installation.
+The separate packaged `assets/logo.png` remains the extension's main icon.
+Standard vsce link rewriting and image validation are enabled.
 
 This identity differs from the old development ID
 `oktawianwybieralski.coagent8-mcp` and `oki-dev.coagent8-mcp`. An old installation is not upgraded by the

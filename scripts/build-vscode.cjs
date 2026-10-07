@@ -26,17 +26,8 @@ async function buildExtension(serverRoot) {
   }
   fs.copyFileSync(path.join(serverRoot, 'assets/logo.png'), path.join(output, 'assets/logo.png'));
   fs.copyFileSync(path.join(serverRoot, 'LICENSE'), path.join(output, 'LICENSE'));
-  // Private VSIX Details cannot load package-relative images. Embed the packed PNG
-  // so the preview works without hosting an unpublished asset on GitHub.
-  const readme = fs.readFileSync(path.join(root, 'extensions/vscode/README.md'), 'utf8');
-  const logo = fs.readFileSync(path.join(serverRoot, 'assets/logo.png')).toString('base64');
-  if (!readme.includes('src="assets/logo.png"')) throw new Error('Extension README must reference the bundled logo.');
-  fs.writeFileSync(path.join(output, 'README.md'), readme.replace('src="assets/logo.png"', `src="data:image/png;base64,${logo}"`));
-  const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
-  fs.writeFileSync(path.join(output, 'CHANGELOG.md'), changelog.replace(
-    '](.agents/rules/02-git-workflow.md)',
-    '](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/.agents/rules/02-git-workflow.md)',
-  ));
+  fs.copyFileSync(path.join(root, 'extensions/vscode/README.md'), path.join(output, 'README.md'));
+  fs.copyFileSync(path.join(root, 'CHANGELOG.md'), path.join(output, 'CHANGELOG.md'));
   await esbuild.build({
     entryPoints: [path.join(root, 'extensions/vscode/src/extension.ts')],
     outfile: path.join(output, 'dist/extension.cjs'),

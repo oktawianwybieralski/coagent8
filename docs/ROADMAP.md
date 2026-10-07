@@ -1857,6 +1857,14 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   `okidev.coagent8-mcp`; author metadata remains Oktawian Wybieralski. Earlier
   `oki-dev` packaging evidence above is historical. No publication is performed.
 
+- [x] Details logo correction (2026-10-07): the owner reported that the embedded
+  PNG still did not render after VSIX installation. Remove the Details logo and
+  its inlining code; retain the main extension icon. Add three small HTTPS badges
+  for oki.dev, GitHub source and issues, and restore standard vsce image validation
+  and link rewriting. Packaging, typecheck and six focused provider/package tests
+  passed; each badge returned HTTP 200 (473-1,664 bytes). Installed-host rendering
+  of the badges remains to be confirmed.
+
 - [ ] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
   core startup and backend execution. Ship setup as a separate entrypoint and
   bundle, so installer-only code and JSONC handling leave the core. Codex

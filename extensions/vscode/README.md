@@ -1,13 +1,12 @@
 # CoAgent8 - MCP bridge to coding CLIs
 
-<p align="center">
-  <img src="assets/logo.png" width="128" height="128" alt="CoAgent8 logo" />
-</p>
-
 **Second opinions and Git reviews from local coding agents, inside your chat.**
 
-By [Oktawian Wybieralski](https://oki.dev) | [Source code](https://github.com/oktawianwybieralski/coagent8)
-| [Report a problem](https://github.com/oktawianwybieralski/coagent8/issues)
+By [Oktawian Wybieralski](https://oki.dev)
+
+[![Author page](https://img.shields.io/badge/oki.dev-0078D4?style=flat-square)](https://oki.dev)
+[![Source code](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github)](https://github.com/oktawianwybieralski/coagent8)
+[![Report a problem](https://img.shields.io/badge/Issues-0078D4?style=flat-square&logo=github)](https://github.com/oktawianwybieralski/coagent8/issues)
 
 CoAgent8 connects VS Code's native MCP chat to **OpenAI Codex**, **Claude Code**
 and **Google Antigravity** (`agy`). Ask another agent to examine a design,
