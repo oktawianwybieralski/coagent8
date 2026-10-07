@@ -85,6 +85,7 @@ is pushed:
 | `fix/cooldown-single-write` | `abcff7d`..`6b0ecba` | `ROUTING-MIGRATE-001` (AUD-P1-1): one cooldown write per rate-limited turn, regression through `executeTask` |
 | `fix/typed-tool-errors` | `e1f83e2`..`d727fc8` | `ERRORS-001` (AUD-P1-2): `ToolError` with an `ErrorCode`; unknown failures are `PROCESS_ERROR` |
 | `build/untrack-dist` | `891875b`..`e93125a` | `PACKAGE-001` (AUD-P1-10): `dist/` out of Git, LF checkouts, consumer smoke compares the packed bundle with a fresh build |
+| `fix/codex-config-toml` | this change | `EXEC-001` (AUD-P1-11, order 2): Codex `config.toml` parsed with `smol-toml`, top-level keys only |
 
 ## Verification
 

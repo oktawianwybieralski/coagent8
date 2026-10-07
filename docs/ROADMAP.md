@@ -876,9 +876,15 @@ Plan:
   `DIAGNOSTICS-001`.
 - [ ] Validate `model` identifiers in the schema and in each adapter before they
   reach argv (AUD-P1-6).
-- [ ] Parse Codex configuration with `smol-toml` (top-level `model` only), or
+- [x] Parse Codex configuration with `smol-toml` (top-level `model` only), or
   omit `-m` when no model was requested and govern the model the CLI reports
-  (AUD-P1-11).
+  (AUD-P1-11). On `fix/codex-config-toml`, not yet merged. `readCodexConfig`
+  parses the file with `smol-toml` and reads only top-level `model` and
+  `model_reasoning_effort`; an unreadable or invalid file keeps the defaults and
+  sets `configError` in the probe's `config`. Evidence:
+  `tests/backends/codex/adapter.test.js` with the audit input (`# model = "o3"`,
+  `review_model`, a `[profiles.*]` model): the old regex returns `o3`, the parser
+  returns the default.
 - [ ] Consent the caller cannot assert (AUD-P1-7):
   - when the client supports MCP elicitation, ask the user before a governed model
     runs;

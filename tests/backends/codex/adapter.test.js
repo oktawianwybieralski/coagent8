@@ -129,6 +129,28 @@ test('readCodexConfig and normalizeReasoningEffort default safe reasoning depth 
   assert.equal(normalizeReasoningEffort('max'), 'max');
 });
 
+test('readCodexConfig reads only the top-level model keys, never comments, other keys or tables (AUD-P1-11)', () => {
+  const file = path.join(directory,'audit-config.toml');
+  fs.writeFileSync(file, [
+    '# model = "o3"',
+    'review_model = "luna"',
+    'model_reasoning_effort = "high"',
+    '[profiles.deep]',
+    'model = "astra"',
+  ].join('\n'));
+  const commented = readCodexConfig(file);
+  assert.equal(commented.defaultModel, 'gpt-6.1-sol', 'a commented, review or profile model is not the default model');
+  assert.equal(commented.defaultReasoningEffort, 'high');
+  assert.equal(commented.configError, undefined);
+  fs.writeFileSync(file, 'model = "gpt-6.0-sol" # chosen\n[profiles.deep]\nmodel = "astra"\n');
+  assert.equal(readCodexConfig(file).defaultModel, 'gpt-6.0-sol');
+  fs.writeFileSync(file, 'model = "unterminated\n');
+  const invalid = readCodexConfig(file);
+  assert.equal(invalid.defaultModel, 'gpt-6.1-sol');
+  assert.match(invalid.configError, /^Codex configuration not used: /, 'an invalid file is reported, not silently ignored');
+  assert.equal(readCodexConfig(path.join(directory,'missing.toml')).configError, undefined, 'a missing file is the normal default case');
+});
+
 test('probe returns standardized AdapterProbeResult with executionSupported, capabilities, loginHint, modelSource, and authEvidence', async () => {
   // Isolate the probe from the machine's Codex login: empty home directory, no API key.
   const home = fs.mkdtempSync(path.join(os.tmpdir(),'coagent8-codex-home-'));

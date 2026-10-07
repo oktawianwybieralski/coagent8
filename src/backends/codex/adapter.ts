@@ -9,11 +9,16 @@ import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
 import { createCodexAppSession } from './app-server.js';
 import { classifyCodexError } from './errors.js';
+import { parse as parseToml } from 'smol-toml';
+import { readBoundedFileSync } from '../../execution/stream.js';
 
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
 const CODEX_EXE = process.env.CODEX_PATH || 'codex';
 export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(os.homedir(), '.codex', 'config.toml');
+
+/** Upper bound for reading `config.toml`. */
+const CODEX_CONFIG_MAX_BYTES = 256 * 1024;
 
 export const VALID_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -21,10 +26,18 @@ export interface CodexConfig {
   defaultModel: string;
   defaultReasoningEffort: string;
   sandboxMode: string;
+  /** Why the configuration file could not be used; the defaults apply. */
+  configError?: string;
 }
 
 const CODEX_CMD: { command: string; argsPrefix: string[] } = { command: CODEX_EXE, argsPrefix: [] };
 
+/**
+ * Reads the top-level `model` and `model_reasoning_effort` keys of Codex's `config.toml`.
+ * Comments, tables (`[profiles.*]`) and other keys such as `review_model` are ignored.
+ * @param customPath - Configuration file; defaults to `CODEX_CONFIG_PATH`.
+ * @returns The configured values, or the defaults with `configError` when the file is unreadable or not valid TOML.
+ */
 export function readCodexConfig(customPath?: string): CodexConfig {
   const result: CodexConfig = {
     defaultModel: 'gpt-6.1-sol',
@@ -33,19 +46,16 @@ export function readCodexConfig(customPath?: string): CodexConfig {
   };
 
   const targetPath = customPath || process.env.CODEX_CONFIG_PATH || CODEX_CONFIG_PATH;
+  let parsed: Record<string, unknown>;
   try {
-    if (fs.existsSync(targetPath)) {
-      const content = fs.readFileSync(targetPath, 'utf-8');
-      const modelMatch = content.match(/model\s*=\s*["']([^"']+)["']/);
-      if (modelMatch) result.defaultModel = modelMatch[1];
-
-      const effortMatch = content.match(/model_reasoning_effort\s*=\s*["']([^"']+)["']/);
-      if (effortMatch && VALID_REASONING_EFFORTS.includes(effortMatch[1])) {
-        result.defaultReasoningEffort = effortMatch[1];
-      }
-    }
-  } catch (_) {}
-
+    parsed = parseToml(readBoundedFileSync(targetPath, CODEX_CONFIG_MAX_BYTES));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return result;
+    return { ...result, configError: `Codex configuration not used: ${redactDiagnostic((err as Error).message, 256)}` };
+  }
+  if (typeof parsed.model === 'string' && parsed.model.trim()) result.defaultModel = parsed.model.trim();
+  const effort = parsed.model_reasoning_effort;
+  if (typeof effort === 'string' && VALID_REASONING_EFFORTS.includes(effort)) result.defaultReasoningEffort = effort;
   return result;
 }
 
