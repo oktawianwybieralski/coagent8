@@ -111,9 +111,12 @@ The text has three parts:
    `> Error [<CODE>, retryable]: <message>` when the same request may succeed
    later (for example `RATE_LIMITED` or `TIMEOUT`). The status follows from the
    code: `ABORTED` is cancelled, `TIMEOUT` timed out, any other code failed. Any
-   answer the backend produced follows under `Partial response:`.
+   answer the backend produced follows under `Partial response:`; text the
+   backend did not produce is never added.
 2. The answer, unchanged apart from escape-sequence stripping, the review gate and
-   credential redaction.
+   credential redaction. It is the backend's final answer: Codex messages marked
+   `phase: "commentary"` leave it once a `final_answer` arrives (the session
+   history keeps them).
 3. The footer, quoted paragraphs separated by an empty `>` line so markdown
    renderers keep each on its own line:
    * always `> CoAgent8: <backend> · <model> · <seconds>s`, then ` · <n> ops` when
@@ -154,8 +157,9 @@ accept, or a missing required one, is `INPUT_LIMIT`. Both messages name the
 accepted values. Efforts the adapter does not pass on (Codex `ultra`) are not
 offered. The catalog is read at most once per probe lifetime (5 minutes, same
 executable and environment); when it cannot be read, nothing is refused and the CLI
-decides. A call without `model` and `reasoning_effort` reads no catalog. `doctor`
-reports each catalog under `backends.<id>.models` with `detail: "full"`.
+decides. A call without `model` and `reasoning_effort` reads no catalog. The
+`doctor` summary adds a `models:` line per backend (the catalog, or Claude Code's
+aliases), and `detail: "full"` reports each catalog under `backends.<id>.models`.
 
 ### Top-tier model consent
 

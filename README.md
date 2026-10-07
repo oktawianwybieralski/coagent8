@@ -116,7 +116,7 @@ for installation, ownership, rollback and current host-verification limits.
 | --- | --- |
 | consult | Second opinion with a plain answer; optional `task_type` (`architecture`, `debug`, `implementation`) |
 | review | CoAgent8 Review: Git diff review with a structured audit envelope; mark generated files `-diff` in `.gitattributes` to keep their content out of the prompt |
-| doctor | Backend installation, version, quota/cooldown and authentication evidence: a few-line summary by default, `detail: "full"` for the complete report, `backend` to check one provider, `quota: false` to skip quota reads |
+| doctor | Backend installation, version, quota/cooldown, authentication evidence and the models and reasoning efforts each CLI offers: a few-line summary by default, `detail: "full"` for the complete report, `backend` to check one provider, `quota: false` to skip quota reads |
 | session | List, read history or close sessions |
 | cancel | Cancel a session's active execution |
 | issue | Generate a sanitized report and issue link |
