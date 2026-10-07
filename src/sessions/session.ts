@@ -9,6 +9,7 @@ import { PROVIDERS } from '../conversation.js';
 import { readBoundedFileSync } from '../execution/stream.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history.js';
 import { canonicalPath, sanitizeHandle } from './identity.js';
+import { redactDiagnostic } from '../redaction.js';
 
 const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
 const ownedTurns = new Map<string, string>();
@@ -113,7 +114,9 @@ export async function closeSession(handle: string, workspace?: string): Promise<
   if (!locked.ok) throw new Error(locked.error);
   if (locked.data) {
     invalidateHistoryCache(handle);
-    try { await pruneHistoryDirectory(); } catch {}
+    // Closing succeeded; reclaiming history space is maintenance and only reported.
+    try { await pruneHistoryDirectory(); }
+    catch (err) { process.stderr.write(`Warning: history pruning after close failed: ${redactDiagnostic((err as Error).message)}\n`); }
   }
   return locked.data || false;
 }

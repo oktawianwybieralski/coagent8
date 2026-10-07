@@ -24,13 +24,13 @@ async function run(): Promise<void> {
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return; shuttingDown = true;
-    try {
-      await backgroundMaintenance;
-    } catch {}
+    // backgroundMaintenance reports its own failure and never rejects.
+    await backgroundMaintenance;
     await shutdownProcessRunner();
     await waitForActiveExecutionTasks();
-    try { await server.close(); } catch {}
-    try { process.stdin.destroy(); } catch {}
+    try { await server.close(); }
+    catch (error) { process.stderr.write(`Warning: MCP server did not close cleanly: ${redactDiagnostic(error instanceof Error ? error.message : String(error))}\n`); }
+    process.stdin.destroy();
     process.exit(0);
   };
   process.stdin.once('end', () => { void shutdown(); });

@@ -37,12 +37,8 @@ const DEFAULT_CONFIG: CoAgent8Config = {
 };
 
 function ensureConfigDir(): void {
-  const dir = path.dirname(getConfigFile());
-  if (!fs.existsSync(dir)) {
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-    } catch (_) {}
-  }
+  // A directory that cannot be created is reported here rather than as a later write failure.
+  fs.mkdirSync(path.dirname(getConfigFile()), { recursive: true });
 }
 
 /**

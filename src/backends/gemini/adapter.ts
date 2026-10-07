@@ -71,21 +71,12 @@ export async function probe(): Promise<AdapterProbeResult> {
   let installed = false;
   let version = 'unknown';
 
-  let resolvedCmd = rawCommand;
-  let resolvedArgsPrefix: string[] = [];
-  try {
-    const resolved = resolveCliCommand(rawCommand);
-    resolvedCmd = resolved.command;
-    resolvedArgsPrefix = resolved.argsPrefix;
-  } catch (_) {}
-
-  try {
-    const res = await runCommand(resolvedCmd, [...resolvedArgsPrefix, '--version'], { timeoutMs: 5000 });
-    if (res.exitCode === 0) {
-      installed = true;
-      version = res.stdout.trim() || 'installed';
-    }
-  } catch (_) {}
+  // runCommand resolves the command and reports a missing or failing CLI in its result.
+  const res = await runCommand(rawCommand, ['--version'], { timeoutMs: 5000 });
+  if (res.exitCode === 0) {
+    installed = true;
+    version = res.stdout.trim() || 'installed';
+  }
 
   const authEvidence: string[] = [];
   const home = process.env.GEMINI_CLI_HOME || os.homedir();

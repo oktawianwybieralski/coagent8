@@ -71,13 +71,12 @@ export async function probe(): Promise<AdapterProbeResult> {
   let installed = false;
   let version = 'unknown';
 
-  try {
-    const res = await runCommand(CODEX_CMD.command, [...CODEX_CMD.argsPrefix, '--version'], { timeoutMs: 5000 });
-    if (res.exitCode === 0) {
-      installed = true;
-      version = res.stdout.trim() || 'installed';
-    }
-  } catch (_) {}
+  // runCommand reports a missing or failing CLI in its result; it does not reject.
+  const res = await runCommand(CODEX_CMD.command, [...CODEX_CMD.argsPrefix, '--version'], { timeoutMs: 5000 });
+  if (res.exitCode === 0) {
+    installed = true;
+    version = res.stdout.trim() || 'installed';
+  }
 
   const authEvidence: string[] = [];
   const codexDir = path.dirname(CODEX_CONFIG_PATH);

@@ -1276,7 +1276,16 @@ These statuses summarize prior implementation; they are not fresh test results.
   `ToolError`s now. Full suite: 227 pass, 0 fail (Windows, Node 24).
 - [ ] `ERRORS-001` remainder (AUD-P2-7, order 3): review the 37 empty `catch {}`
   blocks individually and distinguish expected absence from actionable I/O
-  errors, including `ensureConfigDir`.
+  errors, including `ensureConfigDir`. Partly done on `fix/empty-catches`, not yet
+  merged. Removed as dead code: the probe `--version` catches (`runCommand`
+  reports failures in its result and does not reject), the Basic-token decode
+  catch (`Buffer.from` does not throw) and the shutdown wait on maintenance that
+  cannot reject. Now reported: `ensureConfigDir` throws at the cause (before, the
+  following write failed instead), a failed session invalidation is a result
+  warning, and a failed server close or post-close history pruning is written to
+  stderr. Remaining: about 25 in `src/sessions/history.ts`, the POSIX kill
+  fallbacks in `src/execution/process.ts` and the test-only maintenance gate in
+  `sweepExpiredSessions` (`SIMPLIFY-001`).
 - [ ] `DOCS-001`: expand compressed logic and document meaningful exported contracts.
 - [ ] `VERIFY-001`: record repeatable validation without retroactively assigning
   the historical unexplained 133/134 failure to a later discovered race. Two

@@ -16,12 +16,11 @@ export function redactCredentialFormats(text: string): string {
 
   // Basic tokens (in Authorization: Basic or standalone, only when valid Base64 that decodes to printable user:password)
   text = text.replace(/\b(?:Authorization\s*:\s*)?(Basic)\s+([A-Za-z0-9+/]{6,}={0,2})(?![A-Za-z0-9+/=])/gi, (match, prefix, b64) => {
-    try {
-      const decoded = Buffer.from(b64, 'base64').toString('utf8');
-      if (decoded.includes(':') && /^[\x20-\x7E]+$/.test(decoded)) {
-        return match.startsWith('Authorization') ? `Authorization: ${prefix} ***[REDACTED]***` : `${prefix} ***[REDACTED]***`;
-      }
-    } catch {}
+    // Buffer.from does not throw on malformed base64; it decodes what it can.
+    const decoded = Buffer.from(b64, 'base64').toString('utf8');
+    if (decoded.includes(':') && /^[\x20-\x7E]+$/.test(decoded)) {
+      return match.startsWith('Authorization') ? `Authorization: ${prefix} ***[REDACTED]***` : `${prefix} ***[REDACTED]***`;
+    }
     return match;
   });
 

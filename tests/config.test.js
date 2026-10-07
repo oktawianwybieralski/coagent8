@@ -194,3 +194,15 @@ test('quota module operates without fabricated numbers and respects exhaustion &
   );
 });
 
+
+test('a configuration directory that cannot be created is reported, not ignored (AUD-P2-7)', () => {
+  const blocker = path.join(testTempDir, 'not-a-directory');
+  fs.writeFileSync(blocker, '');
+  const saved = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(blocker, 'config.json');
+  try {
+    assert.throws(() => saveConfig({ defaultBackend: 'codex' }), err => ['ENOTDIR', 'EEXIST', 'ENOENT'].includes(err.code));
+  } finally {
+    process.env.coagent8_CONFIG = saved;
+  }
+});

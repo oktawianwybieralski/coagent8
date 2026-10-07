@@ -235,7 +235,9 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     result = { ...result, continuationAvailable: false };
     try {
       await updateSession(handle, { state: 'invalidated' }, token);
-    } catch {}
+    } catch (invalidateErr) {
+      warnings.push(`Session could not be invalidated: ${redactDiagnostic((invalidateErr as Error).message, 512)}`);
+    }
   }
 
   // History archival finalization
