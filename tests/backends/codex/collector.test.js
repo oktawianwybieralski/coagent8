@@ -89,3 +89,22 @@ test('createCodexStreamCollector retains bounded latest text under budget pressu
   assert.ok(!tightOutput.includes('draft'), 'Stale draft must never survive under tight budget');
   assert.ok(tightOutput.includes('[truncated]'), 'Must indicate truncation');
 });
+
+test('the answer is the final_answer message, without the commentary Codex marks as interim (agy saw it, 2026-10-07)', () => {
+  const run = phases => {
+    const events = [];
+    const collector = createCodexStreamCollector({ onEvent: event => events.push(event) });
+    collector.initialize('thread_phase');
+    collector.beginTurn('turn_1');
+    const completed = (id, text, phase) => collector.line(JSON.stringify({ method: 'item/completed', params: { threadId: 'thread_phase', turnId: 'turn_1', item: { id, type: 'agentMessage', text, ...(phase === undefined ? {} : { phase }) } } }));
+    completed('c1', 'Najlepiej użyć asynchronicznego transform. Sprawdzę dokumentację Zod.', phases[0]);
+    completed('c2', 'Mam dokumentację.', phases[1]);
+    if (phases[2] !== 'absent') completed('f1', 'Use z.transform with an async function and parseAsync.', phases[2]);
+    return { output: collector.snapshot().output, history: events.filter(event => event.type === 'assistant_message').map(event => event.messageId) };
+  };
+  const tagged = run(['commentary', 'commentary', 'final_answer']);
+  assert.equal(tagged.output, 'Use z.transform with an async function and parseAsync.');
+  assert.deepEqual(tagged.history, ['c1', 'c2', 'f1'], 'the history keeps the commentary');
+  assert.equal(run([undefined, undefined, undefined]).output.split('\n\n').length, 3, 'a model without phases keeps every message');
+  assert.match(run(['commentary', 'commentary', 'absent']).output, /^Najlepiej/, 'without a final answer the commentary is the partial response');
+});

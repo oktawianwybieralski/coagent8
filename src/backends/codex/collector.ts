@@ -56,6 +56,8 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   let providerError: ExecutionError | undefined;
   let inputTokens = 0, outputTokens = 0, usageSeen = false;
   let streamedBytes = 0;
+  const commentaryIds = new Set<string>();
+  let finalAnswerSeen = false;
   const emit = (event: AdapterEvent) => {
     options.onEvent?.(event);
     if (event.type === 'status') options.onProgress?.(event.message);
@@ -63,8 +65,21 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   function acceptMessage(item: Record<string, unknown>) {
     if (!validEventIdentifier(item.id) || typeof item.text !== 'string') protocolError('Invalid public Codex message.');
     const id = item.id as string;
+    const text = redactCredentialFormats(item.text);
+    // `phase` (Codex 0.160): `commentary` is interim narration between tool calls,
+    // `final_answer` the answer. The history keeps both; the answer is the final text once
+    // there is one. Without a phase every message stays part of the answer.
+    if (item.phase === 'commentary') commentaryIds.add(id);
+    if (item.phase === 'commentary' && finalAnswerSeen) {
+      emit({ type: 'assistant_message', messageId: id, text });
+      return;
+    }
+    if (item.phase === 'final_answer' && !finalAnswerSeen) {
+      finalAnswerSeen = true;
+      reducer.removeMessages(commentaryIds);
+    }
     if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) throw new BufferLimitError('Too many Codex public messages.');
-    reducer.upsertMessage(id, redactCredentialFormats(item.text));
+    reducer.upsertMessage(id, text);
     emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
   }
   function acceptItem(method: string, item: Record<string, unknown> | null) {

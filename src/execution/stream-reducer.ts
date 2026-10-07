@@ -156,6 +156,18 @@ export class StreamReducer {
   }
 
   /**
+   * Drops messages that are not part of the answer, such as commentary a backend marks as
+   * interim once its final answer arrives; their bytes return to the budget.
+   */
+  removeMessages(ids: Iterable<string>): void {
+    for (const id of ids) {
+      this.totalMessageBytes -= this.messageBytesMap.get(id) || 0;
+      this.messageMap.delete(id);
+      this.messageBytesMap.delete(id);
+    }
+  }
+
+  /**
    * Records tool state transition with bound protection. Returns true if transition was newly recorded.
    */
   recordTool(id: string, name: string, status: 'active' | 'done' | 'error'): boolean {

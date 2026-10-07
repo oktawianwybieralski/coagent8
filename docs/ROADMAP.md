@@ -1005,7 +1005,16 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   `tests/backends/model-catalog.test.js` (fixture catalogs in the live shapes; the
   controller test fails on the previous controller, which ran the backend) and
   `tests/diagnostics/doctor.test.js`.
-- [ ] Only the backend's final answer is returned, without its working commentary.
+- [x] Only the backend's final answer is returned, without its working commentary.
+  Codex 0.160 marks each `agentMessage` with `phase`: `commentary` (interim
+  narration between tool calls) or `final_answer`, or null for models that do not
+  emit it (generated app-server schema, `MessagePhase`). The collector joined every
+  message. Once a `final_answer` arrives, the answer drops the commentary; the
+  history keeps it, a message without a phase stays in the answer, and a turn
+  without a final answer keeps the commentary as its partial response. Claude Code
+  (`result`) and agy (`response`) already return only their final text. Evidence:
+  `tests/backends/codex/collector.test.js` (fails on the previous collector). A live
+  Codex turn with a tool call is part of the live acceptance below.
 - [ ] Neutral consult prompt: no added trade-off or recommendation sections.
 - [ ] Agent-facing contract within about 5 KB:
   - server instructions say when to use CoAgent8 and when not, and point to `doctor`;
