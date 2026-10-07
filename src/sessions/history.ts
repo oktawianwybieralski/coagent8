@@ -25,7 +25,7 @@ import fs from 'node:fs/promises';
 import { paginateHistory } from './history-page.js';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { withFileLock, atomicWrite } from './lock.js';
+import { withFileLock, atomicWrite, LockTimeoutError } from './lock.js';
 import { getDataDir } from '../paths.js';
 import { canonicalPath, sanitizeHandle } from './identity.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
@@ -127,6 +127,54 @@ export type History = {
  * Returns the resolved directory path where session event logs and snapshots are persisted.
  */
 export function getHistoryDir(): string { return path.join(getDataDir(), 'history'); }
+/** Stats of a file, or null when it does not exist; other I/O errors propagate. */
+async function statIfExists(file: string): Promise<{ size: number; mtimeMs: number } | null> {
+  try { return await fs.stat(file); }
+  catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null; throw err; }
+}
+
+/** Size of a file, or 0 when it does not exist. */
+async function sizeIfExists(file: string): Promise<number> {
+  return (await statIfExists(file))?.size ?? 0;
+}
+
+/**
+ * Reads the cached directory total from `.capacity.meta`.
+ * @returns The total, or null when the cache is missing, oversized or not a valid record
+ * and must be recomputed from the directory; other I/O errors propagate.
+ */
+async function readCapacityMeta(metaFile: string): Promise<number | null> {
+  let raw: string;
+  try { raw = await readBoundedFile(metaFile, 1024); }
+  catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'BUFFER_LIMIT') return null;
+    throw err;
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); }
+  catch { return null; /* A torn cache record is recomputed. */ }
+  const total = (parsed as { totalBytes?: unknown } | null)?.totalBytes;
+  return typeof total === 'number' && Number.isFinite(total) && total >= 0 ? total : null;
+}
+
+/** Records the directory total; when that fails, the cache is removed so the next reader recomputes it. */
+async function writeCapacityMeta(metaFile: string, total: number): Promise<void> {
+  try { await atomicWrite(metaFile, JSON.stringify({ totalBytes: total })); }
+  catch { await fs.rm(metaFile, { force: true }); }
+}
+
+/** Adjusts the cached directory total; a missing cache stays missing and is recomputed on demand. */
+async function adjustCapacityMeta(metaFile: string, deltaBytes: number): Promise<void> {
+  const total = await readCapacityMeta(metaFile);
+  if (total !== null) await writeCapacityMeta(metaFile, Math.max(0, total + deltaBytes));
+}
+
+/** Whether a live session record names a running turn for this handle. */
+function sessionMayBeActive(handle: string): boolean {
+  return getSession(handle)?.activePid != null;
+}
+
 function fileFor(handle: string): string { if (!sanitizeHandle(handle)) throw new Error('Invalid history handle.'); return path.join(getHistoryDir(), `${handle}.json`); }
 function logFileFor(handle: string): string { if (!sanitizeHandle(handle)) throw new Error('Invalid history handle.'); return path.join(getHistoryDir(), `${handle}.jsonl`); }
 
@@ -213,8 +261,8 @@ async function load(handle: string, forceLog = false): Promise<History | null> {
 
   let jsonStat: { mtimeMs: number; size: number } | null = null;
   let logStat: { mtimeMs: number; size: number } | null = null;
-  try { jsonStat = await fs.stat(jsonFile); } catch {}
-  try { logStat = await fs.stat(logFile); } catch {}
+  jsonStat = await statIfExists(jsonFile);
+  logStat = await statIfExists(logFile);
 
   if (!jsonStat && !logStat) {
     historyCache.delete(handle);
@@ -420,23 +468,23 @@ export async function evictOldestSessions(dir: string, neededBytes: number, acti
         handles.add(h);
       }
     }
-  } catch {
-    return 0;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw err;
   }
 
   const candidates: Array<{ handle: string; mtimeMs: number; totalBytes: number }> = [];
   for (const h of handles) {
-    try {
-      const sess = getSession(h);
-      if (sess && sess.activePid != null) continue; // Skip active session
-    } catch {}
+    if (sessionMayBeActive(h)) continue;
 
     const jsonFile = path.join(dir, `${h}.json`);
     const logFile = path.join(dir, `${h}.jsonl`);
     let mtimeMs = 0;
     let bytes = 0;
-    try { const s = await fs.stat(jsonFile); bytes += s.size; mtimeMs = Math.max(mtimeMs, s.mtimeMs); } catch {}
-    try { const s = await fs.stat(logFile); bytes += s.size; mtimeMs = Math.max(mtimeMs, s.mtimeMs); } catch {}
+    for (const file of [jsonFile, logFile]) {
+      const stat = await statIfExists(file);
+      if (stat) { bytes += stat.size; mtimeMs = Math.max(mtimeMs, stat.mtimeMs); }
+    }
 
     if (bytes > 0) {
       candidates.push({ handle: h, mtimeMs, totalBytes: bytes });
@@ -450,19 +498,20 @@ export async function evictOldestSessions(dir: string, neededBytes: number, acti
     if (freed >= neededBytes) break;
     try {
       await withFileLock(path.join(dir, `${candidate.handle}.lock`), async () => {
-        try {
-          const sess = getSession(candidate.handle);
-          if (sess && sess.activePid != null) return;
-        } catch {}
-        const jf = path.join(dir, `${candidate.handle}.json`);
-        const lf = path.join(dir, `${candidate.handle}.jsonl`);
+        if (sessionMayBeActive(candidate.handle)) return;
         let b = 0;
-        try { const s = await fs.stat(jf); b += s.size; await fs.rm(jf, { force: true }); } catch {}
-        try { const s = await fs.stat(lf); b += s.size; await fs.rm(lf, { force: true }); } catch {}
+        for (const file of [path.join(dir, `${candidate.handle}.json`), path.join(dir, `${candidate.handle}.jsonl`)]) {
+          const size = await sizeIfExists(file);
+          await fs.rm(file, { force: true });
+          b += size;
+        }
         invalidateHistoryCache(candidate.handle);
         freed += b;
       }, 1);
-    } catch {}
+    } catch (err) {
+      // A session whose lock is held right now is being written; the next candidate is evicted instead.
+      if (!(err instanceof LockTimeoutError)) throw err;
+    }
   }
 
   return freed;
@@ -484,18 +533,17 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0, active
             total += stat.size;
             continue;
           }
-          try {
-            const sess = getSession(sessionHandle);
-            if (sess && sess.activePid != null) {
-              total += stat.size;
-              continue;
-            }
-          } catch {}
+          if (sessionMayBeActive(sessionHandle)) {
+            total += stat.size;
+            continue;
+          }
           try {
             await withFileLock(path.join(dir, `${sessionHandle}.lock`), async () => {
               await fs.rm(file, { force: true });
             }, 1);
-          } catch {
+          } catch (err) {
+            // A session written right now keeps its file until the next sweep.
+            if (!(err instanceof LockTimeoutError)) throw err;
             total += stat.size;
           }
         } else {
@@ -515,11 +563,7 @@ async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0, active
     total = Math.max(0, total - freed);
   }
 
-  try {
-    await atomicWrite(metaFile, JSON.stringify({ totalBytes: total }));
-  } catch {
-    await fs.rm(metaFile, { force: true }).catch(() => {});
-  }
+  await writeCapacityMeta(metaFile, total);
   if (total + extraBytes > TOTAL_LIMIT) {
     throw new Error('History total limit reached.');
   }
@@ -725,13 +769,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
                   const capLockFile = path.join(dir, '.capacity.lock');
                   await withFileLock(capLockFile, async () => {
                     const metaFile = path.join(dir, '.capacity.meta');
-                    try {
-                      const raw = await readBoundedFile(metaFile, 1024);
-                      const parsed = JSON.parse(raw);
-                      if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-                        await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - truncatedBytes) }));
-                      }
-                    } catch {}
+                    await adjustCapacityMeta(metaFile, -truncatedBytes);
                   });
                 }
               }
@@ -756,14 +794,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             const capLockFile = path.join(dir, '.capacity.lock');
             await withFileLock(capLockFile, async () => {
               const metaFile = path.join(dir, '.capacity.meta');
-              let currentTotal: number | null = null;
-              try {
-                const raw = await readBoundedFile(metaFile, 1024);
-                const parsed = JSON.parse(raw);
-                if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
-                  currentTotal = parsed.totalBytes;
-                }
-              } catch {}
+              let currentTotal = await readCapacityMeta(metaFile);
               if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
 
               if (currentTotal + headerBytes > TOTAL_LIMIT) {
@@ -774,9 +805,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
               }
 
               currentTotal += headerBytes;
-              try {
-                await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
-              } catch {}
+              await writeCapacityMeta(metaFile, currentTotal);
             });
 
             try {
@@ -787,15 +816,12 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
               try {
                 await withFileLock(capLockFile, async () => {
                   const metaFile = path.join(dir, '.capacity.meta');
-                  try {
-                    const raw = await readBoundedFile(metaFile, 1024);
-                    const parsed = JSON.parse(raw);
-                    if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-                      await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - headerBytes) }));
-                    }
-                  } catch {}
+                  await adjustCapacityMeta(metaFile, -headerBytes);
                 });
-              } catch {}
+              } catch {
+                // The append error is reported; a cache left high only makes the next eviction earlier,
+                // and the next directory scan recomputes it.
+              }
               throw appendErr;
             }
           }
@@ -833,7 +859,10 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             } finally {
               await fd.close();
             }
-          } catch {}
+          } catch (err) {
+            // A log removed meanwhile needs no separator; any other read error stops the append.
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+          }
         }
 
         if (prefix) {
@@ -846,14 +875,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
         const capLockFile = path.join(dir, '.capacity.lock');
         await withFileLock(capLockFile, async () => {
           const metaFile = path.join(dir, '.capacity.meta');
-          let currentTotal: number | null = null;
-          try {
-            const raw = await readBoundedFile(metaFile, 1024);
-            const parsed = JSON.parse(raw);
-            if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
-              currentTotal = parsed.totalBytes;
-            }
-          } catch {}
+          let currentTotal = await readCapacityMeta(metaFile);
           if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
 
           if (currentTotal + appendBytes > TOTAL_LIMIT) {
@@ -864,9 +886,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
           }
 
           currentTotal += appendBytes;
-          try {
-            await atomicWrite(metaFile, JSON.stringify({ totalBytes: currentTotal }));
-          } catch {}
+          await writeCapacityMeta(metaFile, currentTotal);
         });
 
         try {
@@ -876,15 +896,12 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
           try {
             await withFileLock(capLockFile, async () => {
               const metaFile = path.join(dir, '.capacity.meta');
-              try {
-                const raw = await readBoundedFile(metaFile, 1024);
-                const parsed = JSON.parse(raw);
-                if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-                  await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes - appendBytes) }));
-                }
-              } catch {}
+              await adjustCapacityMeta(metaFile, -appendBytes);
             });
-          } catch {}
+          } catch {
+            // The append error is reported; a cache left high only makes the next eviction earlier,
+            // and the next directory scan recomputes it.
+          }
           throw appendErr;
         }
 
@@ -897,20 +914,13 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             h.updatedAt = new Date().toISOString();
             const text = JSON.stringify(h);
             const jsonBytes = Buffer.byteLength(text);
-            let oldJsonBytes = 0;
-            try { const s = await fs.stat(jsonFile); oldJsonBytes = s.size; } catch {}
+            const oldJsonBytes = await sizeIfExists(jsonFile);
             const deltaBytes = jsonBytes - oldJsonBytes;
             await atomicWrite(jsonFile, text);
             if (deltaBytes !== 0) {
               await withFileLock(capLockFile, async () => {
                 const metaFile = path.join(dir, '.capacity.meta');
-                try {
-                  const raw = await readBoundedFile(metaFile, 1024);
-                  const parsed = JSON.parse(raw);
-                  if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes)) {
-                    await atomicWrite(metaFile, JSON.stringify({ totalBytes: Math.max(0, parsed.totalBytes + deltaBytes) }));
-                  }
-                } catch {}
+                await adjustCapacityMeta(metaFile, deltaBytes);
               });
             }
           }
@@ -971,9 +981,7 @@ export async function deleteHistory(handle: string, workspace: string): Promise<
     const jsonFile = fileFor(handle);
     const logFile = logFileFor(handle);
 
-    let removedBytes = 0;
-    try { const stat = await fs.stat(jsonFile); removedBytes += stat.size; } catch {}
-    try { const stat = await fs.stat(logFile); removedBytes += stat.size; } catch {}
+    const removedBytes = await sizeIfExists(jsonFile) + await sizeIfExists(logFile);
 
     await fs.rm(jsonFile, { force: true });
     await fs.rm(logFile, { force: true });
@@ -983,21 +991,9 @@ export async function deleteHistory(handle: string, workspace: string): Promise<
       const capLockFile = path.join(dir, '.capacity.lock');
       await withFileLock(capLockFile, async () => {
         const metaFile = path.join(dir, '.capacity.meta');
-        let currentTotal: number | null = null;
-        try {
-          const raw = await readBoundedFile(metaFile, 1024);
-          const parsed = JSON.parse(raw);
-          if (typeof parsed?.totalBytes === 'number' && Number.isFinite(parsed.totalBytes) && parsed.totalBytes >= 0) {
-            currentTotal = parsed.totalBytes;
-          }
-        } catch {}
+        let currentTotal = await readCapacityMeta(metaFile);
         if (currentTotal != null) {
-          const updated = Math.max(0, currentTotal - removedBytes);
-          try {
-            await atomicWrite(metaFile, JSON.stringify({ totalBytes: updated }));
-          } catch {
-            await fs.rm(metaFile, { force: true }).catch(() => {});
-          }
+          await writeCapacityMeta(metaFile, Math.max(0, currentTotal - removedBytes));
         }
       });
     }

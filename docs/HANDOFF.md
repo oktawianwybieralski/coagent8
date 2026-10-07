@@ -94,7 +94,8 @@ is pushed:
 | `fix/error-classification` | `cb0f723` | `ROUTING-MIGRATE-001` (AUD-P2-1, order 3): anchored rate-limit and auth phrases; `ms` and decimal resets |
 | `fix/unmeasured-quota` | `d88c07d` | `ROUTING-MIGRATE-001` (AUD-P2-2, order 3): unmeasured agy windows are not full headroom; no `any` in `src/` |
 | `fix/empty-catches` | `96ebcfd` | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
-| `fix/malformed-config` | this change | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
+| `fix/malformed-config` | `8b43688`..`c85c775` | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
+| `fix/history-empty-catches` | this change | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
 
 ## Verification
 

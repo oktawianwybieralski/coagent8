@@ -206,3 +206,14 @@ test('a lease is published complete: no contender ever reads an empty or partial
   assert.ok(observed.length > 0, 'the reader observed held leases');
   for (const content of observed) assert.equal(typeof JSON.parse(content).token, 'string');
 });
+
+test('a lock timeout is a typed LockTimeoutError, so callers can tell contention from I/O failures', async () => {
+  const { LockTimeoutError } = require('../../src/sessions/lock.ts');
+  const resource = path.join(tempDir, 'typed-timeout');
+  fs.writeFileSync(`${resource}.lease`, JSON.stringify({ token: 'live-owner', pid: process.pid, createdAt: Date.now() }));
+  try {
+    await assert.rejects(withFileLock(resource, async () => {}, 50), err => err instanceof LockTimeoutError);
+  } finally {
+    fs.rmSync(`${resource}.lease`, { force: true });
+  }
+});

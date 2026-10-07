@@ -1295,7 +1295,13 @@ These statuses summarize prior implementation; they are not fresh test results.
   cannot reject. Now reported: `ensureConfigDir` throws at the cause (before, the
   following write failed instead), a failed session invalidation is a result
   warning, and a failed server close or post-close history pruning is written to
-  stderr. Remaining: about 25 in `src/sessions/history.ts`, the POSIX kill
+  stderr. On `fix/history-empty-catches`: the 25 in `src/sessions/history.ts` are
+  gone. Optional-file stats use `statIfExists` (only `ENOENT` means absent), the
+  capacity cache goes through `readCapacityMeta`/`writeCapacityMeta`/
+  `adjustCapacityMeta` (a missing or torn cache is recomputed; a failed write
+  removes it), lock contention during eviction is told apart by the new
+  `LockTimeoutError`, and the two rollback catches that keep the original append
+  error say why. Full suite: 243 pass, 0 fail. Remaining: the POSIX kill
   fallbacks in `src/execution/process.ts` and the test-only maintenance gate in
   `sweepExpiredSessions` (`SIMPLIFY-001`).
 - [ ] `DOCS-001`: expand compressed logic and document meaningful exported contracts.

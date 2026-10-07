@@ -106,6 +106,14 @@ export async function atomicWrite(file: string, text: string): Promise<void> {
   finally { await fs.rm(temp, { force: true }); }
 }
 
+/** The lease of a resource stayed held by another owner for the whole timeout. */
+export class LockTimeoutError extends Error {
+  constructor() {
+    super('Timed out waiting for local storage lock.');
+    this.name = 'LockTimeoutError';
+  }
+}
+
 export const inProcessLocks = new Map<string, Promise<void>>();
 
 /**
@@ -196,7 +204,7 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
     const queueTimeout = Math.max(1, timeoutMs - (Date.now() - started));
     let timerHandle: NodeJS.Timeout | null = null;
     const timer = new Promise<never>((_, reject) => {
-      timerHandle = setTimeout(() => reject(new Error('Timed out waiting for local storage lock.')), queueTimeout);
+      timerHandle = setTimeout(() => reject(new LockTimeoutError()), queueTimeout);
     });
     try {
       await Promise.race([prev, timer]);
@@ -214,7 +222,7 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
 
       const elapsed = Date.now() - started;
       if (elapsed >= timeoutMs) {
-        throw new Error('Timed out waiting for local storage lock.');
+        throw new LockTimeoutError();
       }
       // Jittered exponential backoff: 5ms -> 10ms -> 25ms -> 50ms, mitigating NTFS lock contention
       const baseDelay = 5;
