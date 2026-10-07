@@ -1,9 +1,9 @@
 # Antigravity Observation Report: MCP Comparisons and CoAgent8 Gaps
 
-**Author:** Antigravity (Pair Programming Agent)  
-**Date:** 2026-10-07 (Europe/Warsaw)  
-**Context:** Independent verification complementing the prior Codex observation report ([`docs/MCP_COMPARISON_2026-10-07.md`](MCP_COMPARISON_2026-10-07.md)).  
-**Active Plan:** [ROADMAP.md](ROADMAP.md) governs product direction and implementation priorities.  
+**Author:** Antigravity (Pair Programming Agent)
+**Date:** 2026-10-07 (Europe/Warsaw)
+**Context:** Independent verification complementing the prior Codex observation report ([`docs/MCP_COMPARISON_2026-10-07.md`](MCP_COMPARISON_2026-10-07.md)).
+**Active Plan:** [ROADMAP.md](ROADMAP.md) governs product direction and implementation priorities.
 **Working tree:** `feat/dark-theme-branding` at `271152a`.
 
 The run below is recorded by the report's original author. Its timings, tool
@@ -96,4 +96,3 @@ Based on direct testing, source inspection, and the active [RUNTIME_CONTRACT.md]
 - `docs/MCP_COMPARISON_2026-10-07.md` restored to exact original Codex baseline.
 - `docs/ANTIGRAVITY_MCP_REPORT_2026-10-07.md` authored as Antigravity's distinct report.
 - Ran `git diff --check` with 0 errors.
-
