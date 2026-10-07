@@ -4,7 +4,7 @@ import fs from 'fs';
 import { runCommand } from '../../execution/process.js';
 import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult } from '../types.js';
 import { validEventIdentifier, type ExecutionError } from '../../conversation.js';
-import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
+import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../governance.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
 import { createCodexAppSession } from './app-server.js';
@@ -134,6 +134,11 @@ export async function probe(): Promise<AdapterProbeResult> {
   };
 }
 
+/** Returns the requested model, or the `config.toml` default that `execute` runs without one. */
+export function resolveModel(requested?: string): string {
+  return requested || readCodexConfig().defaultModel;
+}
+
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const config = readCodexConfig();
   const model = options.model || config.defaultModel;
@@ -143,7 +148,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     status: 'failed', isError: true, output: '', model, error: { code, message, retryable: false }, truncated: false, continuationAvailable: false,
   });
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
-  if (checkModelGovernance(model, options.userConfirmed)) return rejected('POLICY_DENIED', consentRequiredMessage(model));
+  if (isGovernedModel(model) && options.consentedModel !== model) return rejected('POLICY_DENIED', consentRequiredMessage(model));
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
   // The app-server session requests read-only mode per thread and verifies the server's
   // answer; the config overrides pin the same policy for the server's defaults.
@@ -177,6 +182,7 @@ export const codexAdapter: CliAdapter = {
   id,
   name,
   probe,
+  resolveModel,
   execute,
 };
 

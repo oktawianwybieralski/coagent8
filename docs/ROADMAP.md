@@ -713,8 +713,8 @@ Plan:
   client pays for it on every turn: "Second opinion or code review from another
   local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox."
   Rules needed only at call time go into parameter descriptions, which are loaded
-  only with the tool: consent in `user_confirmed`, continuation in
-  `session_handle`.
+  only with the tool: continuation in `session_handle`. Consent is no longer a
+  parameter: the server asks the user (`EXEC-001`, AUD-P1-7).
 - [x] **Tool definitions:** model-visible definitions 3.7 KB against 9.6 KB, and
   `tools/list` 6.1 KB against 27.4 KB:
   - one-line tool descriptions;
@@ -747,7 +747,7 @@ Plan:
   - default model.
 
   No `doctor` call is needed first. Every error states in one line what to do next,
-  for example `POLICY_DENIED: ask the user, then retry with user_confirmed: true`.
+  for example a `POLICY_DENIED` that says to retry without the top-tier model.
   Input validation failures are tool execution errors (`isError: true`), not
   protocol errors, so the model can correct itself, as specification 2025-11-25
   recommends (SEP-1303); the server already returned them so. Clients without
@@ -916,12 +916,33 @@ Plan:
   `tests/backends/codex/adapter.test.js` with the audit input (`# model = "o3"`,
   `review_model`, a `[profiles.*]` model): the old regex returns `o3`, the parser
   returns the default.
-- [ ] Consent the caller cannot assert (AUD-P1-7):
-  - when the client supports MCP elicitation, ask the user before a governed model
-    runs;
-  - otherwise fail with `POLICY_DENIED` and instructions;
-  - govern the effective default model of every backend, including agy's;
-  - never replace consent with an agent-generated assertion.
+- [x] Consent the caller cannot assert (AUD-P1-7), owner decision of 2026-10-07,
+  on `feat/caller-proof-consent`, not yet merged. Breaking change:
+  - when the client declares form elicitation, the server asks the user with
+    `elicitation/create` before a governed model runs, on every turn;
+  - otherwise the turn fails with `POLICY_DENIED` and a one-line instruction;
+  - the controller governs the model the backend would run
+    (`CliAdapter.resolveModel`: Codex `config.toml` default, Claude alias and
+    `ANTHROPIC_DEFAULT_*_MODEL` override, agy bridge default), and adapters run a
+    governed model only when it equals the approved `consentedModel`;
+  - agy's own default lives in its interface state, so agy always gets `--model`
+    (`gemini-3.8-flash-high` unless the caller names one);
+  - `user_confirmed` is removed from the schema and rejected as unknown.
+
+  Evidence: the audit reproduction (an agent-set `user_confirmed: true` with
+  `claude-opus-4-6-thinking` on agy, and agy without a model) on the stack tip
+  `3dd6abd` launches the governed model and passes no `--model`; on this branch it
+  returns `POLICY_DENIED` without launching, and agy gets
+  `--model gemini-3.8-flash-high`. Regression tests:
+  `tests/server.test.js` (a real MCP client: no elicitation, decline, unchecked
+  box, approval, no prompt for a default-tier model),
+  `tests/execution/controller-history.test.js` (`user_confirmed` grants nothing;
+  consent asked for the effective default and bound to that model),
+  `tests/backends/gemini/adapter.test.js` and `tests/backends/claude/adapter.test.js`
+  (consent for another model does not count). Model-visible tool definitions
+  3,492 B against 3,728 B before (budget 3,800 B). Full suite: 247 pass, 0 fail,
+  2 skipped. Not yet verified: a live elicitation prompt in a real client
+  (`CONTEXT-001` client acceptance).
 
 ### `CLAUDE-BACKEND-001` - Claude Code in restricted read-only mode
 

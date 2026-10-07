@@ -2,6 +2,7 @@ import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
 import { handleConsult } from './consult.tool.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import type { TaskOptions } from '../execution/controller.js';
 
 export function getCanonicalDebugToolDefinition() {
   return {
@@ -36,7 +37,7 @@ export async function handleDebugError(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  forceBackend?: string
+  options: Pick<TaskOptions, 'askConsent'> = {}
 ) {
   if (typeof args.error_message !== 'string' || !args.error_message.trim()) {
     return {
@@ -50,7 +51,7 @@ export async function handleDebugError(
     proposal: args.error_message,
     specific_questions: args.context,
     task_type: 'debug',
-    backend: forceBackend || args.backend || 'auto',
+    backend: args.backend || 'auto',
     file_paths: args.file_paths,
   };
 
@@ -61,7 +62,7 @@ export async function handleDebugError(
     workspaceCwd,
     abortSignal,
     onProgress,
-    { warnings: [warning] }
+    { warnings: [warning], askConsent: options.askConsent }
   );
 }
 

@@ -2,6 +2,7 @@ import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
 import { handleConsult } from './consult.tool.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import type { TaskOptions } from '../execution/controller.js';
 
 export function getCanonicalAnalyzeToolDefinition() {
   return {
@@ -32,7 +33,8 @@ export async function handleAnalyze(
   args: ToolArguments,
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
-  onProgress: ToolProgress = null
+  onProgress: ToolProgress = null,
+  options: Pick<TaskOptions, 'askConsent'> = {}
 ) {
   if (typeof args.task !== 'string' || !args.task.trim()) {
     return {
@@ -55,7 +57,7 @@ export async function handleAnalyze(
     workspaceCwd,
     abortSignal,
     onProgress,
-    { warnings: [warning] }
+    { warnings: [warning], askConsent: options.askConsent }
   );
 }
 

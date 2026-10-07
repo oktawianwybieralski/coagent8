@@ -413,6 +413,29 @@ test('Gemini falls back to the requested model when agy omits it from init', asy
   }
 });
 
+test('agy runs an explicit default model, and a top-tier model only with consent for that model (AUD-P1-7)', async () => {
+  const { GEMINI_DEFAULT_MODEL } = require('../../../src/backends/gemini/adapter.ts');
+  const capturePath = path.join(tempDir, 'governed-capture.json');
+  process.env.coagent8_FIXTURE_CAPTURE = capturePath;
+  try {
+    const plain = await execute('request', { cwd: tempDir });
+    assert.equal(plain.status, 'completed', JSON.stringify(plain));
+    const args = JSON.parse(fs.readFileSync(capturePath, 'utf8')).args;
+    assert.equal(args[args.indexOf('--model') + 1], GEMINI_DEFAULT_MODEL, "agy's interface selection never decides the model");
+    fs.rmSync(capturePath);
+    const governed = 'claude-opus-4-6-thinking';
+    for (const consentedModel of [undefined, 'claude-opus-4-7']) {
+      const denied = await execute('request', { cwd: tempDir, model: governed, consentedModel });
+      assert.equal(denied.error.code, 'POLICY_DENIED');
+    }
+    assert.equal(fs.existsSync(capturePath), false, 'agy is not launched without consent');
+    const approved = await execute('request', { cwd: tempDir, model: governed, consentedModel: governed });
+    assert.equal(approved.status, 'completed', JSON.stringify(approved));
+  } finally {
+    delete process.env.coagent8_FIXTURE_CAPTURE;
+  }
+});
+
 test('agy /usage runs only from quota inspection, sandboxed; probe and execute launch no extra process (AUD-P1-4)', async () => {
   const capture = path.join(tempDir, 'probe-capture.json');
   process.env.coagent8_FIXTURE_CAPTURE = capture;

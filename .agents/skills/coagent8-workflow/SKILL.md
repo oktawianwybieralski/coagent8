@@ -19,8 +19,8 @@ Follow [core invariants](../../rules/00-core-invariants.md),
 [read-only and consent rules](../../rules/01-security-and-sandboxes.md), and
 [Git governance](../../rules/02-git-workflow.md). Use topic branches; never push
 directly to main. Preserve unrelated edits, working registrations and stored data.
-External diagnostic/review agents use read-only modes. Top-tier model selection
-requires the user's explicit consent; never fabricate user_confirmed.
+External diagnostic/review agents use read-only modes. Top-tier models run only
+after the user approves them in the client; agents cannot grant that consent.
 
 ## Verification
 

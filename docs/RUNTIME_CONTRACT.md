@@ -60,7 +60,8 @@ measured more model-visible bytes than the six tools.
 The server sends one sentence of `instructions` in `initialize` and declares its
 icon once, in `serverInfo`; tools carry no icon. Execution parameters are defined
 once (`src/tools/schema.ts`) with descriptions only where the name and enum leave
-them unclear; the consent rule is in the `user_confirmed` description. The icon is
+them unclear. There is no consent parameter: the server asks the user (see
+[Top-tier model consent](#top-tier-model-consent)). The icon is
 sent for every negotiated protocol version, because the SDK offers no supported
 per-version server info; clients of protocol 2025-06-18 ignore the unknown field.
 
@@ -75,7 +76,9 @@ per-version server info; clients of protocol 2025-06-18 ignore the unknown field
 * `nativeSessionId`: CLI-native thread/conversation UUID for multi-turn resume.
 * `timeoutMs`: Execution deadline in milliseconds.
 * `abortSignal`: AbortController signal for in-flight cancellation.
-* `userConfirmed`: Mandatory boolean true when requesting top-tier models (`astra`, `opus`).
+* `consentedModel`: The top-tier model the user approved for this turn. Set only by the
+  controller after the user's answer, never from tool arguments; an adapter refuses a
+  top-tier model unless it equals this value.
 * `onEvent`: Callback streaming normalized `AdapterEvent` updates to the history writer.
 
 ### Terminal Results (`TerminalExecutionResult`)
@@ -111,8 +114,30 @@ The text is markdown, not the serialized `structuredContent` that the specificat
 recommends (SHOULD): Claude Code and agy read `content`, JSON escaping costs more
 tokens, and Codex reads `structuredContent`. Tool errors (`isError`) are distinct
 from audit conclusions (`verdict`). Input validation failures are tool execution
-errors, and a consent refusal says in one line to ask the user and retry with
-`user_confirmed: true`.
+errors, and a consent refusal says in one line to retry without the top-tier
+model or with a non-top-tier one.
+
+### Top-tier model consent
+
+A top-tier model (`astra`, `opus` and `best` families) runs only after the user
+approves it (AUD-P1-7). The calling agent cannot grant consent: `user_confirmed`
+was removed in 1.0.0-beta.2 and is rejected as an unknown argument.
+
+* The controller governs the model the backend would run, defaults and aliases
+  applied (`CliAdapter.resolveModel`): the requested model, the session's model, or
+  the backend default. Codex reads the `config.toml` default, Claude Code resolves
+  its alias (default `sonnet`, `ANTHROPIC_DEFAULT_*_MODEL` overrides applied), and
+  agy runs `gemini-3.8-flash-high` unless a model is given. agy keeps its own
+  default in internal interface state, so the bridge always passes `--model`.
+* When the client declares form elicitation, the server sends one
+  `elicitation/create` request per governed turn, with an `approve` checkbox. The
+  turn runs only when the user accepts with the box checked. Declining, cancelling
+  or unchecking returns `POLICY_DENIED`. The user has five minutes to answer; a
+  failed request is `POLICY_DENIED` and a cancelled tool call is `ABORTED`.
+* Without elicitation the turn fails with `POLICY_DENIED`, before any session is
+  acquired or process launched.
+* Consent covers one turn and one exact model. Continuing a session on a governed
+  model asks again.
 
 ### Typed Error Codes (`ERROR_CODES`)
 `CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`, `RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`, `ABORTED`, `TIMEOUT`, `SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`, `INPUT_LIMIT`, `PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`.
@@ -224,6 +249,7 @@ roots. When no single workspace resolves, `resources/list` returns only the
 * Prompts are delivered via standard input (stdin) to eliminate Windows 32 KiB command-line overflows.
 * Real-time events stream via `--output-format stream-json`.
 * Multi-turn resume uses `--conversation <uuid>`.
+* Always passes `--model`: the requested model or `gemini-3.8-flash-high`, so a model selected in agy's interface never runs ungoverned.
 * agy 1.2.17 has no headless interrupt; cancellation and deadlines force-stop it (POSIX: `SIGTERM` with a 2 s grace, then `SIGKILL`).
 
 ### OpenAI Codex (`codex`)
@@ -274,5 +300,4 @@ when its fix lands with a regression test.
 | ID | Intended contract | Current behavior |
 | --- | --- | --- |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
-| AUD-P1-7 | Top-tier models require the user's consent | `user_confirmed` is asserted by the caller; agy's default model is not governed |
 | AUD-P2-2 | Missing data is reported as unknown | An empty Gemini answer is returned as "Task completed cleanly with no textual output."; missing quota fractions count as 100% headroom |

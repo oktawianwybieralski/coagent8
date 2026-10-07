@@ -8,7 +8,7 @@ import {
   RootsListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { fileURLToPath } from 'node:url';
-import type { Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
+import type { ElicitResult, Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
 import { createProgressReporter } from './execution/progress.js';
 import { chooseWorkspace, type ResolvedWorkspace } from './paths.js';
 import { redactDiagnostic } from './redaction.js';
@@ -28,7 +28,7 @@ import { ToolError, errorCodeOf } from './conversation.js';
 import { listSessions } from './sessions/session.js';
 import { canonicalPath, sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
-import { composeExecutionCancellation } from './execution/controller.js';
+import { composeExecutionCancellation, type ConsentPrompt } from './execution/controller.js';
 import { providerForClient, setCallerProvider } from './backends/routing.js';
 import type { ToolArguments } from './tools/arguments.js';
 
@@ -169,6 +169,8 @@ export function validateToolArguments(value: unknown, schema: Schema, field = 'a
  */
 /** Bound on the client's answer to roots/list. */
 const ROOTS_TIMEOUT_MS = 5000;
+/** Time the user has to answer a top-tier model approval request. */
+const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const SERVER_INSTRUCTIONS = 'Second opinion or code review from another local coding agent (Codex, Claude Code, Antigravity) in a read-only sandbox.';
 
@@ -200,6 +202,26 @@ export function createServer(): Server {
   }
   async function resolveWorkspace(rawPath: string | undefined): Promise<ResolvedWorkspace> {
     return chooseWorkspace(rawPath, rawPath ? null : await workspaceRoots());
+  }
+
+  // A top-tier model runs only after the user approves it in the client (AUD-P1-7). Without
+  // form elicitation there is no prompt and the controller refuses such a model.
+  function consentPrompt(signal: AbortSignal): ConsentPrompt | undefined {
+    if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
+    return async ({ backend, model }) => {
+      let answer: ElicitResult;
+      try {
+        answer = await server.elicitInput({
+          message: `${BRAND.NAME}: run top-tier model '${model}' on ${backend}? It uses more of your plan or budget than the default model.`,
+          requestedSchema: { type: 'object', properties: { approve: { type: 'boolean', title: `Run ${model}`, default: true } } },
+        }, { signal, timeout: CONSENT_TIMEOUT_MS });
+      } catch (cause) {
+        if (signal.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.', { cause });
+        throw new ToolError('POLICY_DENIED', `The approval request for top-tier model '${model}' failed: ${(cause as Error).message}`, { cause });
+      }
+      // Accepting is the user's explicit action; unchecking the box declines.
+      return answer.action === 'accept' && answer.content?.approve !== false;
+    };
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: createToolDefinitions() }));
@@ -300,22 +322,23 @@ export function createServer(): Server {
       }
       const workspace = await resolveWorkspace(args.workspace_path as string | undefined);
       const cwd = workspace.path;
+      const consent = { askConsent: consentPrompt(extra.signal) };
       switch (name) {
         case CANONICAL_TOOL_NAMES.SESSION:
           return await handleSession(args, cwd);
         case CANONICAL_TOOL_NAMES.RUN:
           // The issue action returns a bug report, not an execution result.
-          return args.action === 'issue' ? await handleRun(args, cwd, extra.signal, progress) : withWorkspace(await handleRun(args, cwd, extra.signal, progress), workspace);
+          return args.action === 'issue' ? await handleRun(args, cwd, extra.signal, progress) : withWorkspace(await handleRun(args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.REVIEW:
-          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress), workspace);
+          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.CONSULT:
-          return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress), workspace);
+          return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.ANALYZE:
-          return withWorkspace(await handleAnalyze(name, args, cwd, extra.signal, progress), workspace);
+          return withWorkspace(await handleAnalyze(name, args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.DEBUG:
-          return withWorkspace(await handleDebugError(args, cwd, extra.signal, progress), workspace);
+          return withWorkspace(await handleDebugError(args, cwd, extra.signal, progress, consent), workspace);
         case CANONICAL_TOOL_NAMES.IMPLEMENT:
-          return withWorkspace(await handleImplement(args, cwd, extra.signal, progress), workspace);
+          return withWorkspace(await handleImplement(args, cwd, extra.signal, progress, consent), workspace);
         default:
           throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
       }

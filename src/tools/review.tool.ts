@@ -1,6 +1,6 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
-import { executeTask } from '../execution/controller.js';
+import { executeTask, type TaskOptions } from '../execution/controller.js';
 import { collectGitScope, snapshotId } from '../execution/git.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
@@ -26,7 +26,8 @@ export async function handleReview(
   args: ToolArguments,
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
-  onProgress: ToolProgress = null
+  onProgress: ToolProgress = null,
+  options: Pick<TaskOptions, 'askConsent'> = {}
 ) {
   const effectiveScope = args.scope || args.target;
   const scopeInfo = await collectGitScope(effectiveScope, workspaceCwd, abortSignal);
@@ -58,7 +59,7 @@ export async function handleReview(
     workspaceCwd,
     abortSignal,
     onProgress,
-    { requireEnvelope: true }
+    { requireEnvelope: true, askConsent: options.askConsent }
   );
 }
 

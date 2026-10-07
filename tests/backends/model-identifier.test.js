@@ -19,7 +19,7 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 test('every adapter rejects an option-like model before it reaches argv (AUD-P1-6)', async () => {
   for (const id of ['codex', 'gemini', 'claude']) {
     for (const model of OPTION_LIKE) {
-      const result = await adapterRegistry[id].execute('prompt', { cwd: tempDir, model, userConfirmed: true });
+      const result = await adapterRegistry[id].execute('prompt', { cwd: tempDir, model });
       assert.equal(result.status, 'failed', `${id} ${JSON.stringify(model)}`);
       assert.equal(result.error.code, 'INPUT_LIMIT', `${id} ${JSON.stringify(model)}: ${result.error.message}`);
     }

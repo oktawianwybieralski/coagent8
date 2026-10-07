@@ -1,6 +1,7 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import type { TaskOptions } from '../execution/controller.js';
 import { handleConsult } from './consult.tool.js';
 import { handleReview } from './review.tool.js';
 import { handleIssue } from './issue.tool.js';
@@ -83,7 +84,8 @@ export async function handleRun(
   args: ToolArguments,
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
-  onProgress: ToolProgress = null
+  onProgress: ToolProgress = null,
+  options: Pick<TaskOptions, 'askConsent'> = {}
 ) {
   const action = args?.action;
   switch (action) {
@@ -91,10 +93,10 @@ export async function handleRun(
       if (typeof args.proposal !== 'string' || !args.proposal.trim()) {
         throw new ToolError('INPUT_LIMIT', 'Validation Error: proposal must be a non-empty string for action "consult".');
       }
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, args, workspaceCwd, abortSignal, onProgress);
+      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, args, workspaceCwd, abortSignal, onProgress, options);
     }
     case 'review': {
-      return await handleReview(CANONICAL_TOOL_NAMES.REVIEW, { ...args, scope: args.scope || args.target }, workspaceCwd, abortSignal, onProgress);
+      return await handleReview(CANONICAL_TOOL_NAMES.REVIEW, { ...args, scope: args.scope || args.target }, workspaceCwd, abortSignal, onProgress, options);
     }
     case 'issue': {
       return await handleIssue(args);
@@ -111,7 +113,7 @@ export async function handleRun(
         context_files: args.context_files,
       };
       const warning = "Subcommand 'analyze' in run gateway is deprecated. Use action 'consult' with task_type='architecture' instead.";
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning] });
+      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
     }
     case 'debug': {
       if (typeof args.error_message !== 'string' || !args.error_message.trim()) {
@@ -126,7 +128,7 @@ export async function handleRun(
         context_files: args.context_files,
       };
       const warning = "Subcommand 'debug' in run gateway is deprecated. Use action 'consult' with task_type='debug' instead.";
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning] });
+      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
     }
     case 'implement': {
       if (typeof args.specification !== 'string' || !args.specification.trim()) {
@@ -141,7 +143,7 @@ export async function handleRun(
         file_paths: args.file_paths,
       };
       const warning = "Subcommand 'implement' in run gateway is deprecated. Use action 'consult' with task_type='implementation' instead.";
-      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning] });
+      return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mappedArgs, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
     }
     default:
       throw new ToolError('INPUT_LIMIT', `Validation Error: Unknown action "${action}". Allowed: "consult", "review", "issue", "analyze", "debug", "implement".`);

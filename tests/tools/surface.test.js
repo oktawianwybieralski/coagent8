@@ -310,6 +310,6 @@ test('CONTEXT-001 budgets: one-sentence server instructions and compact model-vi
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
   assert.ok(visible <= 3800, `model-visible tool definitions: ${visible} B (was 9.6 KB before CONTEXT-001)`);
   const consult = tools.find(t => t.name === 'consult');
-  assert.match(consult.inputSchema.properties.user_confirmed.description, /opus, astra/, 'the consent rule travels with the parameter');
+  assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
   assert.deepEqual(consult.inputSchema.properties.reasoning_effort.enum, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 });

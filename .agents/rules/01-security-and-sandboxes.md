@@ -16,11 +16,14 @@ Never grant write permissions or file modification capabilities to external CLI 
 ---
 
 ## 2. Top-Tier Model Governance
-Models classified as top-tier reasoning engines strictly require prior user confirmation via an interactive user prompt (`ask_question`):
+Models classified as top-tier reasoning engines run only after the user approves them:
 * `astra` family in OpenAI Codex.
-* `claude-3-opus` / `opus` family in Claude Code.
+* `claude-3-opus` / `opus` family in Claude Code, also when reached through agy.
 
-**Invariant:** Never pass `user_confirmed: true` without explicit, prior user selection. Unconfirmed attempts must fail closed with `POLICY_DENIED`.
+**Invariant:** Consent comes from the user through MCP elicitation, asked by the
+server for the model the backend will actually run, including its default. A
+calling agent cannot grant it. Without an approval the turn fails closed with
+`POLICY_DENIED` before any CLI starts.
 
 ---
 
@@ -41,7 +44,5 @@ stderr, error messages, doctor output and issue reports. Rewriting ordinary code
 such as `const token = getToken();` is a defect, not a privacy feature.
 This rule is implemented in `REDACTION-002` (AUD-P0-2, AUD-P2-13).
 
-**Consent enforcement:** `user_confirmed` is an assertion by the calling agent;
-the server cannot verify it. Server-side confirmation through MCP elicitation is
-tracked in `EXEC-001` (AUD-P1-7). Until then, agents must follow the invariant
-above.
+**Consent enforcement:** implemented in `EXEC-001` (AUD-P1-7); the contract is in
+[RUNTIME_CONTRACT](../../docs/RUNTIME_CONTRACT.md#top-tier-model-consent).

@@ -3,29 +3,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { checkModelGovernance } = require('../../src/backends/governance.ts');
+const { isGovernedModel } = require('../../src/backends/governance.ts');
 const { resolveWorkspacePath } = require('../../src/paths.ts');
 
-test('checkModelGovernance blocks astra and opus without user confirmation', () => {
-  const astraBlocked = checkModelGovernance('astra', false);
-  assert.ok(astraBlocked);
-  assert.equal(astraBlocked.isError, true);
-  assert.match(astraBlocked.content[0].text, /GOVERNANCE ERROR/);
-
-  const opusBlocked = checkModelGovernance('claude-3-opus', false);
-  assert.ok(opusBlocked);
-  assert.equal(opusBlocked.isError, true);
-
-  // When user confirms
-  const astraAllowed = checkModelGovernance('astra', true);
-  assert.equal(astraAllowed, null);
-
-  const opusAllowed = checkModelGovernance('claude-3-opus', true);
-  assert.equal(opusAllowed, null);
-
-  // Standard models do not require confirmation
-  assert.equal(checkModelGovernance('gpt-6.1-sol', false), null);
-  assert.equal(checkModelGovernance('claude-3-7-sonnet', false), null);
+test('isGovernedModel classifies astra and opus models as top-tier', () => {
+  for (const model of ['astra', 'claude-3-opus', 'Opus', 'best', 'claude-opus-4-6-thinking', 'gpt-6-astra']) assert.equal(isGovernedModel(model), true, model);
+  for (const model of ['gpt-6.1-sol', 'claude-3-7-sonnet', 'gemini-3.8-flash-high', undefined, null]) assert.equal(isGovernedModel(model), false, String(model));
 });
 
 test('resolveWorkspacePath validates directories strictly', () => {

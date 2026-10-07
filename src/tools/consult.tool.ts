@@ -1,6 +1,6 @@
 import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
-import { executeTask } from '../execution/controller.js';
+import { executeTask, type TaskOptions } from '../execution/controller.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
 export function getCanonicalConsultToolDefinition() {
@@ -29,7 +29,7 @@ export async function handleConsult(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: { warnings?: string[] } = {}
+  options: Pick<TaskOptions, 'warnings' | 'askConsent'> = {}
 ) {
   if (typeof args.proposal !== 'string' || !args.proposal.trim()) {
     return {
@@ -81,7 +81,7 @@ export async function handleConsult(
     workspaceCwd,
     abortSignal,
     onProgress,
-    { requireEnvelope: false, warnings: options.warnings }
+    { requireEnvelope: false, warnings: options.warnings, askConsent: options.askConsent }
   );
 }
 

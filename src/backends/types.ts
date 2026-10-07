@@ -95,8 +95,11 @@ export interface ExecutionOptions {
   onProgress?: (info: { message?: string; percent?: number }) => void;
   /** Existing thread or session ID for resuming multi-turn conversation. */
   threadId?: string | null;
-  /** Explicit user confirmation flag for top-tier reasoning engines. */
-  userConfirmed?: boolean;
+  /**
+   * The top-tier model the user approved for this turn through MCP elicitation.
+   * Set only by the controller after the user's answer, never from tool arguments.
+   */
+  consentedModel?: string;
   timeoutMs?: number;
   nativeSessionId?: string | null;
   onEvent?: (event: AdapterEvent) => void;
@@ -112,6 +115,12 @@ export interface CliAdapter {
   name: string;
   /** Probes the environment to verify CLI presence, version, and auth status. */
   probe(): Promise<AdapterProbeResult>;
+  /**
+   * Returns the model `execute` would run for a requested model, defaults and aliases applied,
+   * so the controller can ask for consent before launch. Throws `POLICY_DENIED` for a model
+   * the adapter refuses outright.
+   */
+  resolveModel?(requested?: string): string | undefined;
   /** Executes a prompt in a read-only sandboxed CLI process. */
   execute(prompt: string, options?: ExecutionOptions): Promise<TerminalExecutionResult>;
   /**

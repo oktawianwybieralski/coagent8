@@ -90,7 +90,8 @@ test('Claude validates the model before argv and keeps top-tier governance',()=>
   assert.equal((await executeClaude('x',{cwd:dir})).status,'completed');assert.equal(captured().argv.includes('sonnet'),true);
   process.env.ANTHROPIC_DEFAULT_SONNET_MODEL='claude-opus-4-6';
   assert.equal((await executeClaude('x',{cwd:dir})).error.code,'POLICY_DENIED');assert.equal(captured(),null);
-  const confirmed=await executeClaude('x',{cwd:dir,userConfirmed:true});assert.equal(confirmed.status,'completed');assert.equal(captured().argv.includes('claude-opus-4-6'),true);
+  assert.equal((await executeClaude('x',{cwd:dir,consentedModel:'claude-opus-4-7'})).error.code,'POLICY_DENIED','consent covers one exact model');assert.equal(captured(),null);
+  const confirmed=await executeClaude('x',{cwd:dir,consentedModel:'claude-opus-4-6'});assert.equal(confirmed.status,'completed');assert.equal(captured().argv.includes('claude-opus-4-6'),true);
   process.env.ANTHROPIC_DEFAULT_SONNET_MODEL='--tools=Bash';
   assert.equal((await executeClaude('x',{cwd:dir})).error.code,'POLICY_DENIED');delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
   for(const model of ['opus','opusplan','opus[1m]','best','default'])assert.equal((await executeClaude('x',{cwd:dir,model})).error.code,'POLICY_DENIED',model);

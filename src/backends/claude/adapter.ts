@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { runCommand, type StdinChannel, type StdinSession } from '../../execution/process.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
+import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../governance.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
@@ -20,6 +20,7 @@ const MIN_CLAUDE_USAGE_VERSION: readonly [number, number, number] = [2, 1, 289];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
 
+/** Resolves a requested alias to the model Claude Code runs; the bridge defaults to `sonnet`. */
 function resolveClaudeModel(requested = 'sonnet'): string {
   if (requested === 'default') throw new ToolError('POLICY_DENIED', 'Claude model=default has unknown cost; choose an explicit model or sonnet/haiku alias.');
   const match = /^(sonnet|haiku|opus)(\[1m\])?$/.exec(requested);
@@ -99,7 +100,7 @@ export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterP
   }
   if (!supportsLocalUsage(version)) return undefined;
   const model = resolveClaudeModel('haiku');
-  if (!isValidModelIdentifier(model) || checkModelGovernance(model, false)) return undefined;
+  if (!isValidModelIdentifier(model) || isGovernedModel(model)) return undefined;
   const res = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
     '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
     '--model', model, '--output-format', 'json', '/usage'], { timeoutMs: 15000 });
@@ -130,7 +131,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   try { model = resolveClaudeModel(requested); }
   catch (err) { return rejected('POLICY_DENIED', (err as Error).message); }
   if (!isValidModelIdentifier(model)) return rejected('POLICY_DENIED', 'Invalid Claude model identifier from the environment alias override.');
-  if (checkModelGovernance(model, options.userConfirmed)) return rejected('POLICY_DENIED', consentRequiredMessage(model), model);
+  if (isGovernedModel(model) && options.consentedModel !== model) return rejected('POLICY_DENIED', consentRequiredMessage(model), model);
   const resumeRaw = options.nativeSessionId || options.threadId || null;
   const resumeId = typeof resumeRaw === 'string' ? resumeRaw.trim().toLowerCase() : null;
   if (resumeId && !SESSION_ID_PATTERN.test(resumeId)) return rejected('SESSION_INVALID', 'Invalid native Claude session ID.', model);
@@ -181,5 +182,5 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     continuationAvailable };
 }
 export const execute = executeClaude;
-export const claudeAdapter: CliAdapter = { id, name, probe, execute, inspectQuota };
+export const claudeAdapter: CliAdapter = { id, name, probe, resolveModel: resolveClaudeModel, execute, inspectQuota };
 export default claudeAdapter;

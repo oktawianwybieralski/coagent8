@@ -24,7 +24,7 @@ MCP use. Historical plans and RFCs do not override this direction.
 
 1. **[P0: Security & Read-Only Sandboxes (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
    - Mandatory read-only sandboxes (`--sandbox read-only` on Codex, `--permission-mode dontAsk --tools Read,Glob,Grep` on Claude, native `--sandbox` on agy).
-   - Top-tier model confirmation (`astra`, `opus`) strictly requires explicit interactive user consent (`ask_question`). Never pass `user_confirmed: true` without explicit user selection.
+   - Top-tier models (`astra`, `opus`) run only after the user approves them through MCP elicitation, which the server asks for; a calling agent cannot grant consent.
    - Automated secret redaction for API keys, tokens, credentials, and user home directory paths, without rewriting ordinary content of public answers.
 
 2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:

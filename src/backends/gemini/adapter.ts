@@ -6,7 +6,7 @@ import path from 'node:path';
 import { runCommand } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
-import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../governance.js';
+import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
 import { errorCodeOf, type ExecutionError } from '../../conversation.js';
@@ -16,6 +16,12 @@ export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+/**
+ * Model passed when the caller names none. agy keeps the model last selected in its
+ * interface in internal state, so its own default is unknown before a turn and could be
+ * top-tier; an explicit default keeps every agy turn governable (AUD-P1-7).
+ */
+export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash-high';
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
@@ -129,7 +135,8 @@ export async function probe(): Promise<AdapterProbeResult> {
       'gpt-oss-120b-medium',
     ],
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
-    modelSource: 'Antigravity CLI model catalog',
+    config: { defaultModel: GEMINI_DEFAULT_MODEL },
+    modelSource: 'Antigravity CLI model catalog; the bridge defaults to ' + GEMINI_DEFAULT_MODEL,
     loginHint: 'agy',
   };
 }
@@ -161,12 +168,18 @@ function failed(error: ExecutionError): TerminalExecutionResult {
  * @remarks The deadline and cancellation are `runCommand`'s: it validates `timeoutMs`, stops the
  * process and reports `timed_out` or `cancelled`, which this result keeps.
  */
+/** Returns the requested model, or the bridge default {@link GEMINI_DEFAULT_MODEL}. */
+export function resolveModel(requested?: string): string {
+  return requested || GEMINI_DEFAULT_MODEL;
+}
+
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   if (options.model && !isValidModelIdentifier(options.model)) {
     return failed({ code: 'INPUT_LIMIT', message: 'Invalid Gemini model identifier.', retryable: false });
   }
-  if (checkModelGovernance(options.model, options.userConfirmed)) {
-    return failed({ code: 'POLICY_DENIED', message: consentRequiredMessage(options.model), retryable: false });
+  const model = resolveModel(options.model);
+  if (isGovernedModel(model) && options.consentedModel !== model) {
+    return failed({ code: 'POLICY_DENIED', message: consentRequiredMessage(model), retryable: false });
   }
   if (options.abortSignal?.aborted) {
     return { ...failed({ code: 'ABORTED', message: 'Cancelled before launch.', retryable: false }), status: 'cancelled' };
@@ -194,7 +207,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     });
   }
 
-  const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(options.model, options.reasoningEffort);
+  const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(model, options.reasoningEffort);
 
   const collector = createGeminiCollector(options.onEvent);
   const args = [...resolved.argsPrefix, '--sandbox', '--output-format', 'stream-json'];
@@ -263,5 +276,5 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   };
 }
 
-export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota };
+export const geminiAdapter: CliAdapter = { id, name, probe, resolveModel, execute, inspectQuota };
 export default geminiAdapter;

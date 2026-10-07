@@ -268,16 +268,50 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
   }
 });
 
-test('a top-tier model without consent is refused with a one-line instruction for the single retry', async () => {
+test('a top-tier model without a way to ask the user is refused in one line; user_confirmed grants nothing (AUD-P1-7)', async () => {
   const original = adapterRegistry.gemini;
   let executed = false;
   adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
     saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    const message = "Model 'claude-opus-4-6-thinking' is top-tier and needs the user's approval, which this client cannot ask for (no MCP elicitation); retry without it or with a non-top-tier model.";
     await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'gemini', model: 'claude-opus-4-6-thinking' }, tempDir),
-      { name: 'ToolError', code: 'POLICY_DENIED', message: "Model 'claude-opus-4-6-thinking' is top-tier: ask the user, then retry with user_confirmed: true." });
+      { name: 'ToolError', code: 'POLICY_DENIED', message });
+    // The audit reproduction: an agent-set flag used to start the governed model.
+    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'gemini', model: 'claude-opus-4-6-thinking', user_confirmed: true }, tempDir),
+      { name: 'ToolError', code: 'POLICY_DENIED', message });
     assert.equal(executed, false);
+  } finally {
+    adapterRegistry.gemini = original;
+  }
+});
+
+test("consent is asked from the user for the backend's effective default model and bound to that model", async () => {
+  const original = adapterRegistry.gemini;
+  const asked = [], received = [];
+  // The fixture's own default is top-tier, as agy's interface selection can be.
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+    resolveModel: requested => requested || 'claude-opus-4-6-thinking',
+    execute: async (_prompt, options) => {
+      received.push(options.consentedModel);
+      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'claude-opus-4-6-thinking', truncated: false, continuationAvailable: true };
+    } };
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    await assert.rejects(executeTask('p', 'q', { backend: 'gemini' }, tempDir), { code: 'POLICY_DENIED' });
+    const declined = async request => { asked.push(request); return false; };
+    await assert.rejects(executeTask('p', 'q', { backend: 'gemini' }, tempDir, null, null, { askConsent: declined }),
+      { code: 'POLICY_DENIED', message: "The user did not approve top-tier model 'claude-opus-4-6-thinking'; retry without it or with a non-top-tier model." });
+    assert.deepEqual(received, [], 'nothing runs without approval');
+    const approved = async request => { asked.push(request); return true; };
+    const res = await executeTask('p', 'q', { backend: 'gemini' }, tempDir, null, null, { askConsent: approved });
+    assert.equal(res.isError, false);
+    assert.deepEqual(received, ['claude-opus-4-6-thinking']);
+    assert.deepEqual(asked, [{ backend: 'gemini', model: 'claude-opus-4-6-thinking' }, { backend: 'gemini', model: 'claude-opus-4-6-thinking' }]);
+    // A model that is not top-tier never prompts.
+    await executeTask('p', 'q', { backend: 'gemini', model: 'gemini-3.8-flash-high' }, tempDir, null, null, { askConsent: async () => { throw new Error('must not ask'); } });
+    assert.deepEqual(received, ['claude-opus-4-6-thinking', undefined]);
   } finally {
     adapterRegistry.gemini = original;
   }

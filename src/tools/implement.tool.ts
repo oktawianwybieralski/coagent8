@@ -2,6 +2,7 @@ import type { ToolArguments, ToolProgress } from './arguments.js';
 import { EXECUTION_PARAMETERS } from './schema.js';
 import { handleConsult } from './consult.tool.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import type { TaskOptions } from '../execution/controller.js';
 
 export function getCanonicalImplementToolDefinition() {
   return {
@@ -41,7 +42,7 @@ export async function handleImplement(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  forceBackend?: string
+  options: Pick<TaskOptions, 'askConsent'> = {}
 ) {
   if (typeof args.specification !== 'string' || !args.specification.trim()) {
     return {
@@ -55,7 +56,7 @@ export async function handleImplement(
     proposal: args.specification,
     specific_questions: args.context,
     task_type: 'implementation',
-    backend: forceBackend || args.backend || 'auto',
+    backend: args.backend || 'auto',
     context_files: args.context_files || args.file_paths,
   };
 
@@ -66,7 +67,7 @@ export async function handleImplement(
     workspaceCwd,
     abortSignal,
     onProgress,
-    { warnings: [warning] }
+    { warnings: [warning], askConsent: options.askConsent }
   );
 }
 

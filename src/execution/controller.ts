@@ -4,8 +4,9 @@
  * @remarks
  * ## Lifecycle & Architecture Contract
  * - **Provider Resolution & Policy Governance**: Dynamically resolves the active CLI backend
- *   via `resolveBackend` (Codex, agy / Gemini CLI, or Claude Code). Enforces governance rules
- *   requiring explicit `user_confirmed: true` for top-tier models (`astra`, `opus`).
+ *   via `resolveBackend` (Codex, agy / Gemini CLI, or Claude Code). A top-tier model (`astra`,
+ *   `opus`), requested or the backend's effective default, runs only after the user approves it
+ *   through {@link ConsentPrompt}; without one the turn fails with `POLICY_DENIED`.
  * - **Turn Mutual Exclusion & Lease Tokens**: Sessions are acquired with unique turn tokens
  *   (`acquireAndResolveSession`). A single session handle cannot execute concurrent turns; attempts
  *   receive `SESSION_BUSY`.
@@ -24,7 +25,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
-import { checkModelGovernance, consentRequiredMessage, isValidModelIdentifier } from '../backends/governance.js';
+import { consentDeclinedMessage, consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../backends/governance.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
@@ -43,8 +44,24 @@ export interface ExecutionRequest {
   session_handle?: string;
   model?: string;
   reasoning_effort?: string;
-  user_confirmed?: boolean;
   timeout_ms?: number;
+}
+
+/**
+ * Asks the user, not the calling agent, to approve a top-tier model; resolves true only on
+ * the user's approval. The server implements it with MCP elicitation when the client
+ * supports it (AUD-P1-7).
+ */
+export type ConsentPrompt = (request: { backend: string; model: string }) => Promise<boolean>;
+
+/** Per-call options of {@link executeTask} set by the server and tool handlers, never by tool arguments. */
+export interface TaskOptions {
+  /** Gate review results on the State Envelope. */
+  requireEnvelope?: boolean;
+  /** Notices added to the result, such as a deprecated tool name. */
+  warnings?: string[];
+  /** Absent when the client cannot ask the user; a top-tier model is then refused. */
+  askConsent?: ConsentPrompt;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -91,7 +108,7 @@ export async function waitForActiveExecutionTasks(): Promise<void> {
  * @param options - Execution formatting options (e.g. `requireEnvelope` for reviews).
  * @returns Formatted MCP CallToolResult with markdown text and structuredContent metadata.
  */
-export async function executeTask(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: { requireEnvelope?: boolean; warnings?: string[] } = {}) {
+export async function executeTask(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: TaskOptions = {}) {
   const task = executeTaskInternal(prompt, publicInput, args, cwd, abortSignal, onProgress, options);
   activeExecutionTasks.add(task);
   try {
@@ -101,7 +118,7 @@ export async function executeTask(prompt: string, publicInput: string, args: Exe
   }
 }
 
-async function executeTaskInternal(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: { requireEnvelope?: boolean; warnings?: string[] } = {}) {
+async function executeTaskInternal(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: TaskOptions = {}) {
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
   // The model reaches CLI argv; option-like or whitespace values are rejected before any backend runs.
   if (args.model !== undefined && !isValidModelIdentifier(args.model)) throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');
@@ -113,7 +130,15 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   const config = backend.probe.config as { defaultModel?: string } | undefined;
   const model = args.model || previous?.model || config?.defaultModel;
-  if (checkModelGovernance(model, args.user_confirmed)) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model));
+  // Consent covers the model the backend will run, defaults and aliases applied, and is asked on every turn.
+  const effectiveModel = backend.adapter.resolveModel ? backend.adapter.resolveModel(model) : model;
+  let consentedModel: string | undefined;
+  if (isGovernedModel(effectiveModel)) {
+    if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(effectiveModel));
+    if (!(await options.askConsent({ backend: backend.id, model: effectiveModel! }))) throw new ToolError('POLICY_DENIED', consentDeclinedMessage(effectiveModel));
+    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
+    consentedModel = effectiveModel;
+  }
   await pruneExpiredSessions();
   const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
   if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
@@ -195,7 +220,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     }, 5000);
     flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
     const options: ExecutionOptions = { cwd, model, reasoningEffort: args.reasoning_effort, nativeSessionId: session.threadId, threadId: session.threadId,
-      userConfirmed: args.user_confirmed, timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
+      consentedModel, timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
     const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
     // Validate terminal results defensively, including adapters supplied at runtime.
     const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');

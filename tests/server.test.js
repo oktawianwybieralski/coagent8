@@ -11,7 +11,7 @@ process.env.coagent8_DIR = tempDir;
 const { createHistoryWriter } = require('../src/sessions/history.ts');
 const { createSession } = require('../src/sessions/session.ts');
 const { createServer, createToolDefinitions, validateToolArguments } = require('../src/server.ts');
-const { checkModelGovernance } = require('../src/backends/governance.ts');
+const { isGovernedModel } = require('../src/backends/governance.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -107,13 +107,13 @@ test('F14/F15: shared schema validates required fields, types, enums, unknown fi
   const tools=createToolDefinitions();assert.equal(new Set(tools.map(t=>t.name)).size,tools.length);
   const consultTool=tools.find(t=>t.name==='consult');assert.ok(consultTool.inputSchema.properties.session_handle);assert.ok(consultTool.outputSchema);
   assert.throws(()=>validateToolArguments({},consultTool.inputSchema),/Missing/);
-  assert.throws(()=>validateToolArguments({proposal:'x',user_confirmed:'yes'},consultTool.inputSchema),/expected boolean/);
+  assert.throws(()=>validateToolArguments({proposal:'x',user_confirmed:true},consultTool.inputSchema),/Unknown arguments\.user_confirmed/,'consent is not a tool argument');
   assert.throws(()=>validateToolArguments({proposal:'x',extra:1},consultTool.inputSchema),/Unknown/);
   const { getAllCallableToolDefinitions } = require('../src/server.ts');
   const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
   assert.ok(validateToolArguments({task:'x',backend:'gemini'},schema));
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
-  for(const model of ['gpt-6-astra','gpt-6.1-astra','claude-opus-4-6','opus','astra'])assert.ok(checkModelGovernance(model,false),model);
+  for(const model of ['gpt-6-astra','gpt-6.1-astra','claude-opus-4-6','opus','astra'])assert.ok(isGovernedModel(model),model);
 });
 
 test('the connected client name sets the caller CLI that auto routing avoids', async () => {
@@ -233,5 +233,68 @@ test('the server declares no resource list notifications it never sends (AUD-P2-
   } finally {
     await client.close();
     await server.close();
+  }
+});
+
+test('a top-tier model runs only after the user approves it through MCP elicitation (AUD-P1-7)', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { ElicitRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const { saveConfig } = require('../src/config.ts');
+  const original = adapterRegistry.gemini;
+  const consented = [];
+  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture' }),
+    resolveModel: requested => requested || 'gemini-3.8-flash-high',
+    execute: async (_prompt, options) => {
+      consented.push(options.consentedModel);
+      return { status: 'completed', isError: false, output: 'approved answer', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
+    } };
+  const connect = async capabilities => {
+    const server = createServer();
+    const client = new Client({ name: 'consent-client', version: '1' }, { capabilities });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    return { server, client };
+  };
+  const opened = [];
+  try {
+    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    const call = (client, model) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...(model && { model }) } });
+
+    const plain = await connect({});
+    opened.push(plain);
+    const refused = (await call(plain.client, 'claude-opus-4-6-thinking')).structuredContent.error;
+    assert.equal(refused.code, 'POLICY_DENIED');
+    assert.match(refused.message, /no MCP elicitation/);
+
+    const asking = await connect({ elicitation: {} });
+    opened.push(asking);
+    const requests = [];
+    let answer = { action: 'decline' };
+    asking.client.setRequestHandler(ElicitRequestSchema, async request => { requests.push(request.params); return answer; });
+    const declined = (await call(asking.client, 'claude-opus-4-6-thinking')).structuredContent.error;
+    assert.equal(declined.code, 'POLICY_DENIED');
+    assert.match(declined.message, /did not approve/);
+    answer = { action: 'accept', content: { approve: false } };
+    assert.equal((await call(asking.client, 'claude-opus-4-6-thinking')).structuredContent.error.code, 'POLICY_DENIED', 'an unchecked box declines');
+    assert.deepEqual(consented, [], 'nothing runs before the user approves');
+
+    answer = { action: 'accept', content: { approve: true } };
+    const approved = await call(asking.client, 'claude-opus-4-6-thinking');
+    assert.equal(approved.structuredContent.output, 'approved answer');
+    assert.deepEqual(consented, ['claude-opus-4-6-thinking']);
+    assert.match(requests[0].message, /top-tier model 'claude-opus-4-6-thinking' on gemini/);
+    assert.equal(requests[0].requestedSchema.properties.approve.type, 'boolean');
+
+    // A default-tier model never prompts the user.
+    const plainTurn = await call(asking.client, undefined);
+    assert.equal(plainTurn.isError, false, JSON.stringify(plainTurn.structuredContent));
+    assert.equal(requests.length, 3);
+    assert.deepEqual(consented, ['claude-opus-4-6-thinking', undefined]);
+  } finally {
+    for (const { client, server } of opened) { await client.close(); await server.close(); }
+    adapterRegistry.gemini = original;
   }
 });
