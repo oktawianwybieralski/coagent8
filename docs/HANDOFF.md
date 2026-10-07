@@ -29,7 +29,7 @@ regression test derived from the audit reproduction:
 | AUD-P1-3 | `HISTORY-002` | Bookkeeping failures never discard a successful answer | Implemented on `fix/history-archive-integrity`, not yet merged |
 | AUD-P1-1 | `ROUTING-MIGRATE-001` | One cooldown write per rate-limited turn, verified through the controller sequence | Implemented on `fix/cooldown-single-write`, not yet merged |
 | AUD-P1-2 | `ERRORS-001` | Typed `ToolError`; no prefix parsing; unknown failures map to `PROCESS_ERROR` | Implemented on `fix/typed-tool-errors`, not yet merged |
-| AUD-P1-10 | `PACKAGE-001` | No build output in Git; packed bundle matches packed source | Open |
+| AUD-P1-10 | `PACKAGE-001` | No build output in Git; packed bundle matches packed source | Implemented on `build/untrack-dist`, not yet merged |
 
 Small independent fixes may land as separate PRs into the target branch.
 
@@ -83,7 +83,8 @@ is pushed:
 | `fix/history-archive-integrity` | `3dac0d6`..`0cddde5` | `HISTORY-002`: bounded append-only delta storage, split-credential tail buffering, best-effort archival, LRU capacity eviction, fail-closed leases |
 | `feat/context-budget` | `46fa155`..`ed1c141` | `CONTEXT-001`: resolved model, agy denial kept, compact tool surface and results, client roots, shorter prompts |
 | `fix/cooldown-single-write` | `abcff7d`..`6b0ecba` | `ROUTING-MIGRATE-001` (AUD-P1-1): one cooldown write per rate-limited turn, regression through `executeTask` |
-| `fix/typed-tool-errors` | this change | `ERRORS-001` (AUD-P1-2): `ToolError` with an `ErrorCode`; unknown failures are `PROCESS_ERROR` |
+| `fix/typed-tool-errors` | `e1f83e2`..`d727fc8` | `ERRORS-001` (AUD-P1-2): `ToolError` with an `ErrorCode`; unknown failures are `PROCESS_ERROR` |
+| `build/untrack-dist` | this change | `PACKAGE-001` (AUD-P1-10): `dist/` out of Git, LF checkouts, consumer smoke compares the packed bundle with a fresh build |
 
 ## Verification
 
@@ -113,8 +114,8 @@ results in the project review before requesting an independent review by the Rev
      `fix/history-archive-integrity`;
    - `ROUTING-MIGRATE-001` (AUD-P1-1), implemented on `fix/cooldown-single-write`;
    - `ERRORS-001` (AUD-P1-2), implemented on `fix/typed-tool-errors`;
-   - `PACKAGE-001` (AUD-P1-10; it also removes the non-reproducible `dist/`
-     diffs).
+   - `PACKAGE-001` (AUD-P1-10), implemented on `build/untrack-dist`; plugin and
+     VSIX artifacts from the tarball remain.
 4. Make the Codex `probe` test independent of local Codex credentials, so that
    Linux CI does not fail on it.
 5. Beta 2, the first release for testers (`BETA-001`; beta 1 is the npm name

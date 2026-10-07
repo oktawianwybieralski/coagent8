@@ -41,6 +41,16 @@ function npmRun(args,cwd=root) {
       assert.ok(asset.startsWith('./assets/'));
       assert.ok(fs.existsSync(path.join(pkg,asset)),`Plugin ${key} must resolve in installed package`);
     }
+    // The packed bundle is a build of the packed source: dist/ is not in Git, so a stale
+    // or hand-edited bundle would show up as a difference from a fresh build here.
+    for(const file of pack.files.filter(f=>f.path.startsWith('src/'))) {
+      assert.deepEqual(await fsp.readFile(path.join(pkg,file.path)),await fsp.readFile(path.join(root,file.path)),`Packed ${file.path} matches the source`);
+    }
+    const rebuild=spawnSync(process.execPath,[path.join(root,'scripts','build.cjs')],{cwd:root,encoding:'utf8',windowsHide:true});
+    assert.equal(rebuild.status,0,`Rebuild failed: ${rebuild.stderr}`);
+    for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/THIRD_PARTY_NOTICES.txt']) {
+      assert.ok((await fsp.readFile(path.join(pkg,name))).equals(await fsp.readFile(path.join(root,name))),`Packed ${name} matches a fresh build of the packed source`);
+    }
     // License notices ship beside the bundle; the bundle itself carries no license comments.
     const bundle=await fsp.readFile(path.join(pkg,'dist','index.cjs'),'utf8');
     assert.ok(!/\/\*!|@license|@preserve|SPDX-License-Identifier/.test(bundle),'Bundle must not embed license comments');
@@ -77,8 +87,8 @@ function npmRun(args,cwd=root) {
       assert.equal(init.result.serverInfo.icons[0].mimeType,'image/png');
       assert.deepEqual(Buffer.from(init.result.serverInfo.icons[0].src.replace(/^data:image\/png;base64,/,''),'base64'),expectedIcon);
       proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-      const tools=await request('tools/list',{});assert.equal(tools.result.tools.length,9);
-      assert.ok(tools.result.tools.every(tool=>JSON.stringify(tool.icons)===JSON.stringify(init.result.serverInfo.icons)));
+      const tools=await request('tools/list',{});assert.equal(tools.result.tools.length,6);
+      assert.ok(tools.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
       if(binIndex===0) {
       const first=await request('tools/call',{name:'consult',arguments:{proposal:'consumer first turn',backend:'gemini',workspace_path:dir}});assert.equal(first.result.isError,false,JSON.stringify(first));
       const handle=first.result.structuredContent.sessionHandle;

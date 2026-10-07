@@ -44,6 +44,8 @@ npm ci
 npm run build
 ```
 
+`dist/` is not in Git: run `npm run build` again after every pull.
+
 Add a stdio server definition to your host's MCP configuration. Codex stops an MCP
 tool call after 60 seconds by default, so for Codex also set
 `tool_timeout_sec = 1800` in its `[mcp_servers.coagent8]` table (`coagent8 setup`

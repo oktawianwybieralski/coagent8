@@ -218,7 +218,7 @@ folded into `SIMPLIFY-001`.
 
 | Order | Work | Acceptance |
 | --- | --- | --- |
-| Done | `WINDOWS-001` (window suppression), `VERIFY-SCOPE-001` (runner selection), `STARTUP-001`, `SURFACE-001`, `CONSULT-001` | Recorded below; window suppression is in source but not in the committed bundle until `PACKAGE-001` |
+| Done | `WINDOWS-001` (window suppression), `VERIFY-SCOPE-001` (runner selection), `STARTUP-001`, `SURFACE-001`, `CONSULT-001` | Recorded below |
 | 1 (gates beta 2) | `AUDIT-001` blockers: `WINDOWS-001` process identity, `REDACTION-002`, `HISTORY-002` archive isolation, `ROUTING-MIGRATE-001` cooldown fix, `ERRORS-001` typed errors, `PACKAGE-001`; `CHANGELOG-001` | No teardown without verified identity; answers unaltered except credential formats; archive failures never fail or block a turn; parsed resets survive; no unknown error reported as `INPUT_LIMIT`; no build output in Git. Each with a regression test derived from the audit reproduction |
 | 2 (gates beta 3), owner may reorder | `CLAUDE-BACKEND-001`: Claude Code in restricted read-only mode with streaming and resume | Subscription authentication; per-run read-only check; typed failures from stream-json; adapter tests green in CI |
 | 2 (gates beta 3) | Remaining audit P1: `EXEC-001` probes, argv and consent; `CLI-INTERACT-001` forward compatibility; `SESSION-001` resource isolation; `LOCKS-001`; `WINDOWS-001` supervision cost | One cached probe per backend and no probe in `execute`; validated model identifiers; consent not assertable by the caller; unknown agy events tolerated; resources honor workspace ownership; no permanent lease |
@@ -484,13 +484,15 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 
 ### `PACKAGE-001` - built output is not source
 
-**Status:** Open (AUD-P1-10 blocker).
+**Status:** AUD-P1-10 implemented on `build/untrack-dist`, not yet merged;
+plugin/VSIX packaging from the tarball remains.
 
-- [ ] Remove `dist/` from Git and build it in `prepack` and CI.
+- [x] Remove `dist/` from Git and build it in `prepack` and CI. `dist/` is in
+  `.gitignore`; `prepack` and the CI `Build bundle` step already build it.
 - [ ] Produce plugin/VSIX artifacts from the built tarball, not from a committed
   bundle.
 - [ ] Keep `index.js`, `mcp.json` and `bin` entries valid for installed packages.
-- [ ] Make the source map reproducible. An identifier rename (`Ay` to `Py`) was
+- [x] Make the source map reproducible. An identifier rename (`Ay` to `Py`) was
   seen once on 2026-10-06, but measurements the same day did not reproduce it:
   the bundle (esbuild 0.25.12 and tsdown 0.23.0) rebuilt byte-identically
   across repeated builds, another checkout path, CRLF and LF sources, and
@@ -498,8 +500,18 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
   checkout's line endings ([BUNDLER_COMPARISON](archive/BUNDLER_COMPARISON.md)
   section 7). Fix with an LF policy in `.gitattributes` or without
   `sourcesContent`. Removing `dist/` from Git also removes the noise from diffs.
-- [ ] Acceptance: a fresh clone cannot run a stale bundle. The consumer smoke test
-  verifies the packed bundle matches a build of the packed source.
+  Fixed with `.gitattributes` `* text=auto eol=lf`: every checkout, including
+  Windows with `core.autocrlf=true`, gets LF sources, so `sourcesContent` no
+  longer depends on the platform. The map keeps `sourcesContent` because it also
+  maps bundled `node_modules` files that the package does not ship.
+- [x] Acceptance: a fresh clone cannot run a stale bundle. The consumer smoke test
+  verifies the packed bundle matches a build of the packed source. Evidence: a
+  fresh clone has no `dist/`. `tests/consumer/smoke.cjs` compares every packed
+  `src/` file with the source and the packed `dist/` files byte for byte with a
+  fresh build; run against a tarball packed before a one-line source change it
+  fails with `Packed src/constants.ts matches the source`. Local run passes
+  (Windows, Node 26.10). The smoke also expected 9 advertised tools with per-tool
+  icons; it now checks the 6 core tools and the server-level icon (`CONTEXT-001`).
 
 ### `VERIFY-SCOPE-001` - useful verification without repeated full runs
 
