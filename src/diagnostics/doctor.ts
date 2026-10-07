@@ -1,8 +1,8 @@
-import { probeBackend } from '../backends/probe-cache.js';
+import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfigForDiagnostics } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
-import type { AdapterProbeResult, BackendQuota } from '../backends/types.js';
+import type { AdapterProbeResult, BackendQuota, CatalogModel } from '../backends/types.js';
 
 type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['buckets'];
 
@@ -15,8 +15,11 @@ export interface DoctorReport {
   default_backend: string;
   configuredDefault: string | null;
   effectiveDefault: string | null;
-  /** Probe results without `quota`, which `quotas` reports once. */
-  backends: Partial<Record<ProviderId, Omit<AdapterProbeResult, 'quota'>>>;
+  /**
+   * Probe results without `quota`, which `quotas` reports once, and with `models`: the
+   * models and efforts the CLI itself offers, when it lists them.
+   */
+  backends: Partial<Record<ProviderId, Omit<AdapterProbeResult, 'quota'> & { models?: CatalogModel[] }>>;
   quotas: Partial<Record<ProviderId, DoctorQuota>>;
   recommendations: string[];
   installed_backends: ProviderId[];
@@ -37,7 +40,10 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
   const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await probeBackend(id, { fresh: true })]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
   const measuredNow = new Set<ProviderId>();
-  const cached = await inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow });
+  const [cached, catalogs] = await Promise.all([
+    inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow }),
+    Promise.all(selected.map(id => readModelCatalog(id, { fresh: true }))),
+  ]);
 
   const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
   const ready = active.filter(id => {
@@ -74,7 +80,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const quotas: DoctorReport['quotas'] = {};
   for (const id of selected) {
     const { quota, ...probe } = probes[id]!;
-    backends[id] = probe;
+    const catalog = catalogs[selected.indexOf(id)];
+    backends[id] = catalog ? { ...probe, models: catalog.models, modelSource: catalog.source } : probe;
     if (cached[id]) quotas[id] = quota?.buckets ? { ...cached[id], buckets: quota.buckets } : cached[id];
   }
 

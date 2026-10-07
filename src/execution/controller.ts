@@ -25,6 +25,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
+import { readModelCatalog } from '../backends/probe-cache.js';
+import { checkModelSelection } from '../backends/model-catalog.js';
 import { consentDeclinedMessage, consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../backends/governance.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
@@ -130,6 +132,13 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   const model = args.model || previous?.model || config?.defaultModel;
   // Consent covers the model the backend will run, defaults and aliases applied, and is asked on every turn.
   const effectiveModel = backend.adapter.resolveModel ? backend.adapter.resolveModel(model) : model;
+  // An explicit model or effort is checked against the CLI's own catalog before the user is
+  // asked for consent and before a model call; the default selection needs no catalog read.
+  if (args.model !== undefined || args.reasoning_effort !== undefined) {
+    const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), effectiveModel, args.reasoning_effort);
+    if (rejected) throw new ToolError(rejected.code, rejected.message);
+    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
+  }
   let consentedModel: string | undefined;
   if (isGovernedModel(effectiveModel)) {
     if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(effectiveModel));

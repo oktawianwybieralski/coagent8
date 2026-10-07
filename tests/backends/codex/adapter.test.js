@@ -173,7 +173,7 @@ test('probe returns standardized AdapterProbeResult with executionSupported, cap
       reasoningEffort: true,
     });
     assert.equal(result.loginHint, 'codex');
-    assert.equal(result.modelSource, 'config.toml and built-in model definitions');
+    assert.equal(result.modelSource, 'config.toml default; models from codex app-server model/list');
     assert.ok(Array.isArray(result.authEvidence));
     assert.ok(result.authEvidence.length > 0);
     assert.equal(result.authStatus, 'unauthenticated');

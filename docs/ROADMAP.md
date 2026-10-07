@@ -989,8 +989,22 @@ definition budget from 3,800 B to about 5 KB for described parameters.
   messages (`luna` on Codex 0.160, `gemini-3.8-flash` without effort on agy
   1.3.1) and `tests/execution/stream-reducer.test.js`; both fail on the previous
   source. Full suite: 256 pass, 0 fail, 3 skipped.
-- [ ] Model and effort validated before the CLI runs, with the accepted values in
-  the error.
+- [x] Model and effort validated before the CLI runs, with the accepted values in
+  the error. The probes listed models from a static table that did not match the
+  CLIs: Codex offered `gpt-6.0-sol`, `luna` and `astra`, while Codex 0.160 lists
+  `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`,
+  `gpt-5.6-terra` and `gpt-5.6-luna` (`model/list`, 0.1 to 1.4 s, no model call).
+  agy 1.3.1 lists its models with `agy models` (about 2 s). Both catalogs are now
+  read from the CLI, on demand and cached per probe. The controller checks an
+  explicit `model` or `reasoning_effort` before consent; doctor reports the
+  catalogs. Live check on 2026-10-07 against the installed CLIs: `luna` on Codex is
+  refused with the seven offered models, `gemini-3.8-flash` without effort with
+  "needs reasoning_effort (high, medium, low), or name it with the effort, for
+  example 'gemini-3.8-flash-high'", and `gpt-5.6-luna` with `low`,
+  `gemini-3.8-flash` with `low` and `gemini-3.8-flash-high` pass. Evidence:
+  `tests/backends/model-catalog.test.js` (fixture catalogs in the live shapes; the
+  controller test fails on the previous controller, which ran the backend) and
+  `tests/diagnostics/doctor.test.js`.
 - [ ] Only the backend's final answer is returned, without its working commentary.
 - [ ] Neutral consult prompt: no added trade-off or recommendation sections.
 - [ ] Agent-facing contract within about 5 KB:

@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { adapterRegistry } from './registry.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
 import type { ProviderId } from '../conversation.js';
-import type { AdapterProbeResult, CliAdapter } from './types.js';
+import type { AdapterProbeResult, CliAdapter, ModelCatalog } from './types.js';
 
 /** Upper bound for reusing a probe; doctor always probes afresh. */
 const PROBE_TTL_MS = 5 * 60 * 1000;
@@ -64,4 +64,27 @@ export async function probeBackend(id: ProviderId, options: { fresh?: boolean } 
   const probe = await adapter.probe();
   cache.set(id, { adapter, probeFn: adapter.probe, probe, key: probeKey(probe), at: Date.now() });
   return probe;
+}
+
+interface CachedCatalog { listFn: CliAdapter['listModels']; catalog: ModelCatalog | undefined; key: string; at: number }
+const catalogs = new Map<ProviderId, CachedCatalog>();
+
+/**
+ * Returns the models the backend CLI offers, read at most once per probe lifetime.
+ * @param id - Backend whose catalog to read.
+ * @param options - `fresh` reads again (doctor).
+ * @returns The catalog, or undefined when the CLI is not installed, has no catalog or
+ * did not answer; an unanswered read is also kept, so a slow CLI is not asked on every call.
+ */
+export async function readModelCatalog(id: ProviderId, options: { fresh?: boolean } = {}): Promise<ModelCatalog | undefined> {
+  const adapter = adapterRegistry[id];
+  if (!adapter.listModels) return undefined;
+  const probe = await probeBackend(id);
+  if (!probe.installed) return undefined;
+  const key = probeKey(probe);
+  const cached = catalogs.get(id);
+  if (!options.fresh && cached && cached.listFn === adapter.listModels && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) return cached.catalog;
+  const catalog = await adapter.listModels();
+  catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
+  return catalog;
 }

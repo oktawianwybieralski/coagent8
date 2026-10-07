@@ -8,6 +8,7 @@ import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from 
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
 import { createCodexAppSession } from './app-server.js';
+import { listCodexModels } from './models.js';
 import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
 import { readBoundedFileSync } from '../../execution/stream.js';
@@ -123,12 +124,12 @@ export async function probe(): Promise<AdapterProbeResult> {
     command: CODEX_CMD.command,
     configPath: CODEX_CONFIG_PATH,
     config,
-    availableModels: ['gpt-6.1-sol', 'gpt-6.0-sol', 'luna', 'astra'],
+    // Models and their efforts come from the CLI itself (`listModels`), read on demand.
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
     executionSupported: installed,
     capabilities: { resume: true, streaming: true, readOnlyVerified: true, reasoningEffort: true },
     loginHint: 'codex',
-    modelSource: 'config.toml and built-in model definitions',
+    modelSource: 'config.toml default; models from codex app-server model/list',
     authStatus,
     authEvidence,
   };
@@ -184,6 +185,7 @@ export const codexAdapter: CliAdapter = {
   probe,
   resolveModel,
   execute,
+  listModels: () => listCodexModels(process.env.CODEX_PATH || CODEX_EXE, VALID_REASONING_EFFORTS),
 };
 
 export default codexAdapter;

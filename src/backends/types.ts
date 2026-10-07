@@ -128,6 +128,33 @@ export interface CliAdapter {
    * Called by quota inspection (doctor and quota-aware routing), never by `execute`.
    */
   inspectQuota?(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']>;
+  /**
+   * Reads the models the installed CLI offers, without a model call. Called only when a
+   * caller names a model or effort, and by doctor; undefined when the CLI cannot say.
+   */
+  listModels?(): Promise<ModelCatalog | undefined>;
+}
+
+/** One model a CLI offers. */
+export interface CatalogModel {
+  /** Identifier the caller passes as `model`. */
+  id: string;
+  /** Accepted `reasoning_effort` values; empty when the model takes none. */
+  efforts: string[];
+  /**
+   * The CLI needs an effort with this identifier: agy lists `gemini-3.8-flash-high`
+   * and rejects `gemini-3.8-flash` without `--effort`.
+   */
+  effortRequired?: boolean;
+  /** The CLI's default model. */
+  isDefault?: boolean;
+}
+
+/** Models offered by one backend CLI, read from the CLI itself. */
+export interface ModelCatalog {
+  models: CatalogModel[];
+  /** Where the list comes from, for example `codex app-server model/list`. */
+  source: string;
 }
 
 export type QuotaStatus = 'operational' | 'uninstalled' | 'rate_limited';

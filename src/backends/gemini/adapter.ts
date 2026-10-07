@@ -8,7 +8,7 @@ import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { consentRequiredMessage, isGovernedModel, isValidModelIdentifier } from '../governance.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
+import type { AdapterProbeResult, CatalogModel, ExecutionOptions, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
 import { errorCodeOf, type ExecutionError } from '../../conversation.js';
 
 export const id = 'gemini';
@@ -118,25 +118,10 @@ export async function probe(): Promise<AdapterProbeResult> {
     },
     authStatus,
     authEvidence,
-    availableModels: [
-      'gemini-3.8-flash-high',
-      'gemini-3.8-flash-medium',
-      'gemini-3.8-flash-low',
-      'gemini-3.7-flash-high',
-      'gemini-3.7-flash-medium',
-      'gemini-3.7-flash-low',
-      'gemini-3.6-flash-high',
-      'gemini-3.6-flash-medium',
-      'gemini-3.6-flash-low',
-      'gemini-3.1-pro-high',
-      'gemini-3.1-pro-low',
-      'claude-sonnet-4-6',
-      'claude-opus-4-6-thinking',
-      'gpt-oss-120b-medium',
-    ],
+    // Models come from `agy models` (`listModels`), read on demand.
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
     config: { defaultModel: GEMINI_DEFAULT_MODEL },
-    modelSource: 'Antigravity CLI model catalog; the bridge defaults to ' + GEMINI_DEFAULT_MODEL,
+    modelSource: 'agy models; the bridge defaults to ' + GEMINI_DEFAULT_MODEL,
     loginHint: 'agy',
   };
 }
@@ -276,5 +261,40 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   };
 }
 
-export const geminiAdapter: CliAdapter = { id, name, probe, resolveModel, execute, inspectQuota };
+/**
+ * Groups `agy models` lines (`<id>\t<display name>`) by effort: agy lists
+ * `gemini-3.8-flash-high` and accepts `--model gemini-3.8-flash --effort high`, but rejects
+ * `gemini-3.8-flash` without an effort.
+ */
+export function parseAgyModels(stdout: string): CatalogModel[] {
+  const suffix = new RegExp(`^(.+)-(${VALID_REASONING_EFFORTS.join('|')})$`);
+  const models: CatalogModel[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const modelId = line.split('\t')[0].trim();
+    if (!line.includes('\t') || !isValidModelIdentifier(modelId)) continue;
+    const match = suffix.exec(modelId);
+    if (!match) { models.push({ id: modelId, efforts: [] }); continue; }
+    const group = models.find(model => model.id === match[1] && model.effortRequired);
+    if (group) group.efforts.push(match[2]);
+    else models.push({ id: match[1], efforts: [match[2]], effortRequired: true });
+  }
+  return models;
+}
+
+/** Reads the models agy offers with `agy models`, which makes no model call (about 2 s). */
+export async function listModels(): Promise<ModelCatalog | undefined> {
+  let resolved: ReturnType<typeof resolveCliCommand>;
+  try {
+    resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy');
+  } catch {
+    // Without a resolvable agy there is no catalog; the turn itself reports why agy cannot run.
+    return undefined;
+  }
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], { timeoutMs: 10_000 });
+  if (res.exitCode !== 0 || !res.stdout) return undefined;
+  const models = parseAgyModels(res.stdout);
+  return models.length ? { models, source: 'agy models' } : undefined;
+}
+
+export const geminiAdapter: CliAdapter = { id, name, probe, resolveModel, execute, inspectQuota, listModels };
 export default geminiAdapter;

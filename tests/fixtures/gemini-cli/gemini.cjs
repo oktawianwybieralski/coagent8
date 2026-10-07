@@ -2,7 +2,10 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--version')) { console.log('1.2.16'); process.exit(0); }
 if (args.includes('models')) {
-  console.log('gemini-3.8-flash-high\tGemini 3.8 Flash (High)\ngemini-3.1-pro-high\tGemini 3.1 Pro (High)');
+  // `agy models` of agy 1.3.1 (2026-10-07), abridged: a progress line, then `<id>\t<name>`.
+  console.log(['Fetching available models...', 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)', 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+    'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)', 'gemini-3.1-pro-high\tGemini 3.1 Pro (High)', 'gemini-3.1-pro-low\tGemini 3.1 Pro (Low)',
+    'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)', 'claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)', 'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)'].join('\n'));
   process.exit(0);
 }
 

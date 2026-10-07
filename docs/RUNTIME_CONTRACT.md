@@ -133,6 +133,24 @@ line to retry without the top-tier model or with a non-top-tier one. `doctor`
 with `detail: "full"`, `session` and `issue` return data, not an answer, and keep
 `structuredContent`.
 
+### Model and effort selection
+When a call names `model` or `reasoning_effort`, the controller checks the model the
+backend would run against the catalog the CLI reports, before consent and before any
+model call:
+* Codex: `codex app-server` `model/list` (visible models, each with its efforts);
+* agy: `agy models`, grouped by effort: `gemini-3.8-flash-high` is
+  `gemini-3.8-flash` with effort `high`; a model listed only with efforts needs one,
+  either as `reasoning_effort` or in its name;
+* Claude Code lists no models; its aliases and full identifiers are passed on.
+
+A model the CLI does not offer is `MODEL_UNAVAILABLE`; an effort the model does not
+accept, or a missing required one, is `INPUT_LIMIT`. Both messages name the
+accepted values. Efforts the adapter does not pass on (Codex `ultra`) are not
+offered. The catalog is read at most once per probe lifetime (5 minutes, same
+executable and environment); when it cannot be read, nothing is refused and the CLI
+decides. A call without `model` and `reasoning_effort` reads no catalog. `doctor`
+reports each catalog under `backends.<id>.models` with `detail: "full"`.
+
 ### Top-tier model consent
 
 A top-tier model (`astra`, `opus` and `best` families) runs only after the user

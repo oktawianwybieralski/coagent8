@@ -104,6 +104,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
       adapterRegistry[id] = {
         ...original[id],
         inspectQuota: async () => { quotaReads.push(id); return { measured: true, window: '5h', usedPercent: 40, headroomPercent: 60, resetsAt: '2026-10-07T12:00:00Z' }; },
+        listModels: id === 'gemini' ? async () => ({ source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }) : undefined,
         probe: async () => ({
           id, installed: true, version: `${id} 1.0.0`, executionSupported: true, authStatus: 'authenticated',
           config: { defaultModel: `${id}-model` }, availableModels: Array.from({ length: 14 }, (_, i) => `${id}-model-${i}`),
@@ -124,6 +125,9 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.ok(Buffer.byteLength(summary) < 1024, 'summary budget 1 KB');
 
     assert.equal(report.backends.gemini.quota, undefined, 'quota reported once, under quotas');
+    assert.deepEqual(report.backends.gemini.models, [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }], 'doctor reports the models the CLI lists');
+    assert.equal(report.backends.gemini.modelSource, 'agy models');
+    assert.equal(report.backends.codex.models, undefined, 'no catalog, no models field');
     assert.equal(report.quotas.gemini.buckets.length, 1);
 
     quotaReads.length = 0;

@@ -64,6 +64,15 @@ function handle(message) {
     // `resolved-model`: the thread reports a concrete model other than the requested one.
     send({ id, result: { thread: { id: threadId, turns: [] }, model: mode === 'resolved-model' ? 'gpt-6.1-sol-2026-10-01' : params.model, modelProvider: 'openai', serviceTier: null, cwd: params.cwd,
       approvalPolicy: mode === 'approvals-on' ? 'on-request' : 'never', sandbox, reasoningEffort: null } });
+  } else if (method === 'model/list') {
+    // Shape of Codex 0.160 `model/list` (2026-10-07), abridged; one hidden entry is not offered.
+    const efforts = names => names.map(reasoningEffort => ({ reasoningEffort, description: reasoningEffort }));
+    send({ id, result: { nextCursor: null, data: [
+      { id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', hidden: false, isDefault: true, defaultReasoningEffort: 'low', supportedReasoningEfforts: efforts(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']) },
+      { id: 'gpt-6-astra', model: 'gpt-6-astra', hidden: false, isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: efforts(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']) },
+      { id: 'gpt-5.6-luna', model: 'gpt-5.6-luna', hidden: false, isDefault: false, defaultReasoningEffort: 'medium', supportedReasoningEfforts: efforts(['low', 'medium', 'high', 'xhigh', 'max']) },
+      { id: 'gpt-internal', model: 'gpt-internal', hidden: true, isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: efforts(['low']) },
+    ] } });
   } else if (method === 'turn/start') {
     send({ id, result: { turn: { id: TURN, items: [], status: 'inProgress', error: null } } });
     runTurn();
