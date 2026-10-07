@@ -7,6 +7,13 @@ const zlib = require('node:zlib');
 
 const { readTarball, extractPackage, verifyPlugin } = require('../scripts/package-artifacts.cjs');
 
+test('optional setup is a separate bundle and core startup excludes installation and JSONC modules', () => {
+  const root = path.resolve(__dirname, '..');
+  assert.ok(fs.existsSync(path.join(root, 'dist/setup.cjs')));
+  const map = JSON.parse(fs.readFileSync(path.join(root, 'dist/index.cjs.map'), 'utf8'));
+  assert.ok(!map.sources.some(source => /integrations[\\/]|jsonc-parser/.test(source)), 'source map proves setup code is outside core');
+});
+
 test('package.json has zero omniagent entry in bin and clean coagent8 release metadata', () => {
   const pkgPath = path.resolve(__dirname, '..', 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));

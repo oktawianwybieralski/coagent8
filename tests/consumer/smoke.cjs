@@ -24,7 +24,7 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
   for(const name of ['logo-light.svg','logo-light.png','logo32-light.png','logo64-light.png','logo256-light.png'])assert.ok(pack.files.some(f=>f.path===`assets/${name}`),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
@@ -78,6 +78,19 @@ function npmRun(args,cwd=root) {
     await fsp.rename(sdk,sdk+'-unused');
     for(const dependency of ['jsonc-parser','smol-toml']) await fsp.rename(path.join(dir,'node_modules',dependency),path.join(dir,'node_modules',dependency+'-unused'));
     assert.ok(!fs.existsSync(sdk),'SDK must be unavailable during runtime smoke');
+    const setupHome=path.join(dir,'setup-home');await fsp.mkdir(setupHome);
+    const setupEnv={...process.env,HOME:setupHome,USERPROFILE:setupHome,CODEX_HOME:path.join(setupHome,'.codex'),CLAUDE_CONFIG_DIR:undefined,CODEX_CONFIG_PATH:undefined,GEMINI_CLI_HOME:undefined,
+      CODEX_PATH:path.join(setupHome,'missing-codex'),CLAUDE_PATH:path.join(setupHome,'missing-claude'),AGY_PATH:path.join(setupHome,'missing-agy'),coagent8_EXTENSION_PATHS:'{}'};
+    const setupCommand=commands[0];
+    const dispatch=args=>spawnSync(setupCommand.command,[...setupCommand.argsPrefix,...args],{cwd:setupHome,env:setupEnv,encoding:'utf8',windowsHide:true,timeout:15000});
+    const status=dispatch(['status']);assert.equal(status.status,1,status.stderr);
+    assert.equal(JSON.parse(status.stdout).length,3);
+    assert.ok(JSON.parse(status.stdout).every(item=>!item.installed&&!item.ready));
+    assert.ok(!fs.existsSync(path.join(setupHome,'.coagent8')),'read-only status does not publish state');
+    const preview=dispatch(['cleanup']);assert.equal(preview.status,0,preview.stderr);
+    const plan=JSON.parse(preview.stdout);assert.ok(plan.results.every(item=>item.action==='absent'));
+    const applied=dispatch(['cleanup',`--apply=${plan.token}`]);assert.equal(applied.status,0,applied.stderr);
+    assert.match(dispatch(['--help']).stdout,/cleanup/);
     assert.ok(!fs.existsSync(path.join(dir,'node_modules','tsx')));for(const tool of ['esbuild','tsdown','rolldown'])assert.ok(!fs.existsSync(path.join(dir,'node_modules',tool)),tool);
     for(const [binIndex,command] of commands.entries()) {
     const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.join(root,'tests','fixtures','gemini-cli','gemini.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
@@ -118,7 +131,7 @@ function npmRun(args,cwd=root) {
     } finally {await connection.cleanup();}
     }
     const evidence={version:installed.version,tarball:pack.filename,sha256:hash,platform:process.platform,node:process.version,files:pack.files.length,
-      installation:'PASS (omit=dev)',bundledSdk:'PASS (installed SDK unavailable during runtime smoke)',binAliases:'PASS (two installed npm commands launched with shared resolver; initialize/list/EOF each)',mcp:'PASS (initialize/list, Codex and Gemini two fixture turns/history, EOF)',realCli:'NOT VERIFIED by consumer fixture smoke'};
+      installation:'PASS (omit=dev)',bundledSdk:'PASS (installed SDK unavailable during runtime smoke)',binAliases:'PASS (two installed npm commands launched with shared resolver; initialize/list/EOF each)',setup:'PASS (separate bundled status/cleanup/help dispatch without installed dependencies)',mcp:'PASS (initialize/list, Codex and Gemini two fixture turns/history, EOF)',realCli:'NOT VERIFIED by consumer fixture smoke'};
     await fsp.writeFile(path.join(artifacts,'consumer-'+process.versions.node+'.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
   } finally {await fsp.rm(dir,{recursive:true,force:true});}
 })().catch(err=>{console.error(err.message);process.exitCode=1;});

@@ -202,28 +202,79 @@ and read the text, including an error line it corrected in one retry; agy 1.3.1
 read the text. Codex reports no workspace roots, so its results carry the
 `> Workspace: <path> (server directory)` line.
 
-The VSIX offers **CoAgent8: Set Up or Repair Chat Clients** on first local
-activation and in the Command Palette. The picker lists Codex CLI, Claude Code
-CLI and Antigravity CLI, marks availability, and preselects remembered clients
-on repair. PATH installations take precedence; Codex and Claude can also use
-binaries bundled in local `.vscode` or `.vscode-insiders` extensions. Discovery
-is refreshed on setup and does not persist version-directory paths. Explicit
-executable overrides remain authoritative.
+### CLI onboarding and optional native-host registration
 
-Selecting a missing CLI offers its official installation command in a visible
-terminal: npm for Codex and the native installer for Claude or Antigravity.
-The command is inserted without execution; press Enter to install, sign in to
-the CLI, reload VS Code to refresh PATH, and rerun setup. Missing clients are not
-registered before installation. The standalone setup command registers existing
-clients and does not download CLI binaries:
+**CoAgent8: Set Up Coding CLIs** checks all three full CLI names and remembers
+installation/check choices. It does not authorize external MCP configuration
+writes. **CoAgent8: Refresh CLI Status** reruns bounded version/help and local
+sign-in metadata checks without a prompt, installation or login. At least one
+compatible, locally signed-in backend is needed for useful execution. This status
+is distinct from per-turn sandbox verification, token validity and a successful
+model response. No CLI is required to initialize MCP or list its tools.
+
+Discovery prefers explicit executable overrides, PATH, then bundled Codex/Claude
+binaries. A bad override fails closed for that client while other clients remain
+visible. The provider passes the currently installed `openai.chatgpt` and
+`anthropic.claude-code` paths from VS Code's extension API, including custom
+installation roots, using `coagent8_EXTENSION_PATHS` (JSON object with optional
+`codex`/`claude` absolute extension directories). The runtime has no editor API
+dependency. These paths are computed for each provider definition and check;
+setup does not persist vendor version paths as executable settings. Without
+that environment contract, standalone discovery scans the standard local
+`.vscode` and `.vscode-insiders` extension directories. With it, the editor's
+actual installed paths are authoritative for bundled discovery. Extension
+changes invalidate resolver caches and refresh provider definitions. Restart a
+running MCP server if the host still retains an earlier definition/environment.
+Native-host launches outside VS Code need their own discoverable CLI environment;
+setup does not persist the editor's version directories into their registrations.
+
+For missing Codex/Claude, onboarding offers **Install Vendor Extension** or
+**Open Install Command**. Extension installation uses VS Code's documented
+`workbench.extensions.installExtension` action after the user's choice; its
+bundled CLI must still pass the subsequent check. CoAgent8 has no unconditional
+vendor extension dependencies or extension pack. The inspected Google extension
+does not supply `agy`; Antigravity uses its official standalone installer.
+Standalone commands are inserted in a visible terminal without execution:
+press Enter to install. Cancellation/failure is reported per client, with a
+refresh/retry path. A terminal command offer is not installation evidence.
+
+Onboarding can offer an explicit sign-in terminal command (`codex login`,
+`claude auth login`, or interactive `agy`). It never executes sign-in. Refresh
+status after completion. If PATH is stale, reload VS Code first; a terminal's
+new PATH does not update the existing extension host. CLI presence alone does
+not establish authentication. Claude must meet the adapter's shared minimum
+2.1.289 and advertise the required restricted/streaming controls. Codex also
+passes an app-server initialize handshake without creating a thread or model
+turn. Codex/Claude authentication reflects only their own local status command.
+Antigravity's help/version controls can be checked, but no documented
+noninteractive login-status command was found; its authentication remains
+`unknown` here. Native quota/authentication acceptance is separate.
+
+**CoAgent8: Register or Repair Native Chat Hosts** is optional. Its separate
+picker and confirmation authorize writes to selected clients' external MCP
+configuration. The ordinary VS Code provider works independently. Explicit
+standalone commands retain their registration semantics:
 
 ```bash
-coagent8 setup --clients=codex,claude,agy
-coagent8 repair
-coagent8 status
+coagent8 setup --clients=codex,claude,agy  # authorize native-host registration
+coagent8 repair                          # reuse saved registration selections
+coagent8 status                          # inspect all CLIs and registration evidence
+coagent8 cleanup                         # preview unchanged owned removals
+coagent8 cleanup --apply=<preview-token> # apply that exact current preview
 ```
 
-No-argument invocation remains the stdio MCP server. Setup installs the built
+Metadata and callability evidence are separate fields: `installed`, `version`,
+`compatibility`, `authentication`, `ready`, `registered`, `runtimeCallable`, and
+`hostCallable`. `compatibility: supported` establishes required CLI controls
+(and Codex initialization), not authenticated streaming execution or complete
+capability isolation. Registration errors do not erase CLI presence/sign-in.
+Unknown authentication is not ready. A direct-runtime doctor pass is not native
+Claude/Antigravity acceptance. Status returns exit 1 if no CLI has compatible
+controls and verified local sign-in, while MCP initialization stays available.
+
+No-argument invocation and unknown host startup arguments start the stdio MCP
+server. Recognized setup commands load the separate sibling `dist/setup.cjs`;
+installer code and JSONC handling are excluded from the core bundle. Setup installs the built
 bundle at `~/.coagent8/runtime/<sha256>/index.cjs`, records selections and owned
 entry fingerprints in `~/.coagent8/setup.json`, and keeps private configuration
 backups under `~/.coagent8/setup-backups/`. These files can contain credentials;
@@ -243,9 +294,37 @@ setup reports the conflict and keeps the private backup for recovery.
 
 The provider yields to a manual CoAgent8 entry in the active VS Code profile or
 workspace, preserving the working connection and avoiding a duplicate provider
-entry. No uninstall callback edits external settings. Remove a managed registration
-through its host only after verifying a replacement; setup does not delete manual
-entries or automatically remove old runtime directories.
+entry.
+
+### Owned-registration cleanup and uninstall
+
+Run **CoAgent8: Preview and Remove Owned Registrations** before uninstalling the
+VSIX, or use the standalone `cleanup` command. Preview is read-only. Applying
+requires a confirmation in VS Code or the exact CLI preview token; a changed
+configuration/ownership snapshot invalidates it. Cleanup shares setup's lease,
+keeps private byte-for-byte backups, checks current entry fingerprints, and
+reports removals, absent entries, preserved manual/edited entries and per-client
+failures. It does not require an installed backend CLI. Successful removal and
+failed state persistence are reported separately; rerun a fresh preview for
+recovery. Repeated cleanup is idempotent.
+
+Only unchanged `coagent8` entries with recorded setup ownership are removed.
+Other identities, including legacy names without ownership evidence, are retained.
+JSON/JSONC removal preserves other settings; TOML removal supports full owned
+tables and nested/quoted keys. Unsupported inline/dotted TOML layouts are preserved
+with a conflict instead of reserializing the user's configuration. Runtime files
+are retained conservatively because manual or edited registrations may still
+reference them. Histories, credentials, CLI installations and vendor extensions
+are not removed.
+
+After cleanup, restart native hosts to refresh cached catalogs; uninstall the
+VSIX separately to remove its provider. Restart alone does not remove persistent
+registrations. No `vscode:uninstall` hook mutates external settings: it is not a
+reliable cleanup guarantee and would skip the preview/consent flow. VS Code owns
+its provider/cache lifecycle. Production cleanup neither edits SQLite profile
+databases nor deletes profile storage, cached catalogs or auto-update exclusions.
+Residual installed-host state after restart remains an interactive acceptance
+item, not a reason to mass-delete the owner's profile.
 
 Setup currently supports local default standalone profiles. Remote VS Code hosts
 continue to use the bundled provider but do not run external-client setup on the

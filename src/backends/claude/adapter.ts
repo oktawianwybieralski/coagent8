@@ -6,29 +6,14 @@ import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../conversation.js';
+import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 export const id = 'claude', name = 'Claude Code CLI';
 const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
 export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-/**
- * `--restricted` needs 2.1.248 and `--permission-prompts` 2.1.259 (Claude Code CLI
- * reference). A local `/usage` in print mode, which reports the model in `system/init`
- * without a model turn, was verified live on 2.1.289; the bridge needs it to know which
- * model a name runs before consent.
- */
-const MIN_CLAUDE_VERSION: readonly [number, number, number] = [2, 1, 289];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
-
-/** Returns whether a `claude --version` output meets {@link MIN_CLAUDE_VERSION}. */
-function supportsVersion(versionOutput: string): boolean {
-  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(versionOutput.trim());
-  if (!match) return false;
-  const actual = match.slice(1, 4).map(Number);
-  for (let i = 0; i < 3; i++) if (actual[i] !== MIN_CLAUDE_VERSION[i]) return actual[i] > MIN_CLAUDE_VERSION[i];
-  return true;
-}
 
 /**
  * Reads installation, version and local login state without calling a model.
@@ -41,7 +26,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   const res = await runCommand(command, ['--version'], { timeoutMs: 5000 });
   const installed = res.status === 'completed';
   const version = res.stdout.trim() || 'unknown';
-  const executionSupported = installed && supportsVersion(version);
+  const executionSupported = installed && supportsClaudeVersion(version);
   let authStatus = 'unknown', authMethod: string | undefined;
   const authEvidence: string[] = [];
   if (installed) {
@@ -82,7 +67,7 @@ async function runLocalUsage(model: string | undefined, probe?: AdapterProbeResu
     if (verRes.status !== 'completed') return undefined;
     version = verRes.stdout.trim();
   }
-  if (!supportsVersion(version)) return undefined;
+  if (!supportsClaudeVersion(version)) return undefined;
   const res = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
     '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
     ...(model ? ['--model', model] : []), '--output-format', 'stream-json', '--verbose', '/usage'], { timeoutMs: 15000 });

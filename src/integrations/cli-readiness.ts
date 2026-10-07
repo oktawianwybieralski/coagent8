@@ -6,6 +6,7 @@ import { runCommand } from '../execution/process.js';
 import type { CliCommand } from '../execution/cli-resolver.js';
 import type { SetupClient } from './setup.js';
 import { object, withStdioRpc } from './rpc.js';
+import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from '../backends/claude/version.js';
 
 /** CLI evidence is distinct from runtime/host calls and per-turn sandbox verification. */
 export interface CliReadiness {
@@ -35,11 +36,10 @@ export async function inspectCli(client: SetupClient, cli: CliCommand, env: Node
   const flags = client === 'codex' ? ['app-server', 'sandbox'] : client === 'claude'
     ? ['--restricted', '--tools', '--permission-mode', '--permission-prompts', '--strict-mcp-config', '--mcp-config', '--output-format', '--input-format', '--no-session-persistence']
     : ['--sandbox', '--output-format', '--input-format', '--conversation'];
-  const numbers = parsedVersion.slice(1, 4).map(Number);
-  const recentClaude = client !== 'claude' || numbers[0] > 2 || (numbers[0] === 2 && (numbers[1] > 1 || (numbers[1] === 1 && numbers[2] >= 289)));
+  const recentClaude = client !== 'claude' || supportsClaudeVersion(parsedVersion[0]);
   result.compatibility = recentClaude && flags.every(flag => help.stdout.includes(flag)) ? 'supported' : 'unsupported';
   if (result.compatibility !== 'supported') {
-    result.diagnostic = 'Required CLI controls are missing (Claude requires 2.1.289+). Update explicitly and retry.';
+    result.diagnostic = `Required CLI controls are missing (Claude requires ${MIN_CLAUDE_VERSION.join('.')}+). Update explicitly and retry.`;
     return result;
   }
   if (client === 'codex') {

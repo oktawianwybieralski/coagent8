@@ -211,12 +211,12 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
   }
   const root = path.join(home, '.coagent8');
   const stateFile = path.join(root, 'setup.json');
-  const saved = readSelection(stateFile);
-  const selected = [...new Set(options.clients ?? (options.statusOnly ? SETUP_CLIENTS : saved.clients))];
-  if (!selected.length && !options.statusOnly) throw new Error('Select clients with --clients=codex,claude,agy on first setup.');
-  if (!selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown setup client.');
   if (!options.statusOnly) fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   async function performSetup(): Promise<SetupStatus[]> {
+    const stateBefore = read(stateFile), saved = readSelection(stateFile, stateBefore);
+    const selected = [...new Set(options.clients ?? (options.statusOnly ? SETUP_CLIENTS : saved.clients))];
+    if (!selected.length && !options.statusOnly) throw new Error('Select clients with --clients=codex,claude,agy on first setup.');
+    if (!selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown setup client.');
     let candidate: Registration | null = null;
     if (!options.statusOnly) {
       const bundle = readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024);
@@ -233,12 +233,20 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       const result: SetupStatus = { client, version: null, compatibility: 'unknown', authentication: 'unknown', ready: false, diagnostic: '', installed: false, registered: false, runtimeCallable: false, hostCallable: false, tools: [], action: 'blocked', message: '' };
       results.push(result);
       try {
+        let cli: CliCommand | null = null;
+        let resolutionError: unknown;
+        try { cli = resolveSetupClient(client, home, env, options.nodePath || process.execPath); }
+        catch (error) { resolutionError = error; }
+        if (cli) {
+          result.installed = true;
+          Object.assign(result, await inspectCli(client, cli, env, cwd));
+        }
         const file = configPath(client, home, env);
         const before = read(file);
         const config = before === null ? {} : document(client, before);
         const entry = servers(client, config).coagent8;
         result.registered = entry !== undefined;
-        const cli = resolveSetupClient(client, home, env, options.nodePath || process.execPath);
+        if (resolutionError) throw resolutionError;
         if (!cli) {
           if (options.statusOnly && entry !== undefined) {
             result.tools = await probeRuntime(registration(entry), env, cwd);
@@ -246,8 +254,6 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           }
           result.action = 'missing'; result.message = 'CLI missing; any external registration is retained. Install/authenticate explicitly.'; continue;
         }
-        result.installed = true;
-        Object.assign(result, await inspectCli(client, cli, env, cwd));
         if (!options.statusOnly && result.compatibility !== 'supported') { result.message = result.diagnostic; continue; }
         checkScopes(client, config, cwd, file, home);
         if (entry !== undefined) {
@@ -324,7 +330,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     }
     if (!options.statusOnly) {
       saved.clients = selected;
-      writeChecked(stateFile, read(stateFile), JSON.stringify(saved, null, 2) + '\n');
+      writeChecked(stateFile, stateBefore, JSON.stringify(saved, null, 2) + '\n');
     }
     return results;
   }

@@ -79,8 +79,8 @@ export function writeChecked(file: string, before: string | null, after: string)
     fs.rmSync(temp, { force: true });
   }
 }
-export function readSelection(file: string): Selection {
-  const content = read(file);
+export function readSelection(file: string, snapshot?: string | null): Selection {
+  const content = snapshot === undefined ? read(file) : snapshot;
   if (content === null) return { clients: [], owned: {} };
   const data = json(content);
   if (!Array.isArray(data.clients) || !data.clients.every(client => SETUP_CLIENTS.includes(client as SetupClient))) throw new Error('Invalid saved setup selections.');

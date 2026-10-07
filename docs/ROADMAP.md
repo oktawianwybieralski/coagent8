@@ -1895,14 +1895,17 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   passed; each badge returned HTTP 200 (473-1,664 bytes). Installed-host rendering
   of the badges remains to be confirmed.
 
-- [ ] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
-  core startup and backend execution. Ship setup as a separate entrypoint and
-  bundle, so installer-only code and JSONC handling leave the core. Codex
-  backend config still requires TOML parsing. Unknown
-  arguments must not terminate a server started by a host (AUD-P2-10).
+- [x] Isolate setup/repair, native-host probes and VSIX/plugin presentation from
+  core startup and backend execution (AUD-P2-10). Recognized CLI setup commands
+  load the separate `dist/setup.cjs`; the core sourcemap contains no integration
+  or JSONC modules. Codex backend config still uses TOML. Unknown host startup
+  arguments retain MCP initialize/list behavior, covered by an isolated e2e test.
+  The VSIX ships the sibling setup bundle from the packed npm tarball.
 - [ ] Retain selected-client consent, idempotence, stable owned runtime paths,
   conflict detection, preservation of unrelated settings and private backups.
-- [ ] Implement explicit uninstall/cleanup for managed external-client registrations.
+- [x] Implement explicit uninstall/cleanup for managed external-client registrations.
+  Implementation and isolated acceptance completed below; installed-host restart/UI
+  acceptance remains open.
   Owner reproduction on 2026-10-07: uninstalling the VSIX left CoAgent8 entries in
   Codex, Claude Code and Antigravity configuration, VS Code extension state,
   cached MCP definitions and the extension's auto-update exclusion. Reloading
@@ -1978,6 +1981,43 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   for integrations being changed or claimed as supported. Keep UI/icon evidence
   separate from protocol compatibility and backend readiness.
 
+Implementation follow-up on 2026-10-07 (`fix/vsix-presentation`):
+
+- Separate commands now own CLI onboarding/status, optional confirmed native-host
+  registration and preview/apply cleanup. Picking a CLI never writes native-host
+  configuration. Existing internal IDs, beta.2 metadata, `okidev` identity, icon
+  and compact Details links are retained. No extension pack or mandatory vendor
+  dependency is introduced.
+- The editor passes current installed extension paths to shared runtime discovery,
+  including custom roots; updates/removal invalidate caches. Standalone operation
+  remains editor-independent. Metadata checks verify versions/required controls,
+  a Codex initialize handshake and Codex/Claude local sign-in without model turns.
+  Antigravity sign-in is explicitly unknown; it is never promoted to ready from
+  installation alone. Registration, direct-runtime and native-host calls remain
+  separate evidence. Native-host launches need their own discoverable environment;
+  versioned editor paths are not persisted into their registrations.
+- Cleanup works without the backend CLI, removes only unchanged fingerprint-owned
+  entries, binds apply to a current preview, keeps private backups, reports partial
+  failures and retains runtimes conservatively. Manual/edited/legacy entries,
+  other servers, credentials, histories and extensions survive. JSONC settings
+  and supported full TOML tables are edited without reserializing unrelated
+  content; unsupported inline/dotted TOML ownership remains a visible conflict.
+  State is read under the setup/cleanup lease and writes compare the original
+  snapshot. No uninstall callback or profile SQLite/cache deletion is shipped.
+- Local Windows / Node 26.10.0: typecheck, source documentation lint/generation,
+  fresh build and 66 focused tests passed (setup/provider/readiness/cleanup,
+  resolver/package, generic MCP, Codex/Claude adapters and doctor). Isolated tests
+  cover no CLI, standard bundled discovery, custom paths/update/removal, a single
+  signed-in backend, Antigravity-only unknown auth, override/registration errors,
+  installation cancellation/failure, repeated repair and cleanup preserving
+  manual/edited entries. Backup failure and stale preview regressions passed.
+- Installed VS Code onboarding, sign-in, Details badges, native-host calls for
+  Claude/Antigravity and uninstall -> restart residual-state acceptance are pending.
+  The owner's actual extensions, histories, credentials and registrations were
+  not modified. Fixture evidence is not live host acceptance, an authenticated
+  model response, independent review or release approval. Beta.2 stays private;
+  no publication, release tag or merge is authorized.
+
 Host evidence recorded on 2026-10-05 (historical; not fresh validation):
 
 | Host | Evidence | Remaining acceptance |
@@ -1988,8 +2028,9 @@ Host evidence recorded on 2026-10-05 (historical; not fresh validation):
 | VS Code | Native provider retained; manual active-profile/workspace registration takes precedence; setup/remote/multi-root paths exercised by source tests; VSIX packages. | Real install/update/uninstall lifecycle, fresh/existing chat, icons and alternate-profile UI. |
 | Insiders | Historical repaired profile preserved. | Executable/application installation and all native UI acceptance remain unverified. |
 
-The CLI provides `setup`, `repair` and read-only `status`. VSIX first-run
-onboarding and `CoAgent8: Setup or Repair Chat Clients` reuse that implementation.
+The CLI provides `setup`, `repair`, read-only `status` and preview/apply `cleanup`.
+VSIX onboarding checks CLIs independently; optional native-host registration
+reuses shared setup only after separate confirmation.
 Selected local-default clients are remembered. Immutable runtime bundles are
 published under `~/.coagent8/runtime/<sha256>/index.cjs`. The repaired manual
 `~/.coagent8/runtime/index.cjs` registrations are preserved. No user host

@@ -74,6 +74,33 @@ generated changelog commit: `cca00f2`.
   build and the regenerated changelog. Any rebuild invalidates this artifact
   reference as evidence for the replacement.
 
+## Implementation follow-up - 2026-10-07
+
+The baseline above is historical. The follow-up implements separate CLI
+onboarding/status, explicitly confirmed optional native-host registration, and
+owned-registration preview/apply cleanup. The provider passes actual installed
+vendor extension paths to shared runtime discovery, including custom roots;
+paths are refreshed and never persisted as vendor executable overrides.
+Metadata-only checks report CLI controls and Codex/Claude local sign-in separately
+from direct-runtime/native-host calls. Antigravity sign-in stays unknown here.
+Setup CLI code now ships in `dist/setup.cjs`, outside the core MCP bundle.
+
+Cleanup verifies fingerprints and the current preview token, keeps private
+backups, works without a backend CLI and retains runtime files, manual/edited
+entries, credentials, histories and other extensions. Unsupported inline/dotted
+Codex TOML remains a conflict. No production SQLite/profile-cache deletion or
+uninstall hook is shipped. Local typecheck, source documentation checks, a fresh
+build, 66 focused regressions and isolated package consumer smoke passed on
+Windows / Node 26.10.0. The consumer also exercises bundled status/cleanup/help
+without installed dependency resolution. Current private artifact evidence and
+remaining acceptance are recorded in the INSTALL-001 / MIGRATION-001 section
+of [ROADMAP.md](ROADMAP.md#install-001--migration-001---optional-setup-and-presentation).
+
+Installed VS Code onboarding/Details rendering, actual sign-in, native Claude/agy
+host calls and uninstall/restart residual-state acceptance remain pending. Do not
+repeat maintenance on the owner's actual profile. No publication, tag, merge or
+independent release approval resulted from the follow-up.
+
 ## Dependency recommendation
 
 The owner permits proposing extension installation and justified dependencies;

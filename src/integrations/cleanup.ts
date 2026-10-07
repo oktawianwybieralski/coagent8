@@ -31,12 +31,13 @@ export interface CleanupOptions {
 export interface CleanupPreview { token: string; results: CleanupStatus[]; stateError?: string }
 
 function removeEntry(client: SetupClient, before: string): string {
-  if (client !== 'codex') return applyEdits(before, modify(before, ['mcpServers', 'coagent8'], undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } }));
   // Remove only full owned TOML tables, preserving bytes of other tables/comments.
   // Parsing the header handles quoted keys; an inline/dotted unsupported layout
   // fails closed below instead of rewriting the user's entire document.
   let owned = false;
-  const after = before.split(/(?<=\n)/).filter(line => {
+  const after = client !== 'codex'
+    ? applyEdits(before, modify(before, ['mcpServers', 'coagent8'], undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } }))
+    : before.split(/(?<=\n)/).filter(line => {
     if (/^\s*\[/.test(line)) {
       try { owned = Object.hasOwn(servers('codex', document('codex', line + '\n')), 'coagent8'); }
       catch { owned = false; }
@@ -45,9 +46,10 @@ function removeEntry(client: SetupClient, before: string): string {
   }).join('');
   const oldDoc = document(client, before), newDoc = document(client, after);
   const { coagent8: _removed, ...remaining } = servers(client, oldDoc);
+  const key = client === 'codex' ? 'mcp_servers' : 'mcpServers';
   if (!isDeepStrictEqual({ ...servers(client, newDoc) }, remaining)
-      || !isDeepStrictEqual({ ...oldDoc, mcp_servers: undefined }, { ...newDoc, mcp_servers: undefined })) {
-    throw new Error('TOML entry cannot be removed without changing other settings; preserved.');
+      || !isDeepStrictEqual({ ...oldDoc, [key]: undefined }, { ...newDoc, [key]: undefined })) {
+    throw new Error('Entry cannot be removed without changing other settings; preserved.');
   }
   return after;
 }
@@ -60,7 +62,7 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
   }
   const root = path.join(home, '.coagent8'), stateFile = path.join(root, 'setup.json');
   async function perform(): Promise<CleanupPreview> {
-    const stateBefore = read(stateFile), saved = readSelection(stateFile);
+    const stateBefore = read(stateFile), saved = readSelection(stateFile, stateBefore);
     const selected = [...new Set(options.clients ?? SETUP_CLIENTS)];
     if (!selected.length || !selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown cleanup client.');
     const snapshots = new Map<SetupClient, { file: string; before: string | null; after?: string }>();

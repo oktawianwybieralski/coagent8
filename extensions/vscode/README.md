@@ -123,11 +123,29 @@ normally `~/.coagent8/config.json`. The extension does not provide a model picke
 or a separate backend settings UI. See the
 [runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#configuration-and-routing).
 
-**CoAgent8: Set Up or Repair Chat Clients** connects selected installed local
-standalone Codex CLI, Claude Code CLI and Antigravity CLI clients. The first local activation offers
-this optional setup. Selected clients are remembered for repair; existing manual
-registrations and unrelated settings are preserved. Standalone clients have
-their own MCP registries, separate from VS Code's native provider.
+**CoAgent8: Set Up Coding CLIs** checks existing Codex CLI, Claude Code CLI and
+Antigravity CLI installations and offers explicit installation/sign-in actions.
+Codex/Claude can reuse their vendor extension's compatible bundled CLI, including
+custom extension roots. Missing clients offer a vendor extension or standalone
+install command; Antigravity needs standalone `agy`. Terminal commands are
+inserted without execution. Press Enter, then use **CoAgent8: Refresh CLI Status**;
+reload VS Code first if PATH is stale. At least one compatible signed-in CLI is
+needed for useful execution. Antigravity authentication remains unverified by
+this metadata-only status check.
+
+Installation/check selections do not register external MCP servers. Optional
+**CoAgent8: Register or Repair Native Chat Hosts** has a separate selection and
+confirmation. The VS Code MCP provider works independently. Existing manual
+registrations and unrelated settings are preserved.
+
+Before uninstalling the VSIX, use **CoAgent8: Preview and Remove Owned
+Registrations**, or run `coagent8 cleanup` for a preview and
+`coagent8 cleanup --apply=<preview-token>` to apply it. Only unchanged entries
+with recorded ownership are removed. Private backups and runtime files are
+retained; edited/manual entries, histories, credentials, other servers and vendor
+extensions survive. Restart native hosts to refresh their cached catalogs.
+Uninstalling the VSIX or restarting alone does not remove external registrations.
+No production command deletes VS Code profile databases or cache tables.
 
 External-client setup is unavailable on remote extension hosts. In a multi-root
 window, use `coagent8 setup` from the intended project directory instead.

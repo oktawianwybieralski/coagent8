@@ -8,10 +8,10 @@ const { execFileSync } = require('node:child_process');
 const { connect: connectStdio } = require('../helpers/stdio.cjs');
 const { readResult } = require('../helpers/result.cjs');
 
-function createClient(dir, extraEnv = {}) {
+function createClient(dir, extraEnv = {}, args = []) {
   return connectStdio(
     process.execPath,
-    ['--require', 'tsx/cjs', path.resolve(__dirname, '../../src/index.ts')],
+    ['--require', 'tsx/cjs', path.resolve(__dirname, '../../src/index.ts'), ...args],
     {
       env: {
         ...process.env,
@@ -21,6 +21,15 @@ function createClient(dir, extraEnv = {}) {
     }
   );
 }
+
+test('unknown host startup arguments do not hide the MCP surface', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-host-args-'));
+  const c = createClient(dir, {}, ['--host-specific-argument']);
+  t.after(async () => { await c.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); });
+  await c.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'arbitrary-host', version: '1' } });
+  const tools = await c.request('tools/list', {});
+  assert.ok(tools.result.tools.some(tool => tool.name === 'doctor'));
+});
 
 test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools without backend or host mutation', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-generic-mcp-'));
