@@ -1,10 +1,14 @@
 /** Typed native Codex failures; independent of execution and parsing. @packageDocumentation */
 import { redactDiagnostic } from '../../redaction.js';
+import { isRateLimitError } from '../rate-limit.js';
+import { isAuthError } from '../auth-error.js';
 import type { ExecutionError } from '../../conversation.js';
 
 export function classifyCodexError(message: string): ExecutionError {
-  const code = /429|rate.?limit|quota|too many requests|usage\s*limit|spend\s*cap/i.test(message) ? 'RATE_LIMITED'
-    : /auth|credential|api.?key|log.?in|401|403/i.test(message) ? 'AUTH_REQUIRED'
+  // Anchored provider phrases only: a bare "429", "quota" or "auth" also occurs in file
+  // names, line numbers and ordinary words ("line 429", "disk quota check", "author").
+  const code = isRateLimitError(message) ? 'RATE_LIMITED'
+    : isAuthError(message) ? 'AUTH_REQUIRED'
     : /model.*(?:not found|unavailable|unsupported|does not exist)/i.test(message) ? 'MODEL_UNAVAILABLE'
     : /(?:session|thread).*(?:not found|invalid|does not exist)/i.test(message) ? 'SESSION_INVALID' : 'PROCESS_ERROR';
   return { code, message: redactDiagnostic(message), retryable: code === 'RATE_LIMITED' };

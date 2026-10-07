@@ -1008,9 +1008,16 @@ without a model call.
   With a second write reinjected, the same test fails with 45 s, the audit
   reproduction. The controller is the only writer; `checkAndRecordRateLimit` is
   removed because adapters already classify `RATE_LIMITED`.
-- [ ] Classify from structured payloads first and anchored provider phrases
+- [x] Classify from structured payloads first and anchored provider phrases
   second. Stop matching bare `429`, `quota` or `auth` substrings. Parse `ms`
-  before `m` and decimal durations (AUD-P2-1).
+  before `m` and decimal durations (AUD-P2-1). On `fix/error-classification`, not
+  yet merged. The Codex and Gemini text classifiers use the shared rate-limit
+  detector and a new `isAuthError` (`src/backends/auth-error.ts`) of anchored
+  phrases; structured payload extraction is unchanged. Evidence:
+  `tests/backends/errors.test.js` (the audit inputs `line 429`, `author field`,
+  `disk quota check` are `PROCESS_ERROR` for both classifiers) and
+  `tests/backends/rate-limit.test.js` (`20ms` is 20 ms, `1.5s` is 1.5 s); both fail
+  against the previous classifiers.
 - [ ] Remove remaining synthetic telemetry: a missing `remaining_fraction` is
   unmeasured, not 100% headroom (AUD-P2-2).
 - [ ] Claude Code status: distinguish unauthenticated or logged-out states from

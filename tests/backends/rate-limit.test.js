@@ -27,3 +27,11 @@ test('rate-limit: parseResetTimestamp parses exact and relative timestamps bound
   const noReset = parseResetTimestamp('Random error with no time');
   assert.equal(noReset, null);
 });
+
+test('rate-limit: relative resets read milliseconds before minutes and decimal values (AUD-P2-1)', () => {
+  assert.equal(parseResetTimestamp('Try again in 20ms.').cooldownMs, 20);
+  assert.equal(parseResetTimestamp('Try again in 1.5s.').cooldownMs, 1500);
+  assert.equal(parseResetTimestamp('Try again in 2h30m.').cooldownMs, 9000000);
+  assert.equal(parseResetTimestamp('try again in 5 minutes and 3 seconds').cooldownMs, 303000);
+  assert.equal(parseResetTimestamp('Try again in 3 days.').cooldownMs, 3 * 24 * 3600 * 1000);
+});

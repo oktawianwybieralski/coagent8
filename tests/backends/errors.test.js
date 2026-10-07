@@ -114,3 +114,18 @@ test('codex-errors: classifies usage limit and spend cap as RATE_LIMITED', () =>
   });
   assert.equal(structErr.code, 'RATE_LIMITED');
 });
+
+test('classification uses anchored provider phrases, not bare numbers or substrings (AUD-P2-1)', () => {
+  const { classifyGeminiError } = require('../../src/backends/gemini/errors.ts');
+  for (const classify of [classifyCodexError, classifyGeminiError]) {
+    for (const ordinary of ['Error at line 429 of parser', 'author field missing', 'disk quota check failed', 'see docs/auth-flow.md', 'exit code 401 from helper script line 403']) {
+      assert.equal(classify(ordinary).code, 'PROCESS_ERROR', `${classify.name}: ${ordinary}`);
+    }
+    for (const limited of ['HTTP 429 Too Many Requests', 'Too many requests', 'You hit your usage limit.', 'rate limit exceeded', 'exceeded your current quota']) {
+      assert.equal(classify(limited).code, 'RATE_LIMITED', `${classify.name}: ${limited}`);
+    }
+    for (const auth of ['401 Unauthorized', 'Not logged in. Run the login command.', 'invalid_api_key', 'Authentication required', 'HTTP status 403']) {
+      assert.equal(classify(auth).code, 'AUTH_REQUIRED', `${classify.name}: ${auth}`);
+    }
+  }
+});

@@ -1,6 +1,7 @@
 /** Public Gemini terminal/error classification. @packageDocumentation */
 import { redactDiagnostic } from '../../redaction.js';
 import { isRateLimitError } from '../rate-limit.js';
+import { isAuthError } from '../auth-error.js';
 import type { ExecutionError } from '../../conversation.js';
 export function classifyGeminiError(text: string): ExecutionError {
   const message = redactDiagnostic(text);
@@ -8,7 +9,7 @@ export function classifyGeminiError(text: string): ExecutionError {
     ? 'RATE_LIMITED'
     : /session.*(?:not found|invalid|does not exist)|failed.*resume|conversation.*not found/i.test(text)
     ? 'SESSION_INVALID'
-    : /auth|login|log\.in|credential|api\.key.*(?:missing|required|invalid)|ineligibletiererror|401|403/i.test(text)
+    : isAuthError(text)
     ? 'AUTH_REQUIRED'
     : /model.*(?:not found|unavailable|unsupported|not recognized)|404/i.test(text)
     ? 'MODEL_UNAVAILABLE'

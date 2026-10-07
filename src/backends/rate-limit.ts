@@ -16,7 +16,7 @@ export function isRateLimitError(text?: string | null): boolean {
       return true;
     }
 
-    if (/\b429\s+too\s+many\s+requests\b/i.test(trimmed)) {
+    if (/\b(?:429\s+)?too\s+many\s+requests\b/i.test(trimmed)) {
       return true;
     }
 
@@ -62,21 +62,25 @@ export function parseResetTimestamp(text?: string | null): ParsedResetTime | nul
     }
   }
 
-  // Relative duration matches: "try again in 3 hours, 14 minutes"
-  const relativeMatch = /try again in\s+((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)[,\s]*)+)/i.exec(text);
+  // Relative duration matches: "try again in 3 hours, 14 minutes", "in 1.5s", "in 20ms".
+  // Milliseconds are listed before minutes so "ms" is never read as "m".
+  const unitPattern = '(?:milliseconds?|ms|days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])';
+  const relativeMatch = new RegExp(`try again in\\s+((?:\\d+(?:\\.\\d+)?\\s*${unitPattern}[,\\s]*(?:and\\s+)?)+)`, 'i').exec(text);
   if (relativeMatch) {
     const durationStr = relativeMatch[1];
     let totalMs = 0;
-    const partRegex = /(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)/gi;
+    const partRegex = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${unitPattern})`, 'gi');
     let m: RegExpExecArray | null;
     while ((m = partRegex.exec(durationStr)) !== null) {
-      const val = parseInt(m[1], 10);
+      const val = Number.parseFloat(m[1]);
       const unit = m[2].toLowerCase();
-      if (unit.startsWith('d')) totalMs += val * 24 * 3600 * 1000;
+      if (unit === 'ms' || unit.startsWith('milli')) totalMs += val;
+      else if (unit.startsWith('d')) totalMs += val * 24 * 3600 * 1000;
       else if (unit.startsWith('h')) totalMs += val * 3600 * 1000;
       else if (unit.startsWith('m')) totalMs += val * 60 * 1000;
       else if (unit.startsWith('s')) totalMs += val * 1000;
     }
+    totalMs = Math.round(totalMs);
     if (totalMs > 0) {
       const effectiveMs = Math.min(totalMs, MAX_COOLDOWN_MS);
       return { resetDate: new Date(Date.now() + effectiveMs), cooldownMs: effectiveMs };
