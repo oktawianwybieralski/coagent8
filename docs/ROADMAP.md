@@ -29,8 +29,8 @@ The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pendin
 
 | Area | Implemented locally | Remaining |
 | --- | --- | --- |
-| Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup | Inherited MCP isolation, POSIX parent-death cleanup, fresh candidate matrix |
-| Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection | Sticky commentary truncation/count budgets, review completeness |
+| Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup; Codex inherited-tool verification and nested-turn refusal | agy inherited tools (accepted limitation), POSIX parent-death cleanup, fresh candidate matrix |
+| Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection; structured review completeness and snapshot/check binding | Sticky commentary truncation/count budgets, full review of another tree |
 | Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, cache-failure tolerance, end-to-end budget |
 | Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Coalesced misses, fuller invalidation, catalog/default redesign |
 | Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
@@ -317,11 +317,30 @@ It adds no separate work.
 - [ ] Re-run the audit probes against the candidate and record the results in the
   project review before requesting Reviewer approval.
 
-- [ ] `CUR-001`: propagate omitted/truncated Git input as structured completeness
+- [x] `CUR-001`: propagate omitted/truncated Git input as structured completeness
   state into the review gate. Bind the expected snapshot and define approval
   handling for FAIL/NOT_RUN without turning prose checks into fabricated PASS.
   Acceptance: over-budget diffs/untracked omissions cannot receive READY; wrong
   snapshots and failed required checks block approval.
+  Local implementation on `fix/vsix-presentation` (2026-10-08): Git collection
+  returns completeness and omissions separately from model text. The prompt and
+  gate bind a SHA-256 digest of collected input and workspace state; post-turn
+  changes invalidate readiness. CHECKS are parsed: FAIL always blocks, runtime
+  scopes require PASS and prose-only Markdown allows honest NOT_RUN.
+  NUL-delimited changed-path inventory includes quoted names and rename sources.
+  Binary/gitlink contents and unmerged entries make input incomplete; index flags
+  that hide changes refuse review before a probe. Regression coverage in
+  `tests/tools/review.test.js`, `tests/tools/review-gate.test.js` and
+  `tests/execution/git-fixture.test.js` reproduces over-budget input, omitted
+  untracked files, wrong snapshots, failed/unrun checks, concurrent edits, quoted
+  source names, renames, dirty gitlinks and both hidden-index flags.
+  This does not prove a model's PASS claim or bind release artifact hashes.
+- [x] `CUR-013` mismatch prevention for local beta.2: review of a revision whose
+  tracked files differ from the current workspace, or staged review with working
+  overlays/untracked files, returns POLICY_DENIED before any backend probe.
+  The owner directed work on the current checkout on 2026-10-08; no worktree or
+  additional project checkout is created. Full review from another tree remains
+  unavailable. Independent release evidence remains required.
 - [x] `CUR-002`: prove read-only capability isolation beyond shell flags for
   Codex/agy, including inherited MCP tools and recursive CoAgent8 calls. Use
   isolated fixture configurations, never a user's live writable MCP services.
@@ -1387,6 +1406,11 @@ definition budget from 3,800 B to about 5 KB for described parameters.
 
 ### `EXEC-001` - pure backend resolution, bounded probes and enforceable policy
 
+Owner decision (2026-10-08): a user-configurable read-only sandbox opt-out is
+planned for RC.1, outside beta.2. Propose its shape then: user's config.json only,
+per backend, opt-out default off, never settable by the calling agent. No beta.2
+schema field, tool argument or runtime bypass is authorized by this plan.
+
 - [x] Make backend resolution (`src/backends/routing.ts:resolveBackend`) strictly
   read-only: no `setDefaultBackend` mutation during `auto` resolution. Verified in
   `tests/backends/routing.test.js`.
@@ -2136,9 +2160,22 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   owner acceptance on one desktop, not the six-job CI, independent review or
   release approval.
 
-- [ ] Owner decision: show the welcome notification until a CLI is ready or the
-  user chooses **Don't Show Again** (recommended; VS Code UX guidelines), or keep
-  it once per profile.
+- [x] Owner decision and local implementation (2026-10-08): show the welcome
+  notification on activation until a CLI is ready or **Don't Show Again** is
+  chosen. The former `setupOffered` flag does not suppress it. Explicit dismissal
+  uses `setupDismissed`; remembered selections are preserved. Fixture tests cover
+  repeat activation, legacy state, dismissal and readiness without terminals or
+  output taking focus. Installed-host UI acceptance of this change remains open.
+- [x] Owner choice for configuration (2026-10-08), implemented locally:
+  **CoAgent8: Open Configuration (config.json)** opens the existing file unchanged
+  or creates validated defaults when absent. A bundled JSON schema provides
+  completion/validation at `~/.coagent8/config.json`; custom `coagent8_CONFIG`
+  paths need a `$schema` association. The Node setting links to the command.
+  config.json stays the single source of truth; its options are not duplicated
+  as VS Code settings. Tests cover default creation and preserving malformed
+  existing JSON; `$schema` survives backend-default and remembered-consent
+  updates. The schema is shipped in the VSIX. Native completion/UI remains
+  unverified.
 - No `vscode:uninstall` cleanup is planned: the integration guide keeps the
   explicit preview/confirm cleanup command as the only path, and such a hook
   could not reach `globalState` either. Documentation tells users to run cleanup
@@ -2398,16 +2435,42 @@ Beta 2 gate (first release for testers):
   candidate.
 - [ ] Run the full local gate below on a clean checkout. All six CI jobs pass for
   the candidate commit.
-- [ ] Verify on a real Windows desktop that a consult and a review open no visible
-  windows. Record the helper launch count.
-- [ ] Prepare the feedback channel:
+- [x] Windows observation on 2026-10-08: the owner was writing in Discord and
+  reported no visible windows or focus loss during native Codex consult/review.
+  Codex 0.162.0-alpha.2, model gpt-6.1-sol; policy did not ask (10 USD/million
+  output tokens). Fresh-bundle stdio MCP consult completed in 5.3 seconds;
+  review exercised the 120-second deadline and ended TIMEOUT/BLOCKED, not READY.
+  Node's `child_process.spawn` tracing channel recorded 3 codex.exe launches for
+  consult and 12 git.exe plus 1 codex.exe for review, all windowsHide=true;
+  PowerShell/CIM helpers: 0 in each. Backend-internal descendants were not
+  counted. Logs are in `.artifacts/beta2-live-*`; this predates the follow-up
+  gitlink/path/index-flag fixes and is not independent release approval.
+  The native recheck after those fixes completed in 73.1 seconds; the trace
+  recorded 24 git.exe and 2 codex.exe launches, all hidden, zero PowerShell/CIM
+  helpers. Its envelope reported PARTIAL/NOT_RUN and was truncated: the gate
+  correctly remained BLOCKED. It is not an independent READY audit.
+- [x] Prepare the feedback channel:
   - a GitHub bug-report issue template that asks for the `issue` tool output,
     `doctor` output, OS, Node version and backend CLI versions;
   - a short tester guide in the README (install, register in a host, report a bug).
-- [ ] Write the beta 2 GitHub release notes with known issues and security
-  notes. These come from the open audit findings in
+  Added locally: `.github/ISSUE_TEMPLATE/bug_report.yml` and
+  [README tester guide](../README.md#beta2-tester-guide).
+- [x] Prepare the local [beta.2 release-note draft](BETA_2_RELEASE_NOTES.md)
+  with known issues and security notes. These come from the open audit findings in
   [RUNTIME_CONTRACT section 7](RUNTIME_CONTRACT.md#7-known-limitations-and-deviations);
   the changelog does not carry them (`CHANGELOG-001`).
+
+Local candidate preparation evidence (2026-10-08, Windows, Node v26.10.0):
+typecheck, build, documentation lint/API generation, `npm test` (319 total,
+316 pass, zero fail, three POSIX skips), `npm pack --dry-run`, fresh fixture
+consumer smoke and `package:vscode` pass. After source literal encoding was
+normalized to ASCII, seven focused output tests plus fresh consumer/package
+checks pass. VSIX archive inspection verifies the configuration command/schema
+and runtime byte equality with the packed tarball. `.artifacts/beta2-final-*`
+holds logs. The checkout keeps another agent's CLI-FIRST edits, so this does
+not satisfy clean-tree or six-job validation. Native complete independent review
+remains BLOCKED (PARTIAL/NOT_RUN/truncated); installed UI acceptance of the new
+config/welcome behavior is NOT_RUN. No gate is relaxed by these local results.
 - [x] Create `CHANGELOG.md` (Keep a Changelog) with an Unreleased section.
 - [x] `CHANGELOG.md` is generated from the commit history (`CHANGELOG-001`).
 - [ ] Create the GitHub triage labels defined in

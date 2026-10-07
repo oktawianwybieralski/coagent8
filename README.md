@@ -20,8 +20,9 @@ establish a published or accepted release. The
 owns the release sequence and remaining work.
 
 Read-only CLI profiles, model consent, bounded buffers, credential redaction and
-owned-process cleanup are implemented. Release blockers remain: the review gate
-can accept incomplete input, and Codex and agy can inherit external MCP tools.
+owned-process cleanup are implemented. Codex disables and verifies inherited
+MCP servers per thread; agy still inherits external tools, an owner-accepted
+third-party limitation. Review approval checks input completeness and identity.
 See the
 [runtime limitations](docs/RUNTIME_CONTRACT.md#7-known-limitations-and-deviations).
 A model's `READY` verdict requires independent verification before release.
@@ -123,6 +124,7 @@ macOS), type `CoAgent8` and select one:
 
 | Command | What it does | Changes |
 | --- | --- | --- |
+| `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
 | `CoAgent8: Set Up Coding CLIs` | Checks Codex CLI, Claude Code CLI and Antigravity CLI. For a missing CLI it offers the vendor extension or the official standalone installer, waits until the CLI is found, then offers its sign-in command | Installs only what you choose, in the vendor's own location; registers no MCP server |
 | `CoAgent8: Refresh CLI Status` | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
 | `CoAgent8: Register or Repair Native Chat Hosts` | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
@@ -130,6 +132,28 @@ macOS), type `CoAgent8` and select one:
 
 The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 `CoAgent8` starts, stops or restarts it and shows its output.
+
+### Beta.2 tester guide
+
+1. In a trusted project, run **Extensions: Install from VSIX...** and select the
+   private VSIX supplied by the owner. Use Node.js 24+.
+2. Run **CoAgent8: Set Up Coding CLIs**. Choose an installed CLI to check, or an
+   offered installation and sign-in action. Then run **Refresh CLI Status**.
+3. Start CoAgent8 through **MCP: List Servers**, enable its tools in your chat,
+   and request doctor, a consultation, and a review of current workspace changes.
+   Native-host registration is a separate optional command.
+4. Configure models and consent through **Open Configuration (config.json)**.
+   Configuration stays the single source of truth. The welcome notification
+   appears on activation until a CLI is ready or you choose **Don't Show Again**.
+5. For a problem, ask for the issue tool's sanitized report and doctor output.
+   Open the repository's [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
+   and include OS, Node, host and CLI versions, reproduction steps and expected
+   versus actual behavior. Review pasted diagnostics before submitting.
+
+See the [local release-note draft](docs/BETA_2_RELEASE_NOTES.md) for known issues.
+Restart the MCP server after installing a replacement VSIX; a running process
+keeps its old bundle. Review accepts staged/revision scopes only when their
+files match the current workspace; otherwise use uncommitted changes.
 
 ## Current tools
 

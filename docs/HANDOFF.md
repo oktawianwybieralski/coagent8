@@ -1,4 +1,4 @@
-# Current handoff - documentation reconciled on 2026-10-07
+# Current handoff - local beta.2 preparation on 2026-10-08
 
 ## Next step: prepare the beta.2 candidate locally
 
@@ -34,28 +34,26 @@ Working rules from the owner:
 - Do not lower a gate. If a blocker cannot be closed, stop and describe the
   options for an owner decision.
 
-Open blockers: CUR-002 (inherited MCP isolation for Codex and agy, P0 safety),
-CUR-001 and CUR-013 (review completeness and snapshot binding). Done and
-owner-accepted: VS Code onboarding, agy discovery from ~/.gemini/bin, silent
+Step 1 CUR-002 is done locally. Codex disables and verifies inherited tools
+per thread (measured on 0.162 only); the owner accepted agy's inherited MCP and
+plugin access as a documented third-party limitation on 2026-10-08. Recursion
+is refused and doctor lists inherited agy tools. The agent shell's language-server
+credentials and workspace-plugin loading in conversations remain unmeasured.
+Steps 2-3 and 6 have local implementations; candidate verification is recorded
+below. Previously implemented and owner-accepted: VS Code onboarding, agy discovery from ~/.gemini/bin, silent
 agy sign-in detection, install/uninstall/cleanup.
 
 Work in this order; update the roadmap with evidence after each step and report
 PASS/FAIL/NOT_RUN with the commands you ran:
 
-1. CUR-002. Prove or enforce that a CoAgent8 turn cannot use MCP servers or
-   plugins inherited from the user's Codex or agy configuration, including a
-   recursive CoAgent8 registration. Codex: find a supported app-server override
-   that disables inherited MCP servers and verify it from thread/start evidence.
-   agy 1.3.1 has mcp/plugin management subcommands but no per-turn switch:
-   determine with isolated fixture configurations whether --sandbox turns load
-   ~/.gemini/config/mcp_config.json and plugins and whether agent tools receive
-   ANTIGRAVITY_LS_ADDRESS/ANTIGRAVITY_CSRF_TOKEN. Never touch the owner's live
-   MCP services. If agy cannot be isolated, propose failing closed for agy and
-   ask the owner.
+1. CUR-002: done locally in f8d2cb4, 47c6c10 and 2b7e612. Preserve the Codex
+   verification and the owner-accepted agy limitation; do not spend model turns
+   to turn unmeasured agy properties into claims of isolation.
 2. CUR-001 and CUR-013. Carry omitted or truncated review input as structured
    completeness, bind the expected snapshot, keep FAIL/NOT_RUN honest, and review
-   a non-checkout commit from that commit's tree, not the live workspace.
-   Acceptance is in AUDIT-001.
+   a different tree only when its files are actually available. Local beta.2
+   now refuses nonmatching trees before a backend probe, with no extra checkout.
+   Required unrun checks block; prose-only checks stay honestly NOT_RUN.
 3. Tester material (BETA-001): a GitHub bug-report issue template asking for
    issue/doctor output, OS, Node and CLI versions; a short tester guide in README
    (install the VSIX, run CoAgent8: Set Up Coding CLIs, report a bug); a beta.2
@@ -66,8 +64,12 @@ PASS/FAIL/NOT_RUN with the commands you ran:
 5. The full local gate on the current branch: typecheck, build, test,
    npm pack --dry-run (inspection only), test:consumer, package:vscode. Report
    the VSIX path and SHA-256.
-6. INSTALL-001: implement the owner's choice for the welcome notification
-   (recommended: show until a CLI is ready or Don't Show Again; ask first).
+6. INSTALL-001: the owner chose on 2026-10-08 to show the welcome notification
+   until a CLI is ready or Don't Show Again. Implemented locally, with tests.
+   Open Configuration (config.json), the bundled schema and a settings link
+   keep config.json as the single source of truth. Native UI acceptance remains
+   separate from fixture verification. Sandbox opt-out is planned for RC.1,
+   user-config-only, per backend, default off and never caller-settable.
 
 Report after each step: what is done, the evidence, the files changed and open
 owner decisions. Local checks are not independent review or release approval.
@@ -75,6 +77,25 @@ owner decisions. Local checks are not independent review or release approval.
 
 The snapshot and branch ledger below remain historical context for the broader
 audit stack.
+
+Local step results on 2026-10-08 (`fix/vsix-presentation`, Windows,
+Node v26.10.0):
+
+| Step | Result and evidence |
+| --- | --- |
+| 1 | PASS for the agreed scope: CUR-002 documented and implemented in f8d2cb4, 47c6c10 and 2b7e612; agy isolation is an accepted limitation, not a proven property. |
+| 2 | Local implementation PASS in 3c98992: structured omissions, snapshot/check binding, post-turn recheck and current-tree refusal; gitlink, quoted-path/rename and hidden-index regressions pass. Full other-tree review is unavailable. |
+| 3 | PASS locally: bug-report YAML, README tester guide and BETA_2_RELEASE_NOTES.md draft; nothing submitted externally. |
+| 4 | Owner observation PASS: no window or focus loss while writing in Discord during native Codex consult/review. Initial consult completed; review timed out after 120 seconds. All recorded CoAgent8 launches hidden, zero PowerShell/CIM helpers; backend-internal descendants not counted. |
+| 5 | Local commands PASS: typecheck, build, npm test (319 total, 316 pass, 0 fail, 3 POSIX skips), npm pack --dry-run, fresh fixture consumer smoke and package:vscode; documentation lint/generation pass. After ASCII literal encoding normalization, seven focused output tests and fresh consumer/package checks pass. Logs: .artifacts/beta2-final-*. |
+| 6 | PASS locally in 512eb48: repeated welcome until ready/dismissed, config editor/schema/settings link and schema-association persistence; focused fixtures pass. Installed UI acceptance of the new actions is NOT_RUN. |
+
+Native recheck after the three P2 fixes completed but returned PARTIAL and
+NOT_RUN, with output truncation. Its gate remains BLOCKED, not independent READY.
+The full suite and artifact smoke are local evidence, not complete independent
+review or release approval. The shared checkout retains another agent's
+CLI-FIRST roadmap edits and untracked feature document, so this is not clean-tree
+release validation. All six remote CI jobs are NOT_RUN.
 
 ~~~yaml
 task_id: DOCS-001
@@ -106,8 +127,10 @@ Plugin/VSIX payloads are assembled from the npm tarball. The stack is not a
 merged, matrix-verified or released candidate. Package metadata is beta.2, an
 unpublished development candidate for private testing.
 
-New open findings concern incomplete review input/approval binding, inherited
-Codex/agy MCP capabilities, automatic-routing cache
+Review-input completeness and snapshot/check validation are now implemented
+locally. Other-tree review is refused rather than reading mismatched live files.
+Codex isolates inherited tools; agy remains an accepted third-party limitation.
+New open findings concern automatic-routing cache
 failures, sticky commentary limits, concurrent cache misses and request-budget
 scope. The runtime contract lists these as `CUR-001` through `CUR-013` (`CUR-012` is source-inspected capacity accounting;
 `CUR-013`, a review of another revision reading the live workspace, came from the
@@ -154,15 +177,13 @@ Order decided by the owner on 2026-10-07: `CUR-003` first (done), then:
    At 20 USD per million output tokens that Claude default reaches the default
    limit and asks on every turn; headless clients must name a cheaper Claude model
    until the owner relaxes `governance` (`neverAsk` or `askAbovePrice`).
-3. Close `CUR-001` (review input completeness/snapshot binding) and `CUR-002`
-   (inherited MCP isolation), then the execution/cache/session work in the
+3. Preserve the local `CUR-001` fix and `CUR-002` decision, then the execution/cache/session work in the
    owning roadmap milestones.
 4. The owner retests in VS Code chat hosts after restarting them; rebuilding
    does not reload a running server process or tool catalog. Interactive
    consent and native/UI acceptance remain separate from headless measurements.
-5. Integrate the stack through the required PR/review workflow; validate the
-   exact candidate on all six CI jobs before tester publication. The roadmap
-   owns beta gates, release artifacts and the owner's npm-placeholder deadline.
+5. Keep agent work local. The roadmap owns the remaining gates; local evidence
+   does not establish six-job CI, independent acceptance or release approval.
 
 The headless AX retest in fresh Codex and agy sessions ran on 2026-10-07 and is
 recorded in `CONTEXT-001`; its one CoAgent8 defect is fixed on
@@ -173,7 +194,7 @@ after it:
 - the owner's live check of `fix/agy-quiet-updater` in a fresh Codex chat after
   restarting VS Code, with the first Gemini call at least 15 minutes after the
   last agy launch (the bundle is rebuilt; a running server keeps the old one);
-- an owner decision on `CUR-013` (review of a commit other than the checkout);
+- full other-tree review remains unavailable; beta.2 refuses mismatched files;
 - a consent dialog in a VS Code chat: neither chat showed one, so step 6 can only
   pass in a client that renders MCP forms.
 
