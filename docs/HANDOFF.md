@@ -1,5 +1,11 @@
 # Current handoff - documentation reconciled on 2026-10-07
 
+For the owner's later clean-install and VS Code onboarding discussion, read the
+[CLI setup handoff and coding-agent prompt](CLI_SETUP_HANDOFF.md). It records the
+newer local `fix/vsix-presentation` baseline and remaining work in `INSTALL-001` /
+`MIGRATION-001`; the snapshot and branch ledger below remain historical context
+for the broader audit stack. [ROADMAP.md](ROADMAP.md) is the single active plan.
+
 ~~~yaml
 task_id: DOCS-001
 mode: documentation

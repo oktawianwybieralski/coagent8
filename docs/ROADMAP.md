@@ -1910,6 +1910,37 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   No usable agy executable was found in the inspected Antigravity extension.
   Evaluate an optional VS Code extension pack separately from core MCP setup;
   do not introduce unconditional dependencies on every backend's extension.
+- [ ] Complete the clean-environment CLI onboarding described in the owner's
+  2026-10-07 [implementation handoff](CLI_SETUP_HANDOFF.md). This handoff records
+  context and the next-agent prompt; this roadmap remains the single active plan.
+  The owner permits suggesting extension installation or justified dependencies;
+  no specific extension pack or mandatory dependency has been approved as the
+  final design. Recommended baseline: require at least one compatible,
+  authenticated backend, reuse existing installations, and offer per-backend
+  extension or standalone CLI installation only when needed. Keep core stdio
+  MCP usable without VS Code or every provider's extension.
+  For Codex and Claude, verify the binaries supplied by `openai.chatgpt` and
+  `anthropic.claude-code`; do not assume installation implies compatibility or
+  sign-in. For Antigravity, offer the official standalone `agy` installer;
+  the inspected Google extension supplies no usable CLI and does not satisfy
+  the backend prerequisite. Consider a separate optional extension pack, while
+  using `extensionDependencies` only for a real functional extension dependency.
+  Verify current documentation through Context7 before selecting the mechanism.
+  Finish compatibility/authentication diagnostics, discovery from actual active
+  extension paths (including custom installation roots), and explicit recovery
+  after installation, updates, removal, cancellation or failure. Keep bounded
+  metadata probes separate from billable model calls. Show missing clients rather
+  than hiding them; a bad explicit override must fail closed for that backend
+  without hiding diagnostics/actions for unrelated backends.
+  Distinguish backend installation from optional registration of CoAgent8 in a
+  native chat host; choosing a backend must not silently authorize external MCP
+  configuration changes. Track CLI presence, protocol compatibility, sign-in,
+  registration, direct-runtime callability and native-host callability separately.
+  Verify clean install, one-backend-only use, bundled-only use, Antigravity-only
+  use, repeated setup and managed cleanup in isolated profiles. Preserve the
+  owner's AI extensions and histories/authentication during acceptance testing.
+  Installed VS Code UI acceptance and native backend/host checks remain open;
+  source/fixture tests do not close them. Beta.2 remains private and unpublished.
 - [ ] Never remove a working registration to test a replacement. Use isolated
   profiles, verify the replacement in that host, and retain/restore the original
   on failure. Do not rely on uninstall callbacks for external settings.
