@@ -729,7 +729,9 @@ Plan:
   tests and the roots test in `tests/server.test.js`.
 - [x] **Result in both channels, compact:**
   - `content` leads with the answer and ends with a one-line footer, for example
-    `> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 1, ready)`;
+    `> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (ready)`, with
+    the operation count only when non-zero and the turn only from turn 2; notices,
+    warnings and the workspace note follow as separate quoted paragraphs;
   - `structuredContent` keeps the full `output` but omits `schemaVersion`,
     `activity` and empty or default fields. `historyAvailable` appears only when
     false. Measured overhead beyond the answer: about 320 B before, 197 B after

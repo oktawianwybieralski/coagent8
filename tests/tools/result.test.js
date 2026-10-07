@@ -50,6 +50,18 @@ test('formatExecutionResult enforces strict No-Emoji standard and clean blockquo
   assert.deepEqual(Object.keys(formatted.structuredContent), ['provider', 'status', 'output', 'model', 'sessionHandle', 'turn', 'verdict', 'continuationAvailable'], 'default-valued fields are omitted');
 });
 
+test('formatExecutionResult omits a zero operation count and the first turn, and keeps footer lines apart', async () => {
+  const formatted = await formatExecutionResult('claude', {
+    status: 'completed', isError: false, output: 'answer', model: 'claude-haiku-4-5-20251001',
+    truncated: true, continuationAvailable: true,
+  }, '', 'syn_sess_first', { turn: 1, toolCount: 0, durationMs: 7500, historyAvailable: true }, { warnings: ['slow backend'] });
+  assert.ok(formatted.content[0].text.endsWith([
+    '> CoAgent8: claude · claude-haiku-4-5-20251001 · 7.5s · syn_sess_first (ready)',
+    '> Notice: Output reached buffer limit.',
+    '> Warning: slow backend',
+  ].join('\n>\n')), 'each footer line is its own quoted paragraph');
+});
+
 test('error formatting uses enterprise-grade blockquote without warning emojis', async () => {
   const errorResult = {
     status: 'failed',
@@ -174,7 +186,7 @@ test('withWorkspace names the workspace in structured content and flags only the
   assert.equal(fromRoot.structuredContent.workspaceSource, 'client_root');
   assert.equal(fromRoot.content[0].text, 'answer');
   const fallback = withWorkspace(base, { path: tempDir, source: 'server_directory' });
-  assert.match(fallback.content[0].text, /^answer\n> Workspace: .+ \(server directory; pass workspace_path to change it\)$/);
+  assert.match(fallback.content[0].text, /^answer\n>\n> Workspace: .+ \(server directory\)$/, 'the note is its own quoted paragraph');
   const invalid = { isError: true, content: [{ type: 'text', text: 'Validation Error' }] };
   assert.equal(withWorkspace(invalid, { path: tempDir, source: 'server_directory' }), invalid, 'results without structured content stay unchanged');
 });

@@ -101,8 +101,12 @@ object:
 * `historyAvailable`, only when false;
 * `workspace` and `workspaceSource`.
 
-The text content leads with the answer and ends with one footer line, for example
-`> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 1, ready)`.
+The text content leads with the answer and ends with a quoted footer line, for example
+`> CoAgent8: claude · claude-opus-5-5 · 107.8s · 8 ops · <handle> (turn 2, ready)`.
+The operation count appears only when non-zero and the turn only from turn 2.
+Notices, warnings and the server-directory workspace note
+(`> Workspace: <path> (server directory)`) follow as separate quoted paragraphs,
+separated by an empty `>` line so markdown renderers keep each on its own line.
 The text is markdown, not the serialized `structuredContent` that the specification
 recommends (SHOULD): Claude Code and agy read `content`, JSON escaping costs more
 tokens, and Codex reads `structuredContent`. Tool errors (`isError`) are distinct

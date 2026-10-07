@@ -52,6 +52,12 @@ export const runOutputSchema = {
 };
 
 /**
+ * Separates footer lines with an empty quoted line: consecutive `>` lines form one
+ * markdown paragraph, so renderers would otherwise join them into a single line.
+ */
+const FOOTER_LINE_BREAK = '\n>\n';
+
+/**
  * Formats a terminal execution result into the canonical MCP response envelope.
  *
  * - Sanitizes ANSI escape codes and update banners from output.
@@ -115,10 +121,11 @@ export async function formatExecutionResult(provider: string | null, res: Termin
   }
 
   const durationSec = (meta.durationMs / 1000).toFixed(1);
-  const opLabel = meta.toolCount === 1 ? 'op' : 'ops';
-  const session = sessionHandle ? ` · ${sessionHandle} (turn ${meta.turn}, ${res.continuationAvailable ? 'ready' : 'finished'})` : '';
+  const ops = meta.toolCount > 0 ? ` · ${meta.toolCount} ${meta.toolCount === 1 ? 'op' : 'ops'}` : '';
+  const turn = meta.turn > 1 ? `turn ${meta.turn}, ` : '';
+  const session = sessionHandle ? ` · ${sessionHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'})` : '';
   const footerLines: string[] = [
-    `> CoAgent8: ${provider || 'CLI'} · ${res.model || 'provider default'} · ${durationSec}s · ${meta.toolCount} ${opLabel}${session}`,
+    `> CoAgent8: ${provider || 'CLI'} · ${res.model || 'provider default'} · ${durationSec}s${ops}${session}`,
   ];
   if (res.truncated) {
     footerLines.push('> Notice: Output reached buffer limit.');
@@ -133,7 +140,7 @@ export async function formatExecutionResult(provider: string | null, res: Termin
     });
     footerLines.push(`> Report this issue: [Open pre-filled GitHub Issue](${bug.issueUrl})`);
   }
-  parts.push(footerLines.join('\n'));
+  parts.push(footerLines.join(FOOTER_LINE_BREAK));
 
   return { isError: res.isError, content: [{ type: 'text' as const, text: parts.join('\n\n') }], structuredContent };
 }
@@ -149,7 +156,7 @@ export function withWorkspace<T extends { content: Array<{ type: string; text?: 
   const structuredContent = { ...result.structuredContent, workspace: shown, workspaceSource: workspace.source };
   if (workspace.source !== 'server_directory') return { ...result, structuredContent };
   const [first, ...rest] = result.content;
-  const note = `> Workspace: ${shown} (server directory; pass workspace_path to change it)`;
-  const content = first?.type === 'text' ? [{ ...first, text: `${first.text}\n${note}` }, ...rest] : [...result.content, { type: 'text', text: note }];
+  const note = `> Workspace: ${shown} (server directory)`;
+  const content = first?.type === 'text' ? [{ ...first, text: `${first.text}${FOOTER_LINE_BREAK}${note}` }, ...rest] : [...result.content, { type: 'text', text: note }];
   return { ...result, content, structuredContent };
 }
