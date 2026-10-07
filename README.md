@@ -1,7 +1,11 @@
 # CoAgent8 - MCP bridge to local coding CLIs
 
 <p align="center">
-  <img src="assets/logo.svg" width="128" height="128" alt="CoAgent8" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-light.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo.svg" />
+    <img src="assets/logo.svg" width="128" height="128" alt="CoAgent8" />
+  </picture>
 </p>
 
 CoAgent8 exposes Codex, Claude Code and Antigravity (`agy`, the `gemini`

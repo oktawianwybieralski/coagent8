@@ -78,7 +78,9 @@ test('PACKAGE-001: the plugin check rejects a package whose manifests reference 
     fs.writeFileSync(path.join(dir, 'dist', 'index.cjs'), '');
     assert.throws(() => verifyPlugin(dir), /assets\/logo32\.png/, 'a missing plugin icon is reported');
     fs.mkdirSync(path.join(dir, 'assets'));
-    for (const name of ['logo.png', 'logo32.png']) fs.writeFileSync(path.join(dir, 'assets', name), '');
+    for (const name of ['logo.png', 'logo32.png', 'logo-light.png']) fs.writeFileSync(path.join(dir, 'assets', name), '');
+    assert.throws(() => verifyPlugin(dir), /assets\/logo32-light\.png/, 'a missing dark-theme plugin icon is reported');
+    fs.writeFileSync(path.join(dir, 'assets/logo32-light.png'), '');
     verifyPlugin(dir);
     const plugin = JSON.parse(fs.readFileSync(path.join(dir, 'plugin.json'), 'utf8'));
     fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({ ...plugin, version: '0.0.0' }));

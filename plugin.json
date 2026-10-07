@@ -20,7 +20,9 @@
         "category": "Productivity",
         "websiteURL": "https://github.com/oktawianwybieralski/coagent8",
         "composerIcon": "./assets/logo32.png",
+        "composerIconDark": "./assets/logo32-light.png",
         "logo": "./assets/logo.png",
+        "logoDark": "./assets/logo-light.png",
         "defaultPrompt": [
           "Run CoAgent8 Review on my uncommitted changes using an independent agent in a read-only sandbox",
           "Consult CoAgent8 on an architectural design or refactoring proposal",

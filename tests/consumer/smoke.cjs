@@ -25,6 +25,7 @@ function npmRun(args,cwd=root) {
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
   for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['logo-light.svg','logo-light.png','logo32-light.png','logo64-light.png','logo256-light.png'])assert.ok(pack.files.some(f=>f.path===`assets/${name}`),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.startsWith('assets/design/')),'Design assets must not ship in runtime package');
@@ -37,7 +38,7 @@ function npmRun(args,cwd=root) {
     const installed=JSON.parse(await fsp.readFile(path.join(pkg,'package.json'),'utf8'));
     const plugin=JSON.parse(await fsp.readFile(path.join(pkg,'plugin.json'),'utf8'));
     assert.equal(plugin.version,installed.version,'Plugin/runtime/package version');
-    for(const key of ['composerIcon','logo']) {
+    for(const key of ['composerIcon','composerIconDark','logo','logoDark']) {
       const asset=plugin.extensions['com.openai'].interface[key];
       assert.ok(asset.startsWith('./assets/'));
       assert.ok(fs.existsSync(path.join(pkg,asset)),`Plugin ${key} must resolve in installed package`);
@@ -61,8 +62,8 @@ function npmRun(args,cwd=root) {
     assert.equal(mcp.mcpServers.coagent8.type,'stdio');
     assert.equal(mcp.mcpServers.coagent8.command,'node');
     assert.equal(mcp.mcpServers.coagent8.args[0],'${PLUGIN_ROOT}/dist/index.cjs');
-    const expectedIcon=await fsp.readFile(path.join(pkg,'assets/logo64.png'));
-    // The installed server must advertise its icon even without runtime PNG files.
+    const expectedIcons={light:await fsp.readFile(path.join(pkg,'assets/logo64.png')),dark:await fsp.readFile(path.join(pkg,'assets/logo64-light.png'))};
+    // The installed server must advertise both theme icons even without runtime PNG files.
     for(const name of fs.readdirSync(path.join(pkg,'assets')).filter(name=>name.endsWith('.png'))) {
       await fsp.unlink(path.join(pkg,'assets',name));
     }
@@ -84,9 +85,12 @@ function npmRun(args,cwd=root) {
     try {
       const init=await request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'tarball-consumer',version:'1'}});assert.equal(init.result.serverInfo.version,installed.version);
       assert.equal(init.result.serverInfo.title,'CoAgent8');
-      assert.deepEqual(init.result.serverInfo.icons[0].sizes,['64x64']);
-      assert.equal(init.result.serverInfo.icons[0].mimeType,'image/png');
-      assert.deepEqual(Buffer.from(init.result.serverInfo.icons[0].src.replace(/^data:image\/png;base64,/,''),'base64'),expectedIcon);
+      assert.deepEqual(init.result.serverInfo.icons.map(icon=>icon.theme),['light','dark']);
+      for(const icon of init.result.serverInfo.icons) {
+        assert.deepEqual(icon.sizes,['64x64']);
+        assert.equal(icon.mimeType,'image/png');
+        assert.deepEqual(Buffer.from(icon.src.replace(/^data:image\/png;base64,/,''),'base64'),expectedIcons[icon.theme]);
+      }
       proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
       const tools=await request('tools/list',{});assert.equal(tools.result.tools.length,6);
       assert.ok(tools.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');

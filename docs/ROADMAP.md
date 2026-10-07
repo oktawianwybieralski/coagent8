@@ -905,7 +905,12 @@ Plan:
   toolset because each toolset has a different icon. The offline `data:` URI stays.
   The icon is sent whatever the negotiated protocol version: the SDK offers no
   supported per-version server info, and a 2025-06-18 client ignores the field.
-  Light and dark variants are optional until a supported client displays icons.
+  Light and dark background variants are embedded from `assets/logo64.png` and
+  `assets/logo64-light.png`; MCP `theme` describes the background. The README
+  selects SVG artwork by color scheme, and plugin metadata declares
+  `composerIconDark` and `logoDark`. Native host rendering still needs acceptance.
+  The [MCP comparison](MCP_COMPARISON_2026-10-07.md) records a live Context7-to-Gemini
+  consultation about this contract, its provenance limits and remaining host acceptance.
   This saves 11.7 KB of transport per `tools/list`, not model tokens, which helps
   first launch.
 - [x] **Single-call success:** the minimal call is `{"proposal": "..."}`:

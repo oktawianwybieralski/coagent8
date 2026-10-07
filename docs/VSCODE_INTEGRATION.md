@@ -15,18 +15,27 @@ surfaces share the same logo source:
 
 | Surface | Metadata | Asset |
 | --- | --- | --- |
-| MCP server | `serverInfo.icons`; tools carry no icons | Embedded `assets/logo64.png` |
-| Codex plugin | `plugin.json` / `extensions.com.openai.interface` | `logo32.png` for composer, `logo.png` for logo |
+| MCP server | `serverInfo.icons`; tools carry no icons | Embedded `assets/logo64.png` on light backgrounds, `assets/logo64-light.png` on dark backgrounds |
+| Codex plugin | `plugin.json` / `extensions.com.openai.interface` | `logo32.png` / `logo.png`; `composerIconDark` / `logoDark` use `logo32-light.png` / `logo-light.png` |
 | Native VS Code extension | `icon`, `mcpServerDefinitionProviders` | `logo.png` |
+
+The README uses an SVG `picture` with `prefers-color-scheme` to select
+`assets/logo-light.svg` on dark backgrounds. The VS Code extension manifest's
+[`icon` field](https://code.visualstudio.com/api/references/extension-manifest)
+accepts a single path; its bundled MCP server advertises both themes separately.
+The plugin's dark-theme fields follow the
+[OpenAI manifest reference](https://developers.openai.com/plugins/deploy/submission).
 
 ## Assets and build
 
-`npm run build` validates the 64x64 PNG (maximum 16 KiB), generates
-`src/generated/server-icon.ts`, and copies `assets/logo256.png` to `assets/logo.png`.
+`npm run build` validates both 64x64 PNGs (maximum 16 KiB each), generates
+`src/generated/server-icon.ts`, and copies `assets/logo256.png` to `assets/logo.png`
+and `assets/logo256-light.png` to `assets/logo-light.png`.
 The generated TypeScript is committed so source tests and typechecking work after
-checkout. Regenerate it whenever the 64x64 artwork changes. The standalone runtime
-contains the data URI and does not read image files or fetch a logo over the network.
-No theme is specified: the supplied icon is shared between light and dark themes.
+checkout. Regenerate it whenever either 64x64 artwork changes. The standalone runtime
+contains both data URIs and does not read image files or fetch a logo over the network.
+The original artwork declares `theme: 'light'`; the light artwork declares
+`theme: 'dark'`, since MCP themes describe the intended background.
 Check its visual contrast in both themes before publishing updated artwork.
 
 PNG exports and SVG are shipped in the npm package. The Affinity design source and

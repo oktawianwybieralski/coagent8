@@ -15,10 +15,13 @@ test('MCP stdio exposes unified schema; two fixture turns, public history, fallb
   t.after(async()=>{await c.cleanup();fs.rmSync(dir,{recursive:true,force:true});});
   const init=await c.request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'fixture-client',version:'1'}});
   assert.equal(init.result.serverInfo.title,'CoAgent8');
-  const icon=init.result.serverInfo.icons[0];
-  assert.equal(icon.mimeType,'image/png');assert.deepEqual(icon.sizes,['64x64']);
-  assert.ok(icon.src.startsWith('data:image/png;base64,'));
-  assert.deepEqual(Buffer.from(icon.src.slice('data:image/png;base64,'.length),'base64'),fs.readFileSync(path.resolve('assets/logo64.png')));
+  assert.deepEqual(init.result.serverInfo.icons.map(icon=>icon.theme),['light','dark']);
+  for(const icon of init.result.serverInfo.icons) {
+    assert.equal(icon.mimeType,'image/png');assert.deepEqual(icon.sizes,['64x64']);
+    assert.ok(icon.src.startsWith('data:image/png;base64,'));
+    const asset=icon.theme==='dark'?'assets/logo64-light.png':'assets/logo64.png';
+    assert.deepEqual(Buffer.from(icon.src.slice('data:image/png;base64,'.length),'base64'),fs.readFileSync(path.resolve(asset)));
+  }
   c.proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
   const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,6);assert.ok(list.result.tools.some(x=>x.name==='issue'));
   assert.ok(list.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
