@@ -6,13 +6,16 @@ import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '..
 import type { TerminalExecutionResult } from '../types.js';
 import { extractStructuredGeminiError } from './errors.js';
 import { isValidModelIdentifier } from '../governance.js';
+/** Distinct unknown event types reported per turn; later ones are ignored silently. */
+const MAX_REPORTED_UNKNOWN_TYPES = 5;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 /**
  * Collects supported native event dialects into one bounded public result.
  * @param onEvent - Optional public-event callback; private thought/tool operands are omitted.
  * @returns Line collector, independent denial evidence, and terminal snapshot.
- * @throws On malformed public metadata, duplicate terminals or byte/count overflow.
+ * @throws On malformed public metadata, duplicate terminals or byte/count overflow. Unknown
+ * event types are ignored with one warning per type.
  * @remarks Process execution owns line decoding and cleanup. stderr denial never
  * creates a terminal event. stdout alone establishes native terminal identity.
  */
@@ -24,6 +27,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
   let sandboxDenied = false;
   const reducer = new StreamReducer({ maxTotalBytes: 512 * 1024, maxMessageBytes: 256 * 1024, maxTools: 50, maxMessages: 50 });
   const seen = new Set<string>();
+  const ignoredTypes = new Set<string>();
   let messageId = 'assistant-1';
   let messageNumber = 1;
   let usage: TerminalExecutionResult['usage'];
@@ -253,7 +257,12 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
     }
 
     if (eventType === 'thought' || eventType === 'reasoning') return;
-    throw new Error(`Unsupported Gemini event type: ${String(eventType).slice(0, 80)}`);
+    // A newer agy may add event types; they carry nothing this collector publishes.
+    const unknownType = String(eventType).slice(0, 80);
+    if (!ignoredTypes.has(unknownType) && ignoredTypes.size < MAX_REPORTED_UNKNOWN_TYPES) {
+      ignoredTypes.add(unknownType);
+      onEvent?.({ type: 'warning', message: redactDiagnostic(`Ignored unknown Gemini event type: ${unknownType}`) });
+    }
   }
 
   function snapshot() {

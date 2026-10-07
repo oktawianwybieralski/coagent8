@@ -1054,8 +1054,15 @@ without a model call.
   extend the caller's absolute budget.
 - [ ] Add focused acceptance tests: continuous output, silent reasoning intervals, absolute timeout cutoffs,
   caller cancellation, and process tree teardown without survivors.
-- [ ] Tolerate unknown native event types from agy and other CLIs with a warning;
-  fail only on invalid known events (AUD-P1-5, order 2).
+- [x] Tolerate unknown native event types from agy and other CLIs with a warning;
+  fail only on invalid known events (AUD-P1-5, order 2). On
+  `fix/gemini-unknown-events`, not yet merged. The Gemini collector ignores an
+  unknown type and reports one warning per type (at most five per turn); metadata
+  of every event is still validated. The Codex and Claude collectors already
+  ignored unknown types. Evidence: `tests/backends/gemini/adapter.test.js` feeds an
+  unknown `progress_heartbeat` event twice between an answer and the terminal
+  result: the answer and terminal survive with one warning, and an unknown event
+  with a control character in `event_id` still fails.
 - [ ] Map CLI failure modes (authentication expiration, rate limits, context length
   overflow, crashes, unexpected exit signals) to typed errors through the
   `ERRORS-001` error type.

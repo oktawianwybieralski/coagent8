@@ -173,6 +173,21 @@ test('Gemini collector rejects malformed roles/content, duplicate terminal and t
   assert.throws(() => terminal.line(JSON.stringify({ type: 'result', status: 'success' })), /duplicate/);
 });
 
+test('Gemini collector ignores an unknown event type with one warning and keeps the answer (AUD-P1-5)', () => {
+  const events = [];
+  const c = createGeminiCollector(event => events.push(event));
+  c.line(JSON.stringify({ type: 'message', role: 'assistant', content: 'answer' }));
+  c.line(JSON.stringify({ type: 'progress_heartbeat', detail: 'new in a later agy' }));
+  c.line(JSON.stringify({ type: 'progress_heartbeat', detail: 'again' }));
+  c.line(JSON.stringify({ type: 'result', status: 'success' }));
+  const snapshot = c.snapshot();
+  assert.equal(snapshot.terminal, true);
+  assert.equal(snapshot.terminalError, undefined);
+  assert.equal(snapshot.output, 'answer');
+  assert.deepEqual(events.filter(event => event.type === 'warning').map(event => event.message), ['Ignored unknown Gemini event type: progress_heartbeat']);
+  assert.throws(() => c.line(JSON.stringify({ type: 'brand_new', event_id: 'bad\nid' })), /metadata/, 'metadata of an unknown event is still validated');
+});
+
 test('Gemini production adapter reports a denial independently of terminal order and rejects real duplicates', async () => {
   try {
     for (const mode of ['sandbox-denied-stderr-first', 'sandbox-denied-stdout-first']) {
