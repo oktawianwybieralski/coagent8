@@ -515,14 +515,26 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
 
 ### `PACKAGE-001` - built output is not source
 
-**Status:** AUD-P1-10 implemented on `build/untrack-dist`, not yet merged;
-plugin/VSIX packaging from the tarball remains.
+**Status:** AUD-P1-10 implemented on `build/untrack-dist`, plugin and VSIX
+packaging from the tarball on `build/artifacts-from-tarball`; neither merged.
 
 - [x] Remove `dist/` from Git and build it in `prepack` and CI. `dist/` is in
   `.gitignore`; `prepack` and the CI `Build bundle` step already build it.
-- [ ] Produce plugin/VSIX artifacts from the built tarball, not from a committed
-  bundle.
-- [ ] Keep `index.js`, `mcp.json` and `bin` entries valid for installed packages.
+- [x] Produce plugin/VSIX artifacts from the built tarball, not from a committed
+  bundle. On `build/artifacts-from-tarball`, not yet merged:
+  `npm run package:artifacts` (`scripts/package-artifacts.cjs`) packs the
+  tarball, records its SHA-256, extracts it with a built-in ustar/PAX reader that
+  refuses paths outside `package/`, copies it to `.artifacts/plugin/coagent8/` and
+  stages the VS Code extension from it; `package:vscode` builds the VSIX from that
+  staging. Evidence (Windows, Node 26.10): the extraction is byte-identical to
+  Windows `tar.exe` (75 files); two packs gave the same SHA-256 (`2b502d83…`); the
+  VSIX's `dist/index.cjs`, its map, the notices and the logo match the tarball's
+  by SHA-256. `tests/package.test.js` covers the reader (PAX paths, escapes) and
+  the plugin check.
+- [x] Keep `index.js`, `mcp.json` and `bin` entries valid for installed packages.
+  The artifact build fails unless `mcp.json` starts `${PLUGIN_ROOT}/dist/index.cjs`
+  with `node` and `main`, every `bin` entry and the plugin icons exist in the
+  package; the consumer smoke runs both bins from an installed tarball.
 - [x] Make the source map reproducible. An identifier rename (`Ay` to `Py`) was
   seen once on 2026-10-06, but measurements the same day did not reproduce it:
   the bundle (esbuild 0.25.12 and tsdown 0.23.0) rebuilt byte-identically

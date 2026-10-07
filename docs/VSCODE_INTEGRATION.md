@@ -39,8 +39,18 @@ The root `plugin.json` follows Agent Plugins 1.0.0. Its `extensions.com.openai`
 object supplies Codex presentation metadata. Root `mcp.json` configures the bundled
 stdio server using `${PLUGIN_ROOT}/dist/index.cjs`; the host expands the placeholder.
 Node.js 24+ must be available to the host, and coding CLIs must be installed and
-authenticated separately. Build the project before installing it as a local plugin;
-install a built package rather than an unbuilt source checkout.
+authenticated separately. Install the plugin directory built from the npm package,
+not a source checkout:
+
+```bash
+npm ci
+npm run package:artifacts
+```
+
+The command packs the npm tarball (`.artifacts/package/`, with its SHA-256 in
+`artifacts.json`), extracts it to `.artifacts/plugin/coagent8/` and checks that
+`plugin.json`, `mcp.json`, `main` and `bin` point at files the package contains.
+The plugin directory holds exactly the files npm publishes.
 
 For a repository-local marketplace, add an entry pointing to the built plugin:
 
@@ -80,7 +90,9 @@ npm run package:vscode
 ```
 
 The resulting `.artifacts/coagent8-mcp-<version>.vsix` is a local development
-package. Install it with **Extensions: Install from VSIX...**, open a trusted
+package. Its MCP server bundle, notices, logo and license come from the npm
+tarball that `npm run package:artifacts` packs, never from the working tree's
+`dist/`. Install it with **Extensions: Install from VSIX...**, open a trusted
 workspace, then use **MCP: List Servers**. The extension requires VS Code 1.101+.
 It registers one provider and lets VS Code start, approve, and stop the MCP process.
 It does not launch a separate background process during activation.
