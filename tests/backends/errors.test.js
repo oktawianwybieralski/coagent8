@@ -129,3 +129,17 @@ test('classification uses anchored provider phrases, not bare numbers or substri
     }
   }
 });
+
+test('a rejected model is MODEL_UNAVAILABLE with the provider message, not a PROCESS_ERROR with an issue link (live 2026-10-07)', () => {
+  const { classifyCodexTurnError } = require('../../src/backends/codex/errors.ts');
+  const { classifyGeminiError } = require('../../src/backends/gemini/errors.ts');
+  // Codex 0.160 with a ChatGPT account and `model: "luna"`: the turn error message is the raw response body.
+  const body = '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'luna\' model is not supported when using Codex with a ChatGPT account."}}';
+  const codex = classifyCodexTurnError({ message: body, codexErrorInfo: 'other' }, 'Codex turn failed.');
+  assert.deepEqual(codex, { code: 'MODEL_UNAVAILABLE', message: "The 'luna' model is not supported when using Codex with a ChatGPT account.", retryable: false });
+  assert.equal(classifyCodexTurnError({ message: 'bad', codexErrorInfo: { badRequest: { httpStatusCode: 400 } } }, 'x').code, 'PROCESS_ERROR', 'an unrecognized 400 stays generic');
+  assert.equal(extractStructuredCodexError({ status_code: 400, message: "The 'luna' model is not supported." }).code, 'MODEL_UNAVAILABLE');
+  // agy 1.3.1 with `--model gemini-3.8-flash` and no effort.
+  const agy = classifyGeminiError('invalid model selection (--model "gemini-3.8-flash" --effort ""): --model gemini-3.8-flash requires --effort (available: low, medium, high)');
+  assert.equal(agy.code, 'MODEL_UNAVAILABLE');
+});

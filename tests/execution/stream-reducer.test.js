@@ -129,3 +129,7 @@ test('StreamReducer accounts for split surrogate pairs without overcounting', ()
   assert.equal(reducer.getTotalBytes(), 4);
   assert.equal(Buffer.byteLength(messages[0], 'utf8'), 4);
 });
+
+test('a reducer without backend text returns no placeholder that could read as an answer beside a failure', () => {
+  assert.equal(new StreamReducer().getFormattedOutput(), '');
+});

@@ -10,7 +10,7 @@ export function classifyCodexError(message: string): ExecutionError {
   // names, line numbers and ordinary words ("line 429", "disk quota check", "author").
   const code = isRateLimitError(message) ? 'RATE_LIMITED'
     : isAuthError(message) ? 'AUTH_REQUIRED'
-    : /model.*(?:not found|unavailable|unsupported|does not exist)/i.test(message) ? 'MODEL_UNAVAILABLE'
+    : /model.*(?:not found|unavailable|unsupported|not supported|does not exist)/i.test(message) ? 'MODEL_UNAVAILABLE'
     : /(?:session|thread).*(?:not found|invalid|does not exist)/i.test(message) ? 'SESSION_INVALID' : 'PROCESS_ERROR';
   return { code, message: redactDiagnostic(message), retryable: code === 'RATE_LIMITED' };
 }
@@ -50,8 +50,29 @@ export function classifyCodexTurnError(error: unknown, fallbackMessage: string):
     const code = TURN_ERROR_CODES[info];
     return { code, message: redactDiagnostic(message), retryable: code === 'RATE_LIMITED' };
   }
+  const body = parseProviderErrorBody(message);
+  if (body) return extractStructuredCodexError(body, message);
   const http = info !== null && typeof info === 'object' && !Array.isArray(info)
     ? Object.values(info as Record<string, unknown>).map(value => (value as { httpStatusCode?: unknown } | null)?.httpStatusCode).find(value => typeof value === 'number')
     : undefined;
   return typeof http === 'number' ? extractStructuredCodexError({ status_code: http, message }) : classifyCodexError(message);
+}
+
+/**
+ * Codex passes some provider rejections on as the raw response body, for example
+ * `{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"..."}}`.
+ * @returns The parsed body when the message is such an object with a nested error message.
+ */
+function parseProviderErrorBody(message: string): Record<string, unknown> | null {
+  if (!message.trimStart().startsWith('{')) return null;
+  try {
+    const parsed: unknown = JSON.parse(message);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const inner = (parsed as { error?: unknown }).error;
+    return inner !== null && typeof inner === 'object' && typeof (inner as { message?: unknown }).message === 'string'
+      ? parsed as Record<string, unknown> : null;
+  } catch {
+    // Not JSON: the message is ordinary text and is classified as such.
+    return null;
+  }
 }

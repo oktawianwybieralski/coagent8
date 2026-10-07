@@ -956,6 +956,50 @@ Plan:
   behavior is taken from its source and not yet observed). Record the results in
   the integration guide.
 
+**Agent experience (owner use cases of 2026-10-07).** The owner had Codex, agy
+and Claude Code each solve one task through `consult`, then compare CoAgent8 with
+Context7 from the calling model's side. Findings shared by the three clients:
+- the backends were clear, the models were not: `model` is a bare string, and
+  `gemini-3.8-flash` without `reasoning_effort` and `luna` on Codex were found by
+  failing;
+- errors the caller can fix arrived as `PROCESS_ERROR` with a 1.5 KB issue link,
+  and a failed agy run showed "Task completed cleanly with no textual output." as
+  a partial response;
+- the consult prompt adds trade-off and recommendation sections to plain questions
+  (three of three Gemini answers);
+- Context7 states when to use it and when not, gives examples of good and bad
+  values, and resolves an identifier before the expensive call. Its two tool
+  definitions take 4,587 B; CoAgent8's six take 3,492 B with most parameters
+  undescribed;
+- `auto` ran `gpt-6.1-sol` for 52.8 s from agy, and a Gemini answer from Claude
+  Code stated the MCP specification wrongly with no hint that it is an unverified
+  opinion;
+- agy saw Codex's working commentary before the answer.
+
+Owner decisions of 2026-10-07: fix all of the above; raise the model-visible
+definition budget from 3,800 B to about 5 KB for described parameters.
+
+- [x] Errors the caller can fix are typed, and a failure shows no invented answer.
+  A Codex turn error whose message is the provider's raw response body is
+  classified from that body and reports its inner message. A bare HTTP 4xx takes
+  `MODEL_UNAVAILABLE` or `SESSION_INVALID` from the message, but never a rate limit
+  or sign-in error. "not supported" and agy's "invalid model selection" are
+  `MODEL_UNAVAILABLE`, which gets no issue link. The stream reducer returns no
+  placeholder text. Evidence: `tests/backends/errors.test.js` with the live
+  messages (`luna` on Codex 0.160, `gemini-3.8-flash` without effort on agy
+  1.3.1) and `tests/execution/stream-reducer.test.js`; both fail on the previous
+  source. Full suite: 256 pass, 0 fail, 3 skipped.
+- [ ] Model and effort validated before the CLI runs, with the accepted values in
+  the error.
+- [ ] Only the backend's final answer is returned, without its working commentary.
+- [ ] Neutral consult prompt: no added trade-off or recommendation sections.
+- [ ] Agent-facing contract within about 5 KB:
+  - server instructions say when to use CoAgent8 and when not, and point to `doctor`;
+  - `model`, `reasoning_effort`, `proposal`, `specific_questions`,
+    `context_files`, `task_type` and `backend` described with examples;
+  - `doctor` lists the models and effort levels each backend accepts;
+  - `consult` says that its answer is an opinion to verify.
+
 ## 3. Smaller execution path, robust sessions and honest routing
 
 ### `EXEC-001` - pure backend resolution, bounded probes and enforceable policy

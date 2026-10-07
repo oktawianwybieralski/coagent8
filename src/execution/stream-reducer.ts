@@ -176,21 +176,18 @@ export class StreamReducer {
 
   /**
    * Formats the consolidated output for terminal reporting.
+   * @returns The backend's own text, or an empty string when it produced none: a
+   * placeholder here would read as an answer beside a failure the adapter reports.
    */
-  getFormattedOutput(exitCode = 0, signal: NodeJS.Signals | null = null): string {
+  getFormattedOutput(): string {
     const messages = Array.from(this.messageMap.values()).filter(m => m.trim().length > 0);
-    if (messages.length > 0) {
-      const joined = messages.join('\n\n').trim();
-      if (Buffer.byteLength(joined, 'utf8') > this.maxTotalBytes) {
-        this.messageTruncated = true;
-        return truncateToByteLength(joined, this.maxTotalBytes, this.maxTotalBytes >= 20 ? '\n...[truncated]' : '...');
-      }
-      return joined;
+    if (messages.length === 0) return '';
+    const joined = messages.join('\n\n').trim();
+    if (Buffer.byteLength(joined, 'utf8') > this.maxTotalBytes) {
+      this.messageTruncated = true;
+      return truncateToByteLength(joined, this.maxTotalBytes, this.maxTotalBytes >= 20 ? '\n...[truncated]' : '...');
     }
-    if (exitCode === 0 && !signal) {
-      return 'Task completed cleanly with no textual output.';
-    }
-    return '';
+    return joined;
   }
 
   getMessageMap(): Map<string, string> {

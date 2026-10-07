@@ -12,7 +12,7 @@ export function classifyGeminiError(text: string): ExecutionError {
     ? 'SESSION_INVALID'
     : isAuthError(text)
     ? 'AUTH_REQUIRED'
-    : /model.*(?:not found|unavailable|unsupported|not recognized)|404/i.test(text)
+    : /model.*(?:not found|unavailable|unsupported|not supported|not recognized)|invalid model selection|404/i.test(text)
     ? 'MODEL_UNAVAILABLE'
     : /SANDBOX_UNAVAILABLE|auto-denied|jetski:/i.test(text)
     ? 'SANDBOX_UNAVAILABLE'

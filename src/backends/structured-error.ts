@@ -75,6 +75,13 @@ export function extractStructuredError(payload: unknown, fallbackMessage: string
         ? { code: 'SESSION_INVALID', message: redactDiagnostic(message || 'Session not found'), retryable: false }
         : { code: 'MODEL_UNAVAILABLE', message: redactDiagnostic(message || 'Model unavailable (404)'), retryable: false };
     }
+    if (httpCode !== undefined && httpCode >= 400 && httpCode < 500 && message) {
+      // A bare client error (400, 422) names no cause; the message may, for example an
+      // unsupported model. Rate limits and authentication have their own statuses, so a
+      // message that only mentions them never turns a 400 into one.
+      const fromText = dialect.classifyText(message);
+      if (fromText.code === 'MODEL_UNAVAILABLE' || fromText.code === 'SESSION_INVALID') return fromText;
+    }
     if ((httpCode !== undefined && httpCode >= 400) || codes.some(c => c.length > 0 && c !== 'unknown' && c !== 'error')) {
       const retryable = httpCode === 503 || codes.some(c => dialect.retryableCodes.includes(c));
       return { code: 'PROCESS_ERROR', message: redactDiagnostic(message || `${dialect.name} error (${codes[0] || httpCode})`), retryable };
