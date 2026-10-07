@@ -7,7 +7,7 @@ import { validEventIdentifier, type ExecutionError } from '../../conversation.js
 import { isValidModelIdentifier } from '../model-identifier.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
-import { createCodexAppSession } from './app-server.js';
+import { codexAppServerArgs, createCodexAppSession } from './app-server.js';
 import { listCodexModels } from './models.js';
 import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
@@ -147,8 +147,9 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
   // The app-server session requests read-only mode per thread and verifies the server's
-  // answer; the config overrides pin the same policy for the server's defaults.
-  const args = ['app-server', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"'];
+  // answer; the config overrides pin the same policy for the server's defaults and turn off
+  // the features that add tools beyond the read-only shell.
+  const args = codexAppServerArgs();
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
   const app = createCodexAppSession({ collector, threadId: requestedThread, model, effort,
     cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent });

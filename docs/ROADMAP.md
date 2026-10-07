@@ -330,6 +330,29 @@ It adds no separate work.
   `ANTIGRAVITY_CSRF_TOKEN` for agent tool environments (static evidence in
   `ANTIGRAVITY-HUB-001`), which would let a command reconfigure or start
   sessions outside the sandbox profile.
+  - Codex: done on `fix/vsix-presentation` (2026-10-07). Measured on Codex
+    0.162.0-alpha.2 (the VS Code extension's binary) with an isolated, signed-out
+    `CODEX_HOME`, an HTTP fixture MCP server that records every connection and
+    no `turn/start`. Control: the thread connected the fixture and listed its
+    tool. `-c mcp_servers={}` and a thread `config` of `{"mcp_servers":{}}` left
+    it connected: Codex merges configuration layers. A thread `config` with
+    `enabled = false` per server reported every server `disabled`, and the
+    fixture saw no request. The adapter now reads `config/read` for the turn
+    directory, disables each named server at thread start/resume, starts the
+    server with the tool features off (connectors, plugins, browser and computer
+    use, MCP installation for skills, tool suggestions, hooks, subagents) and
+    starts the turn only after the thread reports those features off and every
+    MCP server `disabled`; otherwise `SANDBOX_UNAVAILABLE`. Live check through the
+    adapter with a user-layer server, a missing `coagent8` stdio entry and a
+    trusted project-layer server: all checks passed, the unauthenticated turn
+    ended with `AUTH_REQUIRED` at the API, and neither fixture saw a request;
+    without the adapter, the same thread tried to start all three. Regression:
+    `tests/backends/codex/adapter.test.js` (disabled servers in the start and
+    resume `config`, checked pages, and `SANDBOX_UNAVAILABLE` without
+    `turn/start` for a server that stays enabled, an enabled feature or a Codex
+    without the requests). Codex before 0.162 lacks these requests and now
+    fails closed.
+  - agy: open; see the owner decision below.
 - [x] `CUR-003`: require `approve` and accept only explicit boolean true for an
   accepted elicitation. Cover missing/empty/false content and every governed
   default/session model through the real MCP request boundary. On

@@ -384,12 +384,29 @@ apply before the independent history-message maximum.
 
 | Backend | Execution profile and protocol |
 | --- | --- |
-| Codex | `app-server -c sandbox_mode="read-only" -c approval_policy="never"`; initialize, thread start/resume, turn start; verify thread `readOnly` and `never`; reject server approval requests; interrupt with `turn/interrupt` |
+| Codex | `app-server -c sandbox_mode="read-only" -c approval_policy="never"` plus `-c features.<name>=false` for the tool features listed below; initialize, `config/read` for the turn directory, thread start/resume with every configured MCP server `enabled = false`, verify thread `readOnly` and `never`, verify the thread's features off and every MCP server `disabled`, then turn start; reject server approval requests; interrupt with `turn/interrupt` |
 | agy / Gemini | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; unknown event types warn; known malformed events fail; every launch sets `AGY_CLI_DISABLE_AUTO_UPDATE=true`, because agy's updater opens a console window that takes the focus on Windows |
 | Claude Code | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none` with hooks disabled and strict empty MCP configuration; stream-json input/output; verify startup tools/no MCP/dontAsk before content; native session UUID/resume and control interrupt |
 
-Codex and agy do not disable inherited MCP servers. Claude's restricted profile
-is the only adapter with explicit empty MCP configuration. Sandbox denial evidence
+Inherited MCP servers (`CUR-002`):
+- Claude's restricted profile passes an explicit empty MCP configuration.
+- Codex (0.162, measured 2026-10-07) merges configuration layers, so an empty
+  `mcp_servers` table, through `-c` or the thread's `config`, leaves every
+  inherited server running. The adapter therefore reads the effective
+  configuration with `config/read` (project layers of the turn directory
+  included) and starts or resumes the thread with each named server
+  `enabled = false`. The server also starts with `apps`, `plugins`,
+  `remote_plugin`, `browser_use`, `browser_use_external`, `computer_use`,
+  `in_app_browser`, `skill_mcp_dependency_install`, `tool_suggest`, `hooks`,
+  `multi_agent` and `multi_agent_v2` off. Before `turn/start` the thread must
+  report each of those features off (`experimentalFeature/list`) and every MCP
+  server, plugin servers included, `disabled` with no tools
+  (`mcpServerStatus/list`, all pages). Anything else, including a Codex without
+  these requests, fails with `SANDBOX_UNAVAILABLE` and no turn starts. A
+  recursive CoAgent8 registration is disabled like any other server.
+- agy does not disable inherited MCP servers; see section 7.
+
+Sandbox denial evidence
 in agy is a warning and requires a real terminal result; a completed answer and
 continuation can remain. Duplicate terminals and missing terminals still fail.
 
@@ -421,7 +438,7 @@ These are open implementation issues, not relaxed security requirements.
 | ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
 | CUR-001 | Truncated/omitted review input can still receive READY; snapshot and failing checks are not bound to approval | `AUDIT-001` / `SURFACE-001` |
-| CUR-002 | Codex/agy inherit MCP tools outside the verified shell/tool profile; agy can recursively call CoAgent8 | `WINDOWS-001` / `EXEC-001` |
+| CUR-002 | agy inherits MCP servers from `~/.gemini/config/mcp_config.json` and enabled plugins in `--sandbox` turns and can recursively call CoAgent8; its agent shell receives the language-server address and CSRF token. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
 | CUR-004 | Automatic routing fails on quota-cache writes; old measurements can retain routing weight | `ROUTING-MIGRATE-001` |
 | CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
 | CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |

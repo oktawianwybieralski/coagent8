@@ -7,6 +7,7 @@
 import { BRAND } from '../../constants.js';
 import { runCommand, type StdinChannel } from '../../execution/process.js';
 import type { CatalogModel, ModelCatalog } from '../types.js';
+import { codexAppServerArgs } from './app-server.js';
 
 /** Upper bound for the catalog read; a slower read leaves the selection unchecked. */
 const MODEL_LIST_TIMEOUT_MS = 10_000;
@@ -47,7 +48,7 @@ export async function listCodexModels(command: string, acceptedEfforts: readonly
   let channel: StdinChannel | undefined;
   const request = (cursor: string | null) => channel?.send({ id: 2 + pages, method: 'model/list', params: cursor ? { cursor } : {} });
   // No thread is started; the overrides keep the server's defaults as read-only as a turn's.
-  const result = await runCommand(command, ['app-server', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"'], {
+  const result = await runCommand(command, codexAppServerArgs(), {
     timeoutMs: MODEL_LIST_TIMEOUT_MS, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024,
     session: {
       start(opened) {

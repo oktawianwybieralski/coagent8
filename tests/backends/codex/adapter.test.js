@@ -32,13 +32,14 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   const second = await executeTask('Follow up','Follow up',{session_handle:handle,reasoning_effort:'high'},directory);
   assert.equal(second.isError,false); assert.equal(readResult(second).turn,2);
   const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8'));
-  assert.deepEqual(capture.args,['app-server','-c','sandbox_mode="read-only"','-c','approval_policy="never"']);
-  assert.deepEqual(capture.records.map(r=>r.method),['initialize','initialized','thread/resume','turn/start']);
+  assert.deepEqual(capture.args.slice(0,5),['app-server','-c','sandbox_mode="read-only"','-c','approval_policy="never"']);
+  assert.deepEqual(capture.records.map(r=>r.method),['initialize','initialized','config/read','thread/resume','experimentalFeature/list','mcpServerStatus/list','mcpServerStatus/list','turn/start']);
   assert.ok(capture.records.every(r=>!('jsonrpc' in r)),'the app-server wire format omits the jsonrpc field');
-  const resume = capture.records[2].params;
+  const resume = capture.records[3].params;
   assert.equal(resume.threadId,thread); assert.equal(resume.excludeTurns,true);
   assert.equal(resume.sandbox,'read-only'); assert.equal(resume.approvalPolicy,'never'); assert.equal(resume.model,options.model);
-  const turn = capture.records[3].params;
+  assert.deepEqual(resume.config,{mcp_servers:{coagent8:{enabled:false},'fixture-http':{enabled:false}}},'a resumed thread disables inherited MCP servers too');
+  const turn = capture.records[7].params;
   assert.equal(turn.threadId,thread); assert.equal(turn.effort,'high'); assert.equal(capture.prompt,'Follow up');
   const history = await sessionHistory(handle,directory);
   assert.equal(history.events.filter(event => event.type === 'assistant_message').length,2);
@@ -49,7 +50,7 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
 });
 
 test('Codex failures are typed and authoritative even at exit zero; malformed or incomplete protocol cannot pass',async () => {
-  for (const [mode,code] of [['auth','AUTH_REQUIRED'],['rate','RATE_LIMITED'],['http-failure','AUTH_REQUIRED'],['error-exit-zero','PROCESS_ERROR'],['no-terminal','PROTOCOL_ERROR'],['malformed','PROTOCOL_ERROR'],['duplicate-terminal','PROTOCOL_ERROR'],['exit-failed','PROCESS_ERROR'],['sandbox-writable','SANDBOX_UNAVAILABLE'],['approvals-on','SANDBOX_UNAVAILABLE']]) {
+  for (const [mode,code] of [['auth','AUTH_REQUIRED'],['rate','RATE_LIMITED'],['http-failure','AUTH_REQUIRED'],['error-exit-zero','PROCESS_ERROR'],['no-terminal','PROTOCOL_ERROR'],['malformed','PROTOCOL_ERROR'],['duplicate-terminal','PROTOCOL_ERROR'],['exit-failed','PROCESS_ERROR'],['sandbox-writable','SANDBOX_UNAVAILABLE'],['approvals-on','SANDBOX_UNAVAILABLE'],['mcp-not-disabled','SANDBOX_UNAVAILABLE'],['feature-enabled','SANDBOX_UNAVAILABLE'],['no-isolation-api','SANDBOX_UNAVAILABLE']]) {
     process.env.CODEX_FIXTURE_MODE = mode;
     const result = await execute('x',options);
     assert.equal(result.status,'failed',mode); assert.equal(result.isError,true,mode); assert.equal(result.error.code,code,mode);
@@ -85,6 +86,30 @@ test('Codex declines server requests, ignores sub-agent threads, sums turn usage
       const answer = capture.records.find(r=>r.id==='srv-1');
       assert.equal(answer.error.code,-32601); assert.equal('result' in answer,false,'nothing is ever approved');
     }
+  }
+  delete process.env.CODEX_FIXTURE_MODE;
+});
+
+test('Codex turns run only after the thread reports every inherited MCP server disabled and tool features off (CUR-002)',async () => {
+  delete process.env.CODEX_FIXTURE_MODE;
+  const result = await execute('x',options);
+  assert.equal(result.status,'completed');
+  const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8'));
+  for (const feature of ['apps','plugins','browser_use','computer_use','hooks','multi_agent']) assert.ok(capture.args.includes(`features.${feature}=false`),feature);
+  const methods = capture.records.map(r=>r.method);
+  assert.deepEqual(methods,['initialize','initialized','config/read','thread/start','experimentalFeature/list','mcpServerStatus/list','mcpServerStatus/list','turn/start']);
+  assert.equal(capture.records[2].params.cwd,path.resolve(directory),'project configuration layers of the turn directory are read');
+  // The recursive CoAgent8 registration is disabled like every other configured server.
+  assert.deepEqual(capture.records[3].params.config,{mcp_servers:{coagent8:{enabled:false},'fixture-http':{enabled:false}}});
+  const thread = '11111111-aaaa-bbbb-cccc-123456789012';
+  assert.ok(capture.records.slice(4,7).every(r=>r.params.threadId===thread),'checks describe the turn thread');
+  assert.equal(capture.records[6].params.cursor,'page-2','every status page is checked');
+  for (const [mode,detail] of [['mcp-not-disabled',/MCP server 'plugin-server' is not disabled/],['feature-enabled',/feature 'apps' is still enabled/],['no-isolation-api',/rejected the check/]]) {
+    process.env.CODEX_FIXTURE_MODE = mode;
+    const denied = await execute('x',options);
+    assert.equal(denied.error.code,'SANDBOX_UNAVAILABLE',mode); assert.match(denied.error.message,detail,mode);
+    const failed = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8'));
+    assert.ok(!failed.records.some(r=>r.method==='turn/start'),`${mode}: no turn starts`);
   }
   delete process.env.CODEX_FIXTURE_MODE;
 });

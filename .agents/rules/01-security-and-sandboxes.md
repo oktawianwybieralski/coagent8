@@ -7,9 +7,12 @@
 
 ## 1. Mandatory Read-Only Sandboxing
 All multi-agent review, diagnostic, consultation, and codebase analysis operations must strictly enforce read-only execution modes across external CLI backends to ensure repository and host integrity:
-* Codex uses `app-server -c sandbox_mode="read-only" -c approval_policy="never"`;
-  each thread start/resume must report `readOnly` and `never`. The older exec
-  `--sandbox read-only` invocation is not the current adapter protocol.
+* Codex uses `app-server -c sandbox_mode="read-only" -c approval_policy="never"`
+  with its tool features (connectors, plugins, browser and computer use, hooks,
+  subagents) off; each thread start/resume must report `readOnly` and `never`,
+  disables every configured MCP server, and must report every MCP server
+  `disabled` before the turn starts. The older exec `--sandbox read-only`
+  invocation is not the current adapter protocol.
 * `--restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none --strict-mcp-config` with an empty `--mcp-config` on Claude Code CLI (`claude`); each run is rejected unless the CLI reports at startup only these tools, no MCP server and `dontAsk`. `--bare` is not used: it disables subscription authentication.
 * Native `--sandbox` read-only isolation on Google Antigravity CLI (`agy`).
 
@@ -62,9 +65,10 @@ such as `const token = getToken();` is a defect, not a privacy feature.
 This rule is implemented in `REDACTION-002` (AUD-P0-2, AUD-P2-13).
 
 **Current enforcement limits:** Claude disables hooks and inherited MCP servers;
-Codex/agy do not yet isolate inherited external MCP tools (`CUR-002`). Their
-shell sandbox flags alone cannot establish the required read-only capability
-boundary. These gaps block safety acceptance rather than weakening this rule.
+Codex disables and verifies them per thread. agy does not yet isolate inherited
+external MCP tools or plugins (`CUR-002`); its shell sandbox flag alone cannot
+establish the required read-only capability boundary. This gap blocks safety
+acceptance rather than weakening this rule.
 
 **Consent transport:** implemented in `EXEC-001` (AUD-P1-7); the explicit
 `approve: true` requirement closed `CUR-003`. The contract is in

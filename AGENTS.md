@@ -23,9 +23,10 @@ MCP use. Historical plans and RFCs do not override this direction.
    - **Production reliability**: Strict TypeScript strict mode, leak-free process management, defensive schema validation.
 
 1. **[P0: Security & Read-Only Sandboxes (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
-   - Mandatory read-only profiles: Codex app-server verifies readOnly/never;
+   - Mandatory read-only profiles: Codex app-server verifies readOnly/never and
+     every inherited MCP server disabled per thread;
      Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
-     agy receives native --sandbox. Inherited MCP isolation for Codex/agy remains
+     agy receives native --sandbox. Inherited MCP isolation for agy remains
      an open deviation, not an exemption from this invariant.
    - Models priced as expensive (at least 2x the backend default, or 20 USD per
      million output tokens), unknown or approximately priced require explicit user

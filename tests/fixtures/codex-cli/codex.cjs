@@ -1,14 +1,34 @@
 // Codex CLI double speaking the `codex app-server` protocol of 0.160 (JSONL JSON-RPC without
-// the `jsonrpc` field). Like the real server it exits on stdin EOF. CODEX_FIXTURE_MODE selects
-// failure variants; CODEX_FIXTURE_CAPTURE records argv, every client message and the prompt.
+// the `jsonrpc` field), with the isolation requests of 0.162 (`config/read`,
+// `experimentalFeature/list`, `mcpServerStatus/list`). Like the real server it exits on stdin
+// EOF. CODEX_FIXTURE_MODE selects failure variants; CODEX_FIXTURE_CAPTURE records argv, every
+// client message and the prompt.
 const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (args.includes('--version')) { console.log('codex-cli 0.160.0'); process.exit(0); }
+if (args.includes('--version')) { console.log('codex-cli 0.162.0'); process.exit(0); }
 if (args[0] !== 'app-server') { console.error(`unexpected arguments ${args.join(' ')}`); process.exit(2); }
 const mode = process.env.CODEX_FIXTURE_MODE || 'success';
 const THREAD = '11111111-aaaa-bbbb-cccc-123456789012', TURN = '019a0000-0000-7000-8000-000000000001';
+// Measured on Codex 0.162 (2026-10-07): layers merge, so only `enabled = false` per server in
+// the thread's `config` disables a configured server; `-c features.<name>=false` turns a
+// feature off. `mcp-not-disabled` adds a plugin server the thread config cannot reach.
+const CONFIGURED_SERVERS = { coagent8: { command: 'coagent8', enabled: true }, 'fixture-http': { url: 'http://127.0.0.1:9/mcp', enabled: true } };
+const DEFAULT_ON = ['apps', 'plugins', 'remote_plugin', 'browser_use', 'browser_use_external', 'computer_use', 'in_app_browser', 'skill_mcp_dependency_install', 'tool_suggest', 'hooks', 'multi_agent', 'shell_tool'];
 const records = [];
-let threadId = null, turnRunning = false, pending = '';
+let threadId = null, threadConfig = null, turnRunning = false, pending = '';
+function featureEnabled(name) {
+  if (mode === 'feature-enabled' && name === 'apps') return true;
+  return !args.includes(`features.${name}=false`) && DEFAULT_ON.includes(name);
+}
+function mcpStatusPage(cursor) {
+  const servers = Object.keys(CONFIGURED_SERVERS).map(name => {
+    const disabled = threadConfig?.mcp_servers?.[name]?.enabled === false;
+    return { name, runtimeStatus: disabled ? 'disabled' : 'connected', authStatus: 'unsupported', tools: disabled ? {} : { write_file: { name: 'write_file' } }, resources: [], resourceTemplates: [], pluginId: null };
+  });
+  if (mode === 'mcp-not-disabled') servers.push({ name: 'plugin-server', runtimeStatus: 'connected', authStatus: 'unsupported', tools: { send: { name: 'send' } }, resources: [], resourceTemplates: [], pluginId: 'plugin@market' });
+  // Two pages exercise the cursor.
+  return cursor ? { data: servers.slice(1), nextCursor: null } : { data: servers.slice(0, 1), nextCursor: 'page-2' };
+}
 const send = message => process.stdout.write(JSON.stringify(message) + '\n');
 const notify = (method, params) => send({ method, params });
 function capture() {
@@ -55,8 +75,14 @@ function handle(message) {
   if (method === 'initialize') {
     if (mode === 'malformed') { process.stdout.write('{invalid\n'); return; }
     send({ id, result: { userAgent: 'codex-fixture/0.160.0', codexHome: '/fixture', platformFamily: 'windows', platformOs: 'windows' } });
+  } else if (method === 'config/read' || method === 'experimentalFeature/list' || method === 'mcpServerStatus/list') {
+    if (mode === 'no-isolation-api') { send({ id, error: { code: -32601, message: `unknown method ${method}` } }); return; }
+    if (method === 'config/read') send({ id, result: { config: { model: 'gpt-6.1-sol', mcp_servers: CONFIGURED_SERVERS }, origins: {} } });
+    else if (method === 'experimentalFeature/list') send({ id, result: { data: [...DEFAULT_ON, 'multi_agent_v2', 'image_generation'].map(name => ({ name, stage: 'stable', enabled: featureEnabled(name), defaultEnabled: DEFAULT_ON.includes(name) })), nextCursor: null } });
+    else send({ id, result: mcpStatusPage(params.cursor) });
   } else if (method === 'thread/start' || method === 'thread/resume') {
     if (method === 'thread/resume' && mode === 'invalid-session') { send({ id, error: { code: -32600, message: `no rollout found for thread id ${params.threadId}` } }); return; }
+    threadConfig = params.config || null;
     threadId = method === 'thread/resume' ? (mode === 'wrong-thread' ? '22222222-aaaa-bbbb-cccc-123456789012' : params.threadId) : THREAD;
     const sandbox = mode === 'sandbox-writable'
       ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
