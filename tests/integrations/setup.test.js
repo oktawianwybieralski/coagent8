@@ -63,6 +63,27 @@ test('manual registrations are verified and retained while new candidates use im
   const state = JSON.parse(fs.readFileSync(path.join(options.home, '.coagent8/setup.json'), 'utf8'));
   assert.deepEqual(state.owned, {});
 });
+
+test('new native-host registrations retain the explicitly selected configuration file', async t => {
+  const options = profile(t);
+  const config = path.join(options.home, 'custom configuration.json');
+  write(config, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'gemini' })));
+  options.env.coagent8_CONFIG = config;
+  const results = await setupClients(options);
+  assert.ok(results.every(result => result.action === 'installed'), JSON.stringify(results));
+  const codex = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  const claude = parse(fs.readFileSync(path.join(options.home, '.claude.json'), 'utf8')).mcpServers.coagent8;
+  const agy = parse(fs.readFileSync(path.join(options.home, '.gemini/config/mcp_config.json'), 'utf8')).mcpServers.coagent8;
+  for (const entry of [codex, claude, agy]) assert.equal(entry.env.coagent8_CONFIG, config);
+  assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).defaultBackend, 'gemini');
+  const nextConfig = path.join(options.home, 'replacement configuration.json');
+  write(nextConfig, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'codex' })));
+  options.env.coagent8_CONFIG = nextConfig;
+  const repaired = await setupClients(options);
+  assert.equal(repaired[0].action, 'updated', JSON.stringify(repaired));
+  assert.ok(repaired.slice(1).every(result => result.action === 'preserved'), 'unverified native-host updates must remain deferred');
+  assert.equal(toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8.env.coagent8_CONFIG, nextConfig);
+});
 test('malformed, duplicate-key, workspace shadow, and independently edited settings are never overwritten', async t => {
   const options = profile(t);
   const file = path.join(options.home, '.claude.json');
@@ -97,6 +118,7 @@ test('native failed replacement rolls back exact original config and preserves c
   assert.equal(concurrent[0].action, 'blocked', JSON.stringify(concurrent));
   const recovered = toml(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(recovered.mcp_servers.coagent8, toml(before).mcp_servers.coagent8);
+  assert.ok(recovered.unrelated, JSON.stringify(concurrent));
   assert.equal(recovered.unrelated.secret, 'synthetic-concurrent-secret');
   assert.equal(concurrent[0].registered, true);
   assert.equal(concurrent[0].hostCallable, true);

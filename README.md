@@ -143,7 +143,8 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
    and request doctor, a consultation, and a review of current workspace changes.
    Native-host registration is a separate optional command.
 4. Configure models and consent through **Open Configuration (config.json)**.
-   Configuration stays the single source of truth. The welcome notification
+   Set `coagent8.configPath` in VS Code user settings to choose another file;
+   empty uses the default. Configuration stays the single source of truth. The welcome notification
    appears on activation until a CLI is ready or you choose **Don't Show Again**.
 5. For a problem, ask for the issue tool's sanitized report and doctor output.
    Open the repository's [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
@@ -151,8 +152,9 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
    versus actual behavior. Review pasted diagnostics before submitting.
 
 See the [local release-note draft](docs/BETA_2_RELEASE_NOTES.md) for known issues.
-Restart the MCP server after installing a replacement VSIX; a running process
-keeps its old bundle. Review accepts staged/revision scopes only when their
+Apply VS Code's native Extensions view restart action when requested after
+installation/update. Use **MCP: List Servers** to restart CoAgent8 after a changed
+MCP definition; a running process keeps its old bundle. Review accepts staged/revision scopes only when their
 files match the current workspace; otherwise use uncommitted changes.
 
 ## Current tools

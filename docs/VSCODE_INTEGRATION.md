@@ -380,10 +380,35 @@ Again** is chosen; the older `setupOffered` flag does not suppress it. Run
 mass-delete the owner's profile.
 
 **CoAgent8: Open Configuration (config.json)** opens the runtime configuration
-and creates defaults only if missing. It honors `coagent8_CONFIG`; the ordinary
-path is `~/.coagent8/config.json`, associated with the VSIX's bundled JSON schema.
-A custom override outside that path needs an explicit `$schema` association.
+and creates defaults only if missing. Set the machine-scoped user setting
+`coagent8.configPath` to an absolute path or `~/...` to choose the file. Empty
+uses `coagent8_CONFIG` or `~/.coagent8/config.json`. Editing and the provider use
+the same path; new native-host registrations carry it in their environment.
+Existing manual connections are preserved, and updates without native-host
+acceptance remain deferred. The ordinary path uses the bundled JSON schema;
+newly created files include `$schema`, while existing contents stay unchanged.
 Backend/model/consent options stay in this file, rather than VS Code settings.
+
+Installation/update/uninstall uses VS Code's native extension lifecycle and its
+Extensions view action. The native **Restart Extensions** action applies added
+and removed extensions before restarting hosts; **Developer: Restart Extension
+Host** only restarts hosts. The extension does not replace either with a blanket
+window reload. See the [VS Code implementation for the measured 1.141.0 build](https://github.com/microsoft/vscode/blob/2a59476c9bfcb90b3ddc372c36762471b7dfad1c/src/vs/workbench/contrib/extensions/browser/extensionsWorkbenchService.ts#L1726).
+
+The MCP provider's version includes the bundled server's SHA-256, so replacing
+a development VSIX with unchanged SemVer still invalidates its tool metadata.
+Path/Node changes and filesystem writes to active-profile/workspace MCP definitions
+fire the provider's change event. VS Code controls restart/refresh through
+**MCP: List Servers**. Separate native-host registrations retain their own restart
+requirement. Provider and watcher disposables belong to the extension context.
+The owner's lingering Restart Required report after uninstall remains unverified
+until the action used and a new native lifecycle test are recorded.
+
+Owner testing on 2026-10-08 confirmed opening the default configuration and
+reported that schema completion/validation appeared to work. Fresh-profile welcome
+and desktop behavior after the new provider refresh remain unverified. A one-off
+owner-requested reset removes only CoAgent8 profile state after the editor closes,
+with backups; it is not production cleanup and does not delete shared databases.
 
 Setup currently supports local default standalone profiles. Remote VS Code hosts
 continue to use the bundled provider but do not run external-client setup on the

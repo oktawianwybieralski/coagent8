@@ -2176,7 +2176,30 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   existing JSON; `$schema` survives backend-default and remembered-consent
   updates. The schema is shipped in the VSIX. Native completion/UI remains
   unverified.
-- No `vscode:uninstall` cleanup is planned: the integration guide keeps the
+- [x] Local follow-up from owner testing (2026-10-08): `coagent8.configPath` is
+  a machine-scoped user setting selecting the same configuration for editing,
+  the provider and new native-host registrations. Absolute paths and `~/...`
+  are supported; relative paths are refused. Existing files stay unchanged.
+  The provider includes the bundled-server SHA-256 in its version, invalidating
+  tool metadata even when a development VSIX keeps the same SemVer. Path/Node
+  changes and active-profile/workspace MCP filesystem changes fire its change
+  event. Install/update/uninstall uses VS Code's native Extensions view action;
+  no blanket window reload or private host-service call is introduced.
+  Source inspection of the installed VS Code 1.141.0 build (2a59476c9b) confirms
+  that native Restart Extensions applies added/removed extensions, whereas
+  Developer: Restart Extension Host does not. The owner reported lingering
+  Restart Required after uninstall; the action used and native recheck remain
+  unverified. No host restart is claimed from source fixtures.
+  Config opening is owner-confirmed; schema behavior is tentative. Fresh welcome
+  and quiet operation after the new refresh remain unverified. The owner removed
+  ~/.coagent8 manually and requested a complete local test reset; exact residual
+  profile entries are inspected separately from project files and other clients.
+  Local checks: typecheck/build/documentation lint, 36 integration tests and 18
+  updated provider fixtures pass. Exact-artifact consumer/package inspection
+  remains separate from native UI acceptance. Reset preview finds five targeted
+  keys in each profile database copy; its fixture proves backups and retention of
+  unrelated bytes. Actual reset awaits editor shutdown; it has not been applied.
+- No `vscode:uninstall` cleanup is currently implemented: the integration guide keeps the
   explicit preview/confirm cleanup command as the only path, and such a hook
   could not reach `globalState` either. Documentation tells users to run cleanup
   before uninstalling.

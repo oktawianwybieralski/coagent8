@@ -6,6 +6,7 @@ import { redactDiagnostic } from '../../../src/redaction.js';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { getConfigFile, validateConfig } from '../../../src/config.js';
 import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
@@ -30,7 +31,15 @@ function discoveryEnvironment(): NodeJS.ProcessEnv {
     const extension = vscode.extensions.getExtension(id);
     if (extension?.extensionUri.scheme === 'file') locations[client] = extension.extensionPath;
   }
-  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations) };
+  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_CONFIG: configurationFile() };
+}
+/** Resolves the machine-scoped user setting without accepting workspace policy overrides. */
+function configurationFile(): string {
+  const selected = vscode.workspace.getConfiguration('coagent8').get<string>('configPath', '').trim();
+  if (!selected) return path.resolve(getConfigFile());
+  const expanded = selected.startsWith('~/') || selected.startsWith('~\\') ? path.join(os.homedir(), selected.slice(2)) : selected;
+  if (!path.isAbsolute(expanded)) throw new Error('CoAgent8: coagent8.configPath must be an absolute path or start with ~/; leave it empty to use the default.');
+  return path.normalize(expanded);
 }
 /** The Google extension is installed but has not downloaded agy yet; installing again would duplicate it. */
 function antigravityDownloadPending(result: SetupStatus): boolean {
@@ -95,7 +104,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const changed = new vscode.EventEmitter<void>();
   context.subscriptions.push(changed);
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('coagent8.nodePath')) { clearCliResolverCache(); changed.fire(); }
+    if (event.affectsConfiguration('coagent8.nodePath') || event.affectsConfiguration('coagent8.configPath')) {
+      clearCliResolverCache(); changed.fire();
+    }
   }));
   context.subscriptions.push(vscode.extensions.onDidChange(() => { clearCliResolverCache(); changed.fire(); }));
   context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('coagent8', {
@@ -106,9 +117,31 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 24+ executable.');
       return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {
         coagent8_EXTENSION_PATHS: discoveryEnvironment().coagent8_EXTENSION_PATHS!,
-      }, version)];
+        coagent8_CONFIG: configurationFile(),
+      }, `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
     },
   }));
+  const profileMcpFile = path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'mcp.json');
+  const mcpFiles = [profileMcpFile, ...vscode.workspace.workspaceFolders?.map(folder => path.join(folder.uri.fsPath, '.vscode', 'mcp.json')) ?? []];
+  let manualRegistration = false;
+  try { manualRegistration = hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? []); }
+  catch (error) { showLifecycleError(error); }
+  function registrationChanged(): void {
+    try {
+      const registered = hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? []);
+      if (registered || manualRegistration) {
+        changed.fire();
+      }
+      manualRegistration = registered;
+    } catch (error) { showLifecycleError(error); }
+  }
+  for (const file of new Set(mcpFiles)) {
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(path.dirname(file), path.basename(file)));
+    context.subscriptions.push(watcher, watcher.onDidChange(registrationChanged), watcher.onDidCreate(registrationChanged), watcher.onDidDelete(registrationChanged));
+  }
+  function showLifecycleError(error: unknown): void {
+    void vscode.window.showErrorMessage(`CoAgent8: ${redactDiagnostic(error instanceof Error ? error.message : 'MCP configuration refresh failed.')}`);
+  }
   let output: vscode.OutputChannel | undefined;
   /**
    * Records evidence in the CoAgent8 Setup channel.
@@ -256,9 +289,10 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   register('coagent8.refreshCliStatus', async () => { await summarize(await status('Refresh CLI Status')); });
   register('coagent8.openConfiguration', async () => {
-    const file = getConfigFile();
+    const file = configurationFile();
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    try { fs.writeFileSync(file, JSON.stringify(validateConfig({}), null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
+    const defaults = validateConfig({ $schema: vscode.Uri.file(context.asAbsolutePath('schemas/config.schema.json')).toString() });
+    try { fs.writeFileSync(file, JSON.stringify(defaults, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
     await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(file)));
   });
@@ -294,7 +328,9 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!picked?.length) return;
     const choice = await vscode.window.showWarningMessage(`Write CoAgent8 MCP registrations in ${picked.map(item => item.label).join(', ')} configuration? This is separate from CLI installation and the VS Code provider.`, { modal: true }, 'Register Selected Hosts');
     if (choice !== 'Register Selected Hosts') return;
-    report(await setupClients({ ...options(), clients: picked.map(item => item.client) }), true);
+    const resultsAfter = await setupClients({ ...options(), clients: picked.map(item => item.client) });
+    report(resultsAfter, true);
+    if (resultsAfter.some(result => result.action === 'installed' || result.action === 'updated')) await vscode.window.showInformationMessage('CoAgent8 native-host registration was written. Restart the affected native chat hosts to refresh their tools. VS Code manages its own MCP server separately through MCP: List Servers.');
   });
   register('coagent8.cleanup', async () => {
     const preview = await cleanupClients({ home: os.homedir(), env: process.env });

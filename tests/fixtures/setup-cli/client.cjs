@@ -26,7 +26,15 @@ if (args[0] === 'mcp' && ['add', 'remove'].includes(args[1])) {
   if (args[1] === 'remove') { fs.writeFileSync(file, prefix + suffix); process.exit(0); }
   const command = args[args.indexOf('--') + 1];
   const commandArgs = args.slice(args.indexOf('--') + 2);
-  fs.writeFileSync(file, prefix + `\n[mcp_servers.coagent8]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(commandArgs)}\n` + suffix);
+  const environment = [];
+  for (let index = 3; index < args.indexOf('--'); index++) {
+    if (args[index] !== '--env') continue;
+    const entry = args[++index], separator = entry.indexOf('=');
+    if (separator < 1) throw new Error('Invalid fixture --env entry');
+    environment.push(`${JSON.stringify(entry.slice(0, separator))} = ${JSON.stringify(entry.slice(separator + 1))}`);
+  }
+  const envLine = environment.length ? `env = { ${environment.join(', ')} }\n` : '';
+  fs.writeFileSync(file, prefix + `\n[mcp_servers.coagent8]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(commandArgs)}\n${envLine}` + suffix);
   process.exit(0);
 }
 if (args[0] === 'app-server') {

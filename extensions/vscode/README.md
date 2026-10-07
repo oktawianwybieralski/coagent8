@@ -229,12 +229,23 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
   uninstall/reinstall in VS Code's stored state.
 
 Use **CoAgent8: Open Configuration (config.json)** to edit backend defaults and
-model consent. The file remains the single source of truth; only the Node.js
-executable is a VS Code setting. Schema completion/validation covers
-`~/.coagent8/config.json`. For a `coagent8_CONFIG` override at another path, add a
-`$schema` pointing to the installed extension's `schemas/config.schema.json`.
+model consent. The file remains the single source of truth. The machine-scoped
+VS Code setting `coagent8.configPath` selects an absolute path or `~/...`; empty
+uses `coagent8_CONFIG` or `~/.coagent8/config.json`. This path is used for editing,
+the VS Code MCP provider and new native-host registrations. Models and consent
+are not duplicated as VS Code settings. Schema completion/validation covers
+the ordinary path; newly created files include a `$schema` association.
 This command creates defaults only when the file is missing and preserves
-existing contents, including invalid JSON that needs repair.
+existing contents, including invalid JSON that needs repair. Existing custom
+files need a `$schema` association if they do not already have one.
+
+Installation/update/uninstall uses the native Extensions view **Restart Extensions**
+action when VS Code requests it. **Developer: Restart Extension Host** is a different
+operation and does not apply added/removed extensions. CoAgent8 does not force a
+window reload. Node/config-path and MCP-definition changes refresh the provider;
+use **MCP: List Servers** to restart the CoAgent8 server. Bundled-server identity
+also changes when a replacement VSIX keeps the same version number. Restart
+separate native chat hosts when their registrations changed.
 
 Track current behavior in the
 [runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md)

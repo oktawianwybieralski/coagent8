@@ -6,7 +6,7 @@ const esbuild = require('esbuild');
 const fs = require('node:fs');
 const os = require('node:os');
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false } = {}) {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false } = {}) {
   const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
@@ -14,17 +14,21 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const cleanupCalls = [];
   const notifications = [], stateUpdates = [], openedFiles = [];
   let selections;
+  let savedListener, configurationListener;
+  let definitionChanges = 0;
   const dispose = () => {};
   const vscode = {
-    Uri: { file(file) { return { fsPath: file }; } },
+    RelativePattern: class { constructor(base, pattern) { Object.assign(this, { base, pattern }); } },
+    Uri: { file(file) { return { fsPath: file, toString() { return require('node:url').pathToFileURL(file).href; } }; } },
     env: {},
     extensions: { getExtension(id) { return vendorExtensions.includes(id) ? { extensionPath: path.resolve('vendor', id), extensionUri: { scheme: 'file' } } : undefined; }, onDidChange() { return { dispose }; } },
     ProgressLocation: { Notification: 15 },
-    EventEmitter: class { event = () => {}; dispose() {} },
+    EventEmitter: class { event = () => {}; fire() { definitionChanges++; } dispose() {} },
     workspace: {
       async openTextDocument(uri) { return { uri, text: fs.readFileSync(uri.fsPath, 'utf8') }; },
-      onDidChangeConfiguration() { return { dispose }; },
-      getConfiguration() { return { get() { return 'node'; } }; }, workspaceFolders: [],
+      onDidChangeConfiguration(listener) { configurationListener = listener; return { dispose }; },
+      createFileSystemWatcher() { return { dispose, onDidChange(listener) { savedListener = listener; return { dispose }; }, onDidCreate() { return { dispose }; }, onDidDelete() { return { dispose }; } }; },
+      getConfiguration() { return { get(key, fallback) { return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback; } }; }, workspaceFolders: [],
     },
     lm: { registerMcpServerDefinitionProvider() { return { dispose }; } },
     commands: {
@@ -89,7 +93,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
         contents: "export async function cleanupClients(options) { globalThis.recordCleanup(options.apply); return { token: 'fixture-preview', results: [{client:'claude',action:options.apply?'removed':'remove',message:'fixture'}] }; }", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
-        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: 'fixture-' + client, argsPrefix: [], source: 'native' }; } export async function setupClients(options) { globalThis.recordEvent('status'); if (!options.statusOnly) globalThis.recordClients(options.clients); return globalThis.statuses.map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
+        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: 'fixture-' + client, argsPrefix: [], source: 'native' }; } export async function setupClients(options) { globalThis.recordEvent('status'); if (!options.statusOnly) { globalThis.recordClients(options.clients); return globalThis.statuses.map(status => ({ ...status, action: 'installed' })); } return globalThis.statuses.map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
       }));
     } }],
   });
@@ -102,15 +106,28 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     recordEvent(name) { events.push(name); },
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
+  const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-extension-'));
+  fs.mkdirSync(path.join(extensionRoot, 'dist'));
+  fs.writeFileSync(path.join(extensionRoot, 'dist/index.cjs'), 'fixture runtime');
   const context = {
     subscriptions: [],
+    globalStorageUri: { fsPath: path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp') },
     globalState: { get(key) { return key === 'setupDismissed' ? dismissed : key === 'setupOffered' ? true : remembered; }, async update(key, value) { stateUpdates.push({ key, value }); if (key === 'setupClients') selections = Array.from(value); } },
-    asAbsolutePath(relative) { return path.resolve(relative); },
+    asAbsolutePath(relative) { return path.join(extensionRoot, relative); },
   };
-  module.exports.activate(context);
-  if (!activationOnly) await handlers[command]();
-  await new Promise(resolve => setImmediate(resolve));
-  return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, stateUpdates, openedFiles };
+  try {
+    module.exports.activate(context);
+    if (!activationOnly) await handlers[command]();
+    if (settingsChanged) configurationListener({ affectsConfiguration(key) { return key === 'coagent8.configPath'; } });
+    if (savedMcp) {
+      const mcp = path.join(extensionRoot, 'User/mcp.json');
+      fs.mkdirSync(path.dirname(mcp), { recursive: true });
+      fs.writeFileSync(mcp, JSON.stringify({ servers: { coagent8: { command: 'fixture' } } }));
+      savedListener();
+    }
+    await new Promise(resolve => setImmediate(resolve));
+    return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, stateUpdates, openedFiles, definitionChanges };
+  } finally { fs.rmSync(extensionRoot, { recursive: true, force: true }); }
 }
 
 test('welcome persists across legacy setupOffered profiles until ready or explicitly dismissed', async () => {
@@ -139,7 +156,10 @@ test('Open Configuration creates defaults only when absent and opens malformed e
     const created = await runSetupPicker({ command: 'coagent8.openConfiguration' });
     assert.equal(created.errors.length, 0);
     assert.equal(created.openedFiles[0].uri.fsPath, file);
-    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), require('../../src/config.ts').validateConfig({}));
+    const defaults = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.match(defaults.$schema, /schemas\/config.schema.json$/);
+    delete defaults.$schema;
+    assert.deepEqual(defaults, require('../../src/config.ts').validateConfig({}));
     fs.writeFileSync(file, '{ malformed existing configuration');
     const existing = await runSetupPicker({ command: 'coagent8.openConfiguration' });
     assert.equal(existing.openedFiles[0].text, '{ malformed existing configuration');
@@ -148,6 +168,37 @@ test('Open Configuration creates defaults only when absent and opens malformed e
     if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('the user configPath setting overrides the environment for editing and rejects relative paths', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-config-setting-'));
+  const file = path.join(directory, 'custom configuration.json');
+  const previous = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(directory, 'environment configuration.json');
+  try {
+    const result = await runSetupPicker({ command: 'coagent8.openConfiguration', configPath: file });
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.openedFiles[0].uri.fsPath, file);
+    assert.equal(fs.existsSync(process.env.coagent8_CONFIG), false, 'the environment override must not be created instead');
+    fs.writeFileSync(file, '{ malformed preserved');
+    const existing = await runSetupPicker({ command: 'coagent8.openConfiguration', configPath: file });
+    assert.equal(existing.openedFiles[0].text, '{ malformed preserved');
+    const invalid = await runSetupPicker({ command: 'coagent8.openConfiguration', configPath: 'relative/config.json' });
+    assert.match(invalid.errors[0], /absolute path/);
+  } finally {
+    if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('settings and filesystem MCP changes invalidate provider definitions without restarting the window or other extensions', async () => {
+  const settings = await runSetupPicker({ activationOnly: true, settingsChanged: true });
+  assert.equal(settings.definitionChanges, 1);
+  assert.deepEqual(settings.requests, []);
+  const saved = await runSetupPicker({ activationOnly: true, savedMcp: true });
+  assert.equal(saved.definitionChanges, 1, 'filesystem writes from the MCP UI also invalidate the provider');
+  assert.deepEqual(saved.requests, []);
+  assert.equal(saved.terminals.length, 0);
 });
 
 test('CLI selection remembers full-label backend choices without authorizing external registration', async () => {
@@ -241,6 +292,7 @@ test('native-host configuration is written only through the separate confirmed a
   assert.deepEqual(declined.registrations, []);
   const accepted = await runSetupPicker({ command: 'coagent8.registerNativeHosts', selected: ['claude'], action: 'Register Selected Hosts' });
   assert.deepEqual(accepted.registrations, [['claude']]);
+  assert.match(accepted.notifications.at(-1).message, /Restart the affected native chat hosts/);
 });
 test('refresh checks all CLI statuses without opening installers or registering hosts', async () => {
   const result = await runSetupPicker({ command: 'coagent8.refreshCliStatus' });
@@ -254,12 +306,13 @@ test('cleanup cancellation is read-only and confirmation applies the exact previ
   assert.deepEqual(accepted.selections, []);
 });
 
-test('VS Code provider uses bundled server, updates Node configuration, and disposes registrations', () => {
-  let provider, providerId, configurationListener, extensionListener, nodePath = 'node';
+test('VS Code provider uses bundled server, updates configuration/build identity, and disposes registrations', t => {
+  let provider, providerId, configurationListener, extensionListener, nodePath = 'node', configPath = '';
   let extensionPath;
   let changes = 0, disposed = 0;
   const disposable = () => ({ dispose() { disposed++; } });
   const vscode = {
+    RelativePattern: class { constructor(base, pattern) { Object.assign(this, { base, pattern }); } },
     env: { remoteName: 'isolated-test' },
     extensions: {
       getExtension(id) { return id === 'openai.chatgpt' && extensionPath ? { extensionPath, extensionUri: { scheme: 'file' } } : undefined; },
@@ -273,9 +326,10 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
     },
     workspace: {
       onDidChangeConfiguration(listener) { configurationListener = listener; return disposable(); },
+      createFileSystemWatcher() { return { ...disposable(), onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable }; },
       getConfiguration(section) {
         assert.equal(section, 'coagent8');
-        return { get(key, fallback) { assert.equal(key, 'nodePath'); return nodePath ?? fallback; } };
+        return { get(key, fallback) { return key === 'configPath' ? configPath : nodePath ?? fallback; } };
       },
     },
     lm: {
@@ -295,7 +349,10 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   vm.runInNewContext(output, { module, exports: module.exports, process, Buffer, require(name) {
     return name === 'vscode' ? vscode : require(name);
   } });
-  const root = path.resolve('extension path with spaces');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'extension path with spaces '));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'dist'));
+  fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'fixture bundle');
   const context = { subscriptions: [], globalStorageUri: { fsPath: path.join(root, 'User/globalStorage/coagent8') }, asAbsolutePath(relative) { return path.join(root, relative); } };
   module.exports.activate(context);
   assert.equal(providerId, require('../../extensions/vscode/package.json').contributes.mcpServerDefinitionProviders[0].id);
@@ -304,8 +361,9 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   assert.equal(definition.command, 'node');
   assert.equal(definition.args.length, 1);
   assert.equal(definition.args[0], path.join(root, 'dist/index.cjs'));
-  assert.equal(definition.version, require('../../package.json').version);
+  assert.ok(definition.version.startsWith(require('../../package.json').version + '#'));
   assert.deepEqual(JSON.parse(definition.env.coagent8_EXTENSION_PATHS), {});
+  assert.equal(definition.env.coagent8_CONFIG, path.resolve(require('../../src/config.ts').getConfigFile()));
   nodePath = ' C:\\Program Files\\nodejs\\node.exe ';
   configurationListener({ affectsConfiguration(section) { return section === 'coagent8.nodePath'; } });
   assert.equal(changes, 1);
@@ -322,6 +380,13 @@ test('VS Code provider uses bundled server, updates Node configuration, and disp
   extensionPath = undefined;
   extensionListener();
   assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EXTENSION_PATHS), {});
+  configPath = path.join(root, 'custom configuration.json');
+  configurationListener({ affectsConfiguration(section) { return section === 'coagent8.configPath'; } });
+  assert.equal(provider.provideMcpServerDefinitions()[0].env.coagent8_CONFIG, configPath);
+  assert.equal(require('../../extensions/vscode/package.json').contributes.configuration.properties['coagent8.configPath'].scope, 'machine');
+  fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'changed bundle, same package version');
+  extensionListener();
+  assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 9);
+  assert.equal(disposed, 13);
 });

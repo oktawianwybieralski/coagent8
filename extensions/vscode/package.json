@@ -38,6 +38,12 @@
     "configuration": {
       "title": "CoAgent8",
       "properties": {
+        "coagent8.configPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Configuration file for CoAgent8. Use an absolute path or ~/; empty uses coagent8_CONFIG or ~/.coagent8/config.json. Backend, model and consent options remain in this file. Open it with [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration). Use MCP: List Servers to restart CoAgent8 after changing the path."
+        },
         "coagent8.nodePath": {
           "type": "string",
           "default": "node",

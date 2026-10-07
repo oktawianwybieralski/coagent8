@@ -226,7 +226,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
       if (hash(readBoundedFileSync(runtime, 8 * 1024 * 1024)) !== hash(bundle)) throw new Error('Owned runtime hash mismatch.');
       const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
-      candidate = { command: node.command, args: [...node.argsPrefix, runtime], env: undefined };
+      candidate = { command: node.command, args: [...node.argsPrefix, runtime], env: env.coagent8_CONFIG ? { coagent8_CONFIG: env.coagent8_CONFIG } : undefined };
       await probeRuntime(candidate, env, cwd);
     }
     const results: SetupStatus[] = [];
@@ -292,7 +292,11 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
             // Failed native serialization never touches the user's live registration.
             after = await nativeCodexEdit(before, candidate, cli, backup, env, cwd);
             if (entry !== undefined) {
-              const otherFields = (value: unknown) => Object.fromEntries(Object.entries(object(value)).filter(([key]) => !['command', 'args'].includes(key)));
+              const otherFields = (value: unknown) => {
+                const entryObject = object(value);
+                const remainingEnv = Object.fromEntries(Object.entries(entryObject.env === undefined ? {} : object(entryObject.env)).filter(([key]) => key !== 'coagent8_CONFIG'));
+                return { ...Object.fromEntries(Object.entries(entryObject).filter(([key]) => !['command', 'args', 'env'].includes(key))), env: remainingEnv };
+              };
               if (!isDeepStrictEqual(otherFields(entry), otherFields(servers(client, document(client, after)).coagent8))) throw new Error('Native update would change existing registration options; preserve it.');
             }
             writeChecked(file, before, after);

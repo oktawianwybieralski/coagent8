@@ -97,6 +97,24 @@ review or release approval. The shared checkout retains another agent's
 CLI-FIRST roadmap edits and untracked feature document, so this is not clean-tree
 release validation. All six remote CI jobs are NOT_RUN.
 
+Owner reinstall follow-up on 2026-10-08: opening the default configuration is
+confirmed; schema behavior is tentative. The extension now exposes the
+machine-scoped `coagent8.configPath`, passes the same path to its MCP process and
+new native-host registrations, and refreshes definitions on settings/MCP file
+changes. Bundled-server SHA-256 joins the provider version to invalidate cached
+tools when development VSIX builds reuse SemVer. Native extension management
+retains installation/update/uninstall control; no blanket window reload is added.
+VS Code source inspection distinguishes the native Restart Extensions action
+(applies extension additions/removals) from Developer: Restart Extension Host.
+The owner's lingering Restart Required report is not yet reproduced or closed.
+Local checks: 36 integration tests pass, then 18 provider/UI fixtures pass after
+the native-lifecycle change; typecheck, build, documentation lint and package
+checks pass. No new model turn was run. A one-off backed-up profile reset was
+fixture-tested and previewed; applying it awaits the owner closing VS Code.
+The owner already deleted ~/.coagent8; installed extension and native/MCP
+registration inventories are empty. Fresh native lifecycle/desktop acceptance
+remains NOT_RUN; use the replacement VSIX path and digest reported in chat.
+
 ~~~yaml
 task_id: DOCS-001
 mode: documentation
