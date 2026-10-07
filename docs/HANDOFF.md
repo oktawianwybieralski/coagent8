@@ -84,7 +84,7 @@ is pushed:
 | `feat/context-budget` | `46fa155`..`ed1c141` | `CONTEXT-001`: resolved model, agy denial kept, compact tool surface and results, client roots, shorter prompts |
 | `fix/cooldown-single-write` | `abcff7d`..`6b0ecba` | `ROUTING-MIGRATE-001` (AUD-P1-1): one cooldown write per rate-limited turn, regression through `executeTask` |
 | `fix/typed-tool-errors` | `e1f83e2`..`d727fc8` | `ERRORS-001` (AUD-P1-2): `ToolError` with an `ErrorCode`; unknown failures are `PROCESS_ERROR` |
-| `build/untrack-dist` | this change | `PACKAGE-001` (AUD-P1-10): `dist/` out of Git, LF checkouts, consumer smoke compares the packed bundle with a fresh build |
+| `build/untrack-dist` | `891875b`..`e93125a` | `PACKAGE-001` (AUD-P1-10): `dist/` out of Git, LF checkouts, consumer smoke compares the packed bundle with a fresh build |
 
 ## Verification
 
@@ -116,8 +116,9 @@ results in the project review before requesting an independent review by the Rev
    - `ERRORS-001` (AUD-P1-2), implemented on `fix/typed-tool-errors`;
    - `PACKAGE-001` (AUD-P1-10), implemented on `build/untrack-dist`; plugin and
      VSIX artifacts from the tarball remain.
-4. Make the Codex `probe` test independent of local Codex credentials, so that
-   Linux CI does not fail on it.
+4. Done: the Codex `probe` test runs with an empty home and no API key
+   (`aae1a2a`, on `fix/windows-process-identity` and every later branch). Not yet
+   re-run on Linux.
 5. Beta 2, the first release for testers (`BETA-001`; beta 1 is the npm name
    placeholder, `REPO-001`):
    - feedback channel and tester guide;
