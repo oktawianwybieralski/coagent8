@@ -274,6 +274,5 @@ when its fix lands with a regression test.
 | ID | Intended contract | Current behavior |
 | --- | --- | --- |
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
-| AUD-P1-4 | agy runs with native `--sandbox` | The `/usage` quota probe runs on every Gemini request without `--sandbox` |
 | AUD-P1-7 | Top-tier models require the user's consent | `user_confirmed` is asserted by the caller; agy's default model is not governed |
 | AUD-P2-2 | Missing data is reported as unknown | An empty Gemini answer is returned as "Task completed cleanly with no textual output."; missing quota fractions count as 100% headroom |
