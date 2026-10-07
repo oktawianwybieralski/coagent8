@@ -142,13 +142,16 @@ results in the project review before requesting an independent review by the Rev
      the effective default model of every backend, including agy's; an
      agent-set `user_confirmed` no longer grants consent. This is a breaking
      contract change (`!` in the commit and PR title).
-   - Live agy (Gemini) calls are authorized: verify `/usage` with `--sandbox`
-     (`perf/bounded-probes`), the agy part of `CONTEXT-001` client acceptance and
-     the agy tool-call limit. Use the cheapest model that answers.
-   - Live Codex calls are deferred: do not run them. Record the Codex acceptance
-     (app-server turn, resume, `turn/interrupt`, `WINDOWS-001`) as a future test
-     in the roadmap.
-   - `CONTEXT-001` acceptance in Claude Code stays open.
+   - Live calls to every backend (agy, Codex, Claude Code) are authorized. Use
+     the cheapest model that answers; top-tier models still need the user's
+     consent. Verify:
+     - agy: `/usage` with `--sandbox` (`perf/bounded-probes`) and the agy
+       tool-call limit;
+     - Codex: one app-server turn, resume and `turn/interrupt` (`WINDOWS-001`
+       acceptance), then the AUD-P0-1 reproduction recorded in the project
+       review;
+     - Claude Code: the interrupt path still works on the current stack.
+   - `CONTEXT-001` client acceptance: repeat the measurements in Claude Code and agy.
 7. Execution order 3 remainder: the POSIX kill fallbacks in `process.ts`
    (`ERRORS-001`), orphans after a server crash (AUD-P2-14, `WINDOWS-001`),
    `SIMPLIFY-001` (one alias table for the deprecated tools, merged structured
