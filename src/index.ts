@@ -1,41 +1,12 @@
 #!/usr/bin/env node
 
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { createServer } from './server.js';
-import { BRAND } from './constants.js';
-import { shutdownProcessRunner } from './execution/process.js';
 import { redactDiagnostic } from './redaction.js';
-import { pruneExpiredSessions } from './sessions/session.js';
-import { waitForActiveExecutionTasks } from './execution/controller.js';
 import { runSetupCli } from './integrations/setup-cli.js';
+import { serveStdio } from './stdio-server.js';
 
 async function run(): Promise<void> {
   if (await runSetupCli(process.argv.slice(2))) return;
-  const server = createServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  process.stderr.write(`${BRAND.NAME} MCP Server (${BRAND.TAGLINE}) running on stdio\n`);
-
-  const backgroundMaintenance: Promise<void> = pruneExpiredSessions(true).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`Warning: background session maintenance failed: ${redactDiagnostic(message)}\n`);
-  });
-
-  let shuttingDown = false;
-  const shutdown = async () => {
-    if (shuttingDown) return; shuttingDown = true;
-    // backgroundMaintenance reports its own failure and never rejects.
-    await backgroundMaintenance;
-    await shutdownProcessRunner();
-    await waitForActiveExecutionTasks();
-    try { await server.close(); }
-    catch (error) { process.stderr.write(`Warning: MCP server did not close cleanly: ${redactDiagnostic(error instanceof Error ? error.message : String(error))}\n`); }
-    process.stdin.destroy();
-    process.exit(0);
-  };
-  process.stdin.once('end', () => { void shutdown(); });
-  process.once('SIGINT', () => { void shutdown(); });
-  process.once('SIGTERM', () => { void shutdown(); });
+  await serveStdio();
 }
 
 run().catch((error) => {

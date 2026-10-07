@@ -225,25 +225,6 @@ export function listSessions(workspace: string): SessionRecord[] {
 }
 
 async function sweepExpiredSessions(dir: string): Promise<void> {
-  const gateFile = process.env.coagent8_MAINTENANCE_GATE;
-  if (gateFile) {
-    try {
-      await fsp.writeFile(`${gateFile}.started`, 'started');
-      const startWait = Date.now();
-      while (Date.now() - startWait < 5000) {
-        try {
-          await fsp.access(`${gateFile}.release`);
-          break;
-        } catch {
-          await new Promise(r => setTimeout(r, 20));
-        }
-      }
-    } catch {}
-  }
-  const delayMs = parseInt(process.env.coagent8_MAINTENANCE_DELAY_MS || '0', 10);
-  if (delayMs > 0) {
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-  }
   try {
     for (const name of await fsp.readdir(dir)) {
       if (!name.endsWith('.json') || !sanitizeHandle(name.slice(0, -5))) continue;

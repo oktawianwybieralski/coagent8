@@ -130,9 +130,9 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
 test('STARTUP-001 & SHUTDOWN: graceful shutdown cleanly awaits pending background maintenance', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-shutdown-delay-'));
   const gateFile = path.join(dir, 'gate');
-  const c = createClient(dir, {
-    coagent8_MAINTENANCE_GATE: gateFile,
-  });
+  // The maintenance dependency is injected by a test launcher; production has no gate.
+  const c = connectStdio(process.execPath, [path.resolve(__dirname, '../fixtures/gated-maintenance-server.cjs'), gateFile],
+    { env: { ...process.env, coagent8_DIR: dir } });
   t.after(async () => {
     try { fs.writeFileSync(gateFile + '.release', 'release'); } catch {}
     await c.cleanup();

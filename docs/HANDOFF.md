@@ -96,7 +96,8 @@ is pushed:
 | `fix/empty-catches` | `96ebcfd` | `ERRORS-001` (AUD-P2-7, order 3, partial): empty catches outside `history.ts` and `process.ts` removed or reported |
 | `fix/malformed-config` | `8b43688`..`c85c775` | `MCP-001` (AUD-P2-11, order 3): an unusable `config.json` is reported by doctor and refuses execution |
 | `fix/history-empty-catches` | `07db345`..`040eb58` | `ERRORS-001` (AUD-P2-7, order 3): no empty catch in `history.ts`; typed `LockTimeoutError` |
-| `refactor/simplify-timeouts-capabilities` | this change | `SIMPLIFY-001` (AUD-P2-5, AUD-P2-8): one Gemini deadline; no phantom `resources.listChanged` |
+| `refactor/simplify-timeouts-capabilities` | `8d2c56b`..`967a0e5` | `SIMPLIFY-001` (AUD-P2-5, AUD-P2-8): one Gemini deadline; no phantom `resources.listChanged` |
+| `refactor/maintenance-injection` | this change | `SIMPLIFY-001` (AUD-P2-3): maintenance injected through `serveStdio`; no test hooks in production |
 
 ## Verification
 

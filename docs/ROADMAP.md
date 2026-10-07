@@ -1212,9 +1212,15 @@ configuration was removed or replaced during the real acceptance checks.
 **Status:** Open (AUD-P2-3 to AUD-P2-6, AUD-P2-8 and P3 nits). Behavior must be
 preserved or explicitly migrated; deletion is not a contract change unless stated.
 
-- [ ] Remove production test hooks `coagent8_MAINTENANCE_GATE` and
+- [x] Remove production test hooks `coagent8_MAINTENANCE_GATE` and
   `coagent8_MAINTENANCE_DELAY_MS`; inject the maintenance dependency in tests
-  (AUD-P2-3).
+  (AUD-P2-3). On `refactor/maintenance-injection`, not yet merged. The stdio
+  lifecycle moved to `src/stdio-server.ts` (`serveStdio({ maintenance })`);
+  `index.ts` handles setup commands and calls it. The shutdown test starts
+  `tests/fixtures/gated-maintenance-server.cjs`, which injects a gated
+  maintenance function. Evidence: the e2e shutdown test passes; the bundle
+  contains no `MAINTENANCE` string; consumer smoke and full suite (244 pass)
+  pass.
 - [ ] Replace the three deprecated `*.tool.ts` files and the duplicated `run`
   mapping with one alias table. Merge the Codex and Gemini structured-error
   extractors. Validate arguments once at the server boundary (AUD-P2-4).
