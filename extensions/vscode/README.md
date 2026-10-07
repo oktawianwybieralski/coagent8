@@ -219,8 +219,12 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
   are unsupported.
 - Icons, tool grouping, native plugin loading and existing-chat refresh depend
   on the host. This extension cannot force their presentation.
-- VSIX install/update/uninstall and chat UI acceptance remain partial. Package
-  checks do not prove native backend readiness or a successful model turn.
+- Installation and uninstallation were accepted on Windows; update and chat UI
+  acceptance remain partial. Package checks do not prove native backend
+  readiness or a successful model turn.
+- After an uninstall, VS Code keeps this extension's stored state, so the
+  welcome notification does not reappear after a reinstall. Run
+  **CoAgent8: Set Up Coding CLIs** from the Command Palette instead.
 
 Track current behavior in the
 [runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md)

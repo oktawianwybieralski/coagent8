@@ -5,6 +5,10 @@ This is a scoped context record and copyable prompt for the next coding agent.
 remains the single active plan. Read [AGENTS.md](../AGENTS.md), its linked rules,
 and [the integration guide](VSCODE_INTEGRATION.md) before changing behavior.
 
+**Status (2026-10-07, evening):** completed for its scope. The owner accepted
+VSIX installation and uninstallation on Windows; evidence and remaining items are
+in `INSTALL-001` of the roadmap. The next prompt is in [HANDOFF.md](HANDOFF.md).
+
 **Correction (2026-10-07, `ANTIGRAVITY-HUB-001`):** statements below that the
 Google extension supplies no `agy` describe only its VSIX contents. The
 extension downloads and updates `agy` in `~/.gemini/bin` when it starts its

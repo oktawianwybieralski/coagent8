@@ -368,8 +368,15 @@ registrations. No `vscode:uninstall` hook mutates external settings: it is not a
 reliable cleanup guarantee and would skip the preview/consent flow. VS Code owns
 its provider/cache lifecycle. Production cleanup neither edits SQLite profile
 databases nor deletes profile storage, cached catalogs or auto-update exclusions.
-Residual installed-host state after restart remains an interactive acceptance
-item, not a reason to mass-delete the owner's profile.
+
+Owner acceptance on Windows, 2026-10-07: after cleanup, uninstall and restart no
+CoAgent8 registration, `~/.coagent8` data or extension directory remained.
+Uninstalling without cleanup leaves working native-host registrations that point
+to `~/.coagent8/runtime`. VS Code keeps the uninstalled extension's
+`globalState` (the shown welcome notification and remembered CLI choices), so a
+reinstall does not show the welcome notification again; run **CoAgent8: Set Up
+Coding CLIs** from the Command Palette instead. This is not a reason to
+mass-delete the owner's profile.
 
 Setup currently supports local default standalone profiles. Remote VS Code hosts
 continue to use the bundled provider but do not run external-client setup on the

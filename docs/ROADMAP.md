@@ -1982,9 +1982,10 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   Verify clean install, one-backend-only use, bundled-only use, Antigravity-only
   use, repeated setup and managed cleanup in isolated profiles. Preserve the
   owner's AI extensions and histories/authentication during acceptance testing.
-  Installed VS Code UI acceptance and native backend/host checks remain open;
-  source/fixture tests do not close them. Beta.2 remains private and unpublished.
-  Progress on `feat/antigravity-extension-probe` (2026-10-07, owner decision:
+  Installed VS Code install/uninstall acceptance passed for the owner on
+  2026-10-07 (see the owner acceptance below); native-host calls remain open.
+  Beta.2 remains private and unpublished.
+  Progress on `fix/vsix-presentation` (2026-10-07, owner decision:
   install CLIs only through vendor extensions or official installers in their
   vendors' locations, never into a CoAgent8 directory): onboarding asks per
   missing CLI for **Install Vendor Extension** (now including
@@ -1993,8 +1994,8 @@ Do not expand the supported-host list as a prerequisite for core MCP compatibili
   offers sign-in. An installed Google extension whose agy is not downloaded yet
   shows **Downloading** and is awaited instead of installed twice. Standalone
   installs offer **Check Now** and **Reload Window** for a stale PATH. Fixture
-  tests in `vscode-extension.test.js` cover these paths; installed VS Code UI
-  acceptance is still open.
+  tests in `vscode-extension.test.js` cover these paths; the owner's installed
+  VS Code acceptance is recorded below.
 - [ ] Never remove a working registration to test a replacement. Use isolated
   profiles, verify the replacement in that host, and retain/restore the original
   on failure. Do not rely on uninstall callbacks for external settings.
@@ -2013,10 +2014,12 @@ Implementation follow-up on 2026-10-07 (`fix/vsix-presentation`):
   including custom roots; updates/removal invalidate caches. Standalone operation
   remains editor-independent. Metadata checks verify versions/required controls,
   a Codex initialize handshake and Codex/Claude local sign-in without model turns.
-  Antigravity sign-in is explicitly unknown; it is never promoted to ready from
-  installation alone. Registration, direct-runtime and native-host calls remain
-  separate evidence. Native-host launches need their own discoverable environment;
-  versioned editor paths are not persisted into their registrations.
+  Antigravity sign-in was explicitly unknown at this point; `5dc8b03` later reads
+  it from agy's silent `AGY_CLI_CDE_AUTH_ACTION=check` (see the owner acceptance
+  below). Installation alone is never promoted to ready. Registration,
+  direct-runtime and native-host calls remain separate evidence. Native-host
+  launches need their own discoverable environment; versioned editor paths are
+  not persisted into their registrations.
 - Cleanup works without the backend CLI, removes only unchanged fingerprint-owned
   entries, binds apply to a current preview, keeps private backups, reports partial
   failures and retains runtimes conservatively. Manual/edited/legacy entries,
@@ -2044,14 +2047,50 @@ Implementation follow-up on 2026-10-07 (`fix/vsix-presentation`):
   `6fede11e9cb5b94fe1093e5240b79f2b8b2f8591b867d0af5d9118097ef58500`.
   Local record: `.artifacts/cli-setup-acceptance-2026-10-07.json`. Source/package
   documentation snapshot: `1619eb0`; subsequent roadmap evidence is prose only
-  and excluded from packages. These hashes supersede earlier private artifact
-  references; any replacement requires new inspection and hash evidence.
-- Installed VS Code onboarding, sign-in, Details badges, native-host calls for
-  Claude/Antigravity and uninstall -> restart residual-state acceptance are pending.
-  The owner's actual extensions, histories, credentials and registrations were
-  not modified. Fixture evidence is not live host acceptance, an authenticated
-  model response, independent review or release approval. Beta.2 stays private;
-  no publication, release tag or merge is authorized.
+  and excluded from packages. These hashes are superseded by the owner
+  acceptance build below; any replacement requires new inspection and hash
+  evidence.
+- Native-host calls for Claude/Antigravity remain pending. Fixture evidence is
+  not live host acceptance, an authenticated model response, independent review
+  or release approval. Beta.2 stays private; no publication, release tag or merge
+  is authorized.
+
+Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
+
+- The owner reported **PASS** for VSIX installation and uninstallation in VS Code
+  on Windows 11 Pro 26200 after a clean state (no CoAgent8 registration, data or
+  VS Code extension state). Last functional change: `7402f5e`; later commits
+  change only the Details README. Private VSIX built from `99a4292`:
+  `.artifacts/coagent8-mcp-1.0.0-beta.2.vsix`, SHA-256
+  `ed0712fe96643141929939b1bb91498d2255db62fdb57aa4dc2333048b9ac12f`.
+- Exercised during the session: **CoAgent8: Set Up Coding CLIs** opens its
+  picker at once and keeps it open (`2b32af7`; it previously closed when the
+  setup output took focus); Codex CLI 0.162.0-alpha.2 (`openai.chatgpt`), Claude
+  Code CLI 2.1.293 (`anthropic.claude-code`) and Antigravity CLI 1.3.1 (the copy
+  `google.google-antigravity` downloads to `~/.gemini/bin`, `6f81071`) all report
+  `supported`, `authenticated` and `ready`; agy help is read from stderr
+  (`1fe2386`) and its sign-in from the silent check (`5dc8b03`); an installed CLI
+  without a CoAgent8 entry reports `not-registered` (`7402f5e`); optional
+  native-host registration for Codex and Claude and preview/apply cleanup
+  removed exactly the owned entries.
+- Residual state after uninstall, checked read-only: no registration in Claude
+  Code, Codex, Antigravity or VS Code `mcp.json`, no `~/.coagent8`, no extension
+  directory. Two expected leftovers are documented, not defects of the test:
+  native-host registrations survive an uninstall unless cleanup runs first, and
+  VS Code keeps the extension's `globalState` (`setupOffered`, remembered CLIs),
+  so the welcome notification does not reappear after a reinstall.
+- Local checks for these commits: typecheck, `lint:docs`, `git diff --check`,
+  build and the focused integration/resolver/package tests (50 pass). This is
+  owner acceptance on one desktop, not the six-job CI, independent review or
+  release approval.
+
+- [ ] Owner decision: show the welcome notification until a CLI is ready or the
+  user chooses **Don't Show Again** (recommended; VS Code UX guidelines), or keep
+  it once per profile.
+- No `vscode:uninstall` cleanup is planned: the integration guide keeps the
+  explicit preview/confirm cleanup command as the only path, and such a hook
+  could not reach `globalState` either. Documentation tells users to run cleanup
+  before uninstalling.
 
 Host evidence recorded on 2026-10-05 (historical; not fresh validation):
 

@@ -1,10 +1,78 @@
 # Current handoff - documentation reconciled on 2026-10-07
 
-For the owner's later clean-install and VS Code onboarding discussion, read the
-[CLI setup handoff and coding-agent prompt](CLI_SETUP_HANDOFF.md). It records the
-newer local `fix/vsix-presentation` baseline and remaining work in `INSTALL-001` /
-`MIGRATION-001`; the snapshot and branch ledger below remain historical context
-for the broader audit stack. [ROADMAP.md](ROADMAP.md) is the single active plan.
+## Next steps after the CLI onboarding acceptance (2026-10-07, evening)
+
+The [CLI setup handoff](CLI_SETUP_HANDOFF.md) is complete for its scope: the
+owner accepted VSIX installation and uninstallation on Windows (see the owner
+acceptance in `INSTALL-001` of the [roadmap](ROADMAP.md)). The roadmap remains
+the single active plan; this section is a copyable prompt, not a second plan.
+
+~~~text
+You continue CoAgent8, a client-independent MCP-to-CLI bridge. Work in the main
+checkout C:\Users\Oktawian\Home\oki.dev\coagent8 on branch fix/vsix-presentation,
+starting from the commit that added this prompt to docs/HANDOFF.md. Nothing is
+pushed; release/v1.0.0 still holds only v1.0.0-beta.1.
+
+Read first: AGENTS.md and every rule in .agents/rules/, docs/ROADMAP.md (single
+active plan), docs/RUNTIME_CONTRACT.md section 7, docs/PROJECT_REVIEW_2026-10-05.md
+(review at 24052e3) and docs/ANTIGRAVITY_EXTENSION_BACKEND_2026-10-07.md.
+
+Working rules from the owner:
+- Never create a git worktree or a parallel checkout. Other agents may edit this
+  checkout: run git status first, keep unrelated changes, and ask the owner
+  before switching or creating branches.
+- No push, pull request, tag, merge or publication without the owner's explicit
+  go-ahead. No AI attribution anywhere. Repository artifacts in English and
+  ASCII only; talk to the owner in Polish.
+- Choose checks with .agents/rules/04-quality-gate.md. Give the owner the exact
+  path and SHA-256 of any artifact to install. Never run a model turn that the
+  consent policy would ask for without the owner's approval.
+
+State: beta.2 is BLOCKED. Open release blockers are CUR-001 and CUR-013 (review
+completeness and snapshot binding) and CUR-002 (inherited MCP isolation for
+Codex and agy). The local stack is not integrated into release/v1.0.0 and has
+no six-job CI run. Onboarding, agy discovery from ~/.gemini/bin and silent agy
+sign-in detection are done and owner-accepted.
+
+Work in this order and update the roadmap with evidence after each step:
+
+0. Deadline, owner action only: before 2026-10-08 22:59 UTC (REPO-001), beta.2
+   cannot be ready, so the owner publishes the 0.0.1 name placeholder, then runs
+   npm unpublish coagent8@1.0.0-beta.1 and checks npm view coagent8 dist-tags.
+   Prepare the placeholder package and the exact commands; do not publish.
+1. CUR-002, P0. Prove or enforce that a CoAgent8 turn cannot use MCP servers
+   inherited from the user's Codex or agy configuration, including a recursive
+   CoAgent8 registration. For Codex, find a supported app-server override that
+   disables inherited MCP servers and verify it from thread/start evidence. For
+   agy (1.3.1 has mcp/plugin management subcommands but no per-turn switch to
+   disable them), determine with isolated fixture configurations whether
+   --sandbox turns load ~/.gemini/config/mcp_config.json and plugins, and
+   whether agent tools receive
+   ANTIGRAVITY_LS_ADDRESS/ANTIGRAVITY_CSRF_TOKEN. Never touch the owner's live
+   MCP services. If isolation cannot be enforced, fail closed or document the
+   blocker for an owner decision; do not weaken rule 01.
+2. CUR-001 and CUR-013. Carry omitted or truncated review input as structured
+   completeness, bind the expected snapshot, treat FAIL/NOT_RUN honestly, and
+   review a non-checkout commit from that commit's tree instead of the live
+   workspace. Acceptance is in AUDIT-001.
+3. BETA-001 preparation that needs no publication: GitHub bug-report issue
+   template, a short tester guide in README, beta.2 release-note draft from
+   RUNTIME_CONTRACT section 7, and a real Windows check that consult and review
+   open no visible windows (count helper launches).
+4. Integration plan: the ordered pull-request stack from the local branches into
+   release/v1.0.0 with Conventional Commit titles and regenerated changelog,
+   ready for the owner's go-ahead. Then the full local gate on a clean checkout.
+5. INSTALL-001 leftovers: implement the owner's choice for the welcome
+   notification (recommended: show until a CLI is ready or Don't Show Again),
+   and accept native-host calls from Claude Code and Antigravity chats.
+
+Report each step with commands, results (PASS/FAIL/NOT_RUN with reasons),
+changed files and open owner decisions. Local checks are not independent
+review or release approval.
+~~~
+
+The snapshot and branch ledger below remain historical context for the broader
+audit stack.
 
 ~~~yaml
 task_id: DOCS-001
