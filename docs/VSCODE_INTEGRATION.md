@@ -213,10 +213,18 @@ is distinct from per-turn sandbox verification, token validity and a successful
 model response. No CLI is required to initialize MCP or list its tools.
 
 The setup picker opens immediately with a busy indicator while the checks run
-and stays open when focus moves (`ignoreFocusOut`). Check evidence goes to the
-**CoAgent8 Setup** output channel, which opens only through **Show Details**,
-for native-host registration results and for the cleanup preview, always without
-taking focus (`show(true)`): a focused output panel would close an open picker.
+and stays open when focus moves (`ignoreFocusOut`). Each check adds one line to
+the **CoAgent8 Setup** output channel, for example
+`[22:31:05] Set Up Coding CLIs - codex: ready; claude: ready; agy: ready`. The
+full JSON evidence is written only through **Show Details**. The channel opens
+only through **Show Details**, for native-host registration results and for the
+cleanup preview, always without taking focus (`show(true)`): a focused output
+panel would close an open picker. Setup checks again at the end only when it
+installed a CLI or opened a sign-in command.
+
+When ready CLIs are not registered in their own chat hosts, the summary offers
+**Register in Chat Hosts**. It opens **CoAgent8: Register or Repair Native Chat
+Hosts** with those CLIs preselected; nothing is written before its confirmation.
 
 Discovery prefers explicit executable overrides, PATH, then bundled Codex/Claude
 binaries and, for agy, the copy that the Google Antigravity extension downloads
@@ -296,7 +304,10 @@ coagent8 cleanup --apply=<preview-token> # apply that exact current preview
 
 Metadata and callability evidence are separate fields: `installed`, `version`,
 `compatibility`, `authentication`, `ready`, `registered`, `runtimeCallable`, and
-`hostCallable`. `compatibility: supported` establishes required CLI controls
+`hostCallable`. In status, `action: missing` means the CLI itself is absent;
+`action: not-registered` means the CLI is present and CoAgent8 is simply not
+registered in that client's own configuration, which is optional.
+`compatibility: supported` establishes required CLI controls
 (and Codex initialization), not authenticated streaming execution or complete
 capability isolation. Registration errors do not erase CLI presence/sign-in.
 Unknown authentication is not ready. A direct-runtime doctor pass is not native

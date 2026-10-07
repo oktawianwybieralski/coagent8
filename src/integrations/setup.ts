@@ -32,7 +32,8 @@ export interface SetupStatus extends CliReadiness {
   runtimeCallable: boolean;
   hostCallable: boolean;
   tools: string[];
-  action: 'preserved' | 'installed' | 'updated' | 'blocked' | 'missing';
+  /** Native-host registration outcome; `missing` means the CLI itself is absent. */
+  action: 'preserved' | 'installed' | 'updated' | 'blocked' | 'missing' | 'not-registered';
   message: string;
 }
 export interface SetupOptions {
@@ -273,7 +274,10 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
             continue;
           }
         } else if (options.statusOnly) {
-          result.action = 'missing'; result.message = 'Client installed; CoAgent8 is not registered.'; continue;
+          // Registration in the CLI's own configuration is optional; the CLI itself is present.
+          result.action = 'not-registered';
+          result.message = 'CLI found; CoAgent8 is not registered in this client. Optional: CoAgent8: Register or Repair Native Chat Hosts, or coagent8 setup.';
+          continue;
         }
         if (!candidate) throw new Error('Setup runtime is unavailable.');
         const backup = path.join(root, 'setup-backups', randomUUID());

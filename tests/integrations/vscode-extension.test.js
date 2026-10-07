@@ -118,6 +118,20 @@ test('the setup picker opens before CLI checks and the setup channel never takes
   const shown = await runSetupPicker({ command: 'coagent8.refreshCliStatus', action: 'Show Details' });
   assert.deepEqual(shown.reveals, [true]);
 });
+test('setup without changes checks once and logs one readable line; details only on request', async () => {
+  const quiet = await runSetupPicker({ selected: ['codex', 'claude', 'agy'] });
+  assert.equal(quiet.events.filter(event => event === 'status').length, 1, 'no second identical check');
+  assert.equal(quiet.reports.length, 1);
+  assert.match(quiet.reports[0], /^\[\d\d:\d\d:\d\d\] Set Up Coding CLIs - codex: ready; claude: ready; agy: ready$/);
+  const detailed = await runSetupPicker({ selected: ['codex'], action: 'Show Details' });
+  assert.equal(detailed.reports.length, 2);
+  assert.equal(JSON.parse(detailed.reports[1]).length, 3, 'full evidence follows the summary line');
+});
+test('the summary offers native-host registration for ready CLIs without writing it', async () => {
+  const result = await runSetupPicker({ command: 'coagent8.refreshCliStatus', action: 'Register in Chat Hosts' });
+  assert.deepEqual(result.requests, [['coagent8.registerNativeHosts']], 'the registration command keeps its own selection and confirmation');
+  assert.deepEqual(result.registrations, []);
+});
 test('missing Antigravity offers official installer without running it or registering a host', async () => {
   const result = await runSetupPicker({ installed: ['claude'], selected: ['agy'], action: 'Install Standalone CLI' });
   assert.deepEqual(result.registrations, []);

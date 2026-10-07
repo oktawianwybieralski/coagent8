@@ -124,21 +124,42 @@ export function activate(context: vscode.ExtensionContext): void {
     clearCliResolverCache();
     return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment() };
   }
-  async function status(clients: SetupClient[] = [...SETUP_CLIENTS]): Promise<SetupStatus[]> {
+  let lastStatus: SetupStatus[] = [];
+  /** One readable state per CLI; the full evidence is written only through Show Details. */
+  function describeState(result: SetupStatus): string {
+    const cli = result.ready ? 'ready'
+      : !result.installed ? (result.action === 'blocked' ? 'blocked' : 'not installed')
+        : result.compatibility !== 'supported' ? `${result.compatibility} controls` : `sign-in ${result.authentication}`;
+    return `${result.client}: ${cli}${result.registered ? ', registered in its host' : ''}`;
+  }
+  /**
+   * Runs the bounded CLI checks and logs one summary line.
+   * @param trigger - The action that ran the check, shown in the log.
+   */
+  async function status(trigger: string, clients: SetupClient[] = [...SETUP_CLIENTS]): Promise<SetupStatus[]> {
     const results = await setupClients({ ...options(), clients, statusOnly: true });
-    report(results);
+    if (!output) { output = vscode.window.createOutputChannel('CoAgent8 Setup'); context.subscriptions.push(output); }
+    output.appendLine(`[${new Date().toTimeString().slice(0, 8)}] ${trigger} - ${results.map(describeState).join('; ')}`);
+    lastStatus = results;
     return results;
+  }
+  function showDetails(): void {
+    report(lastStatus, true);
   }
   function discoverable(client: SetupClient): boolean {
     const opts = options();
     return resolveSetupClient(client, opts.home, opts.env, opts.nodePath) !== null;
   }
+  /** Summarizes readiness and offers optional native-host registration, which keeps its own confirmation. */
   async function summarize(results: SetupStatus[]): Promise<void> {
     const ready = results.filter(result => result.ready).map(result => LABELS[result.client]);
+    const unregistered = results.filter(result => result.ready && !result.registered).map(result => LABELS[result.client]);
+    const actions = unregistered.length ? ['Register in Chat Hosts', 'Show Details'] : ['Show Details'];
     const choice = await vscode.window.showInformationMessage(ready.length
-      ? `Ready: ${ready.join(', ')}. The VS Code MCP provider is available independently of native-host registration.`
-      : 'No CLI has verified compatibility and sign-in yet. Install/update or sign in, then refresh.', 'Show Details');
-    if (choice === 'Show Details') output?.show(true);
+      ? `Ready: ${ready.join(', ')}. CoAgent8 works in VS Code chat now.${unregistered.length ? ` To use it inside ${unregistered.join(', ')} as well, register it there.` : ''}`
+      : 'No CLI has verified compatibility and sign-in yet. Install/update or sign in, then refresh.', ...actions);
+    if (choice === 'Show Details') showDetails();
+    else if (choice === 'Register in Chat Hosts') await vscode.commands.executeCommand('coagent8.registerNativeHosts');
   }
   /**
    * Opens the CLI picker at once and fills it when the bounded CLI checks finish.
@@ -160,7 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
     });
     picker.show();
     try {
-      const results = await status();
+      const results = await status('Set Up Coding CLIs');
       if (hidden) return undefined;
       const remembered = context.globalState.get<SetupClient[]>('setupClients');
       picker.items = results.map(result => ({ label: LABELS[result.client], client: result.client, description: describe(result) }));
@@ -211,15 +232,17 @@ export function activate(context: vscode.ExtensionContext): void {
     if (reload === 'Reload Window') await vscode.commands.executeCommand('workbench.action.reloadWindow');
     return false;
   }
-  async function offerSignIn(result: SetupStatus): Promise<void> {
+  /** @returns Whether a sign-in command was opened. */
+  async function offerSignIn(result: SetupStatus): Promise<boolean> {
     const client = result.client;
     const choice = await vscode.window.showInformationMessage(`${LABELS[client]} sign-in is ${result.authentication}. Open a sign-in command?`, 'Open Sign-in Command');
-    if (choice !== 'Open Sign-in Command') return;
+    if (choice !== 'Open Sign-in Command') return false;
     const opts = options(), cli = resolveSetupClient(client, opts.home, opts.env, opts.nodePath);
     if (!cli) throw new Error('CLI disappeared; refresh discovery.');
     const args = client === 'codex' ? ['login'] : client === 'claude' ? ['auth', 'login'] : [];
     offerTerminal(`${process.platform === 'win32' ? '& ' : ''}${[cli.command, ...cli.argsPrefix, ...args].map(quote).join(' ')}`, `Sign in to ${LABELS[client]}`, context);
     await vscode.window.showInformationMessage('Press Enter in the terminal to sign in. When it finishes, run CoAgent8: Refresh CLI Status.');
+    return true;
   }
   function register(name: string, action: () => Promise<void>): void {
     context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
@@ -228,31 +251,35 @@ export function activate(context: vscode.ExtensionContext): void {
       catch (error) { await vscode.window.showErrorMessage(`CoAgent8 setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Action failed or was cancelled; refresh and retry.')}`); }
     }));
   }
-  register('coagent8.refreshCliStatus', async () => { await summarize(await status()); });
+  register('coagent8.refreshCliStatus', async () => { await summarize(await status('Refresh CLI Status')); });
   register('coagent8.setup', async () => {
     const picked = await pickClients();
     if (!picked?.clients.length) return;
     const { results, clients: selected } = picked;
     await context.globalState.update('setupClients', selected);
+    // Checks run again only after an installation or sign-in could have changed a CLI.
+    let changed = false;
     for (const client of selected) {
       let result = results.find(item => item.client === client)!;
       // An override error is not absence: do not install around an authoritative setting.
       try {
         if (!result.installed && result.action !== 'blocked') {
           if (!await installCli(client)) continue;
-          result = (await status([client])).find(item => item.client === client)!;
+          changed = true;
+          result = (await status(`Installed ${LABELS[client]}`, [client])).find(item => item.client === client)!;
         }
-        if (result.installed && result.compatibility === 'supported' && result.authentication !== 'authenticated') await offerSignIn(result);
+        if (result.installed && result.compatibility === 'supported' && result.authentication !== 'authenticated') changed = await offerSignIn(result) || changed;
       } catch (error) {
         await vscode.window.showErrorMessage(`${LABELS[client]}: ${redactDiagnostic(error instanceof Error ? error.message : 'Installation failed or was cancelled.')} Refresh CLI Status to retry.`);
       }
     }
-    await summarize(await status());
+    await summarize(changed ? await status('Set Up Coding CLIs (after changes)') : results);
   });
   register('coagent8.registerNativeHosts', async () => {
-    const results = await status();
+    const results = await status('Register or Repair Native Chat Hosts');
     const picked = await vscode.window.showQuickPick(results.filter(result => result.installed && result.compatibility === 'supported').map(result => ({
-      label: LABELS[result.client], client: result.client, description: result.registered ? 'Inspect or repair existing registration' : 'Add external MCP registration',
+      label: LABELS[result.client], client: result.client, picked: result.ready && !result.registered,
+      description: result.registered ? 'Inspect or repair existing registration' : 'Add external MCP registration',
     })), { canPickMany: true, ignoreFocusOut: true, title: 'Optional: register CoAgent8 in native chat hosts' });
     if (!picked?.length) return;
     const choice = await vscode.window.showWarningMessage(`Write CoAgent8 MCP registrations in ${picked.map(item => item.label).join(', ')} configuration? This is separate from CLI installation and the VS Code provider.`, { modal: true }, 'Register Selected Hosts');

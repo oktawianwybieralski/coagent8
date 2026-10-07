@@ -104,7 +104,9 @@ test('native failed replacement rolls back exact original config and preserves c
 test('setup status is read-only and custom remote/profile roots fail before mutation', async t => {
   const options = profile(t);
   const result = await setupClients({ ...options, statusOnly: true });
-  assert.ok(result.every(item => item.action === 'missing'));
+  // An installed CLI without a CoAgent8 entry is `not-registered`, never reported as a missing CLI.
+  assert.ok(result.every(item => !item.registered && item.action === (item.installed ? 'not-registered' : 'missing')));
+  assert.ok(result.some(item => item.installed), 'the fixture profile has installed CLIs');
   assert.equal(fs.existsSync(path.join(options.home, '.coagent8')), false);
   await assert.rejects(setupClients({ ...options, env: { ...options.env, CODEX_HOME: path.join(options.home, 'other') } }), /profile/);
   assert.equal(fs.existsSync(path.join(options.home, '.coagent8')), false);
