@@ -1026,10 +1026,16 @@ without a model call.
     The fallback turn must strictly share the original request's remaining absolute time budget and caller
     cancellation signal without restarting or extending deadlines. Never retry policy denials, sandbox failures,
     cancellations, or partial-execution errors.
-- [ ] Enforce workspace ownership consistently (AUD-P1-8, order 2): MCP resources
+- [x] Enforce workspace ownership consistently (AUD-P1-8, order 2): MCP resources
   must not list or return other workspaces' sessions and histories, unless they
   are explicitly documented as an owner-wide view. The `session list` action
-  follows the same rule.
+  follows the same rule. On `fix/resource-workspace-isolation`, not yet merged.
+  `listSessions` takes the workspace; resources use the connection's workspace
+  (runtime contract, "Workspace Scope"). Evidence: `tests/server.test.js` and
+  `tests/tools/session.test.js` create a session in a second workspace; it is
+  absent from `resources/list`, `coagent8://sessions` and `session list`, and
+  reading its history fails. With the history check removed the read succeeds
+  and the test fails.
 
 ### `LOCKS-001` - lease integrity
 

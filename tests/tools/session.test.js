@@ -35,7 +35,11 @@ test('session tool consolidates list, history and close actions', async () => {
   await writer.flush();
 
   // 1. action: list
-  const listRes = await handleSession({ action: 'list' });
+  const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-list-'));
+  const other = createSession('gemini', otherDir);
+  const listRes = await handleSession({ action: 'list', workspace_path: tempDir });
+  assert.ok(!listRes.structuredContent.sessions.some(s => s.sessionHandle === other.sessionHandle), 'list shows only this workspace (AUD-P1-8)');
+  fs.rmSync(otherDir, { recursive: true, force: true });
   assert.equal(listRes.structuredContent.schemaVersion, 1);
   assert.ok(listRes.structuredContent.sessions.some(s => s.sessionHandle === handle));
   assert.ok(listRes.content[0].text.includes(handle));

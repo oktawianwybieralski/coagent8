@@ -202,18 +202,22 @@ export async function cancelSession(handle: string, workspace?: string): Promise
   };
 }
 
-export function listSessions(): SessionRecord[] {
+/**
+ * Lists the live sessions of one workspace.
+ * @param workspace - Only sessions created in this workspace are returned.
+ * @returns Live (not closed, invalidated or expired) sessions; none when no session was ever stored.
+ */
+export function listSessions(workspace: string): SessionRecord[] {
   const dir = getSessionsDir();
+  let files: string[];
+  try { files = fs.readdirSync(dir); }
+  catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []; throw err; }
   const results: SessionRecord[] = [];
-  try {
-    const files = fs.readdirSync(dir);
-    for (const name of files) {
-      if (!name.endsWith('.json') || !sanitizeHandle(name.slice(0, -5))) continue;
-      const handle = name.slice(0, -5);
-      const s = getSession(handle);
-      if (s) results.push(s);
-    }
-  } catch {}
+  for (const name of files) {
+    if (!name.endsWith('.json') || !sanitizeHandle(name.slice(0, -5))) continue;
+    const s = getSession(name.slice(0, -5), { workspace });
+    if (s) results.push(s);
+  }
   return results;
 }
 

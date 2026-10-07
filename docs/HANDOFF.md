@@ -87,7 +87,8 @@ is pushed:
 | `build/untrack-dist` | `891875b`..`e93125a` | `PACKAGE-001` (AUD-P1-10): `dist/` out of Git, LF checkouts, consumer smoke compares the packed bundle with a fresh build |
 | `fix/codex-config-toml` | `bc04df9` | `EXEC-001` (AUD-P1-11, order 2): Codex `config.toml` parsed with `smol-toml`, top-level keys only |
 | `fix/model-identifier-validation` | `9cdb710` | `EXEC-001` (AUD-P1-6, order 2): `model` validated in the controller and every adapter |
-| `fix/gemini-unknown-events` | this change | `CLI-INTERACT-001` (AUD-P1-5, order 2): unknown agy event types ignored with a warning |
+| `fix/gemini-unknown-events` | `d23ad1b` | `CLI-INTERACT-001` (AUD-P1-5, order 2): unknown agy event types ignored with a warning |
+| `fix/resource-workspace-isolation` | this change | `SESSION-001` (AUD-P1-8, order 2): resources and `session list` scoped to the workspace |
 
 ## Verification
 

@@ -23,7 +23,19 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   writer.accept({ type: 'assistant_message', messageId: 'm-mcp', text: 'MCP resources are live and durable.' });
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
+  // A session of another workspace stays invisible through resources (AUD-P1-8).
+  const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-workspace-'));
+  const other = createSession('gemini', otherDir);
+  const otherWriter = createHistoryWriter(other.sessionHandle, otherDir, 'gemini', randomUUID());
+  otherWriter.accept({ type: 'turn_started' });
+  otherWriter.accept({ type: 'user_message', text: 'Other workspace' });
+  otherWriter.accept({ type: 'turn_finished', status: 'completed' });
+  await otherWriter.flush();
 
+  // Without client roots the server directory is the workspace.
+  const launchDirectory = process.cwd();
+  process.chdir(tempDir);
+  try {
   const server = createServer();
 
   // 1. List Resources
@@ -41,6 +53,7 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
 
   const historyResource = resourcesResult.resources.find(r => r.uri === `coagent8://sessions/${sess.sessionHandle}/history`);
   assert.ok(historyResource, 'Session-specific history resource must be listed');
+  assert.ok(!resourcesResult.resources.some(r => r.uri.includes(other.sessionHandle)), 'another workspace is not listed');
 
   // 2. List Resource Templates
   const templatesResult = await server._requestHandlers.get('resources/templates/list')({
@@ -58,6 +71,7 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   const parsedSessions = JSON.parse(readSessionsResult.contents[0].text);
   assert.ok(Array.isArray(parsedSessions));
   assert.ok(parsedSessions.some(s => s.sessionHandle === sess.sessionHandle));
+  assert.ok(!parsedSessions.some(s => s.sessionHandle === other.sessionHandle), 'another workspace is not returned');
 
   // 4. Read coagent8://sessions/{id}/history
   const readHistoryResult = await server._requestHandlers.get('resources/read')({
@@ -68,6 +82,10 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   const parsedHistory = JSON.parse(readHistoryResult.contents[0].text);
   assert.equal(parsedHistory.sessionHandle, sess.sessionHandle);
   assert.ok(parsedHistory.events.length >= 4);
+  await assert.rejects(server._requestHandlers.get('resources/read')({
+    method: 'resources/read',
+    params: { uri: `coagent8://sessions/${other.sessionHandle}/history` },
+  }), /not found in this workspace/, 'the history of another workspace is not readable');
 
   // 5. Invalid / Unknown resource URI throws
   await assert.rejects(
@@ -79,6 +97,10 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
     },
     /Resource not found/
   );
+  } finally {
+    process.chdir(launchDirectory);
+    fs.rmSync(otherDir, { recursive: true, force: true });
+  }
 });
 
 test('F14/F15: shared schema validates required fields, types, enums, unknown fields and model families',()=>{

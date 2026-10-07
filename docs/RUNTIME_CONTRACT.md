@@ -196,6 +196,14 @@ Session archival history is best-effort and bounded. Initial, periodic and final
 * Large messages are split at UTF-8 code point boundaries with `{ offsetBytes, totalBytes, complete }`.
 * Cursors are opaque base64url structures bound to a specific snapshot revision. Concurrent writes trigger `HISTORY_CHANGED` to prevent skipping final response texts.
 
+### Workspace Scope
+Sessions and histories are visible only in the workspace that created them. The
+`session` tool (`list`, `history`, `close`) uses the call's workspace. The MCP
+resources `coagent8://sessions` and `coagent8://sessions/{id}/history` use the
+connection's workspace: its single client root, or the server directory without
+roots. When no single workspace resolves, `resources/list` returns only the
+`coagent8://sessions` index and reading it fails with the validation error.
+
 ---
 
 ## 5. Subprocess Execution & Supervision
@@ -268,5 +276,4 @@ when its fix lands with a regression test.
 | AUD-P0-2 | Redaction removes credentials from public output | Keyword rules also rewrite ordinary code: `const token = getToken();` becomes `const token = ***[REDACTED]***` |
 | AUD-P1-4 | agy runs with native `--sandbox` | The `/usage` quota probe runs on every Gemini request without `--sandbox` |
 | AUD-P1-7 | Top-tier models require the user's consent | `user_confirmed` is asserted by the caller; agy's default model is not governed |
-| AUD-P1-8 | History is visible only to its workspace | MCP resources list and read sessions of every workspace |
 | AUD-P2-2 | Missing data is reported as unknown | An empty Gemini answer is returned as "Task completed cleanly with no textual output."; missing quota fractions count as 100% headroom |

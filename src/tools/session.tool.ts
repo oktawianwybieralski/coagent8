@@ -43,7 +43,7 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
     throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "close".');
   }
   if (action === 'list') {
-    const sessions = listSessions();
+    const sessions = listSessions(workspace);
     if (!sessions.length) {
       return {
         content: [{ type: 'text' as const, text: '> CoAgent8: No active sessions found.' }],

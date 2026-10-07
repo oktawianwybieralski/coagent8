@@ -26,7 +26,7 @@ import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { executionOutputSchema, runOutputSchema, formatExecutionResult, withWorkspace } from './tools/result.js';
 import { ToolError, errorCodeOf } from './conversation.js';
 import { listSessions } from './sessions/session.js';
-import { sanitizeHandle } from './sessions/identity.js';
+import { canonicalPath, sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation } from './execution/controller.js';
 import { providerForClient, setCallerProvider } from './backends/routing.js';
@@ -203,8 +203,16 @@ export function createServer(): Server {
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: createToolDefinitions() }));
 
+  // Resources show only the sessions of the connection's workspace (client root or server
+  // directory), the same scope the session tool enforces.
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    const sessions = listSessions();
+    let sessions: ReturnType<typeof listSessions> = [];
+    try {
+      sessions = listSessions((await resolveWorkspace(undefined)).path);
+    } catch (err) {
+      // Without one workspace (several roots, or a home-directory launch) only the index is listed.
+      if (!(err instanceof ToolError && err.code === 'INPUT_LIMIT')) throw err;
+    }
     const resources: Resource[] = [
       {
         uri: 'coagent8://sessions',
@@ -236,8 +244,9 @@ export function createServer(): Server {
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const uri = request.params.uri;
+    const workspace = (await resolveWorkspace(undefined)).path;
     if (uri === 'coagent8://sessions') {
-      const sessions = listSessions();
+      const sessions = listSessions(workspace);
       return {
         contents: [
           {
@@ -254,7 +263,7 @@ export function createServer(): Server {
       const handle = match[1];
       if (!sanitizeHandle(handle)) throw new Error(`Invalid session handle in URI: ${handle}`);
       const h = await getHistory(handle);
-      if (!h) throw new Error(`Session history not found for handle: ${handle}`);
+      if (!h || h.workspace !== canonicalPath(workspace)) throw new Error(`Session history not found in this workspace: ${handle}`);
       return {
         contents: [
           {
