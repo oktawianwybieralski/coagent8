@@ -21,7 +21,7 @@ async function buildExtension(serverRoot) {
   fs.mkdirSync(path.join(output, 'dist'), { recursive: true });
   fs.mkdirSync(path.join(output, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(output, 'package.json'), JSON.stringify({ ...manifest, version }, null, 2) + '\n');
-  for (const name of ['index.cjs', 'index.cjs.map', 'THIRD_PARTY_NOTICES.txt']) {
+  for (const name of ['index.cjs', 'index.cjs.map', 'setup.cjs', 'setup.cjs.map', 'THIRD_PARTY_NOTICES.txt']) {
     fs.copyFileSync(path.join(serverRoot, 'dist', name), path.join(output, 'dist', name));
   }
   fs.copyFileSync(path.join(serverRoot, 'assets/logo.png'), path.join(output, 'assets/logo.png'));

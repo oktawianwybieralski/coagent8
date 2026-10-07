@@ -50,7 +50,7 @@ function npmRun(args,cwd=root) {
     }
     const rebuild=spawnSync(process.execPath,[path.join(root,'scripts','build.cjs')],{cwd:root,encoding:'utf8',windowsHide:true});
     assert.equal(rebuild.status,0,`Rebuild failed: ${rebuild.stderr}`);
-    for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/THIRD_PARTY_NOTICES.txt']) {
+    for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt']) {
       assert.ok((await fsp.readFile(path.join(pkg,name))).equals(await fsp.readFile(path.join(root,name))),`Packed ${name} matches a fresh build of the packed source`);
     }
     // License notices ship beside the bundle; the bundle itself carries no license comments.

@@ -29,7 +29,7 @@ function writeNotices(packageDirs) {
   const rule = '='.repeat(80);
   const body = entries.map(entry => `${rule}\n${entry.name} ${entry.version} (${entry.license})\n${rule}\n\n${entry.text}\n`).join('\n');
   fs.writeFileSync(path.join(dist, 'THIRD_PARTY_NOTICES.txt'),
-    `dist/index.cjs bundles the following third-party packages. Their license notices follow.\n\n${body}`);
+    `dist/index.cjs and dist/setup.cjs bundle the following third-party packages. Their license notices follow.\n\n${body}`);
 }
 
 const externalPackages = [];
@@ -49,8 +49,8 @@ const inspectBundle = {
 };
 
 prepareBranding();
-import('tsdown').then(({ build }) => build({
-  config: false, cwd: root, entry: { index: 'src/index.ts' }, outDir: dist, clean: false,
+import('tsdown').then(async ({ build }) => { for (const entry of [{ index: 'src/index.ts' }, { setup: 'src/integrations/setup-cli.ts' }]) await build({
+  config: false, cwd: root, entry, outDir: dist, clean: false,
   format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false,
   sourcemap: true, minify: true, dts: false, report: false, logLevel: 'warn',
   checks: { legacyCjs: false },
@@ -59,7 +59,7 @@ import('tsdown').then(({ build }) => build({
   inputOptions: { resolve: { mainFields: ['module', 'main'] } },
   outputOptions: { keepNames: true, comments: { legal: false, annotation: false, jsdoc: false } },
   plugins: [inspectBundle],
-})).then(() => {
+}); }).then(() => {
   if (externalPackages.length) {
     throw new Error(`Bundle requires external packages: ${externalPackages.join(', ')}`);
   }

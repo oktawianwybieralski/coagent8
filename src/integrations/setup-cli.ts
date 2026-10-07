@@ -1,20 +1,28 @@
 import path from 'node:path';
 import { setupClients, SETUP_CLIENTS, type SetupClient } from './setup.js';
+import { cleanupClients } from './cleanup.js';
 
 /** Handles explicit CLI setup commands; no arguments continue to start the MCP server. */
 export async function runSetupCli(args: string[]): Promise<boolean> {
   if (!args.length) return false;
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
-    process.stdout.write('CoAgent8: no arguments starts the stdio MCP server.\nUsage: coagent8 setup|repair|status [--clients=codex,claude,agy]\n');
+    process.stdout.write('CoAgent8: no arguments starts the stdio MCP server.\nUsage: coagent8 setup|repair|status|cleanup [--clients=codex,claude,agy]\nSetup/repair explicitly authorize native-host MCP registration. Status checks CLI readiness.\nCleanup previews owned removals; apply with cleanup --apply=<preview token>.\n');
     return true;
   }
-  if (!['setup', 'repair', 'status'].includes(args[0])) throw new Error('Usage: coagent8 setup|repair|status [--clients=codex,claude,agy]');
+  if (!['setup', 'repair', 'status', 'cleanup'].includes(args[0])) throw new Error('Unknown setup command.');
   const selection = args.find(arg => arg.startsWith('--clients='));
-  if (args.slice(1).some(arg => arg !== selection)) throw new Error('Usage: coagent8 setup|repair|status [--clients=codex,claude,agy]');
+  const apply = args.find(arg => arg.startsWith('--apply='));
+  if (args.slice(1).some(arg => arg !== selection && (args[0] !== 'cleanup' || arg !== apply)) || args.filter(arg => arg.startsWith('--clients=')).length > 1 || args.filter(arg => arg.startsWith('--apply=')).length > 1) throw new Error('Invalid setup arguments.');
   const clients = selection?.slice('--clients='.length).split(',');
   if (clients && !clients.every(client => SETUP_CLIENTS.includes(client as SetupClient))) throw new Error('Unknown setup client.');
+  if (args[0] === 'cleanup') {
+    const preview = await cleanupClients({ clients: clients as SetupClient[] | undefined, apply: apply?.slice('--apply='.length) });
+    process.stdout.write(JSON.stringify(preview, null, 2) + '\n');
+    if (preview.stateError || preview.results.some(result => result.action === 'blocked' || result.action === 'preserved')) process.exitCode = 1;
+    return true;
+  }
   const results = await setupClients({ clients: clients as SetupClient[] | undefined, statusOnly: args[0] === 'status', runtimeSource: path.resolve(__dirname, 'index.cjs') });
   process.stdout.write(JSON.stringify(results, null, 2) + '\n');
-  if (results.some(result => result.action === 'blocked' || result.action === 'missing')) process.exitCode = 1;
+  if (args[0] === 'status' ? !results.some(result => result.ready) : results.some(result => result.action === 'blocked' || result.action === 'missing')) process.exitCode = 1;
   return true;
 }

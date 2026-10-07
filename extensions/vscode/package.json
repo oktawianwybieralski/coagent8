@@ -26,7 +26,12 @@
     "virtualWorkspaces": { "supported": false, "description": "CoAgent8 needs a filesystem workspace and locally available Node.js and coding CLIs." }
   },
   "contributes": {
-    "commands": [{ "command": "coagent8.setup", "title": "CoAgent8: Set Up or Repair Chat Clients" }],
+    "commands": [
+      { "command": "coagent8.setup", "title": "CoAgent8: Set Up Coding CLIs" },
+      { "command": "coagent8.refreshCliStatus", "title": "CoAgent8: Refresh CLI Status" },
+      { "command": "coagent8.registerNativeHosts", "title": "CoAgent8: Register or Repair Native Chat Hosts" },
+      { "command": "coagent8.cleanup", "title": "CoAgent8: Preview and Remove Owned Registrations" }
+    ],
     "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
     "configuration": {
       "title": "CoAgent8",

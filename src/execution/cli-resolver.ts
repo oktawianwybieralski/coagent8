@@ -111,7 +111,7 @@ const MAX_CLI_CACHE_ENTRIES = 128;
 
 /**
  * Resolves the newest usable Claude binary bundled with a local VS Code extension.
- * @param home - Local profile root; no remote or arbitrary extension roots are searched.
+ * @param home - Local profile root for standard extension directories.
  * @param env - Resolution environment for the selected executable.
  * @returns A shell-free command, or null when no bundled executable is usable.
  * @remarks Candidates are read on each fallback so updates do not pin a removed version.
@@ -138,6 +138,21 @@ function resolveBundledExtension(client: 'codex' | 'claude', home: string, env: 
   const executable = process.platform === 'win32' ? `${client}.exe` : client;
   const relative = client === 'codex' ? path.join('bin', `${family}-${arch}`, executable) : path.join('resources', 'native-binary', executable);
   const candidates: { file: string; version: number[] }[] = [];
+  // The editor supplies its actual installed paths, including custom roots. This
+  // environment contract also works in a standalone runtime without editor APIs.
+  if (env.coagent8_EXTENSION_PATHS !== undefined) {
+    let locations: unknown;
+    try { locations = JSON.parse(env.coagent8_EXTENSION_PATHS); }
+    catch { throw new CliResolutionError('CLI_UNSUPPORTED', 'Invalid extension discovery paths.'); }
+    if (!locations || typeof locations !== 'object' || Array.isArray(locations)
+        || Object.entries(locations).some(([key, value]) => !['codex', 'claude'].includes(key) || typeof value !== 'string' || !path.isAbsolute(value))) {
+      throw new CliResolutionError('CLI_UNSUPPORTED', 'Invalid extension discovery paths.');
+    }
+    const root = (locations as Record<string, string>)[client];
+    if (!root) return null;
+    try { return resolveCliCommand(path.join(root, relative), { env }); }
+    catch (error) { if (!(error instanceof CliResolutionError)) throw error; return null; }
+  }
   for (const profile of ['.vscode', '.vscode-insiders']) {
     const dir = path.join(home, profile, 'extensions');
     let names: string[];
@@ -184,7 +199,8 @@ export function resolveCliCommand(command: string, options: { env?: NodeJS.Proce
   const now = Date.now();
   const cached = cliCache.get(cacheKey);
   if (cached) {
-    if (now < cached.expiresAt) {
+    if (now < cached.expiresAt && fs.statSync(cached.result.command, { throwIfNoEntry: false })?.isFile()
+        && (cached.result.source === 'native' || fs.statSync(cached.result.argsPrefix[0], { throwIfNoEntry: false })?.isFile())) {
       cliCache.delete(cacheKey);
       cliCache.set(cacheKey, cached);
       return { command: cached.result.command, argsPrefix: [...cached.result.argsPrefix], source: cached.result.source };
