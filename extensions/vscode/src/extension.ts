@@ -107,10 +107,14 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   }));
   let output: vscode.OutputChannel | undefined;
-  function report(value: unknown): void {
+  /**
+   * Records evidence in the CoAgent8 Setup channel.
+   * @param reveal - Shows the channel without taking focus; an open picker loses focus otherwise and closes.
+   */
+  function report(value: unknown, reveal = false): void {
     if (!output) { output = vscode.window.createOutputChannel('CoAgent8 Setup'); context.subscriptions.push(output); }
     output.appendLine(redactDiagnostic(JSON.stringify(value, null, 2)));
-    output.show();
+    if (reveal) output.show(true);
   }
   function options() {
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
@@ -130,9 +134,45 @@ export function activate(context: vscode.ExtensionContext): void {
     return resolveSetupClient(client, opts.home, opts.env, opts.nodePath) !== null;
   }
   async function summarize(results: SetupStatus[]): Promise<void> {
-    await vscode.window.showInformationMessage(results.some(result => result.ready)
-      ? 'At least one CLI has compatible controls and local sign-in. The VS Code MCP provider is available independently of native-host registration.'
-      : 'No CLI has verified compatibility and sign-in yet. Inspect CoAgent8 Setup, install/update or sign in, then refresh. Antigravity sign-in requires separate native acceptance.');
+    const ready = results.filter(result => result.ready).map(result => LABELS[result.client]);
+    const choice = await vscode.window.showInformationMessage(ready.length
+      ? `Ready: ${ready.join(', ')}. The VS Code MCP provider is available independently of native-host registration.`
+      : 'No CLI has verified compatibility and sign-in yet. Install/update or sign in, then refresh. Antigravity sign-in requires separate native acceptance.', 'Show Details');
+    if (choice === 'Show Details') output?.show(true);
+  }
+  /**
+   * Opens the CLI picker at once and fills it when the bounded CLI checks finish.
+   * @returns The checked statuses and accepted clients, or undefined when the picker was dismissed.
+   */
+  async function pickClients(): Promise<{ results: SetupStatus[]; clients: SetupClient[] } | undefined> {
+    const picker = vscode.window.createQuickPick<vscode.QuickPickItem & { client: SetupClient }>();
+    picker.title = 'Set Up Coding CLIs';
+    picker.placeholder = 'Checking installed CLIs...';
+    picker.canSelectMany = true;
+    // Notifications and terminals opened by earlier actions must not dismiss the choice.
+    picker.ignoreFocusOut = true;
+    picker.busy = true;
+    picker.enabled = false;
+    let hidden = false;
+    const closed = new Promise<boolean>(resolve => {
+      picker.onDidAccept(() => resolve(true));
+      picker.onDidHide(() => { hidden = true; resolve(false); });
+    });
+    picker.show();
+    try {
+      const results = await status();
+      if (hidden) return undefined;
+      const remembered = context.globalState.get<SetupClient[]>('setupClients');
+      picker.items = results.map(result => ({ label: LABELS[result.client], client: result.client, description: describe(result) }));
+      picker.selectedItems = picker.items.filter(item => remembered?.includes(item.client));
+      picker.placeholder = 'Select CLIs to install or check (native-host registration is separate)';
+      picker.busy = false;
+      picker.enabled = true;
+      if (!await closed) return undefined;
+      return { results, clients: picker.selectedItems.map(item => item.client) };
+    } finally {
+      picker.dispose();
+    }
   }
   /** Reports a CLI that did not appear in time; the user's installation itself may still finish. */
   async function waited(client: SetupClient, found: boolean, viaAntigravity: boolean): Promise<boolean> {
@@ -190,13 +230,9 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   register('coagent8.refreshCliStatus', async () => { await summarize(await status()); });
   register('coagent8.setup', async () => {
-    const results = await status();
-    const remembered = context.globalState.get<SetupClient[]>('setupClients');
-    const picked = await vscode.window.showQuickPick(results.map(result => ({
-      label: LABELS[result.client], client: result.client, picked: remembered?.includes(result.client) ?? false, description: describe(result),
-    })), { canPickMany: true, title: 'Choose CLIs to install or check (native-host registration is separate)' });
-    if (!picked?.length) return;
-    const selected = picked.map(item => item.client);
+    const picked = await pickClients();
+    if (!picked?.clients.length) return;
+    const { results, clients: selected } = picked;
     await context.globalState.update('setupClients', selected);
     for (const client of selected) {
       let result = results.find(item => item.client === client)!;
@@ -217,21 +253,22 @@ export function activate(context: vscode.ExtensionContext): void {
     const results = await status();
     const picked = await vscode.window.showQuickPick(results.filter(result => result.installed && result.compatibility === 'supported').map(result => ({
       label: LABELS[result.client], client: result.client, description: result.registered ? 'Inspect or repair existing registration' : 'Add external MCP registration',
-    })), { canPickMany: true, title: 'Optional: register CoAgent8 in native chat hosts' });
+    })), { canPickMany: true, ignoreFocusOut: true, title: 'Optional: register CoAgent8 in native chat hosts' });
     if (!picked?.length) return;
     const choice = await vscode.window.showWarningMessage(`Write CoAgent8 MCP registrations in ${picked.map(item => item.label).join(', ')} configuration? This is separate from CLI installation and the VS Code provider.`, { modal: true }, 'Register Selected Hosts');
     if (choice !== 'Register Selected Hosts') return;
-    report(await setupClients({ ...options(), clients: picked.map(item => item.client) }));
+    report(await setupClients({ ...options(), clients: picked.map(item => item.client) }), true);
   });
   register('coagent8.cleanup', async () => {
     const preview = await cleanupClients({ home: os.homedir(), env: process.env });
-    report(preview.results);
+    // The modal confirmation refers to this preview, so it must be visible.
+    report(preview.results, true);
     const count = preview.results.filter(result => result.action === 'remove').length;
     if (!count) { await vscode.window.showInformationMessage('No unchanged owned registrations to remove. Manual/edited entries and VS Code profile data are preserved.'); return; }
     const choice = await vscode.window.showWarningMessage(`Remove ${count} unchanged CoAgent8-owned external registrations? Preview is in CoAgent8 Setup. Private backups and runtime files will be retained.`, { modal: true }, 'Remove Owned Registrations');
     if (choice !== 'Remove Owned Registrations') return;
     const result = await cleanupClients({ home: os.homedir(), env: process.env, apply: preview.token });
-    report(result);
+    report(result, true);
     if (!result.stateError && !result.results.some(item => item.action === 'blocked' || item.action === 'preserved')) await context.globalState.update('setupClients', []);
     await vscode.window.showInformationMessage('Cleanup results are in CoAgent8 Setup. Restart native hosts to refresh cached catalogs. Uninstall the VSIX separately to remove its provider; profile databases and other extensions are retained.');
   });

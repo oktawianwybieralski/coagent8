@@ -212,6 +212,12 @@ compatible, locally signed-in backend is needed for useful execution. This statu
 is distinct from per-turn sandbox verification, token validity and a successful
 model response. No CLI is required to initialize MCP or list its tools.
 
+The setup picker opens immediately with a busy indicator while the checks run
+and stays open when focus moves (`ignoreFocusOut`). Check evidence goes to the
+**CoAgent8 Setup** output channel, which opens only through **Show Details**,
+for native-host registration results and for the cleanup preview, always without
+taking focus (`show(true)`): a focused output panel would close an open picker.
+
 Discovery prefers explicit executable overrides, PATH, then bundled Codex/Claude
 binaries and, for agy, the copy that the Google Antigravity extension downloads
 to `~/.gemini/bin` when it starts its backend. Only that executable is reused,
