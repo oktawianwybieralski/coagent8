@@ -24,6 +24,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`ce882ba`](https://github.com/oktawianwybieralski/coagent8/commit/ce882baeb85c9c534325fee275b668a2eb55d328) **consent:** Ask the user by a model's approximate price, not by its name
 - [`d937bc9`](https://github.com/oktawianwybieralski/coagent8/commit/d937bc934fa143d704a73f3d28de8e2bb6dfa5f6) **vscode:** One setup list, CLI executable choice and complete uninstall
 - [`1353fb9`](https://github.com/oktawianwybieralski/coagent8/commit/1353fb94764dc1dd0324714a672dc60da4adedea) **vscode:** Share ~/.coagent8/config.json with the CLI and keep it on uninstall
+- [`c144e4f`](https://github.com/oktawianwybieralski/coagent8/commit/c144e4f89e3062e3b31a05bf9774119fdf188db6) **doctor:** Default to a cached model view and move health to a scope
 
 ### Added
 - [`2b17165`](https://github.com/oktawianwybieralski/coagent8/commit/2b171652b995f025c36a14ec710227cf64e3f733) **routing:** Choose another CLI than the client when auto is ambiguous
@@ -39,6 +40,10 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`75c4aee`](https://github.com/oktawianwybieralski/coagent8/commit/75c4aee58f414f4930e5bd0522aa5d2ec6fe8e0f) **vscode:** Expose backend, model and approval settings
 - [`fc61d08`](https://github.com/oktawianwybieralski/coagent8/commit/fc61d086ab10fdfc987575a84d298d4550088a1f) **vscode:** Remove extension registrations on uninstall
 - [`31a1a1b`](https://github.com/oktawianwybieralski/coagent8/commit/31a1a1b7fa8bff8c55764c2834cd783a6a4fc94c) **selection:** List model prices in doctor and enforce output price limits
+- [`bd4ebad`](https://github.com/oktawianwybieralski/coagent8/commit/bd4ebad158515a07f87a804a59df6fa930825819) **claude:** Read Claude Code's model catalog from stream-json initialize
+- [`42968d1`](https://github.com/oktawianwybieralski/coagent8/commit/42968d13e0309224ea7758b9a6e127765fa1de98) **routing:** Route a named model to a backend that lists it
+- [`d253e79`](https://github.com/oktawianwybieralski/coagent8/commit/d253e79f33563de9d4b8166d213e450bfaf839ca) **codex:** Read account rate limits from app-server
+- [`bbe411a`](https://github.com/oktawianwybieralski/coagent8/commit/bbe411aff0e29cbbdc787261df2ef5c42ee74b36) **prices:** Keep per-model prices for offered models and refresh daily
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
@@ -117,6 +122,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`056d1c4`](https://github.com/oktawianwybieralski/coagent8/commit/056d1c4f1f32f25a06a5ef810c10aaa576f789b5) **codex:** Keep a complete final answer untruncated after dropped commentary
 - [`fdbdf99`](https://github.com/oktawianwybieralski/coagent8/commit/fdbdf9977c72f615d03171bc5d377d958a5ad5f5) **history:** Reserve snapshot bytes before writing them
 - [`2e24b66`](https://github.com/oktawianwybieralski/coagent8/commit/2e24b66a902501e1dee47bad409904d9cbd77954) **history:** Cut fragments at UTF-8 character boundaries
+- [`e198a8b`](https://github.com/oktawianwybieralski/coagent8/commit/e198a8b73498085f1e3c1bcf8fed9a65898e6834) **prices:** Let shutdown wait for a background price read
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
