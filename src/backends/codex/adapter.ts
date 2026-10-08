@@ -11,7 +11,7 @@ import { codexAppServerArgs, createCodexAppSession } from './app-server.js';
 import { listCodexModels, readCodexRateLimits } from './models.js';
 import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
-import { readBoundedFileSync } from '../../execution/stream.js';
+import { readBoundedFileSync } from '../../storage/read.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { readBoundedFileSync } from './stream.js';
+import { readBoundedFileSync } from '../storage/read.js';
 import { ToolError } from '../conversation.js';
 export interface CliCommand { command: string; argsPrefix: string[]; source: 'native' | 'node' | 'npm-shim' }
 export class CliResolutionError extends ToolError {

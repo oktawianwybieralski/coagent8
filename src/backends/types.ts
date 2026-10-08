@@ -1,7 +1,30 @@
 /**
- * Result returned by an adapter probe operation inspecting CLI installation and authentication state.
+ * Adapter-local types and contracts for backend CLI adapters.
+ * Shared execution, model catalog, and quota contracts are defined in `src/contracts/`.
+ *
+ * @packageDocumentation
  */
-import type { AdapterEvent, ExecutionError, TerminalStatus } from '../conversation.js';
+
+import type {
+  AdapterEvent,
+  ExecutionResult,
+  TerminalExecutionResult,
+  ExecutionOptions,
+  ModelCatalog,
+} from '../contracts/index.js';
+
+// Re-export shared contracts for consumers
+export type {
+  ExecutionResult,
+  TerminalExecutionResult,
+  ExecutionOptions,
+  CatalogModel,
+  ModelCatalog,
+  QuotaStatus,
+  BackendQuota,
+  QuotaReport,
+  QuotaCacheRecord,
+} from '../contracts/index.js';
 
 export interface AdapterProbeResult {
   /** Unique adapter identifier (e.g. 'codex', 'claude', 'agy'). */
@@ -53,59 +76,6 @@ export interface AdapterProbeResult {
 }
 
 /**
- * Output resulting from executing a prompt against a CLI adapter.
- */
-export interface ExecutionResult {
-  /** Whether execution failed or exited with an error. */
-  isError: boolean;
-  /** Bounded public answer or partial text; inspect truncated/status for completeness. */
-  output: string;
-  /** Optional error trace or failure message. */
-  errorDetail?: string;
-  /** Persistent conversation/thread identifier for multi-turn sessions. */
-  threadId?: string | null;
-  /** Process exit status code. */
-  exitCode?: number | null;
-  /** Legacy helpers may omit this; registered adapters require a terminal result. */
-  status?: TerminalStatus;
-  error?: ExecutionError;
-  nativeSessionId?: string | null;
-  signal?: NodeJS.Signals | null;
-  model?: string;
-  truncated?: boolean;
-  continuationAvailable?: boolean;
-  usage?: { source: 'provider'; inputTokens?: number; outputTokens?: number; totalTokens?: number };
-}
-
-export interface TerminalExecutionResult extends ExecutionResult {
-  status: TerminalStatus;
-  truncated: boolean;
-  continuationAvailable: boolean;
-}
-
-/**
- * Options configuring adapter execution.
- */
-export interface ExecutionOptions {
-  /** Current working directory for CLI execution. */
-  cwd?: string;
-  /** Model override name. */
-  model?: string;
-  /** Reasoning effort level override. */
-  reasoningEffort?: string;
-  /** Cancellation signal for interrupting execution. */
-  abortSignal?: AbortSignal;
-  /** Real-time progress callback. */
-  onProgress?: (info: { message?: string; percent?: number }) => void;
-  /** Existing thread or session ID for resuming multi-turn conversation. */
-  threadId?: string | null;
-  /** Backend process-phase budget in milliseconds; defaults to 900,000, excluding controller preparation. */
-  timeoutMs?: number;
-  nativeSessionId?: string | null;
-  onEvent?: (event: AdapterEvent) => void;
-}
-
-/**
  * Unified contract implemented by all CLI backend adapters.
  */
 export interface CliAdapter {
@@ -153,64 +123,4 @@ export interface InheritedTools {
   mcpServers: string[];
   /** Enabled plugins, which can bring further MCP servers and hooks. */
   plugins: string[];
-}
-
-/** One model a CLI offers. */
-export interface CatalogModel {
-  /** Identifier the caller passes as `model`. */
-  id: string;
-  /** Accepted `reasoning_effort` values; empty when the model takes none. */
-  efforts: string[];
-  /**
-   * The CLI needs an effort with this identifier: agy lists `gemini-3.8-flash-high`
-   * and rejects `gemini-3.8-flash` without `--effort`.
-   */
-  effortRequired?: boolean;
-  /** The CLI's default model. */
-  isDefault?: boolean;
-  /**
-   * Other names the CLI accepts for this model, such as Claude Code's `sonnet` alias for the
-   * concrete model it currently resolves to; `id` is always the concrete model.
-   */
-  aliases?: string[];
-}
-
-/** Models offered by one backend CLI, read from the CLI itself. */
-export interface ModelCatalog {
-  models: CatalogModel[];
-  /** Where the list comes from, for example `codex app-server model/list`. */
-  source: string;
-  /**
-   * The CLI also accepts models it does not list (Claude Code lists a curated set), so an
-   * unlisted name is not rejected; its concrete model is observed instead.
-   */
-  acceptsUnlisted?: boolean;
-}
-
-export type QuotaStatus = 'operational' | 'uninstalled' | 'rate_limited';
-
-export interface BackendQuota {
-  installed: boolean;
-  executionSupported?: boolean;
-  status: QuotaStatus;
-  window: string;
-  usedPercent: number | null;
-  resetsAt: string | null;
-  cooldownUntil: string | null;
-  headroomPercent: number | null;
-  measured: boolean;
-  /** When the CLI last measured this quota; distinct from the cache's rewrite time. */
-  measuredAt?: string | null;
-  cooldownReason?: string | null;
-  cooldownLevel?: number;
-  lastCooldownAt?: string | null;
-}
-
-export interface QuotaReport {
-  [backendId: string]: BackendQuota;
-}
-
-export interface QuotaCacheRecord {
-  timestamp: number;
-  data: QuotaReport;
 }

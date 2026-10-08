@@ -1,7 +1,8 @@
 import { runCommand } from './process.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { readBoundedFile, truncateToByteLength } from './stream.js';
+import { readBoundedFile } from '../storage/read.js';
+import { truncateToByteLength } from './runtime/stream.js';
 import { ToolError } from '../conversation.js';
 
 export interface GitScopeInfo {

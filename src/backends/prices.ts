@@ -19,7 +19,7 @@
  *
  * @packageDocumentation
  */
-import { readBoundedFileSync } from '../execution/stream.js';
+import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../redaction.js';
 import { readObservedModelNames, readStoredPrices, recordPrices, type PriceRecord, type StoredPrices } from './model-store.js';
 

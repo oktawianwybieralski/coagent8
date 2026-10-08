@@ -1,0 +1,62 @@
+/**
+ * Shared execution options and execution result contracts.
+ *
+ * @packageDocumentation
+ */
+
+import type { AdapterEvent, TerminalStatus } from './conversation.js';
+import type { ExecutionError } from './error.js';
+
+/**
+ * Output resulting from executing a prompt against a CLI adapter.
+ */
+export interface ExecutionResult {
+  /** Whether execution failed or exited with an error. */
+  isError: boolean;
+  /** Bounded public answer or partial text; inspect truncated/status for completeness. */
+  output: string;
+  /** Optional error trace or failure message. */
+  errorDetail?: string;
+  /** Persistent conversation/thread identifier for multi-turn sessions. */
+  threadId?: string | null;
+  /** Process exit status code. */
+  exitCode?: number | null;
+  /** Legacy helpers may omit this; registered adapters require a terminal result. */
+  status?: TerminalStatus;
+  error?: ExecutionError;
+  nativeSessionId?: string | null;
+  signal?: NodeJS.Signals | null;
+  model?: string;
+  truncated?: boolean;
+  continuationAvailable?: boolean;
+  usage?: { source: 'provider'; inputTokens?: number; outputTokens?: number; totalTokens?: number };
+}
+
+export interface TerminalExecutionResult extends ExecutionResult {
+  status: TerminalStatus;
+  truncated: boolean;
+  continuationAvailable: boolean;
+}
+
+/**
+ * Options configuring adapter execution.
+ */
+export interface ExecutionOptions {
+  /** Current working directory for CLI execution. */
+  cwd?: string;
+  /** Model override name. */
+  model?: string;
+  /** Reasoning effort level override. */
+  reasoningEffort?: string;
+  /** Cancellation signal for interrupting execution. */
+  abortSignal?: AbortSignal;
+  /** Real-time progress callback. */
+  onProgress?: (info: { message?: string; percent?: number }) => void;
+  /** Existing thread or session ID for resuming multi-turn conversation. */
+  threadId?: string | null;
+  /** Backend process-phase budget in milliseconds; defaults to 900,000, excluding controller preparation. */
+  timeoutMs?: number;
+  nativeSessionId?: string | null;
+  onEvent?: (event: AdapterEvent) => void;
+}
+

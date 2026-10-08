@@ -3,7 +3,7 @@ import { closeSession, cancelSession, listSessions } from '../sessions/session.j
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from './schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../sessions/history.js';
-import { resolveWorkspacePath } from '../paths.js';
+import { resolveWorkspacePath } from '../workspace/workspace.js';
 import { ToolError } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
 import type { SessionRecord } from '../sessions/types.js';

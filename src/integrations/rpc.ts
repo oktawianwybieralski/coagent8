@@ -5,7 +5,7 @@
 import { spawn } from 'node:child_process';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
 import { terminateProcessTree } from '../execution/process.js';
-import { createLineDecoder } from '../execution/stream.js';
+import { createLineDecoder } from '../execution/runtime/stream.js';
 
 /** Narrows an untrusted protocol/configuration value to an object. */
 export function object(value: unknown): Record<string, unknown> {

@@ -10,8 +10,13 @@ The owner requested analysis of three agents' arithmetic trials and consolidatio
 around these three documents. The target is full MCP orchestration: complete tasks,
 write/check/fix workflows, independent roles/models and installable client skills.
 Current read-only profiles remain enforced until verified replacements land.
-The latest task implemented AX-001/002 (per-model prices and the price limit) on
+AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
+The current task is SIMPLIFY-001: S0 baseline captured, S1 implemented and verified.
+Current branch: `refactor/simplify-001`, created from the preserved local stack
+at `ac394ad` after the owner authorized changing the branch.
+The owner requires a stop for inspection after each slice. S1 is complete, awaiting
+owner inspection before starting S2.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -43,17 +48,13 @@ Source anchors:
 
 ## Next implementation
 
-The owner requested dependency rules before source reorganization on 2026-10-08.
-The P0 boundary rules and target architecture now have a local plan under
-[SIMPLIFY-001](ROADMAP.md#simplify-001---module-boundary-migration). This change
-is documentation only; source moves and automated dependency enforcement are
-pending. Start with S0's fresh baseline because selection/doctor changes are
-ongoing in this checkout. The migration does not change the release status or
-the runtime evidence recorded below.
-
-Rules/plan verification: source/content review and local Markdown link/anchor
-checks passed; added text uses ASCII and git diff --check passed. Runtime tests,
-builds and backend calls were not run for this prose-only change.
+The next authorized work boundary is owner inspection of
+[SIMPLIFY-001 S1](#simplify-001-s1-implementation). On continuation, execute S2 in the
+[roadmap's order](ROADMAP.md#execution-checkpoints), with its caller updates and
+scope-based checks, then stop again. S1 contracts, storage, workspace, and execution/runtime
+modules are implemented and verified; automated dependency enforcement remains scheduled for S6.
+Recheck the current checkout rather than assuming that the baseline below is still current.
+The migration does not change the release status or make historical runtime evidence fresh.
 
 AX-001/002 landed locally (contract in
 [ARCHITECTURE.md](ARCHITECTURE.md#price-limit)): output_price_below with strict,
@@ -76,8 +77,9 @@ window change for all three backends) and stage 3 pre-turn estimates and a
 predictable plain consult (AX-001/002); concurrent root budgets (AX-002); the
 fresh-client retest (AX-006).
 
-Next: independent review of this branch, then AX-003/004/005/006 for approval
-transport, effective config, readiness and fresh-client acceptance. Keep consent
+Remaining AX work: independent review of the feat/ax-price-selection work, then
+AX-003/004/005/006 for approval transport, effective config, readiness and
+fresh-client acceptance. Keep consent
 fail-closed and never insert a model into neverAsk. Design COAGENT-001/002
 alongside, then one verified host-led write/check/review path before delegated
 coordinators, preserving the roadmap's root-budget, writer, interruption and
@@ -86,6 +88,199 @@ evidence criteria.
 Open runtime limitations and the CUR items with local fixes are listed in
 [ARCHITECTURE.md](ARCHITECTURE.md#known-limitations); do not reimplement fixed
 items from an old snapshot report. Revalidate the candidate before claiming acceptance.
+
+## SIMPLIFY-001 S0 baseline
+
+Captured 2026-10-08 before documentation edits, on Windows, Node v26.10.0,
+npm 11.19.1. Scope: static baseline and sequential implementation checkpoints.
+No source migration, Git integration, live configuration edit or model turn.
+
+### Checkout and evidence identity
+
+- Initial inventory branch: `feat/ax-price-selection`.
+- Working branch: `refactor/simplify-001`, created at the same HEAD after the
+  owner authorized branch separation during S0. The two documentation edits
+  were preserved across `git switch -c refactor/simplify-001`.
+- HEAD: `ac394adf3ae31181f88a210d07c1d5a1d4e0fdde`.
+- Tree: `e2ad8e735630336c4721428207bf978519e13d8c`.
+- Local `release/v1.0.0` and merge base:
+  `ae55f017fdc7f54776549b94ea5d2e9833601894`.
+- `git rev-list --left-right --count release/v1.0.0...HEAD`: `0 199`.
+  This is the existing local stack, not a newly integrated release branch.
+  The owner authorized preserving this stack as the topic branch's starting
+  point. Integration into release/v1.0.0 remains owner-managed; this branch
+  operation is not evidence of an up-to-date release base or merge readiness.
+- Initial and pre-edit `git status --short --branch`: clean on the initial branch.
+  `git worktree list --porcelain`: one worktree. The collaboration roster showed
+  only this agent. These observations cannot exclude an external editor/process;
+  re-read touched files before every edit. No stash/reset/rebase/new checkout.
+
+Optional ignored evidence is under `.artifacts/simplify-001/`:
+`inventory.cjs`, `baseline-graph.json`, `baseline-state.json`, `references.txt`
+and `legacy-table.md`. These are inspection artifacts, not another active plan.
+The required debt decisions and findings are recorded here. Reproduce the graph
+on the recorded source with `node .artifacts/simplify-001/inventory.cjs` while
+that local script is available; S6 must supply maintained graph enforcement.
+
+Graph SHA-256:
+`3dc8703cc840437cf3a38f01326836b1c4e1fa91d8b70c22525b7d066425bc8f`.
+Inventory script SHA-256:
+`16024718bb163fefaa06c866f6a125fa51f4c868282a19b086f599266665a4c6`.
+
+### Actual graph and cycles
+
+The inventory parses all 158 tracked TS/JS/CJS/MJS files, including 77 source
+modules and the extension/tests/tooling. It resolves relative `.js` imports to
+their `.ts` source, records bindings/line numbers and distinguishes imports,
+explicit type imports, import type queries, dynamic calls and re-exports.
+All parsed files had zero parser errors; no literal relative import was
+unresolved. This does not validate computed paths or packaged files.
+
+Source has 410 dependency declarations: 352 ordinary imports, 56 explicit
+type imports, one type query and one re-export. There are 329 internal source
+edges. Symbol-aware TypeScript 6.0.3 emit from the already-installed documentation
+tooling, captured only in memory, identifies 272 runtime edges and 57 erased
+type edges. Two ordinary declarations are erased despite lacking `import type`:
+`backends/availability.ts:5 -> backends/types.ts` and
+`sessions/session.ts:5 -> sessions/types.ts`. This is static classification,
+not a fresh TypeScript 7.0.2 gate, bundle build or runtime observation.
+
+| Graph | Exact cycle edges (paths relative to src/) | Removal owner |
+| --- | --- | --- |
+| Runtime | `sessions/session.ts:10 -> sessions/history.ts`; `sessions/history.ts:37 -> sessions/session.ts` | S4: narrow activity/lease contract; preserve lock order and eviction protection |
+| Types plus runtime | Above runtime cycle plus `sessions/history.ts:27 -> sessions/history-page.ts`; `sessions/history-page.ts:2 -> sessions/history.ts` (History type) | S4: history-owned snapshot contract; no page/reader cycle |
+| Types plus runtime | `integrations/setup.ts:29 -> integrations/cli-readiness.ts`; `integrations/cli-readiness.ts:7 -> integrations/setup.ts` (SetupClient type) | S5: import the existing setup-clients owner directly |
+
+One source re-export exists: `integrations/setup.ts:27 -> setup-clients.ts`
+exports SETUP_CLIENTS and the SetupClient type. Its consumer surface must be
+classified before removing any forwarding path. No literal runtime dynamic
+import exists under src/. The type query at `index.ts:12 -> integrations/setup-cli.ts`
+does not eagerly load setup; the adjacent computed runtime require deliberately
+loads sibling `setup.cjs` only for setup/repair/status/cleanup/help dispatch.
+
+Three further computed calls were inspected separately: the gated maintenance
+fixture resolves `src/stdio-server.ts`; two VS Code fixture VM callbacks use
+`require(name)` to supply mocked vscode or native dependencies. The reference
+sweep covers launch arguments, esbuild fixture interceptors and embedded code
+strings that a literal import graph cannot treat as ordinary source edges.
+
+### Exact migration debt and caller ownership
+
+Paths below are relative to src/ unless prefixed with extensions/. These rows
+record exact existing edges/callers, not directory-wide dependency exemptions.
+Allowed adapter/application consumption of a mechanism also needs updating
+when its current mixed owner splits. All source/test/fixture callers must be
+updated in the slice that changes their dependency, not deferred to S5.
+
+| Slice | Current target | Exact consumers | Required ownership change |
+| --- | --- | --- | --- |
+| S1 | `sessions/lock.ts` | `extensions/vscode/src/configuration.ts:5`, `backends/availability.ts:7`, `backends/model-store.ts:20`, `config.ts:7`, `integrations/cleanup.ts:12`, `integrations/setup.ts:22`, `sessions/history.ts:30`, `sessions/session.ts:7` | File locking and atomic writes belong to storage |
+| S1 | `execution/stream.ts` | `extensions/vscode/src/configuration.ts:4`, `backends/availability.ts:10`, `backends/codex/adapter.ts:14`, `backends/model-store.ts:19`, `backends/prices.ts:22`, `config.ts:6`, `execution/cli-resolver.ts:4`, `execution/git.ts:4`, `integrations/setup-storage.ts:10`, `integrations/setup.ts:15`, `integrations/vscode-profile.ts:4`, `sessions/history.ts:34`, `sessions/lock.ts:25`, `sessions/session.ts:9` | Bounded file reads belong to storage; split mixed imports |
+| S1 | `execution/stream.ts` | `backends/agy/collector.ts:2`, `backends/claude/collector.ts:2`, `backends/codex/collector.ts:2`, `diagnostics/issue.ts:21`, `execution/controller.ts:48`, `execution/git.ts:4`, `execution/process.ts:31`, `execution/stream-reducer.ts:2`, `integrations/rpc.ts:8`, `redaction.ts:2`, `sessions/history.ts:34` | Byte/line primitives belong to execution/runtime; shared errors must retain identity without loading application policy |
+| S1 | `sessions/identity.ts` | `server.ts:27`, `sessions/history.ts:32`, `sessions/session.ts:11` | canonicalPath belongs to workspace; sanitizeHandle stays with sessions |
+| S1 | `backends/model-identifier.ts`; `backends/governance.ts` | `config.ts:8` (runtime syntax validator); `config.ts:9` (GovernanceSettings type) | Independent syntax/settings contracts prevent config/models reverse dependency during S3 |
+| S2 | `tools/result.ts`; `tools/review-gate.ts` | `execution/controller.ts:51` (formatter); `execution/controller.ts:55` (ReviewGateContext type) | Neutral execution result; review-owned contract, transport-owned formatting |
+| S2 | `execution/git.ts`; `tools/review-gate.ts` | `tools/review-input.ts:3,4`; `tools/review.tool.ts:5` (Git); `tools/result.ts:17` (gate) | Review policy/input belongs to review; Git evidence belongs to workspace; handlers format the outcome |
+| S2 | `diagnostics/issue.ts` | `tools/result.ts:15`, reached transitively by controller | Keep diagnostic presentation at transport edge; do not import it back into execution |
+| S3 | `backends/registry.ts`; `backends/probe-cache.ts` | `backends/model-selection.ts:18,19` | Keep pure policy in models; move native observation/selection orchestration to application |
+| S3 | `backends/model-selection.ts` | `backends/consent.ts:11`; `diagnostics/doctor.ts:5`; `execution/controller.ts:39` | Shared pure policy plus application consent sequencing; update doctor in S3 |
+| S3 | `backends/consent.ts` | `execution/controller.ts:43` | Split governance decisions from default observation, price reads and sequencing |
+| S3 | `backends/registry.ts`, `backends/probe-cache.ts`, `config.ts`, `backends/availability.ts` | `backends/routing.ts:1,2,3,4`; controller calls routing at `execution/controller.ts:36` | Application owns routing composition; native probes/quota/cache remain backend-owned |
+| S4 | `sessions/history.ts` | `sessions/session.ts:10`; `sessions/history-page.ts:2` | Remove both recorded cycles; split reader/recovery, writer and retention/capacity without duplicate state |
+| S4 | `sessions/session.ts` | `sessions/history.ts:37` | Activity/lease evidence contract instead of session-service dependency |
+| S4 | `sessions/history.ts` internal credential boundary logic | computeSafeCommitPoint and its writer use | Move safe credential fragments together with redaction to security; preserve persisted/public bytes |
+| S5 | `integrations/setup.ts` | `integrations/cli-readiness.ts:7` (type) | Use setup-clients.ts; remove the recorded type cycle |
+| S5 | Existing physical paths and setup re-export | Extension/source-test/build/reference inventory below | Finish consumers and genuine mixed responsibilities; remove stale internal aliases, preserve public paths |
+| S6 | Missing dependency enforcement | `package.json` scripts and `.github/workflows/ci.yml` have no boundary check | Enforce actual runtime/type/dynamic/re-export graph and isolated negative fixtures; no directory exclusions |
+
+Shared conversation/provider/error/event and adapter/catalog/quota contracts
+currently live in conversation.ts and backends/types.ts; split cohesive shared
+contracts in S1, keeping adapter-local types with backends. paths.ts currently
+mixes data-directory resolution and workspace choice; split those in S1.
+constants.ts mixes branding and MCP tool names; separate the tool constants
+with MCP in S2. Generated SDK Icon typing remains a transport asset, not a
+shared domain contract. These are ownership splits, not moves of whole files
+under misleading directory names.
+
+### Entrypoints, consumers and generated references
+
+- Package main and both bin names resolve to `dist/index.cjs`; `index.js` is
+  the compatibility wrapper. mcp.json loads `${PLUGIN_ROOT}/dist/index.cjs`.
+  package.json ships src/, dist/, selected branding assets and plugin manifests.
+- scripts/build.cjs has separate `src/index.ts -> dist/index.cjs` and
+  `src/integrations/setup-cli.ts -> dist/setup.cjs` entries, source maps and
+  THIRD_PARTY_NOTICES.txt. Preserve the sibling bundle's lazy runtime require
+  and constants.ts's relative package.json lookup when changing depth.
+- scripts/branding.cjs generates src/generated/server-icon.ts from the two
+  64x64 PNG assets and copies the two 256x256 images. server.ts consumes the
+  generated icons; build regeneration must agree with tracked generated source.
+- scripts/build-vscode.cjs bundles extension.ts and uninstall.ts and copies the
+  exact server/setup runtime set. package-artifacts.cjs obtains runtimes from an
+  npm tarball; tooling/vscode/package.cjs consumes that staged package. Preserve
+  extension main/uninstall entrypoints and artifact provenance.
+- 59 test files are discovered through the existing discovery helper; no test
+  was executed by counting them. There are 232 literal source import edges
+  from 59 non-src code files, including 13 extension-to-source edges. The full
+  graph identifies their exact files/lines; the reference sweep has 299 lines.
+- Extension configuration imports stream/lock; extension.ts imports setup,
+  cleanup, redaction, config, vscode-profile, cli-resolver, config-overrides and
+  setup-storage; uninstall.ts imports cleanup, setup-storage and redaction.
+  vscode-profile.ts has no incoming src/ import but has extension/test callers;
+  it is not an orphan. index.ts is the deliberate root entrypoint.
+- MCP e2e launches src/index.ts through tsx; the gated fixture launches
+  src/stdio-server.ts. Setup tests and package tests inspect existing dist/.
+  Consumer smoke imports the source CLI resolver, installs a tarball and compares
+  shipped bundles to a fresh source build. VS Code tests bundle extension source
+  and intercept old source paths in fixture plugins. Update those paths in their
+  owning slice and build before tests that require current dist/ evidence.
+- Typecheck covers src/ and extension source; TypeDoc expands ../../src.
+  CI has six OS/Node jobs with typecheck, docs lint, build, coverage, package
+  inspection and consumer smoke; documentation generation and VSIX packaging
+  are scoped within that matrix. S6 must add enforcement without bypassing gates.
+
+Existing ignored bundles were hashed, not rebuilt or accepted as current source:
+index.cjs SHA-256
+`57a0014ad5d7fabe7050781bce2573e3abcb48e543fcd6f5ad0c0e7ec75e0e7c`;
+setup.cjs SHA-256
+`4dc9c940f923f3f20ce77c27ad53a85975879e72397d4e76b6533e302c1fe8db`.
+baseline-state.json records their sizes and the license-notice hash.
+
+### S0 checks and acceptance limits
+
+PASS: checkout/status/worktree observations; AST import inventory and explicit
+computed-call inspection; cycle/caller/build/reference review; existing test
+discovery enumeration; changed Markdown content/local links/anchors/ASCII review
+and `git diff --check`. Source hashes are captured in the graph to detect drift.
+
+NOT_RUN: runtime typecheck, tests, build, docs tooling, package/consumer/VSIX
+checks, backend calls, independent review and remote/native acceptance. S0 changes
+only plan/evidence prose; these gates belong to the affected migration slices.
+No fresh runtime failure or pass is established. The unexplained historical
+cross-process lock-test failure below remains a baseline risk; if it recurs,
+retain the failure log and investigate rather than relabel a retry as a fix.
+The three recorded import cycles precede migration and are existing debt.
+
+## SIMPLIFY-001 S1 implementation
+
+Captured 2026-10-08 after S1 implementation.
+Branch: `refactor/simplify-001`.
+
+### Modules and ownership changes:
+- `src/contracts/`: Cohesive contracts created for `provider.ts`, `error.ts`, `conversation.ts`, `execution.ts`, `models.ts` (including `isValidModelIdentifier`), `quota.ts`, and `governance.ts` (`GovernanceSettings`, `ConsentBasis`). `src/conversation.ts` and `src/backends/types.ts` forward shared contracts.
+- `src/storage/`: Atomic file locking (`storage/lock.ts`: `withFileLock`, `atomicWrite`, `LockTimeoutError`, `inProcessLocks`) and bounded file reads (`storage/read.ts`: `readBoundedFile`, `readBoundedFileSync`). `sessions/lock.ts` forwards to `storage/lock.js`.
+- `src/execution/runtime/`: Byte/line decoding primitives extracted to `execution/runtime/stream.ts` (`truncateToByteLength`, `createLineDecoder`, `BufferLimitError`). `execution/stream.ts` forwards to runtime and storage. Runtime has zero imports of `controller.ts`.
+- `src/workspace/`: Canonical workspace identity moved to `workspace/identity.ts` (`canonicalPath`), and workspace resolution to `workspace/workspace.ts` (`chooseWorkspace`, `resolveWorkspacePath`, `WorkspaceSource`, `ResolvedWorkspace`). `sessions/identity.ts` retains `sanitizeHandle` and forwards `canonicalPath`. `paths.ts` isolates `getDataDir` and forwards workspace resolution.
+- Consumer updates: `config.ts`, `availability.ts`, `model-store.ts`, `prices.ts`, `codex/adapter.ts`, `git.ts`, `cli-resolver.ts`, `setup.ts`, `cleanup.ts`, `setup-storage.ts`, `vscode-profile.ts`, `server.ts`, `result.ts`, `session.tool.ts`, and `extensions/vscode/src/configuration.ts` all updated to consume `storage/`, `workspace/`, `contracts/`, and `execution/runtime/`.
+- No consumer in config, model stores, or integrations depends on session implementation or application execution for file operations.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `node tests/run.cjs tests/simplify-s1.test.js` (4/4 tests pass).
+- PASS: `node tests/run.cjs` (392 tests: 389 pass, 0 fail, 3 skipped, exit code 0).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+
+Next action: stop after S1 for owner inspection and independent review (codex sol-6.1). Do not proceed to S2 without owner instruction.
 
 ## Documentation disposition
 
@@ -108,7 +303,7 @@ README remains the quick start; extension README remains the editor guide.
 Contributor rules retain safety/Git/verification authority. The workflow skill
 now points directly to the three documents and includes a short usage path.
 
-## Verification for this change
+## Historical runtime verification
 
 Scope: AX-001/002 and model-registry stage 1 (runtime, schema, TSDoc and docs),
 on Windows 11, Node 26.10.0, source loaded through tsx:

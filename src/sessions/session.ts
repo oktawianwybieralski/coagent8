@@ -4,11 +4,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions } from './types.js';
 import { getDataDir } from '../paths.js';
-import { atomicWrite, withFileLock } from './lock.js';
+import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { PROVIDERS } from '../conversation.js';
-import { readBoundedFileSync } from '../execution/stream.js';
+import { readBoundedFileSync } from '../storage/read.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history.js';
-import { canonicalPath, sanitizeHandle } from './identity.js';
+import { canonicalPath } from '../workspace/identity.js';
+import { sanitizeHandle } from './identity.js';
 import { redactDiagnostic } from '../redaction.js';
 
 const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;

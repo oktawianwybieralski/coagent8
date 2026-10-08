@@ -10,7 +10,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import type { ElicitResult, Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
 import { createProgressReporter } from './execution/progress.js';
-import { chooseWorkspace, type ResolvedWorkspace } from './paths.js';
+import { chooseWorkspace, type ResolvedWorkspace } from './workspace/workspace.js';
 import { redactDiagnostic } from './redaction.js';
 import { BRAND, CANONICAL_TOOL_NAMES } from './constants.js';
 import { SERVER_ICONS } from './generated/server-icon.js';
@@ -24,7 +24,8 @@ import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { formatExecutionResult, withWorkspace } from './tools/result.js';
 import { ToolError, errorCodeOf } from './conversation.js';
 import { listSessions } from './sessions/session.js';
-import { canonicalPath, sanitizeHandle } from './sessions/identity.js';
+import { canonicalPath } from './workspace/identity.js';
+import { sanitizeHandle } from './sessions/identity.js';
 import { getHistory } from './sessions/history.js';
 import { composeExecutionCancellation, type ConsentPrompt } from './execution/controller.js';
 import { providerForClient, setCallerProvider } from './backends/routing.js';

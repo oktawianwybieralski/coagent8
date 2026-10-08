@@ -3,10 +3,10 @@ import path from 'path';
 import { PROVIDERS, ToolError, type ProviderId } from './conversation.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
-import { readBoundedFileSync } from './execution/stream.js';
-import { withFileLock } from './sessions/lock.js';
-import { isValidModelIdentifier } from './backends/model-identifier.js';
-import type { GovernanceSettings } from './backends/governance.js';
+import { readBoundedFileSync } from './storage/read.js';
+import { withFileLock } from './storage/lock.js';
+import { isValidModelIdentifier } from './contracts/models.js';
+import type { GovernanceSettings } from './contracts/governance.js';
 import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */

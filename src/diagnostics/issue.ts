@@ -18,7 +18,7 @@
 
 import os from 'os';
 import { redactDiagnostic } from '../redaction.js';
-import { truncateToByteLength } from '../execution/stream.js';
+import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { BRAND } from '../constants.js';
 
 export interface BugReportOptions {

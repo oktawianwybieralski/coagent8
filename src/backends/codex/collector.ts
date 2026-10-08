@@ -1,5 +1,5 @@
 /** Public Codex app-server notification collector shared by production execution and parser regressions. @packageDocumentation */
-import { BufferLimitError, truncateToByteLength } from '../../execution/stream.js';
+import { BufferLimitError, truncateToByteLength } from '../../execution/runtime/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic, redactCredentialFormats } from '../../redaction.js';
 import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';

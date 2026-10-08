@@ -4,10 +4,10 @@ import { adapterRegistry } from './registry.js';
 import { loadConfig } from '../config.js';
 import { QuotaReport, QuotaCacheRecord } from './types.js';
 import { getDataDir } from '../paths.js';
-import { atomicWrite, withFileLock } from '../sessions/lock.js';
+import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { PROVIDERS, ToolError, type ProviderId } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
-import { readBoundedFileSync } from '../execution/stream.js';
+import { readBoundedFileSync } from '../storage/read.js';
 import type { AdapterProbeResult } from './types.js';
 type ProbeMap = Partial<Record<ProviderId, AdapterProbeResult>>;
 export interface AvailabilitySelectionOptions {

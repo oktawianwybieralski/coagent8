@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { truncateToByteLength } from './execution/stream.js';
+import { truncateToByteLength } from './execution/runtime/stream.js';
 /**
  * Filters high-confidence credential formats in public Markdown and model answers
  * without rewriting ordinary code or keyword assignments.

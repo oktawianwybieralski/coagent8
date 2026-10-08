@@ -45,7 +45,7 @@ import { rememberApprovedModel } from '../config.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
-import { truncateToByteLength, BufferLimitError } from './stream.js';
+import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../conversation.js';
 import { formatExecutionResult } from '../tools/result.js';

@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { truncateToByteLength } from './stream.js';
+import { truncateToByteLength } from './runtime/stream.js';
 
 export interface StreamReducerOptions {
   maxTotalBytes?: number;

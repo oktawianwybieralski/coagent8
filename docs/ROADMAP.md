@@ -66,8 +66,9 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 
 ## SIMPLIFY-001 - module boundary migration
 
-Local implementation plan requested on 2026-10-08. Status: rules/design only;
-no source migration or dependency enforcement has been implemented. This is
+Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
+S1 implemented and verified, awaiting owner inspection; S2-S6 have not started.
+Automated dependency enforcement remains scheduled for S6. This is
 the active plan, not an additional plan under docs/.local/. Work stays local;
 Git integration and publication remain owner-managed. Audit blockers retain
 priority. Apply the slices before expanding the affected owners for COAGENT
@@ -79,7 +80,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
 
 ### Ordered slices and acceptance
 
-- [ ] **S0 - Capture the actual baseline.** Recheck branch, dirty files and
+- [x] **S0 - Capture the actual baseline.** Recheck branch, dirty files and
   concurrent work before any move. Preserve the current checkout and local
   changes; no automatic stash/reset/rebase or new checkout. Inventory runtime,
   type-only, dynamic and re-export edges, cycles, package/build entrypoints,
@@ -87,7 +88,9 @@ Success means clear ownership and dependency direction, not fewer visible files.
   exact legacy edges with S1-S6 owners. Distinguish existing failures from
   migration failures. Implement on an appropriate topic branch under the Git
   rules when the owner integrates the existing local stack.
-- [ ] **S1 - Extract contracts and shared mechanisms.** Split conversation.ts
+  Evidence: [S0 baseline](HANDOFF.md#simplify-001-s0-baseline), captured at
+  `ac394ad`. S0 inspection authorized starting S1 on this branch.
+- [x] **S1 - Extract contracts and shared mechanisms.** Split conversation.ts
   and the shared parts of backends/types.ts into cohesive contracts; keep
   adapter-local types in backends. Move file locking/atomic writes from
   sessions/lock.ts and bounded file reads from execution/stream.ts to storage/.
@@ -97,6 +100,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   identity to workspace/; session handle validation stays with sessions.
   Acceptance: config, model stores and integrations no longer depend on
   session implementation or application execution for file operations.
+  Evidence: [S1 implementation](HANDOFF.md#simplify-001-s1-implementation).
 - [ ] **S2 - Separate execution from MCP presentation.** Extract review input
   and verdict policy into review/. Make the controller return a neutral result
   with all evidence needed by handlers. Move formatting to the transport edge;
@@ -147,6 +151,29 @@ checks; S5 is a final sweep, not permission to leave earlier slices broken.
 Separate mechanical moves from behavior-affecting boundary extraction so each
 diff is reviewable. Roll back only the owned slice against its recorded baseline,
 preserving concurrent edits and user data; never reset the whole workspace.
+
+### Execution checkpoints
+
+Owner instruction of 2026-10-08: work sequentially and stop after each slice
+for owner inspection. Do not begin the next slice until the owner continues.
+Keep the current slice's evidence and next action in HANDOFF so a new context
+can resume without rereading a session transcript. Recheck HEAD, dirty paths
+and affected file contents at every resumption; reconcile concurrent changes
+before using the S0 inventory as a migration baseline.
+
+| Slice | Internal work order | Completion checkpoint |
+| --- | --- | --- |
+| S0 | Checkout identity and concurrent-work visibility; real import graph and cycles; caller/build/reference inventory; exact debt owners and evidence limits | Recorded in HANDOFF; stop for owner inspection |
+| S1 | Extract cohesive contracts and independent config syntax/settings types; extract locks/atomic writes and bounded reads; separate runtime primitives and shared errors; group config/data paths and workspace identity; update every affected caller | Config/model stores/integrations use storage, runtime never loads controller, no new cycles; scoped checks and stop |
+| S2 | Extract review input/verdict policy; neutralize controller results and preserve evidence; move formatting to handlers; group MCP modules and tool constants; retain lazy startup composition | No execution/review import from MCP, including types; review/result/MCP checks and stop |
+| S3 | Move pure catalog/identifier/price/governance/store owners; separate selection policy from native observations; move routing/consent sequencing to application; supply narrow observations to shared doctor/execution policy | No models/backends cycle or duplicated policy; selection/consent/cache checks and stop |
+| S4 | Extract credential commit boundaries to security; split history types/reader/writer/retention without duplicating state; keep pagination with history; replace session service dependency with activity/lease contract | Remove both runtime session/history and type history/page cycles; disk/restart/lock/redaction checks and stop |
+| S5 | Resolve remaining consumer/layout conflicts, including cli-readiness/setup type cycle; update extension/test/fixture/build/docs references; remove stale internal forwarding modules and check generated/public paths | All consumers point to owners; optional setup stays lazy; packaging/reference checks and stop |
+| S6 | Implement real graph enforcement and negative fixtures; remove individually recorded migration debt; wire local/CI checks; run combined package gate once; update actual architecture and evidence | No forbidden edges/cycles; local gates recorded, independent/remote approval still separate; stop |
+
+The S0 graph also found the history-page/history type cycle and the
+cli-readiness/setup type cycle. Their exact edges and S4/S5 removal owners are
+recorded in HANDOFF; do not preserve them as type-only exceptions in S6.
 
 ### Risks and verification
 

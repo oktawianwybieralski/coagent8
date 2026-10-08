@@ -15,7 +15,7 @@ import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext } from './review-gate.js';
-import type { ResolvedWorkspace } from '../paths.js';
+import type { ResolvedWorkspace } from '../workspace/workspace.js';
 
 /**
  * Execution tool result: markdown text only.

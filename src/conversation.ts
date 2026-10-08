@@ -1,43 +1,9 @@
-export const PROVIDERS = ['codex', 'agy', 'claude'] as const;
-export type ProviderId = (typeof PROVIDERS)[number];
-export type TerminalStatus = 'completed' | 'failed' | 'cancelled' | 'timed_out';
-export const ERROR_CODES = ['CLI_NOT_FOUND', 'CLI_UNSUPPORTED', 'AUTH_REQUIRED', 'MODEL_UNAVAILABLE',
-  'RATE_LIMITED', 'SESSION_INVALID', 'SESSION_BUSY', 'ABORTED', 'TIMEOUT', 'SANDBOX_UNAVAILABLE',
-  'PROTOCOL_ERROR', 'BUFFER_LIMIT', 'INPUT_LIMIT', 'PROCESS_ERROR', 'HISTORY_ERROR', 'POLICY_DENIED', 'PRICE_LIMIT'] as const;
-export type ErrorCode = (typeof ERROR_CODES)[number];
-export interface ExecutionError { code: ErrorCode; message: string; retryable: boolean }
 /**
- * A failure whose public error code is known where it is raised. Tool handlers report
- * `code` as is; any other thrown value is reported as `PROCESS_ERROR`.
+ * Compatibility re-exports for conversation, error and provider contracts.
+ *
+ * @packageDocumentation
  */
-export class ToolError extends Error {
-  constructor(readonly code: ErrorCode, message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'ToolError';
-  }
-}
-/** Returns the public error code of a thrown value: its `ToolError` code, else `fallback`. */
-export function errorCodeOf(err: unknown, fallback: ErrorCode = 'PROCESS_ERROR'): ErrorCode {
-  return err instanceof ToolError ? err.code : fallback;
-}
-export type ConversationPayload =
-  | { type: 'turn_started' }
-  | { type: 'user_message'; text: string }
-  | { type: 'assistant_delta'; messageId: string; text: string }
-  | { type: 'assistant_message'; messageId: string; text: string }
-  | { type: 'tool_started'; toolId: string; name: string }
-  | { type: 'tool_finished'; toolId: string; name: string; success: boolean }
-  | { type: 'status'; message: string }
-  | { type: 'warning'; message: string }
-  | { type: 'error'; error: ExecutionError }
-  | { type: 'turn_finished'; status: TerminalStatus };
-export type ConversationEvent = ConversationPayload & {
-  schemaVersion: 1; eventId: string; sequence: number; timestamp: string;
-  sessionHandle: string; turnId: string; provider: ProviderId; nativeEventId?: string;
-};
-/** Adapters emit public payloads; the pipeline owns IDs, ordering and persistence. */
-export type AdapterEvent = ConversationPayload & { nativeEventId?: string };
-const EVENT_METADATA_BYTES = 256;
-export function validEventIdentifier(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && Buffer.byteLength(value) <= EVENT_METADATA_BYTES && !/[\x00-\x1f\x7f]/.test(value);
-}
+
+export * from './contracts/provider.js';
+export * from './contracts/error.js';
+export * from './contracts/conversation.js';

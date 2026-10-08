@@ -12,14 +12,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { modify, applyEdits } from 'jsonc-parser';
-import { readBoundedFileSync } from '../execution/stream.js';
+import { readBoundedFileSync } from '../storage/read.js';
 import { runCommand } from '../execution/process.js';
 import { resolveBundledClaude, resolveBundledCodex, resolveCliCommand, resolveManagedAgy, type CliCommand } from '../execution/cli-resolver.js';
 import { backendCommand, environmentOverride, VSCODE_EXTENSION_EXECUTABLE } from '../backends/executable.js';
 import { readBackendExecutable, recordBackendExecutable } from '../config.js';
 import type { ProviderId } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
-import { withFileLock } from '../sessions/lock.js';
+import { withFileLock } from '../storage/lock.js';
 import { object, withStdioRpc } from './rpc.js';
 import { errorCodeOf } from '../conversation.js';
 

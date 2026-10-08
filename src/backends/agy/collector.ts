@@ -1,5 +1,5 @@
 /** Bounded Gemini public-event parsing, independent of process launch. @packageDocumentation */
-import { BufferLimitError } from '../../execution/stream.js';
+import { BufferLimitError } from '../../execution/runtime/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';

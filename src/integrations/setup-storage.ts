@@ -7,7 +7,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { parse as parseToml } from 'smol-toml';
 import { parse, parseTree, type ParseError, type Node as JsonNode } from 'jsonc-parser';
-import { readBoundedFileSync } from '../execution/stream.js';
+import { readBoundedFileSync } from '../storage/read.js';
 import { object } from './rpc.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export interface Registration { command: string; args: string[]; env?: Record<string, string> }

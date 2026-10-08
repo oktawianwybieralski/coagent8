@@ -16,8 +16,8 @@ import path from 'node:path';
 import { getDataDir } from '../paths.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { redactDiagnostic } from '../redaction.js';
-import { readBoundedFileSync } from '../execution/stream.js';
-import { atomicWrite, withFileLock } from '../sessions/lock.js';
+import { readBoundedFileSync } from '../storage/read.js';
+import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { isValidModelIdentifier } from './model-identifier.js';
 import type { CatalogModel, ModelCatalog } from './types.js';
 

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readBoundedFileSync } from '../../../src/execution/stream.js';
-import { withFileLock } from '../../../src/sessions/lock.js';
+import { readBoundedFileSync } from '../../../src/storage/read.js';
+import { withFileLock } from '../../../src/storage/lock.js';
 
 /** Writes `content` to `file` through a temporary file in the same directory. */
 function replaceFile(file: string, content: string): void {
