@@ -2468,6 +2468,17 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   on metadata length; fragments are now cut at a UTF-8 boundary, covered by a test
   across all four cut positions that fails without the fix. Typecheck, `lint:docs`
   and the full suite (360 pass, 3 skipped) passed after removing that compatibility.
+  Owner acceptance on Windows, 2026-10-08: the owner reported the preliminary
+  native tests PASS for the VSIX with SHA-256
+  `b031e273238e4304b840c277be5ca9d33394e3823dab693b50dd67c0305feb9b` (commits
+  `2e24b66`, `d937bc9`). Verified read-only in the owner's profile afterwards:
+  Codex, Claude Code and Antigravity have the CoAgent8 entry with `coagent8_CONFIG`
+  and `coagent8_DIR` set to the extension's storage; `config.json` records
+  `executable: "vscode-extension"` for all three and `allowedBackends` with `agy`;
+  this Claude Code session reached CoAgent8 doctor through that registration, with
+  codex and claude ready. Open follow-up: agy readiness rests on its `/usage` quota
+  read; the first two doctor calls after a cold start reported agy not ready and
+  its quota not measured, the third reported it ready with 73% weekly headroom.
   Acceptance: the beta.2 checklist's dependency
   installation, complete uninstallation and Extensions-view rows, leaving no
   `~/.coagent8` and no CoAgent8 key, natively verified. Native acceptance is NOT_RUN.
