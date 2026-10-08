@@ -289,7 +289,7 @@ Branch: `refactor/simplify-001`.
 
 ### Modules and ownership changes:
 - `src/workspace/git.ts`: Git evidence extraction (`collectGitScope`, `snapshotId`, `assertReviewWorkspace`). `src/execution/git.ts` forwards to it.
-- `src/review/`: Dedicated review input and verdict policy module (`review/gate.ts`: `evaluateStateEnvelopeGate`, `enforceStateEnvelopeGate`, `StateEnvelopeEvaluation`, `ReviewGateContext`; `review/input.ts`: `collectReviewInput`, `proseOnly`; `review/index.ts`). `src/tools/review-gate.ts` and `src/tools/review-input.ts` forward to it.
+- `src/review/`: Dedicated review input and verdict policy module (`review/gate.ts`: `evaluateStateEnvelopeGate` (server verdict and causes; the reviewer text is never rewritten), `StateEnvelopeEvaluation`, `ReviewGateContext`; `review/input.ts`: `collectReviewInput`, `proseOnly`; `review/index.ts`). `src/tools/review-gate.ts` and `src/tools/review-input.ts` forward to it.
 - `src/contracts/execution.ts`: `TaskExecutionResult` and `ExecutionMeta` defined as neutral contracts with zero transport/Markdown dependencies.
 - `src/execution/controller.ts`: `executeTask` neutralised to return pure `TaskExecutionResult` (no `content` array, no Markdown wrapping, no MCP SDK imports). Stripping ANSI moved to `cli-output.ts`.
 - `src/mcp/`: Transport layer isolated under `src/mcp/`:

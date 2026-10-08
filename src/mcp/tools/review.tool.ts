@@ -45,6 +45,7 @@ export async function handleReview(
     `SNAPSHOT: ${snapshot}`,
     'COVERAGE: COMPLETE | PARTIAL',
     'VERDICT: READY | BLOCKED',
+    'Reviewed: <one sentence naming the files and behavior you checked>',
     '[P1|P2|P3] <file>:<line>',
     'Problem: <one sentence>',
     'Evidence: <at most two sentences, citing file:line>',

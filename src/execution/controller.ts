@@ -426,7 +426,6 @@ async function executeTaskInternal(
   if (options.requireEnvelope) {
     if (result.isError || result.error) {
       review = {
-        output: stripAnsi(result.output || '').trim(),
         verdict: 'BLOCKED',
         reason: result.error?.message || 'Execution error',
       };

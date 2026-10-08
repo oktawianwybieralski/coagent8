@@ -8,7 +8,7 @@ const path = require('node:path');
 const { executeTask } = require('../src/execution/controller.ts');
 const { adapterRegistry } = require('../src/backends/registry.ts');
 const { saveConfig } = require('../src/config.ts');
-const { evaluateStateEnvelopeGate, enforceStateEnvelopeGate } = require('../src/review/gate.ts');
+const { evaluateStateEnvelopeGate } = require('../src/review/gate.ts');
 const { formatExecutionResult } = require('../src/mcp/result.ts');
 
 test('S2 neutral controller: executeTask returns neutral object without MCP markdown content', async () => {
@@ -79,7 +79,6 @@ test('S2 review module: review gate and verdict policy evaluate properly', () =>
 
   const evalResult = evaluateStateEnvelopeGate(envelope, false, true);
   assert.equal(evalResult.verdict, 'READY');
-  assert.ok(evalResult.output.includes('VERDICT: READY'));
 
   const blockedEnvelope = [
     'REVIEW: 1',
@@ -92,10 +91,8 @@ test('S2 review module: review gate and verdict policy evaluate properly', () =>
 
   const blockedResult = evaluateStateEnvelopeGate(blockedEnvelope, false, true);
   assert.equal(blockedResult.verdict, 'BLOCKED');
-  assert.equal(blockedResult.reason, 'Review coverage is partial');
+  assert.equal(blockedResult.reason, 'Review coverage is partial; the reviewer answered READY');
 
-  const enforced = enforceStateEnvelopeGate(blockedEnvelope, false, true);
-  assert.ok(enforced.includes('VERDICT: BLOCKED'));
 });
 
 test('S2 boundaries: execution and review have zero imports from mcp or sdk', () => {

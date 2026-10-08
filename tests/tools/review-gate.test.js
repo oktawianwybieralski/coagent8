@@ -1,7 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { enforceStateEnvelopeGate, evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
+const { evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
+/** Server verdict for a review answer. */
+const verdictOf = (output, truncated, requireEnvelope = false) => evaluateStateEnvelopeGate(output, truncated, requireEnvelope).verdict;
 const { readResult } = require('../helpers/result.cjs');
 
 test('CUR-001 rejects incomplete input, mismatched snapshots, invalid and failed or required unrun checks', () => {
@@ -28,10 +30,26 @@ test('a blocked verdict names every cause, the unrun checks and the reviewer rea
   assert.equal(evaluateStateEnvelopeGate(envelope('Blocked: The diff omits src/review/gate.ts.'), false, true, context).reason,
     'Required checks were not run (tests=NOT_RUN); Reviewer reported BLOCKED: The diff omits src/review/gate.ts.');
   const failed = evaluateStateEnvelopeGate(envelope().replace('typecheck=PASS', 'typecheck=FAIL').replace('VERDICT: BLOCKED', 'VERDICT: READY'), false, true, context);
-  assert.equal(failed.reason, 'A reported check failed (typecheck=FAIL); Required checks were not run (tests=NOT_RUN)');
+  assert.equal(failed.reason, 'A reported check failed (typecheck=FAIL); Required checks were not run (tests=NOT_RUN); the reviewer answered READY');
+  assert.equal(evaluateStateEnvelopeGate('', false, true, context).reason, 'Reviewer returned no answer');
+  assert.equal(evaluateStateEnvelopeGate('Looks fine to me.', false, true, context).reason, 'Answer has no State Envelope');
 });
 
-test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue is reported', () => {
+test('the review answer is shown verbatim in a code block; the server verdict and its override are in the footer', () => {
+  const { formatExecutionResult } = require('../../src/mcp/result.ts');
+  const answer = ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: src/review/gate.ts verdict reasons.', 'Example: ```ts', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n');
+  const formatted = formatExecutionResult('codex', { status: 'completed', isError: false, output: answer, truncated: false, continuationAvailable: false },
+    '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
+    { requireEnvelope: true, reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] } });
+  const text = formatted.content[0].text;
+  assert.ok(text.startsWith('````text\n' + answer + '\n````\n'), "verbatim, fenced longer than the answer's own fence");
+  assert.ok(!text.includes('VERDICT: BLOCKED'), 'the reviewer text is not rewritten');
+  const { verdict, reason } = readResult(formatted);
+  assert.equal(verdict, 'BLOCKED');
+  assert.equal(reason, 'Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY');
+});
+
+test('the server blocks a READY answer if a P1 issue is reported', () => {
   const reviewOutput = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -47,12 +65,11 @@ test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue i
     'END_REVIEW',
   ].join('\n');
 
-  const gated = enforceStateEnvelopeGate(reviewOutput, false);
-  assert.ok(gated.includes('VERDICT: BLOCKED'), 'P1 defect must force VERDICT: BLOCKED');
-  assert.ok(!gated.includes('VERDICT: READY'), 'VERDICT: READY must be overridden');
+  assert.equal(verdictOf(reviewOutput, false), 'BLOCKED', 'P1 defect must block');
+  assert.match(evaluateStateEnvelopeGate(reviewOutput, false).reason, /the reviewer answered READY/, 'the override of the visible READY is named');
 });
 
-test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P2 issue is reported', () => {
+test('the server blocks a READY answer if a P2 issue is reported', () => {
   const reviewOutput = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -68,12 +85,10 @@ test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P2 issue i
     'END_REVIEW',
   ].join('\n');
 
-  const gated = enforceStateEnvelopeGate(reviewOutput, false);
-  assert.ok(gated.includes('VERDICT: BLOCKED'), 'P2 defect must force VERDICT: BLOCKED');
-  assert.ok(!gated.includes('VERDICT: READY'), 'VERDICT: READY must be overridden');
+  assert.equal(verdictOf(reviewOutput, false), 'BLOCKED', 'P2 defect must block');
 });
 
-test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if response was truncated', () => {
+test('the server blocks a READY answer if the response was truncated', () => {
   const truncatedOutput = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -85,12 +100,10 @@ test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if response w
     'Fix: Add comment.',
   ].join('\n');
 
-  const gated = enforceStateEnvelopeGate(truncatedOutput, true);
-  assert.ok(gated.includes('VERDICT: BLOCKED'), 'Truncated response must force VERDICT: BLOCKED');
-  assert.ok(!gated.includes('VERDICT: READY'));
+  assert.equal(verdictOf(truncatedOutput, true), 'BLOCKED', 'Truncated response must block');
 });
 
-test('enforceStateEnvelopeGate preserves VERDICT: READY when only P3 (nit) is reported and not truncated', () => {
+test('the server keeps READY when only P3 (nit) is reported and not truncated', () => {
   const cleanReview = [
     'REVIEW: 1',
     'SNAPSHOT: 7f8a9b',
@@ -106,45 +119,34 @@ test('enforceStateEnvelopeGate preserves VERDICT: READY when only P3 (nit) is re
     'END_REVIEW',
   ].join('\n');
 
-  const gated = enforceStateEnvelopeGate(cleanReview, false);
-  assert.ok(gated.includes('VERDICT: READY'), 'P3-only review should retain VERDICT: READY');
-  assert.ok(!gated.includes('VERDICT: BLOCKED'));
+  assert.equal(verdictOf(cleanReview, false), 'READY', 'P3-only review should stay READY');
 });
 
-test('enforceStateEnvelopeGate handles case variations, partial coverage, and missing verdicts', () => {
+test('the server verdict handles case variations, partial coverage, and missing verdicts', () => {
   // Case-insensitive verdict with P1
   const caseInsensitiveOutput = 'REVIEW: 1\nverdict: READY\n[P1] security defect\nEND_REVIEW';
-  const gatedCase = enforceStateEnvelopeGate(caseInsensitiveOutput, false);
-  assert.ok(gatedCase.includes('VERDICT: BLOCKED'));
-  assert.ok(!gatedCase.includes('verdict: READY'));
+  assert.equal(verdictOf(caseInsensitiveOutput, false), 'BLOCKED');
 
   // Partial coverage overrides READY
   const partialCoverageOutput = 'REVIEW: 1\nCOVERAGE: PARTIAL\nVERDICT: READY\nEND_REVIEW';
-  const gatedPartial = enforceStateEnvelopeGate(partialCoverageOutput, false);
-  assert.ok(gatedPartial.includes('VERDICT: BLOCKED'));
-  assert.ok(!gatedPartial.includes('VERDICT: READY'));
+  assert.equal(verdictOf(partialCoverageOutput, false), 'BLOCKED');
 
-  // Truncated envelope missing VERDICT gets BLOCKED appended
+  // Truncated envelope missing VERDICT is blocked
   const truncatedNoVerdict = 'REVIEW: 1\nSNAPSHOT: abc123\nCOVERAGE: COMPLETE\n';
-  const gatedTruncated = enforceStateEnvelopeGate(truncatedNoVerdict, true);
-  assert.ok(gatedTruncated.includes('VERDICT: BLOCKED'));
+  assert.equal(verdictOf(truncatedNoVerdict, true), 'BLOCKED');
 
-  // Enveloped review without verdict gets BLOCKED appended
+  // Enveloped review without verdict is blocked
   const malformedNoVerdict = 'REVIEW: 1\nSNAPSHOT: abc123\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW';
-  const gatedMalformed = enforceStateEnvelopeGate(malformedNoVerdict, false);
-  assert.ok(gatedMalformed.includes('VERDICT: BLOCKED'));
+  assert.equal(verdictOf(malformedNoVerdict, false), 'BLOCKED');
 
   // Incomplete envelope with VERDICT: READY alone is forced to BLOCKED
-  const readyAlone = enforceStateEnvelopeGate('VERDICT: READY', false);
-  assert.equal(readyAlone, 'VERDICT: BLOCKED', 'VERDICT: READY alone must be BLOCKED due to missing envelope fields');
+  assert.equal(verdictOf('VERDICT: READY', false), 'BLOCKED', 'VERDICT: READY alone must be BLOCKED due to missing envelope fields');
 
   // Bogus verdict value is forced to BLOCKED
-  const readyBogus = enforceStateEnvelopeGate('VERDICT: READY_BOGUS', false);
-  assert.equal(readyBogus, 'VERDICT: BLOCKED', 'VERDICT: READY_BOGUS must be BLOCKED');
+  assert.equal(verdictOf('VERDICT: READY_BOGUS', false), 'BLOCKED', 'VERDICT: READY_BOGUS must be BLOCKED');
 
-  // Truncated plain output with requireEnvelope forces VERDICT: BLOCKED
-  const truncatedPlain = enforceStateEnvelopeGate('Plain text truncated unexpectedly', true, true);
-  assert.ok(truncatedPlain.endsWith('VERDICT: BLOCKED'), 'Truncated response with requireEnvelope must end with VERDICT: BLOCKED');
+  // Truncated plain output with requireEnvelope is blocked
+  assert.equal(verdictOf('Plain text truncated unexpectedly', true, true), 'BLOCKED', 'Truncated response with requireEnvelope must block');
 
   // Empty header values are forced to BLOCKED
   const emptyHeaderEnvelope = [
@@ -155,8 +157,7 @@ test('enforceStateEnvelopeGate handles case variations, partial coverage, and mi
     'CHECKS:',
     'END_REVIEW',
   ].join('\n');
-  const gatedEmptyHeaders = enforceStateEnvelopeGate(emptyHeaderEnvelope, false);
-  assert.ok(gatedEmptyHeaders.includes('VERDICT: BLOCKED'), 'Empty header fields must force VERDICT: BLOCKED');
+  assert.equal(verdictOf(emptyHeaderEnvelope, false), 'BLOCKED', 'Empty header fields must block');
 
   // Multi-token verdict line is forced to BLOCKED
   const multiTokenVerdict = [
@@ -167,8 +168,7 @@ test('enforceStateEnvelopeGate handles case variations, partial coverage, and mi
     'CHECKS: typecheck=PASS; tests=PASS',
     'END_REVIEW',
   ].join('\n');
-  const gatedMultiToken = enforceStateEnvelopeGate(multiTokenVerdict, false);
-  assert.ok(gatedMultiToken.includes('VERDICT: BLOCKED'), 'Multi-token verdict line must force VERDICT: BLOCKED');
+  assert.equal(verdictOf(multiTokenVerdict, false), 'BLOCKED', 'Multi-token verdict line must block');
 
   // END_REVIEW before other content is forced to BLOCKED
   const prematureEndReview = [
@@ -179,13 +179,10 @@ test('enforceStateEnvelopeGate handles case variations, partial coverage, and mi
     'VERDICT: READY',
     'CHECKS: typecheck=PASS; tests=PASS',
   ].join('\n');
-  const gatedPremature = enforceStateEnvelopeGate(prematureEndReview, false);
-  assert.ok(gatedPremature.includes('VERDICT: BLOCKED'), 'Premature END_REVIEW must force VERDICT: BLOCKED');
+  assert.equal(verdictOf(prematureEndReview, false), 'BLOCKED', 'Premature END_REVIEW must block');
 
-  // Non-enveloped plain output without requireEnvelope is left unchanged
-  const plainOutput = 'All systems nominal and operational.';
-  const gatedPlain = enforceStateEnvelopeGate(plainOutput, false, false);
-  assert.equal(gatedPlain, plainOutput);
+  // Non-enveloped plain output without requireEnvelope is not a review
+  assert.equal(verdictOf('All systems nominal and operational.', false, false), 'NOT_APPLICABLE');
 });
 
 test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCKED" evaluates to structured verdict READY', async () => {

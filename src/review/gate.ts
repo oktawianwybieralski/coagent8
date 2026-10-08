@@ -14,16 +14,15 @@
  * END_REVIEW
  * ```
  *
- * In `enforceStateEnvelopeGate`, CoAgent8 programmatically validates the review verdict. If any P1/P2
- * blocker is reported, if coverage is PARTIAL, if the response was truncated, or if the envelope is
- * incomplete, `VERDICT` is automatically overridden to `BLOCKED`.
+ * CoAgent8 evaluates the review verdict programmatically: any P1/P2 blocker, PARTIAL coverage,
+ * truncation or an incomplete envelope makes the server verdict `BLOCKED`. The reviewer's text is
+ * never rewritten; the server verdict and its causes are reported beside it.
  *
  * @packageDocumentation
  */
 
-/** Public text and reported verdict after evaluating envelope structure and severity markers. */
+/** Server verdict after evaluating envelope structure and severity markers. */
 export interface StateEnvelopeEvaluation {
-  output: string;
   verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
   reason?: string;
 }
@@ -45,7 +44,7 @@ export interface ReviewGateContext {
  * @param truncated - Public output truncation.
  * @param requireEnvelope - Require an envelope even when none is detected in the answer.
  * @param context - Server-collected snapshot, input completeness and required checks.
- * @returns Text with a normalized verdict and optional blocking reason.
+ * @returns The server verdict and, when blocked, every cause; a reviewer READY it overrides is named.
  * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
  * With context, SNAPSHOT must match and input must be complete and unchanged. Failed
  * checks always block; required checks must report PASS. A reviewer's BLOCKED without a
@@ -149,11 +148,14 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       if (hasBlockers) reasons.push('Blocker issue [P1/P2] reported');
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
       if (truncated) reasons.push('Output was truncated');
-      if (!isCompleteEnvelope) reasons.push('Incomplete State Envelope');
+      // Without an answer or an envelope, its field checks would only restate that absence.
+      if (nonEmptyLines.length === 0) reasons.push('Reviewer returned no answer');
+      else if (!isEnveloped) reasons.push('Answer has no State Envelope');
+      else if (!isCompleteEnvelope) reasons.push('Incomplete State Envelope');
       if (context?.invalidatedReason) reasons.push(context.invalidatedReason);
       if (incompleteInput) reasons.push('Review input is incomplete');
-      if (wrongSnapshot) reasons.push('Review snapshot does not match the collected input');
-      if (!checks) reasons.push('Invalid CHECKS outcomes');
+      if (isEnveloped && wrongSnapshot) reasons.push('Review snapshot does not match the collected input');
+      if (isEnveloped && !checks) reasons.push('Invalid CHECKS outcomes');
       if (failedChecks) reasons.push(`A reported check failed (${checkList((_, value) => value === 'FAIL')})`);
       const notRun = checkList((name, value) => !!context?.requiredChecks.includes(name) && value === 'NOT_RUN');
       if (notRun) reasons.push(`Required checks were not run (${notRun})`);
@@ -162,38 +164,13 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
           ? `Reviewer reported BLOCKED: ${blockedVal.slice(0, MAX_BLOCKED_REASON_CHARS)}`
           : 'Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason');
       }
-      const reason = reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied';
-
-      if (verdictCount > 0) {
-        let replaced = false;
-        const out = rawLines.map(line => {
-          if (/^[^\S\r\n]*VERDICT:/i.test(line)) {
-            if (!replaced) {
-              replaced = true;
-              return 'VERDICT: BLOCKED';
-            }
-            return '';
-          }
-          return line;
-        }).filter(l => l.length > 0 || l === '').join('\n');
-        return { output: out, verdict: 'BLOCKED', reason };
-      }
-      return { output: output.trimEnd() + '\n\nVERDICT: BLOCKED', verdict: 'BLOCKED', reason };
-    } else {
-      const out = rawLines.map(line => {
-        if (/^[^\S\r\n]*VERDICT:/i.test(line)) {
-          return 'VERDICT: READY';
-        }
-        return line;
-      }).join('\n');
-      return { output: out, verdict: 'READY' };
+      // The answer still reads READY; the caller must see that the server overrides it.
+      if (verdictVal === 'READY' && verdictCount === 1 && !hasBogusVerdict) reasons.push('the reviewer answered READY');
+      return { verdict: 'BLOCKED', reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied' };
     }
+    return { verdict: 'READY' };
   }
 
-  return { output, verdict: 'NOT_APPLICABLE' };
-}
-
-export function enforceStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false): string {
-  return evaluateStateEnvelopeGate(output, truncated, requireEnvelope).output;
+  return { verdict: 'NOT_APPLICABLE' };
 }
 

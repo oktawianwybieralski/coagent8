@@ -32,7 +32,6 @@ export interface TaskExecutionResult {
   warnings: string[];
   price?: string;
   review?: {
-    output: string;
     verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
     reason?: string;
   };

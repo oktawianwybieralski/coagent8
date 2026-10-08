@@ -2,8 +2,9 @@
  * Canonical MCP result envelope for execution tools.
  *
  * @remarks
- * The answer loses escape sequences (`stripAnsi`), is gated by the State Envelope verdict gate when the tool
- * requires it, and redacted before return. When an unrecoverable process/protocol failure occurs
+ * The answer loses escape sequences (`stripAnsi`) and is redacted before return. When the tool
+ * requires a State Envelope, the reviewer's answer is shown verbatim in a code block and the
+ * server verdict with its causes goes to the footer. When an unrecoverable process/protocol failure occurs
  * (`PROCESS_ERROR`, `CLI_UNSUPPORTED`, `PROTOCOL_ERROR`), `formatExecutionResult` generates a
  * pre-filled GitHub issue URL in the response footer.
  *
@@ -37,6 +38,13 @@ export interface ExecutionToolResult {
  * markdown paragraph, so renderers would otherwise join them into a single line.
  */
 const FOOTER_LINE_BREAK = '\n>\n';
+
+/** Fences text with more backticks than any run inside it, so its own fences cannot close the block. */
+function codeBlock(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}text\n${text}\n${fence}`;
+}
 
 export interface FormatExecutionOptions {
   requireEnvelope?: boolean;
@@ -111,31 +119,26 @@ export function formatExecutionResult(
   const rawOutput = res.output || fallbackText;
   const cleaned = stripAnsi(rawOutput).trim();
 
-  let gated: string;
   let verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
   let reason: string | undefined;
 
   if (preEvaluatedReview) {
-    gated = preEvaluatedReview.output;
     verdict = preEvaluatedReview.verdict;
     reason = preEvaluatedReview.reason;
   } else if (formatOpts.requireEnvelope) {
     if (res.isError || error) {
-      gated = cleaned;
       verdict = 'BLOCKED';
       reason = error?.message || 'Execution error';
     } else {
-      const evalResult = evaluateStateEnvelopeGate(cleaned, res.truncated, true, formatOpts.reviewContext);
-      gated = evalResult.output;
-      verdict = evalResult.verdict;
-      reason = evalResult.reason;
+      ({ verdict, reason } = evaluateStateEnvelopeGate(cleaned, res.truncated, true, formatOpts.reviewContext));
     }
   } else {
-    gated = cleaned;
     verdict = 'NOT_APPLICABLE';
   }
 
-  const output = redactCredentialFormats(gated);
+  const redacted = redactCredentialFormats(cleaned);
+  // A review answer is shown verbatim in a code block: markdown would join its envelope lines.
+  const output = verdict !== 'NOT_APPLICABLE' && redacted ? codeBlock(redacted) : redacted;
   const parts: string[] = [];
   if (error) {
     parts.push(`> Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);
