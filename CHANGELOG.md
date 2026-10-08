@@ -22,6 +22,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`5a14941`](https://github.com/oktawianwybieralski/coagent8/commit/5a1494104a12df86b03180ef333edbb791498ae4) **result:** Return execution results as markdown only
 - [`1d3c8dc`](https://github.com/oktawianwybieralski/coagent8/commit/1d3c8dc31e8b677c83db44df8480f747356a4414) **models:** Take models and defaults from the CLIs and config.json, never from the source
 - [`ce882ba`](https://github.com/oktawianwybieralski/coagent8/commit/ce882baeb85c9c534325fee275b668a2eb55d328) **consent:** Ask the user by a model's approximate price, not by its name
+- [`d937bc9`](https://github.com/oktawianwybieralski/coagent8/commit/d937bc934fa143d704a73f3d28de8e2bb6dfa5f6) **vscode:** One setup list, CLI executable choice and complete uninstall
+- [`1353fb9`](https://github.com/oktawianwybieralski/coagent8/commit/1353fb94764dc1dd0324714a672dc60da4adedea) **vscode:** Share ~/.coagent8/config.json with the CLI and keep it on uninstall
 
 ### Added
 - [`2b17165`](https://github.com/oktawianwybieralski/coagent8/commit/2b171652b995f025c36a14ec710227cf64e3f733) **routing:** Choose another CLI than the client when auto is ambiguous
@@ -30,6 +32,13 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`49387f8`](https://github.com/oktawianwybieralski/coagent8/commit/49387f8c322b624da4d965fe009acc98d9468d0d) **tools:** Say how to call CoAgent8 right on the first attempt
 - [`e414ea8`](https://github.com/oktawianwybieralski/coagent8/commit/e414ea81d00b04b90618e74b3e28ac8f4b304c08) **branding:** Support dark themes and record MCP observations
 - [`b64413b`](https://github.com/oktawianwybieralski/coagent8/commit/b64413b772b4e1817dcd788c62f36ac04d5dd3cd) **setup:** Separate CLI readiness, host registration and cleanup
+- [`6f81071`](https://github.com/oktawianwybieralski/coagent8/commit/6f81071ff97a7218249987868a2dc3c841e230c0) **execution:** Resolve agy from the Antigravity extension's copy
+- [`35cf320`](https://github.com/oktawianwybieralski/coagent8/commit/35cf3205e75e4e953c79fbba62e4ec107c3cffb6) **vscode:** Offer vendor extensions and await CLIs during onboarding
+- [`512eb48`](https://github.com/oktawianwybieralski/coagent8/commit/512eb4895841dc32f12b51b9f87a461f64e7a027) **vscode:** Open configuration and persist welcome dismissal
+- [`4c6f08a`](https://github.com/oktawianwybieralski/coagent8/commit/4c6f08ab213a9e5655b3baea741f64ae92d4f620) **vscode:** Reset onboarding state through editor storage
+- [`75c4aee`](https://github.com/oktawianwybieralski/coagent8/commit/75c4aee58f414f4930e5bd0522aa5d2ec6fe8e0f) **vscode:** Expose backend, model and approval settings
+- [`fc61d08`](https://github.com/oktawianwybieralski/coagent8/commit/fc61d086ab10fdfc987575a84d298d4550088a1f) **vscode:** Remove extension registrations on uninstall
+- [`31a1a1b`](https://github.com/oktawianwybieralski/coagent8/commit/31a1a1b7fa8bff8c55764c2834cd783a6a4fc94c) **selection:** List model prices in doctor and enforce output price limits
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
@@ -49,6 +58,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`c1ed6e7`](https://github.com/oktawianwybieralski/coagent8/commit/c1ed6e7f9cf7b37946448e90a01a779e0835fd62) **tools:** Map the deprecated tools and run actions through one alias table
 - [`cb8c30b`](https://github.com/oktawianwybieralski/coagent8/commit/cb8c30bdab0021175b313bba8631f39df6f64489) **backends:** One structured-error extractor parameterized per backend
 - [`651df5f`](https://github.com/oktawianwybieralski/coagent8/commit/651df5f9e6fdd965eb455b72b889f23d8a177eac) **progress:** Redact each progress message once, where it leaves for the client
+- [`09e4943`](https://github.com/oktawianwybieralski/coagent8/commit/09e4943d7e8e3efb4e95aafb7b7ebf819ab4e7be) **probes:** Share concurrent probe, catalog and model reads
 
 ### Fixed
 - [`0c11032`](https://github.com/oktawianwybieralski/coagent8/commit/0c1103211b9efab5872b3b2ae6bd79ca02de7014) **execution:** Enforce process identity and safe teardown on Windows
@@ -94,6 +104,19 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`505cc77`](https://github.com/oktawianwybieralski/coagent8/commit/505cc7724ef4a37d1d755834c0866829bc8bd9c2) **vscode:** Replace broken Details logo with compact links
 - [`075e264`](https://github.com/oktawianwybieralski/coagent8/commit/075e264efb6567e36135c92641dee65f3334558e) **vscode:** Discover bundled Codex and offer CLI installation
 - [`a500347`](https://github.com/oktawianwybieralski/coagent8/commit/a500347b010173c838973430abb9fd0dd8acbfd0) **setup:** Preserve CLI evidence and verify owned cleanup
+- [`1fe2386`](https://github.com/oktawianwybieralski/coagent8/commit/1fe2386fd4fdbb6eaccdd712a252f6eb2671a383) **setup:** Read CLI help from stderr as well as stdout
+- [`2b32af7`](https://github.com/oktawianwybieralski/coagent8/commit/2b32af7702dd60d516b864adb463d2df2201c685) **vscode:** Keep the CLI picker open while setup checks run
+- [`5dc8b03`](https://github.com/oktawianwybieralski/coagent8/commit/5dc8b039b21612fa140402b1339a89752e98237d) **setup:** Detect Antigravity CLI sign-in with its silent check
+- [`7402f5e`](https://github.com/oktawianwybieralski/coagent8/commit/7402f5ea2bdc5d5e4a990e69e4e73633ef387bb2) **setup:** Report unregistered CLIs clearly and log one line per check
+- [`f8d2cb4`](https://github.com/oktawianwybieralski/coagent8/commit/f8d2cb4b22bf651ad0ec503cb692f6c96d68015d) **adapters:** Disable and verify inherited Codex MCP servers per thread
+- [`2b7e612`](https://github.com/oktawianwybieralski/coagent8/commit/2b7e612ede0374c4954c59bb55b283043e8e310b) **adapters:** Refuse recursive turns and name agy's inherited tools
+- [`3c98992`](https://github.com/oktawianwybieralski/coagent8/commit/3c989927695f6f6d5496a7ce773d3becca5bb489) **review:** Bind verdicts to complete current workspace input
+- [`07ba077`](https://github.com/oktawianwybieralski/coagent8/commit/07ba07709dd6d7d804dc0a0fd2ddac330d67ad55) **vscode:** Bind configuration and refresh MCP definitions
+- [`143536e`](https://github.com/oktawianwybieralski/coagent8/commit/143536e79d61850e55a6407be71c83e97dd567ab) **vscode:** Keep extension data in storage removed on uninstall
+- [`c2e3da9`](https://github.com/oktawianwybieralski/coagent8/commit/c2e3da9180316de5bef08ddd37b905868be3dbf7) **routing:** Keep auto selection working without a writable quota cache
+- [`056d1c4`](https://github.com/oktawianwybieralski/coagent8/commit/056d1c4f1f32f25a06a5ef810c10aaa576f789b5) **codex:** Keep a complete final answer untruncated after dropped commentary
+- [`fdbdf99`](https://github.com/oktawianwybieralski/coagent8/commit/fdbdf9977c72f615d03171bc5d377d958a5ad5f5) **history:** Reserve snapshot bytes before writing them
+- [`2e24b66`](https://github.com/oktawianwybieralski/coagent8/commit/2e24b66a902501e1dee47bad409904d9cbd77954) **history:** Cut fragments at UTF-8 character boundaries
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
