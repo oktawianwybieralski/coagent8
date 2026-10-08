@@ -1,62 +1,56 @@
 ---
 name: coagent8-workflow
-description: Procedures for developing, testing, auditing, and releasing CoAgent8 MCP server.
+description: Using CoAgent8 and developing its task orchestration, integrations and release gates.
 ---
 
 # CoAgent8 workflow
 
-Read [ROADMAP.md](../../../docs/ROADMAP.md) for the single active plan. Begin with
-the highest-priority incomplete item relevant to the user's request; audit
-blockers (`AUDIT-001`) come first. Current tool behavior is specified in
-[RUNTIME_CONTRACT.md](../../../docs/RUNTIME_CONTRACT.md), including its known
-deviations. Archival off is implemented through `coagent8_HISTORY=off`, while
-session-free/per-call modes and persisted price catalogs are planned. Audit
-findings and their reproductions are in the
-[project review](../../../docs/PROJECT_REVIEW_2026-10-05.md).
+## Use the tool
 
-The owner changed the product direction on 2026-10-08 to full task delegation,
-configurable agent roles and client skill installation. Follow
-[the coagent milestones](../../../docs/ROADMAP.md#full-coagent-direction);
-model size and provider do not determine the coordinator or worker role.
-Writing and delegated coordination remain planned until verified execution
-profiles and task contracts are implemented. Do not replace current sandbox or
-nested-turn enforcement with a prompt instruction or a blanket opt-out.
+For a simple question use consult with a self-contained proposal. Do not read this
+repository or run full diagnostics just to delegate arithmetic. Omit backend/model
+for ordinary defaults; select them when the user names one or supplies a constraint.
 
-## Safety and contribution
+Use doctor for models/efforts, with quota: false when quota is irrelevant and a
+backend filter when known. Summary/full perform the same diagnostic work.
+For a price limit follow the README's
+[model selection guidance](../../../README.md#choosing-a-model-under-a-price-limit):
+current doctor exposes no per-model prices. Never silently replace an explicit
+model. Current execution is read-only.
+
+Let the server obtain model consent from the user. On unsupported/unanswered
+elicitation explain the model and reason. Do not set approval yourself or edit
+neverAsk to make a blocked call run. A default config path may differ from the
+running server's environment; do not change guessed config files.
+
+## Work on the project
+
+Read [HANDOFF.md](../../../docs/HANDOFF.md) for current state,
+[ROADMAP.md](../../../docs/ROADMAP.md) for the single active plan and
+[ARCHITECTURE.md](../../../docs/ARCHITECTURE.md) for current contracts and target
+design. Read only the sections needed for the task. Optional docs/.local/
+investigations are historical reference, never another plan.
+
+The owner chose full agent orchestration on 2026-10-08. Roles and provider/model
+choices are independent; writing, bounded delegation and client skills require
+the roadmap's verified profiles/task contract. Do not remove current sandbox or
+nested-turn enforcement as a shortcut.
 
 Follow [core invariants](../../rules/00-core-invariants.md),
-[read-only and consent rules](../../rules/01-security-and-sandboxes.md), and
-[Git governance](../../rules/02-git-workflow.md). Use topic branches; never push
-directly to main. Preserve unrelated edits, working registrations and stored data.
-External diagnostic/review agents use read-only modes. Models the price policy
-asks for run only after the user approves them in the client; agents cannot
-grant that consent.
+[security](../../rules/01-security-and-sandboxes.md),
+[Git governance](../../rules/02-git-workflow.md) and the
+[scope-based quality gate](../../rules/04-quality-gate.md).
+Preserve the owner's local stack, existing changes, registrations and stored data.
+Audit blockers come before exposing affected capabilities. Work remains local
+unless the user authorizes integration/publication.
 
-## Verification
+Prose needs content/link review and git diff --check, not runtime tests or paid
+backend calls. Source comments/documentation tooling additionally need lint:docs
+and docs; executable changes need their scope's behavioral checks. Keep source,
+bundle, exact-artifact and native-host evidence distinct. A model READY string
+does not establish independent checks or release approval.
 
-[04-quality-gate.md](../../rules/04-quality-gate.md) is the authoritative local
-verification policy. Classify the diff and run applicable checks once. Markdown
-prose/planning changes require content/link review and git diff --check, not a
-build, runtime suite, package smoke, generated API docs or backend AI invocation.
-Do not run test processes just to modify README or record a plan.
-
-Code, lifecycle, packaging and integration changes need relevant behavioral
-checks. Portable selection, hermetic CLI fixtures and hidden Windows helper
-launches are implemented; POSIX crash cleanup and native-host acceptance remain
-open in the roadmap. Distinguish source-loaded tests, existing-dist setup checks
-and fresh-artifact consumer evidence. Hide helper/descendant windows and retain
-awaited owned-process cleanup.
-
-Full release validation, the supported CI matrix and independent bound Reviewer
-review remain required for release approval. Report actual results and limitations;
-a model-generated envelope or an unchanged passing retry is not sufficient proof.
-
-## Documentation
-
-Update the existing roadmap with status and evidence; do not create a parallel
-plan. README owns getting started, architecture owns current module boundaries,
-the runtime contract owns behavior, and the integration guide owns optional host
-setup. Historical review results are not fresh validation of the current tree. Current
-approval/sandbox/cache findings are `CUR-*` in the snapshot review and runtime
-contract. A READY envelope alone does not verify input completeness or release
-hashes.
+Update the owning document in place: roadmap for remaining work/acceptance,
+architecture for contracts/design, handoff for current evidence/next action.
+README serves users. Remove superseded reports rather than append transcripts.
+Keep required decisions in tracked documents; optional local notes may be ignored.

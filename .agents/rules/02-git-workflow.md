@@ -173,7 +173,7 @@ become the final commit, so they must meet this section.
   SemVer ordering is `1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0-beta.3 < 1.0.0-rc.1 < 1.0.0`.
 * **Beta**: feature-incomplete or not fully hardened; distributed to invited
   testers. **Release candidate**: scope frozen; only release-blocking fixes.
-  The roadmap's [release sequence](../../docs/ROADMAP.md#release-sequence) defines
+  The roadmap's [release acceptance](../../docs/ROADMAP.md#release-acceptance) defines
   each stage's entry gate.
 * The version is changed only in a release commit (section 5), consistently in
   `package.json`, `package-lock.json`, `plugin.json`, `extensions/vscode/package.json`

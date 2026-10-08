@@ -156,7 +156,7 @@ settings. For example, on Windows:
 ```
 
 See the
-[runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#configuration-and-routing)
+[runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md#configuration-and-routing)
 for the configuration file.
 
 Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on macOS), type `CoAgent8` and
@@ -264,7 +264,7 @@ tables.
 External-client setup is unavailable on remote extension hosts. In a multi-root
 window, use `coagent8 setup` from the intended project directory instead.
 Details are in the
-[integration guide](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/VSCODE_INTEGRATION.md).
+[integration contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md#optional-integrations).
 
 ## Privacy and model approval
 
@@ -278,7 +278,7 @@ Public conversation history is stored locally in the extension's global storage 
 Archival is best-effort. `coagent8_HISTORY=off` disables archive files, while
 session records and execution leases remain required. Retention and storage
 bounds are specified in the
-[runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#4-sessions-events-and-archival-history).
+[architecture](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md#sessions-and-history).
 
 The server requests user approval through MCP elicitation for models with unknown
 or approximate prices, or prices at or above configured thresholds (by default,
@@ -347,7 +347,7 @@ chat registrations change, the notice's **Restart Extensions** reloads the vendo
 chat extensions.
 
 Track current behavior in the
-[runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md)
+[architecture and runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md)
 and remaining acceptance in the
 [roadmap](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ROADMAP.md).
 

@@ -61,6 +61,7 @@ guarantees for window suppression.
      bundled packages ship in `dist/THIRD_PARTY_NOTICES.txt`, generated from the modules that
      reach the bundle; the build fails if a bundled package has no license file.
    - The bundler was chosen on measured first-launch time on Windows with Microsoft Defender:
-     identifier-mangled esbuild output was scanned about 4 times longer. See
-     [BUNDLER_COMPARISON](../../docs/archive/BUNDLER_COMPARISON.md) before changing bundler or
-     minification options.
+     identifier-mangled esbuild output was scanned about 4 times longer in the historical
+     trial. Remeasure cold starts before changing bundler or minification options;
+     [architecture](../../docs/ARCHITECTURE.md#code-documentation-and-package-evidence)
+     owns the current package contract. Historical measurements remain in Git.

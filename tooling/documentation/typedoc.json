@@ -5,6 +5,6 @@
   "entryPointStrategy": "expand",
   "tsconfig": "../../tsconfig.json",
   "out": "../../.artifacts/api-docs",
-  "readme": "../../docs/CODE_DOCUMENTATION.md",
+  "readme": "../../README.md",
   "treatWarningsAsErrors": true
 }

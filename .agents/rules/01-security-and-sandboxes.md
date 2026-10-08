@@ -87,4 +87,4 @@ and must not describe agy turns as isolated from them.
 
 **Consent transport:** implemented in `EXEC-001` (AUD-P1-7); the explicit
 `approve: true` requirement closed `CUR-003`. The contract is in
-[RUNTIME_CONTRACT](../../docs/RUNTIME_CONTRACT.md#model-consent).
+[architecture contract](../../docs/ARCHITECTURE.md#model-consent).

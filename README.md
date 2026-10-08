@@ -30,7 +30,7 @@ owned-process cleanup are implemented. Codex disables and verifies inherited
 MCP servers per thread; agy still inherits external tools, an owner-accepted
 third-party limitation. Review approval checks input completeness and identity.
 See the
-[runtime limitations](docs/RUNTIME_CONTRACT.md#7-known-limitations-and-deviations).
+[runtime limitations](docs/ARCHITECTURE.md#known-limitations).
 A model's `READY` verdict requires independent verification before release.
 
 ## Connect through MCP
@@ -123,7 +123,7 @@ and sign-in actions, while external MCP registration requires a separate choice.
 removes only those entries with private backups. Manual/edited entries, runtime
 files, credentials, histories and vendor extensions are retained.
 See the
-[integration guide](docs/VSCODE_INTEGRATION.md)
+[integration contract](docs/ARCHITECTURE.md#optional-integrations)
 for ownership, rollback and host acceptance limits.
 
 ### VS Code commands
@@ -161,8 +161,8 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
    and include OS, Node, host and CLI versions, reproduction steps and expected
    versus actual behavior. Review pasted diagnostics before submitting.
 
-See the [local release-note draft](docs/BETA_2_RELEASE_NOTES.md) for known issues.
-The [VS Code acceptance checklist](docs/VSCODE_BETA_2_CHECKLIST.md) covers reinstall,
+See the [runtime limitations](docs/ARCHITECTURE.md#known-limitations) for known issues.
+The [VS Code acceptance checklist](docs/ROADMAP.md#native-vs-code-acceptance) covers reinstall,
 configuration selection, onboarding reset and native MCP lifecycle testing.
 Apply VS Code's native Extensions view restart action when requested after
 installation/update. VS Code stops a running CoAgent8 server when its definition
@@ -209,7 +209,37 @@ through MCP form elicitation; `governance` in `config.json` tunes this. Prices
 are read from OpenRouter's public model list (no key, no user data). Headless
 clients measured on 2026-10-07 cancel elicitation, so such turns fail there. The
 Codex and Antigravity chats in VS Code also answered without showing the form on
-2026-10-07; name a cheaper model there.
+2026-10-07. If an explicit model needs approval, report the unmet requirement;
+do not silently substitute another model or change approval configuration.
+
+### Choosing a model under a price limit
+
+For ordinary questions, call `consult` with just a self-contained `proposal`.
+When a user supplies a model or price constraint, discover accepted models and
+efforts with `doctor` (use `quota: false` if quota is irrelevant, and `backend`
+when already chosen). `detail: "full"` changes the output format, not the probes.
+
+Current doctor reports the price list's date and count, **not individual prices**.
+The server uses output-unit prices internally for approval; it exposes no request
+cost estimate or per-call price ceiling. Verify a requested price from a current
+source or report it unknown. A cheap-sounding name and the absence of an approval
+prompt do not establish compliance. Price discovery and enforced selection are
+planned in [AX-001/002](docs/ROADMAP.md#agent-usability-acceptance).
+
+For an explicit model, use its exact catalog ID and an accepted effort:
+
+~~~json
+{
+  "proposal": "Calculate 17 * 23. Reply only with the result.",
+  "backend": "codex",
+  "model": "<exact model ID from doctor>",
+  "reasoning_effort": "low"
+}
+~~~
+
+Use `low` only if listed for that model. The footer names the model that answered;
+its elapsed time excludes preparation. Continue with its `session_handle` when
+needed. No repository access or full diagnostic dump is needed for arithmetic.
 
 ## Documentation and contributing
 
@@ -219,15 +249,17 @@ links resolve in the repository.
 | Need | Document |
 | --- | --- |
 | Priorities and acceptance | [Roadmap](docs/ROADMAP.md) |
-| Component responsibilities | [Architecture](docs/ARCHITECTURE.md) |
-| Tools, configuration, errors and limits | [Runtime contract](docs/RUNTIME_CONTRACT.md) |
-| Snapshot-bound findings and evidence | [Project review](docs/PROJECT_REVIEW_2026-10-05.md) |
-| Optional host setup | [Integration guide](docs/VSCODE_INTEGRATION.md) |
+| Current contracts, limitations and target design | [Architecture](docs/ARCHITECTURE.md) |
+| Current work, evidence and next action | [Handoff](docs/HANDOFF.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
 | Branches, PRs and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
 | Generated release history | [Changelog](CHANGELOG.md) |
 | Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
-| TSDoc and API reference | [Code documentation](docs/CODE_DOCUMENTATION.md) |
+| TSDoc and API reference | [Code documentation](docs/ARCHITECTURE.md#code-documentation-and-package-evidence) |
+
+These three project documents replace the separate runtime contract, feature
+plans and historical reports. Optional `docs/.local/` investigations are ignored
+and are not required reading. Historical versions remain in Git.
 
 Markdown edits require content/link review and `git diff --check`. TSDoc edits
 also require documentation lint and generation. Runtime changes need focused

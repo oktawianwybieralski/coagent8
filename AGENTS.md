@@ -4,9 +4,12 @@ This repository defines strict engineering practices, Git branching workflows, q
 
 All rules are organized hierarchically by strict priority from **P0 (Critical System Invariants)** to **P2 (Code Standards & Conventions)** in [`.agents/rules/`](./.agents/rules/):
 
-Use [docs/ROADMAP.md](./docs/ROADMAP.md) as the single active plan. The product is
-a client-independent system for delegating complete tasks to cooperating agents
-(owner decision, 2026-10-08). Roles and model/provider choices are independent;
+Use [docs/ROADMAP.md](./docs/ROADMAP.md) as the single active plan,
+[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contracts and design, and
+[docs/HANDOFF.md](./docs/HANDOFF.md) for current work and evidence. These are the
+three active project documents; optional ignored local notes are not instructions.
+The product is a client-independent system for delegating complete tasks to
+cooperating agents (owner decision, 2026-10-08). Roles and model/provider choices are independent;
 client skill installation is planned. The current runtime remains a read-only
 MCP-to-CLI bridge until verified task execution profiles land. Follow the
 roadmap's full coagent direction while preserving audit gates and quiet desktop

@@ -9,3 +9,4 @@ yarn-error.log*
 .artifacts/
 *.tgz
 dist/
+/docs/.local/

@@ -55,7 +55,7 @@ justify unrelated work. Follow the ownership boundaries in
 
 ## TypeScript Documentation
 
-Follow [`docs/CODE_DOCUMENTATION.md`](../../docs/CODE_DOCUMENTATION.md) for TSDoc
+Follow [code documentation](../../docs/ARCHITECTURE.md#code-documentation-and-package-evidence) for TSDoc
 comments and TypeDoc module introductions. Document meaningful behavior and
 contracts without duplicating TypeScript types. Run `npm run lint:docs` and
 `npm run docs` when source comments or documentation tooling change, as specified
