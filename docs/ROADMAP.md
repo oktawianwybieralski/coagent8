@@ -3,7 +3,7 @@
 **Next release:** `1.0.0-beta.2`, the first release for testers. **Current package
 version:** `1.0.0-beta.2`, an unaccepted development candidate. `1.0.0-beta.1`
 remains the npm name placeholder (`REPO-001`).
-**Direction and status reconciled:** 2026-10-07, implementation snapshot
+**Historical implementation baseline:** 2026-10-07, implementation snapshot
 `24052e3`. **Beta 2 readiness:** BLOCKED. Earlier audit fixes are implemented
 on the local stack, but newer approval/sandbox findings remain open and the
 integrated candidate has no completed six-job CI/release approval.
@@ -13,11 +13,24 @@ release train. The current version label is development metadata. It does not
 establish that a beta or release candidate has been accepted. Each stage requires
 the milestones, compatibility decisions and evidence defined for it below.
 
-The current priority is a simple, client-independent MCP-to-CLI bridge that does
-not interrupt desktop work. After the audit, the first obligation is that it cannot
-harm the desktop or the user's data. Process identity, output integrity and storage
-availability come before new features. This direction supersedes the
-installation-first sequence in the earlier review and handoff.
+**Product direction (owner decision, 2026-10-08):** CoAgent8 becomes a
+client-independent system for delegating complete tasks to cooperating coding
+agents. Roles, model size and provider are independent: any supported model may
+coordinate, plan, implement, verify or review within its configured capabilities.
+Client skill installation is part of this direction. The
+[full coagent plan](#full-coagent-direction) owns the migration and supersedes
+the consultation-only product boundary and the proposed blanket sandbox opt-out.
+This is planned work, not a claim of current write or orchestration support.
+Quiet desktop operation, owned process cleanup, output integrity and existing
+audit blockers remain prerequisites for enabling additional capabilities.
+
+**Owner decision (2026-10-07):** add a public execution CLI and make the MCP
+server an adapter to that packaged CLI before RC 1 (`CLI-FIRST-001`). Command/PATH
+support on Windows, Linux and macOS, model validation and safe consent/cancellation
+are included, with native cross-platform CI evidence.
+TUI is an optional extension. The [feature specification](FEATURE_CLI_FIRST.md)
+records the design and documentation research; it is not another active plan.
+This feature follows audit blockers and does not enlarge the beta.2 gate.
 
 ## Current snapshot status
 
@@ -61,8 +74,8 @@ contains no open P0/P1 defects.
 | --- | --- | --- | --- |
 | Beta 1 | `1.0.0-beta.1` | None: npm name placeholder (2026-10-05), first commit of the history | - (`REPO-001`) |
 | Beta 2 | `1.0.0-beta.2` | Invited testers | Execution order 1 complete (all audit blockers); `BETA-001` checklist |
-| Beta 3 | `1.0.0-beta.3` | Invited testers, wider circle | Execution order 2 complete; no open P0/P1 issue from beta 2 |
-| RC 1 | `1.0.0-rc.1` | Release candidate | Execution orders 3-4 complete or explicitly deferred; scope frozen; `RC-001` checklist |
+| Beta 3 | `1.0.0-beta.3` | Invited testers, wider circle | Execution order 2 plus the host-led coagent slice below; no open P0/P1 issue from beta 2 |
+| RC 1 | `1.0.0-rc.1` | Release candidate | Execution orders 3-4 and `COAGENT-001` through `COAGENT-008` complete or explicitly deferred; `CLI-FIRST-001` accepted; scope frozen; `RC-001` checklist |
 | RC 2 | `1.0.0-rc.2` | Only if needed | Release-readiness corrections to RC 1 only |
 | Final | `1.0.0` | Public | Accepted RC; final release PR to `main` per [Git governance](../.agents/rules/02-git-workflow.md) |
 
@@ -83,6 +96,8 @@ Every stage publishes the exact artifact that passed its gate:
 ## 1.0.0 scope
 
 1.0.0 delivers:
+- complete task delegation with configurable roles, execution profiles and
+  client skills (`COAGENT-001` through `COAGENT-008` below);
 - audit remediation (`AUDIT-001` blockers);
 - generic MCP discovery and execution;
 - plain consultation;
@@ -112,19 +127,31 @@ updated before the RC scope freeze.
 
 ## Product boundary
 
-CoAgent8 lets an agent in a compatible MCP host ask a selected local coding CLI
-for help and receive its public answer, with bounded execution, read-only access,
-redaction and reliable cancellation. A host is the calling application; a backend
-is the CLI executing the request. The same brand can fill either role.
+The target product lets a host agent or a delegated coordinator assign complete
+tasks to local coding CLIs and receive changes, evidence and public results.
+Consultation and independent review retain read-only profiles; implementation
+and command execution receive separately configured capabilities. A host is the
+calling application; a backend is the CLI executing a request. The same brand
+or model can fill either role. No model size or vendor determines authority.
 
-### Why MCP over direct CLI commands?
+The current runtime still exposes consultation and review with the profiles in
+[RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md). The sections below distinguish this
+baseline from the planned coagent behavior; old clients gain no write access
+through an existing consultation, review or deprecated alias.
+
+Before RC 1, `CLI-FIRST-001` adds direct terminal/script use and puts packaged
+CoAgent8 CLI execution behind the MCP interface. Both use the same action engine
+and policy. Existing no-argument stdio launches remain compatible; a TUI is
+optional. These are planned capabilities, not current command availability.
+
+### Current bridge foundation
 While a human in a terminal can run `codex`, `agy`, or `claude` directly, CoAgent8
 serves autonomous AI agents (in Cursor, Claude Desktop, Antigravity, VS Code, Zed):
 
 1. **Agent-to-agent delegation.** Host models lack arbitrary shell execution
    privileges and knowledge of each CLI's invocation syntax; MCP standardizes
    peer invocation.
-2. **Read-only execution policy (P0).** Codex app-server verifies its thread's
+2. **Current read-only execution policy (P0).** Codex app-server verifies its thread's
    readOnly/never profile; Claude verifies restricted read-only tools and empty
    MCP configuration; agy receives native `--sandbox`. External MCP tools in
    Codex/agy remain an open safety boundary (`CUR-002`), so this is not proof
@@ -151,6 +178,293 @@ with `coagent8_HISTORY=off`. The canonical profile advertises six core tools; th
 deprecated aliases (`analyze`, `debug`, `implement`) stay callable but are not
 advertised (`CONTEXT-001`). The compact profile was removed (`CONTEXT-001`). No new runtime option is implied by this plan unless an item
 says so.
+
+## Full coagent direction
+
+**Status:** Owner-approved direction, recorded 2026-10-08; implementation and
+acceptance are pending. The following defaults and staging are the implementation
+plan. Runtime capability claims require their own evidence. The CoAgent8 name
+is retained: cooperating agents are the product, with no fixed agent count.
+
+### Roles and supported workflows
+
+The client may lead the workflow itself, delegate its planning, or hand a whole
+task to a coordinator running behind CoAgent8. One agent may fill several roles;
+independent review uses a separate execution from the implementation author.
+The same provider/model is allowed in both roles; authorship and context, rather
+than branding, determine independence. Review checks the original requirements
+as well as the plan, especially when the planner also performs review.
+
+| Role | Responsibility | Result |
+| --- | --- | --- |
+| Coordinator | Decompose work, route tasks, resolve dependencies and assemble results | Task decisions and an evidence-backed completion report |
+| Planner | Inspect requirements and propose an executable plan | Scope, dependencies, acceptance criteria and verification steps |
+| Worker | Implement, debug, refactor, research or write documentation | Changes or an answer, with unresolved questions and provenance |
+| Verifier | Run required checks against the actual candidate | Commands, exit status, logs and candidate identity |
+| Reviewer | Independently inspect requirements, changes and evidence | Findings and a verdict bound to the reviewed candidate |
+
+Required scenarios cover a strong coordinator with economical workers, an
+economical coordinator consulting a stronger planner/reviewer, peer models,
+single-agent delegation, multiple independent workers, and a delegated
+coordinator. Provider examples are illustrative, not hard-coded routing rules.
+Simple questions need only one consultation; documentation tasks need only
+their applicable checks. A fixed plan/code/test/review sequence is a reusable
+workflow, not a requirement for every call.
+
+~~~mermaid
+flowchart LR
+    User["User"] --> Host["Client agent: any supported model"]
+    Host --> Engine["CoAgent8: tasks, capabilities, budgets and evidence"]
+    Engine --> Planner["Planner"]
+    Engine --> Worker["Worker(s)"]
+    Engine --> Verifier["Verifier"]
+    Engine --> Reviewer["Reviewer"]
+    Engine --> Coordinator["Optional delegated coordinator"]
+    Coordinator --> Gateway["Scoped delegation gateway"]
+    Gateway --> Engine
+~~~
+
+### `COAGENT-001` - task contract and compatibility
+
+- [ ] Add a small task API (working name `task`, final schema to be reviewed)
+  shared by MCP and the public CLI: start, inspect, continue and cancel. Inputs
+  identify objective, role, acceptance criteria, workspace, context references,
+  dependencies, requested profile and optional backend/model/effort. Ordinary
+  single tasks must not require a graph or a long configuration form.
+- [ ] Return a stable task ID, parent/root IDs, status, actual backend/model,
+  effective capabilities, candidate identity, changed files or artifact handles,
+  check evidence, findings, usage availability and suggested next action. Keep
+  public Markdown readable; expose structured task data without changing existing
+  consult/review response contracts. Validate metadata outside model prose.
+- [ ] Specify states: queued, running, waiting for input, succeeded, failed,
+  cancelled and interrupted. Distinguish worker completion from acceptance of
+  the root objective. Missing required checks or unresolved blocking findings
+  prevent acceptance; a model's claim of success does not establish it.
+- [ ] Preserve the six current tools and legacy `run`/`implement` semantics.
+  `implement` currently maps to read-only `consult`; never reinterpret it as a
+  mutating operation. Version and document any incompatible schema migration.
+- [ ] Accept fixtures for invalid transitions, malformed/truncated results,
+  legacy calls, repeated requests and short ordinary task inputs. Bind task
+  continuation to workspace, candidate, backend and effective capabilities.
+
+### `COAGENT-002` - execution profiles and workspace ownership
+
+- [ ] Introduce verified task profiles for read-only inspection, workspace
+  changes and command execution. Role and profile are separate: verification
+  can need build output writes, while review remains read-only. Tool arguments
+  request capabilities within user policy; they cannot enlarge that policy.
+- [ ] Record a native capability matrix per backend/version/OS before enabling
+  writes. Verify effective filesystem, shell, network, tool and inherited MCP
+  permissions at startup where supported. Report unsupported guarantees and
+  reject tasks that require them; a CLI flag or prompt is not isolation proof.
+- [ ] Default to one writer per canonical workspace, including path aliases.
+  Support an explicitly selected shared workspace with a baseline of existing
+  changes. Parallel writers need separately provisioned workspaces or verified
+  disjoint ownership. An optional worktree strategy obeys repository/owner rules;
+  CoAgent8 must not create worktrees where the owner forbids them.
+- [ ] Validate returned changes against task scope. Preserve pre-existing user
+  edits and partial work on failure; never reset/clean the repository to retry.
+  Integration checks the expected base and exposes conflicts without automatic
+  overwrite. A worktree separates changes but is not a security sandbox.
+- [ ] Keep commit, push, merge, deployment and publication outside ordinary
+  coding authority unless included in explicit user policy/task authorization.
+  Test/build commands may have effects beyond generated files; their execution
+  profile must describe and bound those effects instead of assuming safety.
+- [ ] Accept native containment and failure-path evidence plus regressions for
+  escaping paths, conflicting writers, changed baselines and preserved dirty
+  workspaces. Existing process/redaction/consent protections remain applicable.
+
+### `COAGENT-003` - configurable routing and execution limits
+
+- [ ] Configure role/task defaults independently for backend, model and effort;
+  allow an explicit per-task choice within policy. Resolve from actual catalogs
+  and adapter capabilities. Do not infer competence, write authority or cost
+  solely from a provider name or a small/large label.
+- [ ] Support explicit selection and opt-in preferences for cost, latency,
+  quality or quota availability. Record why a model was chosen and any fallback;
+  never silently switch an explicitly requested model. Capability mismatch or
+  unavailable metadata produces a clear result, not an invented model name.
+- [ ] Enforce shared root-task limits for calls, concurrency, elapsed time and
+  delegation depth. Retries and descendants consume the same limits, with atomic
+  reservation before launch. User configuration owns limits and permitted models;
+  no new approval is required inside an already authorized scope.
+- [ ] Preserve existing expensive/unknown-model consent until a separately
+  implemented user policy covers it. A skill, planner or coordinator cannot
+  approve its own model escalation. Distinguish price estimates, provider token
+  usage, subscription quota and actual billing. Missing data stays unknown;
+  never promise a hard monetary cap where the backend cannot enforce one.
+- [ ] Reconcile retries by task/request identity before relaunching a writer.
+  Permit useful repeated implementation attempts within budget; no arbitrary
+  six-call ban. Repeated review of the same candidate/scope/checks requires a
+  stated reason. New changes invalidate prior approval, including cached verdicts.
+- [ ] Accept cross-worker budget contention, quota failure, lost responses,
+  fallback consent and model/effort resolution tests.
+
+### `COAGENT-004` - lifecycle, evidence and resumable coordination
+
+- [ ] Extend the current controller/session owners with minimal durable task
+  state, leases and result references. Execution recovery must work with archival
+  history off; avoid requiring a full transcript database or persistent daemon.
+- [ ] Support progress, inspect and cancel for long tasks. Specify client
+  disconnect, timeout and restart behavior: default cancellation, with explicit
+  detached execution only after owned supervision/recovery is implemented.
+  Interrupted writes require inspection before retry, not automatic replay.
+- [ ] Define context handoff as original requirements, current plan, relevant
+  files/diffs and bounded evidence references. Report omissions/truncation;
+  summaries must not replace missing candidate files or required test logs.
+- [ ] Run checks in the correct candidate workspace and capture commands, exit
+  codes, logs and identity. Distinguish CoAgent8-observed checks from host/agent
+  reports; the server cannot enforce host actions performed outside its tools.
+  Tests passing is a prerequisite only where required, not proof of correctness.
+- [ ] Keep review sessions separate from worker sessions and make the actual
+  candidate available to the reviewer (`CUR-013` dependency). A fix loop returns
+  actionable findings to the worker, reruns affected checks and requests renewed
+  review appropriate to the changes. Release approval remains fully hash-bound.
+- [ ] Accept crash/restart/cancel, stale evidence, context truncation, disabled
+  archive and worker-complete/root-incomplete cases, with no owned survivors.
+
+### `COAGENT-005` - skills and client installation
+
+- [ ] Package composable skills for coordination, planning, implementation,
+  verification, review and recovery. Each states triggers, required inputs,
+  concrete tool steps, output expectations, escalation and stopping conditions.
+  Model/provider selection comes from policy, not embedded vendor preferences.
+- [ ] Use portable `SKILL.md` packages with small entry instructions and optional
+  references/assets. Client-specific adapters handle discovery and supported
+  metadata. Skills describe a workflow; executable policy enforces capabilities,
+  task transitions and limits even if a model ignores the skill.
+- [ ] Add skill catalog/status, install, update and uninstall operations through
+  MCP and the shared CLI, implemented by the existing integration owner. Select
+  client, workspace/user scope and package version explicitly or through an
+  existing user preference. Routine authorized installation needs no repeated
+  confirmation; conflicts or broader scope must not be inferred from a prompt.
+- [ ] Maintain owned-file manifests, source/version/digests, conflict detection,
+  atomic writes and rollback. Preserve custom skills, AGENTS.md and unrelated
+  instructions; update/uninstall only unchanged owned files. Package installation
+  does not execute bundled scripts. Begin with bundled CoAgent8 packages;
+  arbitrary third-party registries are a later extension.
+- [ ] Detect the actual agent client and its filesystem location, not merely
+  the editor name. VS Code chat, Codex and Claude integrations can have different
+  loaders. A remote MCP server cannot assume access to the client's local skill
+  directory: use an authorized local adapter or provide a package and explicit
+  installation instructions. Unsupported clients retain ordinary MCP use.
+- [ ] Verify client discovery and actual skill use, not just file creation, in
+  each advertised client/version. Prioritize the owner's VS Code client plus
+  Codex, Claude Code and agy where documented capability exists. Publish native
+  support/limitations individually; do not promise every client is supported.
+- [ ] Accept install/update/uninstall, user-edit conflicts, shared skill paths,
+  remote paths, corrupt packages and path traversal tests. Evaluate the skill
+  workflows with different model capabilities and task types (`COAGENT-008`).
+
+Design references checked 2026-10-08: the
+[Agent Skills specification](https://agentskills.io/specification) defines
+portable SKILL.md packages; [VS Code skill documentation](https://code.visualstudio.com/docs/agent-customization/agent-skills)
+describes native discovery. Documentation is a design input; installed client
+versions still need acceptance. Fetch current official documentation through
+Context7 for each additional client adapter before implementation.
+
+#### Claudex reference evaluation (2026-10-08)
+
+Owner-proposed reference: [chaseai-yt/claudex-loop](https://github.com/chaseai-yt/claudex-loop/tree/8cf5e2c1771c5151d90c12642391d0ba8fa71b0e),
+inspected at `8cf5e2c1771c5151d90c12642391d0ba8fa71b0e`. Use its skill
+composition and handoff patterns as design input for `COAGENT-005`, with execution
+owned by CoAgent8. This assessment did not run its workflows or establish native
+compatibility; it does not install or vendor the upstream package.
+
+| Reference | Pattern to adapt | CoAgent8 adaptation |
+| --- | --- | --- |
+| `claudex-route` | Choose the role first; stay local or make one bounded handoff with context and acceptance criteria | A lightweight route/delegate skill, independent of the full workflow; resolve models from configured capabilities and preferences |
+| `claudex-loop` | Requirements, plan review, implementation, proof checks and independent final inspection; record findings and dispositions | A composable workflow with configurable roles/providers and task-appropriate stages; reuse the project's active plan |
+| `codex-build` / `codex-review` | Small entry skills load shared instructions instead of duplicating the whole procedure | Role-based entry skills backed by shared contracts, without fixed Codex/Claude pairings |
+| Shared references and runner | Separate procedural instructions from execution and result validation; bind approval to the plan/candidate | Reuse CoAgent8 task IDs, controller, adapters and evidence records instead of adding a second Python execution layer |
+
+- [ ] Write CoAgent8-native skills using these patterns. Carry the objective,
+  relevant context, permitted actions, expected output and verification in each
+  handoff. Keep model examples advisory and fetch actual available models.
+- [ ] Preserve independent review sessions, explicit treatment of failed or
+  incomplete results, findings with evidence, and invalidation after changes.
+  Use configurable optional plan review rather than a mandatory full loop for
+  simple tasks. Route recommendations must not start an expensive workflow.
+- [ ] Enforce root-task limits in the server: upstream runtime documentation
+  assigns round budgets to the host. Do not inherit its fixed opposite-provider
+  rule, review opt-outs for required repository gates, or clean-checkout/worktree
+  requirement as universal product policy.
+- [ ] Audit any executable logic before reuse. The inspected Python runner uses
+  Windows `taskkill /PID /T /F` and immediate POSIX group SIGKILL; those paths do
+  not meet CoAgent8's owned-handle and protocol-interrupt requirements as written.
+- [ ] If copying or adapting substantial upstream material, retain the notices
+  required by its [MIT license](https://github.com/chaseai-yt/claudex-loop/blob/8cf5e2c1771c5151d90c12642391d0ba8fa71b0e/LICENSE),
+  including applicable Matt Pocock notices. Record provenance in third-party
+  notices. No copied material or new dependency is introduced by this plan.
+
+### `COAGENT-006` - delegated coordinators and parallel work
+
+- [ ] Ship client-led delegation first. Then allow a backend coordinator to
+  create child tasks through a narrowly scoped CoAgent8 gateway with verified
+  root/parent identity, allowed capabilities and shared budget accounting.
+- [ ] Keep the current nested-turn refusal until that gateway is verified.
+  Do not enable every inherited MCP server or remove the environment guard as
+  a shortcut. Delegation authority is a server-validated capability tied to the
+  active task, not a caller-supplied parent ID or an unset environment variable.
+- [ ] Serialize dependency transitions, bound fan-out/depth, reject cycles,
+  propagate cancellation and retain attribution of child changes/results. Scope
+  concurrent workers through `COAGENT-002`; integration has its own acceptance.
+- [ ] Distinguish host-native subagents from CoAgent8-managed child tasks. Report
+  unobservable native fan-out instead of claiming shared budgets cover it; disable
+  it where required to provide the promised execution limits.
+- [ ] Accept forged/replayed delegation, recursive loops, cancellation during
+  child launch, server restart and partial fan-out failure. A smaller or larger
+  model uses the same gateway contract and cannot raise its own authority.
+
+### `COAGENT-007` - governance and contract migration
+
+- [ ] Before enabling writing, update security rules, task schemas and backend
+  profiles together. Read-only becomes an execution profile for consultation,
+  planning and review; bounded write/execute profiles support full coagents.
+  This supersedes the earlier RC.1 blanket sandbox opt-out in `EXEC-001`.
+- [ ] Keep contributor Author/Reviewer separation independent of vendor. A
+  planner may review a worker's implementation; implementation authors cannot
+  independently approve their own changes. Preserve required CI and review gates.
+- [ ] Extend `CLI-FIRST-001`, `SURFACE-001`, `SESSION-001`, `CONTEXT-001` and
+  `INSTALL-001` in their existing owners. Reuse execution, routing, sessions and
+  integration logic; add modules only for new responsibilities such as task
+  dependency scheduling. Public CLI and MCP exercise the same policies.
+- [ ] Synchronize README, runtime contract, architecture, client instructions,
+  packaged skills and onboarding at each accepted slice. Preserve existing
+  configuration, sessions and registrations or supply explicit migrations.
+
+### `COAGENT-008` - measurable acceptance and staged delivery
+
+| Stage | Deliverable | Gate |
+| --- | --- | --- |
+| Foundation, beta.2 scope retained | Existing audit and desktop-safety work; task/profile contract design | Existing beta.2 acceptance; no write capability implied |
+| Host-led slice, target beta.3 | `COAGENT-001` through `COAGENT-005` and applicable `COAGENT-007`: serial full-task execution, role configuration, evidence and client skills | Implement/test/review/fix in a selected workspace; native support proven separately per backend/client |
+| Delegated/parallel slice, target RC.1 | `COAGENT-006`, remaining compatibility and backend/client matrix | Root budget, workspace ownership, recovery and cancellation across the task tree |
+| Acceptance, before RC.1 freeze | `COAGENT-008` benchmark and supported-platform package evidence | Complete candidate checks and independent review; explicit deferment of unsupported capabilities |
+
+- [ ] Establish a repeatable task set: a feature, bug fix, refactor, docs-only
+  change, investigation, failed-test repair, ambiguous plan and interrupted task.
+  Compare direct execution with client-led and delegated workflows on the same
+  starting trees and acceptance checks. Record actual model IDs, effort and
+  versions without treating model size as an ability guarantee.
+- [ ] Include strong/small, small/strong, peer and single-worker configurations;
+  measure completion quality, regressions, wall time, calls, context overhead,
+  repair attempts and available usage/cost/quota data. Do not claim savings from
+  per-token prices alone or hide unsuccessful runs. Paid evaluations follow
+  user model policy and are not required merely to edit this plan.
+- [ ] Use deterministic fixtures for lifecycle/policy contracts and native runs
+  for claimed sandbox and client behavior. Record six-job CI evidence for the
+  exact package and update the support matrix before advertising capabilities.
+- [ ] Require independent review of the complete changed product boundary before
+  accepting RC.1. Readiness is not established by a skill, a passing unit suite
+  or a model-generated READY string alone. Release/publication remain owner work.
+
+Immediate implementation order: contract and profile design (`COAGENT-001/002`),
+one verified host-led worker path with checks (`COAGENT-003/004`), skill delivery
+(`COAGENT-005`), then delegated/parallel coordination (`COAGENT-006`). Resolve
+existing audit blockers before exposing affected capabilities. Provider-specific
+flags, client paths and final schema names are implementation decisions verified
+against current documentation, not assumed by this plan.
 
 ## Architecture principle: conventional layout and bounded responsibilities
 
@@ -287,6 +601,10 @@ folded into `SIMPLIFY-001`.
 | AUD-P2-3 … AUD-P2-6, AUD-P2-8, P3 | P2/P3 | Test hooks, duplication, double timeout, dead code, contract fiction, nits | `SIMPLIFY-001` | 3 |
 
 ## Execution order
+
+The coagent delivery stages above extend this table: beta.3 adds the host-led
+slice and RC.1 adds delegated coordination and acceptance. Existing audit gates
+remain required; consultation-only delivery is no longer the complete 1.0.0 goal.
 
 | Order | Work | Acceptance |
 | --- | --- | --- |
@@ -1422,10 +1740,11 @@ definition budget from 3,800 B to about 5 KB for described parameters.
 
 ### `EXEC-001` - pure backend resolution, bounded probes and enforceable policy
 
-Owner decision (2026-10-08): a user-configurable read-only sandbox opt-out is
-planned for RC.1, outside beta.2. Propose its shape then: user's config.json only,
-per backend, opt-out default off, never settable by the calling agent. No beta.2
-schema field, tool argument or runtime bypass is authorized by this plan.
+The earlier 2026-10-08 proposal for a per-backend RC.1 sandbox opt-out is
+superseded by `COAGENT-002/007`: explicit task capabilities under user policy.
+Current read-only behavior remains until the new profiles are implemented and
+verified. No beta.2 schema field, tool argument or runtime bypass is introduced
+by this planning decision.
 
 - [x] Make backend resolution (`src/backends/routing.ts:resolveBackend`) strictly
   read-only: no `setDefaultBackend` mutation during `auto` resolution. Verified in
@@ -2871,6 +3190,8 @@ clean-checkout or six-job result.
 
 Beta 3 gate:
 - [ ] Execution order 2 is complete.
+- [ ] The host-led coagent slice in `COAGENT-008` is accepted, including verified
+  writes, evidence, configured roles and skill installation for advertised clients.
 - [ ] Every beta 2 issue is triaged. No open P0/P1 issue remains; deferred issues
   have a recorded decision.
 - [ ] Same verification and publication steps as beta 2.
@@ -3059,12 +3380,14 @@ Work items:
 
 **Status:** Blocked by `BETA-001`; the existing version label is not acceptance.
 
+- [ ] Accept `COAGENT-001` through `COAGENT-008`, or record explicit scope
+  deferments before freeze and remove any unsupported product claims.
 - [ ] Close every audit P0/P1 finding in its owning milestone with a regression
   test. Re-run the audit reproductions against the candidate.
 - [ ] Close the included core milestones (`SURFACE-001`, `EXEC-001`, `ROUTING-MIGRATE-001`,
   `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002`, `LOCKS-001`, `REDACTION-002`,
-  `PACKAGE-001`, `SIMPLIFY-001`, `CLI-FIRST-001`) and applicable correctness, verification and
-  documentation work with evidence references. Record optional integration limits
+  `PACKAGE-001`, `SIMPLIFY-001`, `CLI-FIRST-001`) and applicable correctness,
+  verification and documentation work with evidence references. Record optional integration limits
   and conditional/deferred items explicitly.
 - [ ] No open P0/P1 issue from either beta.
 - [ ] Freeze the 1.0.0 scope and record included PRs, the accepted base and committed

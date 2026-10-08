@@ -1,6 +1,14 @@
 # Current handoff - local beta.2 preparation on 2026-10-08
 
-## Next step: prepare the beta.2 candidate locally
+**Direction update (owner, 2026-10-08):** the
+[full coagent plan](ROADMAP.md#full-coagent-direction) supersedes the
+consultation-only product goal and the sandbox opt-out proposal in the older
+prompt below. Roles and model/provider choices are independent; full task
+execution and client skill installation are planned. The beta.2 prompt remains
+historical/local foundation work, with its workspace-preservation and
+owner-managed Git/release constraints retained. Select new work from the roadmap.
+
+## Earlier prompt: prepare the beta.2 candidate locally
 
 The [CLI setup handoff](CLI_SETUP_HANDOFF.md) is complete for its scope: the
 owner accepted VSIX installation and uninstallation on Windows (see the owner

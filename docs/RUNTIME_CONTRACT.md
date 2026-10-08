@@ -8,6 +8,11 @@ remain in the [security rule](../.agents/rules/01-security-and-sandboxes.md);
 implementation deviations are explicit in [section 7](#7-known-limitations-and-deviations).
 [ROADMAP.md](ROADMAP.md) owns proposals and acceptance.
 
+The owner-approved [full coagent direction](ROADMAP.md#full-coagent-direction)
+(2026-10-08) adds planned write/execute profiles, configurable roles and client
+skills. None of those capabilities is established by this runtime contract;
+existing consultation, review and legacy alias behavior remains the baseline.
+
 The CLI onboarding follow-up on `fix/vsix-presentation` isolates recognized setup
 commands in `dist/setup.cjs`; no-argument invocation and unknown host arguments
 start MCP. Shared executable discovery prefers overrides, PATH, then Codex/Claude

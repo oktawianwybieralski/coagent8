@@ -5,6 +5,11 @@ including the documentation-only description corrections in the working tree.
 It is not release acceptance. [ROADMAP.md](ROADMAP.md) owns future changes;
 [RUNTIME_CONTRACT.md](RUNTIME_CONTRACT.md) owns behavior and limitations.
 
+The [full coagent direction](ROADMAP.md#full-coagent-direction), accepted by the
+owner on 2026-10-08, plans complete task delegation, execution profiles and
+client skills. The diagram and module responsibilities below describe the
+existing bridge, not an implemented task coordinator.
+
 CoAgent8 is a client-independent stdio MCP bridge to local CLI backends. The host
 and backend are separate roles. MCP discovery does not require a recognized
 client name. Optional setup's host list controls registration automation only.

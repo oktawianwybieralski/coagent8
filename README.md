@@ -1,4 +1,4 @@
-# CoAgent8 - MCP bridge to coding CLIs
+# CoAgent8 - Cooperating coding agents
 
 <p align="center">
   <picture>
@@ -12,6 +12,12 @@ CoAgent8 exposes Codex, Claude Code and Antigravity (backend `agy`, which runs
 Gemini models) through a stdio MCP server. An agent in a compatible host can request a
 second opinion or a Git review and receive the backend's public answer. The host
 runs your chat; the backend CLI performs the requested task.
+
+**Planned direction:** complete task delegation with configurable coordinator,
+planner, worker, verifier and reviewer roles, plus client skill installation.
+Any supported model may fill a role; model size and provider are not fixed.
+Writing and delegated coordination are not available in the current bridge.
+See the [full coagent plan](docs/ROADMAP.md#full-coagent-direction).
 
 The checkout carries `1.0.0-beta.2`, the planned first release for testers.
 `1.0.0-beta.1` remains the npm name placeholder. Local implementation does not
