@@ -101,7 +101,8 @@ function run() {
       result: {
         conversation_id: sid,
         status: 'SUCCESS',
-        response: 'Answer from the files agy could read.',
+        // `sandbox-denied-empty`: agy 1.3.1 (2026-10-08) ends the turn after a headless denial with an empty response.
+        response: mode === 'sandbox-denied-empty' ? '' : 'Answer from the files agy could read.',
         duration_seconds: 0.5,
         num_turns: 1,
         usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },

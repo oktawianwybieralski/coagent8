@@ -39,6 +39,7 @@ export async function handleReview(
   // The answer is read in the caller's context: findings only, each as short as its evidence allows.
   const prompt = [
     `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
+    'The diff is below. Read files with your file tools; do not run shell commands to get what the diff or a file read gives, because a sandbox may deny them and end the turn.',
     'Focus: ' + instructions,
     'Answer with exactly this envelope and nothing before it:',
     'REVIEW: <turn>',

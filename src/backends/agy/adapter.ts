@@ -245,6 +245,10 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (!error && (!s.terminal || !s.nativeSessionId)) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }
+  // A headless denial ends agy's turn before the model answers; an empty success is no answer.
+  if (!error && s.sandboxDenied && !s.output.trim()) {
+    error = { code: 'POLICY_DENIED', message: 'agy ended the turn without an answer after its sandbox denied a command (headless mode cannot ask for permission). Ask again for an answer that reads files without running commands.', retryable: false };
+  }
   if (!error && native && s.nativeSessionId !== native) {
     error = { code: 'SESSION_INVALID', message: 'Resume returned a different Gemini session.', retryable: false };
   }

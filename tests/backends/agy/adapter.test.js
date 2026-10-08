@@ -118,6 +118,12 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   assert.equal(deniedRes.output, 'Answer from the files agy could read.');
   assert.equal(deniedRes.continuationAvailable, true);
   assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1);
+
+  process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
+  const empty = await execute('request', { model: MODEL, cwd: tempDir });
+  assert.equal(empty.status, 'failed', 'a denial that ended the turn without an answer is not a completed answer');
+  assert.equal(empty.error.code, 'POLICY_DENIED');
+  assert.match(empty.error.message, /without an answer after its sandbox denied a command/);
   delete process.env.coagent8_FIXTURE_MODE;
 });
 
