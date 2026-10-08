@@ -12,6 +12,7 @@ import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-pr
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
 import { readSetupState, resetConfigurationFile, updateSetupState } from './configuration.js';
+import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 
 const LABELS: Record<SetupClient, string> = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravity CLI' };
 /** Extensions whose bundled CLI paths the runtime receives through `coagent8_EXTENSION_PATHS`. */
@@ -187,7 +188,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (folders.length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
     clearCliResolverCache();
-    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment(storage) };
+    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment(storage), origin: EXTENSION_ORIGIN };
   }
   let lastStatus: SetupStatus[] = [];
   /** One readable state per CLI; the full evidence is written only through Show Details. */
@@ -250,7 +251,9 @@ export function activate(context: vscode.ExtensionContext): void {
       if (hidden) return undefined;
       const remembered = readSetupState(storage).setupClients;
       picker.items = results.map(result => ({ label: LABELS[result.client], client: result.client, description: describe(result) }));
-      picker.selectedItems = picker.items.filter(item => remembered?.includes(item.client));
+      // Without a remembered choice, the CLIs that are already ready are selected.
+      const preselected = remembered ?? results.filter(result => result.ready).map(result => result.client);
+      picker.selectedItems = picker.items.filter(item => preselected.includes(item.client));
       picker.placeholder = 'Select CLIs to install or check (native-host registration is separate)';
       picker.busy = false;
       picker.enabled = true;
@@ -396,7 +399,14 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   async function showWelcome(): Promise<void> {
     if (vscode.env.remoteName || readSetupState(storage).setupDismissed) return;
-    if ((await status('Welcome CLI Check')).some(result => result.ready)) return;
+    const ready = (await status('Welcome CLI Check')).filter(result => result.ready).map(result => LABELS[result.client]);
+    if (ready.length) {
+      if (readSetupState(storage).readyAnnounced) return;
+      await updateSetupState(storage, { readyAnnounced: true });
+      const next = await vscode.window.showInformationMessage(`CoAgent8 is ready with ${ready.join(', ')}. Use its tools from chat; VS Code starts the server on first use.`, 'Show MCP Servers');
+      if (next === 'Show MCP Servers') await vscode.commands.executeCommand('coagent8.manageMcpServers');
+      return;
+    }
     const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible signed-in coding CLI. Check existing CLIs or choose an installation.', 'Set Up CLIs', "Don't Show Again");
     if (choice === "Don't Show Again") await updateSetupState(storage, { setupDismissed: true });
     if (choice === 'Set Up CLIs') await vscode.commands.executeCommand('coagent8.setup');

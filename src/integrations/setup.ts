@@ -22,7 +22,7 @@ import { errorCodeOf } from '../conversation.js';
 
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, type Registration } from './setup-storage.js';
+import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, type Registration, type RegistrationOrigin } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
 /** Separates registry, direct-runtime, and native-host evidence. No credentials are returned. */
 export interface SetupStatus extends CliReadiness {
@@ -49,6 +49,8 @@ export interface SetupOptions {
   home?: string;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** Records registrations as the VS Code extension's, which its uninstall hook removes. */
+  origin?: RegistrationOrigin;
 }
 /**
  * Resolves an installed client, including the newest usable Claude extension binary.
@@ -320,6 +322,8 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.message = result.hostCallable ? 'Native host discovered tools and invoked doctor. Start a new chat to refresh existing catalogs.'
             : 'Registered; runtime doctor passed. Native host discovery/call and icon presentation still need acceptance in a new chat.';
           saved.owned[client] = hash(JSON.stringify(servers(client, document(client, after)).coagent8));
+          if (options.origin) saved.origin[client] = options.origin;
+          else delete saved.origin[client];
         } catch (error) {
           // Restore exact original bytes only if no concurrent editor changed the file.
           if (liveWritten && after !== null && read(file) === after) {

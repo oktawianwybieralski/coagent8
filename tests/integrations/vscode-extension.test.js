@@ -11,7 +11,7 @@ function affects(...changed) {
   return { affectsConfiguration(section) { return changed.some(key => key === section || key.startsWith(section + '.')); } };
 }
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, awaitState = false } = {}) {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, awaitState = false, announced = false, awaitNotifications = 0 } = {}) {
   const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
@@ -66,7 +66,8 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
                 const pending = item.client === 'agy' && vendorExtensions.includes('google.google-antigravity');
                 assert.match(item.description, blocked.includes(item.client) ? /^Blocked/ : installed.includes(item.client) ? /^Available/ : pending ? /^Downloading/ : /^Missing/);
               }
-              assert.deepEqual(Array.from(this.selectedItems, item => item.client), (remembered ?? []).slice());
+              // Without a remembered choice, the CLIs that are already ready are selected.
+              assert.deepEqual(Array.from(this.selectedItems, item => item.client), ['codex', 'claude', 'agy'].filter(client => (remembered ?? installed).includes(client)));
               if (selected === null) { listeners.hide(); return; }
               this.selectedItems = this.items.filter(item => selected.includes(item.client));
               listeners.accept();
@@ -99,7 +100,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
         contents: "export async function cleanupClients(options) { globalThis.recordCleanup(options.apply); return { token: 'fixture-preview', results: [{client:'claude',action:options.apply?'removed':'remove',message:'fixture'}] }; }", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
-        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: 'fixture-' + client, argsPrefix: [], source: 'native' }; } export async function setupClients(options) { globalThis.recordEvent('status'); if (!options.statusOnly) { globalThis.recordClients(options.clients); return globalThis.statuses.map(status => ({ ...status, action: 'installed' })); } return globalThis.statuses.map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
+        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: 'fixture-' + client, argsPrefix: [], source: 'native' }; } export async function setupClients(options) { globalThis.recordEvent('status'); if (options.origin !== 'vscode-extension') throw new Error('missing extension origin'); if (!options.statusOnly) { globalThis.recordClients(options.clients); return globalThis.statuses.map(status => ({ ...status, action: 'installed' })); } return globalThis.statuses.map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
       }));
     } }],
   });
@@ -116,7 +117,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   // Onboarding state lives in the extension's global storage, which VS Code deletes on uninstall.
   const storage = path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp');
   const stateFile = path.join(storage, 'setup-state.json');
-  const seeded = { ...(remembered === undefined ? {} : { setupClients: remembered }), ...(dismissed ? { setupDismissed: true } : {}) };
+  const seeded = { ...(remembered === undefined ? {} : { setupClients: remembered }), ...(dismissed ? { setupDismissed: true } : {}), ...(announced ? { readyAnnounced: true } : {}) };
   if (Object.keys(seeded).length) { fs.mkdirSync(storage, { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(seeded)); }
   const readState = () => fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined;
   const initialState = readState();
@@ -140,8 +141,8 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     }
     await new Promise(resolve => setImmediate(resolve));
     // The welcome runs after activation; its locked state write completes asynchronously.
-    for (const deadline = Date.now() + 2000; awaitState && readState() === initialState;) {
-      assert.ok(Date.now() < deadline, 'the onboarding state was not written');
+    for (const deadline = Date.now() + 2000; (awaitState && readState() === initialState) || notifications.length < awaitNotifications;) {
+      assert.ok(Date.now() < deadline, 'the onboarding state or notification did not arrive');
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     const finalState = readState();
@@ -164,8 +165,13 @@ test('welcome persists across legacy setupOffered profiles until ready or explic
   const suppressed = await runSetupPicker({ installed: [], dismissed: true, activationOnly: true });
   assert.equal(suppressed.notifications.length, 0);
   assert.equal(suppressed.events.length, 0, 'explicit dismissal avoids startup probes');
-  const ready = await runSetupPicker({ installed: ['codex'], dismissed: false, activationOnly: true });
-  assert.equal(ready.notifications.length, 0);
+  const ready = await runSetupPicker({ installed: ['codex'], dismissed: false, activationOnly: true, awaitState: true, awaitNotifications: 1 });
+  assert.equal(ready.notifications.length, 1, 'ready CLIs are announced once instead of the welcome');
+  assert.match(ready.notifications[0].message, /^CoAgent8 is ready with Codex CLI. /);
+  assert.deepEqual(ready.notifications[0].actions, ['Show MCP Servers']);
+  assert.deepEqual(ready.state, { readyAnnounced: true });
+  const again = await runSetupPicker({ installed: ['codex'], dismissed: false, activationOnly: true, announced: true });
+  assert.equal(again.notifications.length, 0, 'the ready notice is shown once');
   assert.equal(ready.terminals.length, 0);
   assert.equal(ready.reveals.length, 0);
 });

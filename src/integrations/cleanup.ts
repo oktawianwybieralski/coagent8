@@ -13,7 +13,7 @@ import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../sessions/lock.js';
 import { redactDiagnostic } from '../redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { configPath, document, hash, read, readSelection, servers, writeChecked } from './setup-storage.js';
+import { configPath, document, hash, read, readSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
 
 /** Public cleanup evidence contains neither configuration contents nor private backup paths. */
 export interface CleanupStatus {
@@ -27,6 +27,14 @@ export interface CleanupOptions {
   env?: NodeJS.ProcessEnv;
   /** Omit to preview. Apply requires the exact token from a current preview. */
   apply?: string;
+  /** Limits removal to registrations recorded with this origin; others are preserved. */
+  origin?: RegistrationOrigin;
+  /**
+   * Uninstall mode for the VS Code extension: no private backup of the verified, unchanged
+   * entry (setup can recreate it), and runtime copies no registration references are
+   * deleted with an empty CoAgent8 setup state.
+   */
+  uninstall?: boolean;
 }
 export interface CleanupPreview { token: string; results: CleanupStatus[]; stateError?: string }
 
@@ -54,6 +62,33 @@ function removeEntry(client: SetupClient, before: string): string {
   return after;
 }
 
+/**
+ * Deletes runtime copies that no host registration references, and the setup state when
+ * it no longer records a selection or an owned registration.
+ * @throws When a host configuration cannot be read; nothing is deleted then.
+ */
+function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): void {
+  const runtimes = path.join(root, 'runtime');
+  const referenced = new Set<string>();
+  for (const client of SETUP_CLIENTS) {
+    const text = read(configPath(client, home, env));
+    if (text === null) continue;
+    for (const entry of Object.values(servers(client, document(client, text)))) {
+      for (const arg of Array.isArray((entry as { args?: unknown })?.args) ? (entry as { args: unknown[] }).args : []) {
+        if (typeof arg === 'string' && path.resolve(arg).startsWith(runtimes + path.sep)) referenced.add(path.relative(runtimes, path.resolve(arg)).split(path.sep)[0]!);
+      }
+    }
+  }
+  if (fs.existsSync(runtimes)) {
+    for (const name of fs.readdirSync(runtimes)) {
+      if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) fs.rmSync(path.join(runtimes, name), { recursive: true, force: true });
+    }
+    if (!fs.readdirSync(runtimes).length) fs.rmdirSync(runtimes);
+  }
+  const saved = readSelection(stateFile);
+  if (!saved.clients.length && !Object.keys(saved.owned).length) fs.rmSync(stateFile, { force: true });
+}
+
 /** Previews cleanup or applies a matching preview under the same lease as setup. */
 export async function cleanupClients(options: CleanupOptions = {}): Promise<CleanupPreview> {
   const home = path.resolve(options.home || os.homedir()), env = options.env || process.env;
@@ -75,6 +110,9 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         if (!saved.owned[client] || hash(JSON.stringify(entry)) !== saved.owned[client]) {
           return { client, action: 'preserved', message: 'Manual or independently edited entry preserved; no matching ownership.' };
         }
+        if (options.origin && saved.origin[client] !== options.origin) {
+          return { client, action: 'preserved', message: 'Entry registered outside the VS Code extension preserved.' };
+        }
         snapshots.set(client, { file, before, after: removeEntry(client, before!) });
         return { client, action: 'remove', message: 'Unchanged owned entry; removal keeps other settings and retains runtime files.' };
       } catch (error) {
@@ -91,14 +129,18 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         const snapshot = snapshots.get(result.client)!;
         if (read(stateFile) !== stateBefore) throw new Error('Setup ownership changed concurrently; cleanup stopped.');
         if (result.action === 'remove') {
-          const backup = path.join(root, 'setup-backups', randomUUID());
-          fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
-          fs.writeFileSync(path.join(backup, result.client + '.config'), snapshot.before!, { flag: 'wx', mode: 0o600 });
+          if (!options.uninstall) {
+            const backup = path.join(root, 'setup-backups', randomUUID());
+            fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
+            fs.writeFileSync(path.join(backup, result.client + '.config'), snapshot.before!, { flag: 'wx', mode: 0o600 });
+          }
           writeChecked(snapshot.file, snapshot.before, snapshot.after!);
           result.action = 'removed';
-          result.message = 'Owned registration removed; private backup and runtime files retained. Restart the host to refresh its catalog.';
+          result.message = options.uninstall ? 'Owned registration removed with the VS Code extension. Restart the host to refresh its catalog.'
+            : 'Owned registration removed; private backup and runtime files retained. Restart the host to refresh its catalog.';
         } else if (read(snapshot.file) !== snapshot.before) throw new Error('Configuration changed concurrently; retry cleanup.');
         delete saved.owned[result.client];
+        delete saved.origin[result.client];
         saved.clients = saved.clients.filter(client => client !== result.client);
       } catch (error) {
         result.action = 'blocked';
@@ -110,8 +152,15 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
       try { writeChecked(stateFile, stateBefore, JSON.stringify(saved, null, 2) + '\n'); }
       catch { return { token, results, stateError: 'Registration results above are final, but setup state changed or could not be saved. Keep backups and retry a fresh preview.' }; }
     }
+    if (options.uninstall) {
+      try { removeUnreferencedSetup(root, home, env, stateFile); }
+      catch (error) { return { token, results, stateError: redactDiagnostic(error instanceof Error ? error.message : 'Unreferenced runtime copies could not be removed.') }; }
+    }
     return { token, results };
   }
   if (options.apply === undefined) return perform();
-  return withFileLock(path.join(root, 'setup'), perform);
+  const applied = await withFileLock(path.join(root, 'setup'), perform);
+  // The lease lived in the directory until now; remove it only when nothing else remains.
+  if (options.uninstall && fs.existsSync(root) && !fs.readdirSync(root).length) fs.rmdirSync(root);
+  return applied;
 }

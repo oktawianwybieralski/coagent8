@@ -19,6 +19,7 @@
   "qna": "https://github.com/oktawianwybieralski/coagent8/issues",
   "extensionKind": ["workspace"],
   "main": "./dist/extension.cjs",
+  "scripts": { "vscode:uninstall": "node ./dist/uninstall.cjs" },
   "icon": "assets/logo.png",
   "files": ["dist/**", "assets/**", "schemas/**", "README.md", "CHANGELOG.md", "LICENSE"],
   "activationEvents": ["onMcpServerDefinitionProvider:coagent8", "onStartupFinished"],

@@ -141,9 +141,10 @@ The extension keeps everything it creates in its VS Code global storage
 sessions, history and caches. VS Code deletes this folder when the extension is
 uninstalled, so a later installation starts like the first one. The standalone
 `coagent8` CLI uses `~/.coagent8` instead; set `coagent8.configPath` to
-`~/.coagent8/config.json` to share the configuration file with it. VS Code
-settings, CLI sign-ins, external registrations and the CLI's `~/.coagent8` are not
-removed on uninstall.
+`~/.coagent8/config.json` to share the configuration file with it. Unchanged
+native-host registrations the extension wrote are removed on uninstall, as
+described under the commands below. VS Code settings, CLI sign-ins, registrations
+made outside the extension and the CLI's own data in `~/.coagent8` are kept.
 
 If Node.js is unavailable on PATH, set an absolute executable path in VS Code's
 settings. For example, on Windows:
@@ -191,14 +192,16 @@ Installation/check selections do not register external MCP servers. Optional
 confirmation. The VS Code MCP provider works independently. Existing manual
 registrations and unrelated settings are preserved.
 
-Before uninstalling the VSIX, use **CoAgent8: Preview and Remove Owned
-Registrations**, or run `coagent8 cleanup` for a preview and
-`coagent8 cleanup --apply=<preview-token>` to apply it. Only unchanged entries
-with recorded ownership are removed. Private backups and runtime files are
-retained; edited/manual entries, histories, credentials, other servers and vendor
-extensions survive. Restart native hosts to refresh their cached catalogs.
-Uninstalling the VSIX or restarting alone does not remove external registrations.
-No production command deletes VS Code profile databases or cache tables.
+Uninstalling the VSIX removes the native-host registrations it wrote, when they are
+unchanged, together with runtime copies nothing references. VS Code runs this
+cleanup after it restarts following the uninstall. Registrations made by the
+`coagent8` CLI and manual or edited entries are preserved. To remove registrations
+at once, use **CoAgent8: Preview and Remove Owned Registrations**, or run
+`coagent8 cleanup` for a preview and `coagent8 cleanup --apply=<preview-token>` to
+apply it; this command keeps private backups and runtime files. Histories,
+credentials, other servers and vendor extensions survive. Restart native hosts to
+refresh their cached catalogs. No production command deletes VS Code profile
+databases or cache tables.
 
 **CoAgent8: Reset Setup State** clears the remembered CLI selection and welcome
 dismissal, then checks readiness again. Use it to

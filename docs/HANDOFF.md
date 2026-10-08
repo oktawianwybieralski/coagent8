@@ -145,6 +145,14 @@ The owner's earlier reset attempt failed before changing anything because the
 one-off script refused to overwrite its previous backup; it now writes a new
 timestamped backup directory per run.
 
+The owner's screenshots of red settings came from the 02:29 build (VS Code log),
+before the fix. After that install, Register in Chat Hosts wrote Codex, Claude
+Code and Antigravity entries pointing to ~/.coagent8/runtime; uninstalling and
+deleting ~/.coagent8 left them dead. With approval they were removed through each
+CLI's `mcp remove` (backups in .artifacts/dead-registration-backup-*). A
+`vscode:uninstall` hook now removes the extension's own unchanged registrations;
+see the roadmap INSTALL entry.
+
 ~~~yaml
 task_id: DOCS-001
 mode: documentation

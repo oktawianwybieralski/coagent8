@@ -38,6 +38,8 @@ export async function resetConfigurationFile(file: string, defaults: unknown): P
 export interface SetupState {
   setupClients?: string[];
   setupDismissed?: boolean;
+  /** The one-time notice that ready CLIs make CoAgent8 usable was shown. */
+  readyAnnounced?: boolean;
 }
 
 function setupStateFile(storage: string): string {
@@ -55,10 +57,11 @@ export function readSetupState(storage: string): SetupState {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error; }
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${setupStateFile(storage)} is not a JSON object.`);
-  const { setupClients, setupDismissed } = value as Record<string, unknown>;
+  const { setupClients, setupDismissed, readyAnnounced } = value as Record<string, unknown>;
   return {
     ...(Array.isArray(setupClients) && setupClients.every(item => typeof item === 'string') ? { setupClients } : {}),
     ...(setupDismissed === true ? { setupDismissed } : {}),
+    ...(readyAnnounced === true ? { readyAnnounced } : {}),
   };
 }
 

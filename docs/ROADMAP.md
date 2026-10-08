@@ -2245,10 +2245,21 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   entry, an owner decision outside beta.2. Keywords gained model-context-protocol,
   ai, ai-agents and second-opinion; pricing is Free. Local checks are listed in
   the handoff; native acceptance is NOT_RUN.
-- No `vscode:uninstall` cleanup is currently implemented: the integration guide keeps the
-  explicit preview/confirm cleanup command as the only path, and such a hook
-  could not reach `globalState` either. Documentation tells users to run cleanup
-  before uninstalling.
+- [x] Owner decision of 2026-10-08, replacing "no vscode:uninstall cleanup": the
+  `vscode:uninstall` hook (`dist/uninstall.cjs`) removes unchanged native-host
+  registrations recorded with the `vscode-extension` origin, runtime copies no
+  registration references, an empty setup state and an empty ~/.coagent8. CLI-made,
+  manual, edited and origin-less entries are preserved; no preview token or backup
+  is used, since uninstalling is the confirmation. Owner observation that led to it:
+  after uninstall and a manual ~/.coagent8 deletion, Codex, Claude Code and
+  Antigravity kept dead coagent8 entries; with the owner's approval they were
+  removed with each CLI's `mcp remove` after backups in
+  .artifacts/dead-registration-backup-*. Fixture tests run the bundled hook in an
+  isolated home within VS Code's five-second limit. On activation with ready CLIs a
+  one-time notice replaces the welcome, and the setup picker preselects ready CLIs
+  without a remembered choice. Automatic server start was not added: VS Code starts
+  extension-provided servers on demand (chat.mcp.autostart), and the inspected
+  extensions do not start them. Native acceptance is NOT_RUN.
 
 Host evidence recorded on 2026-10-05 (historical; not fresh validation):
 

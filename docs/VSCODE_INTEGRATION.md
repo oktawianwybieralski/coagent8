@@ -362,18 +362,30 @@ are retained conservatively because manual or edited registrations may still
 reference them. Histories, credentials, CLI installations and vendor extensions
 are not removed.
 
-After cleanup, restart native hosts to refresh cached catalogs; uninstall the
-VSIX separately to remove its provider. Restart alone does not remove persistent
-registrations. No `vscode:uninstall` hook mutates external settings: it is not a
-reliable cleanup guarantee and would skip the preview/consent flow. VS Code owns
-its provider/cache lifecycle. Production cleanup neither edits SQLite profile
-databases nor deletes profile storage, cached catalogs or auto-update exclusions.
+After cleanup, restart native hosts to refresh cached catalogs.
+
+Owner decision of 2026-10-08, replacing the earlier "no uninstall hook" rule:
+uninstalling removes what the extension created. VS Code deletes the extension's
+global storage (configuration default, onboarding choices, sessions, history and
+caches). The `vscode:uninstall` hook (`dist/uninstall.cjs`) removes the native-host
+registrations the extension wrote, when they are unchanged, then runtime copies no
+registration references, an empty setup state and an empty `~/.coagent8`. Setup
+records such registrations with the `vscode-extension` origin; registrations made
+by the `coagent8` CLI, manual or edited entries and earlier records without an
+origin are preserved. Uninstalling is the confirmation, so no preview token or
+private backup is used: the removed entry is byte-verified and setup can recreate
+it. VS Code runs the hook only after it restarts following the uninstall, with
+Node, without the VS Code API and with a five-second limit; the explicit cleanup
+command remains the immediate path. Production cleanup neither edits SQLite
+profile databases nor deletes cached catalogs or auto-update exclusions.
 
 Owner acceptance on Windows, 2026-10-07: after cleanup, uninstall and restart no
 CoAgent8 registration, `~/.coagent8` data or extension directory remained.
-Uninstalling without cleanup leaves working native-host registrations that point
-to `~/.coagent8/runtime`. VS Code keeps the uninstalled extension's
-`globalState` (explicit welcome dismissal and remembered CLI choices). The welcome
+Before the 2026-10-08 change, uninstalling without cleanup left native-host
+registrations pointing to `~/.coagent8/runtime`, and VS Code kept the uninstalled
+extension's `globalState` (welcome dismissal and remembered CLI choices); the
+extension now removes those keys on activation and keeps its state in global
+storage. When a CLI is ready, a one-time notice says so instead. The welcome
 notification now appears on activation until a CLI is ready or **Don't Show
 Again** is chosen; the older `setupOffered` flag does not suppress it. Run
 **CoAgent8: Set Up Coding CLIs** from the Command Palette at any time. This is not a reason to

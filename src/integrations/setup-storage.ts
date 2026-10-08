@@ -11,7 +11,11 @@ import { readBoundedFileSync } from '../execution/stream.js';
 import { object } from './rpc.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export interface Registration { command: string; args: string[]; env?: Record<string, string> }
-export interface Selection { clients: SetupClient[]; owned: Partial<Record<SetupClient, string>> }
+/** Registrations written on behalf of the VS Code extension, which removes them on uninstall. */
+export const EXTENSION_ORIGIN = 'vscode-extension' as const;
+export type RegistrationOrigin = typeof EXTENSION_ORIGIN;
+/** Saved selections and ownership; `origin` is absent for the CLI and for earlier records. */
+export interface Selection { clients: SetupClient[]; owned: Partial<Record<SetupClient, string>>; origin: Partial<Record<SetupClient, RegistrationOrigin>> }
 const CONFIG_LIMIT = 512 * 1024;
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 export function read(file: string): string | null {
@@ -81,7 +85,7 @@ export function writeChecked(file: string, before: string | null, after: string)
 }
 export function readSelection(file: string, snapshot?: string | null): Selection {
   const content = snapshot === undefined ? read(file) : snapshot;
-  if (content === null) return { clients: [], owned: {} };
+  if (content === null) return { clients: [], owned: {}, origin: {} };
   const data = json(content);
   if (!Array.isArray(data.clients) || !data.clients.every(client => SETUP_CLIENTS.includes(client as SetupClient))) throw new Error('Invalid saved setup selections.');
   const owned: Selection['owned'] = {};
@@ -90,5 +94,10 @@ export function readSelection(file: string, snapshot?: string | null): Selection
     if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Error('Invalid setup ownership fingerprint.');
     owned[client as SetupClient] = value;
   }
-  return { clients: [...new Set(data.clients)] as SetupClient[], owned };
+  const origin: Selection['origin'] = {};
+  if (data.origin) for (const [client, value] of Object.entries(object(data.origin))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || !owned[client as SetupClient]) throw new Error('Invalid setup origin record.');
+    origin[client as SetupClient] = value;
+  }
+  return { clients: [...new Set(data.clients)] as SetupClient[], owned, origin };
 }

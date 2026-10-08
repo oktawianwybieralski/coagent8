@@ -121,3 +121,54 @@ test('backup failure reports a recoverable blocked removal without changing owne
   assert.equal(fs.readFileSync(p.files.claude, 'utf8'), original);
   assert.equal(JSON.parse(fs.readFileSync(p.state, 'utf8')).owned.claude, fingerprint(entry));
 });
+
+/** An extension-made claude entry and, optionally, a CLI-made agy entry, each with its runtime copy. */
+function uninstallProfile(t, { withCli }) {
+  const p = profile(t), runtime = name => path.join(p.home, '.coagent8/runtime', name.repeat(64), 'index.cjs');
+  const extension = { command: 'node', args: [runtime('a')] }, cli = { command: 'node', args: [runtime('b')] };
+  for (const file of [runtime('a'), ...(withCli ? [runtime('b')] : [])]) p.write(file, 'runtime');
+  p.write(p.files.claude, JSON.stringify({ mcpServers: { coagent8: extension, other: { command: 'keep' } } }));
+  if (withCli) p.write(p.files.agy, JSON.stringify({ mcpServers: { coagent8: cli } }));
+  p.write(p.state, JSON.stringify({ clients: withCli ? ['claude', 'agy'] : ['claude'],
+    owned: { claude: fingerprint(extension), ...(withCli ? { agy: fingerprint(cli) } : {}) }, origin: { claude: 'vscode-extension' } }));
+  return { ...p, runtime };
+}
+test('uninstall cleanup removes only extension registrations and runtime copies nothing references', async t => {
+  const p = uninstallProfile(t, { withCli: true }), options = { ...p, origin: 'vscode-extension', uninstall: true };
+  const preview = await cleanupClients(options);
+  assert.deepEqual(Object.fromEntries(preview.results.map(r => [r.client, r.action])), { codex: 'absent', claude: 'remove', agy: 'preserved' });
+  const applied = await cleanupClients({ ...options, apply: preview.token });
+  assert.equal(applied.stateError, undefined);
+  assert.equal(applied.results.find(r => r.client === 'claude').action, 'removed');
+  assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
+  assert.ok(parse(fs.readFileSync(p.files.agy, 'utf8')).mcpServers.coagent8, 'a coagent8 CLI registration survives the extension');
+  assert.equal(fs.existsSync(path.dirname(p.runtime('a'))), false, 'the unreferenced runtime copy is deleted');
+  assert.ok(fs.existsSync(p.runtime('b')), 'a referenced runtime copy is kept');
+  assert.equal(fs.existsSync(path.join(p.home, '.coagent8/setup-backups')), false, 'no private backup in uninstall mode');
+  assert.deepEqual(JSON.parse(fs.readFileSync(p.state, 'utf8')), { clients: ['agy'], owned: { agy: fingerprint({ command: 'node', args: [p.runtime('b')] }) }, origin: {} });
+});
+test('without an extension origin, as in earlier records, uninstall cleanup preserves the entry', async t => {
+  const p = uninstallProfile(t, { withCli: false });
+  const state = JSON.parse(fs.readFileSync(p.state, 'utf8')); delete state.origin; p.write(p.state, JSON.stringify(state));
+  const options = { ...p, origin: 'vscode-extension', uninstall: true };
+  const preview = await cleanupClients(options);
+  assert.equal(preview.results.find(r => r.client === 'claude').action, 'preserved');
+  await cleanupClients({ ...options, apply: preview.token });
+  assert.ok(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers.coagent8);
+  assert.ok(fs.existsSync(p.runtime('a')), 'its runtime copy is still referenced');
+});
+test('the bundled vscode:uninstall hook leaves no CoAgent8 registration, runtime or directory behind', async t => {
+  const p = uninstallProfile(t, { withCli: false });
+  const manifest = require('../../extensions/vscode/package.json');
+  assert.equal(manifest.scripts['vscode:uninstall'], 'node ./dist/uninstall.cjs');
+  const hook = path.join(p.home, 'hook', 'uninstall.cjs');
+  await require('esbuild').build({ entryPoints: [path.resolve(__dirname, '../../extensions/vscode/src/uninstall.ts')], outfile: hook,
+    bundle: true, platform: 'node', target: 'node24', format: 'cjs', mainFields: ['module', 'main'] });
+  const env = { ...process.env, HOME: p.home, USERPROFILE: p.home };
+  for (const key of ['CODEX_HOME', 'CODEX_CONFIG_PATH', 'CLAUDE_CONFIG_DIR', 'GEMINI_CLI_HOME', 'coagent8_DIR', 'coagent8_CONFIG']) delete env[key];
+  const run = require('node:child_process').spawnSync(process.execPath, [hook], { env, encoding: 'utf8', timeout: 5000, windowsHide: true });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.equal(JSON.parse(run.stdout).results.find(r => r.client === 'claude').action, 'removed');
+  assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
+  assert.equal(fs.existsSync(path.join(p.home, '.coagent8')), false, 'the emptied CoAgent8 directory is removed');
+});
