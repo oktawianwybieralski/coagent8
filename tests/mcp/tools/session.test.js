@@ -16,9 +16,9 @@ const {
   getSessionFilePath,
   isProcessAlive,
   setExecutionCanceller,
-} = require('../../src/sessions/session.ts');
-const { handleSession, handleCancelSession } = require('../../src/tools/session.tool.ts');
-const { createHistoryWriter } = require('../../src/sessions/history.ts');
+} = require('../../../src/sessions/session.ts');
+const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/session.tool.ts');
+const { createHistoryWriter } = require('../../../src/sessions/history/index.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -193,8 +193,8 @@ test('cancelSession respects external live processes and protects replacement tu
 });
 
 test('formatExecutionResult produces clean Markdown with answer at top, and handleSessionHistory preserves global turn numbers across pagination', async () => {
-  const { formatExecutionResult } = require('../../src/mcp/result.ts');
-  const { handleSessionHistory } = require('../../src/mcp/tools/session.tool.ts');
+  const { formatExecutionResult } = require('../../../src/mcp/result.ts');
+  const { handleSessionHistory } = require('../../../src/mcp/tools/session.tool.ts');
 
   // Test formatExecutionResult
   const formatted = await formatExecutionResult('codex', {
@@ -242,8 +242,8 @@ test('formatExecutionResult produces clean Markdown with answer at top, and hand
 });
 
 test('cancel reports cancelled: false when the session has no running turn (SIMPLIFY-001)', async () => {
-  const { cancelSession, setExecutionCanceller } = require('../../src/sessions/session.ts');
-  const { composeExecutionCancellation } = require('../../src/execution/controller.ts');
+  const { cancelSession, setExecutionCanceller } = require('../../../src/sessions/session.ts');
+  const { composeExecutionCancellation } = require('../../../src/execution/controller.ts');
   composeExecutionCancellation();
   const idle = createSession('agy', tempDir);
   const result = await cancelSession(idle.sessionHandle, tempDir);
@@ -260,7 +260,7 @@ test('session list and the sessions resource show a workspace under the home dir
     // Windows stores the canonical lower-case path.
     assert.equal(record.workspace.toLowerCase(), `~${path.sep}${path.basename(workspace)}`.toLowerCase());
     assert.ok(!JSON.stringify(listed).toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()), 'no absolute home path');
-    const { createServer } = require('../../src/mcp/server.ts');
+    const { createServer } = require('../../../src/mcp/server.ts');
     const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
     const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
     const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');

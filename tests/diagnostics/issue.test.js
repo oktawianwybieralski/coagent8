@@ -57,8 +57,8 @@ test('issue reporting generates sanitized GitHub pre-filled issue URL and redact
 });
 
 test('diagnostic and issue truncation cannot expose recognized credential prefixes', () => {
-  const {redactDiagnostic}=require('../../src/redaction.ts');
-  const {truncateToByteLength}=require('../../src/execution/stream.ts');
+  const {redactDiagnostic}=require('../../src/security/redaction.ts');
+  const {truncateToByteLength}=require('../../src/execution/runtime/stream.ts');
   const key='sk-'+'A'.repeat(40);
   for(const input of ['{"api_key":"fixtureSecret','password=\'fixtureSecret','{"token":"fixtureSecret\\','{"secret":"fixtureSecret\\\n']) {
     assert.ok(!redactDiagnostic(input).includes('fixtureSecret'));assert.ok(!sanitizeText(input).includes('fixtureSecret'));
@@ -73,7 +73,7 @@ test('diagnostic and issue truncation cannot expose recognized credential prefix
 });
 
 test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquoted passwords, and resists ReDoS', async () => {
-  const {redactDiagnostic, redactCredentialFormats}=require('../../src/redaction.ts');
+  const {redactDiagnostic, redactCredentialFormats}=require('../../src/security/redaction.ts');
   const keys='-----BEGIN PRIVATE KEY-----\nPRIVATE_DER_SECRET\n-----END PRIVATE KEY-----\n{"aws_access_key_id":"QUOTED_ID_SECRET","aws_secret_access_key":"QUOTED_AWS_SECRET"}';
   assert.ok(!redactCredentialFormats(keys).includes('PRIVATE_DER_SECRET'));
   for(const secret of ['PRIVATE_DER_SECRET','QUOTED_ID_SECRET','QUOTED_AWS_SECRET'])assert.ok(!redactDiagnostic(keys).includes(secret));

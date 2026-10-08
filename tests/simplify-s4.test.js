@@ -50,9 +50,6 @@ const { createHistoryWriter } = require('../src/sessions/history/writer.ts');
 
 // Main barrels
 const historyMain = require('../src/sessions/history/index.ts');
-const historyShim = require('../src/sessions/history.ts');
-const historyPageShim = require('../src/sessions/history-page.ts');
-const redactionShim = require('../src/redaction.ts');
 const { createSession, closeSession } = require('../src/sessions/session.ts');
 
 test('S4 security: safe credential fragment commit boundaries and redaction', () => {
@@ -109,11 +106,6 @@ test('S4 history: module decomposition and compatibility shims', () => {
   assert.equal(historyMain.pruneHistoryDirectory, pruneHistoryDirectory);
   assert.equal(historyMain.paginateHistory, paginateHistory);
 
-  assert.equal(historyShim.createHistoryWriter, createHistoryWriter);
-  assert.equal(historyShim.sessionHistory, sessionHistory);
-  assert.equal(historyShim.getHistory, getHistory);
-  assert.equal(historyPageShim.paginateHistory, paginateHistory);
-  assert.equal(redactionShim.redactCredentialFormats, redactCredentialFormats);
 });
 
 test('S4 history: session activity checker protects active turns during eviction', async () => {

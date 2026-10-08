@@ -11,7 +11,7 @@
  *
  * @packageDocumentation
  */
-import { ToolError } from '../conversation.js';
+import { ToolError } from '../contracts/index.js';
 
 /** Set in the environment of every backend turn this server starts. */
 export const NESTED_TURN_ENV = 'COAGENT8_NESTED_TURN';

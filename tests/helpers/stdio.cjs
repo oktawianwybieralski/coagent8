@@ -1,7 +1,7 @@
 const { spawn } = require('node:child_process');
-const { createLineDecoder } = require('../../src/execution/stream.ts');
+const { createLineDecoder } = require('../../src/execution/runtime/stream.ts');
 const { terminateProcessTree } = require('../../src/execution/process.ts');
-const { redactDiagnostic } = require('../../src/redaction.ts');
+const { redactDiagnostic } = require('../../src/security/redaction.ts');
 
 function connect(command, args, options = {}) {
   const proc = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: 'pipe', windowsHide: true, detached: process.platform !== 'win32' });

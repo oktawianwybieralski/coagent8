@@ -17,11 +17,11 @@ import { runCommand } from '../execution/process.js';
 import { resolveBundledClaude, resolveBundledCodex, resolveCliCommand, resolveManagedAgy, type CliCommand } from '../execution/cli-resolver.js';
 import { backendCommand, environmentOverride, VSCODE_EXTENSION_EXECUTABLE } from '../backends/executable.js';
 import { readBackendExecutable, recordBackendExecutable } from '../config.js';
-import type { ProviderId } from '../conversation.js';
-import { redactDiagnostic } from '../redaction.js';
+import type { ProviderId } from '../contracts/index.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { withFileLock } from '../storage/lock.js';
 import { object, withStdioRpc } from './rpc.js';
-import { errorCodeOf } from '../conversation.js';
+import { errorCodeOf } from '../contracts/index.js';
 
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { version } from '../../../package.json';
 import { alternativeSource, clientSource, setupClients, readRegistrations, SETUP_CLIENTS, SETUP_PROVIDERS, resolveSetupClient, type ClientSource, type RegistrationStatus, type SetupClient, type SetupStatus } from '../../../src/integrations/setup.js';
 import { cleanupClients } from '../../../src/integrations/cleanup.js';
-import { redactDiagnostic } from '../../../src/redaction.js';
+import { redactDiagnostic } from '../../../src/security/redaction.js';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';

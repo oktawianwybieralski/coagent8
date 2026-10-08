@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
-const { redactCredentialFormats, redactDiagnostic, redactSecrets } = require('../src/redaction.ts');
+const { redactCredentialFormats, redactDiagnostic, redactSecrets } = require('../../src/security/redaction.ts');
 
 test('AUD-P0-2 & Opus P1/P2 regression: public code answers and URLs round-trip without corruption', () => {
   const negativeCases = [
@@ -329,8 +329,8 @@ test('diagnostics redact raw, structured and repeatedly JSON-escaped Windows hom
 });
 
 test('AUD-P0-2: user_message stored in history preserves user code and token keywords without diagnostic alteration', async () => {
-  const { createHistoryWriter, sessionHistory, deleteHistory } = require('../src/sessions/history.ts');
-  const { createSession, getSessionFilePath } = require('../src/sessions/session.ts');
+  const { createHistoryWriter, sessionHistory, deleteHistory } = require('../../src/sessions/history/index.ts');
+  const { createSession, getSessionFilePath } = require('../../src/sessions/session.ts');
   const fs = require('node:fs');
   const path = require('node:path');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-hist-test-'));

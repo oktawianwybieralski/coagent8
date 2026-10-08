@@ -18,7 +18,7 @@ const {
   clearHistoryCache,
   invalidateHistoryCache,
   deleteHistory,
-} = require('../../src/sessions/history.ts');
+} = require('../../src/sessions/history/index.ts');
 const { createSession, closeSession } = require('../../src/sessions/session.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -563,7 +563,7 @@ test('history survives a fresh process and failed turns; duplicate native snapsh
   writer.accept({type:'assistant_message',messageId:'m',text:'final'});writer.accept({type:'assistant_message',messageId:'m',text:'final'});
   writer.accept({type:'error',error:{code:'AUTH_REQUIRED',message:'token=fixtureSecret',retryable:false}});writer.accept({type:'turn_finished',status:'failed'});await writer.flush();
   const code=`const {sessionHistory}=require(process.argv[1]);sessionHistory(process.argv[2],process.argv[3]).then(h=>process.stdout.write(JSON.stringify(h)));`;
-  const output=await new Promise((resolve,reject)=>{const p=spawn(process.execPath,['--require','tsx/cjs','-e',code,path.resolve(__dirname, '../..', 'src/sessions/history.ts'),s.sessionHandle,tempDir],{env:{...process.env},windowsHide:true});let out='';p.stdout.on('data',d=>out+=d);p.on('error',reject);p.on('exit',c=>c===0?resolve(out):reject(new Error('history subprocess failed')));});
+  const output=await new Promise((resolve,reject)=>{const p=spawn(process.execPath,['--require','tsx/cjs','-e',code,path.resolve(__dirname, '../..', 'src/sessions/history/index.ts'),s.sessionHandle,tempDir],{env:{...process.env},windowsHide:true});let out='';p.stdout.on('data',d=>out+=d);p.on('error',reject);p.on('exit',c=>c===0?resolve(out):reject(new Error('history subprocess failed')));});
   const h=JSON.parse(output);assert.equal(h.events.filter(e=>e.type==='assistant_message').length,1);assert.equal(h.events.find(e=>e.type==='assistant_message').text,'final');assert.ok(!output.includes('fixtureSecret'));
 });
 
@@ -585,7 +585,7 @@ test('history fragment pagination returns the whole large UTF-8 message at limit
 });
 
 test('history fragments split only at UTF-8 character boundaries, whatever the page budget leaves', () => {
-  const { paginateHistory } = require('../../src/sessions/history-page.ts');
+  const { paginateHistory } = require('../../src/sessions/history/page.ts');
   // Each prefix length moves the fragment cut by one byte across the 4-byte characters.
   for (let prefix = 0; prefix < 4; prefix++) {
     const text = 'a'.repeat(prefix) + '😀'.repeat(60000);

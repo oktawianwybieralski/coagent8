@@ -6,7 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { sanitizeGitRef, collectGitScope, GIT_DIFF_PATHSPEC_EXCLUSIONS } = require('../../src/execution/git.ts');
+const { sanitizeGitRef, collectGitScope, GIT_DIFF_PATHSPEC_EXCLUSIONS } = require('../../src/workspace/git.ts');
 
 test('sanitizeGitRef accepts valid git references', () => {
   assert.equal(sanitizeGitRef('main'), 'main');

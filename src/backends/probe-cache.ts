@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { adapterRegistry } from './registry.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
-import type { ProviderId } from '../conversation.js';
+import type { ProviderId } from '../contracts/index.js';
 import { readObservedModels, recordObservedModels } from '../models/store.js';
 import type { AdapterProbeResult, CliAdapter, ModelCatalog } from './types.js';
 

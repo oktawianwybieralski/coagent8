@@ -10,7 +10,7 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-backends-routing
 process.env.coagent8_DIR = tempDir;
 
 const { adapterRegistry } = require('../../src/backends/registry.ts');
-const { resolveBackend } = require('../../src/backends/routing.ts');
+const { resolveBackend } = require('../../src/execution/routing.ts');
 const { saveConfig, loadConfig } = require('../../src/config.ts');
 
 process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'quota-cache.json');
@@ -55,7 +55,7 @@ test('routing: resolveBackend auto mode is strictly read-only and does not mutat
 });
 
 test('routing: auto prefers another CLI than the calling client and measured headroom, falling back to the caller', async () => {
-  const { setCallerProvider, providerForClient } = require('../../src/backends/routing.ts');
+  const { setCallerProvider, providerForClient } = require('../../src/execution/routing.ts');
   const { selectSmartQuotaBackend } = require('../../src/backends/availability.ts');
   const original = { ...adapterRegistry };
   try {

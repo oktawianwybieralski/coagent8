@@ -221,7 +221,7 @@ test('a configuration directory that cannot be created is reported, not ignored 
 test('a malformed configuration hides no tool, is reported by doctor and refuses execution (AUD-P2-11)', async () => {
   const { createToolDefinitions } = require('../src/mcp/server.ts');
   const { runDoctor } = require('../src/diagnostics/doctor.ts');
-  const { resolveBackend } = require('../src/backends/routing.ts');
+  const { resolveBackend } = require('../src/execution/routing.ts');
   const saved = process.env.coagent8_CONFIG;
   process.env.coagent8_CONFIG = path.join(testTempDir, 'malformed-config.json');
   fs.writeFileSync(process.env.coagent8_CONFIG, '{"routing": {"allowedBackends": ["claude"]');

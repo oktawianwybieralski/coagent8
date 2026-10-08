@@ -15,7 +15,7 @@ process.env.coagent8_DIR = tempDir;
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { executeTask } = require('../../src/execution/controller.ts');
 const { saveConfig } = require('../../src/config.ts');
-const { readStoredPrices, recordPrices } = require('../../src/backends/model-store.ts');
+const { readStoredPrices, recordPrices } = require('../../src/models/store.ts');
 const { readModelCatalog } = require('../../src/backends/probe-cache.ts');
 const { readResult } = require('../helpers/result.cjs');
 

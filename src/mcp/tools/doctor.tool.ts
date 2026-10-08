@@ -1,7 +1,7 @@
 import { DOCTOR_SUMMARY_MAX_BYTES, formatDoctorSummary, formatModelSummary, runDoctor, runModelReport } from '../../diagnostics/doctor.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
-import { redactDiagnostic } from '../../redaction.js';
-import type { ProviderId } from '../../conversation.js';
+import { redactDiagnostic } from '../../security/redaction.js';
+import type { ProviderId } from '../../contracts/index.js';
 
 export const doctorToolDefinition = {
   name: CANONICAL_TOOL_NAMES.DOCTOR,

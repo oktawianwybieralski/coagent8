@@ -8,7 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createServer } from './server.js';
 import { BRAND } from '../brand.js';
 import { shutdownProcessRunner } from '../execution/process.js';
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { pruneExpiredSessions } from '../sessions/session.js';
 import { waitForActiveExecutionTasks } from '../execution/controller.js';
 import { settlePriceReads } from '../models/prices.js';

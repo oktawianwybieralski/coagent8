@@ -26,7 +26,7 @@ const {
   releaseSessionTurn,
   getSessionFilePath,
 } = require('../../src/sessions/session.ts');
-const { withFileLock } = require('../../src/sessions/lock.ts');
+const { withFileLock } = require('../../src/storage/lock.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -359,7 +359,7 @@ test('production execution automatically prunes expired session metadata with hi
 });
 
 test('closing expired, invalidated or already closed sessions checks workspace under the storage lock',async()=>{
-  const {handleCloseSession}=require('../../src/tools/session.tool.ts');
+  const {handleCloseSession}=require('../../src/mcp/tools/session.tool.ts');
   fs.mkdirSync(path.join(tempDir,'other'),{recursive:true});
   for(const state of ['idle','invalidated','closed']) {
     const s=createSession('codex',tempDir),file=getSessionFilePath(s.sessionHandle),raw=JSON.parse(fs.readFileSync(file));

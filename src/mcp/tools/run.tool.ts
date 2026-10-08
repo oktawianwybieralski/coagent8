@@ -6,7 +6,7 @@ import { handleConsult } from './consult.tool.js';
 import { handleReview } from './review.tool.js';
 import { handleIssue } from './issue.tool.js';
 import { handleLegacyAlias } from './legacy.js';
-import { ToolError } from '../../conversation.js';
+import { ToolError } from '../../contracts/index.js';
 
 export const runToolDefinition = {
   name: CANONICAL_TOOL_NAMES.RUN,

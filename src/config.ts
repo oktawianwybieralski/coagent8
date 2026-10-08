@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PROVIDERS, ToolError, type ProviderId } from './conversation.js';
+import { PROVIDERS, ToolError, type ProviderId } from './contracts/index.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './storage/read.js';

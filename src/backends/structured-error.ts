@@ -9,8 +9,8 @@
  * @packageDocumentation
  */
 
-import { redactDiagnostic } from '../redaction.js';
-import type { ExecutionError } from '../conversation.js';
+import { redactDiagnostic } from '../security/redaction.js';
+import type { ExecutionError } from '../contracts/index.js';
 
 /** Where and how one backend reports structured errors. */
 export interface ErrorDialect {

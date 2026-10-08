@@ -4,7 +4,7 @@
  */
 import { runCommand } from '../execution/process.js';
 import type { CliCommand } from '../execution/cli-resolver.js';
-import type { SetupClient } from './setup.js';
+import type { SetupClient } from './setup-clients.js';
 import { object, withStdioRpc } from './rpc.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from '../backends/claude/version.js';
 

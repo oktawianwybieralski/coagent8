@@ -10,8 +10,8 @@ const path = require('node:path');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-governance-'));
 process.env.coagent8_DIR = tempDir;
 
-const { decideConsent } = require('../../src/backends/governance.ts');
-const { parsePriceList, findPrice, matchPrices, readPrices, refreshPrices, settlePriceReads, PRICE_REFRESH_MS } = require('../../src/backends/prices.ts');
+const { decideConsent } = require('../../src/models/governance.ts');
+const { parsePriceList, findPrice, matchPrices, readPrices, refreshPrices, settlePriceReads, PRICE_REFRESH_MS } = require('../../src/models/prices.ts');
 const { resolveWorkspacePath } = require('../../src/paths.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));

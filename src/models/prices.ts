@@ -20,7 +20,7 @@
  * @packageDocumentation
  */
 import { readBoundedFileSync } from '../storage/read.js';
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { readObservedModelNames, readStoredPrices, recordPrices, type PriceRecord, type StoredPrices } from './store.js';
 
 const DEFAULT_PRICES_URL = 'https://openrouter.ai/api/v1/models';

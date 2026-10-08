@@ -5,8 +5,8 @@
  */
 
 import type { History } from './types.js';
-import type { ConversationEvent } from '../../conversation.js';
-import { validEventIdentifier } from '../../conversation.js';
+import type { ConversationEvent } from '../../contracts/index.js';
+import { validEventIdentifier } from '../../contracts/index.js';
 
 export const PAGE_LIMIT = 240 * 1024;
 

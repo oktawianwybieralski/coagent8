@@ -12,11 +12,11 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is SIMPLIFY-001: S0 baseline captured, S1, S2, S3, and S4 implemented and verified.
+The current task is SIMPLIFY-001: S0 baseline captured, S1, S2, S3, S4, and S5 implemented and verified.
 Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
-The owner requires a stop for inspection after each slice. S4 is complete, awaiting
-owner inspection before starting S5.
+The owner requires a stop for inspection after each slice. S5 is complete, awaiting
+owner inspection before starting S6.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -49,9 +49,9 @@ Source anchors:
 ## Next implementation
 
 The next authorized work boundary is owner inspection of
-[SIMPLIFY-001 S4](#simplify-001-s4-implementation). On continuation, execute S5 in the
-[roadmap's order](ROADMAP.md#execution-checkpoints), with its caller updates and
-scope-based checks, then stop again. S1, S2, S3, and S4 modules are implemented and verified;
+[SIMPLIFY-001 S5](#simplify-001-s5-implementation). On continuation, execute S6 in the
+[roadmap's order](ROADMAP.md#execution-checkpoints), with its boundary enforcement and
+scope-based checks, then stop again. S1, S2, S3, S4, and S5 modules are implemented and verified;
 automated dependency enforcement remains scheduled for S6.
 Recheck the current checkout rather than assuming that the baseline below is still current.
 The migration does not change the release status or make historical runtime evidence fresh.
@@ -376,7 +376,51 @@ Branch: `refactor/simplify-001`.
 - PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 
-Next action: stop after S4 for owner inspection and independent review (codex sol-6.1). Do not proceed to S5 without owner instruction.
+Next action: S5 complete, stop for owner inspection and independent review (codex sol-6.1). Do not proceed to S6 without owner instruction.
+
+## SIMPLIFY-001 S5 implementation
+
+Executed on 2026-10-09, Windows 11, Node v26.10.0, npm 11.19.1. Scope: finishing
+consumers, physical layout, retiring internal shims, test layout mirroring, and eliminating
+type cycles without changing public contracts or data formats.
+
+### Structural changes and boundary cleanup:
+- Retired and removed all 28 stale internal forwarding files and the `src/tools/` directory:
+  - `src/conversation.ts` (replaced by canonical imports from `src/contracts/`)
+  - `src/redaction.ts` (replaced by canonical imports from `src/security/`)
+  - `src/server.ts` and `src/stdio-server.ts` (replaced by canonical imports from `src/mcp/`)
+  - `src/backends/` forwarding shims: `consent.ts`, `governance.ts`, `model-catalog.ts`, `model-identifier.ts`, `model-selection.ts`, `model-store.ts`, `prices.ts`, `routing.ts`
+  - `src/execution/` forwarding shims: `git.ts` (workspace), `stream.ts` (runtime/stream & storage/read)
+  - `src/sessions/` forwarding shims: `history.ts`, `history-page.ts`, `lock.ts`
+  - `src/tools/` shims: `arguments.ts`, `consult.tool.ts`, `doctor.tool.ts`, `issue.tool.ts`, `legacy.ts`, `result.ts`, `review-gate.ts`, `review-input.ts`, `review.tool.ts`, `run.tool.ts`, `schema.ts`, `session.tool.ts`
+- Eliminated recorded type cycle:
+  - `src/integrations/cli-readiness.ts` now imports `SetupClient` directly from `./setup-clients.js` instead of `./setup.js`.
+- Mirrored source owners in unit test layout:
+  - `tests/models/`: `governance.test.js`, `catalog.test.js`, `identifier.test.js`, `literals.test.js`, `selection.test.js`, `prices.test.js`.
+  - `tests/review/`: `gate.test.js`.
+  - `tests/security/`: `redaction.test.js`.
+  - `tests/storage/`: `lock.test.js`.
+  - `tests/workspace/`: `git.test.js`, `git-fixture.test.js`, `workspace.test.js`.
+  - `tests/mcp/`: `server.test.js`, `result.test.js`, `surface.test.js`, `tools/issue.test.js`, `tools/review.test.js`, `tools/session.test.js`.
+  - `tests/execution/`: `routing.test.js` moved alongside execution tests.
+  - Retired `tests/tools/` directory.
+- Preserved distinct test purposes:
+  - `tests/e2e/`, `tests/consumer/`, `tests/helpers/`, `tests/fixtures/`.
+- Updated all consumer imports across `src/`, `extensions/vscode/src/`, and `tests/` to canonical owning modules.
+- Preserved genuinely public compatibility paths:
+  - `index.js` compatibility wrapper (delegates to `dist/index.cjs`).
+  - `package.json` main (`dist/index.cjs`) and bin (`coagent8`, `coagent8-mcp`).
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run build` (tsdown build completes cleanly in ~2.7 s).
+- PASS: `node tests/run.cjs tests/simplify-s5.test.js` (5/5 tests pass).
+- PASS: `npm test` (`node tests/run.cjs` full test suite: 418 tests: 415 pass, 0 fail, 3 skipped, exit code 0).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc generates `.artifacts/api-docs` with 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+
+Next action: stop after S5 for owner inspection and independent review (codex sol-6.1). Do not proceed to S6 without owner instruction.
 
 ## Documentation disposition
 

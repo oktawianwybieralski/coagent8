@@ -9,7 +9,7 @@ process.env.coagent8_DIR = tempDir;
 
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { probeBackend } = require('../../src/backends/probe-cache.ts');
-const { resolveBackend } = require('../../src/backends/routing.ts');
+const { resolveBackend } = require('../../src/execution/routing.ts');
 const { saveConfig } = require('../../src/config.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));

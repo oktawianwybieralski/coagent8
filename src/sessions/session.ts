@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
-import { PROVIDERS } from '../conversation.js';
+import { PROVIDERS } from '../contracts/index.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.js';
 import { canonicalPath } from '../workspace/identity.js';

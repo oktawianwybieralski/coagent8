@@ -7,11 +7,11 @@ const { execFileSync } = require('node:child_process');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-review-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
-const { adapterRegistry } = require('../../src/backends/registry.ts');
-const { handleReview } = require('../../src/mcp/tools/review.tool.ts');
-const { saveConfig } = require('../../src/config.ts');
-const { readResult } = require('../helpers/result.cjs');
-const { collectReviewInput } = require('../../src/review/input.ts');
+const { adapterRegistry } = require('../../../src/backends/registry.ts');
+const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
+const { saveConfig } = require('../../../src/config.ts');
+const { readResult } = require('../../helpers/result.cjs');
+const { collectReviewInput } = require('../../../src/review/input.ts');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('review prompt names the snapshot, asks for the bounded envelope, and a matching answer passes the gate', async () => {
@@ -142,7 +142,7 @@ test('gitlink summaries never establish complete review input, even when dirty c
   assert.equal(before.info.diff, after.info.diff, 'Git summarizes both dirty versions identically');
   assert.equal(before.context.inputComplete, false);
   assert.equal(after.context.inputComplete, false);
-  const { evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
+  const { evaluateStateEnvelopeGate } = require('../../../src/review/gate.ts');
   const output = `REVIEW: 1\nSNAPSHOT: ${after.context.expectedSnapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`;
   assert.equal(evaluateStateEnvelopeGate(output, false, true, after.context).verdict, 'BLOCKED');
 });

@@ -10,7 +10,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../storage/lock.js';
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 import { backupDirectory, configPath, document, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
 

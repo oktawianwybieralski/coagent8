@@ -9,9 +9,9 @@ const path = require('node:path');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-price-limit-'));
 process.env.coagent8_DIR = tempDir;
 
-const { checkPriceLimit, isPriceListStale, matchPrices, parsePriceList, priceEvidence, readPrices, PRICE_STALE_MS } = require('../../src/backends/prices.ts');
-const { recordPrices } = require('../../src/backends/model-store.ts');
-const { choosePricedModel, listModelCandidates } = require('../../src/backends/model-selection.ts');
+const { checkPriceLimit, isPriceListStale, matchPrices, parsePriceList, priceEvidence, readPrices, PRICE_STALE_MS } = require('../../src/models/prices.ts');
+const { recordPrices } = require('../../src/models/store.ts');
+const { choosePricedModel, listModelCandidates } = require('../../src/models/selection.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 

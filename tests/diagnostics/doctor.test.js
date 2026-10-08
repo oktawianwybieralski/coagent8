@@ -94,7 +94,7 @@ test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_bac
 test('doctor summary is a few lines, backend filter keeps other cached quotas, full report has quotas once', async () => {
   const { formatDoctorSummary, DOCTOR_SUMMARY_MAX_BYTES } = require('../../src/diagnostics/doctor.ts');
   const { inspectQuotas } = require('../../src/backends/availability.ts');
-  const { handleDoctor } = require('../../src/tools/doctor.tool.ts');
+  const { handleDoctor } = require('../../src/mcp/tools/doctor.tool.ts');
   const original = { ...adapterRegistry };
   const quotaReads = [];
   const quotaCache = process.env.coagent8_QUOTA_CACHE;
@@ -231,7 +231,7 @@ test('the doctor summary drops whole model rows to stay within the inline bound 
 });
 
 test('doctor defaults to the model view: cached catalogs, defaults and prices, no quota read and nothing recorded (AX-001)', async () => {
-  const { handleDoctor } = require('../../src/tools/doctor.tool.ts');
+  const { handleDoctor } = require('../../src/mcp/tools/doctor.tool.ts');
   const { loadConfig } = require('../../src/config.ts');
   const original = { ...adapterRegistry };
   const quotaReads = [];

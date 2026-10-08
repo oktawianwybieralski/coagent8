@@ -13,7 +13,8 @@ const {
   terminateProcessTree,
 } = require('../../src/execution/process.ts');
 const { resolveCliCommand } = require('../../src/execution/cli-resolver.ts');
-const { createLineDecoder, truncateToByteLength, readBoundedFile } = require('../../src/execution/stream.ts');
+const { createLineDecoder, truncateToByteLength } = require('../../src/execution/runtime/stream.ts');
+const { readBoundedFile } = require('../../src/storage/read.ts');
 
 // Fake protocol CLI: NDJSON on stdin; answers an interrupt with a terminal record unless told to ignore it.
 const protocolCli = `

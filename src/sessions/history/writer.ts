@@ -19,7 +19,7 @@ import { withFileLock, atomicWrite } from '../../storage/lock.js';
 import { canonicalPath } from '../../workspace/identity.js';
 import { truncateToByteLength } from '../../execution/runtime/stream.js';
 import { computeSafeCommitPoint, redactCredentialFormats } from '../../security/index.js';
-import type { AdapterEvent, ConversationEvent, ProviderId } from '../../conversation.js';
+import type { AdapterEvent, ConversationEvent, ProviderId } from '../../contracts/index.js';
 import {
   SESSION_LIMIT,
   getHistoryDir,

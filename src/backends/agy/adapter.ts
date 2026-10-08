@@ -5,13 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { runCommand } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
-import { redactDiagnostic } from '../../redaction.js';
-import { isValidModelIdentifier } from '../model-identifier.js';
+import { redactDiagnostic } from '../../security/redaction.js';
+import { isValidModelIdentifier } from '../../models/identifier.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
 import type { AdapterProbeResult, CatalogModel, ExecutionOptions, InheritedTools, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
-import { errorCodeOf, type ExecutionError } from '../../conversation.js';
+import { errorCodeOf, type ExecutionError } from '../../contracts/index.js';
 
 export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';

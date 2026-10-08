@@ -12,7 +12,7 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
 import { handleConsult } from './consult.tool.js';
-import { ToolError } from '../../conversation.js';
+import { ToolError } from '../../contracts/index.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 

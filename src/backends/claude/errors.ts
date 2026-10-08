@@ -1,6 +1,6 @@
 /** Typed Claude Code failures from structured stream-json fields; independent of execution and parsing. @packageDocumentation */
-import { redactDiagnostic } from '../../redaction.js';
-import type { ErrorCode, ExecutionError } from '../../conversation.js';
+import { redactDiagnostic } from '../../security/redaction.js';
+import type { ErrorCode, ExecutionError } from '../../contracts/index.js';
 
 export interface ClaudeErrorMapping { code: ErrorCode; retryable: boolean }
 

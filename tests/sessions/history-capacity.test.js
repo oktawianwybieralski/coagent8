@@ -7,7 +7,7 @@ const path = require('node:path');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-sessions-history-capacity-'));
 process.env.coagent8_DIR = tempDir;
 
-const { createHistoryWriter, getHistoryDir, deleteHistory } = require('../../src/sessions/history.ts');
+const { createHistoryWriter, getHistoryDir, deleteHistory } = require('../../src/sessions/history/index.ts');
 const { createSession, closeSession } = require('../../src/sessions/session.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));

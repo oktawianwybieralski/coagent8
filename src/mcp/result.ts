@@ -14,7 +14,7 @@
 
 import type { TerminalExecutionResult } from '../backends/types.js';
 import type { TaskExecutionResult, ExecutionMeta } from '../contracts/execution.js';
-import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
+import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';

@@ -1,8 +1,8 @@
 /** Typed native Codex failures; independent of execution and parsing. @packageDocumentation */
-import { redactDiagnostic } from '../../redaction.js';
+import { redactDiagnostic } from '../../security/redaction.js';
 import { isRateLimitError } from '../rate-limit.js';
 import { isAuthError } from '../auth-error.js';
-import type { ExecutionError } from '../../conversation.js';
+import type { ExecutionError } from '../../contracts/index.js';
 import { extractStructuredError, type ErrorDialect } from '../structured-error.js';
 
 export function classifyCodexError(message: string): ExecutionError {

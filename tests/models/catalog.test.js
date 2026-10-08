@@ -13,7 +13,7 @@ process.env.CODEX_CONFIG_PATH = path.join(directory, 'config.toml');
 process.env.AGY_PATH = path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs');
 process.env.GEMINI_CLI_HOME = path.join(directory, 'gemini-home');
 
-const { checkModelSelection } = require('../../src/backends/model-catalog.ts');
+const { checkModelSelection } = require('../../src/models/catalog.ts');
 const { listCodexModels, parseCodexModelPage } = require('../../src/backends/codex/models.ts');
 const { VALID_REASONING_EFFORTS: CODEX_EFFORTS } = require('../../src/backends/codex/adapter.ts');
 const { listModels: listAgyModels, parseAgyModels } = require('../../src/backends/agy/adapter.ts');
@@ -95,7 +95,7 @@ test('the controller refuses an unoffered model before any model call, and the d
 });
 
 test('a catalog finds a model by id or alias in lookup form and returns the exact listed name, never an approximation', () => {
-  const { findCatalogEntry, checkModelSelection } = require('../../src/backends/model-catalog.ts');
+  const { findCatalogEntry, checkModelSelection } = require('../../src/models/catalog.ts');
   const catalog = { source: 'x', models: [{ id: 'gpt-6.1-sol', efforts: ['low'] }, { id: 'claude-sonnet-5-5', efforts: ['low'], aliases: ['sonnet', 'default'] }, { id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
   assert.equal(findCatalogEntry(catalog, 'gpt-6-1-sol').name, 'gpt-6.1-sol', 'dots and dashes are one name');
   assert.equal(findCatalogEntry(catalog, 'openai/GPT-6.1-Sol').name, 'gpt-6.1-sol', 'case and a provider prefix do not matter');

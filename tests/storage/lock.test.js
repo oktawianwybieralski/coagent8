@@ -9,7 +9,7 @@ const { spawn } = require('node:child_process');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-sessions-lock-'));
 process.env.coagent8_DIR = tempDir;
 
-const { withFileLock, inProcessLocks } = require('../../src/sessions/lock.ts');
+const { withFileLock, inProcessLocks } = require('../../src/storage/lock.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -112,7 +112,7 @@ test('withFileLock handles concurrency with jittered exponential backoff', async
 
 test('storage locks serialize actual competing Node processes (F09/F10)',async()=>{
   const counter=path.join(tempDir,'multiprocess-counter');fs.writeFileSync(counter,'0');
-  const module=path.resolve(__dirname, '../..', 'src/sessions/lock.ts');
+  const module=path.resolve(__dirname, '../..', 'src/storage/lock.ts');
   const script=`const fs=require('node:fs/promises');const {withFileLock}=require(process.argv[1]);(async()=>{for(let i=0;i<8;i++)await withFileLock(process.argv[2],async()=>{const n=Number(await fs.readFile(process.argv[2],'utf8'));await new Promise(r=>setTimeout(r,2));await fs.writeFile(process.argv[2],String(n+1));});})().catch(e=>{console.error(e);process.exitCode=1;});`;
   await Promise.all(Array.from({length:3},()=>new Promise((resolve,reject)=>{
     const proc=spawn(process.execPath,['--require','tsx/cjs','-e',script,module,counter],{stdio:['ignore','ignore','pipe'],windowsHide:true});let error='';proc.stderr.on('data',d=>{error+=d;});proc.on('error',reject);proc.on('exit',code=>code===0?resolve():reject(new Error(error)));
@@ -208,7 +208,7 @@ test('a lease is published complete: no contender ever reads an empty or partial
 });
 
 test('a lock timeout is a typed LockTimeoutError, so callers can tell contention from I/O failures', async () => {
-  const { LockTimeoutError } = require('../../src/sessions/lock.ts');
+  const { LockTimeoutError } = require('../../src/storage/lock.ts');
   const resource = path.join(tempDir, 'typed-timeout');
   fs.writeFileSync(`${resource}.lease`, JSON.stringify({ token: 'live-owner', pid: process.pid, createdAt: Date.now() }));
   try {

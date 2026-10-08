@@ -9,7 +9,7 @@ process.env.coagent8_DIR = tempDir;
 
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { executeTask } = require('../../src/execution/controller.ts');
-const { sessionHistory, deleteHistory } = require('../../src/sessions/history.ts');
+const { sessionHistory, deleteHistory } = require('../../src/sessions/history/index.ts');
 const { getSession } = require('../../src/sessions/session.ts');
 const { saveConfig } = require('../../src/config.ts');
 const { readResult } = require('../helpers/result.cjs');

@@ -9,7 +9,7 @@
  */
 import { cleanupClients } from '../../../src/integrations/cleanup.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
-import { redactDiagnostic } from '../../../src/redaction.js';
+import { redactDiagnostic } from '../../../src/security/redaction.js';
 
 async function main(): Promise<void> {
   const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });

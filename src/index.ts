@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { redactDiagnostic } from './redaction.js';
+import { redactDiagnostic } from './security/redaction.js';
 import path from 'node:path';
 import { serveStdio } from './mcp/stdio-server.js';
 

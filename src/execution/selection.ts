@@ -8,7 +8,7 @@
  *
  * @packageDocumentation
  */
-import { ToolError, errorCodeOf, type ProviderId } from '../conversation.js';
+import { ToolError, errorCodeOf, type ProviderId } from '../contracts/index.js';
 import { loadConfig } from '../config.js';
 import { adapterRegistry } from '../backends/registry.js';
 import { readModelCatalog, readObservedModel } from '../backends/probe-cache.js';

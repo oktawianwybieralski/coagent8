@@ -13,7 +13,7 @@ import { loadConfig } from '../config.js';
 import { selectSmartQuotaBackend } from '../backends/availability.js';
 import { findCatalogEntry } from '../models/catalog.js';
 import type { AdapterProbeResult, CliAdapter } from '../backends/types.js';
-import { PROVIDERS, ToolError, type ProviderId } from '../conversation.js';
+import { PROVIDERS, ToolError, type ProviderId } from '../contracts/index.js';
 
 export interface ResolvedBackend { id: ProviderId; adapter: CliAdapter; probe: AdapterProbeResult; isSmartQuota?: boolean; warnings?: string[] }
 

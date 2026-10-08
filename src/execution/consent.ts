@@ -4,7 +4,7 @@
  *
  * @packageDocumentation
  */
-import { errorCodeOf, type ProviderId } from '../conversation.js';
+import { errorCodeOf, type ProviderId } from '../contracts/index.js';
 import { loadConfig } from '../config.js';
 import { decideConsent, type ConsentDecision } from '../models/governance.js';
 import { readPrices } from '../models/prices.js';

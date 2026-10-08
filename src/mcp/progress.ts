@@ -4,7 +4,7 @@
  * @packageDocumentation
  */
 
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/redaction.js';
 
 export type ProgressCallback = ((message: string | { message?: string }, progress?: number | null, total?: number | null) => void) & { close: () => void };
 

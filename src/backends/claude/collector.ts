@@ -1,11 +1,11 @@
 /** Public Claude Code stream-json collector shared by production execution and parser regressions. @packageDocumentation */
 import { BufferLimitError, truncateToByteLength } from '../../execution/runtime/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
-import { redactDiagnostic } from '../../redaction.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
+import { redactDiagnostic } from '../../security/redaction.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { classifyClaudeFailure } from './errors.js';
-import { isValidModelIdentifier } from '../model-identifier.js';
+import { isValidModelIdentifier } from '../../models/identifier.js';
 
 /** Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289). */
 const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event', 'control_response']);

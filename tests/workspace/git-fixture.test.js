@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {execFileSync}=require('node:child_process');
-const {collectGitScope}=require('../../src/execution/git.ts');
+const {collectGitScope}=require('../../src/workspace/git.ts');
 
 test('F21: isolated Git fixture covers staged/uncommitted/SHA/branch/range, untracked contents, subdirectory and byte budget',async()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'coagent8-git-')),sub=path.join(root,'nested');
@@ -50,7 +50,7 @@ test('F21: isolated Git fixture covers staged/uncommitted/SHA/branch/range, untr
 });
 
 test('snapshotId names the reviewed snapshot for every scope, including a repository without commits', async () => {
-  const { snapshotId } = require('../../src/execution/git.ts');
+  const { snapshotId } = require('../../src/workspace/git.ts');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-snapshot-'));
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
   try {

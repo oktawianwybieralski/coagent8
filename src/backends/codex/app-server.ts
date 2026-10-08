@@ -21,11 +21,11 @@
  * @packageDocumentation
  */
 import { BRAND } from '../../brand.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';
-import { isValidModelIdentifier } from '../model-identifier.js';
+import { isValidModelIdentifier } from '../../models/identifier.js';
 
 /**
  * Codex features that give a turn tools or commands beyond the read-only shell: connectors

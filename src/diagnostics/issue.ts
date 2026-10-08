@@ -17,7 +17,7 @@
  */
 
 import os from 'os';
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { BRAND } from '../brand.js';
 

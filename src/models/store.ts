@@ -15,7 +15,7 @@
 import path from 'node:path';
 import { getDataDir } from '../paths.js';
 import { PROVIDERS, type ProviderId } from '../contracts/provider.js';
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { isValidModelIdentifier } from './identifier.js';

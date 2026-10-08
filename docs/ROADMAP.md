@@ -67,8 +67,7 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 ## SIMPLIFY-001 - module boundary migration
 
 Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
-S1, S2, S3, and S4 implemented and verified; S5-S6 have not started. Automated
-dependency enforcement remains scheduled for S6. This is
+S1, S2, S3, S4, and S5 implemented and verified; S6 scheduled. This is
 the active plan, not an additional plan under docs/.local/. Work stays local;
 Git integration and publication remain owner-managed. Audit blockers retain
 priority. Apply the slices before expanding the affected owners for COAGENT
@@ -130,7 +129,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   and finalization semantics. Acceptance: history remains compatible on disk
   and across restart; no session/history cycle or duplicated cache/capacity state.
   Evidence: [S4 implementation](HANDOFF.md#simplify-001-s4-implementation).
-- [ ] **S5 - Finish consumers and physical layout.** Update diagnostics,
+- [x] **S5 - Finish consumers and physical layout.** Update diagnostics,
   integrations, extension imports, tests, fixtures, scripts and documentation
   to their owning modules. Mirror source owners in unit tests; retain e2e,
   consumer, helpers and fixtures as distinct test purposes. Split remaining
@@ -139,6 +138,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   internal forwarding files instead of leaving permanent import aliases.
   Acceptance: no unresolved old paths, orphan modules, eager setup imports or
   broken packaged entrypoints; preserve genuinely public compatibility paths.
+  Evidence: [S5 implementation](HANDOFF.md#simplify-001-s5-implementation).
 - [ ] **S6 - Enforce and accept the final boundaries.** Add an automated
   dependency check using the real module graph, covering types, dynamic imports
   and re-exports as well as ordinary imports. Prove it detects forbidden edges

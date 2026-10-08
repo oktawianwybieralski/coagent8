@@ -15,8 +15,8 @@ import { createHash } from 'node:crypto';
 import { withFileLock } from '../../storage/lock.js';
 import { readBoundedFile } from '../../storage/read.js';
 import { canonicalPath } from '../../workspace/identity.js';
-import type { ConversationEvent } from '../../conversation.js';
-import { validEventIdentifier, PROVIDERS } from '../../conversation.js';
+import type { ConversationEvent } from '../../contracts/index.js';
+import { validEventIdentifier, PROVIDERS } from '../../contracts/index.js';
 import type { History, CachedHistorySnapshot } from './types.js';
 import {
   SESSION_LIMIT,

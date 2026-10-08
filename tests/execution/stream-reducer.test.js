@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { StreamReducer, createStreamReducer } = require('../../src/execution/stream-reducer.ts');
-const { truncateToByteLength } = require('../../src/execution/stream.ts');
+const { truncateToByteLength } = require('../../src/execution/runtime/stream.ts');
 
 test('StreamReducer manages message accumulation and terminal answer replacement', () => {
   const reducer = new StreamReducer({ maxTotalBytes: 500, maxMessageBytes: 200 });

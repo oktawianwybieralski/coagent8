@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chooseWorkspace } = require('../src/paths.ts');
+const { chooseWorkspace } = require('../../src/paths.ts');
 
 const base = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-workspace-'));
 const project = path.join(base, 'project'), other = path.join(base, 'other');

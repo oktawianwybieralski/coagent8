@@ -1,8 +1,8 @@
 /** Public Gemini terminal/error classification. @packageDocumentation */
-import { redactDiagnostic } from '../../redaction.js';
+import { redactDiagnostic } from '../../security/redaction.js';
 import { isRateLimitError } from '../rate-limit.js';
 import { isAuthError } from '../auth-error.js';
-import type { ExecutionError } from '../../conversation.js';
+import type { ExecutionError } from '../../contracts/index.js';
 import { extractStructuredError, type ErrorDialect } from '../structured-error.js';
 export function classifyGeminiError(text: string): ExecutionError {
   const message = redactDiagnostic(text);

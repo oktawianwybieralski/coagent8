@@ -8,10 +8,10 @@ const { randomUUID } = require('node:crypto');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-server-'));
 process.env.coagent8_DIR = tempDir;
 
-const { createHistoryWriter } = require('../src/sessions/history.ts');
-const { createSession } = require('../src/sessions/session.ts');
-const { createServer, createToolDefinitions, validateToolArguments } = require('../src/mcp/server.ts');
-const { readResult } = require('./helpers/result.cjs');
+const { createHistoryWriter } = require('../../src/sessions/history/index.ts');
+const { createSession } = require('../../src/sessions/session.ts');
+const { createServer, createToolDefinitions, validateToolArguments } = require('../../src/mcp/server.ts');
+const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -112,7 +112,7 @@ test('F14/F15: shared schema validates required fields, types, enums and unknown
   // AX-002: the price limit is a non-negative finite number of USD per million output tokens.
   assert.ok(validateToolArguments({proposal:'x',output_price_below:4.99},consultTool.inputSchema));
   for (const bad of ['5',-1,null,Number.POSITIVE_INFINITY]) assert.throws(()=>validateToolArguments({proposal:'x',output_price_below:bad},consultTool.inputSchema),/output_price_below/,String(bad));
-  const { getAllCallableToolDefinitions } = require('../src/mcp/server.ts');
+  const { getAllCallableToolDefinitions } = require('../../src/mcp/server.ts');
   const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
   assert.ok(validateToolArguments({task:'x',backend:'agy'},schema));
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
@@ -121,9 +121,9 @@ test('F14/F15: shared schema validates required fields, types, enums and unknown
 test('the connected client name sets the caller CLI that auto routing avoids', async () => {
   const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
-  const { adapterRegistry } = require('../src/backends/registry.ts');
-  const { resolveBackend, setCallerProvider } = require('../src/backends/routing.ts');
-  const { saveConfig } = require('../src/config.ts');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { resolveBackend, setCallerProvider } = require('../../src/execution/routing.ts');
+  const { saveConfig } = require('../../src/config.ts');
   const original = { ...adapterRegistry };
   const server = createServer();
   const client = new Client({ name: 'claude-code', version: '2.1.291' });
@@ -150,8 +150,8 @@ test('execution results report a workspace taken from client roots; roots are re
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
   const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
   const { pathToFileURL } = require('node:url');
-  const { adapterRegistry } = require('../src/backends/registry.ts');
-  const { saveConfig } = require('../src/config.ts');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { saveConfig } = require('../../src/config.ts');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-root-'));
   const original = adapterRegistry.agy;
   const seen = [];
@@ -191,8 +191,8 @@ test('execution results report a workspace taken from client roots; roots are re
 test('execution errors carry the code raised at their source; an unknown failure is PROCESS_ERROR, not INPUT_LIMIT (AUD-P1-2)', async () => {
   const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
-  const { adapterRegistry } = require('../src/backends/registry.ts');
-  const { saveConfig } = require('../src/config.ts');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { saveConfig } = require('../../src/config.ts');
   const original = adapterRegistry.agy;
   adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => { throw new Error('Lock timeout on probe cache.'); },
     execute: async () => { throw new Error('must not run'); } };
@@ -246,8 +246,8 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
   const { ElicitRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
-  const { adapterRegistry } = require('../src/backends/registry.ts');
-  const { saveConfig, loadConfig } = require('../src/config.ts');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { saveConfig, loadConfig } = require('../../src/config.ts');
   const original = adapterRegistry.agy;
   const consented = [];
   const withDefault = defaultModel => async () => ({ installed: true, version: 'fixture', config: { defaultModel } });

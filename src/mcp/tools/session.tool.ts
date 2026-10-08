@@ -2,10 +2,10 @@ import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { closeSession, cancelSession, listSessions } from '../../sessions/session.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
-import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history.js';
+import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history/index.js';
 import { resolveWorkspacePath } from '../../workspace/workspace.js';
-import { ToolError } from '../../conversation.js';
-import { redactDiagnostic } from '../../redaction.js';
+import { ToolError } from '../../contracts/index.js';
+import { redactDiagnostic } from '../../security/redaction.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {

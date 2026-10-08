@@ -9,7 +9,7 @@
  */
 import os from 'node:os';
 import path from 'node:path';
-import type { ProviderId } from '../conversation.js';
+import type { ProviderId } from '../contracts/index.js';
 import { loadConfigForDiagnostics } from '../config.js';
 import { CliResolutionError, resolveBundledClaude, resolveBundledCodex, resolveManagedAgy } from '../execution/cli-resolver.js';
 import type { AdapterProbeResult } from './types.js';

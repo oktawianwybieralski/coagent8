@@ -10,7 +10,7 @@ process.env.coagent8_DIR = tempDir;
 
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { readModelCatalog } = require('../../src/backends/probe-cache.ts');
-const { selectModel } = require('../../src/backends/model-selection.ts');
+const { selectModel } = require('../../src/execution/selection.ts');
 const { saveConfig, loadConfig } = require('../../src/config.ts');
 const { executeTask } = require('../../src/execution/controller.ts');
 const { runDoctor, formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');

@@ -195,7 +195,7 @@ test('Claude initialize entries without a valid name are left out; none at all i
 });
 
 test('selection resolves a listed Claude alias through the catalog and observes only an unlisted name',()=>withFixture(async({captured})=>{
-  const {selectModel}=require('../../../src/backends/model-selection.ts');
+  const {selectModel}=require('../../../src/execution/selection.ts');
   const {probeBackend,readModelCatalog}=require('../../../src/backends/probe-cache.ts');
   const probe=await probeBackend('claude',{fresh:true});await readModelCatalog('claude',{fresh:true});captured();
   assert.deepEqual(await selectModel('claude',probe,{model:'haiku'}),{model:'claude-haiku-4-5-20251001',source:'request'});

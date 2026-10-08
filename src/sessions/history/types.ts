@@ -9,8 +9,8 @@ import path from 'node:path';
 import { getDataDir } from '../../paths.js';
 import { sanitizeHandle } from '../identity.js';
 import { redactDiagnostic, redactCredentialFormats } from '../../security/index.js';
-import type { AdapterEvent, ConversationEvent } from '../../conversation.js';
-import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../../conversation.js';
+import type { AdapterEvent, ConversationEvent } from '../../contracts/index.js';
+import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../../contracts/index.js';
 
 /** Maximum byte capacity for a single session's history log (10 MiB). */
 export const SESSION_LIMIT = 10 * 1024 * 1024;
