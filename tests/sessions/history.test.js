@@ -584,6 +584,26 @@ test('history fragment pagination returns the whole large UTF-8 message at limit
   assert.equal(joined,text);assert.ok(pages>1);
 });
 
+test('history fragments split only at UTF-8 character boundaries, whatever the page budget leaves', () => {
+  const { paginateHistory } = require('../../src/sessions/history-page.ts');
+  // Each prefix length moves the fragment cut by one byte across the 4-byte characters.
+  for (let prefix = 0; prefix < 4; prefix++) {
+    const text = 'a'.repeat(prefix) + '😀'.repeat(60000);
+    const history = { revision: randomUUID(), events: [{ type: 'assistant_message', sequence: 1, eventId: randomUUID(), turnId: randomUUID(), messageId: 'large', text }] };
+    let cursor, joined = '', pages = 0;
+    do {
+      const page = paginateHistory(history, 'fixture-handle', cursor, 1);
+      for (const event of page.events) {
+        assert.ok(!event.text.includes('�'), `no replacement character (prefix ${prefix}, page ${pages})`);
+        joined += event.text;
+      }
+      cursor = page.nextCursor; pages++;
+      assert.ok(pages < 20);
+    } while (cursor);
+    assert.equal(joined, text, `prefix ${prefix}`);
+    assert.ok(pages > 1);
+  }
+});
 test('oversized provider metadata cannot hang history pagination',async()=>{
   const s=createSession('gemini',tempDir),writer=createHistoryWriter(s.sessionHandle,tempDir,'gemini',randomUUID());
   assert.throws(()=>writer.accept({type:'assistant_message',messageId:'x'.repeat(300*1024),text:'short'}),/identifier/);

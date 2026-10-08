@@ -1,5 +1,4 @@
 /** Pure pagination of a validated, owned history snapshot. @packageDocumentation */
-import { truncateToByteLength } from '../execution/stream.js';
 import type { History } from './history.js';
 import type { ConversationEvent } from '../conversation.js';
 import { validEventIdentifier } from '../conversation.js';
@@ -63,8 +62,12 @@ export function paginateHistory(h: History, handle: string, cursor?: string, lim
           // Break page before this large event
           break;
         }
-        let text = truncateToByteLength(raw.subarray(start, start + targetTextBudget).toString('utf8'), targetTextBudget, '');
-        const end = start + Buffer.byteLength(text);
+        // Cut at a UTF-8 character boundary: decoding a split character would insert U+FFFD,
+        // whose length no longer matches the source bytes, and the next offset would land
+        // inside a character.
+        let end = Math.min(raw.length, start + targetTextBudget);
+        while (end > start && end < raw.length && (raw[end] & 0xc0) === 0x80) end--;
+        const text = raw.subarray(start, end).toString('utf8');
         if (end === start && start < raw.length) throw new Error('History fragment cannot make progress within page budget.');
         Object.assign(copy, { fragment: { offsetBytes: start, totalBytes: raw.length, complete: end === raw.length } });
         if (end < raw.length) {
