@@ -1,9 +1,21 @@
-# P0: Security & Read-Only Governance (`01-security-and-sandboxes.md`)
+# P0: Security & Execution Profiles (`01-security-and-sandboxes.md`)
 
 > **Priority Level: P0 (Critical System Invariant)**  
 > Violations block execution and must never be bypassed.
 
 ---
+
+## Product direction and current enforcement
+
+Owner decision (2026-10-08): full coagents may perform implementation and command
+execution under task-scoped user policy. The migration is specified by
+[`COAGENT-002/007` in the roadmap](../../docs/ROADMAP.md#full-coagent-direction).
+This replaces the consultation-only product boundary and proposed blanket
+sandbox opt-out. Current profiles below remain enforced until each replacement
+is implemented and verified. Planning a capability does not make it available.
+Consultation, planning inspection and independent review retain read-only access;
+mutating tasks need a distinct verified profile. Skills and delegated agents
+cannot grant themselves permissions or model consent.
 
 ## 1. Mandatory Read-Only Sandboxing
 All multi-agent review, diagnostic, consultation, and codebase analysis operations must strictly enforce read-only execution modes across external CLI backends to ensure repository and host integrity:

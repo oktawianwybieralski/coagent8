@@ -14,6 +14,14 @@ session-free/per-call modes and persisted price catalogs are planned. Audit
 findings and their reproductions are in the
 [project review](../../../docs/PROJECT_REVIEW_2026-10-05.md).
 
+The owner changed the product direction on 2026-10-08 to full task delegation,
+configurable agent roles and client skill installation. Follow
+[the coagent milestones](../../../docs/ROADMAP.md#full-coagent-direction);
+model size and provider do not determine the coordinator or worker role.
+Writing and delegated coordination remain planned until verified execution
+profiles and task contracts are implemented. Do not replace current sandbox or
+nested-turn enforcement with a prompt instruction or a blanket opt-out.
+
 ## Safety and contribution
 
 Follow [core invariants](../../rules/00-core-invariants.md),

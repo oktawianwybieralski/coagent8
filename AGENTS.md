@@ -5,9 +5,12 @@ This repository defines strict engineering practices, Git branching workflows, q
 All rules are organized hierarchically by strict priority from **P0 (Critical System Invariants)** to **P2 (Code Standards & Conventions)** in [`.agents/rules/`](./.agents/rules/):
 
 Use [docs/ROADMAP.md](./docs/ROADMAP.md) as the single active plan. The product is
-a client-independent MCP-to-CLI bridge; host setup and editor integrations are
-optional. Current priorities are quiet Windows operation and simpler ordinary
-MCP use. Historical plans and RFCs do not override this direction.
+a client-independent system for delegating complete tasks to cooperating agents
+(owner decision, 2026-10-08). Roles and model/provider choices are independent;
+client skill installation is planned. The current runtime remains a read-only
+MCP-to-CLI bridge until verified task execution profiles land. Follow the
+roadmap's full coagent direction while preserving audit gates and quiet desktop
+operation. Historical plans and RFCs do not override this direction.
 
 ---
 
@@ -22,12 +25,14 @@ MCP use. Historical plans and RFCs do not override this direction.
    - **Verifiable reality**: Zero hallucinated claims, honest evidence, no weakened tests, synchronized metadata.
    - **Production reliability**: Strict TypeScript strict mode, leak-free process management, defensive schema validation.
 
-1. **[P0: Security & Read-Only Sandboxes (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
-   - Mandatory read-only profiles: Codex app-server verifies readOnly/never and
+1. **[P0: Security & Execution Profiles (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
+   - Current mandatory read-only profiles: Codex app-server verifies readOnly/never and
      every inherited MCP server disabled per thread;
      Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
      agy receives native --sandbox; its inherited MCP servers and plugins are a
      documented limitation (owner decision 2026-10-08), with recursion refused.
+   - Planned full coagents use task-scoped capabilities under user policy;
+     writing and bounded delegation require the roadmap's profile migration.
    - Models priced as expensive (at least 2x the backend default, or 20 USD per
      million output tokens), unknown or approximately priced require explicit user
      approval (`approve: true`) through server MCP elicitation; a calling agent
@@ -49,7 +54,8 @@ MCP use. Historical plans and RFCs do not override this direction.
 *Mandatory quality bars that must be satisfied before PR merge.*
 
 3. **[P1: CoAgent8 Review & Independent Audit (`03-author-reviewer.md`)](./.agents/rules/03-author-reviewer.md)**:
-   - Strict Author/Reviewer separation: Antigravity acts as Author (writes the change); Codex Sol (`gpt-6.1-sol`) / Claude Code acts as Reviewer (independent review via CoAgent8 Review).
+   - Strict Author/Reviewer separation: roles are independent of model/provider;
+     the implementation author cannot supply their own independent approval.
    - Independent verification via `review` in read-only sandbox before merging.
    - Release approval strictly binds to Base SHA, Candidate SHA, Tree SHA, and Artifact SHA-256.
    - Zero P1 (critical) or P2 (robustness) issues allowed. State Envelope must

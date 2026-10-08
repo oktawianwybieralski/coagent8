@@ -7,10 +7,17 @@
 
 ## 1. Roles & Separation of Concerns
 CoAgent8 strictly enforces **CoAgent8 Review / Independent Audit** (Author-Reviewer separation):
-* **Author (Authoring Agent - Antigravity / Primary Assistant):**
+* **Author (assigned implementation agent):**
   - Primary author responsible for writing TypeScript code, modifying schemas, managing unit tests, and driving git branch lifecycle.
-* **Reviewer (Independent Auditor - Codex Sol `gpt-6.1-sol` / Claude Code via CoAgent8 Review):**
+* **Reviewer (independent agent via CoAgent8 Review):**
   - Independent code verification in read-only sandbox, security audits, architectural consistency checks, and edge-case probing.
+
+Roles are independent of model size and provider (owner decision, 2026-10-08).
+The same provider/model may be used in separate author and reviewer executions;
+the implementation author cannot approve their own changes. A planner may review
+a worker's implementation, but must evaluate the original requirements as well
+as their plan. The [full coagent plan](../../docs/ROADMAP.md#full-coagent-direction)
+defines configurable product roles without relaxing independent review gates.
 
 ---
 

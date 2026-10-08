@@ -10,7 +10,7 @@
 * **Zero Shortcuts**: Never introduce temporary workarounds, monkey-patches, silent exception swallowing (`catch (_) {}` without intentional handling or rationale), mock bypasses in production code, or arbitrary type coercions (`as any`) to artificially bypass checks.
 * **Root-Cause Remediation**: Fix defects, race conditions, and edge cases at their architectural source. If an interface or protocol boundary fails, redesign the boundary cleanly rather than applying duct tape around callers.
 * **Strict TypeScript Strict Mode**: The codebase operates strictly under TypeScript strict mode (`tsc --noEmit` must pass with 0 compiler errors). Never suppress type errors, abuse `any`, or use arbitrary type coercions to conceal type system mismatches.
-* **Runtime Reliability**: The MCP-to-CLI bridge must support bounded headless execution and reliable cancellation. Resource leaks (dangling processes, orphaned file descriptors, uncollected timers, runaway memory buffers) are treated as critical P0 defects. This does not require a general orchestration platform.
+* **Runtime Reliability**: CoAgent8 must support bounded headless task execution and reliable cancellation. Resource leaks (dangling processes, orphaned file descriptors, uncollected timers, runaway memory buffers) are treated as critical P0 defects. The planned full coagent direction extends these guarantees to delegated task trees; the roadmap defines the implementation stages.
 * **Defensive Boundary Validation**: Always validate external inputs, CLI outputs, and JSON payloads with strict schemas (`validateToolArguments`, Zod/MCP schema definitions). Never assume third-party CLIs or external callers behave well.
 * **Strict ASCII Punctuation & Character Encoding**: Never use non-ASCII typography (Unicode em dashes U+2014, en dashes U+2013, curly/smart quotes U+201C/U+201D/U+2018/U+2019, non-breaking spaces U+00A0). All source code, configuration manifests, test suites, and documentation must strictly use standard ASCII hyphens (`-`, U+002D), ASCII straight quotes (`"`, `'`), and standard ASCII whitespace. See [06-language-and-style.md](06-language-and-style.md).
 
@@ -35,8 +35,8 @@
 
 ## 4. Sovereign Author-Reviewer Verification
 * **Mandatory Dual-Role Separation**:
-  - **Author** (Antigravity / Gemini) authors code, refactors, and implements features.
-  - **Reviewer** (OpenAI Codex `gpt-6.1-sol` / Claude Code) independently audits changes in a read-only sandbox before merging.
+  - **Author** authors code, refactors, and implements features. The role is independent of model/provider.
+  - **Reviewer** independently audits changes in a separate read-only execution before merging. The author cannot provide their own independent approval; provider/model identity alone does not establish independence.
 * **Zero Unresolved Blockers**: Pull Requests cannot be opened or merged if any P1 (Blocker) or P2 (Important/Robustness) issue is raised by the Reviewer. The state envelope must evaluate to `VERDICT: READY`.
 * **Scope-Based Quality Gate**: Before submitting changes, satisfy the applicable checks in [`04-quality-gate.md`](./04-quality-gate.md). Prose-only documentation changes do not require runtime tests, builds, packaging or backend AI calls. Full package and cross-platform validation remain required for releases; existing required remote checks and branch protections must not be bypassed.
 
