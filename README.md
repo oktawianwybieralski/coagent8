@@ -73,7 +73,8 @@ Set `backend` for a predictable provider. Otherwise `auto` uses configuration,
 or selects among eligible providers using cached quota and cooldown evidence,
 preferring another CLI than the calling client's own. It does not retry a failed
 turn on another provider. Quota measurements can be stale; `doctor` can refresh
-them. The automatic route currently requires a writable quota cache.
+them; a measurement older than 15 minutes counts as unmeasured. If the quota
+cache cannot be written, the automatic route continues with a warning.
 
 To install a locally built package:
 

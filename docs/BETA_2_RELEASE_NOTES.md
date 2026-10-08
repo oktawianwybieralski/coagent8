@@ -39,8 +39,7 @@ Follow the [tester guide](../README.md#beta2-tester-guide).
 ## Known limitations
 
 The [runtime contract](RUNTIME_CONTRACT.md#7-known-limitations-and-deviations)
-owns the detailed list. Remaining limitations include quota-cache writes that
-can fail automatic routing, stale quota weight, duplicated concurrent probes,
+owns the detailed list. Remaining limitations include duplicated concurrent probes,
 sticky Codex commentary limits, backend-only timeout accounting, mandatory
 session storage even with history off, and no first-turn handle before return.
 Codex authentication is inferred; interactive approval and several native host

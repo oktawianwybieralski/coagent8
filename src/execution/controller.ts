@@ -276,7 +276,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);
   }
 
-  const warnings: string[] = [...(options.warnings || []), ...consentWarnings, ...adapterWarnings];
+  const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...consentWarnings, ...adapterWarnings];
 
   // Post-execution bookkeeping: session metadata (AUD-P1-3)
   try {

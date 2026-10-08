@@ -16,11 +16,15 @@ export interface AvailabilitySelectionOptions {
   quotasOverride?: QuotaReport;
   /** The calling client's own CLI; chosen only when no other provider is available. */
   callerProvider?: ProviderId | null;
+  /** Receives a bounded warning when the quota cache cannot be updated; selection continues. */
+  warnings?: string[];
 }
 /** Headroom assumed for an unmeasured quota, so only measured headroom changes the preference order. */
 const UNMEASURED_HEADROOM_PERCENT = 50;
 function getQuotaCacheFile(): string { return process.env.coagent8_QUOTA_CACHE || path.join(getDataDir(), 'quota-cache.json'); }
 export const QUOTA_CACHE_TTL_MS = 60000;
+/** A native quota measurement older than this ranks like an unmeasured one (CUR-004). */
+export const QUOTA_MEASUREMENT_MAX_AGE_MS = 15 * 60 * 1000;
 const BACKOFF_DELAYS_MS = [15 * 1000, 45 * 1000, 180 * 1000] as const;
 
 function sanitizeCacheData(raw: unknown): QuotaReport {
@@ -33,15 +37,22 @@ function sanitizeCacheData(raw: unknown): QuotaReport {
       const time = Date.parse(entry.cooldownUntil || entry.resetsAt || '');
       if (!Number.isFinite(time) || time <= Date.now()) { entry.status='operational'; entry.cooldownUntil=null; entry.resetsAt=null; entry.cooldownReason=null; }
     }
+    // A measurement without a recent measuredAt (including entries written before it existed)
+    // is dropped, so a cache rewrite never keeps old headroom at full weight.
+    const measuredTime = Date.parse(typeof entry.measuredAt === 'string' ? entry.measuredAt : '');
+    const age = Date.now() - measuredTime;
+    const fresh = Boolean(entry.measured) && Number.isFinite(measuredTime) && age < QUOTA_MEASUREMENT_MAX_AGE_MS && age > -QUOTA_CACHE_TTL_MS;
+    const limited = entry.status === 'rate_limited';
     data[id] = {
       installed: entry.installed,
       executionSupported: typeof entry.executionSupported === 'boolean' ? entry.executionSupported : undefined,
       status: entry.status,
-      window: typeof entry.window === 'string' ? entry.window : 'unknown',
-      usedPercent: typeof entry.usedPercent === 'number' ? entry.usedPercent : null,
-      headroomPercent: typeof entry.headroomPercent === 'number' ? entry.headroomPercent : null,
-      measured: Boolean(entry.measured),
-      resetsAt: typeof entry.resetsAt === 'string' ? entry.resetsAt : null,
+      window: fresh && typeof entry.window === 'string' ? entry.window : 'unknown',
+      usedPercent: fresh && typeof entry.usedPercent === 'number' ? entry.usedPercent : null,
+      headroomPercent: limited ? 0 : fresh && typeof entry.headroomPercent === 'number' ? entry.headroomPercent : null,
+      measured: fresh,
+      measuredAt: fresh ? new Date(measuredTime).toISOString() : null,
+      resetsAt: (fresh || limited) && typeof entry.resetsAt === 'string' ? entry.resetsAt : null,
       cooldownUntil: entry.status === 'rate_limited' ? (entry.cooldownUntil || entry.resetsAt ? new Date(Date.parse(entry.cooldownUntil || entry.resetsAt!)).toISOString() : null) : null,
       cooldownReason: entry.status === 'rate_limited' ? redactDiagnostic(entry.cooldownReason || 'Observed rate limit (heuristic cooldown)', 512) : null,
       cooldownLevel: typeof entry.cooldownLevel === 'number' ? entry.cooldownLevel : undefined,
@@ -62,10 +73,12 @@ export async function writeQuotaCache(data: QuotaReport): Promise<void> { await 
  * @param probesOverride - Existing probes; their presence bypasses cache reuse.
  * @param options - Native quota reads default on only without supplied probes. A provider
  * filter preserves other cached entries; measuredNow distinguishes newly measured quota.
- * @returns The report, including carried-over native measurements and observed cooldowns.
- * @throws On cache write/lock failure; automatic routing currently inherits that failure.
+ * `onCacheError` makes the cache optional: a lock/write failure is reported to it and the
+ * report is built from an unlocked read instead.
+ * @returns The report, including fresh carried-over native measurements and observed cooldowns.
+ * @throws On cache write/lock failure when no `onCacheError` is given.
  */
-export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: { nativeQuota?: boolean; only?: readonly ProviderId[]; measuredNow?: Set<ProviderId> } = {}): Promise<QuotaReport> {
+export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: { nativeQuota?: boolean; only?: readonly ProviderId[]; measuredNow?: Set<ProviderId>; onCacheError?: (error: Error) => void } = {}): Promise<QuotaReport> {
   const cache=readQuotaCache();
   if (!forceRefresh && !probesOverride && cache && Date.now()-cache.timestamp<QUOTA_CACHE_TTL_MS && PROVIDERS.every(id=>cache.data[id])) return cache.data;
   const probes=probesOverride || Object.fromEntries(await Promise.all(PROVIDERS.map(async id=>[id,await adapterRegistry[id].probe()])));
@@ -76,8 +89,8 @@ export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap
     return [id, await adapterRegistry[id].inspectQuota?.(probe)];
   }))) as Partial<Record<ProviderId, AdapterProbeResult['quota']>>;
   for (const id of PROVIDERS) if (native[id]?.measured) options.measuredNow?.add(id);
-  return withFileLock(getQuotaCacheFile(), async()=>{
-    const latest=readQuotaCache()?.data || {};
+  const measuredAt = new Date().toISOString();
+  const merge = (latest: QuotaReport): QuotaReport => {
     const result: QuotaReport={};
     for (const id of PROVIDERS) {
       if (options.only && !options.only.includes(id)) {
@@ -96,6 +109,7 @@ export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap
         usedPercent: nativeQuota?.usedPercent ?? latest[id]?.usedPercent ?? null,
         headroomPercent: isRateLimited ? 0 : (nativeQuota?.headroomPercent ?? latest[id]?.headroomPercent ?? null),
         measured: Boolean(nativeQuota?.measured || latest[id]?.measured),
+        measuredAt: nativeQuota?.measured ? measuredAt : latest[id]?.measuredAt ?? null,
         resetsAt: nativeQuota?.resetsAt || latest[id]?.resetsAt || null,
         cooldownUntil: null,
       };
@@ -105,8 +119,18 @@ export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap
         result[id] = { ...result[id], cooldownLevel: latest[id].cooldownLevel, lastCooldownAt: latest[id].lastCooldownAt };
       }
     }
-    await store(result); return result;
-  });
+    return result;
+  };
+  try {
+    return await withFileLock(getQuotaCacheFile(), async()=>{
+      const result = merge(readQuotaCache()?.data || {});
+      await store(result); return result;
+    });
+  } catch (error) {
+    if (!options.onCacheError) throw error;
+    options.onCacheError(error instanceof Error ? error : new Error(String(error)));
+    return merge(readQuotaCache()?.data || {});
+  }
 }
 export async function recordQuotaCooldown(id: string, cooldownMs?: number, reason='Observed rate limit (heuristic cooldown)'): Promise<void> {
   if (!PROVIDERS.includes(id as typeof PROVIDERS[number])) throw new Error('Invalid cooldown provider.');
@@ -173,14 +197,16 @@ export async function resetQuotaCooldown(id: string): Promise<void> {
  * @param candidates - Stable tie-break order; defaults to the provider registry.
  * @param options - Configuration, probes, quota report and optional caller identity.
  * @returns An eligible different CLI when possible, otherwise the caller's own provider.
- * @throws When no provider is executable, all eligible providers have observed limits,
- * or the quota report cannot be cached.
+ * @throws When no provider is executable or all eligible providers have observed limits.
+ * A quota cache that cannot be updated adds a warning to `options.warnings` instead.
  * @remarks Measured headroom sorts descending; unknown quota uses 50 as a ranking
- * heuristic, not account telemetry. Measurement freshness is not independently enforced.
+ * heuristic, not account telemetry. A measurement older than
+ * {@link QUOTA_MEASUREMENT_MAX_AGE_MS} counts as unknown.
  */
 export async function selectSmartQuotaBackend(candidates: ProviderId[] | null = null, options: AvailabilitySelectionOptions = {}): Promise<ProviderId> {
   const config = options.config || loadConfig();
-  const quotas = options.quotasOverride || await inspectQuotas(false, options.probesOverride);
+  const onCacheError = (error: Error) => options.warnings?.push(`Quota cache not updated; routing used the last readable data: ${redactDiagnostic(error.message, 512)}`);
+  const quotas = options.quotasOverride || await inspectQuotas(false, options.probesOverride, { onCacheError });
   const installed = (candidates || PROVIDERS).filter(id =>
     config.routing.allowedBackends.includes(id) && quotas[id]?.installed &&
     quotas[id].executionSupported !== false && options.probesOverride?.[id]?.executionSupported !== false);

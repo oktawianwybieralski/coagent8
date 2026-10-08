@@ -94,3 +94,51 @@ test('routing: auto prefers another CLI than the calling client and measured hea
     Object.assign(adapterRegistry, original);
   }
 });
+
+function fixtureAdapters() {
+  for (const id of ['codex', 'claude', 'gemini']) {
+    adapterRegistry[id] = { id, name: id, inspectQuota: async () => { throw new Error('Routing reads no native quota'); },
+      probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
+  }
+}
+
+test('CUR-004: auto routing continues with a bounded warning when the quota cache cannot be written', async t => {
+  const original = { ...adapterRegistry };
+  const cacheFile = process.env.coagent8_QUOTA_CACHE;
+  const blocker = path.join(tempDir, 'quota-parent-is-a-file');
+  fs.writeFileSync(blocker, 'not a directory');
+  t.after(() => { process.env.coagent8_QUOTA_CACHE = cacheFile; Object.assign(adapterRegistry, original); });
+  fixtureAdapters();
+  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'gemini'] } });
+  process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
+  const chosen = await resolveBackend('auto');
+  assert.equal(chosen.id, 'gemini', 'the provider order decides without cached data');
+  assert.equal(chosen.warnings.length, 1);
+  assert.match(chosen.warnings[0], /^Quota cache not updated; routing used the last readable data: /);
+  assert.ok(chosen.warnings[0].length < 700, 'the warning is bounded');
+  assert.equal((await resolveBackend('gemini')).warnings, undefined, 'an explicit backend never touches the quota cache');
+});
+
+test('CUR-004: a stale or undated measurement ranks like an unmeasured one; a fresh one keeps its weight', async t => {
+  const { readQuotaCache, QUOTA_MEASUREMENT_MAX_AGE_MS } = require('../../src/backends/availability.ts');
+  const original = { ...adapterRegistry };
+  t.after(() => Object.assign(adapterRegistry, original));
+  fixtureAdapters();
+  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] } });
+  const quota = (headroomPercent, measuredAt) => ({ installed: true, status: 'operational', window: '5h', usedPercent: 100 - headroomPercent,
+    headroomPercent, measured: true, resetsAt: null, cooldownUntil: null, ...(measuredAt === undefined ? {} : { measuredAt }) });
+  const stale = new Date(Date.now() - QUOTA_MEASUREMENT_MAX_AGE_MS - 60000).toISOString();
+  const fresh = new Date(Date.now() - 60000).toISOString();
+  const write = data => fs.writeFileSync(process.env.coagent8_QUOTA_CACHE, JSON.stringify({ timestamp: Date.now(), data }));
+
+  write({ codex: quota(95), claude: quota(90, stale), gemini: quota(70, fresh) });
+  assert.equal((await resolveBackend('auto')).id, 'gemini', 'a fresh 70% outranks stale 90% and undated 95%, which count as 50%');
+  const stored = readQuotaCache().data;
+  assert.equal(stored.claude.measured, false, 'the rewritten cache drops the stale measurement');
+  assert.equal(stored.claude.headroomPercent, null);
+  assert.equal(stored.codex.measured, false);
+  assert.equal(stored.gemini.measuredAt, new Date(fresh).toISOString(), 'a carried-over measurement keeps its own time, not the rewrite time');
+
+  write({ codex: quota(30, fresh), claude: quota(40, fresh), gemini: quota(20, stale) });
+  assert.equal((await resolveBackend('auto')).id, 'gemini', 'a stale low measurement no longer penalizes its provider');
+});

@@ -72,8 +72,11 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
   const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await probeBackend(id, { fresh: true })]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
   const measuredNow = new Set<ProviderId>();
+  // An unwritable quota cache must not hide the rest of the diagnosis (CUR-004).
+  const cacheNotes: string[] = [];
   const [cached, catalogs, prices, inherited] = await Promise.all([
-    inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow }),
+    inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow,
+      onCacheError: error => cacheNotes.push(`Quota cache not updated: ${redactDiagnostic(error.message, 512)}`) }),
     Promise.all(selected.map(id => readModelCatalog(id, { fresh: true }))),
     // A list older than a week is read again; prices change rarely and approximate is enough.
     readPrices({ refresh: true }),
@@ -161,7 +164,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     quotas,
     defaultModels,
     prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: prices.entries.length } : null,
-    recommendations: [...(configError ? [configError] : []), ...recommendations, ...inheritedNotes],
+    recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes],
     ...(configError ? { configError } : {}),
     inheritedTools,
   };

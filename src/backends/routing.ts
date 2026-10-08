@@ -4,7 +4,7 @@ import { loadConfig } from '../config.js';
 import { selectSmartQuotaBackend } from './availability.js';
 import type { AdapterProbeResult, CliAdapter } from './types.js';
 import { PROVIDERS, ToolError, type ProviderId } from '../conversation.js';
-export interface ResolvedBackend { id: ProviderId; adapter: CliAdapter; probe: AdapterProbeResult; isSmartQuota?: boolean }
+export interface ResolvedBackend { id: ProviderId; adapter: CliAdapter; probe: AdapterProbeResult; isSmartQuota?: boolean; warnings?: string[] }
 
 /** CLI of the connected MCP client; a stdio server process serves exactly one client. */
 let callerProvider: ProviderId | null = null;
@@ -46,8 +46,9 @@ export async function resolveBackend(requested?: string | null): Promise<Resolve
   if (!installed.length) throw candidates.some(id=>probes.get(id)?.installed) ? new ToolError('CLI_UNSUPPORTED', 'No installed permitted CLI supports execution; run doctor.') : new ToolError('CLI_NOT_FOUND', 'No permitted CLI installed; run doctor.');
   if (target === 'smart_quota' || installed.length > 1) {
     // Without a configured default, auto chooses like smart_quota: another CLI than the caller's, most headroom first.
-    const id = await selectSmartQuotaBackend(installed, { probesOverride: Object.fromEntries(probes), config, callerProvider });
-    return selected(id as ProviderId, true);
+    const warnings: string[] = [];
+    const id = await selectSmartQuotaBackend(installed, { probesOverride: Object.fromEntries(probes), config, callerProvider, warnings });
+    return { ...await selected(id as ProviderId, true), ...(warnings.length ? { warnings } : {}) };
   }
   return selected(installed[0]);
 }

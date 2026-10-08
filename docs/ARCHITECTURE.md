@@ -66,8 +66,9 @@ hash file stamps and provider-prefixed environment. Concurrent misses are not
 coalesced. `backends/model-selection.ts` chooses the model of a turn from the
 call, session, configuration or CLI; the source names no model.
 Routing reads cached quota and cooldowns; `doctor` performs native quota reads.
-Automatic selection still writes the quota cache synchronously, so cache failure
-can prevent execution.
+Automatic selection and `doctor` treat the quota cache as optional: a lock or
+write failure becomes a bounded warning, and a native measurement older than
+15 minutes ranks as unmeasured.
 
 `consult` has a plain prompt and no audit gate. `review` requests a State
 Envelope and gates reported structure/findings. It does not verify input

@@ -178,3 +178,14 @@ test('doctor names the MCP servers and plugins agy turns inherit, without changi
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('doctor reports an unwritable quota cache as a recommendation instead of failing (CUR-004)', async t => {
+  const cacheFile = process.env.coagent8_QUOTA_CACHE;
+  const blocker = path.join(tempDir, 'quota-parent-is-a-file');
+  fs.writeFileSync(blocker, 'not a directory');
+  t.after(() => { process.env.coagent8_QUOTA_CACHE = cacheFile; });
+  process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
+  const report = await runDoctor({ quota: false });
+  assert.ok(report.backends.codex && report.backends.claude && report.backends.gemini);
+  assert.equal(report.recommendations.filter(text => text.startsWith('Quota cache not updated: ')).length, 1);
+});

@@ -31,7 +31,7 @@ The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pendin
 | --- | --- | --- |
 | Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup; Codex inherited-tool verification and nested-turn refusal | agy inherited tools (accepted limitation), POSIX parent-death cleanup, fresh candidate matrix |
 | Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection; structured review completeness and snapshot/check binding | Sticky commentary truncation/count budgets, full review of another tree |
-| Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, cache-failure tolerance, end-to-end budget |
+| Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, end-to-end budget |
 | Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Coalesced misses, fuller invalidation, catalog/default redesign |
 | Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
 | Governance | Consent by approximate price (relative to the default, 20 USD limit, remember for unknown prices); models and defaults from the CLIs and `config.json` (`CUR-010` closed locally) | Interactive approval UI acceptance |
@@ -1789,11 +1789,22 @@ without a model call.
 - [x] Document observed cooldowns separately from native quota. Current selection
   ranks cached measured headroom and prefers a different CLI (`CONTEXT-001`);
   unknown headroom uses 50 only as a sorting heuristic.
-- [ ] `CUR-004`: make optional quota-cache failure non-blocking for automatic
+- [x] `CUR-004`: make optional quota-cache failure non-blocking for automatic
   selection, with a bounded warning and deterministic safe fallback. Keep policy
   and observed limits fail-closed. Track measurement freshness separately from
   cache rewrite time; stale measurements must not silently retain fresh weight.
   Acceptance: unwritable/file-parent cache and stale-data routing regressions.
+  Local implementation on `fix/vsix-presentation` (2026-10-08): a lock or write
+  failure of the quota cache no longer rejects `auto`; selection uses the last
+  readable data and the result carries one bounded warning (doctor lists it as a
+  recommendation). Policy (`allowedBackends`) and unexpired observed cooldowns are
+  unchanged. Native measurements record `measuredAt`; one older than 15 minutes
+  (`QUOTA_MEASUREMENT_MAX_AGE_MS`) or undated ranks as unmeasured (50) and is
+  dropped on the next rewrite. Regression: `tests/backends/routing.test.js`
+  (file-parent cache; stale, undated and fresh measurements),
+  `tests/execution/controller-cooldown.test.js` (an auto call completes with the
+  warning) and `tests/diagnostics/doctor.test.js`; both routing tests fail on the
+  previous source.
 
 ### `SESSION-001` - safe auto-resume and first-class handle exposure
 

@@ -133,9 +133,12 @@ name only influences preference.
 
 Routing does not mutate user configuration or retry a failed turn on another
 provider. Native quota reads run in diagnostics, not automatic selection.
-Selection writes a quota report to disk; write/lock failure currently rejects
-the route. Carried-over measured values have no independent freshness limit.
-Explicit fixed-provider resolution bypasses that quota-cache requirement.
+Selection writes a quota report to disk. A write or lock failure does not reject
+the route: selection uses the last readable cache data and the result carries one
+bounded warning; `doctor` lists the failure as a recommendation. Each native
+measurement records `measuredAt`; one older than 15 minutes, or without that time,
+ranks as unmeasured and is dropped on the next rewrite. Observed cooldowns are
+kept until they expire. Explicit fixed-provider resolution does not read the cache.
 
 Missing configuration uses defaults. An existing unreadable, malformed or invalid
 file refuses execution with `POLICY_DENIED`. Discovery remains available;
@@ -477,7 +480,6 @@ These are open implementation issues, not relaxed security requirements.
 | ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
 | CUR-002 | Accepted limitation for agy (owner decision 2026-10-08): `--sandbox` turns can use the MCP servers of `~/.gemini/config/mcp_config.json` and of enabled plugins; agy's built-in documentation states that its agent shell receives the language-server address and CSRF token (not measured). Recursion into CoAgent8 is refused and doctor names the inherited tools. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
-| CUR-004 | Automatic routing fails on quota-cache writes; old measurements can retain routing weight | `ROUTING-MIGRATE-001` |
 | CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
 | CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |
 | CUR-007 | Timeout and duration omit preparation; agy headless host has a measured 180-second limit | `CLI-INTERACT-001` / `CONTEXT-001` |
