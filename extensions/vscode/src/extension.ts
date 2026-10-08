@@ -614,4 +614,19 @@ export function activate(context: vscode.ExtensionContext): void {
     if (choice === 'Set Up CLIs') await vscode.commands.executeCommand('coagent8.setup');
   }
   void showWelcome().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`); });
+  /**
+   * Offers Set Up CLIs once per bundled runtime when a CLI chat still starts another one,
+   * as after an extension update. Reads the CLI configuration files only and starts no process.
+   */
+  async function offerRegistrationUpdate(): Promise<void> {
+    if (vscode.env.remoteName || !readSetupState(storage).welcomed) return;
+    const runtime = `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`;
+    if (readSetupState(storage).updateOffered === runtime) return;
+    const outdated = readRegistrations(options()).filter(item => item.state === 'owned' && !item.current).map(item => item.client);
+    if (!outdated.length) return;
+    await updateSetupState(storage, { updateOffered: runtime });
+    const next = await vscode.window.showWarningMessage(`CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Set Up CLIs updates them; restart those chats afterwards.`, 'Set Up CLIs');
+    if (next === 'Set Up CLIs') await vscode.commands.executeCommand('coagent8.setup');
+  }
+  void offerRegistrationUpdate().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 update check: ${redactDiagnostic(error instanceof Error ? error.message : 'Update check failed.')}`); });
 }

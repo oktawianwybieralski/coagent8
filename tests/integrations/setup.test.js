@@ -84,9 +84,31 @@ test('new native-host registrations retain the explicitly selected configuration
   write(nextConfig, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'codex' })));
   options.env.coagent8_CONFIG = nextConfig;
   const repaired = await setupClients(options);
-  assert.equal(repaired[0].action, 'updated', JSON.stringify(repaired));
-  assert.ok(repaired.slice(1).every(result => result.action === 'preserved'), 'unverified native-host updates must remain deferred');
+  assert.ok(repaired.every(result => result.action === 'updated'), JSON.stringify(repaired));
   assert.equal(toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8.env.coagent8_CONFIG, nextConfig);
+  for (const file of ['.claude.json', '.gemini/config/mcp_config.json']) {
+    assert.equal(parse(fs.readFileSync(path.join(options.home, file), 'utf8')).mcpServers.coagent8.env.coagent8_CONFIG, nextConfig, `${file}: owned entries without a host check update on the runtime check`);
+  }
+});
+
+test('a new runtime replaces owned Claude and agy entries, keeping the previous runtime and a backup', async t => {
+  const options = { ...profile(t), clients: ['claude', 'agy'] };
+  assert.ok((await setupClients(options)).every(result => result.action === 'installed'));
+  const files = ['.claude.json', '.gemini/config/mcp_config.json'].map(file => path.join(options.home, file));
+  const runtimeOf = file => parse(fs.readFileSync(file, 'utf8')).mcpServers.coagent8.args.at(-1);
+  const previous = files.map(runtimeOf);
+  const updatedSource = path.join(options.home, 'updated.cjs');
+  fs.writeFileSync(updatedSource, fs.readFileSync(source, 'utf8') + '\n// synthetic update\n');
+  const updated = await setupClients({ ...options, runtimeSource: updatedSource });
+  assert.ok(updated.every(result => result.action === 'updated' && result.runtimeCallable && !result.hostCallable), JSON.stringify(updated));
+  assert.ok(updated.every(result => /previous runtime stays until cleanup/.test(result.message)));
+  assert.deepEqual(readRegistrations({ ...options, runtimeSource: updatedSource }).filter(item => item.client !== 'codex').map(item => [item.state, item.current]), [['owned', true], ['owned', true]]);
+  for (const [index, file] of files.entries()) {
+    assert.notEqual(runtimeOf(file), previous[index]);
+    assert.ok(fs.existsSync(previous[index]), 'the previous runtime stays for running chats and rollback');
+  }
+  const backups = fs.readdirSync(path.join(options.home, '.coagent8/setup-backups'));
+  assert.ok(backups.flatMap(name => fs.readdirSync(path.join(options.home, '.coagent8/setup-backups', name))).filter(name => name === 'claude.config').length >= 2, 'each update keeps the original bytes');
 });
 test('malformed, duplicate-key, workspace shadow, and independently edited settings are never overwritten', async t => {
   const options = profile(t);

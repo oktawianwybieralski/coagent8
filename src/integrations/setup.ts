@@ -176,8 +176,14 @@ async function probeCodex(cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string):
     return true;
   }, { env, cwd });
 }
+/**
+ * Clients whose host can call CoAgent8 under setup's control; only their failed check is
+ * evidence against a registration. Claude and agy offer no such call (owner decision
+ * 2026-10-09: their owned entries update on the runtime check, as a first registration does).
+ */
+const HOST_CHECKED_CLIENTS: readonly SetupClient[] = ['codex'];
 async function hostCallable(client: SetupClient, cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<boolean> {
-  if (client !== 'codex') return false;
+  if (!HOST_CHECKED_CLIENTS.includes(client)) return false;
   try { return await probeCodex(cli, env, cwd); }
   catch { return false; } // Host versions without the direct-call API remain explicitly unverified.
 }
@@ -308,7 +314,9 @@ export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 
  * @throws On setup-state/lock/runtime errors before any client mutation.
  * @remarks
  * Private backups retain original bytes. Existing manual entries and independently
- * changed managed entries are never replaced. Failed candidate checks restore only
+ * changed managed entries are never replaced. An owned entry is updated after the new
+ * runtime starts and lists its tools; a client whose host setup can check also needs that
+ * host's call. Failed candidate checks restore only
  * the owned entry, preserving concurrent unrelated edits. Restart/new chat is needed
  * for hosts caching tool catalogs. Remote scopes are intentionally unsupported here.
  * Status reads host files and CLI metadata only, without starting the runtime or a host.
@@ -377,8 +385,8 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
             result.message = 'Manual or independently changed registration preserved; migration requires native-host acceptance.';
             return;
           }
-          if (!result.hostCallable) {
-            result.message = 'Managed runtime update deferred: native-host call is unverified; old connection retained.';
+          if (HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) {
+            result.message = 'Managed runtime update deferred: the native host did not call the current registration; old connection retained.';
             return;
           }
         } else if (options.statusOnly) {
@@ -417,7 +425,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.tools = await probeRuntime(installed, env, cwd);
           result.runtimeCallable = true;
           result.hostCallable = await hostCallable(client, cli, env, cwd);
-          if (entry !== undefined && !result.hostCallable) throw new Error('Replacement failed native-host acceptance.');
+          if (entry !== undefined && HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) throw new Error('Replacement failed native-host acceptance.');
           const current = read(file);
           if (current === null || !isDeepStrictEqual(servers(client, document(client, current)).coagent8, servers(client, document(client, after)).coagent8)) {
             throw new Error('CoAgent8 entry changed during verification; ownership was not transferred.');
@@ -426,6 +434,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.action = entry === undefined ? 'installed' : 'updated';
           result.message = result.hostCallable ? 'Native host discovered the CoAgent8 tools. Start a new chat to refresh existing catalogs.'
             : 'Registered; the runtime starts and lists its tools. Native host discovery and icon presentation still need acceptance in a new chat.';
+          if (entry !== undefined && !result.hostCallable) result.message += ' The previous runtime stays until cleanup; restart running chats to use this one.';
           saved.owned[client] = hash(JSON.stringify(servers(client, document(client, after)).coagent8));
           if (options.origin) saved.origin[client] = options.origin;
           else delete saved.origin[client];

@@ -18,7 +18,7 @@ function affects(...changed) {
  * @param registrations - Registration state per client for Manage CLI Chat Registrations: `owned`,
  * `outdated` (owned for another version), `manual` or `blocked`; others are absent.
  */
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, command = 'coagent8.setup', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = [], welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, awaitState = false, awaitNotifications = 0, buttons = [], registrations = {}, extensionApiLags = false, commands = {}, alternatives = {} } = {}) {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, command = 'coagent8.setup', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = [], welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, buttons = [], registrations = {}, extensionApiLags = false, commands = {}, alternatives = {} } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [], pickers = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
@@ -166,7 +166,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     }
     await new Promise(resolve => setImmediate(resolve));
     // The welcome runs after activation; its locked state write completes asynchronously.
-    for (const deadline = Date.now() + 2000; (awaitState && readState() === initialState) || notifications.length < awaitNotifications;) {
+    for (const deadline = Date.now() + 2000; (awaitState && readState() === initialState) || notifications.length < awaitNotifications || warnings.length < awaitWarnings;) {
       assert.ok(Date.now() < deadline, 'the onboarding state or notification did not arrive');
       await new Promise(resolve => setTimeout(resolve, 10));
     }
@@ -194,8 +194,21 @@ test('the first activation checks the CLIs once and shows one notice; later acti
   for (const storedState of [{ welcomed: true }]) {
     const later = await runSetupPicker({ installed: [], activationOnly: true, storedState });
     assert.equal(later.notifications.length, 0, JSON.stringify(storedState));
-    assert.equal(later.events.length, 0, 'no CLI check after the first activation');
+    assert.deepEqual(later.events, ['registrations'], 'no CLI check after the first activation; only the chat configuration files are read');
+    assert.equal(later.stateChanged, false);
   }
+});
+
+test('an activation with an outdated CLI chat registration offers Set Up CLIs once per runtime', async () => {
+  const offered = await runSetupPicker({ activationOnly: true, registrations: { codex: 'owned', claude: 'outdated', agy: 'outdated' }, awaitState: true, awaitWarnings: 1, action: 'Set Up CLIs' });
+  assert.equal(offered.warnings.length, 1);
+  assert.match(offered.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI, Antigravity CLI still start the previous version\./);
+  assert.deepEqual(offered.events, ['registrations'], 'the check reads files and starts no CLI');
+  assert.deepEqual(offered.requests, [['coagent8.setup']]);
+  assert.match(offered.state.updateOffered, /#[0-9a-f]{64}$/);
+  const again = await runSetupPicker({ activationOnly: true, registrations: { claude: 'outdated' }, storedState: offered.state });
+  assert.deepEqual(again.warnings, [], 'the same runtime is offered once');
+  assert.deepEqual(again.events, [], 'and reads nothing again');
 });
 
 test('the extension keeps no state in globalState, which VS Code keeps after uninstall', async () => {
@@ -302,7 +315,8 @@ test('settings and filesystem MCP changes invalidate provider definitions withou
 
 test('the setup list opens before its checks and checks exactly the CLIs that have CoAgent8 in their chat', async () => {
   const result = await runSetupPicker({ signedOut: ['claude'], registrations: { codex: 'owned', agy: 'manual' }, selected: ['codex', 'agy'] });
-  assert.deepEqual(result.events.slice(0, 3), ['show', 'status', 'registrations'], 'feedback appears before the bounded checks finish');
+  assert.equal(result.events[0], 'registrations', 'activation reads the chat configuration files once');
+  assert.deepEqual(result.events.slice(1, 4), ['show', 'status', 'registrations'], 'feedback appears before the bounded checks finish');
   const [picker] = result.pickers;
   assert.deepEqual(picker.items.map(item => [item.label, item.description]), [
     ['Codex CLI', 'Ready · in its chat'],
