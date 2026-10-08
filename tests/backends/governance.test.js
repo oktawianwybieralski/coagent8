@@ -11,7 +11,7 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-governance-'));
 process.env.coagent8_DIR = tempDir;
 
 const { decideConsent } = require('../../src/backends/governance.ts');
-const { parsePriceList, findPrice, matchPrices, readPrices, refreshPrices, PRICE_REFRESH_MS } = require('../../src/backends/prices.ts');
+const { parsePriceList, findPrice, matchPrices, readPrices, refreshPrices, settlePriceReads, PRICE_REFRESH_MS } = require('../../src/backends/prices.ts');
 const { resolveWorkspacePath } = require('../../src/paths.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -97,7 +97,6 @@ test('prices are stored for offered models only, read again for an unchecked mod
   process.env.coagent8_PRICES_URL = `http://127.0.0.1:${server.address().port}/api/v1/models`;
   const storeFile = path.join(tempDir, 'models.json');
   const age = ms => { const stored = JSON.parse(fs.readFileSync(storeFile, 'utf8')); stored.prices.fetchedAt = Date.now() - ms; fs.writeFileSync(storeFile, JSON.stringify(stored)); };
-  const until = async condition => { for (let i = 0; i < 200 && !condition(); i++) await new Promise(resolve => setTimeout(resolve, 10)); };
   try {
     fs.rmSync(storeFile, { force: true });
     const first = await readPrices({ models: ['gpt-6-luna'] });
@@ -115,9 +114,9 @@ test('prices are stored for offered models only, read again for an unchecked mod
     age(PRICE_REFRESH_MS + 1000);
     const dayOld = await readPrices();
     assert.ok(Date.now() - dayOld.fetchedAt > PRICE_REFRESH_MS, 'a day-old list is returned at once');
-    await until(() => requests === 3);
+    await settlePriceReads();
     assert.equal(requests, 3, 'and read again in the background');
-    await until(() => Date.now() - JSON.parse(fs.readFileSync(storeFile, 'utf8')).prices.fetchedAt < PRICE_REFRESH_MS);
+    assert.ok(Date.now() - JSON.parse(fs.readFileSync(storeFile, 'utf8')).prices.fetchedAt < PRICE_REFRESH_MS, 'which stores the new list');
     age(PRICE_REFRESH_MS + 1000);
     await readPrices({ refresh: true });
     assert.equal(requests, 4, 'doctor waits for a day-old list to be read');

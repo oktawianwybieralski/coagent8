@@ -6,6 +6,7 @@ import { shutdownProcessRunner } from './execution/process.js';
 import { redactDiagnostic } from './redaction.js';
 import { pruneExpiredSessions } from './sessions/session.js';
 import { waitForActiveExecutionTasks } from './execution/controller.js';
+import { settlePriceReads } from './backends/prices.js';
 
 export interface StdioServerOptions {
   /** Background maintenance started after the connection; shutdown waits for it. Defaults to the session sweep. */
@@ -35,6 +36,8 @@ export async function serveStdio(options: StdioServerOptions = {}): Promise<void
     await backgroundMaintenance;
     await shutdownProcessRunner();
     await waitForActiveExecutionTasks();
+    // A background price read stores its result before the process ends.
+    await settlePriceReads();
     try { await server.close(); }
     catch (error) { process.stderr.write(`Warning: MCP server did not close cleanly: ${redactDiagnostic(error instanceof Error ? error.message : String(error))}\n`); }
     process.stdin.destroy();

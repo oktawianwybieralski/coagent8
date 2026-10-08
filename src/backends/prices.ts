@@ -196,6 +196,15 @@ async function sharedRefresh(models: readonly string[]): Promise<PriceList | und
 }
 
 /**
+ * Waits for a price read in progress, such as a background one, to store its result.
+ * @remarks For graceful shutdown; the read is bounded by its 10-second fetch timeout and
+ * reports its own failure.
+ */
+export async function settlePriceReads(): Promise<void> {
+  await running;
+}
+
+/**
  * Whether a list is too old to show that a model meets a user's price limit (`AX-002`).
  * @param now - Milliseconds since the epoch.
  */
