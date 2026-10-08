@@ -12,11 +12,11 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is SIMPLIFY-001: S0 baseline captured, S1, S2, and S3 implemented and verified.
+The current task is SIMPLIFY-001: S0 baseline captured, S1, S2, S3, and S4 implemented and verified.
 Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
-The owner requires a stop for inspection after each slice. S3 is complete, awaiting
-owner inspection before starting S4.
+The owner requires a stop for inspection after each slice. S4 is complete, awaiting
+owner inspection before starting S5.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -49,9 +49,9 @@ Source anchors:
 ## Next implementation
 
 The next authorized work boundary is owner inspection of
-[SIMPLIFY-001 S3](#simplify-001-s3-implementation). On continuation, execute S4 in the
+[SIMPLIFY-001 S4](#simplify-001-s4-implementation). On continuation, execute S5 in the
 [roadmap's order](ROADMAP.md#execution-checkpoints), with its caller updates and
-scope-based checks, then stop again. S1, S2 and S3 modules are implemented and verified;
+scope-based checks, then stop again. S1, S2, S3, and S4 modules are implemented and verified;
 automated dependency enforcement remains scheduled for S6.
 Recheck the current checkout rather than assuming that the baseline below is still current.
 The migration does not change the release status or make historical runtime evidence fresh.
@@ -340,6 +340,43 @@ Branch: `refactor/simplify-001`.
 - PASS: `git diff --check` (clean whitespace and diff markers).
 
 Next action: stop after S3 for owner inspection and independent review (codex sol-6.1). Do not proceed to S4 without owner instruction.
+
+## SIMPLIFY-001 S4 implementation
+
+Captured 2026-10-09 after S4 implementation.
+Branch: `refactor/simplify-001`.
+
+### Modules and ownership changes:
+- `src/security/`: Dedicated security and redaction boundaries extracted:
+  - `security/redaction.ts`: Automated secret redaction for credentials, tokens, and sensitive diagnostics (`redactCredentialFormats`, `redactSecrets`, `redactDiagnostic`).
+  - `security/boundaries.ts`: Safe credential stream fragment commit calculation (`computeSafeCommitPoint`, `isPotentialSecretPrefix`).
+  - `security/index.ts`: Barrel exports for `security/`.
+  - Compatibility forwarding shim maintained at `src/redaction.ts`.
+- `src/sessions/activity.ts`: Narrow activity and process liveness inspection (`isProcessAlive`, `getSessionsDir`, `getSessionFilePath`, `isSessionActive`, type `SessionActivityChecker`).
+- `src/contracts/session.ts`: Narrow `SessionActivityChecker` contract defined in `contracts/`.
+- `src/sessions/history/`: History split into cohesive single-responsibility modules:
+  - `history/types.ts`: History snapshot types (`History`, `CachedHistorySnapshot`), limits (`SESSION_LIMIT`, `TOTAL_LIMIT`), path resolvers, and event validation (`validateEvent`, `sanitize`, `cloneEvent`, `cloneHistory`).
+  - `history/page.ts`: Pure pagination of validated history snapshots (`paginateHistory`, `PAGE_LIMIT`).
+  - `history/retention.ts`: Directory capacity accounting, eviction, and pruning (`pruneHistoryDirectory`, `evictOldestSessions`, `reserveCapacity`, `releaseCapacity`, `sessionMayBeActive`, `setSessionActivityChecker`, `adjustCapacityMeta`). Connects to `isSessionActive` via narrow activity contract.
+  - `history/reader.ts`: History snapshot reading, cache management (`clearHistoryCache`, `invalidateHistoryCache`), and crash recovery (`load`, `getHistory`, `sessionHistory`, `deleteHistory`, `getTurnMapping`).
+  - `history/writer.ts`: Append-only history writing, streaming delta coalescing, torn-tail truncation, and atomic JSON snapshots (`createHistoryWriter`).
+  - `history/index.ts`: Unified barrel exports for `history/`.
+- Compatibility forwarding shims maintained at `src/sessions/history.ts` and `src/sessions/history-page.ts`.
+- `src/sessions/session.ts` updated to import `getSessionsDir`, `isProcessAlive`, `getSessionFilePath` from `./activity.js`, and history pruning/cache invalidation from `./history/index.js`.
+- Architectural boundary invariants & cycle removals verified:
+  - Runtime cycle `sessions/session.ts <-> sessions/history.ts` completely eliminated: `history/` has zero dependencies on `session.ts`.
+  - Type cycle `sessions/history.ts <-> sessions/history-page.ts` completely eliminated: `page.ts` depends only on `types.ts`.
+  - `security/` has zero dependencies on `sessions/`, `backends/`, `mcp/`, or `controller`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `node tests/run.cjs tests/simplify-s4.test.js` (7/7 tests pass).
+- PASS: S4 scoped test suite: 48/48 tests pass (`tests/sessions/history.test.js`, `tests/sessions/history-capacity.test.js`, `tests/sessions/session.test.js`, `tests/redaction.test.js`, `tests/execution/controller-history.test.js`).
+- PASS: `node tests/run.cjs` full test suite (413 tests: 410 pass, 0 fail, 3 skipped, exit code 0).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+
+Next action: stop after S4 for owner inspection and independent review (codex sol-6.1). Do not proceed to S5 without owner instruction.
 
 ## Documentation disposition
 

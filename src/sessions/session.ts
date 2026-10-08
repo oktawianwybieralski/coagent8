@@ -7,22 +7,16 @@ import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { PROVIDERS } from '../conversation.js';
 import { readBoundedFileSync } from '../storage/read.js';
-import { pruneHistoryDirectory, invalidateHistoryCache } from './history.js';
+import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.js';
 import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from './identity.js';
-import { redactDiagnostic } from '../redaction.js';
+import { redactDiagnostic } from '../security/index.js';
+import { getSessionsDir, isProcessAlive, getSessionFilePath } from './activity.js';
+
+export { getSessionsDir, isProcessAlive, getSessionFilePath };
 
 const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
 const ownedTurns = new Map<string, string>();
-export function getSessionsDir(): string {
-  const explicit = process.env.coagent8_SESSIONS_DIR || process.env.coagent8_SESSIONS;
-  return explicit ? (explicit.endsWith('.json') ? path.join(path.dirname(explicit), 'sessions') : explicit) : path.join(getDataDir(), 'sessions');
-}
-export function isProcessAlive(pid?: number | null): boolean {
-  if (!pid || !Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return (err as NodeJS.ErrnoException).code === 'EPERM'; }
-}
-export function getSessionFilePath(handle: string): string | null { return sanitizeHandle(handle) ? path.join(getSessionsDir(), `${handle}.json`) : null; }
 function saveSessionFile(file: string, record: SessionRecord): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.tmp.${crypto.randomUUID()}`;

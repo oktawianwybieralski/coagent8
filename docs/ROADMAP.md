@@ -67,7 +67,7 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 ## SIMPLIFY-001 - module boundary migration
 
 Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
-S1, S2, and S3 implemented and verified; S4-S6 have not started. Automated
+S1, S2, S3, and S4 implemented and verified; S5-S6 have not started. Automated
 dependency enforcement remains scheduled for S6. This is
 the active plan, not an additional plan under docs/.local/. Work stays local;
 Git integration and publication remain owner-managed. Audit blockers retain
@@ -120,7 +120,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   reuse the same selection policy. Acceptance: no models/backends cycle,
   duplicate policy or change to explicit-model, price-limit and consent rules.
   Evidence: [S3 implementation](HANDOFF.md#simplify-001-s3-implementation).
-- [ ] **S4 - Split history by responsibility.** With storage extracted,
+- [x] **S4 - Split history by responsibility.** With storage extracted,
   split sessions/history.ts into history reader/recovery, writer and
   retention/capacity modules; place history-page.ts alongside them. Move safe
   credential fragment boundaries together with redaction into security/.
@@ -129,6 +129,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   Extract one responsibility at a time; preserve lock order, reservations
   and finalization semantics. Acceptance: history remains compatible on disk
   and across restart; no session/history cycle or duplicated cache/capacity state.
+  Evidence: [S4 implementation](HANDOFF.md#simplify-001-s4-implementation).
 - [ ] **S5 - Finish consumers and physical layout.** Update diagnostics,
   integrations, extension imports, tests, fixtures, scripts and documentation
   to their owning modules. Mirror source owners in unit tests; retain e2e,
