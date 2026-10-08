@@ -229,3 +229,46 @@ test('the doctor summary drops whole model rows to stay within the inline bound 
   });
   assert.match(summary, /agy-catalog-model-19 1; reasoning_effort low\|high(\n|$)/, 'the shorter list stays complete while the longest is cut');
 });
+
+test('doctor defaults to the model view: cached catalogs, defaults and prices, no quota read and nothing recorded (AX-001)', async () => {
+  const { handleDoctor } = require('../../src/tools/doctor.tool.ts');
+  const { loadConfig } = require('../../src/config.ts');
+  const original = { ...adapterRegistry };
+  const quotaReads = [];
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        inspectQuota: async () => { quotaReads.push(id); return undefined; },
+        listModels: id === 'codex' ? async () => ({ source: 'codex fixture', models: [{ id: 'gpt-6-luna', efforts: ['low', 'high'], isDefault: true }, { id: 'gpt-6-astra', efforts: ['low', 'high'] }] })
+          : id === 'claude' ? async () => ({ source: 'claude fixture', acceptsUnlisted: true, models: [{ id: 'claude-haiku-4-5-20251001', efforts: [], aliases: ['haiku', 'default'], isDefault: true }] })
+          : undefined,
+        observeModel: undefined,
+        probe: async () => ({ id, installed: id !== 'agy', version: `${id} 2.0.0`, executionSupported: true, authStatus: 'authenticated', capabilities: { readOnlyVerified: true } }),
+      };
+    }
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] }, backends: { codex: {}, claude: {}, agy: {} } });
+    const summary = (await handleDoctor({})).content[0].text;
+    assert.deepEqual(summary.split('\n'), [
+      summary.split('\n')[0],
+      'codex · codex 2.0.0 · model gpt-6-luna (CLI default)',
+      '  models, USD per million output tokens: gpt-6-luna 0.5 [default], gpt-6-astra 50 [asks: askAbovePrice]; reasoning_effort low|high',
+      'agy: not installed',
+      'claude · claude 2.0.0 · model claude-haiku-4-5-20251001 (CLI default)',
+      '  models, USD per million output tokens: claude-haiku-4-5-20251001 5 [default]',
+      '  also accepted: unlisted names the CLI resolves itself',
+    ]);
+    assert.match(summary, /^CoAgent8 models · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\) · scope "health" diagnoses sign-in and quota\n/);
+    assert.deepEqual(quotaReads, [], 'the model view reads no quota');
+    assert.deepEqual(loadConfig().backends.codex, {}, 'and records no default');
+    const full = (await handleDoctor({ detail: 'full', backend: 'claude' })).structuredContent;
+    assert.equal(full.scope, 'models');
+    assert.deepEqual(full.backends, { claude: { installed: true, allowed: true, version: 'claude 2.0.0', defaultModel: { model: 'claude-haiku-4-5-20251001', source: 'catalog' }, catalogSource: 'claude fixture', acceptsUnlisted: true } });
+    assert.deepEqual(full.selection.map(row => [row.model, row.price.outputUsdPerMTok, row.defaultSource]), [['claude-haiku-4-5-20251001', 5, 'catalog']]);
+    const health = (await handleDoctor({ scope: 'health' })).content[0].text;
+    assert.match(health, /^CoAgent8 doctor: /, 'scope health runs the full diagnosis');
+    assert.ok(quotaReads.length > 0, 'with quota reads');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});

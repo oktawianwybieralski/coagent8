@@ -305,7 +305,7 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 5500, `model-visible tool definitions: ${visible} B (owner budget raised to 5,500 B for the price limit, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  assert.ok(visible <= 5500, `model-visible tool definitions: ${visible} B (owner budget raised to 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
   for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
@@ -318,7 +318,10 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   assert.deepEqual({ ...consultProperties.output_price_below, description: undefined }, { type: 'number', minimum: 0, description: undefined });
   assert.match(consultProperties.output_price_below.description, /USD per million output tokens, strict \(5 excludes 5\)\. Only verified prices qualify/);
   assert.deepEqual(tools.find(t => t.name === 'review').inputSchema.properties.output_price_below, consultProperties.output_price_below, 'review takes the same limit');
-  assert.match(tools.find(t => t.name === 'doctor').description, /output price and approval/);
+  const doctor = tools.find(t => t.name === 'doctor');
+  assert.match(doctor.description, /efforts, output prices, approval need; or backend health/);
+  assert.deepEqual(doctor.inputSchema.properties.scope.enum, ['models', 'health'], 'the model view is a scope of doctor, not a seventh tool');
+  assert.equal(doctor.inputSchema.properties.quota, undefined, 'health covers quota; the model view reads none');
   const consult = tools.find(t => t.name === 'consult');
   assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
   assert.deepEqual(consult.inputSchema.properties.reasoning_effort.enum, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);

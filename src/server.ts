@@ -313,7 +313,7 @@ export function createServer(): Server {
 
       switch (name) {
         case CANONICAL_TOOL_NAMES.DOCTOR:
-          return await handleDoctor(args as { backend?: string; detail?: string; quota?: boolean });
+          return await handleDoctor(args as { backend?: string; detail?: string; scope?: string });
         case CANONICAL_TOOL_NAMES.ISSUE:
           return await handleIssue(args);
         case CANONICAL_TOOL_NAMES.CANCEL:

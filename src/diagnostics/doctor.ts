@@ -49,7 +49,7 @@ export interface DoctorReport {
    * Probe results without `quota`, which `quotas` reports once, and with `models`: the
    * models and efforts the CLI itself offers, when it lists them.
    */
-  backends: Partial<Record<ProviderId, Omit<AdapterProbeResult, 'quota'> & { models?: CatalogModel[] }>>;
+  backends: Partial<Record<ProviderId, Omit<AdapterProbeResult, 'quota'> & { models?: CatalogModel[]; acceptsUnlisted?: boolean }>>;
   quotas: Partial<Record<ProviderId, DoctorQuota>>;
   /** Default model per installed backend; absent when none is known. */
   defaultModels: Partial<Record<ProviderId, DoctorDefaultModel>>;
@@ -166,7 +166,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   for (const id of selected) {
     const { quota, ...probe } = probes[id]!;
     const catalog = catalogs[selected.indexOf(id)];
-    backends[id] = catalog ? { ...probe, models: catalog.models, modelSource: catalog.source } : probe;
+    backends[id] = catalog ? { ...probe, models: catalog.models, modelSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) } : probe;
     if (cached[id]) quotas[id] = quota?.buckets ? { ...cached[id], buckets: quota.buckets } : cached[id];
   }
 
@@ -232,42 +232,145 @@ function formatQuota(quota: DoctorQuota | undefined): string {
   return `${quota.window} ${quota.headroomPercent}% left${quota.resetsAt ? `, resets ${quota.resetsAt}` : ''}`;
 }
 
+function formatPrices(list: DoctorPrices | null): string {
+  return list ? `prices ${list.source} ${list.fetchedAt.slice(0, 10)} (${list.models} models priced${list.stale ? ', stale: meets no price limit' : ''})`
+    : 'no price list: every model asks, none meets a price limit';
+}
+
+/** Names the default model and where it came from. */
+function formatDefault(selected: DoctorDefaultModel | undefined): string {
+  return selected ? ` · model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''})` : '';
+}
+
+/** What a backend accepts beyond the listed models: unlisted names, the probe's aliases, or any name. */
+function formatUnlisted(catalog: { listed: boolean; acceptsUnlisted?: boolean; availableModels?: string[] }): string | undefined {
+  if (catalog.listed) return catalog.acceptsUnlisted ? '  also accepted: unlisted names the CLI resolves itself' : undefined;
+  return catalog.availableModels?.length ? `  also accepted: ${catalog.availableModels.join(', ')}, or a full model id` : '  also accepted: any model name the CLI accepts';
+}
+
 /**
- * Renders a doctor report as a few lines: overall status and price list, one line per
- * backend, its models with their prices, and the recommendations.
- * @remarks Model rows are dropped whole, from the longest list first, until the summary
- * fits {@link DOCTOR_SUMMARY_MAX_BYTES}: a cut row would misstate a price. The tool still
- * applies the byte bound for recommendations that alone exceed it.
+ * Renders a summary whose model lines fit {@link DOCTOR_SUMMARY_MAX_BYTES}: model rows are
+ * dropped whole, from the longest list first, because a cut row would misstate a price.
+ * @param render - Renders the summary with at most the given number of rows per backend.
+ */
+function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId) => ModelCandidate[], limits: Partial<Record<ProviderId, number>>) => string): string {
+  const ids = [...new Set(selection.map(row => row.backend))];
+  const rows = (id: ProviderId) => selection.filter(row => row.backend === id);
+  const limits: Partial<Record<ProviderId, number>> = Object.fromEntries(ids.map(id => [id, rows(id).length]));
+  let text = render(rows, limits);
+  while (Buffer.byteLength(text) > DOCTOR_SUMMARY_MAX_BYTES) {
+    const longest = ids.reduce<ProviderId | undefined>((top, id) => top === undefined || limits[id]! > limits[top]! ? id : top, undefined);
+    if (!longest || limits[longest]! <= 1) break;
+    limits[longest]!--;
+    text = render(rows, limits);
+  }
+  return text;
+}
+
+/**
+ * Renders a health report as a few lines: overall status and price list, one line per
+ * backend with its readiness and quota, its models with their prices, and the recommendations.
+ * @remarks The tool still applies the byte bound for recommendations that alone exceed it.
  */
 export function formatDoctorSummary(report: DoctorReport): string {
-  const list = report.prices;
-  const prices = list ? `prices ${list.source} ${list.fetchedAt.slice(0, 10)} (${list.models} models priced${list.stale ? ', stale: meets no price limit' : ''})`
-    : 'no price list: every model asks, none meets a price limit';
   const ids = Object.keys(report.backends) as ProviderId[];
-  const rows = Object.fromEntries(ids.map(id => [id, report.selection.filter(row => row.backend === id)])) as Record<ProviderId, ModelCandidate[]>;
-  const limits = Object.fromEntries(ids.map(id => [id, rows[id].length])) as Record<ProviderId, number>;
-  const render = () => {
-    const lines = [`CoAgent8 doctor: ${report.status} · default backend: ${report.default_backend} · ${prices}`];
+  return fitSummary(report.selection, (rows, limits) => {
+    const lines = [`CoAgent8 doctor: ${report.status} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
     for (const id of ids) {
       const probe = report.backends[id]!;
       if (!probe.installed) { lines.push(`${id}: not installed`); continue; }
       const state = report.ready_backends.includes(id) ? 'ready' : !report.active_backends.includes(id) ? 'not allowed' : probe.authStatus === 'unauthenticated' ? 'signed out' : 'not ready';
-      const selected = report.defaultModels?.[id];
-      const model = selected ? ` · model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''})` : '';
-      lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${model} · ${formatQuota(report.quotas[id])}`);
-      // The discovery step before an explicit model or a price limit: what the CLI offers and what it costs.
-      if (rows[id].length) lines.push(formatCandidates(rows[id], limits[id]));
-      if (!probe.models?.length) lines.push(probe.availableModels?.length ? `  also accepted: ${probe.availableModels.join(', ')}, or a full model id` : '  also accepted: any model name the CLI accepts');
+      lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} · ${formatQuota(report.quotas[id])}`);
+      if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
+      const unlisted = formatUnlisted({ listed: Boolean(probe.models?.length), acceptsUnlisted: probe.acceptsUnlisted, availableModels: probe.availableModels });
+      if (unlisted) lines.push(unlisted);
     }
     if (report.recommendations.length) lines.push(...report.recommendations.map(text => `- ${text}`));
     return lines.join('\n');
+  });
+}
+
+/** One backend in the model report: whether it can run, its version, default and catalog source. */
+export interface ModelReportBackend {
+  installed: boolean;
+  /** Permitted by `routing.allowedBackends`. */
+  allowed: boolean;
+  version?: string;
+  defaultModel?: DoctorDefaultModel;
+  /** Where the model list comes from; absent when the CLI lists none. */
+  catalogSource?: string;
+  /** The CLI also runs names it does not list (Claude Code). */
+  acceptsUnlisted?: boolean;
+  /** Names the probe knows when the CLI lists no catalog. */
+  availableModels?: string[];
+}
+
+/**
+ * The model view of doctor (`AX-001`): which models each backend offers, their efforts,
+ * output prices and approval need, from cached probes, catalogs and prices. It reads no
+ * quota and records nothing; `scope: "health"` diagnoses installation, sign-in and quota.
+ */
+export interface ModelReport {
+  scope: 'models';
+  prices: DoctorPrices | null;
+  backends: Partial<Record<ProviderId, ModelReportBackend>>;
+  selection: ModelCandidate[];
+  recommendations: string[];
+}
+
+/**
+ * Builds the model view from cached data: probes and catalogs younger than their TTLs are
+ * reused, prices are read only when none are stored or a listed model is unchecked.
+ * @param options - `backend` narrows the view to one backend.
+ */
+export async function runModelReport(options: { backend?: ProviderId } = {}): Promise<ModelReport> {
+  const { config, error: configError } = loadConfigForDiagnostics();
+  const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
+  const probes = await Promise.all(selected.map(id => probeBackend(id)));
+  const catalogs = await Promise.all(selected.map((id, index) => probes[index].installed ? readModelCatalog(id) : undefined));
+  const recommendations: string[] = configError ? [configError] : [];
+  const defaults = await Promise.all(selected.map(async (id, index): Promise<ModelSelection | undefined> => {
+    if (!probes[index].installed || configError) return undefined;
+    try { return await selectModel(id, probes[index]); }
+    catch (err) { recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`); return undefined; }
+  }));
+  const prices = await readPrices({ models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...defaults.flatMap(selection => selection ? [selection.model] : [])] });
+  if (!prices) recommendations.push('No price list could be read: every model asks for approval and none meets a price limit.');
+  const backends: ModelReport['backends'] = {};
+  selected.forEach((id, index) => {
+    const probe = probes[index], catalog = catalogs[index], fallback = defaults[index];
+    backends[id] = { installed: probe.installed, allowed: config.routing.allowedBackends.includes(id),
+      ...(probe.version ? { version: probe.version } : {}),
+      ...(fallback ? { defaultModel: { ...fallback, ...(decideConsent(fallback.model, fallback.model, prices, config.governance).ask ? { asks: true } : {}) } } : {}),
+      ...(catalog ? { catalogSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) } : {}),
+      ...(!catalog && probe.availableModels?.length ? { availableModels: probe.availableModels } : {}) };
+  });
+  return {
+    scope: 'models',
+    prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
+    backends,
+    selection: selected.flatMap((id, index) => probes[index].installed ? listModelCandidates(id, catalogs[index], defaults[index], prices, config.governance) : []),
+    recommendations,
   };
-  let text = render();
-  while (Buffer.byteLength(text) > DOCTOR_SUMMARY_MAX_BYTES) {
-    const longest = ids.reduce((top, id) => limits[id] > limits[top] ? id : top, ids[0]);
-    if (!longest || limits[longest] <= 1) break;
-    limits[longest]--;
-    text = render();
-  }
-  return text;
+}
+
+/**
+ * Renders the model view: the price list, then per backend its default and its models with
+ * efforts, output prices, default and approval tags, within {@link DOCTOR_SUMMARY_MAX_BYTES}.
+ */
+export function formatModelSummary(report: ModelReport): string {
+  const ids = Object.keys(report.backends) as ProviderId[];
+  return fitSummary(report.selection, (rows, limits) => {
+    const lines = [`CoAgent8 models · ${formatPrices(report.prices)} · scope "health" diagnoses sign-in and quota`];
+    for (const id of ids) {
+      const backend = report.backends[id]!;
+      if (!backend.installed) { lines.push(`${id}: not installed`); continue; }
+      lines.push(`${id}${backend.allowed ? '' : ' (not allowed by routing.allowedBackends)'} · ${backend.version || 'unknown version'}${formatDefault(backend.defaultModel)}`);
+      if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
+      const unlisted = formatUnlisted({ listed: Boolean(backend.catalogSource), acceptsUnlisted: backend.acceptsUnlisted, availableModels: backend.availableModels });
+      if (unlisted) lines.push(unlisted);
+    }
+    if (report.recommendations.length) lines.push(...report.recommendations.map(text => `- ${text}`));
+    return lines.join('\n');
+  });
 }

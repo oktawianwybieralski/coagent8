@@ -1,17 +1,18 @@
-import { DOCTOR_SUMMARY_MAX_BYTES, formatDoctorSummary, runDoctor } from '../diagnostics/doctor.js';
+import { DOCTOR_SUMMARY_MAX_BYTES, formatDoctorSummary, formatModelSummary, runDoctor, runModelReport } from '../diagnostics/doctor.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { redactDiagnostic } from '../redaction.js';
 import type { ProviderId } from '../conversation.js';
 
 export const doctorToolDefinition = {
   name: CANONICAL_TOOL_NAMES.DOCTOR,
-  description: 'Backends: install, sign-in, quota; per model its efforts, output price and approval.',
+  description: 'Models per backend: efforts, output prices, approval need; or backend health.',
   inputSchema: {
     type: 'object',
     properties: {
       backend: { type: 'string', enum: ['codex', 'claude', 'agy'] },
-      detail: { type: 'string', enum: ['summary', 'full'], description: 'Default summary; full to diagnose a failure.' },
-      quota: { type: 'boolean', description: 'false skips the slower quota reads.' },
+      scope: { type: 'string', enum: ['models', 'health'], description: 'models (default, cached); health: install, sign-in, quota.' },
+      // The enum says it: a summary by default, or the same report as JSON.
+      detail: { type: 'string', enum: ['summary', 'full'] },
     },
   },
 };
@@ -24,11 +25,17 @@ function redactStrings(value: unknown): unknown {
   return value;
 }
 
-/** Summary text by default; `detail: "full"` returns the report as compact JSON and structured content. */
-export async function handleDoctor(args: { backend?: string; detail?: string; quota?: boolean } = {}) {
-  const report = await runDoctor({ backend: args.backend as ProviderId | undefined, quota: args.quota });
+/**
+ * The model view by default (`scope: "models"`, cached); `scope: "health"` runs the full
+ * diagnosis. Summary text by default; `detail: "full"` returns the report as compact JSON and
+ * structured content.
+ */
+export async function handleDoctor(args: { backend?: string; detail?: string; scope?: string } = {}) {
+  const backend = args.backend as ProviderId | undefined;
+  const report = args.scope === 'health' ? await runDoctor({ backend }) : await runModelReport({ backend });
   if (args.detail !== 'full') {
-    return { content: [{ type: 'text', text: redactDiagnostic(formatDoctorSummary(report), DOCTOR_SUMMARY_MAX_BYTES) }] };
+    const summary = 'scope' in report ? formatModelSummary(report) : formatDoctorSummary(report);
+    return { content: [{ type: 'text', text: redactDiagnostic(summary, DOCTOR_SUMMARY_MAX_BYTES) }] };
   }
   const structuredContent = redactStrings(report) as Record<string, unknown>;
   return { content: [{ type: 'text', text: JSON.stringify(structuredContent) }], structuredContent };
