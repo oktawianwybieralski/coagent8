@@ -25,7 +25,15 @@ export function providerForClient(clientName: string | undefined): ProviderId | 
 export function setCallerProvider(provider: ProviderId | null): void {
   callerProvider = provider;
 }
-export async function resolveBackend(requested?: string | null): Promise<ResolvedBackend> {
+/**
+ * Resolves the backend of a turn: an explicit or configured fixed backend, else one chosen
+ * like smart_quota among the permitted installed CLIs.
+ * @param requested - The call's or session's backend; `auto` or absent for the configured route.
+ * @param options - `eligible` narrows a chosen (not a fixed) backend: it returns why a backend
+ * cannot run the turn, such as no model below a user's price limit (`AX-002`), or undefined.
+ * @throws The reasons of every backend `eligible` rejected, with the first one's code, when none remains.
+ */
+export async function resolveBackend(requested?: string | null, options: { eligible?: (id: ProviderId, probe: AdapterProbeResult) => Promise<ToolError | undefined> } = {}): Promise<ResolvedBackend> {
   const config = loadConfig(), allowed = config.routing.allowedBackends;
   const raw = requested || 'auto';
   let target = raw === 'auto' ? (config.routing.strategy === 'smart_quota' ? 'smart_quota' : config.defaultBackend) : raw;
@@ -44,11 +52,17 @@ export async function resolveBackend(requested?: string | null): Promise<Resolve
   for (const [id, probe] of results) probes.set(id, probe);
   const installed = candidates.filter(id => probes.get(id)?.installed && probes.get(id)?.executionSupported !== false);
   if (!installed.length) throw candidates.some(id=>probes.get(id)?.installed) ? new ToolError('CLI_UNSUPPORTED', 'No installed permitted CLI supports execution; run doctor.') : new ToolError('CLI_NOT_FOUND', 'No permitted CLI installed; run doctor.');
-  if (target === 'smart_quota' || installed.length > 1) {
+  let pool = installed;
+  if (options.eligible) {
+    const rejected = await Promise.all(installed.map(id => options.eligible!(id, probes.get(id)!)));
+    pool = installed.filter((_, index) => !rejected[index]);
+    if (!pool.length) throw new ToolError(rejected[0]!.code, installed.map((id, index) => `${id}: ${rejected[index]!.message}`).join(' '));
+  }
+  if (target === 'smart_quota' || pool.length > 1) {
     // Without a configured default, auto chooses like smart_quota: another CLI than the caller's, most headroom first.
     const warnings: string[] = [];
-    const id = await selectSmartQuotaBackend(installed, { probesOverride: Object.fromEntries(probes), config, callerProvider, warnings });
+    const id = await selectSmartQuotaBackend(pool, { probesOverride: Object.fromEntries(probes), config, callerProvider, warnings });
     return { ...await selected(id as ProviderId, true), ...(warnings.length ? { warnings } : {}) };
   }
-  return selected(installed[0]);
+  return selected(pool[0]);
 }

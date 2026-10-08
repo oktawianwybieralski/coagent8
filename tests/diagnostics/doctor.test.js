@@ -92,7 +92,7 @@ test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_bac
 });
 
 test('doctor summary is a few lines, backend filter keeps other cached quotas, full report has quotas once', async () => {
-  const { formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');
+  const { formatDoctorSummary, DOCTOR_SUMMARY_MAX_BYTES } = require('../../src/diagnostics/doctor.ts');
   const { inspectQuotas } = require('../../src/backends/availability.ts');
   const { handleDoctor } = require('../../src/tools/doctor.tool.ts');
   const original = { ...adapterRegistry };
@@ -119,14 +119,26 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
 
     const report = await runDoctor();
     const summary = formatDoctorSummary(report);
-    assert.equal(summary.split('\n').length, 7, summary);
-    assert.match(summary, /\nagy: ready[^\n]*\n {2}models: gemini-3\.8-flash \(high\|low\)(\n|$)/, 'the catalog the CLI lists, with the efforts a model needs');
-    assert.match(summary, /\n {2}models: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
-    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices \d{4}-\d{2}-\d{2} \(19 models\)/);
+    assert.equal(summary.split('\n').length, 9, summary);
+    assert.match(summary, /\nagy: ready[^\n]*\n {2}models, USD per million output tokens: agy-model \? \[default, asks: no price\], gemini-3\.8-flash \(high\|low required\) 3\.75(\n|$)/,
+      'the default and the catalog the CLI lists, with prices and the efforts a model needs');
+    assert.match(summary, /\n {2}also accepted: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
+    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(19 models\)\n/);
     // The fixture models have no price, so the policy asks before each turn and doctor says so.
     assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
     assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 81% left/);
-    assert.ok(Buffer.byteLength(summary) < 1024, 'summary budget 1 KB');
+    assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, 'within the bound agy shows inline');
+    // Summary and full report state the same rows (AX-001).
+    assert.deepEqual(report.selection.map(row => [row.backend, row.model, row.price.outputUsdPerMTok, row.price.match, row.approval.required, row.defaultSource]), [
+      ['codex', 'codex-model', null, 'unknown', true, 'cli-config'],
+      ['agy', 'agy-model', null, 'unknown', true, 'cli-config'],
+      ['agy', 'gemini-3.8-flash', 3.75, 'exact', false, undefined],
+      ['claude', 'claude-model', null, 'unknown', true, 'cli-config'],
+    ]);
+    const flash = report.selection.find(row => row.model === 'gemini-3.8-flash');
+    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false });
+    assert.deepEqual(flash.approval, { required: false, basis: 'priced', reason: 'Its output costs 3.75 USD per million tokens.', rememberable: false });
+    assert.equal(report.prices.stale, false);
 
     assert.equal(report.backends.agy.quota, undefined, 'quota reported once, under quotas');
     assert.deepEqual(report.backends.agy.models, [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }], 'doctor reports the models the CLI lists');
@@ -147,6 +159,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     const full = await handleDoctor({ detail: 'full', backend: 'agy' });
     assert.deepEqual(JSON.parse(full.content[0].text), full.structuredContent);
     assert.deepEqual(Object.keys(full.structuredContent.backends), ['agy']);
+    assert.deepEqual(full.structuredContent.selection.map(row => row.model), ['agy-model', 'gemini-3.8-flash'], 'a backend filter narrows the rows');
   } finally {
     process.env.coagent8_QUOTA_CACHE = quotaCache;
     Object.assign(adapterRegistry, original);
@@ -188,4 +201,31 @@ test('doctor reports an unwritable quota cache as a recommendation instead of fa
   const report = await runDoctor({ quota: false });
   assert.ok(report.backends.codex && report.backends.claude && report.backends.agy);
   assert.equal(report.recommendations.filter(text => text.startsWith('Quota cache not updated: ')).length, 1);
+});
+
+test('the doctor summary drops whole model rows to stay within the inline bound and flags a stale price list (AX-001)', () => {
+  const { formatDoctorSummary, DOCTOR_SUMMARY_MAX_BYTES } = require('../../src/diagnostics/doctor.ts');
+  const row = (backend, index, price) => ({ backend, model: `${backend}-catalog-model-${index}`, efforts: ['low', 'high'],
+    price: { outputUsdPerMTok: price, matched: price === null ? null : `x/${backend}-${index}`, match: price === null ? 'unknown' : index % 7 === 0 ? 'approximate' : 'exact', source: 'openrouter', fetchedAt: '2026-09-01T00:00:00.000Z', stale: true },
+    approval: { required: price === null, basis: price === null ? 'unpriced' : 'priced', reason: '', rememberable: price === null } });
+  const probe = id => ({ id, installed: true, version: '1.0.0', models: [{ id: 'm', efforts: [] }] });
+  const report = {
+    status: 'operational', default_backend: 'auto', active_backends: ['codex', 'agy'], ready_backends: ['codex', 'agy'],
+    backends: { codex: probe('codex'), agy: probe('agy') }, quotas: {}, defaultModels: {}, recommendations: [],
+    prices: { source: 'openrouter', fetchedAt: '2026-09-01T00:00:00.000Z', models: 300, stale: true },
+    selection: [...Array.from({ length: 200 }, (_, i) => row('codex', i, i % 5 ? i / 10 : null)), ...Array.from({ length: 20 }, (_, i) => row('agy', i, 1))],
+  };
+  const summary = formatDoctorSummary(report);
+  assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, `${Buffer.byteLength(summary)} B`);
+  assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices openrouter 2026-09-01 \(300 models, stale: meets no price limit\)\n/);
+  const codexLine = summary.split('\n').find(line => line.includes('codex-catalog-model-0'));
+  const counted = Number(codexLine.match(/, \+(\d+) more \(detail: full\); reasoning_effort low\|high$/)[1]);
+  const shown = codexLine.replace(/^ {2}models, USD per million output tokens: /, '').replace(/, \+\d+ more.*$/, '').split(', ');
+  assert.equal(shown.length + counted, 200, 'every row is shown or counted');
+  shown.forEach((text, i) => {
+    const price = report.selection[i].price;
+    const expected = price.outputUsdPerMTok === null ? '? [asks: no price]' : `${price.match === 'approximate' ? '~' : ''}${price.outputUsdPerMTok}`;
+    assert.equal(text, `codex-catalog-model-${i} ${expected}`, 'a shown row is whole and states the full report\'s price');
+  });
+  assert.match(summary, /agy-catalog-model-19 1; reasoning_effort low\|high(\n|$)/, 'the shorter list stays complete while the longest is cut');
 });

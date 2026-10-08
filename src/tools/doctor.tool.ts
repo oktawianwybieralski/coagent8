@@ -1,11 +1,11 @@
-import { formatDoctorSummary, runDoctor } from '../diagnostics/doctor.js';
+import { DOCTOR_SUMMARY_MAX_BYTES, formatDoctorSummary, runDoctor } from '../diagnostics/doctor.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { redactDiagnostic } from '../redaction.js';
 import type { ProviderId } from '../conversation.js';
 
 export const doctorToolDefinition = {
   name: CANONICAL_TOOL_NAMES.DOCTOR,
-  description: 'Backends: install, sign-in, quota, and the models and reasoning efforts each accepts.',
+  description: 'Backends: install, sign-in, quota; per model its efforts, output price and approval.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,7 +28,7 @@ function redactStrings(value: unknown): unknown {
 export async function handleDoctor(args: { backend?: string; detail?: string; quota?: boolean } = {}) {
   const report = await runDoctor({ backend: args.backend as ProviderId | undefined, quota: args.quota });
   if (args.detail !== 'full') {
-    return { content: [{ type: 'text', text: redactDiagnostic(formatDoctorSummary(report), 4096) }] };
+    return { content: [{ type: 'text', text: redactDiagnostic(formatDoctorSummary(report), DOCTOR_SUMMARY_MAX_BYTES) }] };
   }
   const structuredContent = redactStrings(report) as Record<string, unknown>;
   return { content: [{ type: 'text', text: JSON.stringify(structuredContent) }], structuredContent };

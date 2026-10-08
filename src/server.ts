@@ -168,7 +168,7 @@ export const SERVER_INSTRUCTIONS = 'Asks another local coding agent (Codex, Clau
   + 'Use consult for a second opinion on a question, design, bug or plan, and review for an independent review of Git changes. '
   + 'Not for reading files, running commands or what the workspace already answers. '
   + 'The answer is another model\'s opinion: verify facts before acting on them. '
-  + 'Leave backend and model unset unless the user names one; doctor lists the models and efforts each backend accepts.';
+  + 'Leave backend and model unset unless the user names one or a price limit; doctor lists the models, efforts and prices each backend accepts.';
 
 export function createServer(): Server {
   composeExecutionCancellation();

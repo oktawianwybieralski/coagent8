@@ -45,7 +45,7 @@ const FOOTER_LINE_BREAK = '\n>\n';
  * - Redacts secrets and credentials before public return.
  * - Includes execution-owned cooldown warnings without writing persistent state.
  * - Appends blockquote footer lines: backend, model, duration, operations, session handle
- *   with its state, the review verdict, notices and warnings.
+ *   with its state, the review verdict, the price evidence of a price limit, notices and warnings.
  * - Appends pre-filled GitHub issue report link on unrecoverable fatal system errors.
  *
  * @param provider - Backend provider identifier (e.g. 'codex', 'agy', 'claude', or null).
@@ -53,11 +53,12 @@ const FOOTER_LINE_BREAK = '\n>\n';
  * @param defaultText - Fallback public text if output is empty.
  * @param sessionHandle - Active session handle or null.
  * @param meta - Execution metadata (turn, tool count, duration, history status).
- * @param options - Envelope formatting options.
+ * @param options - Envelope formatting options; `price` is the price evidence of the turn's
+ * model when the call set a price limit (`AX-002`).
  * @returns MCP CallToolResult with the markdown answer and footer as its only content.
  */
 export async function formatExecutionResult(provider: string | null, res: TerminalExecutionResult, defaultText = '', sessionHandle: string | null = null,
-  meta = { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, options: { requireEnvelope?: boolean; warnings?: string[]; reviewContext?: ReviewGateContext } = {}) {
+  meta = { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, options: { requireEnvelope?: boolean; warnings?: string[]; reviewContext?: ReviewGateContext; price?: string } = {}) {
   const error = res.error ? { ...res.error, message: redactDiagnostic(res.error.message) } : undefined;
   const warnings = (options.warnings || []).map(warning => redactDiagnostic(warning, 512));
   const rawOutput = res.output || defaultText;
@@ -104,6 +105,7 @@ export async function formatExecutionResult(provider: string | null, res: Termin
     // A failed run states its reason in the error line already.
     footerLines.push(`> Verdict: ${verdict}${reason && !error ? ` (${reason})` : ''}`);
   }
+  if (options.price) footerLines.push(`> Price: ${options.price}`);
   if (res.truncated) {
     footerLines.push('> Notice: Output reached buffer limit.');
   }

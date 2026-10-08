@@ -300,18 +300,25 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   assert.ok(SERVER_INSTRUCTIONS.length <= 512, 'every client reads the first 512 characters; Claude Code truncates at 2,048');
   // The owner's use cases (2026-10-07): models did not know when not to call, where the models are listed, or that the answer is an opinion.
   for (const part of ['Not for', 'doctor lists the models', 'verify facts']) assert.ok(SERVER_INSTRUCTIONS.includes(part), part);
+  // AX-006: a user's price limit is a reason to select a model, and doctor lists the prices.
+  assert.match(SERVER_INSTRUCTIONS, /unless the user names one or a price limit; doctor lists the models, efforts and prices/);
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 5300, `model-visible tool definitions: ${visible} B (owner budget of about 5 KB, 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  assert.ok(visible <= 5500, `model-visible tool definitions: ${visible} B (owner budget raised to 5,500 B for the price limit, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
-  for (const name of ['backend', 'model', 'reasoning_effort', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle']) {
+  for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
   }
   // No model names in descriptions (owner decision of 2026-10-07): doctor lists them, and a
   // wrong name fails before any model call with the accepted ones.
-  assert.match(consultProperties.model.description, /doctor lists each backend's models and default/, 'model points to the place that lists them');
-  assert.match(consultProperties.reasoning_effort.description, /listed with efforts needs one/, 'the effort requirement is stated before a call fails');
+  assert.match(consultProperties.model.description, /Omit unless the user names a model or price limit\. doctor lists models, efforts and prices/, 'model points to the place that lists them and permits selection for a limit');
+  assert.match(consultProperties.reasoning_effort.description, /Required where listed, or as a model name suffix/, 'the effort requirement is stated before a call fails');
+  // AX-002: unit, direction and strict boundary are part of the contract the caller sees.
+  assert.deepEqual({ ...consultProperties.output_price_below, description: undefined }, { type: 'number', minimum: 0, description: undefined });
+  assert.match(consultProperties.output_price_below.description, /USD per million output tokens, strict \(5 excludes 5\)\. Only verified prices qualify/);
+  assert.deepEqual(tools.find(t => t.name === 'review').inputSchema.properties.output_price_below, consultProperties.output_price_below, 'review takes the same limit');
+  assert.match(tools.find(t => t.name === 'doctor').description, /output price and approval/);
   const consult = tools.find(t => t.name === 'consult');
   assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
   assert.deepEqual(consult.inputSchema.properties.reasoning_effort.enum, ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);

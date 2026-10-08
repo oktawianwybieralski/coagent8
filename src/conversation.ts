@@ -3,7 +3,7 @@ export type ProviderId = (typeof PROVIDERS)[number];
 export type TerminalStatus = 'completed' | 'failed' | 'cancelled' | 'timed_out';
 export const ERROR_CODES = ['CLI_NOT_FOUND', 'CLI_UNSUPPORTED', 'AUTH_REQUIRED', 'MODEL_UNAVAILABLE',
   'RATE_LIMITED', 'SESSION_INVALID', 'SESSION_BUSY', 'ABORTED', 'TIMEOUT', 'SANDBOX_UNAVAILABLE',
-  'PROTOCOL_ERROR', 'BUFFER_LIMIT', 'INPUT_LIMIT', 'PROCESS_ERROR', 'HISTORY_ERROR', 'POLICY_DENIED'] as const;
+  'PROTOCOL_ERROR', 'BUFFER_LIMIT', 'INPUT_LIMIT', 'PROCESS_ERROR', 'HISTORY_ERROR', 'POLICY_DENIED', 'PRICE_LIMIT'] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 export interface ExecutionError { code: ErrorCode; message: string; retryable: boolean }
 /**

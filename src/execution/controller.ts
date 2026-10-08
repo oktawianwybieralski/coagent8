@@ -8,6 +8,10 @@
  *   policy prices as expensive, unknown or approximate (`consentFor`), requested or the
  *   backend's default, runs only after the user approves it through {@link ConsentPrompt};
  *   without one the turn fails with `POLICY_DENIED`.
+ * - **Price Limit** (`AX-002`): `output_price_below` is checked for the concrete model, separately
+ *   from consent, before the user is asked and again right before the session is acquired;
+ *   a model without a verified price below the limit fails with `PRICE_LIMIT`, never
+ *   replaced by another. Without a named model, routing and selection choose one that meets it.
  * - **Turn Mutual Exclusion & Lease Tokens**: Sessions are acquired with unique turn tokens
  *   (`acquireAndResolveSession`). A single session handle cannot execute concurrent turns; attempts
  *   receive `SESSION_BUSY`.
@@ -32,7 +36,8 @@ import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../backends/model-catalog.js';
-import { selectModel } from '../backends/model-selection.js';
+import { selectModel, type PriceConstraint } from '../backends/model-selection.js';
+import { checkPriceLimit, priceEvidence, readPrices } from '../backends/prices.js';
 import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../backends/governance.js';
 import { isValidModelIdentifier } from '../backends/model-identifier.js';
 import { consentFor } from '../backends/consent.js';
@@ -58,6 +63,8 @@ export interface ExecutionRequest {
   model?: string;
   reasoning_effort?: string;
   timeout_ms?: number;
+  /** User's price limit in USD per million output tokens; strict (`AX-002`). */
+  output_price_below?: number;
 }
 
 /**
@@ -143,13 +150,22 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
   if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
-  const backend = await resolveBackend(previous?.backend || args.backend);
+  const below = args.output_price_below;
+  // A limit needs a current price list: a stale one is read again before anything is chosen.
+  const constraint: PriceConstraint | undefined = below === undefined ? undefined
+    : { below, prices: await readPrices({ current: true }), effort: args.reasoning_effort };
+  // Without a named model, only backends with a model below the limit are chosen from.
+  const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
+  const backend = await resolveBackend(previous?.backend || args.backend, choosing ? { eligible: async (id, probe) => {
+    try { await selectModel(id, probe, {}, { constraint: choosing }); return undefined; }
+    catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
+  } } : {});
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
   if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   // The model comes from the call, the session, the configuration or the CLI, never from the
   // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
   // every turn) and the turn name the same model.
-  const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model });
+  const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model }, choosing ? { constraint: choosing } : {});
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
   // A continuation keeps its session's selection: the effort follows the model it was chosen for.
   const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
@@ -160,6 +176,18 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     if (rejected) throw new ToolError(rejected.code, rejected.message);
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
   }
+  // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
+  const assertPriceLimit = async () => {
+    const prices = await readPrices({ current: true });
+    const evidence = priceEvidence(prices, model);
+    const rejected = checkPriceLimit(model, evidence, below!);
+    if (rejected) {
+      throw new ToolError('PRICE_LIMIT', choosing ? `${rejected} The price list changed after the model was chosen; retry to choose again.`
+        : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${previous ? ' or start a new session' : ' or omit model'}.`);
+    }
+    return `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(below!.toFixed(4))} USD`;
+  };
+  if (below !== undefined) await assertPriceLimit();
   // Asked on every turn, for the model this turn runs (EXEC-001: price, not name).
   const decision = await consentFor(backend.id, backend.probe, model);
   const consentWarnings: string[] = [];
@@ -176,6 +204,9 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
       catch (err) { consentWarnings.push(`The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`); }
     }
   }
+  // Rechecked right before the turn: the list or the limit's evidence may have changed while the user decided.
+  const priceNote = below === undefined ? undefined : await assertPriceLimit();
+  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while checking the price limit.');
   await pruneExpiredSessions();
   const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
   if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
@@ -355,6 +386,6 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     '',
     handle,
     { turn: session.turnCount || 1, toolCount, durationMs: Date.now() - started, historyAvailable: !writer.disabled && !historyError },
-    { ...options, warnings }
+    { ...options, warnings, ...(priceNote ? { price: priceNote } : {}) }
   );
 }

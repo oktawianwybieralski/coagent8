@@ -1,13 +1,16 @@
 /**
  * Approximate public API prices of models (`EXEC-001`, owner decision of 2026-10-07). They
- * decide only whether to ask the user before a model runs, never billing or a model's safety.
+ * decide whether to ask the user before a model runs and whether a model meets a user's price
+ * limit (`AX-002`); never billing, a request's cost or a model's safety.
  *
  * @remarks
  * The list comes from `coagent8_PRICES_URL` (an http(s) URL, or a local file for a mirror or
  * an offline copy), else OpenRouter's public `GET /api/v1/models`, which needs no key and
  * receives no user data. A read is bounded in time and size and validated, and the output
  * price per million tokens of each model is kept in `models.json`. Doctor reads a list older
- * than a week again; a turn reads one only when none is stored, at most once per process.
+ * than a week again; a turn reads one when none is stored, or, with a price limit, when the
+ * stored one is older than a week, sharing the read and retrying a failure after five minutes.
+ * Only an exact match from a list younger than a week meets a limit ({@link checkPriceLimit}).
  *
  * @packageDocumentation
  */
@@ -56,7 +59,9 @@ export function parsePriceList(payload: unknown): Array<[string, number]> | unde
   for (const item of data.slice(0, MAX_ENTRIES)) {
     const entry = record(item);
     const id = entry?.id;
-    const completion = Number(record(entry?.pricing)?.completion);
+    // Number(null) and Number('') are 0: a missing price must not read as a free model (AX-002).
+    const raw = record(entry?.pricing)?.completion;
+    const completion = typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '') ? Number(raw) : NaN;
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(id) || !Number.isFinite(completion) || completion < 0) continue;
     entries.push([id, Math.round(completion * 1e6 * 1e4) / 1e4]);
   }
@@ -106,16 +111,27 @@ const RETRY_MS = 5 * 60 * 1000;
 let lastRead: { at: number; result: Promise<PriceList | undefined> } | undefined;
 
 /**
+ * Whether a list is too old to show that a model meets a user's price limit (`AX-002`).
+ * @param now - Milliseconds since the epoch.
+ */
+export function isPriceListStale(list: PriceList, now = Date.now()): boolean {
+  return now - list.fetchedAt >= PRICE_REFRESH_MS;
+}
+
+/**
  * Returns the stored price list, of any age; without one, reads it, shared by concurrent
  * turns and tried again at most every five minutes after a failure.
- * @param options - `refresh` reads a list older than {@link PRICE_REFRESH_MS} again (doctor).
+ * @param options - `refresh` reads a list older than {@link PRICE_REFRESH_MS} again (doctor);
+ * `current` does so for a turn with a price limit, shared and backed off like a missing
+ * list, and returns the stale list when the read fails.
  */
-export async function readPrices(options: { refresh?: boolean } = {}): Promise<PriceList | undefined> {
+export async function readPrices(options: { refresh?: boolean; current?: boolean } = {}): Promise<PriceList | undefined> {
   const stored = readStoredPrices();
-  if (stored && !(options.refresh && Date.now() - stored.fetchedAt >= PRICE_REFRESH_MS)) return stored;
+  if (stored && !((options.refresh || options.current) && isPriceListStale(stored))) return stored;
   if (options.refresh) return (await refreshPrices()) ?? stored;
-  if (!lastRead || (Date.now() - lastRead.at >= RETRY_MS && !(await lastRead.result))) lastRead = { at: Date.now(), result: refreshPrices() };
-  return lastRead.result;
+  const usable = async (read: Promise<PriceList | undefined>) => { const list = await read; return list !== undefined && !isPriceListStale(list); };
+  if (!lastRead || (Date.now() - lastRead.at >= RETRY_MS && !(await usable(lastRead.result)))) lastRead = { at: Date.now(), result: refreshPrices() };
+  return (await lastRead.result) ?? stored;
 }
 
 function normalize(name: string): string {
@@ -147,4 +163,66 @@ export function findPrice(list: PriceList, model: string): ModelPrice | undefine
   const stem = base.replace(EFFORT_SUFFIX, '');
   const loose = [...named].filter(([key]) => key.startsWith(`${stem}-`) || stem.startsWith(`${key}-`)).flatMap(([, entries]) => entries);
   return loose.length ? highest(loose, false) : undefined;
+}
+
+/** How a model's price was found: by its name, only by a looser comparison, or not at all. */
+export type PriceMatch = 'exact' | 'approximate' | 'unknown';
+
+/**
+ * What the price list says about one concrete model (`AX-001`): a public list price per
+ * million output tokens, not a request estimate, measured usage or a bill.
+ */
+export interface PriceEvidence {
+  /** USD per million output tokens; null when unknown. */
+  outputUsdPerMTok: number | null;
+  /** The list entry the price belongs to; null when unknown. */
+  matched: string | null;
+  match: PriceMatch;
+  /** Where the list came from (`openrouter` or `coagent8_PRICES_URL`); null without a list. */
+  source: string | null;
+  /** When the list was read, as an ISO timestamp; null without a list. */
+  fetchedAt: string | null;
+  /** The list is older than {@link PRICE_REFRESH_MS}, so it cannot satisfy a price limit. */
+  stale: boolean;
+}
+
+/**
+ * Looks up a concrete model in a price list.
+ * @param list - The price list, or undefined when none could be read.
+ * @param model - The model the backend runs, aliases already resolved.
+ * @param now - Milliseconds since the epoch, for staleness.
+ */
+export function priceEvidence(list: PriceList | undefined, model: string, now = Date.now()): PriceEvidence {
+  if (!list) return { outputUsdPerMTok: null, matched: null, match: 'unknown', source: null, fetchedAt: null, stale: false };
+  const price = findPrice(list, model);
+  return {
+    outputUsdPerMTok: price?.output ?? null,
+    matched: price?.matched ?? null,
+    match: !price ? 'unknown' : price.exact ? 'exact' : 'approximate',
+    source: list.source,
+    fetchedAt: new Date(list.fetchedAt).toISOString(),
+    stale: isPriceListStale(list, now),
+  };
+}
+
+const usd = (value: number) => `${Number(value.toFixed(4))} USD`;
+
+/**
+ * Checks a user's price limit (`AX-002`). Separate from consent: neither `neverAsk` nor an
+ * approval makes a model meet a limit, and only an exact price from a current list does.
+ * @param model - The concrete model, for the message.
+ * @param evidence - Its {@link priceEvidence}.
+ * @param below - The limit in USD per million output tokens; strict, so a model priced at
+ * exactly the limit does not meet it.
+ * @returns Why the model does not meet the limit, or undefined when it does.
+ */
+export function checkPriceLimit(model: string, evidence: PriceEvidence, below: number): string | undefined {
+  const limit = `below ${usd(below)} per million output tokens`;
+  if (!evidence.source) return `No price list is available, so '${model}' cannot be shown to cost ${limit}.`;
+  const list = `${evidence.source} list of ${evidence.fetchedAt!.slice(0, 10)}`;
+  if (evidence.stale) return `The ${list} is older than seven days and could not be read again, so '${model}' cannot be shown to cost ${limit}.`;
+  if (evidence.match === 'unknown') return `The ${list} has no price for '${model}', so it cannot be shown to cost ${limit}.`;
+  if (evidence.match === 'approximate') return `The ${list} prices '${model}' only approximately, as ${evidence.matched} at ${usd(evidence.outputUsdPerMTok!)}, so it cannot be shown to cost ${limit}.`;
+  if (evidence.outputUsdPerMTok! >= below) return `'${model}' costs ${usd(evidence.outputUsdPerMTok!)} per million output tokens (${list}), not ${limit}.`;
+  return undefined;
 }

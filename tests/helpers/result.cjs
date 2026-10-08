@@ -27,7 +27,7 @@ function readResult(result) {
     state: status.groups.state || null, continuationAvailable: status.groups.state === 'ready', historyAvailable: !status.groups.noHistory,
     status: 'completed',
     verdict: 'NOT_APPLICABLE', reason: null, truncated: false, warnings: [], issueUrl: null, workspace: null,
-    error: null, answer: body,
+    error: null, answer: body, price: null,
   };
   const error = /^> Error \[/.test(body) ? ERROR.exec(body.split('\n\n')[0]) : null;
   if (error) {
@@ -40,6 +40,7 @@ function readResult(result) {
     let match;
     if ((match = /^> Verdict: (READY|BLOCKED)(?: \(([\s\S]*)\))?$/.exec(line))) { parsed.verdict = match[1]; parsed.reason = match[2] || null; }
     else if (line === '> Notice: Output reached buffer limit.') parsed.truncated = true;
+    else if ((match = /^> Price: (.+)$/.exec(line))) parsed.price = match[1];
     else if ((match = /^> Warning: ([\s\S]*)$/.exec(line))) parsed.warnings.push(match[1]);
     else if ((match = /^> Report this issue: \[Open pre-filled GitHub Issue\]\((.+)\)$/.exec(line))) parsed.issueUrl = match[1];
     else if ((match = /^> Workspace: (.+) \(server directory\)$/.exec(line))) parsed.workspace = match[1];
