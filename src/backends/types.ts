@@ -134,10 +134,11 @@ export interface CliAdapter {
    */
   inspectQuota?(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']>;
   /**
-   * Reads the models the installed CLI offers, without a model call. Called only when a
-   * caller names a model or effort, and by doctor; undefined when the CLI cannot say.
+   * Reads the models the installed CLI offers, without a model call. Called when a turn
+   * selects or checks a model, and by doctor; undefined when the CLI cannot say.
+   * @param probe - The current probe, for the version and executable it found.
    */
-  listModels?(): Promise<ModelCatalog | undefined>;
+  listModels?(probe?: AdapterProbeResult): Promise<ModelCatalog | undefined>;
   /**
    * Reads, without a model call, the MCP servers and plugins of the user's CLI configuration
    * that its turns offer the model and the adapter cannot disable (`CUR-002`). Called only
@@ -167,6 +168,11 @@ export interface CatalogModel {
   effortRequired?: boolean;
   /** The CLI's default model. */
   isDefault?: boolean;
+  /**
+   * Other names the CLI accepts for this model, such as Claude Code's `sonnet` alias for the
+   * concrete model it currently resolves to; `id` is always the concrete model.
+   */
+  aliases?: string[];
 }
 
 /** Models offered by one backend CLI, read from the CLI itself. */
@@ -174,6 +180,11 @@ export interface ModelCatalog {
   models: CatalogModel[];
   /** Where the list comes from, for example `codex app-server model/list`. */
   source: string;
+  /**
+   * The CLI also accepts models it does not list (Claude Code lists a curated set), so an
+   * unlisted name is not rejected; its concrete model is observed instead.
+   */
+  acceptsUnlisted?: boolean;
 }
 
 export type QuotaStatus = 'operational' | 'uninstalled' | 'rate_limited';

@@ -72,7 +72,10 @@ const isTime = (value: unknown): value is number => typeof value === 'number' &&
 function parseCatalogModel(value: unknown): CatalogModel | null {
   const entry = record(value);
   if (!entry || !isValidModelIdentifier(entry.id) || !Array.isArray(entry.efforts) || !entry.efforts.every(effort => typeof effort === 'string' && effort.length <= 32)) return null;
-  return { id: entry.id, efforts: entry.efforts as string[], ...(entry.effortRequired === true ? { effortRequired: true } : {}), ...(entry.isDefault === true ? { isDefault: true } : {}) };
+  const aliases = entry.aliases;
+  if (aliases !== undefined && !(Array.isArray(aliases) && aliases.every(isValidModelIdentifier))) return null;
+  return { id: entry.id, efforts: entry.efforts as string[], ...(entry.effortRequired === true ? { effortRequired: true } : {}), ...(entry.isDefault === true ? { isDefault: true } : {}),
+    ...(aliases?.length ? { aliases: aliases as string[] } : {}) };
 }
 
 function parseEntry(value: unknown): ObservedModels | null {
@@ -83,7 +86,7 @@ function parseEntry(value: unknown): ObservedModels | null {
   if (catalog) {
     const models = Array.isArray(catalog.models) ? catalog.models.map(parseCatalogModel) : [];
     if (!models.length || models.includes(null) || typeof catalog.source !== 'string' || !isTime(catalog.observedAt)) return null;
-    parsed.catalog = { models: models as CatalogModel[], source: catalog.source.slice(0, 128), observedAt: catalog.observedAt };
+    parsed.catalog = { models: models as CatalogModel[], source: catalog.source.slice(0, 128), observedAt: catalog.observedAt, ...(catalog.acceptsUnlisted === true ? { acceptsUnlisted: true } : {}) };
   }
   const resolved = record(entry.resolved);
   if (resolved) {

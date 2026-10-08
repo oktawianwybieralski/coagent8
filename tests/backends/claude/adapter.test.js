@@ -165,3 +165,42 @@ test('Claude cancellation and deadlines interrupt the turn over stream-json befo
   assert.equal(stuck.status,'cancelled');assert.ok(Date.now()-startedAt>=3000,'a CLI that ignores the interrupt is stopped after the grace period');
   assert.notEqual(stuck.exitCode,1,'the stuck CLI did not exit by itself');
 }));
+
+test('Claude lists its models and aliases from the stream-json initialize response, without a user message or turn',()=>withFixture(async({captured})=>{
+  const {listModels}=require('../../../src/backends/claude/adapter.ts');
+  const catalog=await listModels({executionSupported:true});
+  assert.deepEqual(catalog,{source:'claude stream-json initialize',acceptsUnlisted:true,models:[
+    {id:'claude-sonnet-4-6',efforts:['low','medium','high','xhigh','max'],aliases:['default','sonnet'],isDefault:true},
+    {id:'claude-opus-4-6',efforts:['low','medium','high','xhigh','max'],aliases:['opus']},
+    {id:'claude-haiku-4-5-20251001',efforts:[],aliases:['haiku']},
+  ]});
+  const {argv,records,stdin}=captured();
+  assert.deepEqual(records.map(r=>[r.type,r.request?.subtype]),[['control_request','initialize']],'only the control request; stdin closes before any user message');
+  assert.equal(stdin,'');
+  assert.ok(argv.includes('--restricted'));assert.equal(argv[argv.indexOf('--tools')+1],'');assert.equal(argv[argv.indexOf('--input-format')+1],'stream-json');
+  assert.deepEqual(JSON.parse(argv[argv.indexOf('--mcp-config')+1]),{mcpServers:{}});assert.ok(!argv.includes('--model'));
+  process.env.CLAUDE_FIXTURE_MODELS=JSON.stringify({sonnet:'claude-sonnet-5-5',default:'claude-sonnet-5-5'});
+  const remapped=await listModels({executionSupported:true});captured();
+  assert.deepEqual(remapped.models.find(m=>m.id==='claude-sonnet-5-5'),{id:'claude-sonnet-5-5',efforts:['low','medium','high','xhigh','max'],aliases:['default','sonnet'],isDefault:true},'an alias follows what the CLI resolves it to');
+  process.env.CLAUDE_FIXTURE_CATALOG='error';
+  assert.equal(await listModels({executionSupported:true}),undefined,'an error answer is no catalog');captured();
+  assert.equal(await listModels({executionSupported:false}),undefined,'an unsupported version is not asked');assert.equal(captured(),null);
+}));
+
+test('Claude initialize entries without a valid name are left out; none at all is no catalog',()=>{
+  const {parseClaudeModels}=require('../../../src/backends/claude/adapter.ts');
+  assert.equal(parseClaudeModels({models:[]}),undefined);
+  assert.equal(parseClaudeModels({}),undefined);
+  assert.deepEqual(parseClaudeModels({models:[{value:'--tools=Bash'},{value:'x',resolvedModel:'bad name'},{value:'claude-x',supportedEffortLevels:['low','turbo',3]}]}).models,[{id:'claude-x',efforts:['low']}]);
+});
+
+test('selection resolves a listed Claude alias through the catalog and observes only an unlisted name',()=>withFixture(async({captured})=>{
+  const {selectModel}=require('../../../src/backends/model-selection.ts');
+  const {probeBackend,readModelCatalog}=require('../../../src/backends/probe-cache.ts');
+  const probe=await probeBackend('claude',{fresh:true});await readModelCatalog('claude',{fresh:true});captured();
+  assert.deepEqual(await selectModel('claude',probe,{model:'haiku'}),{model:'claude-haiku-4-5-20251001',source:'request'});
+  assert.deepEqual(await selectModel('claude',probe),{model:'claude-sonnet-4-6',source:'catalog'},'the account default is the default entry');
+  assert.equal(captured(),null,'no CLI run: the catalog answers');
+  assert.deepEqual(await selectModel('claude',probe,{model:'claude-opus-4-1'}),{model:'claude-opus-4-1',source:'request'});
+  assert.equal(captured().argv.at(-1),'/usage','an unlisted name is resolved by the CLI itself');
+}));

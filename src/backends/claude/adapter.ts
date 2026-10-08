@@ -6,7 +6,7 @@ import { redactDiagnostic } from '../../redaction.js';
 import { isValidModelIdentifier } from '../model-identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
-import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, CliAdapter } from '../types.js';
+import type { AdapterProbeResult, CatalogModel, ExecutionOptions, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../conversation.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
@@ -54,7 +54,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   if (installed && !executionSupported) authEvidence.push(`Claude Code ${version} is older than ${MIN_CLAUDE_VERSION.join('.')}, which the restricted profile and model reporting need.`);
   return { id, name, installed, version, command, configPath: claudeSettingsPath(), authStatus, authMethod, authEvidence, loginHint: 'claude auth login',
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
-    modelSource: 'any Claude Code model or alias; the CLI reports the concrete model in system/init', executionSupported,
+    modelSource: 'models and aliases from stream-json initialize; an unlisted name is resolved from system/init', executionSupported,
     capabilities: { resume: true, streaming: true, readOnlyVerified: executionSupported, reasoningEffort: true } };
 }
 
@@ -112,6 +112,75 @@ export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterP
 export async function observeModel(requested?: string, probe?: AdapterProbeResult): Promise<string | undefined> {
   if (requested !== undefined && !isValidModelIdentifier(requested)) return undefined;
   return (await runLocalUsage(requested, probe))?.model;
+}
+
+/** Upper bound for the catalog read; 0.9 s measured on Claude Code 2.1.294 (2026-10-08). */
+const MODEL_LIST_TIMEOUT_MS = 15_000;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+/**
+ * Reads the model list of a stream-json `initialize` control response (Claude Code 2.1.294):
+ * entries `{ value, resolvedModel, supportedEffortLevels }`, where `value` is a name the CLI
+ * accepts and `resolvedModel` the concrete model it runs. Entries resolving to one model
+ * become one catalog model with the other names as aliases; the `default` entry marks the
+ * account default.
+ * @returns The catalog, or undefined when the response lists no valid model.
+ */
+export function parseClaudeModels(response: unknown): ModelCatalog | undefined {
+  const entries = record(response)?.models;
+  if (!Array.isArray(entries)) return undefined;
+  const models = new Map<string, CatalogModel>();
+  for (const item of entries.map(record)) {
+    const value = item?.value;
+    const concrete = item?.resolvedModel ?? value;
+    if (!isValidModelIdentifier(value) || !isValidModelIdentifier(concrete)) continue;
+    const efforts = Array.isArray(item!.supportedEffortLevels) ? item!.supportedEffortLevels.filter((effort): effort is string => typeof effort === 'string' && VALID_REASONING_EFFORTS.includes(effort)) : [];
+    const model = models.get(concrete) ?? { id: concrete, efforts };
+    if (value !== concrete && !model.aliases?.includes(value)) model.aliases = [...model.aliases ?? [], value];
+    if (value === 'default') model.isDefault = true;
+    models.set(concrete, model);
+  }
+  return models.size ? { models: [...models.values()], source: 'claude stream-json initialize', acceptsUnlisted: true } : undefined;
+}
+
+/**
+ * Lists the models Claude Code offers, with the concrete model each alias runs, from the
+ * `initialize` control request of a restricted stream-json session that receives no user
+ * message: no model turn and no cost.
+ * @param probe - The current probe; an unsupported version is not asked.
+ * @returns The catalog, or undefined when the CLI does not answer, is older than
+ * {@link MIN_CLAUDE_VERSION}, or reports a turn or result, which discards the read.
+ */
+export async function listModels(probe?: AdapterProbeResult): Promise<ModelCatalog | undefined> {
+  if (probe && !probe.executionSupported) return undefined;
+  const requestId = randomUUID();
+  let channel: StdinChannel | undefined, response: unknown, turned = false;
+  const result = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
+    '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
+    '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'], {
+    timeoutMs: MODEL_LIST_TIMEOUT_MS, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024,
+    session: {
+      start(opened) { channel = opened; opened.send({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize' } }); },
+      interrupt(opened) { opened.close(); },
+    },
+    onStdoutLine(line) {
+      let event: Record<string, unknown> | null;
+      try { event = record(JSON.parse(line)); } catch { event = null; }
+      if (!event) return;
+      if (event.type === 'result' || event.type === 'assistant') turned = true;
+      const answer = record(event.response);
+      if (event.type === 'control_response' && answer?.request_id === requestId) {
+        response = answer.subtype === 'success' ? answer.response : undefined;
+        // Closing stdin before any user message ends the session without a turn.
+        channel?.close();
+      }
+    },
+  });
+  if (turned || result.status !== 'completed') return undefined;
+  return parseClaudeModels(response);
 }
 
 /**
@@ -180,5 +249,5 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
     continuationAvailable };
 }
 export const execute = executeClaude;
-export const claudeAdapter: CliAdapter = { id, name, probe, observeModel, execute, inspectQuota };
+export const claudeAdapter: CliAdapter = { id, name, probe, observeModel, listModels, execute, inspectQuota };
 export default claudeAdapter;

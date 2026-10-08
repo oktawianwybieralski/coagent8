@@ -61,8 +61,9 @@ export interface PriceConstraint {
 
 /**
  * Selects the model of a turn: the call's, else the session's, else the configured default,
- * else the CLI's own default. A name the CLI resolves itself (Claude Code aliases) is
- * replaced by the concrete model the CLI reports for it, so consent and the turn agree.
+ * else the CLI's own default. A name the catalog lists, by id or alias, becomes the exact
+ * listed model; an unlisted name the CLI resolves itself is replaced by the concrete model
+ * the CLI reports for it, so consent, price checks and the turn name the same model.
  * @param id - Backend of the turn.
  * @param probe - Its current probe; `config.defaultModel` is the CLI's own configured default.
  * @param requested - The call's `model` and the session's model, if any.
@@ -85,7 +86,13 @@ export async function selectModel(id: ProviderId, probe: AdapterProbeResult, req
   async function resolve(): Promise<ModelSelection> {
     if (chosen) {
       // The session stores the model the CLI reported, which needs no second look.
-      if (chosen.source === 'session' || !adapter.observeModel) return chosen;
+      if (chosen.source === 'session') return chosen;
+      // A listed name or alias becomes the exact form the CLI lists: `sonnet` the concrete
+      // model it runs, `gpt-6-1-sol` the listed `gpt-6.1-sol`.
+      const catalog = await readModelCatalog(id);
+      const listed = catalog ? findCatalogEntry(catalog, chosen.model) : undefined;
+      if (listed) return { model: listed.name, source: chosen.source };
+      if (!adapter.observeModel) return chosen;
       // An alias can map to any model (Claude Code honors environment overrides), so a name the
       // CLI did not resolve is refused rather than governed by its spelling.
       const observed = await readObservedModel(id, chosen.model, observe);

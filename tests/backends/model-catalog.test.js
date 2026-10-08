@@ -93,3 +93,16 @@ test('the controller refuses an unoffered model before any model call, and the d
     adapterRegistry.agy = original;
   }
 });
+
+test('a catalog finds a model by id or alias in lookup form and returns the exact listed name, never an approximation', () => {
+  const { findCatalogEntry, checkModelSelection } = require('../../src/backends/model-catalog.ts');
+  const catalog = { source: 'x', models: [{ id: 'gpt-6.1-sol', efforts: ['low'] }, { id: 'claude-sonnet-5-5', efforts: ['low'], aliases: ['sonnet', 'default'] }, { id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
+  assert.equal(findCatalogEntry(catalog, 'gpt-6-1-sol').name, 'gpt-6.1-sol', 'dots and dashes are one name');
+  assert.equal(findCatalogEntry(catalog, 'openai/GPT-6.1-Sol').name, 'gpt-6.1-sol', 'case and a provider prefix do not matter');
+  assert.equal(findCatalogEntry(catalog, 'Sonnet').name, 'claude-sonnet-5-5', 'an alias names its concrete model');
+  assert.deepEqual(findCatalogEntry(catalog, 'gemini-3.8-flash-HIGH'), { entry: catalog.models[2], suffixEffort: 'high', name: 'gemini-3.8-flash-high' });
+  assert.equal(findCatalogEntry(catalog, 'gpt-6.1'), undefined, 'a prefix is not a match');
+  assert.equal(findCatalogEntry(catalog, 'gpt-6.1-sol-preview'), undefined, 'an extension is not a match');
+  assert.equal(checkModelSelection('codex', catalog, 'gpt-7', undefined).code, 'MODEL_UNAVAILABLE');
+  assert.equal(checkModelSelection('claude', { ...catalog, acceptsUnlisted: true }, 'claude-opus-4-1', undefined), null, 'a CLI that runs unlisted models decides itself');
+});

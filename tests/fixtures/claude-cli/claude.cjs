@@ -72,6 +72,22 @@ function answer() {
     interruptible = setInterval(() => {}, 1000);
   }
 }
+// `initialize` (shape of Claude Code 2.1.294, recorded 2026-10-08): the names the CLI accepts,
+// each with the concrete model it resolves to; CLAUDE_FIXTURE_MODELS adds or remaps names and
+// CLAUDE_FIXTURE_CATALOG=error answers with an error.
+function initialize(request) {
+  if (env.CLAUDE_FIXTURE_CATALOG === 'error') {
+    send({ type: 'control_response', response: { subtype: 'error', request_id: request.request_id, error: 'initialize failed' } });
+    return;
+  }
+  const names = { default: 'claude-sonnet-4-6', opus: 'claude-opus-4-6', sonnet: 'claude-sonnet-4-6', haiku: 'claude-haiku-4-5-20251001', ...JSON.parse(env.CLAUDE_FIXTURE_MODELS || '{}') };
+  delete names[''];
+  const efforts = model => model.startsWith('claude-haiku-4-5') ? undefined : ['low', 'medium', 'high', 'xhigh', 'max'];
+  const concrete = [...new Set(Object.values(names))];
+  const models = [...Object.entries(names), ...concrete.map(model => [model, model])]
+    .map(([value, resolvedModel]) => ({ value, resolvedModel, displayName: value, description: '', ...(efforts(resolvedModel) ? { supportsEffort: true, supportedEffortLevels: efforts(resolvedModel) } : {}) }));
+  send({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { commands: [], agents: [], models, account: {}, pid: process.pid } } });
+}
 function interrupt(request) {
   send({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response: { still_queued: [] } } });
   // Only a running turn ends with an interrupted result.
@@ -91,6 +107,7 @@ process.stdin.on('data', chunk => {
     records.push(record);
     if (record.type === 'user' && !answered) { answered = true; capture(); answer(); }
     else if (record.type === 'control_request' && record.request?.subtype === 'interrupt') { capture(); interrupt(record); }
+    else if (record.type === 'control_request' && record.request?.subtype === 'initialize') initialize(record);
   }
 });
 process.stdin.on('end', () => {

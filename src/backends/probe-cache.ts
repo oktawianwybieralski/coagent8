@@ -121,13 +121,13 @@ export async function readModelCatalog(id: ProviderId, options: { fresh?: boolea
   if (!options.fresh && cached && cached.listFn === adapter.listModels && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) return cached.catalog;
   const stored = options.fresh ? undefined : readObservedModels(id, key)?.catalog;
   if (stored && Date.now() - stored.observedAt < STORED_TTL_MS) {
-    const catalog: ModelCatalog = { models: stored.models, source: stored.source };
+    const catalog: ModelCatalog = { models: stored.models, source: stored.source, ...(stored.acceptsUnlisted ? { acceptsUnlisted: true } : {}) };
     catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
     return catalog;
   }
   const listFn = adapter.listModels;
   return coalesce(`catalog:${id}:${key}`, listFn, !options.fresh, async () => {
-    const catalog = await listFn.call(adapter);
+    const catalog = await listFn.call(adapter, probe);
     catalogs.set(id, { listFn, catalog, key, at: Date.now() });
     if (catalog) await recordObservedModels(id, key, { catalog });
     return catalog;

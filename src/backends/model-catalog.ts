@@ -22,13 +22,28 @@ export function describeModels(models: CatalogModel[]): string {
   return models.length > LISTED_MODELS ? `${shown.join(', ')}, and ${models.length - LISTED_MODELS} more (doctor lists all)` : shown.join(', ');
 }
 
-/** Finds the catalog entry for `model`, also in agy's suffixed form `<id>-<effort>`, with that effort. */
-export function findCatalogEntry(catalog: ModelCatalog, model: string): { entry: CatalogModel; suffixEffort?: string } | undefined {
-  const exact = catalog.models.find(entry => entry.id === model);
-  if (exact) return { entry: exact };
+/**
+ * The form of a model name used only to look it up: lower case, without a provider prefix
+ * (`anthropic/`), dots as dashes (`gpt-6.1-sol` and `gpt-6-1-sol` are one name).
+ */
+export function lookupName(model: string): string {
+  return (model.toLowerCase().split('/').pop() ?? '').replace(/\./g, '-');
+}
+
+/**
+ * Finds the catalog entry for `model`: by its id or an alias (Claude Code's `sonnet`), also in
+ * agy's suffixed form `<id>-<effort>`, comparing {@link lookupName} forms.
+ * @returns The entry, the effort a suffixed name carries, and `name`: the exact form the CLI
+ * accepts for what was asked (the entry's id, or `<id>-<effort>`), never an approximation.
+ */
+export function findCatalogEntry(catalog: ModelCatalog, model: string): { entry: CatalogModel; suffixEffort?: string; name: string } | undefined {
+  const wanted = lookupName(model);
+  const exact = catalog.models.find(entry => lookupName(entry.id) === wanted || entry.aliases?.some(alias => lookupName(alias) === wanted));
+  if (exact) return { entry: exact, name: exact.id };
   for (const entry of catalog.models) {
-    const effort = entry.effortRequired && model.startsWith(`${entry.id}-`) ? model.slice(entry.id.length + 1) : undefined;
-    if (effort && entry.efforts.includes(effort)) return { entry, suffixEffort: effort };
+    const base = lookupName(entry.id);
+    const effort = entry.effortRequired && wanted.startsWith(`${base}-`) ? wanted.slice(base.length + 1) : undefined;
+    if (effort && entry.efforts.includes(effort)) return { entry, suffixEffort: effort, name: `${entry.id}-${effort}` };
   }
   return undefined;
 }
@@ -45,6 +60,8 @@ export function findCatalogEntry(catalog: ModelCatalog, model: string): { entry:
 export function checkModelSelection(backend: string, catalog: ModelCatalog | undefined, model: string | undefined, effort: string | undefined): ExecutionError | null {
   if (!catalog || !catalog.models.length || !model) return null;
   const found = findCatalogEntry(catalog, model);
+  // A CLI that also runs unlisted models (Claude Code) decides about a name it does not list.
+  if (!found && catalog.acceptsUnlisted) return null;
   if (!found) {
     return { code: 'MODEL_UNAVAILABLE', retryable: false,
       message: `Model '${model}' is not offered by ${backend}. Use one of: ${describeModels(catalog.models)}; or omit model for the default.` };
