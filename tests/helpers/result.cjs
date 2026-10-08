@@ -9,6 +9,15 @@
 const FOOTER = /\n\n> CoAgent8: /;
 const STATUS = /^(?<provider>\S+) · (?<model>.+?) · (?<duration>\d+\.\d)s(?: · (?<ops>\d+) ops?)?(?: · (?<handle>\S+) \((?:turn (?<turn>\d+), )?(?<state>ready|finished)(?<noHistory>, no history)?\))?$/;
 const ERROR = /^> Error \[(?<code>[A-Z_]+)(?<retryable>, retryable)?\]: (?<message>[\s\S]*)$/;
+/** The answer frame: a markdown fence longer than any backtick run inside it. */
+const FRAME = /^(?<fence>`{3,})markdown\n(?<answer>[\s\S]*)\n\k<fence>$/;
+
+/** Returns the framed answer unchanged; any other text means the answer is unframed. */
+function unframe(text) {
+  const frame = FRAME.exec(text);
+  if (!frame) throw new Error(`answer is not framed: ${text}`);
+  return frame.groups.answer;
+}
 
 function readResult(result) {
   if (result && typeof result === 'object' && !result.content && 'result' in result && 'meta' in result) {
@@ -31,14 +40,15 @@ function readResult(result) {
     state: status.groups.state || null, continuationAvailable: status.groups.state === 'ready', historyAvailable: !status.groups.noHistory,
     status: 'completed',
     verdict: 'NOT_APPLICABLE', reason: null, truncated: false, warnings: [], issueUrl: null, workspace: null,
-    error: null, answer: body, price: null,
+    // The server's own no-answer placeholders are the only unframed bodies.
+    error: null, answer: body.startsWith('```') ? unframe(body) : body, price: null,
   };
   const error = /^> Error \[/.test(body) ? ERROR.exec(body.split('\n\n')[0]) : null;
   if (error) {
     parsed.error = { code: error.groups.code, retryable: Boolean(error.groups.retryable), message: error.groups.message };
     parsed.status = { ABORTED: 'cancelled', TIMEOUT: 'timed_out' }[parsed.error.code] || 'failed';
     const partial = body.indexOf('\n\nPartial response:\n\n');
-    parsed.answer = partial < 0 ? '' : body.slice(partial + '\n\nPartial response:\n\n'.length);
+    parsed.answer = partial < 0 ? '' : unframe(body.slice(partial + '\n\nPartial response:\n\n'.length));
   }
   for (const line of lines) {
     let match;

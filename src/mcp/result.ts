@@ -2,9 +2,9 @@
  * Canonical MCP result envelope for execution tools.
  *
  * @remarks
- * The answer loses escape sequences (`stripAnsi`) and is redacted before return. When the tool
- * requires a State Envelope, the reviewer's answer is shown verbatim in a code block and the
- * server verdict with its causes goes to the footer. When an unrecoverable process/protocol failure occurs
+ * The answer loses escape sequences (`stripAnsi`), is redacted and is shown verbatim in a code block,
+ * framed apart from the footer. When the tool requires a State Envelope, the server verdict with
+ * its causes goes to the footer. When an unrecoverable process/protocol failure occurs
  * (`PROCESS_ERROR`, `CLI_UNSUPPORTED`, `PROTOCOL_ERROR`), `formatExecutionResult` generates a
  * pre-filled GitHub issue URL in the response footer.
  *
@@ -43,7 +43,7 @@ const FOOTER_LINE_BREAK = '\n>\n';
 function codeBlock(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
-  return `${fence}text\n${text}\n${fence}`;
+  return `${fence}markdown\n${text}\n${fence}`;
 }
 
 export interface FormatExecutionOptions {
@@ -137,8 +137,9 @@ export function formatExecutionResult(
   }
 
   const redacted = redactCredentialFormats(cleaned);
-  // A review answer is shown verbatim in a code block: markdown would join its envelope lines.
-  const output = verdict !== 'NOT_APPLICABLE' && redacted ? codeBlock(redacted) : redacted;
+  // The answer is framed apart from the footer, as its markdown source: unfenced markdown blends
+  // into the client panel and joins a review envelope's lines.
+  const output = redacted ? codeBlock(redacted) : redacted;
   const parts: string[] = [];
   if (error) {
     parts.push(`> Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);

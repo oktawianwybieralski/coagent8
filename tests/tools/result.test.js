@@ -221,5 +221,5 @@ test('CONTEXT-001: an execution result is markdown only and its footer carries e
   }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }));
   assert.equal(consult.verdict, 'NOT_APPLICABLE', 'consult has no verdict line');
   assert.equal(consult.model, 'provider default');
-  assert.equal(consult.text, 'answer\n\n> CoAgent8: agy · provider default · 0.0s');
+  assert.equal(consult.text, '```markdown\nanswer\n```\n\n> CoAgent8: agy · provider default · 0.0s');
 });
