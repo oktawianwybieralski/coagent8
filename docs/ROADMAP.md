@@ -2612,6 +2612,14 @@ holds logs. The checkout keeps another agent's CLI-FIRST edits, so this does
 not satisfy clean-tree or six-job validation. Native complete independent review
 remains BLOCKED (PARTIAL/NOT_RUN/truncated); installed UI acceptance of the new
 config/welcome behavior is NOT_RUN. No gate is relaxed by these local results.
+Follow-up on 2026-10-08 at `fdbdf99` (after the `CUR-004`, `CUR-005`, `CUR-006`
+and `CUR-012` fixes): typecheck, `lint:docs`, `npm test` (345 total, 342 pass,
+zero fail, three POSIX skips), build, `npm pack --dry-run` (97 files),
+`test:consumer` and `package:vscode` pass. VSIX
+`.artifacts/coagent8-mcp-1.0.0-beta.2.vsix`, SHA-256
+`8ffe8618bfcf6eaee31bfdcc03c5fa87192c74f7c0c9935e347ea9e83c1d02d2`. The tree
+still held another agent's uncommitted CLI-FIRST documentation, so this is not a
+clean-checkout or six-job result.
 - [x] Create `CHANGELOG.md` (Keep a Changelog) with an Unreleased section.
 - [x] `CHANGELOG.md` is generated from the commit history (`CHANGELOG-001`).
 - [ ] Create the GitHub triage labels defined in
