@@ -134,7 +134,7 @@ macOS), type `CoAgent8` and select one:
 | Command | What it does | Changes |
 | --- | --- | --- |
 | `CoAgent8: Open Settings` | Opens CoAgent8's backend, model and approval settings in VS Code's Settings editor | None |
-| `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover the extension's storage and `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
+| `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
 | `CoAgent8: Reset Configuration (config.json)` | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
 | `CoAgent8: Show MCP Servers` | Opens VS Code's `MCP: List Servers` | None |
 | `CoAgent8: Set Up Coding CLIs` | One list of Codex CLI, Claude Code CLI and Antigravity CLI: each line shows the CLI's state, whether CoAgent8 is in its own chat, and where it is installed from. Checked CLIs have CoAgent8 in their chat; check one to install it (VS Code extension or official standalone installer), sign it in and add CoAgent8, uncheck to remove CoAgent8 from its chat. The title bar checks again or shows details | Installs only what you check, in the vendor's own location; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries; never uninstalls a CLI; ends with one notice offering **Restart Extensions** |
@@ -167,8 +167,8 @@ configuration selection, onboarding reset and native MCP lifecycle testing.
 Apply VS Code's native Extensions view restart action when requested after
 installation/update. VS Code stops a running CoAgent8 server when its definition
 changes (a new bundle or changed settings) and starts it again on the next use.
-The VSIX keeps its configuration, sessions and history in its own VS Code storage,
-which uninstalling removes; the standalone CLI uses `~/.coagent8`. Review accepts staged/revision scopes only when their
+The VSIX shares `~/.coagent8/config.json` with the standalone CLI and keeps sessions
+and history in its own VS Code storage, which uninstalling removes. Review accepts staged/revision scopes only when their
 files match the current workspace; otherwise use uncommitted changes.
 
 ## Current tools

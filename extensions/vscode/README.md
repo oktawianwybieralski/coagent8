@@ -124,7 +124,7 @@ models or approval rules.
 | `coagent8.approval.priceMultiplier` | `2` | Ask for approval before a model costing at least this many times the backend's default model |
 | `coagent8.approval.alwaysAskModels` | `[]` | Models that always need approval |
 | `coagent8.approval.neverAskModels` | `[]` | Models that run without asking, unless also in Always Ask Models |
-| `coagent8.configPath` | empty | Configuration file; empty uses the extension's own storage |
+| `coagent8.configPath` | empty | Configuration file; empty uses `~/.coagent8/config.json`, shared with the CLI |
 | `coagent8.nodePath` | `node` | Node.js 24+ executable used to start the bundled MCP server |
 
 A setting you change in VS Code takes precedence over the same option in the
@@ -136,15 +136,15 @@ restart is needed.
 
 ### Where the extension keeps data
 
-The extension keeps everything it creates in its VS Code global storage
-(`globalStorage/okidev.coagent8-mcp`): the configuration file, onboarding choices,
-sessions, history and caches. VS Code deletes this folder when the extension is
-uninstalled, so a later installation starts like the first one. The standalone
-`coagent8` CLI uses `~/.coagent8` instead; set `coagent8.configPath` to
-`~/.coagent8/config.json` to share the configuration file with it. Unchanged
-native-host registrations the extension wrote are removed on uninstall, as
-described under the commands below. VS Code settings, CLI sign-ins, registrations
-made outside the extension and the CLI's own data in `~/.coagent8` are kept.
+The configuration file is `~/.coagent8/config.json`, the same file the standalone
+`coagent8` CLI and other MCP hosts read, so one configuration applies everywhere.
+Uninstalling keeps it, like VS Code settings. Everything else the extension
+creates (onboarding choices, sessions, history and caches) stays in its VS Code
+global storage (`globalStorage/okidev.coagent8-mcp`). VS Code deletes this folder
+when the extension is uninstalled. Unchanged native-host registrations the
+extension wrote are removed on uninstall, as described under the commands below.
+CLI sign-ins, registrations made outside the extension and the CLI's own data in
+`~/.coagent8` are kept.
 
 If Node.js is unavailable on PATH, set an absolute executable path in VS Code's
 settings. For example, on Windows:
@@ -327,10 +327,10 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
 Use **CoAgent8: Open Settings** for backends, models and approval in VS Code, or
 **CoAgent8: Open Configuration (config.json)** for the configuration file. The
 machine-scoped VS Code setting `coagent8.configPath` selects an absolute path or
-`~/...`; empty uses `coagent8_CONFIG`, then config.json in the extension's
-storage. This path is used for editing, the VS Code MCP provider and new
-native-host registrations. Schema completion/validation covers both default
-locations; newly created files include a `$schema` association.
+`~/...`; empty uses `coagent8_CONFIG`, then `~/.coagent8/config.json`. This path
+is used for editing, the VS Code MCP provider and new native-host registrations.
+Schema completion/validation covers the default location; newly created files
+include a `$schema` association.
 This command creates defaults only when the file is missing and preserves
 existing contents, including invalid JSON that needs repair. Existing custom
 files need a `$schema` association if they do not already have one.

@@ -42,7 +42,7 @@ function discoveryEnvironment(storage: string): NodeJS.ProcessEnv {
     const extension = vscode.extensions.getExtension(id);
     if (extension?.extensionUri.scheme === 'file') locations[client] = extension.extensionPath;
   }
-  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_DIR: storage, coagent8_CONFIG: configurationFile(storage), [EDITOR_SETTINGS_ENV]: editorSettings() };
+  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_DIR: storage, coagent8_CONFIG: configurationFile(), [EDITOR_SETTINGS_ENV]: editorSettings() };
 }
 /**
  * Serializes the backend, model and approval settings the user set explicitly. Only the user
@@ -59,11 +59,11 @@ function editorSettings(): string {
 }
 /**
  * Resolves the configuration file: the machine-scoped user setting (never a workspace
- * value), then `coagent8_CONFIG`, then config.json in the extension's global storage.
+ * value), then `coagent8_CONFIG`, then `~/.coagent8/config.json`, shared with the CLI and other hosts.
  */
-function configurationFile(storage: string): string {
+function configurationFile(): string {
   const selected = vscode.workspace.getConfiguration('coagent8').get<string>('configPath', '').trim();
-  if (!selected) return path.resolve(process.env.coagent8_CONFIG || path.join(storage, 'config.json'));
+  if (!selected) return path.resolve(process.env.coagent8_CONFIG || path.join(os.homedir(), '.coagent8', 'config.json'));
   const expanded = selected.startsWith('~/') || selected.startsWith('~\\') ? path.join(os.homedir(), selected.slice(2)) : selected;
   if (!path.isAbsolute(expanded)) throw new Error('CoAgent8: coagent8.configPath must be an absolute path or start with ~/; leave it empty to use the default.');
   return path.normalize(expanded);
@@ -181,7 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {
         coagent8_EXTENSION_PATHS: discoveryEnvironment(storage).coagent8_EXTENSION_PATHS!,
         coagent8_DIR: storage,
-        coagent8_CONFIG: configurationFile(storage),
+        coagent8_CONFIG: configurationFile(),
         [EDITOR_SETTINGS_ENV]: editorSettings(),
       }, `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
     },
@@ -276,7 +276,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const source = clientSource(result.client, cli, opts.home, opts.env);
     const state = readSetupState(storage);
     const byCoAgent8 = source.kind === 'vscode-extension' ? state.installedExtensions?.includes(VENDOR_EXTENSIONS[result.client].id) : state.installedClis?.includes(result.client);
-    const configured = readBackendExecutable(SETUP_PROVIDERS[result.client], configurationFile(storage)) !== undefined;
+    const configured = readBackendExecutable(SETUP_PROVIDERS[result.client], configurationFile()) !== undefined;
     const alternative = alternativeSource(result.client, source, opts.home, opts.env, opts.nodePath);
     return {
       detail: `${describeSource(result.client, source, opts.home)}${byCoAgent8 ? ', installed by CoAgent8' : ''}${configured ? ', set in config.json' : ''}${alternative ? `; also: ${describeSource(result.client, alternative, opts.home)}` : ''}`,
@@ -444,7 +444,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`); });
   register('coagent8.manageMcpServers', async () => { await vscode.commands.executeCommand('workbench.mcp.listServer'); });
   register('coagent8.resetConfiguration', async () => {
-    const file = configurationFile(storage);
+    const file = configurationFile();
     const dirty = vscode.workspace.textDocuments.some(document => document.uri.scheme === 'file' && path.resolve(document.uri.fsPath) === path.resolve(file) && document.isDirty);
     if (dirty) throw new Error('Save or revert the configuration editor before resetting the file.');
     const choice = await vscode.window.showWarningMessage(`Reset ${file} to defaults? The current file will be saved as ${path.basename(file)}.backup, replacing an earlier backup. CoAgent8 settings in VS Code, CLI sign-ins and MCP registrations will be retained.`, { modal: true }, 'Reset Configuration');
@@ -455,7 +455,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (next === 'Open Settings') await vscode.commands.executeCommand('coagent8.openSettings');
   });
   register('coagent8.openConfiguration', async () => {
-    const file = configurationFile(storage);
+    const file = configurationFile();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const defaults = validateConfig({ $schema: vscode.Uri.file(context.asAbsolutePath('schemas/config.schema.json')).toString() });
     try { fs.writeFileSync(file, JSON.stringify(defaults, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
@@ -480,7 +480,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return { items, selected, placeholder: 'Checked: CoAgent8 uses the CLI and is in its chat. Check to install, sign in and add; uncheck to remove from the chat.' };
     }, async item => {
       // The runtime, VS Code chat and the CLI chats read this file on their next turn.
-      await setBackendExecutable(SETUP_PROVIDERS[item.client], item.alternative!.executable, configurationFile(storage));
+      await setBackendExecutable(SETUP_PROVIDERS[item.client], item.alternative!.executable, configurationFile());
       clearCliResolverCache();
       return `Set Up Coding CLIs (${LABELS[item.client]} switched)`;
     });

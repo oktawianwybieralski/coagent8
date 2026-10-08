@@ -37,7 +37,7 @@
       { "command": "coagent8.uninstall", "title": "CoAgent8: Uninstall CoAgent8" }
     ],
     "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
-    "jsonValidation": [{ "fileMatch": ["**/.coagent8/config.json", "**/okidev.coagent8-mcp/config.json"], "url": "./schemas/config.schema.json" }],
+    "jsonValidation": [{ "fileMatch": ["**/.coagent8/config.json"], "url": "./schemas/config.schema.json" }],
     "configuration": {
       "title": "CoAgent8",
       "properties": {
@@ -137,7 +137,7 @@
           "default": "",
           "scope": "machine",
           "order": 30,
-          "markdownDescription": "Configuration file. Use an absolute path or ~/; empty uses coagent8_CONFIG, then a config.json in the extension's storage, which VS Code removes on uninstall. Set `~/.coagent8/config.json` to share the file with the `coagent8` CLI. CoAgent8 settings changed in VS Code take precedence. Open it with [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration)."
+          "markdownDescription": "Configuration file. Use an absolute path or ~/; empty uses coagent8_CONFIG, then `~/.coagent8/config.json`, shared with the `coagent8` CLI and other MCP hosts and kept on uninstall. CoAgent8 settings changed in VS Code take precedence. Open it with [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration)."
         },
         "coagent8.nodePath": {
           "type": "string",

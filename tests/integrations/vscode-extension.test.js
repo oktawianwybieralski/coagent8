@@ -604,7 +604,7 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   assert.ok(definition.version.startsWith(require('../../package.json').version + '#'));
   assert.deepEqual(JSON.parse(definition.env.coagent8_EXTENSION_PATHS), {});
   assert.equal(definition.env.coagent8_DIR, context.globalStorageUri.fsPath, 'runtime data lives in storage VS Code deletes on uninstall');
-  assert.equal(definition.env.coagent8_CONFIG, path.resolve(process.env.coagent8_CONFIG || path.join(context.globalStorageUri.fsPath, 'config.json')));
+  assert.equal(definition.env.coagent8_CONFIG, path.resolve(process.env.coagent8_CONFIG || path.join(os.homedir(), '.coagent8', 'config.json')), 'the configuration file is shared with the CLI and other hosts');
   nodePath = ' C:\\Program Files\\nodejs\\node.exe ';
   configurationListener(affects('coagent8.nodePath'));
   assert.equal(changes, 1);

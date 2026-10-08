@@ -95,7 +95,8 @@ arrives in its terminal footer; use host request cancellation while it runs.
 Default file: `~/.coagent8/config.json`; override with `coagent8_CONFIG`.
 Storage root: `coagent8_DIR` or `~/.coagent8`. The VS Code extension sets both for
 the server it starts: `coagent8_DIR` to its global storage, which VS Code deletes
-on uninstall, and `coagent8_CONFIG` to `coagent8.configPath` or config.json there.
+on uninstall, and `coagent8_CONFIG` to `coagent8.configPath` or `~/.coagent8/config.json`,
+shared with the CLI and kept on uninstall.
 
 ~~~json
 {
