@@ -22,6 +22,12 @@ export interface RoutingConfig {
 export interface BackendSettings {
   /** Model a turn runs when neither the call nor its session names one. */
   defaultModel?: string;
+  /**
+   * The CLI to run: an absolute path, a path starting with `~/`, or `vscode-extension` for
+   * the newest copy the vendor's VS Code extension provides. Omitted, the CLI is found on
+   * PATH, then in the vendor's VS Code extension.
+   */
+  executable?: string;
 }
 
 export interface CoAgent8Config {
@@ -44,7 +50,14 @@ export function getConfigFile(): string {
   return process.env.coagent8_CONFIG || path.join(getDataDir(), 'config.json');
 }
 
-const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'gemini', 'smart_quota'];
+/** Longest accepted `backends.<id>.executable`. */
+const MAX_EXECUTABLE_LENGTH = 1024;
+function isValidExecutable(value: unknown): boolean {
+  if (typeof value !== 'string' || !value || value.length > MAX_EXECUTABLE_LENGTH || value.includes('\0')) return false;
+  return value === 'vscode-extension' || /^~[\\/]./.test(value) || path.isAbsolute(value);
+}
+
+const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'agy', 'smart_quota'];
 const VALID_STRATEGIES: RoutingStrategy[] = ['fixed', 'smart_quota'];
 
 const DEFAULT_CONFIG: CoAgent8Config = {
@@ -52,7 +65,7 @@ const DEFAULT_CONFIG: CoAgent8Config = {
   defaultBackend: null, // null lets auto choose among several backends
   routing: {
     strategy: 'fixed',
-    allowedBackends: ['codex', 'claude', 'gemini'],
+    allowedBackends: ['codex', 'claude', 'agy'],
   },
   backends: {},
   // Owner decision of 2026-10-07: twice the default's price, and 20 USD per million output
@@ -60,9 +73,9 @@ const DEFAULT_CONFIG: CoAgent8Config = {
   governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
 };
 
-function ensureConfigDir(): void {
+function ensureConfigDir(file = getConfigFile()): void {
   // A directory that cannot be created is reported here rather than as a later write failure.
-  fs.mkdirSync(path.dirname(getConfigFile()), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
 }
 
 /**
@@ -126,9 +139,9 @@ export function validateConfig(value: unknown): CoAgent8Config {
         );
       }
       for (const b of fields.allowedBackends) {
-        if (typeof b !== 'string' || !['codex', 'claude', 'gemini'].includes(b.toLowerCase())) {
+        if (typeof b !== 'string' || !['codex', 'claude', 'agy'].includes(b.toLowerCase())) {
           throw new Error(
-            `Configuration Error: Invalid entry in allowedBackends: '${b}'. Supported: 'codex', 'claude', 'gemini'.`
+            `Configuration Error: Invalid entry in allowedBackends: '${b}'. Supported: 'codex', 'claude', 'agy'.`
           );
         }
       }
@@ -148,11 +161,14 @@ export function validateConfig(value: unknown): CoAgent8Config {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error(`Configuration Error: backends.${id} must be an object.`);
       }
-      const { defaultModel } = value as Record<string, unknown>;
+      const { defaultModel, executable } = value as Record<string, unknown>;
       if (defaultModel !== undefined && !isValidModelIdentifier(defaultModel)) {
         throw new Error(`Configuration Error: backends.${id}.defaultModel is not a valid model identifier.`);
       }
-      backends[id as ProviderId] = defaultModel === undefined ? {} : { defaultModel };
+      if (executable !== undefined && !isValidExecutable(executable)) {
+        throw new Error(`Configuration Error: backends.${id}.executable must be an absolute path, a path starting with ~/, or "vscode-extension".`);
+      }
+      backends[id as ProviderId] = { ...(defaultModel === undefined ? {} : { defaultModel: defaultModel as string }), ...(executable === undefined ? {} : { executable: executable as string }) };
     }
   }
 
@@ -212,8 +228,7 @@ function defaultConfig(): CoAgent8Config {
  * validated: its routing policy (for example `allowedBackends`) cannot be applied, and
  * executing with the defaults instead could run a backend the user disabled.
  */
-function loadFileConfig(): CoAgent8Config {
-  const configFile = getConfigFile();
+function loadFileConfig(configFile = getConfigFile()): CoAgent8Config {
   if (!fs.existsSync(configFile)) return defaultConfig();
   const unusable = (reason: string, cause: unknown) =>
     new ToolError('POLICY_DENIED', `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`, { cause });
@@ -265,9 +280,8 @@ export function loadConfigForDiagnostics(): { config: CoAgent8Config; error?: st
   }
 }
 
-function writeConfig(config: CoAgent8Config): void {
-  const configFile = getConfigFile();
-  ensureConfigDir();
+function writeConfig(config: CoAgent8Config, configFile = getConfigFile()): void {
+  ensureConfigDir(configFile);
   const tmpPath = `${configFile}.tmp.${crypto.randomUUID()}`;
   try {
     fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
@@ -322,6 +336,45 @@ export async function recordDefaultModel(id: ProviderId, model: string): Promise
     const current = loadFileConfig();
     writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }));
     return true;
+  });
+}
+
+/**
+ * Reads `backends.<id>.executable` from one configuration file, without VS Code settings.
+ * @throws `ToolError` (`POLICY_DENIED`) when the file is unusable.
+ */
+export function readBackendExecutable(id: ProviderId, file = getConfigFile()): string | undefined {
+  return loadFileConfig(file).backends[id]?.executable;
+}
+
+/**
+ * Records the CLI a backend runs, unless the file already names one; the user may change it
+ * at any time afterwards.
+ * @param file - The configuration file; the VS Code extension passes the one it gives the runtime.
+ * @returns Whether the value was written.
+ * @throws When the configuration cannot be locked, read, validated or written.
+ */
+export async function recordBackendExecutable(id: ProviderId, executable: string, file = getConfigFile()): Promise<boolean> {
+  ensureConfigDir(file);
+  return withFileLock(file, async () => {
+    const current = loadFileConfig(file);
+    if (current.backends[id]?.executable) return false;
+    writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], executable } } }), file);
+    return true;
+  });
+}
+
+/**
+ * Sets the CLI a backend runs, replacing any earlier choice; undefined restores automatic discovery.
+ * @param file - The configuration file; the VS Code extension passes the one it gives the runtime.
+ * @throws When the configuration cannot be locked, read, validated or written.
+ */
+export async function setBackendExecutable(id: ProviderId, executable: string | undefined, file = getConfigFile()): Promise<void> {
+  ensureConfigDir(file);
+  await withFileLock(file, async () => {
+    const current = loadFileConfig(file);
+    const { executable: _previous, ...rest } = current.backends[id] ?? {};
+    writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: executable === undefined ? rest : { ...rest, executable } } }), file);
   });
 }
 

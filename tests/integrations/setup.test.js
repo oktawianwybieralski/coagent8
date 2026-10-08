@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { setupClients, resolveSetupClient } = require('../../src/integrations/setup.ts');
+const { setupClients, readRegistrations, resolveSetupClient } = require('../../src/integrations/setup.ts');
 const { parse } = require('jsonc-parser');
 const { parse: toml } = require('smol-toml');
 const { hasManualVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
@@ -67,7 +67,7 @@ test('manual registrations are verified and retained while new candidates use im
 test('new native-host registrations retain the explicitly selected configuration file', async t => {
   const options = profile(t);
   const config = path.join(options.home, 'custom configuration.json');
-  write(config, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'gemini' })));
+  write(config, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'agy' })));
   options.env.coagent8_CONFIG = config;
   const results = await setupClients(options);
   assert.ok(results.every(result => result.action === 'installed'), JSON.stringify(results));
@@ -75,7 +75,11 @@ test('new native-host registrations retain the explicitly selected configuration
   const claude = parse(fs.readFileSync(path.join(options.home, '.claude.json'), 'utf8')).mcpServers.coagent8;
   const agy = parse(fs.readFileSync(path.join(options.home, '.gemini/config/mcp_config.json'), 'utf8')).mcpServers.coagent8;
   for (const entry of [codex, claude, agy]) assert.equal(entry.env.coagent8_CONFIG, config);
-  assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).defaultBackend, 'gemini');
+  assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).defaultBackend, 'agy');
+  assert.deepEqual(readRegistrations(options).map(item => item.current), [true, true, true], 'a TOML env table equals the candidate');
+  const codexBefore = fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8');
+  assert.ok((await setupClients(options)).every(result => result.action === 'preserved'), 'repair keeps an identical entry with an environment');
+  assert.equal(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8'), codexBefore);
   const nextConfig = path.join(options.home, 'replacement configuration.json');
   write(nextConfig, JSON.stringify(require('../../src/config.ts').validateConfig({ defaultBackend: 'codex' })));
   options.env.coagent8_CONFIG = nextConfig;
@@ -132,6 +136,69 @@ test('setup status is read-only and custom remote/profile roots fail before muta
   assert.equal(fs.existsSync(path.join(options.home, '.coagent8')), false);
   await assert.rejects(setupClients({ ...options, env: { ...options.env, CODEX_HOME: path.join(options.home, 'other') } }), /profile/);
   assert.equal(fs.existsSync(path.join(options.home, '.coagent8')), false);
+});
+test('extension registrations carry its data directory and leave tagged backups without Codex staging copies', async t => {
+  const options = profile(t);
+  const storage = path.join(options.home, 'globalStorage', 'okidev.coagent8-mcp');
+  const results = await setupClients({ ...options, origin: 'vscode-extension', dataDirectory: storage });
+  assert.ok(results.every(result => result.action === 'installed'), JSON.stringify(results));
+  const codex = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  const claude = parse(fs.readFileSync(path.join(options.home, '.claude.json'), 'utf8')).mcpServers.coagent8;
+  for (const entry of [codex, claude]) assert.equal(entry.env.coagent8_DIR, storage, 'CLI chats keep their data where VS Code deletes it on uninstall');
+  assert.deepEqual(readRegistrations({ ...options, dataDirectory: storage }).map(item => item.current), [true, true, true]);
+  assert.deepEqual(readRegistrations(options).map(item => item.current), [false, false, false], 'another data directory is another registration');
+  const backups = fs.readdirSync(path.join(options.home, '.coagent8/setup-backups'));
+  assert.equal(backups.length, 3);
+  assert.ok(backups.every(name => name.startsWith('vscode-extension-')));
+  const leftovers = backups.flatMap(name => fs.readdirSync(path.join(options.home, '.coagent8/setup-backups', name)));
+  assert.deepEqual(leftovers.sort(), ['agy.config', 'claude.config', 'codex.config'], 'no codex-staging directory remains');
+});
+test('the first registration records the CLI in config.json, keeps a later user change, and a configured path is used', async t => {
+  const options = profile(t);
+  const config = path.join(options.home, 'config.json');
+  options.env.coagent8_CONFIG = config;
+  const cli = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
+  assert.ok((await setupClients({ ...options, clients: ['claude'] })).every(result => result.action === 'installed'));
+  assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).backends.claude.executable, cli, 'a JavaScript launcher is recorded by its script');
+  const changed = { ...JSON.parse(fs.readFileSync(config, 'utf8')) };
+  changed.backends.claude.executable = cli;
+  changed.backends.codex = { executable: '~/custom/codex' };
+  fs.writeFileSync(config, JSON.stringify(changed));
+  await setupClients({ ...options, clients: ['codex'], env: { ...options.env, CODEX_PATH: cli } });
+  assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).backends.codex.executable, '~/custom/codex', 'the user value is kept');
+  // Without an environment override the runtime and setup use the configured path.
+  const env = { ...options.env, CLAUDE_PATH: undefined };
+  assert.equal(resolveSetupClient('claude', options.home, env).argsPrefix[0], cli);
+  changed.backends.claude.executable = path.join(options.home, 'missing', 'claude.exe');
+  fs.writeFileSync(config, JSON.stringify(changed));
+  assert.throws(() => resolveSetupClient('claude', options.home, env), /backends\.claude\.executable \(configured path\) cannot be resolved/, 'no fallback to another installation');
+  const [blocked] = await setupClients({ ...options, env, clients: ['claude'], statusOnly: true });
+  assert.equal(blocked.action, 'blocked');
+});
+test('status with registrations reads host files only: no runtime start, no host discovery', async t => {
+  const options = profile(t);
+  assert.ok((await setupClients(options)).every(result => result.action === 'installed'));
+  const log = path.join(options.home, 'probes.log');
+  const result = await setupClients({ ...options, clients: undefined, statusOnly: true, env: { ...options.env, SETUP_FIXTURE_PROBE_LOG: log } });
+  assert.ok(result.every(item => item.registered && item.ready && item.action === 'preserved'), JSON.stringify(result));
+  assert.ok(result.every(item => !item.runtimeCallable && !item.hostCallable && !item.tools.length), 'status claims no connection evidence');
+  const launches = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.ok(!launches.some(args => args.length === 1 && args[0] === 'app-server'), 'no Codex discovery thread');
+  assert.equal(launches.length, 3 * 3 + 1, 'version, help and sign-in per CLI, plus the Codex app-server handshake');
+});
+test('registrations are read from host files with ownership and the current runtime', async t => {
+  const options = profile(t);
+  await setupClients({ ...options, clients: ['codex', 'claude'] });
+  const manual = { mcpServers: { coagent8: { command: process.execPath, args: [source] } } };
+  write(path.join(options.home, '.gemini/config/mcp_config.json'), JSON.stringify(manual));
+  assert.deepEqual(readRegistrations(options).map(item => [item.client, item.state, item.current]), [['codex', 'owned', true], ['claude', 'owned', true], ['agy', 'manual', false]]);
+  const updatedSource = path.join(options.home, 'updated.cjs');
+  fs.writeFileSync(updatedSource, fs.readFileSync(source, 'utf8') + '\n// synthetic update\n');
+  assert.deepEqual(readRegistrations({ ...options, runtimeSource: updatedSource }).map(item => item.current), [false, false, false], 'another bundle is another version');
+  write(path.join(options.home, '.claude.json'), '{ malformed');
+  const blocked = readRegistrations(options);
+  assert.equal(blocked[1].state, 'blocked');
+  assert.equal(blocked[0].state, 'owned', 'one unreadable host does not hide the others');
 });
 test('Claude extension fallback resolves newest usable installed version on each call', t => {
   const { home } = profile(t);

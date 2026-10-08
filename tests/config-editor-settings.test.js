@@ -42,7 +42,7 @@ test('explicit scalar settings replace file values and model lists are added to 
   const config = withSettings({
     defaultBackend: 'auto',
     'routing.strategy': 'smart_quota',
-    'routing.allowedBackends': ['gemini'],
+    'routing.allowedBackends': ['agy'],
     'claude.defaultModel': 'opus',
     'approval.priceMultiplier': 4,
     'approval.askAbovePrice': null,
@@ -50,7 +50,7 @@ test('explicit scalar settings replace file values and model lists are added to 
     'approval.neverAskModels': ['editor-never', 'file-never'],
   }, loadConfig);
   assert.equal(config.defaultBackend, null, 'auto is automatic selection');
-  assert.deepEqual(config.routing, { strategy: 'smart_quota', allowedBackends: ['gemini'] });
+  assert.deepEqual(config.routing, { strategy: 'smart_quota', allowedBackends: ['agy'] });
   assert.deepEqual(config.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'opus' } });
   assert.equal(config.governance.priceMultiplier, 4);
   assert.equal(config.governance.askAbovePrice, null);
@@ -80,12 +80,12 @@ test('an invalid or unknown setting refuses execution and names the VS Code sett
 });
 
 test('writes keep VS Code settings out of the file; a remembered approval stays effective', async () => {
-  const settings = { defaultBackend: 'codex', 'approval.neverAskModels': ['editor-never'], 'gemini.defaultModel': 'editor-gemini' };
+  const settings = { defaultBackend: 'codex', 'approval.neverAskModels': ['editor-never'], 'agy.defaultModel': 'editor-gemini' };
   fs.writeFileSync(file, fileBytes);
   process.env[EDITOR_SETTINGS_ENV] = JSON.stringify(settings);
   try {
     assert.equal(await rememberApprovedModel('approved-model'), true);
-    assert.equal(await recordDefaultModel('gemini', 'detected-gemini'), false, 'a VS Code default model is not recorded over');
+    assert.equal(await recordDefaultModel('agy', 'detected-gemini'), false, 'a VS Code default model is not recorded over');
     assert.equal(await recordDefaultModel('claude', 'detected-claude'), true);
     setDefaultBackend('codex');
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));

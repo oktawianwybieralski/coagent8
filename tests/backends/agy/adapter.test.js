@@ -9,7 +9,7 @@ const os = require('node:os');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-backends-gemini-adapter-'));
 process.env.coagent8_DIR = tempDir;
 process.env.GEMINI_CLI_HOME = path.join(tempDir, 'original-home');
-process.env.GEMINI_PATH = path.resolve(__dirname, '../../fixtures/gemini-cli/gemini.cjs');
+process.env.AGY_PATH = path.resolve(__dirname, '../../fixtures/agy-cli/agy.cjs');
 
 const {
   execute,
@@ -18,11 +18,11 @@ const {
   parseGeminiUsage,
   probe: probeGemini,
   inspectQuota: inspectGeminiQuota,
-} = require('../../../src/backends/gemini/adapter.ts');
+} = require('../../../src/backends/agy/adapter.ts');
 const { StreamReducer } = require('../../../src/execution/stream-reducer.ts');
 /** The model the controller would select; the adapter never chooses one. */
 const MODEL = 'gemini-3.8-flash-high';
-const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
+const { createGeminiCollector } = require('../../../src/backends/agy/collector.ts');
 const { readResult } = require('../../helpers/result.cjs');
 
 process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'quota-cache.json');
@@ -32,11 +32,11 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 test('Gemini resolves relative primary and legacy data directories before entering its isolated workspace', async () => {
   const { getDataDir } = require('../../../src/paths.ts');
   const relative = path.relative(process.cwd(), tempDir);
-  const cli = process.env.GEMINI_PATH;
+  const cli = process.env.AGY_PATH;
   try {
     process.env.coagent8_DIR = relative;
     assert.equal(getDataDir(), tempDir);
-    process.env.GEMINI_PATH = path.relative(process.cwd(), cli);
+    process.env.AGY_PATH = path.relative(process.cwd(), cli);
     process.env.coagent8_FIXTURE_CAPTURE = path.join(tempDir, 'relative-capture.json');
     const result = await execute('relative directory', { model: MODEL, cwd: relative });
     assert.equal(result.status, 'completed', JSON.stringify(result));
@@ -46,7 +46,7 @@ test('Gemini resolves relative primary and legacy data directories before enteri
     assert.equal(capture.nested, '1', 'agy passes the nested-turn guard to the MCP servers it starts (CUR-002)');
   } finally {
     process.env.coagent8_DIR = tempDir;
-    process.env.GEMINI_PATH = cli;
+    process.env.AGY_PATH = cli;
     delete process.env.coagent8_FIXTURE_CAPTURE;
   }
 });
@@ -135,9 +135,9 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
   const { executeTask } = require('../../../src/execution/controller.ts');
   const { sessionHistory, getHistoryDir } = require('../../../src/sessions/history.ts');
   const { saveConfig } = require('../../../src/config.ts');
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const controller = new AbortController();
-  adapterRegistry.gemini = {
+  adapterRegistry.agy = {
     ...original,
     execute: (prompt, options) => execute(prompt, {
       ...options,
@@ -149,8 +149,8 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
   };
   process.env.coagent8_FIXTURE_MODE = 'secret-hang';
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
-    const response = await executeTask('partial answer', 'public request', { backend: 'gemini' }, tempDir, controller.signal);
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const response = await executeTask('partial answer', 'public request', { backend: 'agy' }, tempDir, controller.signal);
     assert.equal(readResult(response).status, 'cancelled', JSON.stringify(response));
     assert.ok(readResult(response).answer.includes('REDACTED'));
     assert.ok(!JSON.stringify(response).includes('fixtureSecret'));
@@ -161,13 +161,13 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
     assert.ok(!JSON.stringify(page).includes('fixtureSecret'));
     assert.ok(!fs.readFileSync(path.join(getHistoryDir(), handle + '.json'), 'utf8').includes('fixtureSecret'));
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
     delete process.env.coagent8_FIXTURE_MODE;
   }
 });
 
 test('Gemini collector rejects malformed roles/content, duplicate terminal and total answer overflow', () => {
-  const { classifyGeminiError } = require('../../../src/backends/gemini/errors.ts');
+  const { classifyGeminiError } = require('../../../src/backends/agy/errors.ts');
   assert.equal(classifyGeminiError('Model report-429.txt not found').code, 'MODEL_UNAVAILABLE');
   assert.equal(classifyGeminiError('Connection failed on port 1429').code, 'PROCESS_ERROR');
   const c = createGeminiCollector();
@@ -354,7 +354,7 @@ test('messages exceeding maxMessages set isTruncated and throw in Gemini adapter
   assert.equal(reducer.getMessageMap().size, 3);
 
   // Gemini adapter throws BufferLimitError when exceeding maxMessages public messages
-  const { createGeminiCollector } = require('../../../src/backends/gemini/collector.ts');
+  const { createGeminiCollector } = require('../../../src/backends/agy/collector.ts');
   const collector = createGeminiCollector();
   for (let i = 0; i < 50; i++) {
     collector.line(JSON.stringify({ type: 'message', role: 'assistant', content: `Message ${i}`, message_id: `msg-${i}` }));
@@ -474,7 +474,7 @@ test('gemini-adapter: a window without remaining_fraction is unmeasured, not ful
 });
 
 test('every agy launch disables its auto-updater, whose console window takes the focus on Windows (WINDOWS-001)', async () => {
-  const { listModels } = require('../../../src/backends/gemini/adapter.ts');
+  const { listModels } = require('../../../src/backends/agy/adapter.ts');
   const log = path.join(tempDir, 'launches.jsonl');
   const inherited = process.env.AGY_CLI_DISABLE_AUTO_UPDATE;
   // agy 1.3.1 honours only 'true'; an inherited '1' must not leave the updater on.
@@ -499,7 +499,7 @@ test('every agy launch disables its auto-updater, whose console window takes the
 });
 
 test('agy inherited tools: enabled MCP servers from `agy mcp list` and enabled discovered plugins (CUR-002)', async () => {
-  const { parseAgyMcpList, listAgyPlugins, inheritedTools } = require('../../../src/backends/gemini/adapter.ts');
+  const { parseAgyMcpList, listAgyPlugins, inheritedTools } = require('../../../src/backends/agy/adapter.ts');
   // Recorded from agy 1.3.1 (2026-10-07), plus a disabled row.
   assert.deepEqual(parseAgyMcpList('NAME      TYPE   STATUS    COMMAND/URL\ncontext7  stdio  enabled   npx.cmd -y @upstash/context7-mcp\nold       http   disabled  http://127.0.0.1:9/mcp\n'), ['context7']);
   assert.deepEqual(parseAgyMcpList('No MCP servers configured.\n'), []);

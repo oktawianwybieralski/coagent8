@@ -18,11 +18,11 @@ const { readResult } = require('../helpers/result.cjs');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('full archive never blocks CLI launch, returns successful answer with history warning (AUD-P0-3)', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   let cliExecuted = false;
 
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
@@ -41,7 +41,7 @@ test('full archive never blocks CLI launch, returns successful answer with histo
   };
 
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const historyDir = getHistoryDir();
     fs.mkdirSync(historyDir, { recursive: true });
 
@@ -58,7 +58,7 @@ test('full archive never blocks CLI launch, returns successful answer with histo
       fs.utimesSync(dummyFile, mtime, mtime);
     }
 
-    const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
+    const res = await executeTask('User prompt', 'Public question', { backend: 'agy' }, tempDir);
 
     assert.equal(cliExecuted, true, 'Backend CLI must have executed');
     assert.equal(res.isError, false, 'Turn must not be marked as failed');
@@ -71,16 +71,16 @@ test('full archive never blocks CLI launch, returns successful answer with histo
     assert.ok(remaining.length < 11, 'LRU retention must have evicted oldest dummy sessions');
     assert.ok(!remaining.includes('syn_sess_dummy0000000000000000.jsonl'), 'Oldest dummy session must be evicted');
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test('per-session limit: 120 KiB streamed answer returns successfully (AUD-P0-3)', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const largeOutput = 'X'.repeat(120 * 1024); // 120 KiB
 
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
@@ -98,23 +98,23 @@ test('per-session limit: 120 KiB streamed answer returns successfully (AUD-P0-3)
   };
 
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
-    const res = await executeTask('Generate 120 KiB', 'Public question', { backend: 'gemini' }, tempDir);
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const res = await executeTask('Generate 120 KiB', 'Public question', { backend: 'agy' }, tempDir);
 
     assert.equal(res.isError, false, '120 KiB response must return successfully');
     assert.equal(readResult(res).status, 'completed');
     assert.ok(res.content[0].text.startsWith(largeOutput));
     assert.equal(readResult(res).answer.length, 120 * 1024);
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test('metadata failure returns answer with warning and continuationAvailable=false (AUD-P1-3)', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
 
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
@@ -133,9 +133,9 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
   };
 
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
-    const res = await executeTask('Prompt', 'Public question', { backend: 'gemini' }, tempDir);
+    const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, tempDir);
 
     assert.equal(res.isError, false, 'Turn must succeed despite metadata write failure');
     assert.ok(res.content[0].text.startsWith('Important successfully computed answer'));
@@ -145,15 +145,15 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
       'Warning must report metadata failure'
     );
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test('lease failure returns fail-closed SESSION_INVALID error (AUD-P0-3 lease invariant)', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
 
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, _options) => {
@@ -183,28 +183,28 @@ test('lease failure returns fail-closed SESSION_INVALID error (AUD-P0-3 lease in
   };
 
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
-    const res = await executeTask('Prompt', 'Public question', { backend: 'gemini' }, tempDir);
+    const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, tempDir);
 
     assert.equal(res.isError, true, 'Lease failure must fail closed');
     assert.equal(readResult(res).status, 'failed');
     assert.equal(readResult(res).error?.code, 'SESSION_INVALID', 'Must return SESSION_INVALID, not HISTORY_ERROR');
     assert.notEqual(readResult(res).error?.code, 'HISTORY_ERROR');
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test('history disabled (coagent8_HISTORY=off) creates no history files', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const prevHistoryEnv = process.env.coagent8_HISTORY;
   process.env.coagent8_HISTORY = 'off';
 
   const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-no-history-'));
 
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => ({
@@ -218,9 +218,9 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
 
   try {
     process.env.coagent8_DIR = isolatedDir;
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
-    const res = await executeTask('Prompt', 'Public question', { backend: 'gemini' }, isolatedDir);
+    const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, isolatedDir);
 
     assert.equal(res.isError, false);
     assert.ok(res.content[0].text.startsWith('No history answer'));
@@ -233,7 +233,7 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
       assert.equal(files.length, 0, 'No history files should be created when coagent8_HISTORY=off');
     }
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
     if (prevHistoryEnv !== undefined) {
       process.env.coagent8_HISTORY = prevHistoryEnv;
     } else {
@@ -245,9 +245,9 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
 });
 
 test('adapter warnings such as a sandbox denial reach the result once each, with the answer kept', async () => {
-  const original = adapterRegistry.gemini;
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
@@ -257,77 +257,77 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
     },
   };
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
-    const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const res = await executeTask('User prompt', 'Public question', { backend: 'agy' }, tempDir);
     assert.equal(res.isError, false);
     assert.equal(readResult(res).answer, 'Answer kept');
     const warnings = readResult(res).warnings;
     assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'duplicates collapse');
     assert.equal(warnings.length, 5, 'adapter warnings are bounded');
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test('a top-tier model without a way to ask the user is refused in one line; user_confirmed grants nothing (AUD-P1-7)', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   let executed = false;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Retry with another model.";
-    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'gemini', model: 'claude-opus-4-6-thinking' }, tempDir),
+    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking' }, tempDir),
       { name: 'ToolError', code: 'POLICY_DENIED', message });
     // The audit reproduction: an agent-set flag used to start the governed model.
-    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'gemini', model: 'claude-opus-4-6-thinking', user_confirmed: true }, tempDir),
+    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking', user_confirmed: true }, tempDir),
       { name: 'ToolError', code: 'POLICY_DENIED', message });
     assert.equal(executed, false);
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test("consent is asked from the user for the backend's effective default model and bound to that model", async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const asked = [], received = [];
   // The fixture's own default is top-tier, as agy's interface selection can be.
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'claude-opus-4-6-thinking' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'claude-opus-4-6-thinking' } }),
     execute: async (_prompt, options) => {
       received.push(options.model);
       return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'claude-opus-4-6-thinking', truncated: false, continuationAvailable: true };
     } };
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
-    await assert.rejects(executeTask('p', 'q', { backend: 'gemini' }, tempDir), { code: 'POLICY_DENIED' });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir), { code: 'POLICY_DENIED' });
     const declined = async request => { asked.push(request); return { approved: false }; };
-    await assert.rejects(executeTask('p', 'q', { backend: 'gemini' }, tempDir, null, null, { askConsent: declined }),
+    await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: declined }),
       { code: 'POLICY_DENIED', message: "The user did not approve model 'claude-opus-4-6-thinking'; retry with another model." });
     assert.deepEqual(received, [], 'nothing runs without approval');
     const approved = async request => { asked.push(request); return { approved: true }; };
-    const res = await executeTask('p', 'q', { backend: 'gemini' }, tempDir, null, null, { askConsent: approved });
+    const res = await executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: approved });
     assert.equal(res.isError, false);
     assert.deepEqual(received, ['claude-opus-4-6-thinking']);
-    assert.deepEqual(asked.map(({ backend, model }) => ({ backend, model })), [{ backend: 'gemini', model: 'claude-opus-4-6-thinking' }, { backend: 'gemini', model: 'claude-opus-4-6-thinking' }]);
+    assert.deepEqual(asked.map(({ backend, model }) => ({ backend, model })), [{ backend: 'agy', model: 'claude-opus-4-6-thinking' }, { backend: 'agy', model: 'claude-opus-4-6-thinking' }]);
     assert.match(asked[0].reason, /approximately, as anthropic\/claude-opus-4\.6/, 'the user sees why');
     // A model the policy does not price as expensive never prompts.
-    await executeTask('p', 'q', { backend: 'gemini', model: 'gemini-3.8-flash-high' }, tempDir, null, null, { askConsent: async () => { throw new Error('must not ask'); } });
+    await executeTask('p', 'q', { backend: 'agy', model: 'gemini-3.8-flash-high' }, tempDir, null, null, { askConsent: async () => { throw new Error('must not ask'); } });
     assert.deepEqual(received, ['claude-opus-4-6-thinking', 'gemini-3.8-flash-high']);
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
 test('a continuation reuses the model and effort of its session unless the call names a model', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const seen = [];
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       seen.push({ model: options.model, effort: options.reasoningEffort });
       return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
     } };
   try {
-    const first = readResult(await executeTask('p', 'q', { backend: 'gemini', model: 'gemini-3.8-flash', reasoning_effort: 'low' }, tempDir));
+    const first = readResult(await executeTask('p', 'q', { backend: 'agy', model: 'gemini-3.8-flash', reasoning_effort: 'low' }, tempDir));
     for (const args of [{}, { reasoning_effort: 'high' }, {}, { model: 'gemini-3.7-flash' }]) {
       assert.equal(readResult(await executeTask('p', 'q', { session_handle: first.sessionHandle, ...args }, tempDir)).error, null);
     }
@@ -341,6 +341,6 @@ test('a continuation reuses the model and effort of its session unless the call 
       { model: 'gemini-3.7-flash', effort: undefined },
     ]);
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });

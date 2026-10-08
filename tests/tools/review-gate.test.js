@@ -199,7 +199,7 @@ test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCK
   const evalResult = evaluateStateEnvelopeGate(reviewOutput, false, true);
   assert.equal(evalResult.verdict, 'READY', 'Quoted verdict in prose must not override header VERDICT: READY');
 
-  const formatted = await formatExecutionResult('gemini', {
+  const formatted = await formatExecutionResult('agy', {
     status: 'completed',
     isError: false,
     output: reviewOutput,

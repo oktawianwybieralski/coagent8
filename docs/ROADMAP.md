@@ -2311,6 +2311,166 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   without a remembered choice. Automatic server start was not added: VS Code starts
   extension-provided servers on demand (chat.mcp.autostart), and the inspected
   extensions do not start them. Native acceptance is NOT_RUN.
+- [ ] `ONBOARDING-002` - one purpose per VSIX command, no waits (owner report and
+  decisions of 2026-10-08). Owner observation in VS Code: the installation notice,
+  then **Set Up Coding CLIs** with ready CLIs preselected ended in a summary offering
+  **Register in Chat Hosts**, which opened a second picker and a modal; after
+  registration the setup list took about 10 s to fill, **Register or Repair Native
+  Chat Hosts** opened after about 10 s and wrote after about 10 s more; the closing
+  notice asked the user to restart "native chat hosts" without a way to do it; the
+  "preview" of **Preview and Remove Owned Registrations** existed only as JSON in
+  the output. Measured on the owner's profile (terminal, 2026-10-08): the CLI checks
+  take 0.37-0.57 s per CLI and 0.84 s for all three in parallel, while read-only
+  status with the three registrations took 43 s (Codex 16.9 s, Claude 6.7 s, agy
+  7.5 s) because every registered CLI started the runtime and called `doctor`
+  (5.0-10.9 s, which probes all backends again), Codex a second time through its
+  app-server, all serially. Runtime initialize and `tools/list` take 0.11-0.15 s.
+  Owner decisions: one registration list with checkboxes and no modal; the ready
+  notice offers registration; Refresh CLI Status and Reset Setup State are removed.
+  Each concern has one place:
+  - VS Code chat works through the provider without registration or restart
+    (**Show MCP Servers**).
+  - **Set Up Coding CLIs** installs and signs in CLIs only. It preselects only CLIs
+    that need an action, ends silently when nothing changed, never offers
+    registration, and refreshes from a button in its title bar.
+  - **Manage CLI Chat Registrations** shows the current registrations as checked
+    items; checking adds or updates, unchecking removes an owned entry, and
+    accepting the list is the confirmation. Manual and unreadable entries are named
+    and preserved. One closing notice reports the outcome and offers **Restart
+    Extensions** (`workbench.action.restartExtensionHost`) when a vendor chat
+    extension is installed, because those extensions keep their MCP catalogs until
+    restarted. **Preview and Remove Owned Registrations** is replaced; `coagent8
+    cleanup` keeps its preview token.
+  - Activation checks the CLIs once per installation and shows one notice: ready
+    CLIs with **Add to CLI Chats** (when one is unregistered) and **Show MCP
+    Servers**, or a setup offer. Later starts run no process. This supersedes the
+    2026-10-08 decision to repeat the welcome until a CLI is ready.
+  - Shared setup: status reads registrations from the host files without starting
+    the runtime or a host, and checks clients in parallel. Setup verifies a written
+    entry with runtime initialize and `tools/list`, and Codex native discovery of
+    the CoAgent8 tools; neither calls `doctor`, so a tool call is first exercised
+    on actual use.
+  Acceptance: fixture tests for each flow and for status without runtime/host
+  probes, a repeated timing on the owner's profile, and owner acceptance in the
+  installed VSIX including the extension restart. Native acceptance is NOT_RUN.
+  Local evidence on `fix/vsix-presentation` (2026-10-08, Windows, Node 26.10.0,
+  uncommitted): read-only status with the same three registrations took 0.75 s
+  (was 43 s) and reading the registrations 20-27 ms. The timing exposed a
+  defect: smol-toml returns prototype-less tables, so a Codex entry with
+  `coagent8_CONFIG` never equaled the candidate and every repair rewrote it;
+  `registration()` now returns plain copies, covered by a test that fails without
+  the fix. Typecheck, `lint:docs`, build, `git diff --check` and the full suite
+  (343 pass, 3 skipped) passed; `package:vscode` produced
+  `.artifacts/coagent8-mcp-1.0.0-beta.2.vsix`, SHA-256
+  `71829a286796bd5c9c51ecd581942037620c83e66b598f78f1f12956981cab1a`.
+- [ ] `UNINSTALL-002` - uninstalling leaves CoAgent8 data behind. Owner check on
+  2026-10-08 after registering all three CLIs from the VSIX, uninstalling, and a full
+  VS Code restart (**Restart Extensions** alone does not run the `vscode:uninstall`
+  hook or delete the extension; VS Code does both on the next full start): the hook
+  removed the three registrations, the runtime copy and `setup.json`, and VS Code
+  removed the extension directory and its global storage. Left behind, by cause:
+  - Extension defects: `~/.coagent8/setup-backups/` with the private pre-registration
+    copies (including the whole `~/.claude.json`), which the hook never removes; a
+    `codex-staging-*` directory inside a backup, never cleaned after the native Codex
+    edit; and `config.json`, `models.json`, `quota-cache.json` in `~/.coagent8`,
+    because CLI-chat registrations pass `coagent8_CONFIG` but not `coagent8_DIR`,
+    so CoAgent8 started from those chats writes to `~/.coagent8` (some of these files
+    came from read-only timing runs on the same day). Either keeps `~/.coagent8`
+    non-empty, so the hook does not remove it.
+  - VS Code behavior: an empty `okidev.coagent8-mcp` globalState record in
+    `state.vscdb`, left after the extension removed its legacy keys (VS Code keeps
+    globalState on uninstall), and its copy in `state.vscdb.backup`.
+  - Not caused by the extension: the user setting `coagent8.gemini.defaultModel`
+    (VS Code keeps settings); `%TEMP%` test directories (see `TESTS-001`).
+  The owner removed all of them by hand for a clean installation.
+  Owner decisions of 2026-10-08, implemented locally: registrations from the
+  extension pass `coagent8_DIR` for its global storage; private backups written
+  for the extension are tagged `vscode-extension-<uuid>` and the uninstall hook
+  deletes them, keeping `coagent8` CLI backups; the native Codex staging copy is
+  deleted after each edit. The globalState record came from removing legacy keys,
+  which only happens when they exist, so a clean installation creates none.
+  The owner also asked for a complete removal including dependencies, offered only
+  for what CoAgent8 installed and with a double confirmation. **CoAgent8:
+  Uninstall CoAgent8** lists the vendor extensions that **Install VS Code Extension** (renamed
+  from **Install Vendor Extension**, which the owner found misleading)
+  added (recorded in `setup-state.json` only when absent before and present after),
+  none preselected; a modal confirms the uninstall and a second one the vendor
+  extensions. It removes the extension's registrations at once, uninstalls the
+  selected extensions and CoAgent8 with `workbench.extensions.uninstallExtension`,
+  and offers **Quit VS Code**. On the owner's request the standalone CLIs setup
+  installed are offered too, after documentation research (2026-10-08): Codex CLI
+  is removed with `npm uninstall -g @openai/codex`, the inverse of setup's
+  install (its README documents no uninstall); Claude Code CLI with the commands
+  of its uninstall documentation (code.claude.com/docs/en/setup#uninstall-claude-code);
+  Antigravity CLI, which documents no uninstall, by deleting the single binary
+  its installer script copies (`%LOCALAPPDATA%\agy\bin\agy.exe`, `~/.local/bin/agy`;
+  the script itself names `Remove-Item` for that binary). The commands are inserted
+  unexecuted in a terminal that outlives the extension. A standalone CLI counts as
+  installed by CoAgent8 when setup opened its installer and a later check, also
+  after a reload, finds it. PATH entries the installers add stay. Fixture tests
+  cover the data directory, tagged backups, staging removal, the recorded flags,
+  both confirmations, the removal commands and each cancellation; typecheck,
+  `lint:docs` and the full suite (350 pass, 3 skipped) passed; the VSIX built for
+  the owner's test has SHA-256
+  `c5733a21b18b71098cdf72bf6c393d0ff4436416df2d59eac8d117b78334ccfa`.
+  Owner test of that VSIX (2026-10-08, extension paths only; standalone
+  installation not tested): installing the Claude Code and Codex extensions through
+  setup worked, also on a second run with all three. Findings and local fixes:
+  (1) with only Antigravity CLI ready, the first-activation notice offered no way
+  to set up the missing CLIs; it now adds **Set Up CLIs** whenever a CLI needs an
+  installation or sign-in. That Antigravity CLI was the `~/.gemini/bin/agy.exe`
+  the uninstalled Google Antigravity extension had left behind; removing that
+  extension through **Uninstall CoAgent8** now deletes this file. (2) The vendor
+  extensions CoAgent8 had installed stayed after uninstalling CoAgent8. The record
+  required the extension API to list the new extension after the CLI was found,
+  which can lag behind the install command; it now depends on the completed
+  command. Whether the owner used the command or the Extensions view is not
+  recorded; the Extensions view never removes dependencies, as the uninstall hook
+  cannot ask. (3) VS Code showed a native "Install (Do not sync)" dialog after the
+  notice; the install now passes `donotSync: true`. Typecheck and the full suite
+  (351 pass, 3 skipped) passed; VSIX SHA-256
+  `84f3525f4163a51129d44f930884e11e5be89ad74c66e332e3ba56b242c55fa9`. Native
+  acceptance of these fixes is NOT_RUN.
+  Owner decision of the same day, replacing "setup never registers": a CLI that
+  **Set Up Coding CLIs** installs is registered in its own chat at once, and the
+  run ends with one notice offering **Restart Extensions**; CLIs that were
+  already installed are left to **Manage CLI Chat Registrations**. The owner's
+  report that all three CLIs showed "Not added" after installation was correct
+  behavior under the earlier rule, with unclear wording; the list now says
+  "CoAgent8 not added to this chat yet" / "CoAgent8 is in this chat", and
+  **Install Vendor Extension** is **Install VS Code Extension**.
+  Owner decision of the same day: **Manage CLI Chat Registrations** is merged into
+  **Set Up Coding CLIs**. One list shows per CLI its state, whether CoAgent8 is in
+  its chat and its installation source; checked means CoAgent8 is in that CLI's
+  chat, checking installs, signs in and adds, unchecking removes only CoAgent8's
+  entry, and accepting unchanged does nothing. The former command's removals did
+  not tag their backups for the uninstall; the merged list passes `actor`.
+  Owner decision of the same day: the CLI is chosen by `backends.<id>.executable`
+  in `config.json` (absolute path, `~/...` or `vscode-extension`), after the
+  `*_PATH` environment overrides and before PATH and the vendor copies; adapters
+  and setup share one resolver (`src/backends/executable.ts`), and a configured
+  CLI that is missing fails for that backend without falling back. The first
+  registration of a client records the CLI it found (`vscode-extension` for a
+  vendor copy, whose versioned folder changes on every extension update), never
+  replacing a value; the setup list names a second installation and switches to
+  it with a line button. Owner decision of the same day: the Antigravity backend id
+  is `agy`, the CLI's name; `gemini` names only its models. The MCP tool schemas,
+  provider list, adapter folder (`src/backends/agy`), VS Code settings
+  (`coagent8.agy.defaultModel`), config schema, the `AGY_PATH` override and tests use
+  it. Owner decision: nothing has been published, so no compatibility with earlier
+  beta builds is kept: no `gemini` alias in `config.json`, no `GEMINI_PATH`, no
+  former onboarding keys and no globalState cleanup. A configuration file that
+  still says `gemini` is refused with the entry to fix (**Reset Configuration**
+  replaces it with the defaults and keeps a backup). The rename
+  exposed a pagination defect: a history fragment was cut at a byte budget and then
+  decoded, so a cut inside a multi-byte character produced U+FFFD and the next
+  offset landed inside a character (`Invalid history fragment offset`), depending
+  on metadata length; fragments are now cut at a UTF-8 boundary, covered by a test
+  across all four cut positions that fails without the fix. Typecheck, `lint:docs`
+  and the full suite (360 pass, 3 skipped) passed after removing that compatibility.
+  Acceptance: the beta.2 checklist's dependency
+  installation, complete uninstallation and Extensions-view rows, leaving no
+  `~/.coagent8` and no CoAgent8 key, natively verified. Native acceptance is NOT_RUN.
 
 Host evidence recorded on 2026-10-05 (historical; not fresh validation):
 
@@ -2543,6 +2703,14 @@ The structural migration is implemented; final release validation remains pendin
 - [x] Imports/configuration follow the migration and the unused Node 20 polyfill
   was removed. Test evidence (`.artifacts/coverage`, `.artifacts/consumer`) and API/VSIX
   output (`.artifacts/api-docs`, `.artifacts/vscode`) use separate subdirectories.
+- [ ] Leave no temporary directory behind. On 2026-10-08 the owner's `%TEMP%`
+  held 15 `coagent8-*` entries from runs on 2026-10-06 to 2026-10-08
+  (`coagent8-extension-*`, `-codex-*`, `-claude-*`, `-sessions-lock-*`,
+  `-history-concurrent-test-*`, `-tests-*`, `-repro-*`, `-phase1-*`, `-live` and
+  `coagent8-suite.txt`), probably from interrupted or failing runs; the full
+  suite run that day left none. They were removed by hand. Find the tests whose
+  failure or interruption skips cleanup and register cleanup before the first
+  assertion.
 - [ ] Verify the exact package, coverage thresholds and supported OS/Node matrix
   at release acceptance; complete independent review of the resulting snapshot.
 

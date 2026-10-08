@@ -136,7 +136,7 @@ test('Claude reads subscription quota from /usage without a model turn and feeds
   const {inspectQuotas}=require('../../../src/backends/availability.ts');const {adapterRegistry}=require('../../../src/backends/registry.ts');
   const original={...adapterRegistry};
   try{
-    for(const id of ['codex','gemini'])adapterRegistry[id]={id,name:id,probe:async()=>({installed:false}),execute:async()=>{throw new Error('not executed');}};
+    for(const id of ['codex','agy'])adapterRegistry[id]={id,name:id,probe:async()=>({installed:false}),execute:async()=>{throw new Error('not executed');}};
     const report=await inspectQuotas(true);
     assert.equal(report.claude.measured,true);assert.equal(report.claude.headroomPercent,33);assert.equal(report.claude.status,'operational');
     const overridden=await inspectQuotas(true,{claude:{installed:true}});assert.equal(overridden.claude.measured,true,'cached measurement is kept');

@@ -14,7 +14,7 @@ export interface SessionRecord {
   lastErrorCode?: string;
   /** Public session handle identifier. */
   sessionHandle: string;
-  /** Concrete CLI provider used for this session: codex, claude or gemini. */
+  /** Concrete CLI provider used for this session: codex, claude or agy. */
   backend: string;
   /** CLI-native thread ID or conversation token for resuming turns. */
   threadId: string | null;

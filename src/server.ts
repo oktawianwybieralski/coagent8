@@ -344,7 +344,7 @@ export function createServer(): Server {
       const message = redactDiagnostic((err as Error).message);
       if (executionNames.has(name)) {
         const raw = request.params.arguments;
-        const provider = typeof raw?.backend === 'string' && ['codex', 'gemini', 'claude'].includes(raw.backend) ? raw.backend : null;
+        const provider = typeof raw?.backend === 'string' && ['codex', 'agy', 'claude'].includes(raw.backend) ? raw.backend : null;
         const code = errorCodeOf(err);
         // A call refused before launch names the model the caller asked for, not "provider default".
         const requestedModel = typeof raw?.model === 'string' && isValidModelIdentifier(raw.model) ? raw.model : undefined;

@@ -10,13 +10,13 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-model-catalog-
 process.env.coagent8_DIR = directory;
 process.env.CODEX_PATH = path.resolve(__dirname, '../fixtures/codex-cli/codex.cjs');
 process.env.CODEX_CONFIG_PATH = path.join(directory, 'config.toml');
-process.env.GEMINI_PATH = path.resolve(__dirname, '../fixtures/gemini-cli/gemini.cjs');
+process.env.AGY_PATH = path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs');
 process.env.GEMINI_CLI_HOME = path.join(directory, 'gemini-home');
 
 const { checkModelSelection } = require('../../src/backends/model-catalog.ts');
 const { listCodexModels, parseCodexModelPage } = require('../../src/backends/codex/models.ts');
 const { VALID_REASONING_EFFORTS: CODEX_EFFORTS } = require('../../src/backends/codex/adapter.ts');
-const { listModels: listAgyModels, parseAgyModels } = require('../../src/backends/gemini/adapter.ts');
+const { listModels: listAgyModels, parseAgyModels } = require('../../src/backends/agy/adapter.ts');
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { executeTask } = require('../../src/execution/controller.ts');
 const { saveConfig } = require('../../src/config.ts');
@@ -61,27 +61,27 @@ test('a model or effort the CLI does not offer is refused with the accepted valu
   assert.equal(minimal.code, 'INPUT_LIMIT');
   assert.match(minimal.message, /accepts reasoning_effort low, medium, high, xhigh, max, not 'minimal'/);
 
-  const flash = checkModelSelection('gemini', agy, 'gemini-3.8-flash', undefined);
+  const flash = checkModelSelection('agy', agy, 'gemini-3.8-flash', undefined);
   assert.equal(flash.code, 'INPUT_LIMIT');
-  assert.equal(flash.message, "gemini model 'gemini-3.8-flash' needs reasoning_effort (high, medium, low), or name it with the effort, for example 'gemini-3.8-flash-high'.");
-  assert.equal(checkModelSelection('gemini', agy, 'gemini-3.8-flash', 'low'), null);
-  assert.equal(checkModelSelection('gemini', agy, 'gemini-3.8-flash-high', undefined), null, 'the listed identifier carries its effort');
-  assert.equal(checkModelSelection('gemini', agy, 'gemini-3.8-flash-high', 'low'), null, 'an explicit effort replaces the suffix');
-  assert.equal(checkModelSelection('gemini', agy, 'gemini-3.1-pro', 'medium').code, 'INPUT_LIMIT', 'Pro offers high and low only');
-  assert.equal(checkModelSelection('gemini', agy, 'claude-sonnet-4-6', 'high').code, 'INPUT_LIMIT', 'a model without effort variants takes none');
-  assert.equal(checkModelSelection('gemini', agy, 'claude-sonnet-4-6', undefined), null);
+  assert.equal(flash.message, "agy model 'gemini-3.8-flash' needs reasoning_effort (high, medium, low), or name it with the effort, for example 'gemini-3.8-flash-high'.");
+  assert.equal(checkModelSelection('agy', agy, 'gemini-3.8-flash', 'low'), null);
+  assert.equal(checkModelSelection('agy', agy, 'gemini-3.8-flash-high', undefined), null, 'the listed identifier carries its effort');
+  assert.equal(checkModelSelection('agy', agy, 'gemini-3.8-flash-high', 'low'), null, 'an explicit effort replaces the suffix');
+  assert.equal(checkModelSelection('agy', agy, 'gemini-3.1-pro', 'medium').code, 'INPUT_LIMIT', 'Pro offers high and low only');
+  assert.equal(checkModelSelection('agy', agy, 'claude-sonnet-4-6', 'high').code, 'INPUT_LIMIT', 'a model without effort variants takes none');
+  assert.equal(checkModelSelection('agy', agy, 'claude-sonnet-4-6', undefined), null);
 
   assert.equal(checkModelSelection('codex', undefined, 'gpt-7-new', 'low'), null, 'without a catalog nothing is refused');
 });
 
 test('the controller refuses an unoffered model before any model call, and the default selection reads no catalog', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   let executed = 0, listed = 0;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'gemini-3.8-flash-high' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'gemini-3.8-flash-high' } }),
     listModels: async () => { listed++; return { source: 'fixture', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }; },
     execute: async () => { executed++; return { status: 'completed', isError: false, output: 'ok', model: 'gemini-3.8-flash-high', truncated: false, continuationAvailable: false }; } };
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(executeTask('x', 'x', { model: 'gemini-3.8-flash' }, directory), error => error.code === 'INPUT_LIMIT' && /needs reasoning_effort \(high, low\)/.test(error.message));
     await assert.rejects(executeTask('x', 'x', { model: 'luna' }, directory), error => error.code === 'MODEL_UNAVAILABLE');
     assert.equal(executed, 0, 'no backend ran');
@@ -90,7 +90,7 @@ test('the controller refuses an unoffered model before any model call, and the d
     assert.equal(readResult(await executeTask('x', 'x', {}, directory)).answer, 'ok');
     assert.equal(listed, reads, 'the default selection needs no catalog');
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 

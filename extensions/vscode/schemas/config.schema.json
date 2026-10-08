@@ -8,7 +8,7 @@
     "$schema": { "type": "string", "maxLength": 2048, "description": "Optional schema location for a custom configuration path." },
     "schemaVersion": { "const": 1, "default": 1, "description": "Configuration format version. Must be 1." },
     "defaultBackend": {
-      "enum": [null, "codex", "claude", "gemini", "smart_quota"],
+      "enum": [null, "codex", "claude", "agy", "smart_quota"],
       "default": null,
       "description": "Backend used when a request does not name one. null chooses among routing.allowedBackends by routing.strategy. gemini is Antigravity. VS Code setting: coagent8.defaultBackend.",
       "markdownEnumDescriptions": ["Automatic: choose among the allowed backends.", "Codex CLI.", "Claude Code CLI.", "Antigravity CLI (agy).", "Compatibility alias for routing.strategy smart_quota."]
@@ -26,9 +26,9 @@
         },
         "allowedBackends": {
           "type": "array",
-          "items": { "enum": ["codex", "claude", "gemini"] },
+          "items": { "enum": ["codex", "claude", "agy"] },
           "uniqueItems": true,
-          "default": ["codex", "claude", "gemini"],
+          "default": ["codex", "claude", "agy"],
           "description": "Backends CoAgent8 may run. gemini is Antigravity. VS Code setting: coagent8.routing.allowedBackends."
         }
       }
@@ -40,7 +40,7 @@
       "properties": {
         "codex": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Codex CLI. VS Code setting: coagent8.codex.defaultModel." },
         "claude": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Claude Code CLI. VS Code setting: coagent8.claude.defaultModel." },
-        "gemini": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Antigravity CLI (agy). VS Code setting: coagent8.gemini.defaultModel." }
+        "agy": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Antigravity CLI (agy). VS Code setting: coagent8.agy.defaultModel." }
       }
     },
     "governance": {
@@ -85,7 +85,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "defaultModel": { "allOf": [{ "$ref": "#/definitions/model" }], "description": "Model used when a request names none. Recorded by doctor when missing." }
+        "defaultModel": { "allOf": [{ "$ref": "#/definitions/model" }], "description": "Model used when a request names none. Recorded by doctor when missing." },
+        "executable": {"type": "string", "minLength": 1, "maxLength": 1024, "anyOf": [{"const": "vscode-extension"}, {"pattern": "^~[\\\\/]."}, {"pattern": "^([A-Za-z]:[\\\\/]|\\\\\\\\|/)"}], "description": "CLI to run: an absolute path, a path starting with ~/, or \"vscode-extension\" for the newest copy the vendor's VS Code extension provides (it survives extension updates). Omitted, the CLI is found on PATH, then in the vendor's VS Code extension. Setup records the CLI it finds at the first registration; change it at any time. The CODEX_PATH, CLAUDE_PATH and AGY_PATH environment variables take precedence."}
       }
     }
   }

@@ -29,14 +29,14 @@ test('runDoctor returns structured diagnostic report for all three CLIs', async 
   // Backends
   assert.ok(report.backends.codex);
   assert.ok(report.backends.claude);
-  assert.ok(report.backends.gemini);
+  assert.ok(report.backends.agy);
 
   assert.equal(report.backends.codex.id, 'codex');
   assert.equal(report.backends.claude.id, 'claude');
-  assert.equal(report.backends.gemini.id, 'gemini');
+  assert.equal(report.backends.agy.id, 'agy');
 
   // Verify recommendations exist if any backend is missing
-  if (!report.backends.codex.installed || !report.backends.claude.installed || !report.backends.gemini.installed) {
+  if (!report.backends.codex.installed || !report.backends.claude.installed || !report.backends.agy.installed) {
     assert.ok(report.recommendations.length > 0);
   }
 });
@@ -45,7 +45,7 @@ test('doctor does not classify installation and unverified authentication eviden
   const { adapterRegistry } = require('../../src/backends/registry.ts');
   const original = { ...adapterRegistry };
   try {
-    for (const id of ['codex', 'claude', 'gemini']) {
+    for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = { ...original[id], inspectQuota: async () => undefined, probe: async () => ({ id, installed: true, executionSupported: true,
         authStatus: 'unknown', authEvidence: ['Synthetic auth file present (not verified)'],
         capabilities: { readOnlyVerified: true, resume: false, streaming: false, reasoningEffort: false } }) };
@@ -54,15 +54,15 @@ test('doctor does not classify installation and unverified authentication eviden
     assert.deepEqual(report.ready_backends, []);
     assert.equal(report.status, 'partially_configured');
     // A quota the CLI itself measured (agy and Claude `/usage`) proves a signed-in CLI.
-    adapterRegistry.gemini.inspectQuota = async () => ({ measured: true, headroomPercent: 40, usedPercent: 60, window: 'weekly', resetsAt: null });
-    assert.deepEqual((await runDoctor()).ready_backends, ['gemini']);
+    adapterRegistry.agy.inspectQuota = async () => ({ measured: true, headroomPercent: 40, usedPercent: 60, window: 'weekly', resetsAt: null });
+    assert.deepEqual((await runDoctor()).ready_backends, ['agy']);
   } finally { Object.assign(adapterRegistry, original); }
 });
 
 test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_backends', async () => {
   const original = { ...adapterRegistry };
   try {
-    for (const id of ['codex', 'claude', 'gemini']) {
+    for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = {
         ...original[id],
         inspectQuota: async () => undefined,
@@ -76,7 +76,7 @@ test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_bac
       };
     }
 
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] } });
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
 
     // Mark codex as rate limited
     await recordQuotaCooldown('codex', 60000, 'Usage limit reached');
@@ -84,7 +84,7 @@ test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_bac
     const report = await runDoctor();
     assert.ok(!report.ready_backends.includes('codex'));
     assert.ok(report.ready_backends.includes('claude'));
-    assert.ok(report.ready_backends.includes('gemini'));
+    assert.ok(report.ready_backends.includes('agy'));
     assert.ok(report.recommendations.some(r => r.includes('codex: usage limit reached or rate limited')));
   } finally {
     Object.assign(adapterRegistry, original);
@@ -100,39 +100,39 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
   const quotaCache = process.env.coagent8_QUOTA_CACHE;
   process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'doctor-summary-quota-cache.json');
   try {
-    for (const id of ['codex', 'claude', 'gemini']) {
+    for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = {
         ...original[id],
         inspectQuota: async () => { quotaReads.push(id); return { measured: true, window: '5h', usedPercent: 40, headroomPercent: 60, resetsAt: '2026-10-07T12:00:00Z' }; },
-        listModels: id === 'gemini' ? async () => ({ source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }) : undefined,
+        listModels: id === 'agy' ? async () => ({ source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }) : undefined,
         observeModel: id === 'claude' ? async requested => requested : undefined,
         probe: async () => ({
           id, installed: true, version: `${id} 1.0.0`, executionSupported: true, authStatus: 'authenticated',
           config: { defaultModel: `${id}-model` }, availableModels: Array.from({ length: 14 }, (_, i) => `${id}-model-${i}`),
           capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
-          ...(id === 'gemini' ? { quota: { measured: true, window: 'weekly', usedPercent: 19, headroomPercent: 81, resetsAt: '2026-10-12T17:31:49Z',
+          ...(id === 'agy' ? { quota: { measured: true, window: 'weekly', usedPercent: 19, headroomPercent: 81, resetsAt: '2026-10-12T17:31:49Z',
             buckets: [{ id: 'gemini-weekly', name: 'Weekly', window: 'weekly', remainingFraction: 0.81, resetTime: '2026-10-12T17:31:49Z' }] } } : {}),
         }),
       };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] }, backends: { codex: {}, claude: {}, gemini: {} } });
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
 
     const report = await runDoctor();
     const summary = formatDoctorSummary(report);
     assert.equal(summary.split('\n').length, 7, summary);
-    assert.match(summary, /\ngemini: ready[^\n]*\n {2}models: gemini-3\.8-flash \(high\|low\)(\n|$)/, 'the catalog the CLI lists, with the efforts a model needs');
+    assert.match(summary, /\nagy: ready[^\n]*\n {2}models: gemini-3\.8-flash \(high\|low\)(\n|$)/, 'the catalog the CLI lists, with the efforts a model needs');
     assert.match(summary, /\n {2}models: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
     assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices \d{4}-\d{2}-\d{2} \(19 models\)/);
     // The fixture models have no price, so the policy asks before each turn and doctor says so.
     assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
-    assert.match(summary, /gemini: ready · gemini 1\.0\.0 · model gemini-model \(CLI config, asks each turn\) · weekly 81% left/);
+    assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 81% left/);
     assert.ok(Buffer.byteLength(summary) < 1024, 'summary budget 1 KB');
 
-    assert.equal(report.backends.gemini.quota, undefined, 'quota reported once, under quotas');
-    assert.deepEqual(report.backends.gemini.models, [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }], 'doctor reports the models the CLI lists');
-    assert.equal(report.backends.gemini.modelSource, 'agy models');
+    assert.equal(report.backends.agy.quota, undefined, 'quota reported once, under quotas');
+    assert.deepEqual(report.backends.agy.models, [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }], 'doctor reports the models the CLI lists');
+    assert.equal(report.backends.agy.modelSource, 'agy models');
     assert.equal(report.backends.codex.models, undefined, 'no catalog, no models field');
-    assert.equal(report.quotas.gemini.buckets.length, 1);
+    assert.equal(report.quotas.agy.buckets.length, 1);
 
     quotaReads.length = 0;
     const claudeOnly = await runDoctor({ backend: 'claude', quota: false });
@@ -140,13 +140,13 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.deepEqual(quotaReads, [], 'quota: false skips native quota reads');
     const cache = await inspectQuotas(false);
     assert.equal(cache.codex.installed, true, 'a filtered doctor keeps the other providers cached');
-    assert.equal(cache.gemini.installed, true);
+    assert.equal(cache.agy.installed, true);
 
     const summaryResult = await handleDoctor({});
     assert.equal(summaryResult.structuredContent, undefined);
-    const full = await handleDoctor({ detail: 'full', backend: 'gemini' });
+    const full = await handleDoctor({ detail: 'full', backend: 'agy' });
     assert.deepEqual(JSON.parse(full.content[0].text), full.structuredContent);
-    assert.deepEqual(Object.keys(full.structuredContent.backends), ['gemini']);
+    assert.deepEqual(Object.keys(full.structuredContent.backends), ['agy']);
   } finally {
     process.env.coagent8_QUOTA_CACHE = quotaCache;
     Object.assign(adapterRegistry, original);
@@ -156,21 +156,21 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
 test('doctor names the MCP servers and plugins agy turns inherit, without changing the status (CUR-002)', async () => {
   const original = { ...adapterRegistry };
   try {
-    for (const id of ['codex', 'claude', 'gemini']) {
+    for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = {
         ...original[id],
         inspectQuota: async () => undefined,
         listModels: undefined,
         observeModel: id === 'claude' ? async requested => requested : undefined,
-        inheritedTools: id === 'gemini' ? async () => ({ mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] }) : undefined,
+        inheritedTools: id === 'agy' ? async () => ({ mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] }) : undefined,
         probe: async () => ({ id, installed: true, version: '1.0.0', executionSupported: true, authStatus: 'authenticated',
           config: { defaultModel: `${id}-model` }, capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }),
       };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'gemini'] }, backends: { codex: {}, claude: {}, gemini: {} } });
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
     const report = await runDoctor({ quota: false });
-    assert.deepEqual(report.inheritedTools, { gemini: { mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] } });
-    const note = report.recommendations.find(text => text.startsWith('gemini: turns run'));
+    assert.deepEqual(report.inheritedTools, { agy: { mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] } });
+    const note = report.recommendations.find(text => text.startsWith('agy: turns run'));
     assert.match(note, /MCP servers context7, coagent8 and plugins team-kit from your agy configuration; CoAgent8 cannot disable them/);
     const withoutNote = report.recommendations.filter(text => text !== note);
     assert.equal(report.status, withoutNote.length ? 'partially_configured' : 'operational', 'the note alone does not change the status');
@@ -186,6 +186,6 @@ test('doctor reports an unwritable quota cache as a recommendation instead of fa
   t.after(() => { process.env.coagent8_QUOTA_CACHE = cacheFile; });
   process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
   const report = await runDoctor({ quota: false });
-  assert.ok(report.backends.codex && report.backends.claude && report.backends.gemini);
+  assert.ok(report.backends.codex && report.backends.claude && report.backends.agy);
   assert.equal(report.recommendations.filter(text => text.startsWith('Quota cache not updated: ')).length, 1);
 });

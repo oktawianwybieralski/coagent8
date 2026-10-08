@@ -93,7 +93,7 @@ function npmRun(args,cwd=root) {
     assert.match(dispatch(['--help']).stdout,/cleanup/);
     assert.ok(!fs.existsSync(path.join(dir,'node_modules','tsx')));for(const tool of ['esbuild','tsdown','rolldown'])assert.ok(!fs.existsSync(path.join(dir,'node_modules',tool)),tool);
     for(const [binIndex,command] of commands.entries()) {
-    const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.join(root,'tests','fixtures','gemini-cli','gemini.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
+    const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),AGY_PATH:path.join(root,'tests','fixtures','agy-cli','agy.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
     const {proc,request}=connection;
     try {
       const init=await request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'tarball-consumer',version:'1'}});assert.equal(init.result.serverInfo.version,installed.version);
@@ -109,7 +109,7 @@ function npmRun(args,cwd=root) {
       assert.ok(tools.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
       for(const name of ['consult','review'])assert.equal(tools.result.tools.find(tool=>tool.name===name).outputSchema,undefined,`${name}: markdown result only`);
       if(binIndex===0) {
-      const first=await request('tools/call',{name:'consult',arguments:{proposal:'consumer first turn',backend:'gemini',workspace_path:dir}});assert.equal(first.result.isError,false,JSON.stringify(first));
+      const first=await request('tools/call',{name:'consult',arguments:{proposal:'consumer first turn',backend:'agy',workspace_path:dir}});assert.equal(first.result.isError,false,JSON.stringify(first));
       const handle=readResult(first.result).sessionHandle;
       const second=await request('tools/call',{name:'analyze',arguments:{task:'consumer second turn',session_handle:handle,workspace_path:dir}});assert.equal(readResult(second.result).turn,2);
       const history=await request('tools/call',{name:'session',arguments:{action:'history',session_handle:handle,workspace_path:dir}});assert.equal(history.result.structuredContent.events.filter(e=>e.type==='assistant_message').length,2);

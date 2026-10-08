@@ -24,9 +24,9 @@ const { createSession, closeSession } = require('../../src/sessions/session.ts')
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('streamed 60 KiB answer in 40-byte deltas persists within a factor of <= 3x (AUD-P0-3 remediation)', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const turnId = randomUUID();
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', turnId);
 
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Prompt requesting 60 KiB response' });
@@ -68,9 +68,9 @@ test('streamed 60 KiB answer in 40-byte deltas persists within a factor of <= 3x
 });
 
 test('split credentials across multiple streaming deltas and flushes never reach disk unredacted', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const turnId = randomUUID();
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', turnId);
 
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Generate split secret' });
@@ -191,9 +191,9 @@ test('split credentials across multiple streaming deltas and flushes never reach
 });
 
 test('streaming delta ending in potential secret prefix is held back until turn_finished', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const turnId = randomUUID();
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', turnId);
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', turnId);
 
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Give advice' });
@@ -222,12 +222,12 @@ test('streaming delta ending in potential secret prefix is held back until turn_
 });
 
 test('resuming a session older than 7 days succeeds without lock timeout deadlock', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
   const jsonFile = path.join(getHistoryDir(), `${sess.sessionHandle}.json`);
 
   // Write initial turn
-  const writer1 = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const writer1 = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
   writer1.accept({ type: 'turn_started' });
   writer1.accept({ type: 'user_message', text: 'Turn 1' });
   writer1.accept({ type: 'assistant_message', messageId: 'm1', text: 'Response 1' });
@@ -242,7 +242,7 @@ test('resuming a session older than 7 days succeeds without lock timeout deadloc
   }
 
   // Resume the session with a new turn
-  const writer2 = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const writer2 = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
   writer2.accept({ type: 'turn_started' });
   writer2.accept({ type: 'user_message', text: 'Turn 2' });
   writer2.accept({ type: 'assistant_message', messageId: 'm2', text: 'Response 2' });
@@ -259,19 +259,19 @@ test('resuming a session older than 7 days succeeds without lock timeout deadloc
 });
 
 test('legacy snapshot-repeating format loads, paginates and resumes cleanly', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
 
   // Write a legacy format log where assistant_message full snapshots are repeated
   const { canonicalPath } = require('../../src/sessions/identity.ts');
   const lines = [
     JSON.stringify({ _type: 'header', schemaVersion: 1, sessionHandle: sess.sessionHandle, workspace: canonicalPath(tempDir), createdAt: new Date().toISOString(), nextSequence: 1 }),
-    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 1, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'turn_started' }),
-    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 2, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'user_message', text: 'Legacy prompt' }),
-    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 3, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'assistant_message', messageId: 'm1', text: 'Partial 1' }),
-    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 4, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'assistant_message', messageId: 'm1', text: 'Partial 1 + Partial 2' }),
-    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 5, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'assistant_message', messageId: 'm1', text: 'Final complete message' }),
-    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 6, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'gemini', type: 'turn_finished', status: 'completed' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 1, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'agy', type: 'turn_started' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 2, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'agy', type: 'user_message', text: 'Legacy prompt' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 3, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'agy', type: 'assistant_message', messageId: 'm1', text: 'Partial 1' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 4, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'agy', type: 'assistant_message', messageId: 'm1', text: 'Partial 1 + Partial 2' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 5, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'agy', type: 'assistant_message', messageId: 'm1', text: 'Final complete message' }),
+    JSON.stringify({ schemaVersion: 1, eventId: randomUUID(), sequence: 6, timestamp: new Date().toISOString(), sessionHandle: sess.sessionHandle, turnId: 'turn-1', provider: 'agy', type: 'turn_finished', status: 'completed' }),
   ];
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
   fs.writeFileSync(logFile, lines.join('\n') + '\n', 'utf8');
@@ -289,8 +289,8 @@ test('legacy snapshot-repeating format loads, paginates and resumes cleanly', as
 });
 
 test('capacity limits are strictly enforced during append-only writes', async () => {
-  const sess = createSession('gemini', tempDir);
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const sess = createSession('agy', tempDir);
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
 
   // Oversized message exceeding 10MB session limit must fail on flush
   for (let i = 0; i < 11; i++) {
@@ -304,8 +304,8 @@ test('capacity limits are strictly enforced during append-only writes', async ()
 });
 
 test('pagination is deterministically indexed by event sequence', async () => {
-  const sess = createSession('gemini', tempDir);
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const sess = createSession('agy', tempDir);
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
 
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Prompt 1' });
@@ -313,7 +313,7 @@ test('pagination is deterministically indexed by event sequence', async () => {
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
-  const writer2 = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const writer2 = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
   writer2.accept({ type: 'turn_started' });
   writer2.accept({ type: 'user_message', text: 'Prompt 2' });
   writer2.accept({ type: 'assistant_message', messageId: 'm2', text: 'Answer 2' });
@@ -342,11 +342,11 @@ test('pagination is deterministically indexed by event sequence', async () => {
 });
 
 test('streaming deltas do not trigger monolithic .json snapshot rewrite', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const jsonFile = path.join(getHistoryDir(), `${sess.sessionHandle}.json`);
   const logFile = path.join(getHistoryDir(), `${sess.sessionHandle}.jsonl`);
 
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Prompt' });
   await writer.flush();
@@ -389,7 +389,7 @@ test('sessionHistory cleanly ignores corrupted trailing JSONL line from unexpect
   const file = path.join(historyDir, `${handle}.jsonl`);
 
   const turnId = randomUUID();
-  const writer = createHistoryWriter(handle, tempDir, 'gemini', turnId);
+  const writer = createHistoryWriter(handle, tempDir, 'agy', turnId);
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Check system health' });
   writer.accept({ type: 'assistant_message', messageId: 'msg-1', text: 'System is healthy and responsive.' });
@@ -419,7 +419,7 @@ test('subsequent append cleanly starts on newline even if previous process crash
   const file = path.join(historyDir, `${handle}.jsonl`);
 
   const turnId1 = randomUUID();
-  const writer1 = createHistoryWriter(handle, tempDir, 'gemini', turnId1);
+  const writer1 = createHistoryWriter(handle, tempDir, 'agy', turnId1);
   writer1.accept({ type: 'turn_started' });
   writer1.accept({ type: 'user_message', text: 'First query' });
   await writer1.flush();
@@ -429,7 +429,7 @@ test('subsequent append cleanly starts on newline even if previous process crash
 
   // Next turn writer appends a new batch
   const turnId2 = randomUUID();
-  const writer2 = createHistoryWriter(handle, tempDir, 'gemini', turnId2);
+  const writer2 = createHistoryWriter(handle, tempDir, 'agy', turnId2);
   writer2.accept({ type: 'turn_started' });
   writer2.accept({ type: 'user_message', text: 'Second query' });
   await writer2.flush();
@@ -543,21 +543,21 @@ test('getHistory returns defensive copies protecting cached snapshots from mutat
 });
 
 test('history reports byte-limit failures, expires old local files and supports explicit disable',async()=>{
-  const old=createSession('gemini',tempDir),writer=createHistoryWriter(old.sessionHandle,tempDir,'gemini',randomUUID());
+  const old=createSession('agy',tempDir),writer=createHistoryWriter(old.sessionHandle,tempDir,'agy',randomUUID());
   writer.accept({type:'user_message',text:'old public'});await writer.flush();
   const file=path.join(tempDir,'history',old.sessionHandle+'.json');fs.utimesSync(file,new Date(0),new Date(0));
-  const fresh=createSession('gemini',tempDir),next=createHistoryWriter(fresh.sessionHandle,tempDir,'gemini',randomUUID());next.accept({type:'turn_started'});await next.flush();assert.equal(fs.existsSync(file),false);
-  const full=createHistoryWriter(fresh.sessionHandle,tempDir,'gemini',randomUUID());
+  const fresh=createSession('agy',tempDir),next=createHistoryWriter(fresh.sessionHandle,tempDir,'agy',randomUUID());next.accept({type:'turn_started'});await next.flush();assert.equal(fs.existsSync(file),false);
+  const full=createHistoryWriter(fresh.sessionHandle,tempDir,'agy',randomUUID());
   for(let i=0;i<10;i++)full.accept({type:'assistant_message',messageId:'large-'+i,text:'x'.repeat(1024*1024)});
   await assert.rejects(full.flush(),/session limit/);
   assert.equal((await sessionHistory(fresh.sessionHandle,tempDir)).events.length,1);
-  process.env.coagent8_HISTORY='off';try{const disabled=createHistoryWriter(fresh.sessionHandle,tempDir,'gemini',randomUUID());assert.equal(disabled.disabled,true);disabled.accept({type:'user_message',text:'never persisted'});await disabled.flush();}finally{delete process.env.coagent8_HISTORY;}
+  process.env.coagent8_HISTORY='off';try{const disabled=createHistoryWriter(fresh.sessionHandle,tempDir,'agy',randomUUID());assert.equal(disabled.disabled,true);disabled.accept({type:'user_message',text:'never persisted'});await disabled.flush();}finally{delete process.env.coagent8_HISTORY;}
   assert.equal((await sessionHistory(fresh.sessionHandle,tempDir)).events.length,1);
 });
 
 test('history survives a fresh process and failed turns; duplicate native snapshots are canonical',async()=>{
-  const s=createSession('gemini',tempDir),turn=randomUUID();
-  const writer=createHistoryWriter(s.sessionHandle,tempDir,'gemini',turn);
+  const s=createSession('agy',tempDir),turn=randomUUID();
+  const writer=createHistoryWriter(s.sessionHandle,tempDir,'agy',turn);
   writer.accept({type:'turn_started'});writer.accept({type:'user_message',text:'public user'});
   writer.accept({type:'assistant_delta',messageId:'m',text:'draft'});await writer.flush();
   writer.accept({type:'assistant_message',messageId:'m',text:'final'});writer.accept({type:'assistant_message',messageId:'m',text:'final'});
@@ -568,7 +568,7 @@ test('history survives a fresh process and failed turns; duplicate native snapsh
 });
 
 test('live pagination rejects a changed snapshot so final assistant text is never silently skipped',async()=>{
-  const s=createSession('gemini',tempDir),w=createHistoryWriter(s.sessionHandle,tempDir,'gemini',randomUUID());
+  const s=createSession('agy',tempDir),w=createHistoryWriter(s.sessionHandle,tempDir,'agy',randomUUID());
   w.accept({type:'assistant_delta',messageId:'m',text:'draft'});w.accept({type:'status',message:'running'});await w.flush();
   const before=await sessionHistory(s.sessionHandle,tempDir,undefined,1);assert.equal(before.events[0].text,'draft');assert.ok(before.nextCursor);
   w.accept({type:'assistant_message',messageId:'m',text:'final'});w.accept({type:'turn_finished',status:'completed'});await w.flush();
@@ -577,7 +577,7 @@ test('live pagination rejects a changed snapshot so final assistant text is neve
 });
 
 test('history fragment pagination returns the whole large UTF-8 message at limit=1 without skipping an unreturned prefix',async()=>{
-  const s=createSession('gemini',tempDir),writer=createHistoryWriter(s.sessionHandle,tempDir,'gemini',randomUUID());
+  const s=createSession('agy',tempDir),writer=createHistoryWriter(s.sessionHandle,tempDir,'agy',randomUUID());
   const text=('😀"\n').repeat(100000);writer.accept({type:'turn_started'});writer.accept({type:'assistant_message',messageId:'large',text});await writer.flush();
   let cursor,joined='',pages=0;
   do {const page=await sessionHistory(s.sessionHandle,tempDir,cursor,1);assert.ok(Buffer.byteLength(JSON.stringify(page))<256*1024);joined+=page.events.filter(e=>e.type==='assistant_message').map(e=>e.text).join('');cursor=page.nextCursor;pages++;assert.ok(pages<20);}while(cursor);
@@ -605,9 +605,9 @@ test('history fragments split only at UTF-8 character boundaries, whatever the p
   }
 });
 test('oversized provider metadata cannot hang history pagination',async()=>{
-  const s=createSession('gemini',tempDir),writer=createHistoryWriter(s.sessionHandle,tempDir,'gemini',randomUUID());
+  const s=createSession('agy',tempDir),writer=createHistoryWriter(s.sessionHandle,tempDir,'agy',randomUUID());
   assert.throws(()=>writer.accept({type:'assistant_message',messageId:'x'.repeat(300*1024),text:'short'}),/identifier/);
-  const {createGeminiCollector}=require('../../src/backends/gemini/collector.ts');
+  const {createGeminiCollector}=require('../../src/backends/agy/collector.ts');
   assert.throws(()=>createGeminiCollector().line(JSON.stringify({type:'message',role:'assistant',message_id:'x'.repeat(300*1024),content:'short'})),/metadata/);
   writer.accept({type:'assistant_message',messageId:'safe',text:'short'});await writer.flush();
   const file=path.join(tempDir,'history',s.sessionHandle+'.json'),raw=JSON.parse(fs.readFileSync(file));

@@ -121,7 +121,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   // A known limitation, not a configuration problem: it leaves the status unchanged.
   const inheritedNotes = (Object.entries(inheritedTools) as [ProviderId, InheritedTools][]).map(([id, tools]) => {
     const named = [tools.mcpServers.length ? `MCP servers ${tools.mcpServers.join(', ')}` : '', tools.plugins.length ? `plugins ${tools.plugins.join(', ')}` : ''].filter(Boolean).join(' and ');
-    return `${id}: turns run in the CLI's sandbox but can use ${named} from your ${id === 'gemini' ? 'agy' : id} configuration; CoAgent8 cannot disable them. Keep only servers you trust there.`;
+    return `${id}: turns run in the CLI's sandbox but can use ${named} from your ${id} configuration; CoAgent8 cannot disable them. Keep only servers you trust there.`;
   });
 
   // The default model of each installed backend. One the CLI does not state itself (the first

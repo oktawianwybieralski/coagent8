@@ -17,8 +17,8 @@ test('History streaming flush skips directory scan and enforces TOTAL_LIMIT', as
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
   process.env.coagent8_DIR = dir;
-  const sess = createSession('gemini', dir);
-  const writer = createHistoryWriter(sess.sessionHandle, dir, 'gemini', 'turn-1');
+  const sess = createSession('agy', dir);
+  const writer = createHistoryWriter(sess.sessionHandle, dir, 'agy', 'turn-1');
 
   // First flush initializes and triggers retention check
   writer.accept({ type: 'turn_started' });
@@ -72,8 +72,8 @@ test('Concurrent writers strictly enforce 100MB TOTAL_LIMIT', async t => {
   fs.mkdirSync(historyDir, { recursive: true });
 
   const TOTAL_LIMIT = 100 * 1024 * 1024;
-  const sess1 = createSession('gemini', dir);
-  const writer1 = createHistoryWriter(sess1.sessionHandle, dir, 'gemini', 'turn-1');
+  const sess1 = createSession('agy', dir);
+  const writer1 = createHistoryWriter(sess1.sessionHandle, dir, 'agy', 'turn-1');
   writer1.accept({ type: 'turn_started' });
   await writer1.flush(); // Initial flush initializes capacity tracking
 
@@ -98,8 +98,8 @@ test('CUR-012: a snapshot near the total limit reserves its bytes before it is w
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-history-snapshot-capacity-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   process.env.coagent8_DIR = dir;
-  const sess = createSession('gemini', dir);
-  const writer = createHistoryWriter(sess.sessionHandle, dir, 'gemini', 'turn-1');
+  const sess = createSession('agy', dir);
+  const writer = createHistoryWriter(sess.sessionHandle, dir, 'agy', 'turn-1');
   writer.accept({ type: 'turn_started' });
   for (let i = 0; i < 20; i++) {
     writer.accept({ type: 'assistant_delta', messageId: 'msg-1', text: 'x'.repeat(1024) });

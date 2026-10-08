@@ -13,10 +13,10 @@ import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
 import { readBoundedFileSync } from '../../execution/stream.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
+import { configuredBackendCommand, probeCommand } from '../executable.js';
 
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
-const CODEX_EXE = process.env.CODEX_PATH || 'codex';
 /** Codex reads `config.toml` from `CODEX_HOME` when it is set (CUR-006). */
 export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml');
 
@@ -34,7 +34,6 @@ export interface CodexConfig {
   configError?: string;
 }
 
-const CODEX_CMD: { command: string; argsPrefix: string[] } = { command: CODEX_EXE, argsPrefix: [] };
 
 /**
  * Reads the top-level `model` and `model_reasoning_effort` keys of Codex's `config.toml`.
@@ -74,8 +73,10 @@ export async function probe(): Promise<AdapterProbeResult> {
   let installed = false;
   let version = 'unknown';
 
+  const resolved = probeCommand('codex', 'OpenAI Codex CLI');
+  if ('unresolved' in resolved) return resolved.unresolved;
   // runCommand reports a missing or failing CLI in its result; it does not reject.
-  const res = await runCommand(CODEX_CMD.command, [...CODEX_CMD.argsPrefix, '--version'], { timeoutMs: 5000 });
+  const res = await runCommand(resolved.command, ['--version'], { timeoutMs: 5000 });
   if (res.exitCode === 0) {
     installed = true;
     version = res.stdout.trim() || 'installed';
@@ -123,7 +124,7 @@ export async function probe(): Promise<AdapterProbeResult> {
     name: 'OpenAI Codex CLI',
     installed,
     version,
-    command: CODEX_CMD.command,
+    command: resolved.command,
     configPath: CODEX_CONFIG_PATH,
     config,
     // Models and their efforts come from the CLI itself (`listModels`), read on demand.
@@ -155,7 +156,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
   const app = createCodexAppSession({ collector, threadId: requestedThread, model, effort,
     cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent });
-  const result = await runCommand(process.env.CODEX_PATH || CODEX_EXE, args, {
+  const result = await runCommand(configuredBackendCommand('codex'), args, {
     cwd: options.cwd, env: turnEnvironment(), stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
     maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine: app.line,
   });
@@ -182,7 +183,7 @@ export const codexAdapter: CliAdapter = {
   name,
   probe,
   execute,
-  listModels: () => listCodexModels(process.env.CODEX_PATH || CODEX_EXE, VALID_REASONING_EFFORTS),
+  listModels: () => listCodexModels(configuredBackendCommand('codex'), VALID_REASONING_EFFORTS),
 };
 
 export default codexAdapter;

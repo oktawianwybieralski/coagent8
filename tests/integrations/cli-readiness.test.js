@@ -9,7 +9,7 @@ function profile(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-readiness-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const log = path.join(home, 'probe.jsonl');
-  const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: '', CODEX_PATH: undefined, CLAUDE_PATH: undefined, AGY_PATH: undefined, GEMINI_PATH: undefined,
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: '', CODEX_PATH: undefined, CLAUDE_PATH: undefined, AGY_PATH: undefined, AGY_PATH: undefined,
     CODEX_HOME: path.join(home, '.codex'), CLAUDE_CONFIG_DIR: undefined, CODEX_CONFIG_PATH: undefined, GEMINI_CLI_HOME: undefined,
     coagent8_EXTENSION_PATHS: '{}', SETUP_FIXTURE_HOME: home, SETUP_FIXTURE_PROBE_LOG: log };
   const options = { home, cwd: home, env, statusOnly: true, runtimeSource: 'not-used' };

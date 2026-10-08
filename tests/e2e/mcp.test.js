@@ -7,7 +7,7 @@ const {connect: connectStdio}=require('../helpers/stdio.cjs');
 const { readResult } = require('../helpers/result.cjs');
 
 function connect(dir) {
-  return connectStdio(process.execPath,['--require','tsx/cjs',path.resolve(__dirname, '../../src/index.ts')],{env:{...process.env,coagent8_DIR:dir,GEMINI_CLI_HOME:path.join(dir,'original-home'),GEMINI_PATH:path.resolve(__dirname, '../fixtures/gemini-cli/gemini.cjs')}});
+  return connectStdio(process.execPath,['--require','tsx/cjs',path.resolve(__dirname, '../../src/index.ts')],{env:{...process.env,coagent8_DIR:dir,GEMINI_CLI_HOME:path.join(dir,'original-home'),AGY_PATH:path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs')}});
 }
 test('MCP stdio exposes unified schema; two fixture turns, public history, fallback, validation, redacted errors and monotonic progress',async t=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'coagent8-mcp-'));
@@ -26,12 +26,12 @@ test('MCP stdio exposes unified schema; two fixture turns, public history, fallb
   const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,6);assert.ok(list.result.tools.some(x=>x.name==='issue'));
   assert.ok(list.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
   assert.match(init.result.instructions,/^Asks another local coding agent .* doctor lists the models/);
-  const definition=list.result.tools.find(x=>x.name==='consult');assert.ok(definition.inputSchema.properties.backend.enum.includes('gemini'));
+  const definition=list.result.tools.find(x=>x.name==='consult');assert.ok(definition.inputSchema.properties.backend.enum.includes('agy'));
   // CONTEXT-001: Claude Code shows the model only structuredContent when a result has one, so execution tools declare no outputSchema and return markdown only.
   for(const name of ['consult','review'])assert.equal(list.result.tools.find(x=>x.name===name).outputSchema,undefined,name);
   const invalid=await c.request('tools/call',{name:'analyze',arguments:{task:'x',file_paths:[2]}});assert.equal(invalid.result.isError,true);assert.equal(invalid.error,undefined);
   const bad=await c.request('tools/call',{name:'consult',arguments:{proposal:'x',workspace_path:path.join(dir,'token=fixtureSecret')}});assert.ok(!JSON.stringify(bad).includes('fixtureSecret'));
-  const first=await c.request('tools/call',{name:'consult',arguments:{proposal:'first public turn',backend:'gemini',workspace_path:dir},_meta:{progressToken:'turn-one'}});
+  const first=await c.request('tools/call',{name:'consult',arguments:{proposal:'first public turn',backend:'agy',workspace_path:dir},_meta:{progressToken:'turn-one'}});
   assert.equal(first.result.isError,false,JSON.stringify(first));
   assert.equal(first.result.structuredContent,undefined,'the answer and its footer reach every client in content');
   const handle=readResult(first.result).sessionHandle;
@@ -55,7 +55,7 @@ test('MCP active EOF cancels CLI and writes terminal history before exit',async 
   t.after(async()=>{await c.cleanup();fs.rmSync(dir,{recursive:true,force:true});});
   await c.request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
   c.proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-  const activeRequest=c.request('tools/call',{name:'consult',arguments:{proposal:'active cancellation',backend:'gemini',workspace_path:dir}}).catch(error=>({error}));
+  const activeRequest=c.request('tools/call',{name:'consult',arguments:{proposal:'active cancellation',backend:'agy',workspace_path:dir}}).catch(error=>({error}));
   const started=Date.now();while(!fs.existsSync(capture)){if(Date.now()-started>30000)throw new Error('Fixture did not start');await new Promise(resolve=>setTimeout(resolve,25));}
   c.proc.stdin.end();
   await c.waitForExit(20000);

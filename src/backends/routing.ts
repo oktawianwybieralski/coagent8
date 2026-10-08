@@ -17,7 +17,7 @@ export function providerForClient(clientName: string | undefined): ProviderId | 
   const name = (clientName || '').toLowerCase();
   if (name.includes('claude')) return 'claude';
   if (name.includes('codex')) return 'codex';
-  if (/antigravity|jetski|gemini|\bagy\b/.test(name)) return 'gemini';
+  if (/antigravity|jetski|gemini|\bagy\b/.test(name)) return 'agy';
   return null;
 }
 

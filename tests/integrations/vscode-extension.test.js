@@ -11,8 +11,15 @@ function affects(...changed) {
   return { affectsConfiguration(section) { return changed.some(key => key === section || key.startsWith(section + '.')); } };
 }
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, awaitState = false, announced = false, awaitNotifications = 0 } = {}) {
-  const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [];
+/**
+ * Activates the bundled extension against a scripted VS Code API.
+ * @param selected - Clients the user leaves checked in each picker; null dismisses it.
+ * @param buttons - Title-bar buttons (by tooltip) pressed in the first picker before it is answered.
+ * @param registrations - Registration state per client for Manage CLI Chat Registrations: `owned`,
+ * `outdated` (owned for another version), `manual` or `blocked`; others are absent.
+ */
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, command = 'coagent8.setup', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = [], welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, awaitState = false, awaitNotifications = 0, buttons = [], registrations = {}, extensionApiLags = false, commands = {}, alternatives = {} } = {}) {
+  const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [], pickers = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
   const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
@@ -24,6 +31,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const dispose = () => {};
   const vscode = {
     RelativePattern: class { constructor(base, pattern) { Object.assign(this, { base, pattern }); } },
+    ThemeIcon: class { constructor(id) { this.id = id; } },
     Uri: { file(file) { return { fsPath: file, toString() { return require('node:url').pathToFileURL(file).href; } }; } },
     env: {},
     extensions: { getExtension(id) { return vendorExtensions.includes(id) ? { extensionPath: path.resolve('vendor', id), extensionUri: { scheme: 'file' } } : undefined; }, onDidChange() { return { dispose }; } },
@@ -39,35 +47,49 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     lm: { registerMcpServerDefinitionProvider() { return { dispose }; } },
     commands: {
       registerCommand(name, handler) { handlers[name] = handler; return { dispose }; },
-      async executeCommand(...args) { requests.push(args); if (failInstall) throw new Error('fixture installation cancelled'); },
+      async executeCommand(...args) {
+        // A copy in this realm: option objects from the extension compare like plain values.
+        requests.push(JSON.parse(JSON.stringify(args)));
+        if (failInstall) throw new Error('fixture installation cancelled');
+        if (args[0] === 'workbench.extensions.installExtension' && !extensionApiLags && !vendorExtensions.includes(args[1])) vendorExtensions = [...vendorExtensions, args[1]];
+      },
     },
     window: {
       async showQuickPick(items, options) {
         assert.equal(options.ignoreFocusOut, true);
+        pickers.push({ title: options.title, placeholder: options.placeHolder, items: Array.from(items, item => ({ client: item.client, label: item.label, description: item.description })) });
         return selected === null ? undefined : items.filter(item => selected.includes(item.client));
       },
-      // The setup picker opens before the CLI checks and is answered once it is enabled.
+      // Pickers open before their CLI checks and are answered once they are enabled.
       createQuickPick() {
         const listeners = {};
-        let enabled = true;
+        let enabled = true, fills = 0;
+        const snapshot = { fills: 0 };
+        pickers.push(snapshot);
         return {
-          items: [], selectedItems: [], busy: false, ignoreFocusOut: false, canSelectMany: false, dispose,
+          items: [], selectedItems: [], busy: false, ignoreFocusOut: false, canSelectMany: false, buttons: [], dispose,
           show() { events.push('show'); assert.equal(this.busy, true); assert.equal(enabled, false); },
+          hide() { listeners.hide(); },
           onDidAccept(listener) { listeners.accept = listener; return { dispose }; },
           onDidHide(listener) { listeners.hide = listener; return { dispose }; },
+          onDidTriggerButton(listener) { listeners.button = listener; return { dispose }; },
+          onDidTriggerItemButton(listener) { listeners.itemButton = listener; return { dispose }; },
           get enabled() { return enabled; },
           set enabled(value) {
             enabled = value;
             if (!value) return;
             setImmediate(() => {
               assert.equal(this.ignoreFocusOut, true); assert.equal(this.canSelectMany, true); assert.equal(this.busy, false);
-              assert.deepEqual(Array.from(this.items, item => item.label), ['Codex CLI', 'Claude Code CLI', 'Antigravity CLI']);
-              for (const item of this.items) {
-                const pending = item.client === 'agy' && vendorExtensions.includes('google.google-antigravity');
-                assert.match(item.description, blocked.includes(item.client) ? /^Blocked/ : installed.includes(item.client) ? /^Available/ : pending ? /^Downloading/ : /^Missing/);
+              Object.assign(snapshot, { title: this.title, placeholder: this.placeholder, fills: ++fills, items: Array.from(this.items, item => ({ client: item.client, label: item.label, description: item.description, detail: item.detail, buttons: Array.from(item.buttons ?? [], button => button.tooltip) })), selected: Array.from(this.selectedItems, item => item.client) });
+              const next = pickers.length === 1 ? buttons[fills - 1] : undefined;
+              // A button named `client:tooltip` is one on that CLI's line.
+              if (next?.includes(':')) {
+                const [client, tooltip] = next.split(':');
+                const item = this.items.find(entry => entry.client === client);
+                listeners.itemButton({ item, button: item.buttons.find(button => button.tooltip === tooltip) });
+                return;
               }
-              // Without a remembered choice, the CLIs that are already ready are selected.
-              assert.deepEqual(Array.from(this.selectedItems, item => item.client), ['codex', 'claude', 'agy'].filter(client => (remembered ?? installed).includes(client)));
+              if (next) { listeners.button(this.buttons.find(button => button.tooltip === next)); if (next !== 'Check Again') this.enabled = true; return; }
               if (selected === null) { listeners.hide(); return; }
               this.selectedItems = this.items.filter(item => selected.includes(item.client));
               listeners.accept();
@@ -97,19 +119,22 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     bundle: true, write: false, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
     plugins: [{ name: 'isolated-setup', setup(build) {
       build.onLoad({ filter: /[\\/]integrations[\\/]cleanup\.ts$/ }, () => ({
-        contents: "export async function cleanupClients(options) { globalThis.recordCleanup(options.apply); return { token: 'fixture-preview', results: [{client:'claude',action:options.apply?'removed':'remove',message:'fixture'}] }; }", loader: 'js',
+        contents: "export async function cleanupClients(options) { globalThis.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; }", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({
-        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: 'fixture-' + client, argsPrefix: [], source: 'native' }; } export async function setupClients(options) { globalThis.recordEvent('status'); if (options.origin !== 'vscode-extension') throw new Error('missing extension origin'); if (!options.statusOnly) { globalThis.recordClients(options.clients); return globalThis.statuses.map(status => ({ ...status, action: 'installed' })); } return globalThis.statuses.map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
+        contents: "export const SETUP_CLIENTS = ['codex', 'claude', 'agy']; export const SETUP_PROVIDERS = { codex: 'codex', claude: 'claude', agy: 'agy' }; export function clientSource(client, cli) { return globalThis.vendorRoots.some(root => cli.command.startsWith(root)) ? { kind: 'vscode-extension', executable: 'vscode-extension' } : { kind: 'standalone', executable: require('node:path').resolve(cli.command) }; } export function alternativeSource(client) { return globalThis.alternatives[client]; } const appeared = new Set(); export function resolveSetupClient(client) { if (!globalThis.discoverable.includes(client)) return null; appeared.add(client); return { command: globalThis.commands[client] ?? 'fixture-' + client, argsPrefix: [], source: 'native' }; } export function readRegistrations(options) { globalThis.recordEvent('registrations'); if (!options.runtimeSource) throw new Error('missing runtime'); return SETUP_CLIENTS.map(client => { const state = globalThis.registrationStates[client]; return { client, state: state === 'outdated' ? 'owned' : state ?? 'absent', current: state !== 'outdated', message: state === 'blocked' ? 'Malformed fixture configuration.' : 'fixture' }; }); } export async function setupClients(options) { globalThis.recordEvent(options.statusOnly ? 'status' : 'setup'); if (options.origin !== 'vscode-extension') throw new Error('missing extension origin'); if (!options.statusOnly) { globalThis.recordClients(options.clients); return options.clients.map(client => ({ ...globalThis.statuses.find(status => status.client === client), action: globalThis.registrationStates[client] === 'outdated' ? 'updated' : 'installed' })); } return globalThis.statuses.filter(status => options.clients.includes(status.client)).map(status => !status.installed && appeared.has(status.client) ? { ...status, installed: true, compatibility: 'supported', authentication: 'unknown', ready: false } : status); }", loader: 'js',
       }));
     } }],
   });
   const module = { exports: {} };
-  const statuses = ['codex', 'claude', 'agy'].map(client => ({ client, installed: installed.includes(client), compatibility: installed.includes(client) ? 'supported' : 'unknown', authentication: 'authenticated', ready: installed.includes(client), registered: false, action: blocked.includes(client) ? 'blocked' : 'missing', message: 'fixture' }));
+  const statuses = ['codex', 'claude', 'agy'].map(client => {
+    const present = installed.includes(client), signedIn = !signedOut.includes(client);
+    return { client, installed: present, compatibility: present ? 'supported' : 'unknown', authentication: signedIn ? 'authenticated' : 'unauthenticated', ready: present && signedIn, registered: registrations[client] !== undefined, action: blocked.includes(client) ? 'blocked' : 'missing', message: 'fixture' };
+  });
   vm.runInNewContext(output.outputFiles[0].text, {
-    module, exports: module.exports, process, Buffer, statuses, discoverable, setTimeout, clearTimeout, setInterval, clearInterval,
-    recordClients(clients) { registrations.push(Array.from(clients)); },
-    recordCleanup(apply) { cleanupCalls.push(apply); },
+    module, exports: module.exports, process, Buffer, statuses, discoverable, commands, alternatives, vendorRoots: ['openai.chatgpt', 'anthropic.claude-code', 'google.google-antigravity'].map(id => path.resolve('vendor', id)), registrationStates: registrations, setTimeout, clearTimeout, setInterval, clearInterval,
+    recordClients(clients) { registrationsWritten.push(Array.from(clients)); },
+    recordCleanup(call) { cleanupCalls.push({ clients: call.clients && Array.from(call.clients), apply: call.apply, ...(call.uninstall ? { origin: call.origin, uninstall: true } : {}), ...(call.actor ? { actor: call.actor } : {}) }); },
     recordEvent(name) { events.push(name); },
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
@@ -117,8 +142,8 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   // Onboarding state lives in the extension's global storage, which VS Code deletes on uninstall.
   const storage = path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp');
   const stateFile = path.join(storage, 'setup-state.json');
-  const seeded = { ...(remembered === undefined ? {} : { setupClients: remembered }), ...(dismissed ? { setupDismissed: true } : {}), ...(announced ? { readyAnnounced: true } : {}) };
-  if (Object.keys(seeded).length) { fs.mkdirSync(storage, { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(seeded)); }
+  const seeded = storedState ?? (welcomed ? { welcomed: true } : undefined);
+  if (seeded) { fs.mkdirSync(storage, { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(seeded)); }
   const readState = () => fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined;
   const initialState = readState();
   fs.mkdirSync(path.join(extensionRoot, 'dist'));
@@ -147,64 +172,36 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     }
     const finalState = readState();
     const state = finalState === undefined ? undefined : JSON.parse(finalState);
-    const stateChanged = finalState !== initialState;
-    const selections = stateChanged && state?.setupClients ? Array.from(state.setupClients) : undefined;
     const storageFiles = fs.existsSync(storage) ? fs.readdirSync(storage) : [];
-    return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, state, stateChanged, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
+    return { registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, pickers, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
   } finally { fs.rmSync(extensionRoot, { recursive: true, force: true }); }
 }
 
-test('welcome persists across legacy setupOffered profiles until ready or explicitly dismissed', async () => {
-  const first = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true });
-  assert.equal(first.notifications.length, 1);
-  assert.deepEqual(first.notifications[0].actions, ['Set Up CLIs', "Don't Show Again"]);
-  assert.equal(first.stateChanged, false);
-  assert.equal((await runSetupPicker({ installed: [], dismissed: false, activationOnly: true })).notifications.length, 1);
-  const dismissed = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true, action: "Don't Show Again", awaitState: true });
-  assert.deepEqual(dismissed.state, { setupDismissed: true });
-  const suppressed = await runSetupPicker({ installed: [], dismissed: true, activationOnly: true });
-  assert.equal(suppressed.notifications.length, 0);
-  assert.equal(suppressed.events.length, 0, 'explicit dismissal avoids startup probes');
-  const ready = await runSetupPicker({ installed: ['codex'], dismissed: false, activationOnly: true, awaitState: true, awaitNotifications: 1 });
-  assert.equal(ready.notifications.length, 1, 'ready CLIs are announced once instead of the welcome');
-  assert.match(ready.notifications[0].message, /^CoAgent8 is ready with Codex CLI. /);
-  assert.deepEqual(ready.notifications[0].actions, ['Show MCP Servers']);
-  assert.deepEqual(ready.state, { readyAnnounced: true });
-  const again = await runSetupPicker({ installed: ['codex'], dismissed: false, activationOnly: true, announced: true });
-  assert.equal(again.notifications.length, 0, 'the ready notice is shown once');
+test('the first activation checks the CLIs once and shows one notice; later activations start nothing', async () => {
+  const none = await runSetupPicker({ installed: [], welcomed: false, activationOnly: true, awaitState: true, awaitNotifications: 1 });
+  assert.equal(none.notifications.length, 1);
+  assert.deepEqual(none.notifications[0].actions, ['Set Up CLIs']);
+  assert.deepEqual(none.state, { welcomed: true }, 'recorded before the notice is answered');
+  const ready = await runSetupPicker({ installed: ['codex'], welcomed: false, activationOnly: true, awaitState: true, awaitNotifications: 1 });
+  assert.match(ready.notifications[0].message, /^CoAgent8 is ready with Codex CLI\. .* Set Up CLIs installs or signs in Claude Code CLI, Antigravity CLI and adds CoAgent8 to the chats of Codex CLI\.$/);
+  assert.deepEqual(ready.notifications[0].actions, ['Set Up CLIs', 'Show MCP Servers'], 'one list covers the missing CLIs and the CLI chats');
   assert.equal(ready.terminals.length, 0);
   assert.equal(ready.reveals.length, 0);
+  const registered = await runSetupPicker({ welcomed: false, activationOnly: true, awaitNotifications: 1, registrations: { codex: 'owned', claude: 'owned', agy: 'owned' } });
+  assert.deepEqual(registered.notifications[0].actions, ['Show MCP Servers'], 'nothing to offer when every CLI is ready and in its chat');
+  const setUp = await runSetupPicker({ installed: ['codex'], welcomed: false, activationOnly: true, awaitNotifications: 1, action: 'Set Up CLIs' });
+  assert.deepEqual(setUp.requests, [['coagent8.setup']]);
+  for (const storedState of [{ welcomed: true }]) {
+    const later = await runSetupPicker({ installed: [], activationOnly: true, storedState });
+    assert.equal(later.notifications.length, 0, JSON.stringify(storedState));
+    assert.equal(later.events.length, 0, 'no CLI check after the first activation');
+  }
 });
 
-test('onboarding state from earlier builds is removed from globalState, which VS Code keeps after uninstall', async () => {
-  const result = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true, legacyState: { setupClients: ['codex'], setupOffered: true, setupDismissed: true, unrelated: 'kept' } });
-  assert.deepEqual(result.legacyUpdates, ['setupClients', 'setupOffered', 'setupDismissed'].map(key => ({ key, value: undefined })));
+test('the extension keeps no state in globalState, which VS Code keeps after uninstall', async () => {
+  const result = await runSetupPicker({ installed: ['codex'], welcomed: false, activationOnly: true, awaitNotifications: 1, legacyState: { unrelated: 'kept' } });
+  assert.deepEqual(result.legacyUpdates, []);
   assert.deepEqual([...result.legacy], [['unrelated', 'kept']]);
-  assert.equal(result.notifications.length, 1, 'a legacy dismissal does not suppress the first-install welcome');
-  assert.deepEqual((await runSetupPicker({ installed: [], dismissed: false, activationOnly: true })).legacyUpdates, [], 'nothing to remove');
-});
-
-test('setup reset clears only remembered choices and dismissal, rechecks readiness, and cancellation preserves state', async t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-setup-reset-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const file = path.join(directory, 'config.json');
-  const bytes = '{ "schemaVersion": 1, "defaultBackend": "codex" }\n';
-  fs.writeFileSync(file, bytes);
-  const options = { command: 'coagent8.resetSetupState', remembered: ['codex'], installed: [], configPath: file };
-  const cancelled = await runSetupPicker(options);
-  assert.equal(cancelled.stateChanged, false);
-  assert.deepEqual(cancelled.state, { setupClients: ['codex'], setupDismissed: true });
-  const reset = await runSetupPicker({ ...options, action: 'Reset Setup State' });
-  assert.equal(reset.state, undefined, 'every remembered choice is removed');
-  assert.deepEqual(reset.storageFiles, [], 'no lock or temporary file remains');
-  assert.ok(reset.notifications.some(item => item.actions.includes("Don't Show Again")), 'reset offers welcome again when no CLI is ready');
-  assert.deepEqual(reset.registrations, []);
-  assert.deepEqual(reset.cleanupCalls, []);
-  assert.deepEqual(reset.requests, [], 'no editor restart');
-  assert.equal(reset.terminals.length, 0);
-  assert.equal(fs.readFileSync(file, 'utf8'), bytes);
-  const ready = await runSetupPicker({ ...options, installed: ['codex'], action: 'Reset Setup State' });
-  assert.equal(ready.notifications.some(item => item.actions.includes("Don't Show Again")), false, 'a ready CLI suppresses welcome after reset');
 });
 
 test('Open Configuration creates defaults only when absent and opens malformed existing JSON unchanged', async () => {
@@ -303,31 +300,103 @@ test('settings and filesystem MCP changes invalidate provider definitions withou
   assert.equal(saved.terminals.length, 0);
 });
 
-test('CLI selection remembers full-label backend choices without authorizing external registration', async () => {
-  const result = await runSetupPicker();
-  assert.deepEqual(result.selections, ['agy']);
+test('the setup list opens before its checks and checks exactly the CLIs that have CoAgent8 in their chat', async () => {
+  const result = await runSetupPicker({ signedOut: ['claude'], registrations: { codex: 'owned', agy: 'manual' }, selected: ['codex', 'agy'] });
+  assert.deepEqual(result.events.slice(0, 3), ['show', 'status', 'registrations'], 'feedback appears before the bounded checks finish');
+  const [picker] = result.pickers;
+  assert.deepEqual(picker.items.map(item => [item.label, item.description]), [
+    ['Codex CLI', 'Ready · in its chat'],
+    ['Claude Code CLI', 'Sign-in needed (unauthenticated) · not in its chat'],
+    ['Antigravity CLI', 'Ready · in its chat (manual entry, kept)'],
+  ]);
+  assert.deepEqual(picker.selected, ['codex', 'agy'], 'checked means CoAgent8 is in the chat; a manual entry counts');
+  assert.match(picker.placeholder, /^Checked: CoAgent8 uses the CLI and is in its chat\./);
+  assert.deepEqual(result.notifications, [], 'an unchanged list closes silently');
   assert.deepEqual(result.registrations, []);
-});
-test('the setup picker opens before CLI checks and the setup channel never takes focus', async () => {
-  const result = await runSetupPicker({ installed: [], selected: ['claude'], remembered: ['claude'], action: 'Install Standalone CLI' });
-  assert.deepEqual(result.events.slice(0, 2), ['show', 'status'], 'feedback appears before the bounded checks finish');
+  assert.deepEqual(result.cleanupCalls, []);
+  assert.deepEqual(result.terminals, []);
   assert.ok(result.reveals.every(preserveFocus => preserveFocus === true), 'revealing setup output must not dismiss the picker');
-  const shown = await runSetupPicker({ command: 'coagent8.refreshCliStatus', action: 'Show Details' });
-  assert.deepEqual(shown.reveals, [true]);
 });
-test('setup without changes checks once and logs one readable line; details only on request', async () => {
-  const quiet = await runSetupPicker({ selected: ['codex', 'claude', 'agy'] });
+test('a checked CLI that is missing or signed out gets its installation or sign-in offered', async () => {
+  const result = await runSetupPicker({ installed: ['codex'], registrations: { codex: 'owned', claude: 'manual' }, selected: ['codex', 'claude'] });
+  assert.deepEqual(result.pickers[0].items.find(item => item.client === 'claude').description, 'Not installed · in its chat (manual entry, kept)');
+  assert.match(result.notifications[0].message, /^Claude Code CLI is not installed\./, 'a checked CLI is meant to work');
+  assert.deepEqual(result.registrations, [], 'a manual entry is never replaced');
+});
+test('each CLI shows where it is installed from', async () => {
+  const extension = path.join(path.resolve('vendor', 'openai.chatgpt'), 'bin', 'codex.exe');
+  const result = await runSetupPicker({ discoverable: ['codex', 'claude'], commands: { codex: extension }, vendorExtensions: ['openai.chatgpt'], storedState: { welcomed: true, installedExtensions: ['openai.chatgpt'], installedClis: ['claude'] }, installed: ['codex', 'claude'], selected: null });
+  assert.deepEqual(result.pickers[0].items.map(item => item.detail), [
+    'Codex (OpenAI) VS Code extension, installed by CoAgent8',
+    `Standalone CLI - ${path.resolve('fixture-claude')}, installed by CoAgent8`,
+    undefined,
+  ]);
+});
+test('a line with a second installation switches the CLI in config.json and refreshes the list', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-executable-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'config.json');
+  const result = await runSetupPicker({ installed: ['claude'], discoverable: ['claude'], configPath: file, selected: null,
+    alternatives: { claude: { kind: 'vscode-extension', executable: 'vscode-extension' } }, buttons: ['claude:Use Claude Code (Anthropic) VS Code extension'] });
+  const [picker] = result.pickers;
+  const claude = picker.items.find(item => item.client === 'claude');
+  // The snapshot is the list after the switch: the fixture keeps offering the other installation.
+  assert.match(claude.detail, /^Standalone CLI - .*fixture-claude, set in config\.json; also: Claude Code \(Anthropic\) VS Code extension$/);
+  assert.deepEqual(picker.items.map(item => item.buttons.length), [0, 1, 0], 'only a CLI with two installations has the button');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).backends.claude.executable, 'vscode-extension');
+  assert.equal(picker.fills, 2, 'the list is refreshed after the switch');
+  assert.match(result.reports.at(-1), /Set Up Coding CLIs \(Claude Code CLI switched\)/);
+});
+test('setup with nothing changed ends silently: one check, one log line, no notice', async () => {
+  const quiet = await runSetupPicker({ registrations: { codex: 'owned', claude: 'owned', agy: 'owned' }, selected: ['codex', 'claude', 'agy'] });
+  assert.deepEqual(quiet.errors, []);
   assert.equal(quiet.events.filter(event => event === 'status').length, 1, 'no second identical check');
+  assert.deepEqual(quiet.notifications, []);
+  assert.deepEqual(quiet.requests, []);
   assert.equal(quiet.reports.length, 1);
-  assert.match(quiet.reports[0], /^\[\d\d:\d\d:\d\d\] Set Up Coding CLIs - codex: ready; claude: ready; agy: ready$/);
-  const detailed = await runSetupPicker({ selected: ['codex'], action: 'Show Details' });
-  assert.equal(detailed.reports.length, 2);
-  assert.equal(JSON.parse(detailed.reports[1]).length, 3, 'full evidence follows the summary line');
+  assert.match(quiet.reports[0], /^\[\d\d:\d\d:\d\d\] Set Up Coding CLIs - codex: ready, added to its chat; claude: ready, added to its chat; agy: ready, added to its chat$/);
+  const unchecked = await runSetupPicker({ selected: [] });
+  assert.deepEqual(unchecked.notifications, [], 'leaving unregistered CLIs unchecked changes nothing');
 });
-test('the summary offers native-host registration for ready CLIs without writing it', async () => {
-  const result = await runSetupPicker({ command: 'coagent8.refreshCliStatus', action: 'Register in Chat Hosts' });
-  assert.deepEqual(result.requests, [['coagent8.registerNativeHosts']], 'the registration command keeps its own selection and confirmation');
-  assert.deepEqual(result.registrations, []);
+test('the title-bar buttons check again and show details without closing the picker', async () => {
+  const result = await runSetupPicker({ buttons: ['Show Details', 'Check Again'], selected: [] });
+  assert.deepEqual(result.reveals, [true], 'details are revealed without taking focus');
+  assert.equal(JSON.parse(result.reports[1]).length, 3, 'full evidence follows the summary line');
+  assert.equal(result.events.filter(event => event === 'status').length, 2);
+  assert.match(result.reports[2], /Set Up Coding CLIs \(Check Again\) - /);
+  assert.equal(result.pickers[0].fills, 3);
+});
+test('checking a ready CLI adds CoAgent8 to its chat without a modal and offers to restart its extension', async () => {
+  const result = await runSetupPicker({ selected: ['claude'], vendorExtensions: ['anthropic.claude-code'], action: 'Restart Extensions' });
+  assert.deepEqual(result.registrations, [['claude']]);
+  assert.deepEqual(result.cleanupCalls, []);
+  assert.deepEqual(result.warnings, [], 'accepting the list is the confirmation');
+  assert.match(result.notifications.at(-1).message, /^CoAgent8 added to the chats of Claude Code CLI\. Restart extensions so their VS Code chats load it/);
+  assert.deepEqual(result.notifications.at(-1).actions, ['Restart Extensions', 'Show Details']);
+  assert.deepEqual(result.requests, [['workbench.action.restartExtensionHost']]);
+  assert.deepEqual(result.reveals, [], 'the outcome is logged without opening the output');
+  const terminalOnly = await runSetupPicker({ selected: ['claude'] });
+  assert.match(terminalOnly.notifications.at(-1).message, /^CoAgent8 added to the chats of Claude Code CLI\. New terminal sessions have it\.$/);
+  assert.deepEqual(terminalOnly.notifications.at(-1).actions, ['Show Details'], 'no restart without a vendor chat extension');
+});
+test('unchecking removes only a CoAgent8-owned entry, tagged for uninstall; an outdated entry is updated', async () => {
+  const result = await runSetupPicker({ registrations: { codex: 'owned', claude: 'outdated', agy: 'manual' }, selected: ['claude'], vendorExtensions: ['openai.chatgpt'] });
+  assert.match(result.pickers[0].items.find(item => item.client === 'claude').description, /in its chat for another version; stays checked to update$/);
+  assert.deepEqual(result.cleanupCalls, [{ clients: ['codex'], apply: undefined, actor: 'vscode-extension' }, { clients: ['codex'], apply: 'fixture-preview', actor: 'vscode-extension' }], 'the unchecked manual entry is kept');
+  assert.deepEqual(result.registrations, [['claude']]);
+  assert.match(result.notifications.at(-1).message, /^CoAgent8 updated in the chats of Claude Code CLI\. CoAgent8 removed from the chats of Codex CLI\. Restart extensions/);
+  assert.deepEqual(result.progress, ['Updating CoAgent8 in CLI chats...']);
+});
+test('a checked CLI that needs a sign-in is signed in on request and added to its chat', async () => {
+  const result = await runSetupPicker({ signedOut: ['codex'], discoverable: ['codex'], selected: ['codex'], action: ['Open Sign-in Command', 'Check Now'] });
+  assert.equal(result.terminals.length, 1);
+  assert.match(result.terminals[0].options.name, /^Sign in to Codex CLI/);
+  assert.equal(result.terminals[0].execute, false);
+  assert.equal(result.events.filter(event => event === 'status').length, 2, 'checked again after Check Now');
+  assert.deepEqual(result.registrations, [['codex']], 'registration needs no sign-in');
+  assert.deepEqual(result.notifications.at(-1).actions, ['Show Details']);
+  const later = await runSetupPicker({ signedOut: ['codex'], discoverable: ['codex'], selected: ['codex'], action: 'Open Sign-in Command' });
+  assert.equal(later.events.filter(event => event === 'status').length, 1, 'no check while the sign-in may still be running');
 });
 test('missing Antigravity offers official installer without running it or registering a host', async () => {
   const result = await runSetupPicker({ installed: ['claude'], selected: ['agy'], action: 'Install Standalone CLI' });
@@ -338,10 +407,10 @@ test('missing Antigravity offers official installer without running it or regist
   assert.equal(result.terminals[0].options.shellPath, process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
 });
 test('vendor extension installation is explicit; cancellation/failure and override errors remain retryable', async () => {
-  const installed = await runSetupPicker({ installed: [], selected: ['codex'], action: 'Install Vendor Extension' });
-  assert.deepEqual(installed.requests, [['workbench.extensions.installExtension', 'openai.chatgpt']]);
+  const installed = await runSetupPicker({ installed: [], selected: ['codex'], action: 'Install VS Code Extension' });
+  assert.deepEqual(installed.requests, [['workbench.extensions.installExtension', 'openai.chatgpt', { donotSync: true }]], 'machine-scoped: VS Code asks nothing about Settings Sync');
   assert.deepEqual(installed.registrations, []);
-  const failed = await runSetupPicker({ installed: [], selected: ['codex', 'claude'], action: 'Install Vendor Extension', failInstall: true });
+  const failed = await runSetupPicker({ installed: [], selected: ['codex', 'claude'], action: 'Install VS Code Extension', failInstall: true });
   assert.equal(failed.errors.length, 2);
   assert.equal(failed.requests.length, 2, 'one failure must not suppress another backend action');
   const overridden = await runSetupPicker({ installed: ['claude'], blocked: ['codex'], selected: ['codex', 'agy'], action: 'Install Standalone CLI' });
@@ -355,19 +424,21 @@ test('an installed Google Antigravity extension is awaited instead of installing
   assert.equal(ready.terminals.length, 1, 'only the sign-in command follows');
   assert.match(ready.terminals[0].options.name, /^Sign in to Antigravity CLI/);
   assert.equal(ready.terminals[0].execute, false);
-  assert.deepEqual(ready.registrations, []);
+  assert.deepEqual(ready.registrations, [['agy']], 'the CLI installed here is added to its chat at once');
+  assert.deepEqual(ready.notifications.at(-1).actions, ['Restart Extensions', 'Show Details'], 'one closing notice offers the restart');
+  assert.match(ready.notifications.at(-1).message, /CoAgent8 added to the chats of Antigravity CLI\. Restart extensions/);
   const pending = await runSetupPicker({ installed: [], selected: ['agy'], vendorExtensions: ['google.google-antigravity'] });
   assert.deepEqual(pending.requests, []);
   assert.equal(pending.terminals.length, 0);
   assert.match(pending.warnings.at(-1), /Open the Antigravity view once/);
 });
 test('missing agy offers the Google extension, then waits for its CLI before sign-in', async () => {
-  const result = await runSetupPicker({ installed: [], selected: ['agy'], discoverable: ['agy'], action: ['Install Vendor Extension', 'Open Sign-in Command'] });
-  assert.deepEqual(result.requests, [['workbench.extensions.installExtension', 'google.google-antigravity']]);
+  const result = await runSetupPicker({ installed: [], selected: ['agy'], discoverable: ['agy'], action: ['Install VS Code Extension', 'Open Sign-in Command'] });
+  assert.deepEqual(result.requests, [['workbench.extensions.installExtension', 'google.google-antigravity', { donotSync: true }]]);
   assert.match(result.progress[0], /Antigravity CLI from the Google Antigravity extension/);
   assert.equal(result.terminals.length, 1);
   assert.match(result.terminals[0].options.name, /^Sign in to Antigravity CLI/);
-  assert.deepEqual(result.registrations, []);
+  assert.deepEqual(result.registrations, [['agy']]);
 });
 test('a standalone installer is checked on request and a stale PATH asks for a reload', async () => {
   const stale = await runSetupPicker({ installed: [], selected: ['claude'], action: ['Install Standalone CLI', 'Check Now'] });
@@ -381,31 +452,97 @@ test('a standalone installer is checked on request and a stale PATH asks for a r
   const found = await runSetupPicker({ installed: [], selected: ['claude'], discoverable: ['claude'], action: ['Install Standalone CLI', 'Check Now', 'Open Sign-in Command'] });
   assert.equal(found.terminals.length, 2, 'installer, then sign-in');
   assert.match(found.terminals[1].options.name, /^Sign in to Claude Code CLI/);
-  assert.deepEqual(found.registrations, []);
+  assert.deepEqual(found.registrations, [['claude']], 'a standalone CLI found after Check Now is added too');
+  assert.deepEqual(found.notifications.at(-1).actions, ['Show Details'], 'no restart without a vendor chat extension');
 });
-test('remembered selections and picker/installer cancellation do not change registrations', async () => {
-  const cancelled = await runSetupPicker({ installed: ['claude'], selected: null, remembered: ['codex', 'claude'] });
-  assert.equal(cancelled.selections, undefined); assert.deepEqual(cancelled.registrations, []); assert.equal(cancelled.terminals.length, 0);
-  const declined = await runSetupPicker({ installed: ['claude'], selected: ['codex', 'claude'] });
-  assert.deepEqual(declined.selections, ['codex', 'claude']); assert.equal(declined.terminals.length, 0); assert.deepEqual(declined.registrations, []);
+test('setup and picker cancellation store no selection and change no registration', async () => {
+  const cancelled = await runSetupPicker({ installed: ['claude'], selected: null });
+  assert.equal(cancelled.stateChanged, false); assert.deepEqual(cancelled.registrations, []); assert.equal(cancelled.terminals.length, 0);
+  const declined = await runSetupPicker({ installed: [], selected: ['codex'] });
+  assert.deepEqual(declined.notifications.map(item => item.actions), [['Install VS Code Extension', 'Install Standalone CLI']], 'a dismissed installation offer ends without a notice');
+  assert.equal(declined.stateChanged, false); assert.equal(declined.terminals.length, 0); assert.deepEqual(declined.registrations, []);
 });
-test('native-host configuration is written only through the separate confirmed action', async () => {
-  const declined = await runSetupPicker({ command: 'coagent8.registerNativeHosts', selected: ['claude'] });
-  assert.deepEqual(declined.registrations, []);
-  const accepted = await runSetupPicker({ command: 'coagent8.registerNativeHosts', selected: ['claude'], action: 'Register Selected Hosts' });
-  assert.deepEqual(accepted.registrations, [['claude']]);
-  assert.match(accepted.notifications.at(-1).message, /Restart the affected native chat hosts/);
+
+
+test('setup records only the vendor extensions it installed', async () => {
+  const added = await runSetupPicker({ installed: [], selected: ['codex'], action: 'Install VS Code Extension' });
+  assert.deepEqual(added.state, { welcomed: true, installedExtensions: ['openai.chatgpt'] });
+  const lagging = await runSetupPicker({ installed: [], selected: ['claude'], action: 'Install VS Code Extension', extensionApiLags: true });
+  assert.deepEqual(lagging.state, { welcomed: true, installedExtensions: ['anthropic.claude-code'] }, 'recorded although the extension API does not list it yet');
+  const existing = await runSetupPicker({ installed: [], selected: ['codex'], vendorExtensions: ['openai.chatgpt'], action: 'Install VS Code Extension' });
+  assert.deepEqual(existing.state, { welcomed: true }, 'an extension present before setup is never claimed');
 });
-test('refresh checks all CLI statuses without opening installers or registering hosts', async () => {
-  const result = await runSetupPicker({ command: 'coagent8.refreshCliStatus' });
-  assert.deepEqual(result.registrations, []); assert.equal(result.terminals.length, 0); assert.equal(result.reports.length, 1);
+test('a standalone installer setup opened counts as installed once a check finds the CLI', async () => {
+  const opened = await runSetupPicker({ installed: [], selected: ['codex'], action: 'Install Standalone CLI' });
+  assert.deepEqual(opened.state, { welcomed: true, pendingClis: ['codex'] }, 'not installed until a check finds it');
+  const found = await runSetupPicker({ installed: [], selected: ['codex'], discoverable: ['codex'], action: ['Install Standalone CLI', 'Check Now'] });
+  assert.deepEqual(found.state, { welcomed: true, installedClis: ['codex'] });
+  const reloaded = await runSetupPicker({ storedState: { welcomed: true, pendingClis: ['claude', 'agy'] }, installed: ['claude'], selected: [] });
+  assert.deepEqual(reloaded.state, { welcomed: true, pendingClis: ['agy'], installedClis: ['claude'] }, 'a check after a reload also counts');
 });
-test('cleanup cancellation is read-only and confirmation applies the exact preview token', async () => {
-  const declined = await runSetupPicker({ command: 'coagent8.cleanup' });
-  assert.deepEqual(declined.cleanupCalls, [undefined]);
-  const accepted = await runSetupPicker({ command: 'coagent8.cleanup', action: 'Remove Owned Registrations' });
-  assert.deepEqual(accepted.cleanupCalls, [undefined, 'fixture-preview']);
-  assert.deepEqual(accepted.selections, []);
+test('uninstall without dependencies installed by CoAgent8 asks once, removes registrations, then the extension', async () => {
+  const declined = await runSetupPicker({ command: 'coagent8.uninstall', vendorExtensions: ['openai.chatgpt'] });
+  assert.deepEqual(declined.pickers, [], 'a vendor extension the user installed is not offered');
+  assert.equal(declined.warnings.length, 1);
+  assert.deepEqual(declined.requests, []);
+  assert.deepEqual(declined.cleanupCalls, []);
+  const accepted = await runSetupPicker({ command: 'coagent8.uninstall', action: 'Uninstall' });
+  assert.deepEqual(accepted.cleanupCalls, [{ clients: undefined, apply: undefined, origin: 'vscode-extension', uninstall: true }, { clients: undefined, apply: 'fixture-preview', origin: 'vscode-extension', uninstall: true }]);
+  assert.deepEqual(accepted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
+  assert.match(accepted.notifications.at(-1).message, /^CoAgent8 uninstalled\. Quit VS Code and start it again to finish\.$/);
+  assert.deepEqual(accepted.notifications.at(-1).actions, ['Quit VS Code']);
+});
+test('removing dependencies installed by CoAgent8 needs their selection and two confirmations', async () => {
+  const options = { command: 'coagent8.uninstall', vendorExtensions: ['openai.chatgpt', 'anthropic.claude-code'], storedState: { welcomed: true, installedExtensions: ['openai.chatgpt', 'google.google-antigravity'] }, selected: ['codex'] };
+  const once = await runSetupPicker({ ...options, action: 'Uninstall' });
+  assert.deepEqual(once.pickers[0].items.map(item => item.client), ['codex'], 'only recorded extensions that are still installed');
+  assert.equal(once.warnings.length, 2);
+  assert.match(once.warnings[1], /^Remove Codex \(OpenAI\)\?$/);
+  assert.deepEqual(once.requests, [], 'declining the second confirmation changes nothing');
+  assert.deepEqual(once.cleanupCalls, []);
+  const twice = await runSetupPicker({ ...options, action: ['Uninstall', 'Remove'] });
+  assert.deepEqual(twice.requests, [['workbench.extensions.uninstallExtension', 'openai.chatgpt'], ['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
+  assert.match(twice.notifications.at(-1).message, /^CoAgent8 and Codex \(OpenAI\) uninstalled\./);
+  const kept = await runSetupPicker({ ...options, selected: [], action: 'Uninstall' });
+  assert.equal(kept.warnings.length, 1, 'no second confirmation when no dependency is selected');
+  assert.deepEqual(kept.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
+  assert.equal((await runSetupPicker({ ...options, selected: null })).warnings.length, 0, 'dismissing the list cancels');
+});
+
+test('removing the Antigravity extension CoAgent8 installed also deletes the agy it downloaded', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-home-'));
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  // os.homedir() follows these; the real profile's agy must never be touched.
+  process.env.HOME = home; process.env.USERPROFILE = home;
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const agy = path.join(home, '.gemini', 'bin', process.platform === 'win32' ? 'agy.exe' : 'agy');
+  fs.mkdirSync(path.dirname(agy), { recursive: true });
+  fs.writeFileSync(agy, 'fixture');
+  fs.writeFileSync(path.join(path.dirname(agy), 'other'), 'kept');
+  const result = await runSetupPicker({ command: 'coagent8.uninstall', vendorExtensions: ['google.google-antigravity'], storedState: { welcomed: true, installedExtensions: ['google.google-antigravity'] }, selected: ['agy'], action: ['Uninstall', 'Remove'] });
+  assert.match(result.pickers[0].items[0].label, /Google Antigravity/);
+  assert.deepEqual(result.requests, [['workbench.extensions.uninstallExtension', 'google.google-antigravity'], ['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
+  assert.equal(fs.existsSync(agy), false);
+  assert.ok(fs.existsSync(path.join(path.dirname(agy), 'other')), 'only the downloaded agy is deleted');
+});
+test('standalone CLIs CoAgent8 installed are removed through reviewed terminal commands after two confirmations', async () => {
+  const options = { command: 'coagent8.uninstall', storedState: { welcomed: true, installedClis: ['claude', 'agy'] }, discoverable: ['claude'], selected: ['claude'] };
+  const declined = await runSetupPicker({ ...options, action: 'Uninstall' });
+  assert.deepEqual(declined.pickers[0].items, [{ client: 'claude', label: 'Claude Code CLI', description: 'standalone CLI' }], 'a CLI no longer found is not offered');
+  assert.equal(declined.terminals.length, 0);
+  const accepted = await runSetupPicker({ ...options, action: ['Uninstall', 'Remove'] });
+  assert.equal(accepted.terminals.length, 1);
+  assert.equal(accepted.terminals[0].options.name, 'Remove coding CLIs');
+  assert.equal(accepted.terminals[0].execute, false, 'the user reviews and runs the commands');
+  // The commands from Claude Code's uninstall documentation.
+  assert.equal(accepted.terminals[0].command, process.platform === 'win32'
+    ? String.raw`Remove-Item -Path "$env:USERPROFILE\.local\bin\claude.exe" -Force; Remove-Item -Path "$env:USERPROFILE\.local\share\claude" -Recurse -Force`
+    : 'rm -f ~/.local/bin/claude && rm -rf ~/.local/share/claude');
+  assert.deepEqual(accepted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
+  assert.match(accepted.notifications.at(-1).message, /Press Enter in the "Remove coding CLIs" terminal to remove Claude Code CLI\. Quit VS Code/);
 });
 
 test('VS Code provider uses bundled server, updates configuration/build identity, and disposes registrations', t => {
@@ -491,7 +628,7 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   assert.equal(definition.env.coagent8_EDITOR_SETTINGS, '{}', 'contributed defaults leave config.json in effect');
   Object.assign(inspected, {
     'approval.neverAskModels': { defaultValue: [], globalValue: ['user-model'], workspaceValue: ['workspace-model'] },
-    defaultBackend: { defaultValue: 'auto', workspaceValue: 'gemini', workspaceFolderValue: 'gemini' },
+    defaultBackend: { defaultValue: 'auto', workspaceValue: 'agy', workspaceFolderValue: 'agy' },
     'claude.defaultModel': { globalValue: 'opus' },
   });
   const before = changes;
@@ -503,5 +640,5 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   extensionListener();
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 17);
+  assert.equal(disposed, 14);
 });

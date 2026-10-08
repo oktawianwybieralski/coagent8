@@ -147,6 +147,19 @@ test('uninstall cleanup removes only extension registrations and runtime copies 
   assert.equal(fs.existsSync(path.join(p.home, '.coagent8/setup-backups')), false, 'no private backup in uninstall mode');
   assert.deepEqual(JSON.parse(fs.readFileSync(p.state, 'utf8')), { clients: ['agy'], owned: { agy: fingerprint({ command: 'node', args: [p.runtime('b')] }) }, origin: {} });
 });
+test('backups written for the extension are tagged and removed on uninstall; coagent8 CLI backups stay', async t => {
+  const p = uninstallProfile(t, { withCli: true });
+  const options = { ...p, clients: ['claude'] };
+  const preview = await cleanupClients({ ...options, actor: 'vscode-extension' });
+  await cleanupClients({ ...options, actor: 'vscode-extension', apply: preview.token });
+  const backups = path.join(p.home, '.coagent8/setup-backups');
+  assert.deepEqual(fs.readdirSync(backups).map(name => name.startsWith('vscode-extension-')), [true], 'the removal backup is tagged');
+  p.write(path.join(backups, 'cli-made', 'agy.config'), 'original');
+  p.write(path.join(backups, 'vscode-extension-earlier', 'claude.config'), 'original');
+  const uninstall = { ...p, origin: 'vscode-extension', uninstall: true };
+  await cleanupClients({ ...uninstall, apply: (await cleanupClients(uninstall)).token });
+  assert.deepEqual(fs.readdirSync(backups), ['cli-made'], 'only the CLI backup remains');
+});
 test('without an extension origin, as in earlier records, uninstall cleanup preserves the entry', async t => {
   const p = uninstallProfile(t, { withCli: false });
   const state = JSON.parse(fs.readFileSync(p.state, 'utf8')); delete state.origin; p.write(p.state, JSON.stringify(state));

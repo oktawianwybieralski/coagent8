@@ -288,7 +288,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
         model: raw.model || model,
         reasoningEffort,
         cliVersion: backend.probe.version,
-        safetyProfile: backend.id === 'gemini' ? `gemini-${backend.probe.version}-read-only` : undefined,
+        safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-read-only` : undefined,
       }, token);
     }
     if (result.error?.code === 'SESSION_INVALID') {

@@ -117,9 +117,9 @@ models or approval rules.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `coagent8.defaultBackend` | `auto` | Backend used when a request names none; `auto` chooses among the allowed backends |
-| `coagent8.routing.allowedBackends` | all three | Backends CoAgent8 may run (`gemini` is Antigravity) |
+| `coagent8.routing.allowedBackends` | all three | Backends CoAgent8 may run (`agy` is Antigravity CLI) |
 | `coagent8.routing.strategy` | `fixed` | `fixed` uses the default backend; `smart_quota` prefers a backend with quota left |
-| `coagent8.codex.defaultModel`, `coagent8.claude.defaultModel`, `coagent8.gemini.defaultModel` | empty | Model when a request names none; empty uses config.json, then the CLI default |
+| `coagent8.codex.defaultModel`, `coagent8.claude.defaultModel`, `coagent8.agy.defaultModel` | empty | Model when a request names none; empty uses config.json, then the CLI default |
 | `coagent8.approval.askAbovePrice` | `20` | Ask for approval before a model costing at least this many USD per million output tokens (`null` in config.json disables it) |
 | `coagent8.approval.priceMultiplier` | `2` | Ask for approval before a model costing at least this many times the backend's default model |
 | `coagent8.approval.alwaysAskModels` | `[]` | Models that always need approval |
@@ -168,46 +168,98 @@ select a command:
 | **CoAgent8: Open Configuration (config.json)** | Opens the configuration file, creating defaults only when absent | Creates a missing file; preserves existing contents |
 | **CoAgent8: Reset Configuration (config.json)** | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
 | **CoAgent8: Show MCP Servers** | Opens VS Code's **MCP: List Servers**, where CoAgent8 is started, stopped or restarted | None |
-| **CoAgent8: Set Up Coding CLIs** | Checks Codex CLI, Claude Code CLI and Antigravity CLI; offers installation and sign-in for the CLIs you select | Installs only what you choose; registers no MCP server |
-| **CoAgent8: Refresh CLI Status** | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
-| **CoAgent8: Register or Repair Native Chat Hosts** | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
-| **CoAgent8: Preview and Remove Owned Registrations** | Previews the CoAgent8 registrations it owns and removes them after a confirmation | Removes only unchanged CoAgent8-owned entries |
+| **CoAgent8: Set Up Coding CLIs** | One list of the three CLIs: state, CoAgent8 in its chat, installation source. Check a CLI to install, sign in and add CoAgent8; uncheck to remove CoAgent8 from its chat | Installs only what you check; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries; never uninstalls a CLI |
+| **CoAgent8: Uninstall CoAgent8** | Removes CoAgent8's CLI chat registrations, then uninstalls the extension; optionally also the vendor extensions and standalone CLIs CoAgent8 installed, after two confirmations | Removes only what CoAgent8 created; vendor sign-ins and histories stay |
 
-**CoAgent8: Set Up Coding CLIs** opens its list at once and fills it when the
-checks finish. Existing CLIs are reused: Codex and Claude Code from their vendor
-extensions (including custom extension roots), and Antigravity CLI from the copy
-the Google Antigravity extension downloads to `~/.gemini/bin`. For a missing CLI
-you choose **Install Vendor Extension** or **Install Standalone CLI** (the
-vendor's official installer). Every CLI stays in its vendor's own location;
-CoAgent8 does not download or store CLI binaries. After an extension install the
-command waits until the CLI is found; standalone installer commands are inserted
-in a terminal without execution, so press Enter, then choose **Check Now**, or
-**Reload Window** if the installer changed PATH. Sign-in commands are offered the
-same way. At least one compatible signed-in CLI is needed for useful execution.
-Sign-in is read from each CLI's own silent check (for Antigravity CLI, the check
-the Google Antigravity extension uses); it never starts a login or a model turn.
+The first activation checks the CLIs once and shows one notice: the ready CLIs,
+with **Set Up CLIs** when another CLI is missing or signed out, or a ready one does
+not have CoAgent8 in its own chat yet, or only an offer to set up a CLI. Later
+starts of VS Code run no check.
 
-Installation/check selections do not register external MCP servers. Optional
-**CoAgent8: Register or Repair Native Chat Hosts** has a separate selection and
-confirmation. The VS Code MCP provider works independently. Existing manual
-registrations and unrelated settings are preserved.
+**CoAgent8: Set Up Coding CLIs** is one list for everything about the CLIs. It
+opens at once and fills when the checks finish, in about a second. Each line shows
+the CLI's state (ready with its version, sign-in needed, not installed), whether
+CoAgent8 is in its own chat, and under it where the CLI comes from: the vendor's
+VS Code extension, the copy the Google Antigravity extension downloaded, a
+standalone CLI or an npm package, marked when CoAgent8 installed it. VS Code chat
+uses CoAgent8 through its own provider either way; "its own chat" means the chats
+of Codex, Claude Code and Antigravity (their VS Code extensions and terminal
+sessions).
 
-Uninstalling the VSIX removes the native-host registrations it wrote, when they are
-unchanged, together with runtime copies nothing references. VS Code runs this
-cleanup after it restarts following the uninstall. Registrations made by the
+A checked CLI has CoAgent8 in its chat, so accepting the list unchanged changes
+nothing. Check a CLI to make it work completely: a missing CLI is installed, a
+signed-out one is offered its sign-in command, and CoAgent8 is added to its chat,
+which needs no sign-in. Uncheck a CLI to remove the entry CoAgent8 wrote; the CLI
+itself stays installed. A manual entry counts as checked and is never changed. An
+entry for another CoAgent8 version or configuration file is marked and updated
+while it stays checked. The title bar checks again and shows the details in the
+`CoAgent8 Setup` output.
+
+Existing CLIs are reused: Codex and Claude Code from their vendor extensions
+(including custom extension roots), and Antigravity CLI from the copy the Google
+Antigravity extension downloads to `~/.gemini/bin`. When a CLI is installed both
+ways, the standalone one on PATH is used, and its line names the other
+installation with a button to switch to it. The choice is stored as
+`backends.<id>.executable` in the configuration file (**CoAgent8: Open
+Configuration (config.json)**): an absolute path, a path starting with `~/`, or
+`vscode-extension` for the vendor extension's newest copy, which keeps working
+after the extension updates. The first time CoAgent8 is added to a CLI's chat,
+setup records the CLI it found there; change the value at any time, or remove it
+for automatic discovery. VS Code chat, the CLI chats and the `coagent8` CLI with the
+same file all follow it on their next turn. For a missing CLI you choose
+**Install VS Code Extension** or **Install Standalone CLI** (the vendor's official
+installer). Every CLI stays in its vendor's own location; CoAgent8 does not
+download or store CLI binaries. A vendor extension is installed for this machine
+only, so VS Code does not ask whether Settings Sync should copy it to your other
+devices. A vendor extension or a standalone CLI installed this way is recorded, so
+that uninstalling CoAgent8 can offer to remove it; what you installed yourself is
+never offered. A standalone CLI counts once a check finds it, also after a window
+reload. After an extension install the command waits until the CLI is found;
+standalone installer commands are inserted in a terminal without execution, so
+press Enter, then choose **Check Now**, or **Reload Window** if the installer
+changed PATH. Sign-in commands are offered the same way. At least one compatible
+signed-in CLI is needed for useful execution. Sign-in is read from each CLI's own
+silent check (for Antigravity CLI, the check the Google Antigravity extension
+uses); it never starts a login or a model turn.
+
+Registrations made here keep CoAgent8's data from those chats in the extension's
+storage, which VS Code deletes on uninstall. The list ends with one notice for all
+changes. It offers **Restart Extensions** when a vendor chat extension is
+installed: it runs **Developer: Restart Extension Host**, because those extensions
+load MCP servers only when they start. The VS Code window and chat histories stay;
+replies in progress in any chat stop. New terminal sessions see the change without
+a restart.
+
+**CoAgent8: Uninstall CoAgent8** is the complete removal. If CoAgent8 setup
+installed vendor extensions or standalone CLIs that are still present, it first
+lists them, none selected. It then asks for confirmation, and a second time before
+removing anything selected. It removes CoAgent8's registrations in the CLI chats at
+once, uninstalls the selected extensions and CoAgent8, and offers **Quit VS
+Code**. Removing the Google Antigravity extension also deletes the
+`~/.gemini/bin/agy.exe` (`agy` outside Windows) it downloaded, which the extension
+itself leaves behind: VS Code deletes uninstalled extensions and their storage only on its next
+full start (**Restart Extensions** is not enough). For a selected standalone CLI
+the removal commands are inserted in a **Remove coding CLIs** terminal, where you
+press Enter: `npm uninstall -g @openai/codex` for Codex CLI; for Claude Code CLI
+the commands of its
+[uninstall documentation](https://code.claude.com/docs/en/setup#uninstall-claude-code)
+(`~/.local/bin/claude[.exe]` and `~/.local/share/claude`); for Antigravity CLI,
+which publishes no uninstall, deletion of the single binary its installer copies
+(`%LOCALAPPDATA%\agy\bin\agy.exe` on Windows, `~/.local/bin/agy` elsewhere). PATH
+entries the installers added stay. Vendor sign-ins and histories (`~/.codex`,
+`~/.claude`, `~/.gemini`) stay.
+
+Uninstalling from the Extensions view also works: on VS Code's next full start
+the `vscode:uninstall` hook removes the registrations CoAgent8 wrote, when they are
+unchanged, the runtime copies nothing references, the private backups written for
+the extension and an emptied `~/.coagent8`. Registrations and backups made by the
 `coagent8` CLI and manual or edited entries are preserved. To remove registrations
-at once, use **CoAgent8: Preview and Remove Owned Registrations**, or run
-`coagent8 cleanup` for a preview and `coagent8 cleanup --apply=<preview-token>` to
-apply it; this command keeps private backups and runtime files. Histories,
-credentials, other servers and vendor extensions survive. Restart native hosts to
-refresh their cached catalogs. No production command deletes VS Code profile
-databases or cache tables.
-
-**CoAgent8: Reset Setup State** clears the remembered CLI selection and welcome
-dismissal, then checks readiness again. Use it to
-repeat onboarding without reinstalling or restarting the editor. It preserves
-configuration files, native-host registrations, histories and CLI sign-ins.
-The welcome appears only when no compatible signed-in CLI is ready.
+without uninstalling, uncheck them in **CoAgent8: Set Up Coding CLIs**,
+or run `coagent8 cleanup` for a preview and `coagent8 cleanup --apply=<preview-token>`
+to apply it; both keep private backups and runtime files. Histories, credentials
+and other servers survive. VS Code itself keeps your `coagent8.*` settings after
+an uninstall. No production command deletes VS Code profile databases or cache
+tables.
 
 External-client setup is unavailable on remote extension hosts. In a multi-root
 window, use `coagent8 setup` from the intended project directory instead.
@@ -245,7 +297,7 @@ Host support for the approval form varies; see the limitations below.
 | `POLICY_DENIED` | The model needs approval and the host did not supply it; use a host that supports the form or choose a model allowed by your governance configuration |
 | Tools look outdated after an update | Restart CoAgent8 through **MCP: List Servers** and refresh the tool list or start a new chat |
 | Duplicate CoAgent8 extensions | Remove old development extensions `oktawianwybieralski.coagent8-mcp` and `oki-dev.coagent8-mcp`; this package uses `okidev.coagent8-mcp` |
-| A standalone client cannot see CoAgent8 | Run the setup command for that client; the VS Code provider alone does not register it there |
+| A standalone client cannot see CoAgent8 | Check it in **CoAgent8: Set Up Coding CLIs** and restart extensions; the VS Code provider alone does not register it there |
 
 For startup errors, inspect the server output available from VS Code's MCP
 controls. For a reproducible problem, ask the chat agent to use `doctor` and
@@ -267,9 +319,10 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
 - Installation and uninstallation were accepted on Windows; update and chat UI
   acceptance remain partial. Package checks do not prove native backend
   readiness or a successful model turn.
-- The welcome notification appears on activation until a CLI is ready or you
-  choose **Don't Show Again**. Uninstalling removes the dismissal and remembered
-  CLI choices with the extension's storage.
+- The first-activation notice appears once per installation; uninstalling
+  removes that record with the extension's storage.
+- **Restart Extensions** restarts every extension: VS Code has no API to restart
+  only the vendor chat extensions.
 
 Use **CoAgent8: Open Settings** for backends, models and approval in VS Code, or
 **CoAgent8: Open Configuration (config.json)** for the configuration file. The
@@ -289,8 +342,9 @@ window reload. Changes to CoAgent8 settings and MCP definitions refresh the
 provider; VS Code stops a running server whose definition changed and starts it
 again on the next use. **MCP: List Servers** (or **CoAgent8: Show MCP Servers**)
 also starts, stops and restarts it. Bundled-server identity
-also changes when a replacement VSIX keeps the same version number. Restart
-separate native chat hosts when their registrations changed.
+also changes when a replacement VSIX keeps the same version number. After CLI
+chat registrations change, the notice's **Restart Extensions** reloads the vendor
+chat extensions.
 
 Track current behavior in the
 [runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md)

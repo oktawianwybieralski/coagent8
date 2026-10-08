@@ -9,7 +9,7 @@ export const doctorToolDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      backend: { type: 'string', enum: ['codex', 'claude', 'gemini'] },
+      backend: { type: 'string', enum: ['codex', 'claude', 'agy'] },
       detail: { type: 'string', enum: ['summary', 'full'], description: 'Default summary; full to diagnose a failure.' },
       quota: { type: 'boolean', description: 'false skips the slower quota reads.' },
     },

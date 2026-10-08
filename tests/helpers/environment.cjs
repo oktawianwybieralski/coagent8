@@ -35,7 +35,7 @@ function systemPath(env) {
 function createTestEnvironment(base = process.env) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-tests-'));
   const home = path.join(root, 'home');
-  for (const dir of ['home', 'appdata', 'localappdata', 'config', 'coagent8', 'claude', 'codex', 'gemini']) {
+  for (const dir of ['home', 'appdata', 'localappdata', 'config', 'coagent8', 'claude', 'codex', 'agy']) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
   }
   const env = {};
@@ -55,11 +55,11 @@ function createTestEnvironment(base = process.env) {
     CLAUDE_CONFIG_DIR: path.join(root, 'claude'),
     CODEX_HOME: path.join(root, 'codex'),
     CODEX_CONFIG_PATH: path.join(root, 'codex', 'config.toml'),
-    GEMINI_CLI_HOME: path.join(root, 'gemini'),
+    GEMINI_CLI_HOME: path.join(root, 'agy'),
     CLAUDE_PATH: path.join(fixtures, 'claude-cli', 'claude.cjs'),
     CODEX_PATH: path.join(fixtures, 'codex-cli', 'codex.cjs'),
-    AGY_PATH: path.join(fixtures, 'gemini-cli', 'gemini.cjs'),
-    GEMINI_PATH: path.join(fixtures, 'gemini-cli', 'gemini.cjs'),
+    AGY_PATH: path.join(fixtures, 'agy-cli', 'agy.cjs'),
+    AGY_PATH: path.join(fixtures, 'agy-cli', 'agy.cjs'),
     // Model prices come from a recorded list, never from the network.
     coagent8_PRICES_URL: path.join(fixtures, 'prices', 'openrouter-models.json'),
   });

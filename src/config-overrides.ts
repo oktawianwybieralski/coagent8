@@ -12,7 +12,7 @@ export const EDITOR_SETTINGS = {
   'routing.allowedBackends': { field: ['routing', 'allowedBackends'], list: false },
   'codex.defaultModel': { field: ['backends', 'codex', 'defaultModel'], list: false },
   'claude.defaultModel': { field: ['backends', 'claude', 'defaultModel'], list: false },
-  'gemini.defaultModel': { field: ['backends', 'gemini', 'defaultModel'], list: false },
+  'agy.defaultModel': { field: ['backends', 'agy', 'defaultModel'], list: false },
   'approval.priceMultiplier': { field: ['governance', 'priceMultiplier'], list: false },
   'approval.askAbovePrice': { field: ['governance', 'askAbovePrice'], list: false },
   'approval.alwaysAskModels': { field: ['governance', 'alwaysAsk'], list: true },

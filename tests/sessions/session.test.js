@@ -73,7 +73,7 @@ test('the session sweep leaves leases to the lease protocol (AUD-P1-9)', async (
   // The sweep once deleted every dead owner's `.json.lease` by name, outside the token
   // protocol, and could delete a newer lease that replaced it meanwhile. It now reaches
   // leases only through withFileLock on a session record, which verifies the owner.
-  createSession('gemini', tempDir);
+  createSession('agy', tempDir);
   const handle = 'syn_sess_0123456789abcdef01234567';
   const leasePath = path.join(getSessionsDir(), `${handle}.json.lease`);
   const lease = JSON.stringify({ token: randomUUID(), pid: 99999999, createdAt: Date.now() });
@@ -330,7 +330,7 @@ test('F09/F10/F11: unique claim ownership, async contention, stale claimant reco
   assert.equal((await releaseSessionTurn(sess.sessionHandle,randomUUID())).ok,false);
   assert.equal(getSession(sess.sessionHandle).turnToken,first.data.token);
   await releaseSessionTurn(sess.sessionHandle,first.data.token);
-  await assert.rejects(updateSession(sess.sessionHandle,{backend:'gemini'}),/Immutable/);
+  await assert.rejects(updateSession(sess.sessionHandle,{backend:'agy'}),/Immutable/);
   assert.equal(getSession('../'+sess.sessionHandle),null);
   const data=JSON.parse(fs.readFileSync(file,'utf8'));data.lastUsedAt='invalid-date';fs.writeFileSync(file,JSON.stringify(data));
   assert.equal(getSession(sess.sessionHandle),null);
@@ -353,7 +353,7 @@ test('session leases reject a second process, permit an independent session and 
 
 test('production execution automatically prunes expired session metadata with history disabled',async()=>{
   const data=path.join(tempDir,'prune-production');fs.mkdirSync(data);
-  const script=`process.env.coagent8_DIR=process.argv[1];process.env.coagent8_HISTORY='off';const fs=require('node:fs');const path=require('node:path');const s=require(process.argv[2]);const {adapterRegistry}=require(process.argv[3]);const {executeTask}=require(process.argv[4]);(async()=>{const old=s.createSession('gemini',process.argv[1]);const file=s.getSessionFilePath(old.sessionHandle);const raw=JSON.parse(fs.readFileSync(file));raw.lastUsedAt=new Date(0).toISOString();fs.writeFileSync(file,JSON.stringify(raw));adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>({installed:true,executionSupported:true,config:{defaultModel:'fixture-model'}}),execute:async()=>({status:'completed',isError:false,output:'public',truncated:false,continuationAvailable:false})};await executeTask('x','x',{backend:'gemini'},process.argv[1]);console.log(JSON.stringify({oldFile:fs.existsSync(file)}));})().catch(e=>{console.error(e.message);process.exitCode=1;});`;
+  const script=`process.env.coagent8_DIR=process.argv[1];process.env.coagent8_HISTORY='off';const fs=require('node:fs');const path=require('node:path');const s=require(process.argv[2]);const {adapterRegistry}=require(process.argv[3]);const {executeTask}=require(process.argv[4]);(async()=>{const old=s.createSession('agy',process.argv[1]);const file=s.getSessionFilePath(old.sessionHandle);const raw=JSON.parse(fs.readFileSync(file));raw.lastUsedAt=new Date(0).toISOString();fs.writeFileSync(file,JSON.stringify(raw));adapterRegistry.agy={id:'agy',name:'fixture',probe:async()=>({installed:true,executionSupported:true,config:{defaultModel:'fixture-model'}}),execute:async()=>({status:'completed',isError:false,output:'public',truncated:false,continuationAvailable:false})};await executeTask('x','x',{backend:'agy'},process.argv[1]);console.log(JSON.stringify({oldFile:fs.existsSync(file)}));})().catch(e=>{console.error(e.message);process.exitCode=1;});`;
   const result=await new Promise((resolve,reject)=>{const p=spawn(process.execPath,['--require','tsx/cjs','-e',script,data,path.resolve(__dirname, '../..', 'src/sessions/session.ts'),path.resolve(__dirname, '../..', 'src/backends/registry.ts'),path.resolve(__dirname, '../..', 'src/execution/controller.ts')],{env:{...process.env},windowsHide:true});let out='',err='';p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('error',reject);p.on('exit',code=>code===0?resolve(JSON.parse(out)):reject(new Error(err)));});
   assert.equal(result.oldFile,false);
 });

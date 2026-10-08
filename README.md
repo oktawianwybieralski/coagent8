@@ -8,8 +8,8 @@
   </picture>
 </p>
 
-CoAgent8 exposes Codex, Claude Code and Antigravity (`agy`, the `gemini`
-backend) through a stdio MCP server. An agent in a compatible host can request a
+CoAgent8 exposes Codex, Claude Code and Antigravity (backend `agy`, which runs
+Gemini models) through a stdio MCP server. An agent in a compatible host can request a
 second opinion or a Git review and receive the backend's public answer. The host
 runs your chat; the backend CLI performs the requested task.
 
@@ -63,9 +63,11 @@ adds it. Host deadlines can be shorter than the bridge deadline. A measured agy
 notifications; interactive IDE behavior has not been measured.
 
 No setup command, recognized client name or VSIX is required for ordinary MCP
-use. Backends resolve from PATH, then from executables installed by their VS
-Code extensions (for agy, `~/.gemini/bin`); override with `CODEX_PATH`,
-`CLAUDE_PATH` or `GEMINI_PATH`/`AGY_PATH`. The workspace comes from `workspace_path`, client
+use. Backends resolve from `backends.<id>.executable` in `config.json` (an
+absolute path, `~/...`, or `vscode-extension` for the vendor extension's newest
+copy), else from PATH, then from executables installed by their VS Code extensions
+(for agy, `~/.gemini/bin`). `CODEX_PATH`, `CLAUDE_PATH` and `AGY_PATH` override all
+of them. The workspace comes from `workspace_path`, client
 roots, or an eligible server working directory. Only the server-directory
 fallback adds a workspace line to the result.
 
@@ -129,11 +131,8 @@ macOS), type `CoAgent8` and select one:
 | `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover the extension's storage and `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
 | `CoAgent8: Reset Configuration (config.json)` | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
 | `CoAgent8: Show MCP Servers` | Opens VS Code's `MCP: List Servers` | None |
-| `CoAgent8: Set Up Coding CLIs` | Checks Codex CLI, Claude Code CLI and Antigravity CLI. For a missing CLI it offers the vendor extension or the official standalone installer, waits until the CLI is found, then offers its sign-in command | Installs only what you choose, in the vendor's own location; registers no MCP server |
-| `CoAgent8: Refresh CLI Status` | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
-| `CoAgent8: Reset Setup State` | Repeats onboarding after confirmation and checks readiness without restarting | Clears remembered CLI choices and welcome dismissal; preserves configuration and sign-ins |
-| `CoAgent8: Register or Repair Native Chat Hosts` | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
-| `CoAgent8: Preview and Remove Owned Registrations` | Previews the CoAgent8 registrations it owns and removes them after a confirmation | Removes only unchanged CoAgent8-owned entries |
+| `CoAgent8: Set Up Coding CLIs` | One list of Codex CLI, Claude Code CLI and Antigravity CLI: each line shows the CLI's state, whether CoAgent8 is in its own chat, and where it is installed from. Checked CLIs have CoAgent8 in their chat; check one to install it (VS Code extension or official standalone installer), sign it in and add CoAgent8, uncheck to remove CoAgent8 from its chat. The title bar checks again or shows details | Installs only what you check, in the vendor's own location; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries; never uninstalls a CLI; ends with one notice offering **Restart Extensions** |
+| `CoAgent8: Uninstall CoAgent8` | Removes CoAgent8's CLI chat registrations and uninstalls it; optionally also the vendor extensions and standalone CLIs CoAgent8 setup installed, after two confirmations. Quit and start VS Code to finish | Removes only what CoAgent8 created; never vendor sign-ins or histories |
 
 The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 `CoAgent8` starts, stops or restarts it and shows its output.
@@ -142,16 +141,15 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 
 1. In a trusted project, run **Extensions: Install from VSIX...** and select the
    private VSIX supplied by the owner. Use Node.js 24+.
-2. Run **CoAgent8: Set Up Coding CLIs**. Choose an installed CLI to check, or an
-   offered installation and sign-in action. Then run **Refresh CLI Status**.
+2. The first activation shows one notice: the ready CLIs, or an offer to set them
+   up. Run **CoAgent8: Set Up Coding CLIs** at any time to install or sign in a
+   CLI and to add CoAgent8 to the CLIs' own chats, all from one list.
 3. Start CoAgent8 through **MCP: List Servers**, enable its tools in your chat,
    and request doctor, a consultation, and a review of current workspace changes.
-   Native-host registration is a separate optional command.
 4. Configure backends, models and approval through **CoAgent8: Open Settings**.
    A changed setting takes precedence over `config.json` in VS Code; the CLI and
    other MCP hosts read only the file (**Open Configuration (config.json)**). Set
-   `coagent8.configPath` to choose another file; empty uses the default. The welcome notification
-   appears on activation until a CLI is ready or you choose **Don't Show Again**.
+   `coagent8.configPath` to choose another file; empty uses the default.
 5. For a problem, ask for the issue tool's sanitized report and doctor output.
    Open the repository's [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
    and include OS, Node, host and CLI versions, reproduction steps and expected

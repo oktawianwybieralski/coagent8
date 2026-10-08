@@ -16,8 +16,8 @@ const { readResult } = require('./helpers/result.cjs');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('MCP server registers and fulfills coagent8://sessions and coagent8://sessions/{id}/history resources', async () => {
-  const sess = createSession('gemini', tempDir);
-  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'gemini', randomUUID());
+  const sess = createSession('agy', tempDir);
+  const writer = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Testing MCP resource exposure' });
   writer.accept({ type: 'assistant_message', messageId: 'm-mcp', text: 'MCP resources are live and durable.' });
@@ -25,8 +25,8 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   await writer.flush();
   // A session of another workspace stays invisible through resources (AUD-P1-8).
   const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-workspace-'));
-  const other = createSession('gemini', otherDir);
-  const otherWriter = createHistoryWriter(other.sessionHandle, otherDir, 'gemini', randomUUID());
+  const other = createSession('agy', otherDir);
+  const otherWriter = createHistoryWriter(other.sessionHandle, otherDir, 'agy', randomUUID());
   otherWriter.accept({ type: 'turn_started' });
   otherWriter.accept({ type: 'user_message', text: 'Other workspace' });
   otherWriter.accept({ type: 'turn_finished', status: 'completed' });
@@ -111,7 +111,7 @@ test('F14/F15: shared schema validates required fields, types, enums and unknown
   assert.throws(()=>validateToolArguments({proposal:'x',extra:1},consultTool.inputSchema),/Unknown/);
   const { getAllCallableToolDefinitions } = require('../src/server.ts');
   const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
-  assert.ok(validateToolArguments({task:'x',backend:'gemini'},schema));
+  assert.ok(validateToolArguments({task:'x',backend:'agy'},schema));
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
 });
 
@@ -125,15 +125,15 @@ test('the connected client name sets the caller CLI that auto routing avoids', a
   const server = createServer();
   const client = new Client({ name: 'claude-code', version: '2.1.291' });
   try {
-    for (const id of ['codex', 'claude', 'gemini']) {
+    for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
         probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }), execute: async () => { throw new Error('Not executed'); } };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'gemini'] } });
+    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    assert.equal((await resolveBackend()).id, 'gemini', 'Claude Code as client is routed to another CLI');
+    assert.equal((await resolveBackend()).id, 'agy', 'Claude Code as client is routed to another CLI');
   } finally {
     await client.close();
     await server.close();
@@ -150,16 +150,16 @@ test('execution results report a workspace taken from client roots; roots are re
   const { adapterRegistry } = require('../src/backends/registry.ts');
   const { saveConfig } = require('../src/config.ts');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-root-'));
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const seen = [];
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => { seen.push(options.cwd); return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'gemini-test', truncated: false, continuationAvailable: true }; } };
   const server = createServer();
   const client = new Client({ name: 'roots-client', version: '1' }, { capabilities: { roots: { listChanged: true } } });
   let rootsRequests = 0;
   client.setRequestHandler(ListRootsRequestSchema, async () => { rootsRequests++; return { roots: [{ uri: pathToFileURL(root).href, name: 'project' }] }; });
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
@@ -180,7 +180,7 @@ test('execution results report a workspace taken from client roots; roots are re
   } finally {
     await client.close();
     await server.close();
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -190,13 +190,13 @@ test('execution errors carry the code raised at their source; an unknown failure
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
   const { adapterRegistry } = require('../src/backends/registry.ts');
   const { saveConfig } = require('../src/config.ts');
-  const original = adapterRegistry.gemini;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => { throw new Error('Lock timeout on probe cache.'); },
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => { throw new Error('Lock timeout on probe cache.'); },
     execute: async () => { throw new Error('must not run'); } };
   const server = createServer();
   const client = new Client({ name: 'errors-client', version: '1' });
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
@@ -217,7 +217,7 @@ test('execution errors carry the code raised at their source; an unknown failure
   } finally {
     await client.close();
     await server.close();
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });
 
@@ -245,10 +245,10 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   const { ElicitRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
   const { adapterRegistry } = require('../src/backends/registry.ts');
   const { saveConfig, loadConfig } = require('../src/config.ts');
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   const consented = [];
   const withDefault = defaultModel => async () => ({ installed: true, version: 'fixture', config: { defaultModel } });
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: withDefault('gemini-3.8-flash-high'),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: withDefault('gemini-3.8-flash-high'),
     execute: async (_prompt, options) => {
       consented.push(options.model);
       return { status: 'completed', isError: false, output: 'approved answer', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
@@ -263,7 +263,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   };
   const opened = [];
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] } });
     const callWith = (client, args) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...args } });
     const call = (client, model) => callWith(client, model ? { model } : {});
 
@@ -302,7 +302,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const approved = readResult(await call(asking.client, 'claude-opus-4-6-thinking'));
     assert.equal(approved.answer, 'approved answer');
     assert.deepEqual(consented, ['claude-opus-4-6-thinking']);
-    assert.match(requests[0].message, /run 'claude-opus-4-6-thinking' on gemini\? Its price is known only approximately/);
+    assert.match(requests[0].message, /run 'claude-opus-4-6-thinking' on agy\? Its price is known only approximately/);
     assert.equal(requests[0].requestedSchema.properties.approve.type, 'boolean');
     assert.deepEqual(requests[0].requestedSchema.required, ['approve']);
     assert.equal(requests[0].requestedSchema.properties.remember.type, 'boolean', 'an approximate price offers remember');
@@ -313,10 +313,10 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     assert.equal(readResult(resumed).error.code, 'POLICY_DENIED');
 
     // A governed default model is asked for like a requested one.
-    adapterRegistry.gemini = { ...adapterRegistry.gemini, probe: withDefault('claude-opus-4-6-thinking') };
+    adapterRegistry.agy = { ...adapterRegistry.agy, probe: withDefault('claude-opus-4-6-thinking') };
     assert.equal(readResult(await call(asking.client, undefined)).error.code, 'POLICY_DENIED');
     assert.deepEqual(consented, ['claude-opus-4-6-thinking'], 'no declined turn ran');
-    adapterRegistry.gemini = { ...adapterRegistry.gemini, probe: withDefault('gemini-3.8-flash-high') };
+    adapterRegistry.agy = { ...adapterRegistry.agy, probe: withDefault('gemini-3.8-flash-high') };
 
     // A default model the policy does not price as expensive never prompts the user.
     const plainTurn = await call(asking.client, undefined);
@@ -338,6 +338,6 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     assert.equal(requests.length, asked, 'remembered: no prompt');
   } finally {
     for (const { client, server } of opened) { await client.close(); await server.close(); }
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });

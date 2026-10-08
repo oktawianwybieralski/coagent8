@@ -7,13 +7,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../sessions/lock.js';
 import { redactDiagnostic } from '../redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { configPath, document, hash, read, readSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
+import { backupDirectory, configPath, document, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
 
 /** Public cleanup evidence contains neither configuration contents nor private backup paths. */
 export interface CleanupStatus {
@@ -29,10 +28,13 @@ export interface CleanupOptions {
   apply?: string;
   /** Limits removal to registrations recorded with this origin; others are preserved. */
   origin?: RegistrationOrigin;
+  /** Who removes the entries; the VS Code extension's private backups are tagged so its uninstall removes them. */
+  actor?: RegistrationOrigin;
   /**
    * Uninstall mode for the VS Code extension: no private backup of the verified, unchanged
    * entry (setup can recreate it), and runtime copies no registration references are
-   * deleted with an empty CoAgent8 setup state.
+   * deleted with an empty CoAgent8 setup state, together with the private backups
+   * written for the extension.
    */
   uninstall?: boolean;
 }
@@ -63,8 +65,9 @@ function removeEntry(client: SetupClient, before: string): string {
 }
 
 /**
- * Deletes runtime copies that no host registration references, and the setup state when
- * it no longer records a selection or an owned registration.
+ * Deletes runtime copies that no host registration references, the private backups
+ * written for the VS Code extension, and the setup state when it no longer records a
+ * selection or an owned registration. Backups of `coagent8` CLI changes are kept.
  * @throws When a host configuration cannot be read; nothing is deleted then.
  */
 function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): void {
@@ -84,6 +87,13 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
       if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) fs.rmSync(path.join(runtimes, name), { recursive: true, force: true });
     }
     if (!fs.readdirSync(runtimes).length) fs.rmdirSync(runtimes);
+  }
+  const backups = path.join(root, 'setup-backups');
+  if (fs.existsSync(backups)) {
+    for (const name of fs.readdirSync(backups)) {
+      if (name.startsWith(EXTENSION_BACKUP_PREFIX)) fs.rmSync(path.join(backups, name), { recursive: true, force: true });
+    }
+    if (!fs.readdirSync(backups).length) fs.rmdirSync(backups);
   }
   const saved = readSelection(stateFile);
   if (!saved.clients.length && !Object.keys(saved.owned).length) fs.rmSync(stateFile, { force: true });
@@ -130,8 +140,7 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         if (read(stateFile) !== stateBefore) throw new Error('Setup ownership changed concurrently; cleanup stopped.');
         if (result.action === 'remove') {
           if (!options.uninstall) {
-            const backup = path.join(root, 'setup-backups', randomUUID());
-            fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
+            const backup = backupDirectory(root, options.actor);
             fs.writeFileSync(path.join(backup, result.client + '.config'), snapshot.before!, { flag: 'wx', mode: 0o600 });
           }
           writeChecked(snapshot.file, snapshot.before, snapshot.after!);

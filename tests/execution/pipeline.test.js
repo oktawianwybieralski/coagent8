@@ -17,23 +17,23 @@ const { readResult } = require('../helpers/result.cjs');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('a server started inside a CoAgent8 turn refuses to start another turn before any backend work (CUR-002)',async()=>{
-  const original=adapterRegistry.gemini;
+  const original=adapterRegistry.agy;
   let calls=0;
-  adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>{calls++;return {installed:true,version:'fixture',config:{defaultModel:'fixture-model'}};},execute:async()=>{calls++;return {status:'completed',isError:false,output:'x',truncated:false,continuationAvailable:false};}};
+  adapterRegistry.agy={id:'agy',name:'fixture',probe:async()=>{calls++;return {installed:true,version:'fixture',config:{defaultModel:'fixture-model'}};},execute:async()=>{calls++;return {status:'completed',isError:false,output:'x',truncated:false,continuationAvailable:false};}};
   process.env.COAGENT8_NESTED_TURN='1';
   try {
-    saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});
-    await assert.rejects(executeTask('x','x',{backend:'gemini'},tempDir),{code:'POLICY_DENIED',message:/inside a CoAgent8 turn/});
+    saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
+    await assert.rejects(executeTask('x','x',{backend:'agy'},tempDir),{code:'POLICY_DENIED',message:/inside a CoAgent8 turn/});
     assert.equal(calls,0,'no probe and no turn');
   } finally {
     delete process.env.COAGENT8_NESTED_TURN;
-    adapterRegistry.gemini=original;
+    adapterRegistry.agy=original;
   }
 });
 
 test('one pipeline pins provider, persists two turns and canonical messages, preserves Markdown, activity and errors',async()=>{
-  const original=adapterRegistry.gemini;
-  adapterRegistry.gemini={id:'gemini',name:'fixture',probe:async()=>({installed:true,version:'fixture',config:{defaultModel:'fixture-model'}}),execute:async(prompt,options)=>{
+  const original=adapterRegistry.agy;
+  adapterRegistry.agy={id:'agy',name:'fixture',probe:async()=>({installed:true,version:'fixture',config:{defaultModel:'fixture-model'}}),execute:async(prompt,options)=>{
     options.onEvent({type:'user_message',text:'CLI echo must be ignored'});
     options.onEvent({type:'assistant_delta',messageId:'m',text:'Draft'});
     options.onEvent({type:'assistant_message',messageId:'m',text:'Final **answer**\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef'});
@@ -42,8 +42,8 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
     return {status:'completed',isError:false,output:'Final **answer**\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef',nativeSessionId:'11111111-aaaa-bbbb-cccc-123456789012',model:'fixture-model',truncated:false,continuationAvailable:true};
   }};
   try {
-    saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});
-    const first=await executeTask('PROMPT_WITH_PRIVATE_SNAPSHOT','User first turn',{backend:'gemini'},tempDir);
+    saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
+    const first=await executeTask('PROMPT_WITH_PRIVATE_SNAPSHOT','User first turn',{backend:'agy'},tempDir);
     assert.equal(first.isError,false); assert.match(first.content[0].text,/ · 1 op · /); assert.ok(first.content[0].text.includes('const answer = 42;'));
     const handle=readResult(first).sessionHandle;
     const second=await executeTask('second prompt','User second turn',{session_handle:handle},tempDir);
@@ -61,7 +61,7 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
     const savedModel=getSession(handle).model;
     assert.equal(savedModel,'fixture-model'); assert.equal(getSession(handle).activePid,null);
     await deleteHistory(handle,tempDir); await assert.rejects(sessionHistory(handle,tempDir),/not found/);
-  } finally {adapterRegistry.gemini=original;}
+  } finally {adapterRegistry.agy=original;}
 });
 
 test('pipeline enforces effective defaults and terminal errors; rate limits preserve native continuation and invalid resume does not',async()=>{
@@ -86,5 +86,5 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
     mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle},tempDir,null,null,approve);assert.equal(readResult(invalid).error.code,'SESSION_INVALID');assert.equal(readResult(invalid).continuationAvailable, false);assert.equal(getSession(handle),null);
     const history=await sessionHistory(handle,tempDir);assert.ok(!JSON.stringify(history).includes('MUST_NOT_PERSIST'));assert.equal(history.events.at(-1).status,'failed');
     for(mode of ['missing','contradiction']) {const r=await executeTask('x','x',{},tempDir,null,null,approve);assert.equal(r.isError,true);assert.equal(readResult(r).error.code,'PROTOCOL_ERROR');assert.equal(getSession(readResult(r).sessionHandle).activePid,null);}
-  }finally{adapterRegistry.codex=original;saveConfig({defaultBackend:'gemini',routing:{strategy:'fixed',allowedBackends:['gemini']}});}
+  }finally{adapterRegistry.codex=original;saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});}
 });

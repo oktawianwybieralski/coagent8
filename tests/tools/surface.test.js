@@ -265,7 +265,7 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
   assert.ok(codexCall.content[0].text.includes('Unknown tool: codex_status'));
 
   // 4. Call session action via canonical session tool
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const sessionCall = await callHandler(
     {
       method: 'tools/call',
@@ -321,12 +321,12 @@ test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to 
   const { adapterRegistry } = require('../../src/backends/registry.ts');
   const { saveConfig } = require('../../src/config.ts');
   const { randomUUID } = require('node:crypto');
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   let prompt;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async p => { prompt = p; return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'm', truncated: false, continuationAvailable: true }; } };
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const call = createServer()._requestHandlers.get('tools/call');
     const expected = { analyze: ['task', 'ARCHITECTURAL', 'SQ'], debug: ['error_message', 'ROOT CAUSE', 'CTX'], implement: ['specification', 'CODE IMPLEMENTATION', 'CTX'] };
     for (const [name, [input, header, questions]] of Object.entries(expected)) {
@@ -340,6 +340,6 @@ test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to 
       }
     }
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });

@@ -629,7 +629,7 @@ async function releaseCapacity(dir: string, bytes: number): Promise<void> {
  *
  * @param handle - Valid session handle.
  * @param workspace - Absolute canonical workspace path.
- * @param provider - Execution provider ID (e.g. 'codex', 'gemini', 'claude').
+ * @param provider - Execution provider ID (e.g. 'codex', 'agy', 'claude').
  * @param turnId - Unique turn UUID for event correlation.
  * @returns Object exposing `accept(event)`, `flush()`, and `disabled`.
  */

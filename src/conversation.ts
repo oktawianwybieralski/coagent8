@@ -1,4 +1,4 @@
-export const PROVIDERS = ['codex', 'gemini', 'claude'] as const;
+export const PROVIDERS = ['codex', 'agy', 'claude'] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 export type TerminalStatus = 'completed' | 'failed' | 'cancelled' | 'timed_out';
 export const ERROR_CODES = ['CLI_NOT_FOUND', 'CLI_UNSUPPORTED', 'AUTH_REQUIRED', 'MODEL_UNAVAILABLE',

@@ -4,7 +4,7 @@ This directory contains standalone mock executables for external coding CLI engi
 
 - `claude-cli/claude.cjs` (Claude Code mock double)
 - `codex-cli/codex.cjs` (OpenAI Codex CLI mock double)
-- `gemini-cli/gemini.cjs` (Google Antigravity / Gemini CLI mock double)
+- `agy-cli/agy.cjs` (Antigravity CLI mock double)
 
 ## Architectural Isolation Invariant (P2)
 These test doubles are CommonJS executables (`.cjs`) that simulate subprocess communication via `stdin`/`stdout`/`stderr` and emit JSON-RPC / CLI protocols.

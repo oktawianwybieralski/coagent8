@@ -10,13 +10,13 @@ import type { AdapterProbeResult, ExecutionOptions, TerminalExecutionResult, Cli
 import type { ExecutionError } from '../../conversation.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
+import { configuredBackendCommand, probeCommand } from '../executable.js';
 export const id = 'claude', name = 'Claude Code CLI';
-const CLAUDE_EXE = process.env.CLAUDE_PATH || 'claude';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
 export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
+const claudeCommand = () => configuredBackendCommand('claude');
 /** User settings, which can choose the default model; a change invalidates cached probes and observed models. */
 const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 
@@ -27,7 +27,9 @@ const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path
  * Read-only enforcement is checked on every run against `system/init`.
  */
 export async function probe(): Promise<AdapterProbeResult> {
-  const command = claudeCommand();
+  const resolved = probeCommand('claude', name);
+  if ('unresolved' in resolved) return resolved.unresolved;
+  const command = resolved.command;
   const res = await runCommand(command, ['--version'], { timeoutMs: 5000 });
   const installed = res.status === 'completed';
   const version = res.stdout.trim() || 'unknown';

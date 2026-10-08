@@ -20,8 +20,8 @@ export const WORKSPACE_PARAMETER = {
 };
 
 export const EXECUTION_PARAMETERS = {
-  backend: { type: 'string', enum: ['auto', 'codex', 'claude', 'gemini', 'smart_quota'],
-    description: 'codex: Codex CLI; claude: Claude Code; gemini: agy. auto (default): configured provider, else as smart_quota: prefer another CLI, rank cached quota.' },
+  backend: { type: 'string', enum: ['auto', 'codex', 'claude', 'agy', 'smart_quota'],
+    description: 'codex: Codex CLI; claude: Claude Code; agy: Antigravity. auto (default): configured provider, else as smart_quota: prefer another CLI, rank cached quota.' },
   model: { type: 'string',
     description: 'Omit for the default. doctor lists each backend\'s models and default; a listed catalog rejects unknown names, else the CLI decides.' },
   reasoning_effort: { type: 'string', enum: [...REASONING_EFFORTS],

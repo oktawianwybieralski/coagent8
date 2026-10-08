@@ -42,7 +42,7 @@ Common execution arguments (`consult`/`review` and compatibility mappings):
 
 | Argument | Current contract |
 | --- | --- |
-| `backend` | `auto` (default), `codex`, `claude`, `gemini` or `smart_quota` |
+| `backend` | `auto` (default), `codex`, `claude`, `agy` or `smart_quota` |
 | `model` | Optional validated identifier; defaults and aliases are resolved per adapter |
 | `reasoning_effort` | Schema union `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; actual support is model/provider dependent |
 | `session_handle` | Explicit continuation; cannot switch workspace/provider |
@@ -98,17 +98,27 @@ on uninstall, and `coagent8_CONFIG` to `coagent8.configPath` or config.json ther
   "defaultBackend": null,
   "routing": {
     "strategy": "fixed",
-    "allowedBackends": ["codex", "claude", "gemini"]
+    "allowedBackends": ["codex", "claude", "agy"]
   },
   "backends": {
-    "gemini": { "defaultModel": "<model the first doctor recorded>" }
+    "agy": { "defaultModel": "<model the first doctor recorded>" }
   }
 }
 ~~~
 
 `defaultBackend` accepts a concrete provider or `smart_quota`.
 `backends.<id>.defaultModel` is the model a turn runs when neither the call nor
-its session names one; it must be a valid model identifier. `governance`
+its session names one; it must be a valid model identifier.
+The Antigravity backend is `agy`, the name of its CLI; `gemini` names only its
+models. The VS Code setting is `coagent8.agy.defaultModel`.
+`backends.<id>.executable` chooses the CLI: an absolute path, a path starting with
+`~/`, or `vscode-extension` for the newest copy the vendor's VS Code extension
+provides (`~/.gemini/bin/agy` for agy), which survives the versioned folders of
+extension updates. Omitted, the CLI is found on PATH, then in the vendor's
+extension. `CODEX_PATH`, `CLAUDE_PATH` and `AGY_PATH` take precedence.
+A configured executable that cannot be found fails for that backend with
+`CLI_NOT_FOUND`; it never falls back to another installation. Setup records the CLI
+it finds at a client's first registration, without replacing an existing value. `governance`
 (`priceMultiplier`, `askAbovePrice`, `alwaysAsk`, `neverAsk`) is described under
 [model consent](#model-consent).
 A server started by the VS Code extension also receives the CoAgent8 settings
@@ -128,7 +138,7 @@ With no fixed default, auto uses the single eligible backend directly; with
 several it selects like smart_quota. Selection excludes observed rate limits,
 prefers an eligible CLI other than the caller's own, and ranks by cached measured
 headroom. Unknown headroom uses 50 as a ranking value, not a measurement.
-Equal values retain `codex`, `gemini`, `claude` order. The caller's self-reported
+Equal values retain `codex`, `agy`, `claude` order. The caller's self-reported
 name only influences preference.
 
 Routing does not mutate user configuration or retry a failed turn on another

@@ -113,7 +113,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
 
   // 2. Fatal CLI_UNSUPPORTED
   const resCliErr = await formatExecutionResult(
-    'gemini',
+    'agy',
     {
       status: 'failed',
       isError: true,
@@ -216,10 +216,10 @@ test('CONTEXT-001: an execution result is markdown only and its footer carries e
   assert.equal(failed.verdict, 'BLOCKED');
   assert.equal(failed.reason, null, 'the error line already states why');
 
-  const consult = readResult(await formatExecutionResult('gemini', {
+  const consult = readResult(await formatExecutionResult('agy', {
     status: 'completed', isError: false, output: 'answer', truncated: false, continuationAvailable: false,
   }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }));
   assert.equal(consult.verdict, 'NOT_APPLICABLE', 'consult has no verdict line');
   assert.equal(consult.model, 'provider default');
-  assert.equal(consult.text, 'answer\n\n> CoAgent8: gemini · provider default · 0.0s');
+  assert.equal(consult.text, 'answer\n\n> CoAgent8: agy · provider default · 0.0s');
 });

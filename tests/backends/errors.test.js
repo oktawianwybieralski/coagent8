@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { extractStructuredGeminiError } = require('../../src/backends/gemini/errors.ts');
+const { extractStructuredGeminiError } = require('../../src/backends/agy/errors.ts');
 const { extractStructuredCodexError, classifyCodexError } = require('../../src/backends/codex/errors.ts');
 
 test('Structured error extraction handles typed envelopes and prevents false 429 lockouts', () => {
@@ -116,7 +116,7 @@ test('codex-errors: classifies usage limit and spend cap as RATE_LIMITED', () =>
 });
 
 test('classification uses anchored provider phrases, not bare numbers or substrings (AUD-P2-1)', () => {
-  const { classifyGeminiError } = require('../../src/backends/gemini/errors.ts');
+  const { classifyGeminiError } = require('../../src/backends/agy/errors.ts');
   for (const classify of [classifyCodexError, classifyGeminiError]) {
     for (const ordinary of ['Error at line 429 of parser', 'author field missing', 'disk quota check failed', 'see docs/auth-flow.md', 'exit code 401 from helper script line 403']) {
       assert.equal(classify(ordinary).code, 'PROCESS_ERROR', `${classify.name}: ${ordinary}`);
@@ -132,7 +132,7 @@ test('classification uses anchored provider phrases, not bare numbers or substri
 
 test('a rejected model is MODEL_UNAVAILABLE with the provider message, not a PROCESS_ERROR with an issue link (live 2026-10-07)', () => {
   const { classifyCodexTurnError } = require('../../src/backends/codex/errors.ts');
-  const { classifyGeminiError } = require('../../src/backends/gemini/errors.ts');
+  const { classifyGeminiError } = require('../../src/backends/agy/errors.ts');
   // Codex 0.160 with a ChatGPT account and `model: "luna"`: the turn error message is the raw response body.
   const body = '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'luna\' model is not supported when using Codex with a ChatGPT account."}}';
   const codex = classifyCodexTurnError({ message: body, codexErrorInfo: 'other' }, 'Codex turn failed.');

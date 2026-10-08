@@ -19,9 +19,9 @@ const MINUTE_MS = 60 * 1000;
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 async function rateLimitedTurn(message) {
-  const original = adapterRegistry.gemini;
-  adapterRegistry.gemini = {
-    id: 'gemini',
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => ({
@@ -31,14 +31,14 @@ async function rateLimitedTurn(message) {
   };
   try {
     fs.rmSync(quotaCache, { force: true });
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const started = Date.now();
-    const res = await executeTask('User prompt', 'Public question', { backend: 'gemini' }, tempDir);
+    const res = await executeTask('User prompt', 'Public question', { backend: 'agy' }, tempDir);
     assert.equal(readResult(res).error.code, 'RATE_LIMITED');
-    const entry = JSON.parse(fs.readFileSync(quotaCache, 'utf8')).data.gemini;
+    const entry = JSON.parse(fs.readFileSync(quotaCache, 'utf8')).data.agy;
     return { entry, cooldownMs: Date.parse(entry.cooldownUntil) - started };
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 }
 
@@ -56,21 +56,21 @@ test('a rate limit without a reset records exactly one first-tier cooldown (AUD-
 });
 
 test('CUR-004: an unwritable quota cache does not block an auto call; the answer carries one warning', async t => {
-  const original = { codex: adapterRegistry.codex, gemini: adapterRegistry.gemini };
+  const original = { codex: adapterRegistry.codex, agy: adapterRegistry.agy };
   const blocker = path.join(tempDir, 'quota-parent-is-a-file');
   fs.writeFileSync(blocker, 'not a directory');
   t.after(() => { process.env.coagent8_QUOTA_CACHE = quotaCache; Object.assign(adapterRegistry, original); });
-  for (const id of ['codex', 'gemini']) {
+  for (const id of ['codex', 'agy']) {
     adapterRegistry[id] = {
       id, name: 'fixture',
       probe: async () => ({ installed: true, executionSupported: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
       execute: async () => ({ status: 'completed', isError: false, output: `answer from ${id}`, model: 'fixture-model', truncated: false, continuationAvailable: false }),
     };
   }
-  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'gemini'] } });
+  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] } });
   process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
   const result = readResult(await executeTask('User prompt', 'Public question', { backend: 'auto' }, tempDir));
   assert.equal(result.error, null);
-  assert.match(result.answer, /^answer from (codex|gemini)/);
+  assert.match(result.answer, /^answer from (codex|agy)/);
   assert.equal(result.warnings.filter(warning => warning.startsWith('Quota cache not updated')).length, 1, result.text);
 });

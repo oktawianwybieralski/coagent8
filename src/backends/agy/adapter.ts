@@ -9,10 +9,11 @@ import { redactDiagnostic } from '../../redaction.js';
 import { isValidModelIdentifier } from '../model-identifier.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
+import { configuredBackendCommand, probeCommand } from '../executable.js';
 import type { AdapterProbeResult, CatalogModel, ExecutionOptions, InheritedTools, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
 import { errorCodeOf, type ExecutionError } from '../../conversation.js';
 
-export const id = 'gemini';
+export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 const AGY_SIGNAL_GRACE_MS = 2000;
@@ -78,7 +79,9 @@ export function parseGeminiUsage(parsed: unknown): AdapterProbeResult['quota'] {
 }
 
 export async function probe(): Promise<AdapterProbeResult> {
-  const rawCommand = process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy';
+  const resolvedCommand = probeCommand('agy', name);
+  if ('unresolved' in resolvedCommand) return resolvedCommand.unresolved;
+  const rawCommand = resolvedCommand.command;
   let installed = false;
   let version = 'unknown';
 
@@ -139,7 +142,7 @@ export async function probe(): Promise<AdapterProbeResult> {
  */
 export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
   if (!probe?.installed) return undefined;
-  const resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy');
+  const resolved = resolveCliCommand(configuredBackendCommand('agy'));
   const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: 5000, env: agyEnvironment() });
   if (usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
   let parsed: unknown;
@@ -181,10 +184,10 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     }
   }
 
-  const rawCommand = process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy';
   let resolved: ReturnType<typeof resolveCliCommand>;
   try {
-    resolved = resolveCliCommand(rawCommand);
+    // A configured executable that is missing fails here like an absent CLI.
+    resolved = resolveCliCommand(configuredBackendCommand('agy'));
   } catch (err) {
     return failed({
       code: errorCodeOf(err) === 'CLI_UNSUPPORTED' ? 'CLI_UNSUPPORTED' : 'CLI_NOT_FOUND',
@@ -287,7 +290,7 @@ export function parseAgyModels(stdout: string): CatalogModel[] {
 export async function listModels(): Promise<ModelCatalog | undefined> {
   let resolved: ReturnType<typeof resolveCliCommand>;
   try {
-    resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy');
+    resolved = resolveCliCommand(configuredBackendCommand('agy'));
   } catch {
     // Without a resolvable agy there is no catalog; the turn itself reports why agy cannot run.
     return undefined;
@@ -342,7 +345,7 @@ export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config'
  */
 export async function inheritedTools(): Promise<InheritedTools | undefined> {
   let resolved: ReturnType<typeof resolveCliCommand>;
-  try { resolved = resolveCliCommand(process.env.AGY_PATH || process.env.GEMINI_PATH || 'agy'); }
+  try { resolved = resolveCliCommand(configuredBackendCommand('agy')); }
   catch { return undefined; }
   const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], { timeoutMs: 10_000, env: agyEnvironment() });
   if (res.exitCode !== 0) return undefined;
@@ -352,5 +355,5 @@ export async function inheritedTools(): Promise<InheritedTools | undefined> {
   return { mcpServers: parseAgyMcpList(res.stdout), plugins };
 }
 
-export const geminiAdapter: CliAdapter = { id, name, probe, execute, inspectQuota, listModels, inheritedTools };
-export default geminiAdapter;
+export const agyAdapter: CliAdapter = { id, name, probe, execute, inspectQuota, listModels, inheritedTools };
+export default agyAdapter;

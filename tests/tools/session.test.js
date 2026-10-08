@@ -23,11 +23,11 @@ const { createHistoryWriter } = require('../../src/sessions/history.ts');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('session tool consolidates list, history and close actions', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const handle = sess.sessionHandle;
 
   // Write durable history so history action has data
-  const writer = createHistoryWriter(handle, tempDir, 'gemini', randomUUID());
+  const writer = createHistoryWriter(handle, tempDir, 'agy', randomUUID());
   writer.accept({ type: 'turn_started' });
   writer.accept({ type: 'user_message', text: 'Initial message for history test' });
   writer.accept({ type: 'assistant_message', messageId: 'msg-1', text: 'Assistant reply' });
@@ -36,7 +36,7 @@ test('session tool consolidates list, history and close actions', async () => {
 
   // 1. action: list
   const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-list-'));
-  const other = createSession('gemini', otherDir);
+  const other = createSession('agy', otherDir);
   const listRes = await handleSession({ action: 'list', workspace_path: tempDir });
   assert.ok(!listRes.structuredContent.sessions.some(s => s.sessionHandle === other.sessionHandle), 'list shows only this workspace (AUD-P1-8)');
   fs.rmSync(otherDir, { recursive: true, force: true });
@@ -73,7 +73,7 @@ test('session tool consolidates list, history and close actions', async () => {
 });
 
 test('cancel tool releases leases, child execution and recovers locks', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const handle = sess.sessionHandle;
 
   // Simulate acquiring a turn
@@ -112,7 +112,7 @@ test('cancel tool releases leases, child execution and recovers locks', async ()
 });
 
 test('cancelSession respects external live processes and protects replacement turn tokens', async () => {
-  const sess = createSession('gemini', tempDir);
+  const sess = createSession('agy', tempDir);
   const handle = sess.sessionHandle;
   const file = getSessionFilePath(handle);
 
@@ -132,7 +132,7 @@ test('cancelSession respects external live processes and protects replacement tu
   }
 
   // 2. Replacement turn token protection
-  const sess2 = createSession('gemini', tempDir);
+  const sess2 = createSession('agy', tempDir);
   const handle2 = sess2.sessionHandle;
   const file2 = getSessionFilePath(handle2);
 
@@ -159,7 +159,7 @@ test('cancelSession respects external live processes and protects replacement tu
   assert.equal(updatedRecord.state, 'running', 'Replacement running turn must not be forced to idle');
 
   // 3. Idle session cancellation must not clear a newly acquired turn
-  const sess3 = createSession('gemini', tempDir);
+  const sess3 = createSession('agy', tempDir);
   const handle3 = sess3.sessionHandle;
   const file3 = getSessionFilePath(handle3);
 
@@ -245,7 +245,7 @@ test('cancel reports cancelled: false when the session has no running turn (SIMP
   const { cancelSession, setExecutionCanceller } = require('../../src/sessions/session.ts');
   const { composeExecutionCancellation } = require('../../src/execution/controller.ts');
   composeExecutionCancellation();
-  const idle = createSession('gemini', tempDir);
+  const idle = createSession('agy', tempDir);
   const result = await cancelSession(idle.sessionHandle, tempDir);
   assert.equal(result.cancelled, false);
   assert.match(result.message, /nothing to cancel/);
@@ -254,7 +254,7 @@ test('cancel reports cancelled: false when the session has no running turn (SIMP
 test('session list and the sessions resource show a workspace under the home directory as ~ (SIMPLIFY-001)', async () => {
   const workspace = fs.mkdtempSync(path.join(os.homedir(), 'coagent8-list-'));
   try {
-    const created = createSession('gemini', workspace);
+    const created = createSession('agy', workspace);
     const listed = await handleSession({ action: 'list' }, workspace);
     const record = listed.structuredContent.sessions.find(s => s.sessionHandle === created.sessionHandle);
     // Windows stores the canonical lower-case path.

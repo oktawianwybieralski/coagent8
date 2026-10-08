@@ -207,29 +207,60 @@ read the text. Codex reports no workspace roots, so its results carry the
 
 ### CLI onboarding and optional native-host registration
 
-**CoAgent8: Set Up Coding CLIs** checks all three full CLI names and remembers
-installation/check choices. It does not authorize external MCP configuration
-writes. **CoAgent8: Refresh CLI Status** reruns bounded version/help and local
-sign-in metadata checks without a prompt, installation or login. At least one
-compatible, locally signed-in backend is needed for useful execution. This status
-is distinct from per-turn sandbox verification, token validity and a successful
-model response. No CLI is required to initialize MCP or list its tools.
+Each VSIX command has one purpose. VS Code chat uses the provider without any
+registration or restart (**CoAgent8: Show MCP Servers**). **CoAgent8: Set Up
+Coding CLIs** is the one list for the CLIs: installation, sign-in and CoAgent8 in
+the CLIs' own chats (owner decision, 2026-10-08, merging the former **Manage CLI
+Chat Registrations**). **CoAgent8: Uninstall CoAgent8** removes it.
+
+The first activation checks the CLIs once and shows one notice: the ready CLIs
+with **Show MCP Servers**, plus **Set Up CLIs** when another CLI needs an
+installation or sign-in or a ready CLI has no CoAgent8 entry, or only an offer to
+set up a CLI. The state file in the extension's
+global storage records it before the notice is answered; later activations start
+no process.
+
+**CoAgent8: Set Up Coding CLIs** checks all three full CLI names with bounded
+version/help and local sign-in metadata checks, without a prompt, installation or
+login, in parallel (0.75 s for three ready CLIs on the owner's Windows profile,
+2026-10-08). At least one compatible, locally signed-in backend is needed for
+useful execution. This status is distinct from per-turn sandbox verification,
+token validity and a successful model response. No CLI is required to initialize
+MCP or list its tools. Status reads CoAgent8 registrations from the host files
+only; it starts neither the runtime nor a host (`coagent8 repair` verifies them).
 
 The setup picker opens immediately with a busy indicator while the checks run
-and stays open when focus moves (`ignoreFocusOut`). Each check adds one line to
-the **CoAgent8 Setup** output channel, for example
-`[22:31:05] Set Up Coding CLIs - codex: ready; claude: ready; agy: ready`. The
-full JSON evidence is written only through **Show Details**. The channel opens
-only through **Show Details**, for native-host registration results and for the
-cleanup preview, always without taking focus (`show(true)`): a focused output
-panel would close an open picker. Setup checks again at the end only when it
-installed a CLI or opened a sign-in command.
+and stays open when focus moves (`ignoreFocusOut`). Each line combines the CLI's
+state with its registration, read from the host files (20 ms on the owner's
+profile), and a detail naming the installation source from the resolved
+executable: inside the vendor extension's folder, `~/.gemini/bin` for the copy the
+Google Antigravity extension downloads, otherwise a standalone binary or an npm
+package, marked when setup recorded installing it. Checked lines are the CLIs with
+a CoAgent8 entry (owned or manual), so the accepted list authorizes exactly its
+difference plus what a checked CLI still needs: a missing CLI is installed, a
+signed-out one is offered its sign-in, and an absent or outdated owned entry is
+written through shared setup with the extension origin; unchecked owned entries go
+to cleanup with the preview token applied at once and tagged backups. Manual and
+unreadable entries are never changed; blocked CLIs are not installed around their
+override. Setup verifies a written entry with runtime initialize and `tools/list`,
+plus Codex native discovery of the tools; no `doctor` call, which took 5-11 s per
+client. Its title-bar buttons check again and show details. Each check adds one
+line to the **CoAgent8 Setup** output channel, for example
+`[22:31:05] Set Up Coding CLIs - codex: ready, added to its chat; claude: ready; agy: ready`.
+The full JSON evidence is written only through **Show Details**, which opens the
+channel without taking focus (`show(true)`): a focused output panel would close an
+open picker. Setup checks again at the end only after an installation, or after a
+sign-in when **Check Now** is chosen. One closing notice states readiness and the
+registration changes and offers **Restart Extensions**
+(`workbench.action.restartExtensionHost`) when a vendor chat extension of a
+changed CLI is installed, since those extensions load MCP servers only when they
+start; it restarts every extension, as VS Code has no API to restart one. With
+nothing to do the list closes without a notice. A CLI that appears only later,
+such as agy after the Antigravity view first opens or a standalone CLI after a
+window reload, is checked in the next run of the list.
 
-When ready CLIs are not registered in their own chat hosts, the summary offers
-**Register in Chat Hosts**. It opens **CoAgent8: Register or Repair Native Chat
-Hosts** with those CLIs preselected; nothing is written before its confirmation.
-
-Discovery prefers explicit executable overrides, PATH, then bundled Codex/Claude
+Discovery prefers explicit executable overrides, then `backends.<id>.executable`
+in the configuration file the runtime receives, then PATH, then bundled Codex/Claude
 binaries and, for agy, the copy that the Google Antigravity extension downloads
 to `~/.gemini/bin` when it starts its backend. Only that executable is reused,
 with the usual `--sandbox` turn; CoAgent8 does not call the extension's running
@@ -249,7 +280,7 @@ Native-host launches outside VS Code need their own discoverable CLI environment
 setup does not persist the editor's version directories into their registrations.
 
 For each selected missing CLI, onboarding asks how to install it:
-**Install Vendor Extension** (`openai.chatgpt`, `anthropic.claude-code` or
+**Install VS Code Extension** (`openai.chatgpt`, `anthropic.claude-code` or
 `google.google-antigravity`; it updates itself and adds its own chat) or
 **Install Standalone CLI** (the vendor's official installer; lighter and usable
 in terminals). Either way the CLI stays in its vendor's own location; CoAgent8
@@ -292,10 +323,9 @@ isolated home does not simulate a signed-out state. All agy probes set
 `AGY_CLI_DISABLE_AUTO_UPDATE=true`. Native quota/authentication acceptance is
 separate.
 
-**CoAgent8: Register or Repair Native Chat Hosts** is optional. Its separate
-picker and confirmation authorize writes to selected clients' external MCP
-configuration. The ordinary VS Code provider works independently. Explicit
-standalone commands retain their registration semantics:
+Registration in the CLIs' own chats is optional: the ordinary VS Code provider
+works independently. Explicit standalone commands
+retain their registration semantics:
 
 ```bash
 coagent8 setup --clients=codex,claude,agy  # authorize native-host registration
@@ -343,9 +373,10 @@ entry.
 
 ### Owned-registration cleanup and uninstall
 
-Run **CoAgent8: Preview and Remove Owned Registrations** before uninstalling the
-VSIX, or use the standalone `cleanup` command. Preview is read-only. Applying
-requires a confirmation in VS Code or the exact CLI preview token; a changed
+Uncheck the CLIs in **CoAgent8: Set Up Coding CLIs** before uninstalling the
+VSIX, run **CoAgent8: Uninstall CoAgent8**, or use the standalone `cleanup` command. Preview is
+read-only. Applying requires the accepted list in VS Code or the exact CLI preview
+token; a changed
 configuration/ownership snapshot invalidates it. Cleanup shares setup's lease,
 keeps private byte-for-byte backups, checks current entry fingerprints, and
 reports removals, absent entries, preserved manual/edited entries and per-client
@@ -379,17 +410,48 @@ Node, without the VS Code API and with a five-second limit; the explicit cleanup
 command remains the immediate path. Production cleanup neither edits SQLite
 profile databases nor deletes cached catalogs or auto-update exclusions.
 
+Since `UNINSTALL-002` (2026-10-08) nothing the extension creates outlives it.
+Registrations it writes carry `coagent8_DIR` for its global storage, so CoAgent8
+started from a CLI chat keeps sessions, history and caches there. Private backups
+it writes, from setup and from removals, are named `vscode-extension-<uuid>` in
+`~/.coagent8/setup-backups`; the hook deletes them, keeping untagged `coagent8`
+CLI backups. The temporary Codex staging copy is deleted after each native edit.
+The extension writes globalState only to remove keys of earlier builds.
+
+**CoAgent8: Uninstall CoAgent8** runs the same removal at once and then
+`workbench.extensions.uninstallExtension` for CoAgent8. Setup installs a vendor
+extension with `workbench.extensions.installExtension` and `{ donotSync: true }`:
+it is machine-scoped, so VS Code skips its "Install (Do not sync)" dialog, shown
+whenever extension sync is on and the option is absent (VS Code 1.141
+`hasToFlagExtensionsMachineScoped`). Setup records the extension in
+`setup-state.json` when it was absent before and the install command completed;
+the extension API may list a new extension only later, so it is not consulted.
+Removing the Google Antigravity extension also deletes `~/.gemini/bin/agy[.exe]`,
+which that extension downloads and does not remove on uninstall. Opening a standalone installer records the CLI
+as pending, and the first check that finds it, also after a reload, records it as
+installed. Only such extensions and CLIs, while present, are listed, none
+preselected. A modal confirms the uninstall; a second modal confirms the removal
+of what is selected, and declining either changes nothing. Standalone CLIs are
+removed by commands inserted, not run, in a terminal the extension does not own,
+so it outlives the uninstall: `npm uninstall -g @openai/codex` (the inverse of
+setup's npm install), the two `Remove-Item`/`rm` commands of Claude Code's
+uninstall documentation, and deletion of `%LOCALAPPDATA%\agy\bin\agy.exe` or
+`~/.local/bin/agy`, where the Antigravity installer script copies its single
+binary (it publishes no uninstall). PATH entries the installers added stay.
+Vendor sign-ins and histories are never removed. Uninstalled
+extensions and global storage disappear on VS Code's next full start, which the
+closing notice offers through **Quit VS Code**; **Restart Extensions** does not
+complete an uninstall. VS Code keeps user settings such as `coagent8.*`.
+
 Owner acceptance on Windows, 2026-10-07: after cleanup, uninstall and restart no
 CoAgent8 registration, `~/.coagent8` data or extension directory remained.
 Before the 2026-10-08 change, uninstalling without cleanup left native-host
 registrations pointing to `~/.coagent8/runtime`, and VS Code kept the uninstalled
 extension's `globalState` (welcome dismissal and remembered CLI choices); the
 extension now removes those keys on activation and keeps its state in global
-storage. When a CLI is ready, a one-time notice says so instead. The welcome
-notification now appears on activation until a CLI is ready or **Don't Show
-Again** is chosen; the older `setupOffered` flag does not suppress it. Run
-**CoAgent8: Set Up Coding CLIs** from the Command Palette at any time. This is not a reason to
-mass-delete the owner's profile.
+storage. Since `ONBOARDING-002` the first activation shows one notice per
+installation (see above). Run **CoAgent8: Set Up Coding CLIs** from the Command
+Palette at any time. This is not a reason to mass-delete the owner's profile.
 
 **CoAgent8: Open Configuration (config.json)** opens the runtime configuration
 and creates defaults only if missing. Set the machine-scoped user setting
@@ -422,9 +484,8 @@ and desktop behavior after the new provider refresh remain unverified. A one-off
 owner-requested reset removes only CoAgent8 profile state after the editor closes,
 with backups; it is not production cleanup and does not delete shared databases.
 
-**CoAgent8: Reset Setup State** clears remembered CLI choices and welcome dismissal
-through the public VS Code storage API and rechecks readiness without restarting
-the editor. Configuration, registrations and sign-ins remain intact. Use
+The extension remembers no CLI selection, so it has no reset command; uninstalling
+removes the first-activation record with its global storage. Use
 [the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md) for native lifecycle acceptance.
 
 Setup currently supports local default standalone profiles. Remote VS Code hosts

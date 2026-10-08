@@ -17,8 +17,8 @@ test('backend CLIs resolve to fixtures and real installations are unreachable', 
   clearCliResolverCache();
   assert.equal(process.env.CLAUDE_PATH, path.join(fixtures, 'claude-cli', 'claude.cjs'));
   assert.equal(process.env.CODEX_PATH, path.join(fixtures, 'codex-cli', 'codex.cjs'));
-  assert.equal(process.env.AGY_PATH, path.join(fixtures, 'gemini-cli', 'gemini.cjs'));
-  for (const name of ['claude', 'codex', 'agy', 'gemini', 'pwsh', 'powershell']) {
+  assert.equal(process.env.AGY_PATH, path.join(fixtures, 'agy-cli', 'agy.cjs'));
+  for (const name of ['claude', 'codex', 'agy', 'agy', 'pwsh', 'powershell']) {
     assert.throws(() => resolveCliCommand(name), { code: 'CLI_NOT_FOUND' }, `${name} must not resolve on the test PATH`);
   }
   assert.equal(resolveBundledClaude(), null);

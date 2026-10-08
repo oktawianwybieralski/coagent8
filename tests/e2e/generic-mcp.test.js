@@ -35,14 +35,14 @@ test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools withou
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-generic-mcp-'));
   const configPath = path.join(dir, 'config.json');
   // Create minimal isolated config with no default backend set
-  fs.writeFileSync(configPath, JSON.stringify({ routing: { allowedBackends: ['codex', 'claude', 'gemini'] } }, null, 2));
+  fs.writeFileSync(configPath, JSON.stringify({ routing: { allowedBackends: ['codex', 'claude', 'agy'] } }, null, 2));
   const initialConfigContent = fs.readFileSync(configPath, 'utf8');
 
   // Point to non-existent executables so no real CLI can run
   const c = createClient(dir, {
     CODEX_PATH: path.join(dir, 'nonexistent-codex'),
     CLAUDE_PATH: path.join(dir, 'nonexistent-claude'),
-    GEMINI_PATH: path.join(dir, 'nonexistent-gemini'),
+    AGY_PATH: path.join(dir, 'nonexistent-gemini'),
   });
   t.after(async () => {
     await c.cleanup();
@@ -87,10 +87,10 @@ test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools withou
 
 test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict without synthetic State Envelope', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-consult-plain-'));
-  const fixturePath = path.resolve(__dirname, '../fixtures/gemini-cli/gemini.cjs');
+  const fixturePath = path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs');
   const captureFile = path.join(dir, 'fixture-capture.json');
   const c = createClient(dir, {
-    GEMINI_PATH: fixturePath,
+    AGY_PATH: fixturePath,
     GEMINI_CLI_HOME: path.join(dir, 'gemini-home'),
     coagent8_FIXTURE_CAPTURE: captureFile,
   });
@@ -111,7 +111,7 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
     name: 'consult',
     arguments: {
       proposal: 'How should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?',
-      backend: 'gemini',
+      backend: 'agy',
       workspace_path: dir,
     },
   });
@@ -192,9 +192,9 @@ test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and states the 
   execFileSync('git', ['commit', '-qm', 'initial'], { cwd: dir, windowsHide: true });
   fs.writeFileSync(path.join(dir, 'file.txt'), 'hello modified\n');
 
-  const fixturePath = path.resolve(__dirname, '../fixtures/gemini-cli/gemini.cjs');
+  const fixturePath = path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs');
   const c = createClient(dir, {
-    GEMINI_PATH: fixturePath,
+    AGY_PATH: fixturePath,
     GEMINI_CLI_HOME: path.join(dir, 'gemini-home'),
   });
   t.after(async () => {
@@ -213,7 +213,7 @@ test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and states the 
     name: 'review',
     arguments: {
       instructions: 'Audit recent changes for security defects.',
-      backend: 'gemini',
+      backend: 'agy',
       workspace_path: dir,
     },
   });

@@ -17,7 +17,7 @@ const OPTION_LIKE = ['--yolo', '-m', 'gpt 6', 'model\n--dangerously-bypass'];
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('every adapter rejects an option-like model before it reaches argv (AUD-P1-6)', async () => {
-  for (const id of ['codex', 'gemini', 'claude']) {
+  for (const id of ['codex', 'agy', 'claude']) {
     for (const model of OPTION_LIKE) {
       const result = await adapterRegistry[id].execute('prompt', { cwd: tempDir, model });
       assert.equal(result.status, 'failed', `${id} ${JSON.stringify(model)}`);
@@ -27,15 +27,15 @@ test('every adapter rejects an option-like model before it reaches argv (AUD-P1-
 });
 
 test('the controller rejects an option-like model before any backend runs (AUD-P1-6)', async () => {
-  const original = adapterRegistry.gemini;
+  const original = adapterRegistry.agy;
   let executed = false;
-  adapterRegistry.gemini = { id: 'gemini', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
-    saveConfig({ defaultBackend: 'gemini', routing: { strategy: 'fixed', allowedBackends: ['gemini'] } });
-    await assert.rejects(executeTask('prompt', 'question', { backend: 'gemini', model: '--yolo' }, tempDir), { code: 'INPUT_LIMIT' });
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await assert.rejects(executeTask('prompt', 'question', { backend: 'agy', model: '--yolo' }, tempDir), { code: 'INPUT_LIMIT' });
     assert.equal(executed, false);
   } finally {
-    adapterRegistry.gemini = original;
+    adapterRegistry.agy = original;
   }
 });

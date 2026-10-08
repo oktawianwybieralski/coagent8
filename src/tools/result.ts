@@ -48,7 +48,7 @@ const FOOTER_LINE_BREAK = '\n>\n';
  *   with its state, the review verdict, notices and warnings.
  * - Appends pre-filled GitHub issue report link on unrecoverable fatal system errors.
  *
- * @param provider - Backend provider identifier (e.g. 'codex', 'gemini', 'claude', or null).
+ * @param provider - Backend provider identifier (e.g. 'codex', 'agy', 'claude', or null).
  * @param res - TerminalExecutionResult from CLI adapter or controller.
  * @param defaultText - Fallback public text if output is empty.
  * @param sessionHandle - Active session handle or null.

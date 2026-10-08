@@ -4,7 +4,7 @@ import os from 'node:os';
 import { readBoundedFileSync } from './stream.js';
 import { ToolError } from '../conversation.js';
 export interface CliCommand { command: string; argsPrefix: string[]; source: 'native' | 'node' | 'npm-shim' }
-class CliResolutionError extends ToolError {
+export class CliResolutionError extends ToolError {
   constructor(code: 'CLI_NOT_FOUND' | 'CLI_UNSUPPORTED', message: string) {
     super(code, message);
   }

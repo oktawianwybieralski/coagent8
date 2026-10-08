@@ -34,7 +34,7 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (s.sessionHandle !== handle || !sanitizeHandle(handle) || !PROVIDERS.includes(s.backend as typeof PROVIDERS[number]) || typeof s.workspace !== 'string' || !path.isAbsolute(s.workspace)) return null;
   if (!Number.isFinite(Date.parse(s.createdAt)) || !Number.isFinite(Date.parse(s.lastUsedAt))) return null;
   if (s.threadId != null && (typeof s.threadId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(s.threadId))) return null;
-  if (s.backend === 'gemini' && s.threadId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s.threadId)) return null;
+  if (s.backend === 'agy' && s.threadId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s.threadId)) return null;
   if (s.activePid != null && (!Number.isSafeInteger(s.activePid) || s.activePid <= 0)) return null;
   if (s.activeTurnAt != null && (!Number.isFinite(s.activeTurnAt) || s.activeTurnAt < 0)) return null;
   if (s.state && !['idle', 'running', 'invalidated', 'closed'].includes(s.state)) return null;

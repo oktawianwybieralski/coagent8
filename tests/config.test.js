@@ -135,10 +135,10 @@ test('quota module operates without fabricated numbers and respects exhaustion &
     config: { routing: { allowedBackends: ['codex', 'claude'] } },
   });
   assert.equal(bestChoice, 'codex');
-  const geminiBest=await selectSmartQuotaBackend(['codex','claude','gemini'],{quotasOverride:{...measuredQuotas,gemini:{installed:true,status:'operational',headroomPercent:90}},config:{routing:{allowedBackends:['codex','claude','gemini']}}});assert.equal(geminiBest,'codex');
-  await Promise.all(['codex','claude','gemini'].map(id=>recordQuotaCooldown(id)));
-  const concurrent=JSON.parse(fs.readFileSync(testQuotaCache,'utf8'));for(const id of ['codex','claude','gemini'])assert.equal(concurrent.data[id].status,'rate_limited');
-  await Promise.all(['codex','claude','gemini'].map(id=>recordQuotaCooldown(id,-5000)));
+  const geminiBest=await selectSmartQuotaBackend(['codex','claude','agy'],{quotasOverride:{...measuredQuotas,agy:{installed:true,status:'operational',headroomPercent:90}},config:{routing:{allowedBackends:['codex','claude','agy']}}});assert.equal(geminiBest,'codex');
+  await Promise.all(['codex','claude','agy'].map(id=>recordQuotaCooldown(id)));
+  const concurrent=JSON.parse(fs.readFileSync(testQuotaCache,'utf8'));for(const id of ['codex','claude','agy'])assert.equal(concurrent.data[id].status,'rate_limited');
+  await Promise.all(['codex','claude','agy'].map(id=>recordQuotaCooldown(id,-5000)));
 
   // 6. Runtime rate-limit cooldown recording
   await recordQuotaCooldown('codex', undefined, 'OpenAI API Error: 429 Too Many Requests - rate limit exceeded for 5h window');

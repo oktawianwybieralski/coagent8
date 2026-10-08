@@ -62,7 +62,8 @@ export function registration(value: unknown): Registration {
   if (entry.disabled === true || entry.enabled === false) throw new Error('Existing CoAgent8 entry is disabled; enable it in the host explicitly.');
   const env = entry.env === undefined ? undefined : object(entry.env);
   if (env && !Object.values(env).every(value => typeof value === 'string')) throw new Error('Invalid CoAgent8 environment.');
-  return { command: entry.command, args: entry.args, env: env as Record<string, string> | undefined };
+  // TOML tables have no prototype; a plain copy keeps deep comparison with a candidate exact.
+  return { command: entry.command, args: [...entry.args], env: env ? { ...env } as Record<string, string> : undefined };
 }
 export function configPath(client: SetupClient, home: string, env: NodeJS.ProcessEnv): string {
   if (client === 'codex') return path.join(env.CODEX_HOME || path.join(home, '.codex'), 'config.toml');
@@ -71,6 +72,14 @@ export function configPath(client: SetupClient, home: string, env: NodeJS.Proces
 }
 
 
+/** Prefix of private backups written for the VS Code extension, which its uninstall removes. */
+export const EXTENSION_BACKUP_PREFIX = `${EXTENSION_ORIGIN}-`;
+/** Creates a private backup directory, tagged when the VS Code extension made the change. */
+export function backupDirectory(root: string, origin?: RegistrationOrigin): string {
+  const directory = path.join(root, 'setup-backups', `${origin ? EXTENSION_BACKUP_PREFIX : ''}${randomUUID()}`);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  return directory;
+}
 export function writeChecked(file: string, before: string | null, after: string): void {
   if (read(file) !== before) throw new Error('Configuration changed concurrently; setup did not overwrite it.');
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
