@@ -174,6 +174,37 @@ request. **Snapshot:** `c265cdf` with a clean working tree.
 | AUD-P1-10 | Committed `dist/` is stale and excluded from review | [reproduced] |
 | AUD-P1-11 | Codex configuration is parsed with a regex that matches commented lines | [reproduced] |
 
+### Audit reproductions re-run at cb97c78 (2026-10-08)
+
+Local candidate `cb97c78` on `fix/vsix-presentation`, Windows 11, Node v26.10.0.
+The working tree differed from the commit only in documentation (`docs/`), not in
+`src/` or `tests/`. Each order-1 reproduction is now a committed regression test
+using the audit's inputs; the run used hermetic fixtures and no backend AI CLI.
+
+Command: `node tests/run.cjs tests/redaction.test.js
+tests/execution/controller-cooldown.test.js tests/execution/controller-history.test.js
+tests/sessions/history.test.js tests/sessions/history-capacity.test.js
+tests/server.test.js tests/backends/codex/adapter.test.js tests/execution/process.test.js`.
+Result: 70 tests, 68 pass, zero fail, two POSIX-only skips.
+
+| Finding | Reproduction | Regression test | Result |
+| --- | --- | --- | --- |
+| AUD-P0-1 | Synthetic stale-PPID snapshot | `tests/execution/process.test.js` ("layer 3: the supervisor never snapshots, polls or kills by PID") | PASS: no PID, parent-PID or CIM selection in `src/`; `process-tree.ts` absent |
+| AUD-P0-2 | Four code inputs in a public answer | `tests/redaction.test.js` (AUD-P0-2 round-trip; credential formats) | PASS: inputs unchanged; credential formats still replaced |
+| AUD-P0-3 | Streamed-history byte growth | `tests/sessions/history.test.js` (60 KiB in 40-byte deltas within 3x) | PASS |
+| AUD-P0-3 | Full-archive first flush; 120 KiB session | `tests/execution/controller-history.test.js` | PASS: the CLI launches and the answer returns with a history warning |
+| AUD-P1-1 | Controller cooldown sequence, "try again in 3 days" | `tests/execution/controller-cooldown.test.js` | PASS: 3-day cooldown kept; first backoff tier |
+| AUD-P1-2 | Unknown error reported as `INPUT_LIMIT` | `tests/server.test.js` (AUD-P1-2) | PASS: `PROCESS_ERROR` |
+| AUD-P1-3 | Metadata failure discards an answer | `tests/execution/controller-history.test.js` (AUD-P1-3) | PASS: answer kept, `continuationAvailable: false` |
+| AUD-P1-10 | Stale committed `dist/` | `git ls-files dist` and `git check-ignore` | PASS: no tracked file; `dist/` ignored |
+| AUD-P1-11 | Commented Codex `model` line | `tests/backends/codex/adapter.test.js` (AUD-P1-11) | PASS |
+
+Not repeated: the live stale-parent process listing, last run on 2026-10-07 at
+`3480af4` (see [the re-run on the stack tip](#re-run-on-the-stack-tip-2026-10-07)).
+It needs a process-listing helper on the owner's desktop, and the source test
+above covers the mechanism. This run is local evidence for one commit. It is
+not six-job CI, a clean-checkout gate or an independent Reviewer approval.
+
 ### P0 findings
 
 #### AUD-P0-1 Windows teardown can terminate unrelated processes

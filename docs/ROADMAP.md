@@ -310,12 +310,21 @@ reduce responsibilities.
 [remediation index](#audit-remediation-index) is complete in its owning milestone.
 It adds no separate work.
 
-- [ ] Turn each audit reproduction into a regression test before or with the fix.
+- [x] Turn each audit reproduction into a regression test before or with the fix.
   The reproductions cover: the redaction inputs, the controller cooldown sequence,
   streamed-history byte growth, the full-archive first flush, the commented Codex
   `model` line and the synthetic stale-PPID process snapshot.
-- [ ] Re-run the audit probes against the candidate and record the results in the
+  Each has a committed test with the audit's own inputs (mapping in the
+  [re-run record](PROJECT_REVIEW_2026-10-05.md#audit-reproductions-re-run-at-cb97c78-2026-10-08)).
+  The stale-PPID snapshot has no runtime test because the snapshot mechanism was
+  removed; a source test fails if PID/parent-PID selection returns.
+- [x] Re-run the audit probes against the candidate and record the results in the
   project review before requesting Reviewer approval.
+  Re-run on 2026-10-08 at local candidate `cb97c78` (Windows, Node v26.10.0):
+  eight focused test files, 70 tests, 68 pass, zero fail, two POSIX skips;
+  `dist/` untracked and ignored. Results are in the
+  [project review](PROJECT_REVIEW_2026-10-05.md#audit-reproductions-re-run-at-cb97c78-2026-10-08).
+  Repeat the run if the candidate's `src/` or `tests/` change before release.
 
 - [x] `CUR-001`: propagate omitted/truncated Git input as structured completeness
   state into the review gate. Bind the expected snapshot and define approval
@@ -650,13 +659,17 @@ Crash orphans and Job Objects (AUD-P2-14, order 3):
   - agy (`gemini-3.8-flash-low`): `agy.exe` with the user's MCP servers
     (CoAgent8's own `dist/index.cjs`, and `cmd.exe`, `node.exe` (npx), `cmd.exe`,
     `node.exe` for Context7); all gone after 1 s.
-- [ ] agy turns start every MCP server of the user's agy configuration, here
+- [x] agy turns start every MCP server of the user's agy configuration, here
   CoAgent8 itself and Context7 through `npx`, on every turn. That costs startup
   time and console helpers, and the user's allow rules
   (`mcp(coagent8/consult)`, `mcp(coagent8/review)`) let the backend model call
   CoAgent8 recursively. agy 1.3.1 has no option to start without MCP servers.
   Measure whether the model can reach these tools in `--sandbox` print mode and
   decide on isolation (owner decision).
+  Decided 2026-10-08 under `CUR-002` in `AUDIT-001`: measured in `--sandbox`
+  (servers connect and list their tools); accepted as a documented third-party
+  limitation. Recursion is refused (`COAGENT8_NESTED_TURN`) and doctor names the
+  inherited servers and plugins. The startup cost of these servers remains.
 - [ ] Add a POSIX parent-death strategy for detached groups. Do not rely on
   stdin EOF: Claude did not exit on EOF mid-turn (see the evidence above).
 - [x] Focus-stealing console window on the first agy launch (P0, beta 2 blocker),
