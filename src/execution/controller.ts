@@ -35,7 +35,7 @@
 import { randomUUID } from 'node:crypto';
 import { resolveBackend } from '../backends/routing.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
-import { checkModelSelection } from '../backends/model-catalog.js';
+import { checkModelSelection, findCatalogEntry } from '../backends/model-catalog.js';
 import { selectModel, type PriceConstraint } from '../backends/model-selection.js';
 import { checkPriceLimit, priceEvidence, readPrices } from '../backends/prices.js';
 import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../backends/governance.js';
@@ -47,7 +47,7 @@ import { createHistoryWriter } from '../sessions/history.js';
 import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, BufferLimitError } from './stream.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
-import { ToolError, errorCodeOf, type AdapterEvent } from '../conversation.js';
+import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../conversation.js';
 import { formatExecutionResult } from '../tools/result.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
@@ -120,6 +120,27 @@ export async function waitForActiveExecutionTasks(): Promise<void> {
 }
 
 /**
+ * Resolves the backend for a named model. `auto` routes to a backend whose CLI lists the
+ * model, by id or alias; when none lists it, to one whose CLI decides itself: it runs
+ * unlisted models (Claude Code) or lists none. An explicit backend is kept and its catalog
+ * check reports a model it does not offer.
+ * @throws `MODEL_UNAVAILABLE` naming each permitted backend that does not offer the model.
+ */
+async function resolveBackendForModel(requested: string | undefined, model: string) {
+  const offers = (acceptUnlisted: boolean) => async (id: ProviderId) => {
+    const catalog = await readModelCatalog(id);
+    if (catalog && findCatalogEntry(catalog, model)) return undefined;
+    if (acceptUnlisted && (!catalog || catalog.acceptsUnlisted)) return undefined;
+    return new ToolError('MODEL_UNAVAILABLE', `does not list '${model}'; doctor lists its models.`);
+  };
+  try { return await resolveBackend(requested, { eligible: offers(false) }); }
+  catch (err) {
+    if (!(err instanceof ToolError) || err.code !== 'MODEL_UNAVAILABLE') throw err;
+    return resolveBackend(requested, { eligible: offers(true) });
+  }
+}
+
+/**
  * Executes a task through the unified controller pipeline.
  *
  * @param prompt - Internal prompt payload passed to the CLI adapter (e.g. system instructions + task).
@@ -156,10 +177,12 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     : { below, prices: await readPrices({ current: true }), effort: args.reasoning_effort };
   // Without a named model, only backends with a model below the limit are chosen from.
   const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
-  const backend = await resolveBackend(previous?.backend || args.backend, choosing ? { eligible: async (id, probe) => {
-    try { await selectModel(id, probe, {}, { constraint: choosing }); return undefined; }
-    catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
-  } } : {});
+  const backend = previous ? await resolveBackend(previous.backend)
+    : args.model !== undefined ? await resolveBackendForModel(args.backend, args.model)
+    : await resolveBackend(args.backend, choosing ? { eligible: async (id, probe) => {
+      try { await selectModel(id, probe, {}, { constraint: choosing }); return undefined; }
+      catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
+    } } : {});
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
   if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   // The model comes from the call, the session, the configuration or the CLI, never from the

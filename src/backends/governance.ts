@@ -74,14 +74,21 @@ export function decideConsent(model: string, defaultModel: string | undefined, p
   return { ask: false, basis: 'priced', offerRemember: false, reason: `Its output costs ${usd(price.output)} per million tokens.` };
 }
 
+/**
+ * The caller's next step after a refusal: the user chose or accepted this model, so another
+ * one is the user's decision (`AX-003`; a calling agent switched models after an unanswered
+ * request in the 2026-10-08 trials).
+ */
+const NO_SUBSTITUTE = 'Tell the user; switch to another model only if the user asks.';
+
 /** One-line refusal when the user's approval cannot be requested. */
 export function consentRequiredMessage(model: string, reason: string): string {
-  return `Model '${model}' needs the user's approval, which this client cannot ask for (no MCP elicitation). ${reason} Retry with another model.`;
+  return `Model '${model}' needs the user's approval, which this client cannot ask for (no MCP elicitation). ${reason} ${NO_SUBSTITUTE}`;
 }
 
 /** One-line refusal when the user declined the approval request or left the box unchecked. */
 export function consentDeclinedMessage(model: string): string {
-  return `The user did not approve model '${model}'; retry with another model.`;
+  return `The user did not approve model '${model}'. Ask the user before using another model.`;
 }
 
 /**
@@ -90,5 +97,5 @@ export function consentDeclinedMessage(model: string): string {
  * cancels every request without showing it (measured 2026-10-07).
  */
 export function consentUnansweredMessage(model: string, reason: string): string {
-  return `The client closed the approval request for model '${model}' without an answer, possibly without showing it to the user. ${reason} Retry with another model.`;
+  return `The client closed the approval request for model '${model}' without an answer, possibly without showing it to the user. ${reason} ${NO_SUBSTITUTE}`;
 }

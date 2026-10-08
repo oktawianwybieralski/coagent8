@@ -276,7 +276,7 @@ test('a top-tier model without a way to ask the user is refused in one line; use
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
     saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
-    const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Retry with another model.";
+    const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Tell the user; switch to another model only if the user asks.";
     await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking' }, tempDir),
       { name: 'ToolError', code: 'POLICY_DENIED', message });
     // The audit reproduction: an agent-set flag used to start the governed model.
@@ -302,7 +302,7 @@ test("consent is asked from the user for the backend's effective default model a
     await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir), { code: 'POLICY_DENIED' });
     const declined = async request => { asked.push(request); return { approved: false }; };
     await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: declined }),
-      { code: 'POLICY_DENIED', message: "The user did not approve model 'claude-opus-4-6-thinking'; retry with another model." });
+      { code: 'POLICY_DENIED', message: "The user did not approve model 'claude-opus-4-6-thinking'. Ask the user before using another model." });
     assert.deepEqual(received, [], 'nothing runs without approval');
     const approved = async request => { asked.push(request); return { approved: true }; };
     const res = await executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: approved });

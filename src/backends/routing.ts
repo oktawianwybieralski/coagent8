@@ -26,11 +26,13 @@ export function setCallerProvider(provider: ProviderId | null): void {
   callerProvider = provider;
 }
 /**
- * Resolves the backend of a turn: an explicit or configured fixed backend, else one chosen
- * like smart_quota among the permitted installed CLIs.
+ * Resolves the backend of a turn: an explicit backend, else the configured default, else one
+ * chosen like smart_quota among the permitted installed CLIs.
  * @param requested - The call's or session's backend; `auto` or absent for the configured route.
- * @param options - `eligible` narrows a chosen (not a fixed) backend: it returns why a backend
- * cannot run the turn, such as no model below a user's price limit (`AX-002`), or undefined.
+ * @param options - `eligible` narrows an `auto` route: it returns why a backend cannot run the
+ * turn, such as not listing the named model or having none below a user's price limit
+ * (`AX-002`), or undefined. The configured default is kept when eligible; otherwise the
+ * route chooses among the eligible backends. An explicit backend is never replaced.
  * @throws The reasons of every backend `eligible` rejected, with the first one's code, when none remains.
  */
 export async function resolveBackend(requested?: string | null, options: { eligible?: (id: ProviderId, probe: AdapterProbeResult) => Promise<ToolError | undefined> } = {}): Promise<ResolvedBackend> {
@@ -46,8 +48,9 @@ export async function resolveBackend(requested?: string | null, options: { eligi
     if (probe.executionSupported === false) throw new ToolError('CLI_UNSUPPORTED', `Provider '${id}' version/profile is unsupported; run doctor.`);
     return { id, adapter: adapterRegistry[id], probe, isSmartQuota: smart };
   }
-  if (target && PROVIDERS.includes(target as ProviderId)) return selected(target as ProviderId);
-  if (target && target !== 'smart_quota') throw new ToolError('INPUT_LIMIT', `Invalid routing target '${target}'.`);
+  const preferred = target && PROVIDERS.includes(target as ProviderId) ? target as ProviderId : undefined;
+  if (preferred && !(raw === 'auto' && options.eligible)) return selected(preferred);
+  if (target && !preferred && target !== 'smart_quota') throw new ToolError('INPUT_LIMIT', `Invalid routing target '${target}'.`);
   const results = await Promise.all(candidates.map(async id => [id, await probeBackend(id)] as const));
   for (const [id, probe] of results) probes.set(id, probe);
   const installed = candidates.filter(id => probes.get(id)?.installed && probes.get(id)?.executionSupported !== false);
@@ -58,6 +61,7 @@ export async function resolveBackend(requested?: string | null, options: { eligi
     pool = installed.filter((_, index) => !rejected[index]);
     if (!pool.length) throw new ToolError(rejected[0]!.code, installed.map((id, index) => `${id}: ${rejected[index]!.message}`).join(' '));
   }
+  if (preferred && pool.includes(preferred)) return selected(preferred);
   if (target === 'smart_quota' || pool.length > 1) {
     // Without a configured default, auto chooses like smart_quota: another CLI than the caller's, most headroom first.
     const warnings: string[] = [];
