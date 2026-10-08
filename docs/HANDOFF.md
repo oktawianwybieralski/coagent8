@@ -194,9 +194,9 @@ unpublished development candidate for private testing.
 Review-input completeness and snapshot/check validation are now implemented
 locally. Other-tree review is refused rather than reading mismatched live files.
 Codex isolates inherited tools; agy remains an accepted third-party limitation.
-New open findings concern automatic-routing cache
-failures, sticky commentary limits, concurrent cache misses and request-budget
-scope. The runtime contract lists these as `CUR-001` through `CUR-013` (`CUR-012` is source-inspected capacity accounting;
+Open findings concern concurrent cache misses and request-budget scope;
+automatic-routing cache failures (`CUR-004`) and sticky commentary limits
+(`CUR-005`) are fixed locally. The runtime contract lists these as `CUR-001` through `CUR-013` (`CUR-012` is source-inspected capacity accounting;
 `CUR-013`, a review of another revision reading the live workspace, came from the
 owner's VS Code retest).
 `CUR-003` (accepted consent without the checkbox) is closed on `fix/explicit-consent`.

@@ -108,3 +108,33 @@ test('the answer is the final_answer message, without the commentary Codex marks
   assert.equal(run([undefined, undefined, undefined]).output.split('\n\n').length, 3, 'a model without phases keeps every message');
   assert.match(run(['commentary', 'commentary', 'absent']).output, /^Najlepiej/, 'without a final answer the commentary is the partial response');
 });
+
+test('CUR-005: commentary over the byte or count budget does not mark a small complete final answer as truncated', () => {
+  const run = ({ commentary, final = 'OK', ...budgets }) => {
+    const collector = createCodexStreamCollector(budgets);
+    collector.initialize('thread_budget');
+    collector.beginTurn('turn_1');
+    const completed = (id, text, phase) => collector.line(JSON.stringify({ method: 'item/completed', params: { threadId: 'thread_budget', turnId: 'turn_1', item: { id, type: 'agentMessage', text, ...(phase ? { phase } : {}) } } }));
+    commentary.forEach((text, index) => completed(`c${index}`, text, 'commentary'));
+    if (final !== null) completed('final', final, 'final_answer');
+    collector.line(JSON.stringify({ method: 'turn/completed', params: { threadId: 'thread_budget', turn: { id: 'turn_1', status: 'completed' } } }));
+    return collector.snapshot();
+  };
+  const large = run({ commentary: ['x'.repeat(100)], maxTotalMessageBytes: 80 });
+  assert.equal(large.output, 'OK');
+  assert.equal(large.truncated, false, 'the cut commentary left the answer with the final message');
+  assert.equal(large.error, undefined);
+
+  const many = run({ commentary: ['one', 'two', 'three', 'four'], maxMessages: 2 });
+  assert.equal(many.output, 'OK', 'commentary beyond the count budget does not fail the turn before its final answer');
+  assert.equal(many.truncated, false);
+  assert.equal(many.error, undefined);
+
+  const unfinished = run({ commentary: ['x'.repeat(100)], final: null, maxTotalMessageBytes: 80 });
+  assert.equal(unfinished.truncated, true, 'without a final answer the cut commentary is the output and stays marked');
+  assert.equal(unfinished.error.code, 'BUFFER_LIMIT');
+
+  const longFinal = run({ commentary: ['short'], final: 'y'.repeat(100), maxTotalMessageBytes: 80 });
+  assert.equal(longFinal.truncated, true, 'a final answer over the budget is still reported as truncated');
+  assert.equal(longFinal.error.code, 'BUFFER_LIMIT');
+});

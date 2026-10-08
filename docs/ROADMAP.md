@@ -30,7 +30,7 @@ The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pendin
 | Area | Implemented locally | Remaining |
 | --- | --- | --- |
 | Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup; Codex inherited-tool verification and nested-turn refusal | agy inherited tools (accepted limitation), POSIX parent-death cleanup, fresh candidate matrix |
-| Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection; structured review completeness and snapshot/check binding | Sticky commentary truncation/count budgets, full review of another tree |
+| Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection; structured review completeness and snapshot/check binding | Full review of another tree |
 | Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, end-to-end budget |
 | Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Coalesced misses, fuller invalidation, catalog/default redesign |
 | Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
@@ -1872,9 +1872,17 @@ without a model call.
 
 ### `CLI-INTERACT-001` - stream activity liveness and backend failure modes
 
-- [ ] `CUR-005`: preserve final-answer completeness when Codex drops commentary.
+- [x] `CUR-005`: preserve final-answer completeness when Codex drops commentary.
   Track current-message truncation/count pressure separately; acceptance includes
   large/over-count commentary followed by a small complete final answer.
+  Local implementation on `fix/vsix-presentation` (2026-10-08): the stream
+  reducer marks truncation per message, and removing a message clears its mark.
+  Codex commentary beyond the message-count budget is dropped and marked instead
+  of failing the turn; answer messages over the count still fail at once.
+  Regression: `tests/backends/codex/collector.test.js` (100-byte commentary with
+  an 80-byte budget, four commentary messages with a two-message budget, each
+  followed by `OK`; no final answer and an over-budget final answer stay
+  `BUFFER_LIMIT`); it fails on the previous source.
 - [ ] `CUR-007`: define an end-to-end request budget and truthful timing
   scope across Git, probes, catalogs, consent, acquisition, execution and cleanup.
   Decide consent wait accounting explicitly; never extend a caller's absolute

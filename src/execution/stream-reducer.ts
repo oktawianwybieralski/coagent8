@@ -15,7 +15,9 @@ export interface StreamReducerOptions {
  * createLineDecoder in execution/stream.
  */
 export class StreamReducer {
-  private messageTruncated = false;
+  /** Messages whose current text is cut or that were dropped; removing a message clears its mark. */
+  private readonly truncatedIds = new Set<string>();
+  private outputTruncated = false;
   private totalMessageBytes = 0;
   private readonly messageMap = new Map<string, string>();
   private readonly messageBytesMap = new Map<string, number>();
@@ -81,9 +83,11 @@ export class StreamReducer {
     }
 
     let fullText = isDelta ? (prevText || '') + text : text;
+    // The latest text decides whether this message is cut; a complete replacement clears it.
+    let cut = false;
 
     if (fullText.length > this.maxMessageBytes || Buffer.byteLength(fullText, 'utf8') > this.maxMessageBytes) {
-      this.messageTruncated = true;
+      cut = true;
       fullText = truncateToByteLength(fullText, this.maxMessageBytes, this.maxMessageBytes >= 20 ? '\n...[truncated]' : '...');
     }
 
@@ -97,7 +101,7 @@ export class StreamReducer {
         this.messageBytesMap.set(id, msgBytes);
         this.totalMessageBytes += deltaBytes;
       } else {
-        this.messageTruncated = true;
+        cut = true;
         const availableBytes = Math.max(0, this.maxTotalBytes - (this.totalMessageBytes - prevBytes));
         if (availableBytes > 0) {
           const truncated = truncateToByteLength(
@@ -117,7 +121,7 @@ export class StreamReducer {
       }
     } else {
       if (this.messageMap.size >= this.maxMessages) {
-        this.messageTruncated = true;
+        this.truncatedIds.add(id);
         return;
       }
 
@@ -126,7 +130,7 @@ export class StreamReducer {
         this.messageBytesMap.set(id, msgBytes);
         this.totalMessageBytes += msgBytes;
       } else {
-        this.messageTruncated = true;
+        cut = true;
         const availableBytes = Math.max(0, this.maxTotalBytes - this.totalMessageBytes);
         if (availableBytes > 0) {
           const truncated = truncateToByteLength(
@@ -141,6 +145,8 @@ export class StreamReducer {
         }
       }
     }
+    if (cut) this.truncatedIds.add(id);
+    else this.truncatedIds.delete(id);
   }
 
   /**
@@ -151,19 +157,22 @@ export class StreamReducer {
     if (typeof finalText !== 'string') return;
     this.messageMap.clear();
     this.messageBytesMap.clear();
+    this.truncatedIds.clear();
     this.totalMessageBytes = 0;
     this.upsertMessage('final', finalText);
   }
 
   /**
    * Drops messages that are not part of the answer, such as commentary a backend marks as
-   * interim once its final answer arrives; their bytes return to the budget.
+   * interim once its final answer arrives; their bytes return to the budget, and their
+   * truncation no longer marks the answer as truncated (CUR-005).
    */
   removeMessages(ids: Iterable<string>): void {
     for (const id of ids) {
       this.totalMessageBytes -= this.messageBytesMap.get(id) || 0;
       this.messageMap.delete(id);
       this.messageBytesMap.delete(id);
+      this.truncatedIds.delete(id);
     }
   }
 
@@ -196,7 +205,7 @@ export class StreamReducer {
     if (messages.length === 0) return '';
     const joined = messages.join('\n\n').trim();
     if (Buffer.byteLength(joined, 'utf8') > this.maxTotalBytes) {
-      this.messageTruncated = true;
+      this.outputTruncated = true;
       return truncateToByteLength(joined, this.maxTotalBytes, this.maxTotalBytes >= 20 ? '\n...[truncated]' : '...');
     }
     return joined;
@@ -214,8 +223,9 @@ export class StreamReducer {
     return this.totalMessageBytes;
   }
 
+  /** Whether a current message is cut or was dropped, or the joined output was cut. */
   isTruncated(): boolean {
-    return this.messageTruncated;
+    return this.truncatedIds.size > 0 || this.outputTruncated;
   }
 
   getActiveTools(): Map<string, string> {

@@ -265,7 +265,10 @@ Execution text contains:
    server-directory workspace fallback.
 
 Codex commentary leaves the public answer when a final answer arrives; history
-keeps it. Current truncation state can remain sticky after that replacement.
+keeps it. Truncation is tracked per message: commentary that was cut, or dropped
+beyond the message-count budget, no longer marks the final answer as truncated
+once it is removed. Without a final answer the cut commentary remains the output
+and the result reports `BUFFER_LIMIT`.
 
 Footer duration starts after session acquisition. It excludes Git collection,
 workspace resolution, probes, catalog reads, consent and pruning. `timeout_ms`
@@ -480,7 +483,6 @@ These are open implementation issues, not relaxed security requirements.
 | ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
 | CUR-002 | Accepted limitation for agy (owner decision 2026-10-08): `--sandbox` turns can use the MCP servers of `~/.gemini/config/mcp_config.json` and of enabled plugins; agy's built-in documentation states that its agent shell receives the language-server address and CSRF token (not measured). Recursion into CoAgent8 is refused and doctor names the inherited tools. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
-| CUR-005 | Codex commentary can leave truncation/count limits after final-answer replacement | `CLI-INTERACT-001` |
 | CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |
 | CUR-007 | Timeout and duration omit preparation; agy headless host has a measured 180-second limit | `CLI-INTERACT-001` / `CONTEXT-001` |
 | CUR-008 | Sessions remain mandatory with archival disabled; first active handle is unavailable until return | `SESSION-001` / `HISTORY-002` |

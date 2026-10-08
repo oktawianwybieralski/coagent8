@@ -78,7 +78,9 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
       finalAnswerSeen = true;
       reducer.removeMessages(commentaryIds);
     }
-    if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) throw new BufferLimitError('Too many Codex public messages.');
+    // Commentary over the count budget is dropped and marked as truncated by the reducer;
+    // the final answer removes it with that mark (CUR-005). Answer messages fail at once.
+    if (item.phase !== 'commentary' && !reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) throw new BufferLimitError('Too many Codex public messages.');
     reducer.upsertMessage(id, text);
     emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
   }
