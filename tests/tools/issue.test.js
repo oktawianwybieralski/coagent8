@@ -45,7 +45,7 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
 });
 
 test('server advertises issue tool and dispatches tools/call issue cleanly', async () => {
-  const { createServer, createToolDefinitions } = require('../../src/server.ts');
+  const { createServer, createToolDefinitions } = require('../../src/mcp/server.ts');
   const server = createServer();
   const tools = createToolDefinitions();
   const advertisedIssue = tools.find(t => t.name === 'issue');
@@ -54,7 +54,7 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
 
   const advertisedRun = tools.find(t => t.name === 'run');
   // Check run when in callable definitions
-  const { getAllCallableToolDefinitions } = require('../../src/server.ts');
+  const { getAllCallableToolDefinitions } = require('../../src/mcp/server.ts');
   const allCallable = getAllCallableToolDefinitions();
   const runDef = allCallable.find(t => t.name === 'run');
   assert.equal(runDef.outputSchema, undefined, 'run returns execution results, which are markdown only (CONTEXT-001)');

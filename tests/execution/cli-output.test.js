@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { stripAnsi } = require('../../src/execution/cli-output.ts');
-const { formatExecutionResult } = require('../../src/tools/result.ts');
+const { formatExecutionResult } = require('../../src/mcp/result.ts');
 const { readResult } = require('../helpers/result.cjs');
 
 test('stripAnsi deterministically strips colors, cursor moves, and formatting sequences', () => {

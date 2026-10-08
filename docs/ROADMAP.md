@@ -101,7 +101,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   Acceptance: config, model stores and integrations no longer depend on
   session implementation or application execution for file operations.
   Evidence: [S1 implementation](HANDOFF.md#simplify-001-s1-implementation).
-- [ ] **S2 - Separate execution from MCP presentation.** Extract review input
+- [x] **S2 - Separate execution from MCP presentation.** Extract review input
   and verdict policy into review/. Make the controller return a neutral result
   with all evidence needed by handlers. Move formatting to the transport edge;
   keep consent, cancellation and progress contracts independent of the SDK.
@@ -109,6 +109,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   Keep index.ts as dispatch/composition. Acceptance: execution and review have
   no runtime or type imports from MCP; review completeness/post-turn snapshot
   checks, redaction, error status and Markdown-only execution answers survive.
+  Evidence: [S2 implementation](HANDOFF.md#simplify-001-s2-implementation).
 - [ ] **S3 - Separate model policy from provider discovery.** Group catalog,
   identifier, price, governance and model-store modules in models/. Split
   model-selection.ts and consent.ts: pure decisions stay there; registry,

@@ -20,7 +20,7 @@
  *
  * @packageDocumentation
  */
-import { BRAND } from '../../constants.js';
+import { BRAND } from '../../brand.js';
 import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../conversation.js';
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';

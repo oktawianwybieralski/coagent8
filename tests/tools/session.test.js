@@ -193,8 +193,8 @@ test('cancelSession respects external live processes and protects replacement tu
 });
 
 test('formatExecutionResult produces clean Markdown with answer at top, and handleSessionHistory preserves global turn numbers across pagination', async () => {
-  const { formatExecutionResult } = require('../../src/tools/result.ts');
-  const { handleSessionHistory } = require('../../src/tools/session.tool.ts');
+  const { formatExecutionResult } = require('../../src/mcp/result.ts');
+  const { handleSessionHistory } = require('../../src/mcp/tools/session.tool.ts');
 
   // Test formatExecutionResult
   const formatted = await formatExecutionResult('codex', {
@@ -260,7 +260,7 @@ test('session list and the sessions resource show a workspace under the home dir
     // Windows stores the canonical lower-case path.
     assert.equal(record.workspace.toLowerCase(), `~${path.sep}${path.basename(workspace)}`.toLowerCase());
     assert.ok(!JSON.stringify(listed).toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()), 'no absolute home path');
-    const { createServer } = require('../../src/server.ts');
+    const { createServer } = require('../../src/mcp/server.ts');
     const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
     const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
     const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');

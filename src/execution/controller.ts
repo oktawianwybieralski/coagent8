@@ -22,8 +22,8 @@
  *   elapsed seconds and active phase.
  * - **Defensive Protocol Validation**: Validates adapter terminal results (`TerminalExecutionResult`).
  *   Contradictory or missing results fail safely as `PROTOCOL_ERROR`, discarding untrusted output.
- * - **State Envelope Gate Enforcement**: Calls `formatExecutionResult` with `requireEnvelope`,
- *   gating review-only reported verdicts to `BLOCKED` for malformed envelopes or findings.
+ * - **State Envelope Gate Enforcement**: Evaluates review-only reported verdicts
+ *   via evaluateStateEnvelopeGate, returning structured review evaluation in TaskExecutionResult.
  *   The review handler supplies completeness, snapshot identity and check requirements;
  *   this does not independently prove a model's PASS claim or release artifact hashes.
  * - **Timing Scope**: Preparation and consent precede session acquisition and the duration
@@ -48,11 +48,14 @@ import { redactDiagnostic, redactCredentialFormats } from '../redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../conversation.js';
-import { formatExecutionResult } from '../tools/result.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { assertNotNestedTurn } from './nested-turn.js';
-import type { ReviewGateContext } from '../tools/review-gate.js';
+import { stripAnsi } from './cli-output.js';
+import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
+import type { TaskExecutionResult, ExecutionMeta } from '../contracts/execution.js';
+
+export type { TaskExecutionResult, ExecutionMeta };
 
 /**
  * Universal execution parameters accepted by execution tools and the run gateway.
@@ -150,9 +153,17 @@ async function resolveBackendForModel(requested: string | undefined, model: stri
  * @param abortSignal - Optional caller abort signal.
  * @param onProgress - Optional MCP progress callback.
  * @param options - Execution formatting options (e.g. `requireEnvelope` for reviews).
- * @returns Formatted MCP CallToolResult with the markdown answer and footer.
+ * @returns Neutral execution result containing all evidence and metadata.
  */
-export async function executeTask(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: TaskOptions = {}) {
+export async function executeTask(
+  prompt: string,
+  publicInput: string,
+  args: ExecutionRequest,
+  cwd: string,
+  abortSignal?: AbortSignal | null,
+  onProgress?: ((info: { message?: string }) => void) | null,
+  options: TaskOptions = {}
+): Promise<TaskExecutionResult> {
   const task = executeTaskInternal(prompt, publicInput, args, cwd, abortSignal, onProgress, options);
   activeExecutionTasks.add(task);
   try {
@@ -162,7 +173,15 @@ export async function executeTask(prompt: string, publicInput: string, args: Exe
   }
 }
 
-async function executeTaskInternal(prompt: string, publicInput: string, args: ExecutionRequest, cwd: string, abortSignal?: AbortSignal | null, onProgress?: ((info: { message?: string }) => void) | null, options: TaskOptions = {}) {
+async function executeTaskInternal(
+  prompt: string,
+  publicInput: string,
+  args: ExecutionRequest,
+  cwd: string,
+  abortSignal?: AbortSignal | null,
+  onProgress?: ((info: { message?: string }) => void) | null,
+  options: TaskOptions = {}
+): Promise<TaskExecutionResult> {
   // A server started by a backend inside a turn never starts another one (CUR-002).
   assertNotNestedTurn();
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
@@ -402,12 +421,38 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
     try { options.reviewContext.invalidatedReason = await options.verifyReviewSnapshot(); }
     catch (error) { options.reviewContext.invalidatedReason = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`; }
   }
-  return formatExecutionResult(
-    backend.id,
+
+  let review: StateEnvelopeEvaluation | undefined;
+  if (options.requireEnvelope) {
+    if (result.isError || result.error) {
+      review = {
+        output: stripAnsi(result.output || '').trim(),
+        verdict: 'BLOCKED',
+        reason: result.error?.message || 'Execution error',
+      };
+    } else {
+      review = evaluateStateEnvelopeGate(
+        stripAnsi(result.output || '').trim(),
+        result.truncated,
+        true,
+        options.reviewContext
+      );
+    }
+  }
+
+  return {
+    isError: result.isError,
+    provider: backend.id,
     result,
-    '',
-    handle,
-    { turn: session.turnCount || 1, toolCount, durationMs: Date.now() - started, historyAvailable: !writer.disabled && !historyError },
-    { ...options, warnings, ...(priceNote ? { price: priceNote } : {}) }
-  );
+    sessionHandle: handle,
+    meta: {
+      turn: session.turnCount || 1,
+      toolCount,
+      durationMs: Date.now() - started,
+      historyAvailable: !writer.disabled && !historyError,
+    },
+    warnings,
+    price: priceNote,
+    review,
+  };
 }

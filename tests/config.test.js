@@ -219,7 +219,7 @@ test('a configuration directory that cannot be created is reported, not ignored 
 });
 
 test('a malformed configuration hides no tool, is reported by doctor and refuses execution (AUD-P2-11)', async () => {
-  const { createToolDefinitions } = require('../src/server.ts');
+  const { createToolDefinitions } = require('../src/mcp/server.ts');
   const { runDoctor } = require('../src/diagnostics/doctor.ts');
   const { resolveBackend } = require('../src/backends/routing.ts');
   const saved = process.env.coagent8_CONFIG;

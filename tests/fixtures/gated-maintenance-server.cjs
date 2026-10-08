@@ -3,7 +3,7 @@
 require('tsx/cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { serveStdio } = require(path.resolve(__dirname, '../../src/stdio-server.ts'));
+const { serveStdio } = require(path.resolve(__dirname, '../../src/mcp/stdio-server.ts'));
 
 const gate = process.argv[2];
 async function gatedMaintenance() {

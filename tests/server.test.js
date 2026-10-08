@@ -10,7 +10,7 @@ process.env.coagent8_DIR = tempDir;
 
 const { createHistoryWriter } = require('../src/sessions/history.ts');
 const { createSession } = require('../src/sessions/session.ts');
-const { createServer, createToolDefinitions, validateToolArguments } = require('../src/server.ts');
+const { createServer, createToolDefinitions, validateToolArguments } = require('../src/mcp/server.ts');
 const { readResult } = require('./helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -112,7 +112,7 @@ test('F14/F15: shared schema validates required fields, types, enums and unknown
   // AX-002: the price limit is a non-negative finite number of USD per million output tokens.
   assert.ok(validateToolArguments({proposal:'x',output_price_below:4.99},consultTool.inputSchema));
   for (const bad of ['5',-1,null,Number.POSITIVE_INFINITY]) assert.throws(()=>validateToolArguments({proposal:'x',output_price_below:bad},consultTool.inputSchema),/output_price_below/,String(bad));
-  const { getAllCallableToolDefinitions } = require('../src/server.ts');
+  const { getAllCallableToolDefinitions } = require('../src/mcp/server.ts');
   const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
   assert.ok(validateToolArguments({task:'x',backend:'agy'},schema));
   assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);

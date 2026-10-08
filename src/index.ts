@@ -2,7 +2,7 @@
 
 import { redactDiagnostic } from './redaction.js';
 import path from 'node:path';
-import { serveStdio } from './stdio-server.js';
+import { serveStdio } from './mcp/stdio-server.js';
 
 async function run(): Promise<void> {
   const args = process.argv.slice(2);

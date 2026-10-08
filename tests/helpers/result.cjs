@@ -11,6 +11,10 @@ const STATUS = /^(?<provider>\S+) · (?<model>.+?) · (?<duration>\d+\.\d)s(?: �
 const ERROR = /^> Error \[(?<code>[A-Z_]+)(?<retryable>, retryable)?\]: (?<message>[\s\S]*)$/;
 
 function readResult(result) {
+  if (result && typeof result === 'object' && !result.content && 'result' in result && 'meta' in result) {
+    const { formatExecutionResult } = require('../../src/mcp/result.ts');
+    result = formatExecutionResult(result);
+  }
   if (result.structuredContent !== undefined) throw new Error('execution results carry no structuredContent');
   if (result.content.length !== 1 || result.content[0].type !== 'text') throw new Error('execution results carry one text block');
   const text = result.content[0].text;

@@ -25,7 +25,7 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   assert.ok(readResult(first).answer.includes('const answer = 42;'));
   assert.ok(readResult(first).answer.includes('😀')); assert.ok(!readResult(first).answer.includes('fixtureSecret'));
   assert.equal(readResult(first).continuationAvailable,true);
-  assert.match(first.content[0].text,/ · 1 op · /);
+  assert.match(readResult(first).text,/ · 1 op · /);
   const handle = readResult(first).sessionHandle;
   const thread = getSession(handle).threadId;
   assert.equal(thread,'11111111-aaaa-bbbb-cccc-123456789012');
@@ -69,6 +69,16 @@ test('Codex failures are typed and authoritative even at exit zero; malformed or
   const mismatched = await execute('x',{...options,nativeSessionId:thread});
   assert.equal(mismatched.error.code,'PROTOCOL_ERROR'); assert.equal(mismatched.continuationAvailable,false);
   delete process.env.CODEX_FIXTURE_MODE;
+});
+
+test('Codex tool output beyond the runner stdout copy does not mark a complete answer truncated',async () => {
+  process.env.CODEX_FIXTURE_MODE = 'large-tool-output';
+  try {
+    const result = await execute('x',options);
+    assert.equal(result.status,'completed'); assert.equal(result.error,undefined);
+    assert.equal(result.truncated,false);
+    assert.ok(result.output.includes('const answer = 42;'));
+  } finally { delete process.env.CODEX_FIXTURE_MODE; }
 });
 
 test('Codex declines server requests, ignores sub-agent threads, sums turn usage and reports retries as warnings',async () => {

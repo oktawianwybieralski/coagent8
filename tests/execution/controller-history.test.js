@@ -64,7 +64,7 @@ test('full archive never blocks CLI launch, returns successful answer with histo
     assert.equal(res.isError, false, 'Turn must not be marked as failed');
     assert.notEqual(readResult(res).error?.code, 'PROCESS_ERROR');
     assert.notEqual(readResult(res).error?.code, 'HISTORY_ERROR');
-    assert.ok(res.content[0].text.startsWith('Secured answer from backend'));
+    assert.ok(res.result.output.startsWith('Secured answer from backend'));
     assert.equal(readResult(res).answer, 'Secured answer from backend');
     assert.equal(readResult(res).historyAvailable, true, 'History must be available after LRU eviction');
     const remaining = fs.readdirSync(historyDir).filter(f => f.startsWith('syn_sess_dummy'));
@@ -103,7 +103,7 @@ test('per-session limit: 120 KiB streamed answer returns successfully (AUD-P0-3)
 
     assert.equal(res.isError, false, '120 KiB response must return successfully');
     assert.equal(readResult(res).status, 'completed');
-    assert.ok(res.content[0].text.startsWith(largeOutput));
+    assert.ok(res.result.output.startsWith(largeOutput));
     assert.equal(readResult(res).answer.length, 120 * 1024);
   } finally {
     adapterRegistry.agy = original;
@@ -138,7 +138,7 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
     const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, tempDir);
 
     assert.equal(res.isError, false, 'Turn must succeed despite metadata write failure');
-    assert.ok(res.content[0].text.startsWith('Important successfully computed answer'));
+    assert.ok(res.result.output.startsWith('Important successfully computed answer'));
     assert.equal(readResult(res).continuationAvailable, false, 'continuationAvailable must be disabled on metadata failure');
     assert.ok(
       readResult(res).warnings.some(w => w.includes('Session update failed')),
@@ -223,7 +223,7 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
     const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, isolatedDir);
 
     assert.equal(res.isError, false);
-    assert.ok(res.content[0].text.startsWith('No history answer'));
+    assert.ok(res.result.output.startsWith('No history answer'));
     assert.equal(readResult(res).historyAvailable, false);
 
     // Verify history directory does not exist or has no json/jsonl files

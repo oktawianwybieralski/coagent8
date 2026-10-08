@@ -5,7 +5,7 @@
  *
  * @packageDocumentation
  */
-import { BRAND } from '../../constants.js';
+import { BRAND } from '../../brand.js';
 import { runCommand, type StdinChannel } from '../../execution/process.js';
 import type { CatalogModel, ModelCatalog } from '../types.js';
 import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';

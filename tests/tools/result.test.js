@@ -11,7 +11,7 @@ process.env.coagent8_DIR = tempDir;
 const tempSessionsFile = path.join(tempDir, 'sessions.json');
 process.env.coagent8_SESSIONS = tempSessionsFile;
 
-const { formatExecutionResult } = require('../../src/tools/result.ts');
+const { formatExecutionResult } = require('../../src/mcp/result.ts');
 const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -181,7 +181,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
 });
 
 test('withWorkspace adds a line only for the server-directory fallback', () => {
-  const { withWorkspace } = require('../../src/tools/result.ts');
+  const { withWorkspace } = require('../../src/mcp/result.ts');
   const base = { isError: false, content: [{ type: 'text', text: 'answer' }] };
   assert.equal(withWorkspace(base, { path: tempDir, source: 'client_root' }), base, 'a client root costs no text');
   assert.equal(withWorkspace(base, { path: tempDir, source: 'argument' }), base, 'an explicit path costs no text');

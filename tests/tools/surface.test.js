@@ -13,10 +13,10 @@ const {
   getLegacyAliasTools,
   getAllCallableToolDefinitions,
   createServer,
-} = require('../../src/server.ts');
+} = require('../../src/mcp/server.ts');
 const { CORE_CANONICAL_TOOL_NAMES } = require('../../src/constants.ts');
-const { LEGACY_ALIASES, handleLegacyAlias } = require('../../src/tools/legacy.ts');
-const { handleRun, runToolDefinition } = require('../../src/tools/run.tool.ts');
+const { LEGACY_ALIASES, handleLegacyAlias } = require('../../src/mcp/tools/legacy.ts');
+const { handleRun, runToolDefinition } = require('../../src/mcp/tools/run.tool.ts');
 const { createSession } = require('../../src/sessions/session.ts');
 const { readResult } = require('../helpers/result.cjs');
 
@@ -296,7 +296,7 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
 });
 
 test('CONTEXT-001 budgets: server instructions and model-visible tool definitions that say how to call on the first attempt', () => {
-  const { SERVER_INSTRUCTIONS } = require('../../src/server.ts');
+  const { SERVER_INSTRUCTIONS } = require('../../src/mcp/server.ts');
   assert.ok(SERVER_INSTRUCTIONS.length <= 512, 'every client reads the first 512 characters; Claude Code truncates at 2,048');
   // The owner's use cases (2026-10-07): models did not know when not to call, where the models are listed, or that the answer is an opinion.
   for (const part of ['Not for', 'doctor lists the models', 'verify facts']) assert.ok(SERVER_INSTRUCTIONS.includes(part), part);

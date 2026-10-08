@@ -12,11 +12,11 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is SIMPLIFY-001: S0 baseline captured, S1 implemented and verified.
+The current task is SIMPLIFY-001: S0 baseline captured, S1 and S2 implemented and verified.
 Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
-The owner requires a stop for inspection after each slice. S1 is complete, awaiting
-owner inspection before starting S2.
+The owner requires a stop for inspection after each slice. S2 is complete, awaiting
+owner inspection before starting S3.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -49,10 +49,10 @@ Source anchors:
 ## Next implementation
 
 The next authorized work boundary is owner inspection of
-[SIMPLIFY-001 S1](#simplify-001-s1-implementation). On continuation, execute S2 in the
+[SIMPLIFY-001 S2](#simplify-001-s2-implementation). On continuation, execute S3 in the
 [roadmap's order](ROADMAP.md#execution-checkpoints), with its caller updates and
-scope-based checks, then stop again. S1 contracts, storage, workspace, and execution/runtime
-modules are implemented and verified; automated dependency enforcement remains scheduled for S6.
+scope-based checks, then stop again. S1 and S2 modules are implemented and verified;
+automated dependency enforcement remains scheduled for S6.
 Recheck the current checkout rather than assuming that the baseline below is still current.
 The migration does not change the release status or make historical runtime evidence fresh.
 
@@ -280,7 +280,34 @@ Branch: `refactor/simplify-001`.
 - PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 
-Next action: stop after S1 for owner inspection and independent review (codex sol-6.1). Do not proceed to S2 without owner instruction.
+Next action: S1 completed and reviewed with VERDICT: READY (b4f05f3).
+
+## SIMPLIFY-001 S2 implementation
+
+Captured 2026-10-08 after S2 implementation.
+Branch: `refactor/simplify-001`.
+
+### Modules and ownership changes:
+- `src/workspace/git.ts`: Git evidence extraction (`collectGitScope`, `snapshotId`, `assertReviewWorkspace`). `src/execution/git.ts` forwards to it.
+- `src/review/`: Dedicated review input and verdict policy module (`review/gate.ts`: `evaluateStateEnvelopeGate`, `enforceStateEnvelopeGate`, `StateEnvelopeEvaluation`, `ReviewGateContext`; `review/input.ts`: `collectReviewInput`, `proseOnly`; `review/index.ts`). `src/tools/review-gate.ts` and `src/tools/review-input.ts` forward to it.
+- `src/contracts/execution.ts`: `TaskExecutionResult` and `ExecutionMeta` defined as neutral contracts with zero transport/Markdown dependencies.
+- `src/execution/controller.ts`: `executeTask` neutralised to return pure `TaskExecutionResult` (no `content` array, no Markdown wrapping, no MCP SDK imports). Stripping ANSI moved to `cli-output.ts`.
+- `src/mcp/`: Transport layer isolated under `src/mcp/`:
+  - `mcp/server.ts`, `mcp/stdio-server.ts`, `mcp/result.ts` (`formatExecutionResult`, `withWorkspace`, `ExecutionToolResult`), `mcp/progress.ts` (`createProgressReporter`), `mcp/schema.ts`, `mcp/constants.ts`, `mcp/arguments.ts`, `mcp/index.ts`.
+  - Transport tool handlers moved to `src/mcp/tools/` (`consult.tool.ts`, `review.tool.ts`, `doctor.tool.ts`, `session.tool.ts`, `issue.tool.ts`, `legacy.ts`, `run.tool.ts`).
+  - Compatibility shims maintained at `src/server.ts`, `src/stdio-server.ts`, `src/constants.ts`, and `src/tools/*`.
+  - `src/index.ts` simplified to dispatch only (`./mcp/stdio-server.js`).
+- `src/brand.ts`: Leaf branding module extracted to prevent reverse runtime dependencies from backends and diagnostics into `mcp/constants.js` via `constants.js`.
+- Clean architectural boundaries verified: zero runtime or type imports from `mcp/` or `@modelcontextprotocol/sdk` inside `src/execution/` or `src/review/`. Also verified zero `constants.js` or `mcp/` imports inside `src/backends/` and `src/diagnostics/`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `node tests/run.cjs tests/simplify-s2.test.js` (3/3 tests pass).
+- PASS: `node tests/run.cjs` (395 tests: 392 pass, 0 fail, 3 skipped, exit code 0).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+
+Next action: stop after S2 for owner inspection and independent review (codex sol-6.1). Do not proceed to S3 without owner instruction.
 
 ## Documentation disposition
 

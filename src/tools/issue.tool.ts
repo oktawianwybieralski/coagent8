@@ -1,78 +1,10 @@
 /**
- * Canonical issue and bug reporting MCP tool.
+ * Forwarding module for issue tool.
  *
  * @remarks
- * Provides a privacy-sanitized bug report generator, pre-filled GitHub issue URL,
- * and optional diagnostic probe via doctor service.
+ * In S2, issue tool moved to `src/mcp/tools/issue.tool.ts`.
  *
  * @packageDocumentation
  */
 
-import { CANONICAL_TOOL_NAMES } from '../constants.js';
-import { generateBugReport } from '../diagnostics/issue.js';
-import { runDoctor, DoctorReport } from '../diagnostics/doctor.js';
-
-export interface IssueToolArgs {
-  error_message?: string;
-  context?: string;
-  include_doctor?: boolean;
-}
-
-export const issueOutputSchema = {
-  type: 'object',
-  required: ['title', 'body', 'issueUrl'],
-  properties: {
-    title: { type: 'string' },
-    body: { type: 'string' },
-    issueUrl: { type: 'string' },
-  },
-};
-
-export const issueToolDefinition = {
-  name: CANONICAL_TOOL_NAMES.ISSUE,
-  description: 'Sanitized bug report with a pre-filled GitHub issue link.',
-  outputSchema: issueOutputSchema,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      error_message: { type: 'string' },
-      context: { type: 'string', description: 'What led to the problem.' },
-      include_doctor: { type: 'boolean', description: 'Default true: attach doctor diagnostics.' },
-    },
-  },
-};
-
-/**
- * Handles the canonical issue tool execution.
- *
- * Sanitizes input to strip secrets, passwords, git diffs, and code blocks before
- * assembling a pre-filled GitHub issue URL and preview prompt.
- *
- * @param args - Issue parameters including optional error message, context, and doctor flag.
- * @returns MCP tool result with user prompt and structuredContent.
- */
-export async function handleIssue(args: IssueToolArgs = {}) {
-  let doctorReport: DoctorReport | null = null;
-  if (args.include_doctor !== false) {
-    try {
-      doctorReport = await runDoctor();
-    } catch (_) {
-      doctorReport = null;
-    }
-  }
-
-  const report = generateBugReport({
-    errorMessage: args.error_message,
-    context: args.context,
-    doctorReport,
-  });
-
-  return {
-    content: [{ type: 'text', text: report.prompt }],
-    structuredContent: {
-      title: report.title,
-      body: report.body,
-      issueUrl: report.issueUrl,
-    },
-  };
-}
+export * from '../mcp/tools/issue.tool.js';

@@ -4,8 +4,39 @@
  * @packageDocumentation
  */
 
+import type { ProviderId } from './provider.js';
 import type { AdapterEvent, TerminalStatus } from './conversation.js';
 import type { ExecutionError } from './error.js';
+
+/**
+ * Execution metadata collected across the turn lifecycle.
+ */
+export interface ExecutionMeta {
+  turn: number;
+  toolCount: number;
+  durationMs: number;
+  historyAvailable: boolean;
+}
+
+/**
+ * Neutral execution outcome returned by the execution controller.
+ * Contains all evidence required by transport adapters without MCP formatting.
+ */
+export interface TaskExecutionResult {
+  isError: boolean;
+  provider: ProviderId | null;
+  /** Raw adapter result; downstream presentation layers (e.g. MCP) are responsible for credential redaction before display. */
+  result: TerminalExecutionResult;
+  sessionHandle: string | null;
+  meta: ExecutionMeta;
+  warnings: string[];
+  price?: string;
+  review?: {
+    output: string;
+    verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
+    reason?: string;
+  };
+}
 
 /**
  * Output resulting from executing a prompt against a CLI adapter.

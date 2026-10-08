@@ -1,3 +1,9 @@
+/**
+ * MCP progress notifications bridge and debouncing.
+ *
+ * @packageDocumentation
+ */
+
 import { redactDiagnostic } from '../redaction.js';
 
 export type ProgressCallback = ((message: string | { message?: string }, progress?: number | null, total?: number | null) => void) & { close: () => void };
@@ -71,3 +77,4 @@ export function createProgressReporter(
 
   return report;
 }
+

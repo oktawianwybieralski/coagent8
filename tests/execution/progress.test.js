@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
 
-const { createProgressReporter } = require('../../src/execution/progress.ts');
+const { createProgressReporter } = require('../../src/mcp/progress.ts');
 
 test('the progress reporter redacts each message where it leaves for the client (SIMPLIFY-001)', () => {
   const sent = [];

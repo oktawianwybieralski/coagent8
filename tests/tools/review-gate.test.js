@@ -1,11 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { enforceStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
+const { enforceStateEnvelopeGate, evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
 const { readResult } = require('../helpers/result.cjs');
 
 test('CUR-001 rejects incomplete input, mismatched snapshots, invalid and failed or required unrun checks', () => {
-  const { evaluateStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
   const envelope = (snapshot, checks) => `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW`;
   for (const [snapshot, checks, binding] of [
@@ -19,6 +18,17 @@ test('CUR-001 rejects incomplete input, mismatched snapshots, invalid and failed
   ]) assert.equal(evaluateStateEnvelopeGate(envelope(snapshot, checks), false, true, binding).verdict, 'BLOCKED');
   assert.equal(evaluateStateEnvelopeGate(envelope('fixture#digest', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true,
     { ...context, requiredChecks: [] }).verdict, 'READY', 'prose checks remain honestly NOT_RUN');
+});
+
+test('a blocked verdict names every cause, the unrun checks and the reviewer reason', () => {
+  const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
+  const envelope = (...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', 'VERDICT: BLOCKED', ...extra, 'CHECKS: typecheck=PASS; tests=NOT_RUN', 'END_REVIEW'].join('\n');
+  assert.equal(evaluateStateEnvelopeGate(envelope(), true, true, context).reason,
+    'Output was truncated; Required checks were not run (tests=NOT_RUN); Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason');
+  assert.equal(evaluateStateEnvelopeGate(envelope('Blocked: The diff omits src/review/gate.ts.'), false, true, context).reason,
+    'Required checks were not run (tests=NOT_RUN); Reviewer reported BLOCKED: The diff omits src/review/gate.ts.');
+  const failed = evaluateStateEnvelopeGate(envelope().replace('typecheck=PASS', 'typecheck=FAIL').replace('VERDICT: BLOCKED', 'VERDICT: READY'), false, true, context);
+  assert.equal(failed.reason, 'A reported check failed (typecheck=FAIL); Required checks were not run (tests=NOT_RUN)');
 });
 
 test('enforceStateEnvelopeGate overrides VERDICT: READY to BLOCKED if P1 issue is reported', () => {
@@ -179,8 +189,8 @@ test('enforceStateEnvelopeGate handles case variations, partial coverage, and mi
 });
 
 test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCKED" evaluates to structured verdict READY', async () => {
-  const { evaluateStateEnvelopeGate } = require('../../src/tools/review-gate.ts');
-  const { formatExecutionResult } = require('../../src/tools/result.ts');
+  const { evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
+  const { formatExecutionResult } = require('../../src/mcp/result.ts');
   const reviewOutput = [
     'REVIEW: 1',
     'SNAPSHOT: sha1234567890',
