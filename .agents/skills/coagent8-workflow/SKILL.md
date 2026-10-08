@@ -11,12 +11,13 @@ For a simple question use consult with a self-contained proposal. Do not read th
 repository or run full diagnostics just to delegate arithmetic. Omit backend/model
 for ordinary defaults; select them when the user names one or supplies a constraint.
 
-Use doctor for models/efforts, with quota: false when quota is irrelevant and a
-backend filter when known. Summary/full perform the same diagnostic work.
-For a price limit follow the README's
-[model selection guidance](../../../README.md#choosing-a-model-under-a-price-limit):
-current doctor exposes no per-model prices. Never silently replace an explicit
-model. Current execution is read-only.
+Use doctor for models, efforts and output prices, with quota: false when quota is
+irrelevant and a backend filter when known. Summary/full perform the same work.
+For a user's price limit pass output_price_below (USD per million output tokens,
+strict) and omit model to let the server choose; see the README's
+[model selection guidance](../../../README.md#choosing-a-model-under-a-price-limit).
+On PRICE_LIMIT report the reason; never silently replace an explicit model.
+Current execution is read-only.
 
 Let the server obtain model consent from the user. On unsupported/unanswered
 elicitation explain the model and reason. Do not set approval yourself or edit

@@ -24,7 +24,7 @@ local and preserves the existing checkout.
 | Safety | Owned cleanup, hidden Windows launches, redaction, explicit model consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup; native acceptance |
 | Review | Completeness, snapshot/check gate, post-turn recheck, other-tree mismatch rejection | Other-tree review; independently observed checks and release hashes |
 | Storage/routing | Leases, best-effort bounded archives, cached catalogs/prices, optional quota-cache writes | Ephemeral calls, early handles, end-to-end deadlines |
-| Agent usability | Model/effort discovery and result footer | Prices, effective config, price constraints, consent-aware selection |
+| Agent usability | Model/effort discovery with per-model prices, strict output price limit, result footer | Request estimates, effective config, consent transport, native first-use acceptance |
 | Integrations | Shared config, optional setup, VSIX, owned registration/uninstall | Fresh lifecycle acceptance, client skills, public execution CLI |
 
 ## Agent usability gaps
@@ -34,10 +34,11 @@ simple calculation with a model below USD 5 per million output tokens, showed
 that an agent with only MCP tools cannot select a model by price. Evidence and
 its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 
-- Doctor exposes the price list's source, date and size, not per-model prices,
-  and no request accepts a price limit (`AX-001/002`).
-- Approval governance is not a cost constraint: no prompt does not prove that a
-  model meets a user's limit (`AX-002`).
+- Doctor exposed the price list's source, date and size, not per-model prices,
+  and no request accepted a price limit. Fixed locally on 2026-10-08: doctor lists
+  each model's output price, match, freshness and approval need, and
+  `output_price_below` enforces a strict limit separate from consent (`AX-001/002`);
+  native fresh-client acceptance remains (`AX-006`).
 - An unanswered approval form is followed by advice to use another model even
   when the user chose this one (`AX-003`).
 - Older registrations can point at a different config file than the default the
@@ -47,7 +48,8 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
   limit, and effort syntax needs trial and error (`AX-006`).
 - A plain `consult` through `auto` can run an expensive default model; earlier
   `auto` chose a large model for 52.8 s (owner decision: make plain consult cost
-  predictable, `AX-002`).
+  predictable, `AX-002`). A per-call limit now bounds a constrained call; a call
+  without one still runs the default.
 
 ## Execution order
 
@@ -69,28 +71,37 @@ do not create separate selection/policy implementations per client.
 
 ### AX-001 - prices before execution
 
-- [ ] Expose a bounded MCP selection view: backend, concrete model, accepted
+- [x] Expose a bounded MCP selection view: backend, concrete model, accepted
   efforts, default source, output USD per million tokens, price source/date,
   exact/approximate/unknown match and approval requirement/reason. Keep concise
   text and structured data consistent; reuse it for the planned CLI models command.
+  Doctor selection rows and summary (3,900 bytes), from listModelCandidates.
 - [ ] Separate unit prices, request estimates, measured tokens, quota and billing.
   Unknown stays unknown. Estimates identify input/output/cache/context-tier
   assumptions and provider evidence; a unit price is not a request estimate.
-- [ ] Test missing/stale lists, aliases, approximate matches, tiers, truncation
+  Done for unit prices (labelled list prices, unknown kept unknown); request
+  estimates and measured tokens are open.
+- [x] Test missing/stale lists, aliases, approximate matches, tiers, truncation
   and invalid price fields. Expose freshness/matching before selection.
 
 ### AX-002 - enforce the selection constraint
 
-- [ ] Define currency, token unit, direction and strict/inclusive boundary:
+- [x] Define currency, token unit, direction and strict/inclusive boundary:
   below USD 5 per million output tokens excludes 5. Recheck the concrete model
   and applicable price before execution. Unknown/stale/approximate data cannot
-  silently satisfy a constraint.
-- [ ] Keep selection separate from consent: neverAsk cannot override a requested
+  silently satisfy a constraint. `output_price_below`, `PRICE_LIMIT`.
+- [x] Keep selection separate from consent: neverAsk cannot override a requested
   ceiling. Auto chooses only qualifying policy-allowed models. An explicit
-  unavailable/over-limit model returns a reason without substitution.
+  unavailable/over-limit model returns a reason without substitution. Auto takes
+  the qualifying default, else the highest-priced qualifying model, which still
+  asks where governance says so (owner decision of 2026-10-08).
 - [ ] Preserve minimal unconstrained calls. Accept a constrained call in at most
   one discovery plus one execution, without web lookup or private config reads.
   Test the boundary, no match, resume, config changes and concurrent root budgets.
+  Local fixture tests cover all but concurrent root budgets (COAGENT-006); fresh
+  native clients are retested under AX-006.
+- [ ] Make a plain consult's cost predictable without a per-call limit (owner
+  decision), for example a configured default limit. Not designed yet.
 
 ### AX-003 - consent across clients
 
@@ -131,7 +142,8 @@ do not create separate selection/policy implementations per client.
 
 - [ ] Schemas must suffice without repository access or skills: minimal call,
   priced selection, exact model plus effort, continuation and actionable errors.
-  Permit model selection for user constraints; omit choices for ordinary defaults.
+  Permit model selection for user constraints; omit choices for ordinary defaults
+  (schema and instruction wording landed with AX-002; native retest pending).
   Measure client ToolSearch separately from server overhead.
 - [ ] Retest fresh Codex/Claude/agy clients with the same task and price ceiling.
   Record calls, model, price evidence, effort, preparation/execution/total time,

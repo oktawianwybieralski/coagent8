@@ -197,7 +197,8 @@ clients receive the same six tools and short initialization instructions.
 `context_files` sends paths for the backend to read, not file contents.
 Implementation analysis proposes changes within the read-only profile.
 Execution tools return Markdown: answer or typed error, then backend, model,
-duration and session handle where available. `review` adds its verdict.
+duration and session handle where available. `review` adds its verdict, and a
+call with a price limit adds the model's price evidence.
 Continuation uses `session_handle` from a prior footer.
 
 Archival history is enabled by default and best-effort. `coagent8_HISTORY=off`
@@ -215,31 +216,48 @@ do not silently substitute another model or change approval configuration.
 ### Choosing a model under a price limit
 
 For ordinary questions, call `consult` with just a self-contained `proposal`.
-When a user supplies a model or price constraint, discover accepted models and
-efforts with `doctor` (use `quota: false` if quota is irrelevant, and `backend`
-when already chosen). `detail: "full"` changes the output format, not the probes.
+When the user sets a price limit, pass it as `output_price_below`: USD per million
+output tokens, strict, so `5` means below 5 and excludes a model priced at 5.
+Without `model`, the server chooses: the backend's default if it qualifies, else
+the highest-priced qualifying model it lists. One call is enough:
 
-Current doctor reports the price list's date and count, **not individual prices**.
-The server uses output-unit prices internally for approval; it exposes no request
-cost estimate or per-call price ceiling. Verify a requested price from a current
-source or report it unknown. A cheap-sounding name and the absence of an approval
-prompt do not establish compliance. Price discovery and enforced selection are
-planned in [AX-001/002](docs/ROADMAP.md#agent-usability-acceptance).
+~~~json
+{
+  "proposal": "Calculate 17 * 23. Reply only with the result.",
+  "output_price_below": 5
+}
+~~~
 
-For an explicit model, use its exact catalog ID and an accepted effort:
+Only an exact price from a price list younger than seven days qualifies; an
+unknown, approximate or stale price never does. If no model qualifies, the call
+fails with `PRICE_LIMIT` and each backend's reason instead of running another
+model. The footer's `Price` line states the price, its list and date. A model
+within the limit may still need the user's approval; approval and `neverAsk` do
+not satisfy a limit. Prices are public list prices per output token, not a
+request estimate or a bill.
+
+To choose yourself, `doctor` lists each model with its accepted efforts, output
+price (`~` approximate, `?` unknown), the default and why a model asks for
+approval (use `quota: false` if quota is irrelevant, and `backend` when already
+chosen; `detail: "full"` returns the same rows as data). Claude Code lists no
+catalog, so doctor prices only its default; name another alias, such as the one
+the user asked for, and the server checks the model it resolves to. For an
+explicit model use its exact ID and an accepted effort, keeping the limit:
 
 ~~~json
 {
   "proposal": "Calculate 17 * 23. Reply only with the result.",
   "backend": "codex",
   "model": "<exact model ID from doctor>",
-  "reasoning_effort": "low"
+  "reasoning_effort": "low",
+  "output_price_below": 5
 }
 ~~~
 
+An explicit model over the limit fails with the reason; it is never replaced.
 Use `low` only if listed for that model. The footer names the model that answered;
 its elapsed time excludes preparation. Continue with its `session_handle` when
-needed. No repository access or full diagnostic dump is needed for arithmetic.
+needed. No repository access, web price lookup or full diagnostic dump is needed.
 
 ## Documentation and contributing
 

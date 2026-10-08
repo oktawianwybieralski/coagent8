@@ -10,12 +10,13 @@ The owner requested analysis of three agents' arithmetic trials and consolidatio
 around these three documents. The target is full MCP orchestration: complete tasks,
 write/check/fix workflows, independent roles/models and installable client skills.
 Current read-only profiles remain enforced until verified replacements land.
-This task changes documentation and its reference wiring, not runtime behavior.
+The latest task implemented AX-001/002 (per-model prices and the price limit) on
+feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
 
-The starting checkout was clean on docs/coagent-direction at 1353fb9. Preserve
-the local stack and owner-managed Git integration; no new checkout, reset, merge,
-push or publication is part of this handoff. Inspect status again before editing.
-Development ultimately targets release/v1.0.0 under the repository Git rules.
+Preserve the local stack and owner-managed Git integration; no new checkout,
+reset, merge, push or publication is part of this handoff. Inspect status again
+before editing. Development ultimately targets release/v1.0.0 under the
+repository Git rules.
 
 ## What the trials establish
 
@@ -42,20 +43,26 @@ Source anchors:
 
 ## Next implementation
 
-Start with AX-001/002: expose bounded prices with source/freshness/match quality,
-then enforce an explicit output-unit-price constraint. Use the same selection
-owner for future CLI and task calls. Success: an agent with only MCP tools can
-choose a verified qualifying model in at most one discovery plus one execution,
-without guessing, external price lookup or config modification.
+AX-001/002 landed locally (contract in
+[ARCHITECTURE.md](ARCHITECTURE.md#price-limit)): doctor selection rows and a
+3,900-byte summary with output prices, match, freshness and approval;
+output_price_below on execution tools with strict, consent-independent checks
+before consent and before session acquisition; PRICE_LIMIT without substitution;
+auto choosing the qualifying default or the highest-priced qualifying model.
+Owner decisions of 2026-10-08 set that rule and the 5,500/3,900-byte budgets.
+A null or empty list price no longer parses as a free model.
 
-Continue AX-003/004/005/006 for approval transport, effective config, readiness and
-fresh-client acceptance. Keep existing consent fail-closed. Never silently replace
-an explicit model or insert it into neverAsk. User limits and approval thresholds
-are separate. A unit rate does not predict subscription charges or the total bill.
+Open from these items: request estimates and measured tokens (AX-001), a
+predictable plain consult without a per-call limit and concurrent root budgets
+(AX-002), and the fresh-client retest of the price task (AX-006). Claude Code has
+no catalog, so a constrained auto call uses only its default.
 
-Design COAGENT-001/002 alongside these fixes, then implement one verified host-led
-write/check/review path before enabling delegated coordinators. Preserve the
-root-budget, writer ownership, interruption and evidence criteria in the roadmap.
+Next: independent review of this branch, then AX-003/004/005/006 for approval
+transport, effective config, readiness and fresh-client acceptance. Keep consent
+fail-closed and never insert a model into neverAsk. Design COAGENT-001/002
+alongside, then one verified host-led write/check/review path before delegated
+coordinators, preserving the roadmap's root-budget, writer, interruption and
+evidence criteria.
 
 Open runtime limitations and the CUR items with local fixes are listed in
 [ARCHITECTURE.md](ARCHITECTURE.md#known-limitations); do not reimplement fixed
@@ -84,23 +91,24 @@ now points directly to the three documents and includes a short usage path.
 
 ## Verification for this change
 
-Scope: documentation consolidation plus TypeDoc README reference. On Windows:
+Scope: runtime selection/schema change plus TSDoc and documentation, on Windows
+11, Node 26.10.0, source loaded through tsx:
 
-- PASS: content/source reconciliation and 73 local/repository links in the
-  remaining tracked Markdown files, including heading anchors.
-- PASS: owner decisions recorded in the pre-consolidation roadmap were
-  reconciled into ARCHITECTURE's owner decisions table.
-- PASS: git diff --check and npm run lint:docs.
-- PASS: npm run docs, with warnings still treated as errors. The first run used
-  ARCHITECTURE as the API landing page and failed on unsupported Mermaid code
-  highlighting. Pointing the generator to the user README resolved that mismatch;
-  diagrams remain in the repository architecture, and no check was disabled.
-- NOT_RUN: runtime tests, build, consumer smoke and paid backend calls; this
-  change has no runtime implementation and these checks are outside its scope.
+- PASS: npm run typecheck (tsc --noEmit).
+- PASS: focused tests via node tests/run.cjs: new tests/backends/price-limit.test.js
+  and tests/execution/price-limit.test.js (boundary, stale/missing lists, aliases,
+  approximate and [1m] matches, invalid price fields, no match, explicit over-limit
+  model, neverAsk, routing filter, resume, config change, recheck after consent),
+  plus doctor, surface/budget, server and pipeline tests.
+- PASS: full suite, node tests/run.cjs: 377 tests, 374 pass, 3 skipped, 0 fail.
+- PASS: surface budgets: 5,478 of 5,500 tool-definition bytes, 507 of 512
+  instruction characters.
+- PASS: npm run lint:docs, npm run docs (warnings as errors) and git diff --check.
+- NOT_RUN: build, consumer smoke and packaging (no bundle/package change claimed);
+  paid backend calls and native fresh-client retests (AX-006).
 
-No new independent release review, six-job CI or native acceptance is established.
-The owner's earlier preliminary VSIX acceptance predates the shared-config change
-1353fb9. Full native lifecycle and consent acceptance remain in ROADMAP.
+No independent review, six-job CI or native acceptance is established for this
+branch. Full native lifecycle and consent acceptance remain in ROADMAP.
 
 ## Compact handoff contract
 

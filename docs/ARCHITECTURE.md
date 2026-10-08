@@ -58,20 +58,21 @@ for tasks; introduce a scheduler only for actual dependency/concurrency work.
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
 | review | Bounded Git review, State Envelope and server-derived READY/BLOCKED |
-| doctor | Backend installation/auth/profile evidence, models/efforts/defaults, quotas and price-list metadata |
+| doctor | Backend installation/auth/profile evidence, models/efforts/defaults with output prices and approval need, quotas and price-list metadata |
 | session | Workspace-scoped list/history/close; continuation uses session_handle |
 | cancel | Stops a known active/abandoned session turn; idle returns false |
 | issue | Sanitized report and prefilled GitHub issue link; does not submit it |
 
 Deprecated analyze/debug/implement and legacy run remain callable, unadvertised.
 Implement still means read-only advice. Unknown arguments are rejected; there is
-no task API, price ceiling, per-call history or session_mode argument today.
+no task API, per-call history or session_mode argument today. Execution tools
+accept output_price_below ([price limit](#price-limit)).
 Client-independent discovery requires no installer or recognized client name.
 
 Execution results are one Markdown block plus isError, without outputSchema or
 structuredContent: answer or typed error/secured partial answer; backend, resolved
 model, duration, operation count and session state; review verdict when applicable;
-warnings and fallback workspace. Full doctor, session list/history, cancel and
+price evidence when the call set a price limit; warnings and fallback workspace. Full doctor, session list/history, cancel and
 issue return structured data; session close is text-only.
 
 The footer time starts after session acquisition. It excludes workspace/Git
@@ -91,8 +92,9 @@ ownership. Resource history is not the paginated session API. Cancel without
 workspace_path remains unscoped; an initial session handle arrives only at return,
 so use host request cancellation during the first call.
 
-The source surface budget is 512 initialization characters and 5,300 model-visible
-tool-definition bytes (server icon excluded). Hosts control ToolSearch, instruction
+The source surface budget is 512 initialization characters and 5,500 model-visible
+tool-definition bytes (server icon excluded); Codex loads definitions with every
+request, so each byte is paid per turn there. Hosts control ToolSearch, instruction
 visibility, UI rendering and cached schemas. A skill is not required for a plain call.
 
 ## Configuration and routing
@@ -183,19 +185,56 @@ refusal. Consent is request/model-bound and precedes session acquisition/model
 execution; metadata probes may precede it. The form wait is bounded to five minutes
 and follows cancellation. Real UI display still needs client-specific acceptance.
 
-The present API exposes neither per-model prices nor a caller's price constraint.
 The absence of an approval prompt does not prove that a model meets a user's price
-limit. NeverAsk, thresholds,
-default-model ratios and price staleness make those separate questions. Current
-routing is not a cheap-model selector. AX-001/002 own this gap.
+limit. NeverAsk, thresholds, default-model ratios and price staleness make those
+separate questions; the price limit below answers the user's question.
+
+### Price limit
+
+output_price_below on consult, review and the unadvertised execution aliases is
+the user's limit in USD per million output tokens. It is strict: 5 excludes a
+model priced at 5. It is a list unit price, not a request estimate, measured
+usage, quota or bill; request estimates remain open in AX-001.
+
+- Only an exact match from a list younger than seven days meets a limit. Unknown,
+  approximate (including context variants such as [1m]) and stale prices never do;
+  several exact entries count at their highest price. A constrained call reads a
+  stale list again (shared, retried after five minutes); if that fails the call
+  fails. A null or empty list price is no price, not zero.
+- The check is separate from consent. neverAsk, an approval or the absence of a
+  prompt cannot satisfy it, and a model within the limit still asks where
+  governance says so (alwaysAsk, askAbovePrice, priceMultiplier, unknown).
+- A named model (request or session continuation) is checked as resolved, aliases
+  included. If it does not meet the limit the call fails with PRICE_LIMIT and the
+  reason; it is never replaced. A continuation keeps its model.
+- Without a named model the backend default runs when it meets the limit;
+  otherwise the highest-priced catalog model below the limit, as a capability
+  proxy, accepting the call's reasoning_effort (an agy model needing an effort
+  gets its first). A fixed backend (explicit or configured) stays fixed; auto
+  routing chooses only among backends with a qualifying model, then as usual.
+  Without a catalog (Claude) only the default or a named alias can qualify.
+  No qualifying model is PRICE_LIMIT with each backend's reason.
+- The controller checks the concrete model before consent and again right before
+  session acquisition, so a price list or configuration changed while the user
+  decided is honored. The footer then carries a Price line with the unit price,
+  list source/date and the limit. Without the argument calls behave as before.
+
+The selection view in model-selection.ts (listModelCandidates, choosePricedModel)
+is the single owner for doctor, execution and the planned CLI models command.
 
 ### Doctor and readiness
 
 Summary and full call the same runDoctor. Both force backend/catalog refresh and
 read price metadata; quota: false skips separate native quota reads, not all probes.
-Backend narrows the scope. Summary is bounded to 4,096 bytes; full contains
-structured data with redacted strings bounded to 2,048 bytes. Neither exposes
-individual prices: DoctorPrices contains source, fetchedAt and models count.
+Backend narrows the scope. Full contains structured data with redacted strings
+bounded to 2,048 bytes. prices adds stale; selection lists every model of the
+installed diagnosed backends: backend, model, efforts/effortRequired, defaultSource
+on the default row, price (output USD per million tokens, matched entry,
+exact/approximate/unknown, list source, fetchedAt, stale) and approval
+(required, rule basis, reason, rememberable). Without a catalog only the default
+is listed. The summary renders the same rows (~ approximate, ? unknown, default
+and asks: rule tags) and is bounded to 3,900 bytes, under agy's inline result
+threshold; it drops whole rows from the longest list and counts them.
 
 Ready combines execution/profile/auth evidence and available quota. A native quota
 read can supply auth evidence, explaining agy's cold not-ready/success discrepancy.
@@ -396,6 +435,8 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-08 | Uninstall removes only unchanged registrations, runtime copies and tagged backups owned by the extension, and offers only recorded dependencies. |
 | 2026-10-08 | The product becomes full client-independent agent orchestration with independent roles and models and installable client skills, replacing the consultation-only boundary and any blanket sandbox opt-out. |
 | 2026-10-08 | Native VS Code acceptance in the owner's VS Code precedes beta.2 ([checklist](ROADMAP.md#native-vs-code-acceptance)). |
+| 2026-10-08 | A price limit without a named model runs the default when it qualifies, else the highest-priced qualifying model; approval rules still apply to it. Without a catalog only the default qualifies; aliases are named by the caller, never by source literals. |
+| 2026-10-08 | The model-visible tool-definition budget rises to 5,500 bytes for the price limit, and the doctor summary bound falls to 3,900 bytes so agy shows it inline. |
 
 ## Known limitations
 
@@ -407,7 +448,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | CUR-009 | Auth/profile/UI evidence incomplete | DIAGNOSTICS-001, AX-003/005 |
 | CUR-011 | POSIX unexpected-parent-death cleanup absent | WINDOWS-001 |
 | CUR-013 | Other-tree review refused, not implemented | COAGENT-004, SURFACE-001 |
-| AX-001 through 006 | Prices/constraints/config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
+| AX-001, AX-003 through 006 | Request estimates, config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
 
 CUR-001/003/004/005/006/010/012 have local fixes for review identity/completeness,
 explicit consent, quota-cache failure, commentary truncation, coalesced probes,
