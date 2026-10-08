@@ -2515,6 +2515,16 @@ Beta 2 gate (first release for testers):
   candidate.
 - [ ] Run the full local gate below on a clean checkout. All six CI jobs pass for
   the candidate commit.
+- [ ] Owner decision of 2026-10-08: native VS Code acceptance of the 2026-10-08
+  extension changes (commits 75c4aee, 143536e, fc61d08) passes in the owner's
+  main VS Code before beta.2, following
+  [VSCODE_BETA_2_CHECKLIST.md](VSCODE_BETA_2_CHECKLIST.md). Required: the twelve
+  settings show no invalid field and apply without a manual server restart; Reset
+  Configuration keeps one backup; the one-time ready notice and preselected ready
+  CLIs; uninstall, VS Code restart and reinstall leave no extension storage,
+  extension-written native-host registration or empty ~/.coagent8 and behave like a
+  first installation; no Restart Required banner remains. Fixture tests do not
+  replace this check.
 - [x] Windows observation on 2026-10-08: the owner was writing in Discord and
   reported no visible windows or focus loss during native Codex consult/review.
   Codex 0.162.0-alpha.2, model gpt-6.1-sol; policy did not ask (10 USD/million

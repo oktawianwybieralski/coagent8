@@ -153,6 +153,14 @@ CLI's `mcp remove` (backups in .artifacts/dead-registration-backup-*). A
 `vscode:uninstall` hook now removes the extension's own unchanged registrations;
 see the roadmap INSTALL entry.
 
+Stage closed by the owner on 2026-10-08. Open before beta.2: native acceptance of
+these changes in the owner's main VS Code, recorded as a BETA-001 gate item and
+listed in [the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md). Install the VSIX
+built from fc61d08 (SHA-256
+d6405c973ecfc652eddb387a19190f189db38b269a0c52697fbf308d6937a451); the isolated
+acceptance window under .artifacts/vscode-native-acceptance holds an older build
+and does not count.
+
 ~~~yaml
 task_id: DOCS-001
 mode: documentation
