@@ -11,7 +11,7 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-governance-'));
 process.env.coagent8_DIR = tempDir;
 
 const { decideConsent } = require('../../src/backends/governance.ts');
-const { parsePriceList, findPrice, readPrices, refreshPrices } = require('../../src/backends/prices.ts');
+const { parsePriceList, findPrice, matchPrices, readPrices, refreshPrices, PRICE_REFRESH_MS } = require('../../src/backends/prices.ts');
 const { resolveWorkspacePath } = require('../../src/paths.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
@@ -19,7 +19,12 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 // Recorded OpenRouter prices of 2026-10-07 (USD per million output tokens): gpt-6.1-sol 10,
 // gpt-6-astra 50, gpt-5.6-luna 1.2, claude-opus-5.5 20, claude-fable-5.1 50, gemini-3.8-flash 3.75.
 const recorded = JSON.parse(fs.readFileSync(path.join(__dirname, '../fixtures/prices/openrouter-models.json'), 'utf8'));
-const prices = { fetchedAt: Date.now(), source: 'openrouter', entries: parsePriceList(recorded) };
+// The stored list prices the models the backends offer; these are the ones this file asks about.
+const OFFERED = ['claude-fable-5-1', 'claude-sonnet-5-5', 'gpt-5.6-luna', 'gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-5.6-terra', 'claude-sonnet-4-6',
+  'gemini-3.8-flash-high', 'gpt-oss-120b-medium', 'gemini-3.7-flash-low', 'claude-opus-5-5', 'gpt-7-nova', 'claude-opus-4-6-thinking',
+  'claude-haiku-4-5-20251001', 'gemini-3.1-pro-low', 'claude-opus-5-5[1m]'];
+const prices = { fetchedAt: Date.now(), source: 'openrouter', models: matchPrices(parsePriceList(recorded), OFFERED) };
+const brief = price => price && { output: price.output, matched: price.matched, exact: price.exact };
 const settings = (changes = {}) => ({ priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [], ...changes });
 const asks = (model, defaultModel, list = prices, changes = {}) => decideConsent(model, defaultModel, list, settings(changes));
 
@@ -63,19 +68,21 @@ test('an unknown or approximately priced model asks with remember; without price
 });
 
 test('a price is matched exactly, also without an effort or date suffix, and approximately otherwise', () => {
-  assert.deepEqual(findPrice(prices, 'gemini-3.8-flash-high'), { output: 3.75, matched: 'google/gemini-3.8-flash', exact: true });
-  assert.deepEqual(findPrice(prices, 'claude-haiku-4-5-20251001'), { output: 5, matched: 'anthropic/claude-haiku-4.5', exact: true });
-  assert.deepEqual(findPrice(prices, 'claude-opus-5-5'), { output: 20, matched: 'anthropic/claude-opus-5.5', exact: true });
-  assert.deepEqual(findPrice(prices, 'gpt-6-astra'), { output: 50, matched: 'openai/gpt-6-astra', exact: true }, 'the :batch variant is not a price');
-  assert.deepEqual(findPrice(prices, 'gemini-3.1-pro-low'), { output: 12, matched: 'google/gemini-3.1-pro-preview', exact: false });
+  assert.deepEqual(brief(findPrice(prices, 'gemini-3.8-flash-high')), { output: 3.75, matched: 'google/gemini-3.8-flash', exact: true });
+  assert.deepEqual(brief(findPrice(prices, 'claude-haiku-4-5-20251001')), { output: 5, matched: 'anthropic/claude-haiku-4.5', exact: true });
+  assert.deepEqual(brief(findPrice(prices, 'claude-opus-5-5')), { output: 20, matched: 'anthropic/claude-opus-5.5', exact: true });
+  assert.deepEqual(brief(findPrice(prices, 'gpt-6-astra')), { output: 50, matched: 'openai/gpt-6-astra', exact: true }, 'the :batch variant is not a price');
+  assert.deepEqual(brief(findPrice(prices, 'gemini-3.1-pro-low')), { output: 12, matched: 'google/gemini-3.1-pro-preview', exact: false });
   assert.equal(findPrice(prices, 'claude-opus-5-5[1m]').exact, false, 'a context variant may cost more');
   assert.equal(findPrice(prices, 'gpt-7-nova'), undefined);
+  assert.equal(findPrice(prices, 'gpt-6-sol'), undefined, 'a model the list did not check has no price yet');
+  assert.deepEqual(findPrice(prices, 'gpt-6-luna'), { output: 0.5, input: 0.1, cachedInput: null, matched: 'openai/gpt-6-luna', exact: true }, 'input prices are kept; a missing cache price stays unknown');
   assert.equal(parsePriceList({ data: [{ id: 'openrouter/auto', pricing: { completion: '-1' } }] }), undefined, 'no fixed price, no entry');
   assert.equal(parsePriceList('not a list'), undefined);
   assert.equal(parsePriceList({ data: [{ id: '--flag', pricing: { completion: '0.00001' } }] }), undefined);
 });
 
-test('the price list is read once when none is stored, bounded, and read again by doctor after a week', async () => {
+test('prices are stored for offered models only, read again for an unchecked model, in the background after a day, and waited for when a week old with a limit', async () => {
   let requests = 0, mode = 'ok';
   const body = JSON.stringify(recorded);
   const server = http.createServer((request, response) => {
@@ -89,24 +96,42 @@ test('the price list is read once when none is stored, bounded, and read again b
   const previous = process.env.coagent8_PRICES_URL;
   process.env.coagent8_PRICES_URL = `http://127.0.0.1:${server.address().port}/api/v1/models`;
   const storeFile = path.join(tempDir, 'models.json');
+  const age = ms => { const stored = JSON.parse(fs.readFileSync(storeFile, 'utf8')); stored.prices.fetchedAt = Date.now() - ms; fs.writeFileSync(storeFile, JSON.stringify(stored)); };
+  const until = async condition => { for (let i = 0; i < 200 && !condition(); i++) await new Promise(resolve => setTimeout(resolve, 10)); };
   try {
     fs.rmSync(storeFile, { force: true });
-    const first = await readPrices();
-    assert.equal(first.entries.length, recorded.data.length - 1, 'the :batch variant is left out');
+    const first = await readPrices({ models: ['gpt-6-luna'] });
+    assert.equal(requests, 1);
     assert.equal(first.source, 'coagent8_PRICES_URL');
-    assert.equal((await readPrices()).fetchedAt, first.fetchedAt);
-    assert.equal(requests, 1, 'a stored list is used whatever its age; a turn does not refresh it');
-    assert.equal((await readPrices({ refresh: true })).fetchedAt, first.fetchedAt, 'doctor keeps a list younger than a week');
-    const stored = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
-    stored.prices.fetchedAt = Date.now() - 8 * 24 * 60 * 60 * 1000;
-    fs.writeFileSync(storeFile, JSON.stringify(stored));
+    assert.deepEqual(Object.keys(first.models), ['gpt-6-luna'], 'only offered and asked models are kept, not the whole list');
+    assert.equal((await readPrices({ models: ['gpt-6-luna'] })).fetchedAt, first.fetchedAt);
+    assert.equal(requests, 1, 'a checked model needs no read');
+    const nova = await readPrices({ models: ['gpt-7-nova'] });
+    assert.equal(requests, 2, 'an unchecked model is matched by a new read');
+    assert.equal(nova.models['gpt-7-nova'], null, 'checked without a match');
+    assert.equal(nova.models['gpt-6-luna'].output, 0.5, 'models checked before are kept');
+    await readPrices({ models: ['gpt-7-nova'] });
+    assert.equal(requests, 2, 'a model without a price is not looked up again');
+    age(PRICE_REFRESH_MS + 1000);
+    const dayOld = await readPrices();
+    assert.ok(Date.now() - dayOld.fetchedAt > PRICE_REFRESH_MS, 'a day-old list is returned at once');
+    await until(() => requests === 3);
+    assert.equal(requests, 3, 'and read again in the background');
+    await until(() => Date.now() - JSON.parse(fs.readFileSync(storeFile, 'utf8')).prices.fetchedAt < PRICE_REFRESH_MS);
+    age(PRICE_REFRESH_MS + 1000);
     await readPrices({ refresh: true });
-    assert.equal(requests, 2, 'doctor reads a list older than a week again');
+    assert.equal(requests, 4, 'doctor waits for a day-old list to be read');
+    age(8 * PRICE_REFRESH_MS);
+    mode = 'malformed';
+    const stale = await readPrices({ current: true });
+    assert.equal(requests, 5, 'a limit waits for a week-old list to be read');
+    assert.ok(Date.now() - stale.fetchedAt > 7 * PRICE_REFRESH_MS, 'a failed read leaves the stale list');
+    await readPrices({ current: true });
+    assert.equal(requests, 5, 'a failed source is not asked again within five minutes');
     mode = 'large';
     assert.equal(await refreshPrices(), undefined, 'a list over the size limit is refused');
     mode = 'malformed';
     assert.equal(await refreshPrices(), undefined, 'a list without priced models is refused');
-    assert.ok(readPrices(), 'the stored list survives a failed read');
   } finally {
     process.env.coagent8_PRICES_URL = previous;
     await new Promise(resolve => server.close(resolve));

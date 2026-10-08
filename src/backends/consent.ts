@@ -25,5 +25,5 @@ export async function consentFor(id: ProviderId, probe: AdapterProbeResult, mode
     // Without a known default there is no price reference; the other rules still apply.
     if (errorCodeOf(err) !== 'MODEL_UNAVAILABLE') throw err;
   }
-  return decideConsent(model, defaultModel, await readPrices(), settings);
+  return decideConsent(model, defaultModel, await readPrices({ models: defaultModel ? [model, defaultModel] : [model] }), settings);
 }

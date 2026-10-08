@@ -61,7 +61,7 @@ test('a catalog read from the CLI is kept in models.json for later processes, ke
     adapterRegistry.agy = stub('agy', { listModels: async () => { reads++; return AGY_CATALOG; } });
     await readModelCatalog('agy');
     assert.equal(reads, 4);
-    assert.equal(JSON.parse(fs.readFileSync(storeFile, 'utf8')).schemaVersion, 1);
+    assert.equal(JSON.parse(fs.readFileSync(storeFile, 'utf8')).schemaVersion, 2);
   } finally {
     delete process.env.GEMINI_API_KEY;
   }

@@ -21,7 +21,8 @@ import { atomicWrite, withFileLock } from '../sessions/lock.js';
 import { isValidModelIdentifier } from './model-identifier.js';
 import type { CatalogModel, ModelCatalog } from './types.js';
 
-const STORE_VERSION = 1;
+/** Version 2 (2026-10-08) keeps per-model prices instead of the whole price list. */
+const STORE_VERSION = 2;
 /** Upper bound for reading the store; catalogs and a price list are a few dozen kilobytes. */
 const STORE_MAX_BYTES = 1024 * 1024;
 
@@ -47,13 +48,31 @@ export interface ObservedModels {
   resolved?: Record<string, ObservedModel>;
 }
 
-/** A price list as read: the output price in USD per million tokens of each listed model. */
+/** The list price of one model, in USD per million tokens. */
+export interface PriceRecord {
+  output: number;
+  /** Uncached input; null when the list states none. */
+  input: number | null;
+  /** Cached input read; null when the list states none. */
+  cachedInput: number | null;
+  /** The list entry the prices belong to. */
+  matched: string;
+  /** False when the entry was found only by a looser name comparison. */
+  exact: boolean;
+}
+
+/**
+ * Prices of the models the backends offer, matched once when the list was read: only these
+ * are kept, not the whole list. A model checked without a match maps to null, so it is not
+ * looked up again before the next read.
+ */
 export interface StoredPrices {
   /** Milliseconds since the epoch. */
   fetchedAt: number;
   /** Where the list came from: `openrouter` or `coagent8_PRICES_URL`. */
   source: string;
-  entries: Array<[string, number]>;
+  /** Keyed by the model name in lower case. */
+  models: Record<string, PriceRecord | null>;
 }
 
 type Store = Partial<Record<ProviderId, ObservedModels>>;
@@ -100,12 +119,28 @@ function parseEntry(value: unknown): ObservedModels | null {
   return parsed;
 }
 
+const isPrice = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+function parsePriceRecord(value: unknown): PriceRecord | null | undefined {
+  if (value === null) return null;
+  const price = record(value);
+  if (!price || !isPrice(price.output) || !(price.input === null || isPrice(price.input)) || !(price.cachedInput === null || isPrice(price.cachedInput))
+    || typeof price.matched !== 'string' || price.matched.length > 128 || typeof price.exact !== 'boolean') return undefined;
+  return { output: price.output, input: price.input, cachedInput: price.cachedInput, matched: price.matched, exact: price.exact };
+}
+
+/** Validates stored prices; any invalid model entry discards them all, so a damaged file is read again. */
 function parsePrices(value: unknown): StoredPrices | undefined {
   const prices = record(value);
-  if (!prices || !isTime(prices.fetchedAt) || typeof prices.source !== 'string' || !Array.isArray(prices.entries)) return undefined;
-  const entries = prices.entries.filter((entry): entry is [string, number] => Array.isArray(entry) && entry.length === 2
-    && typeof entry[0] === 'string' && entry[0].length <= 128 && typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] >= 0);
-  return entries.length && entries.length === prices.entries.length ? { fetchedAt: prices.fetchedAt, source: prices.source.slice(0, 64), entries } : undefined;
+  const models = record(prices?.models);
+  if (!prices || !models || !isTime(prices.fetchedAt) || typeof prices.source !== 'string') return undefined;
+  const parsed: Record<string, PriceRecord | null> = {};
+  for (const [name, entry] of Object.entries(models)) {
+    const price = parsePriceRecord(entry);
+    if (price === undefined || !isValidModelIdentifier(name)) return undefined;
+    parsed[name] = price;
+  }
+  return { fetchedAt: prices.fetchedAt, source: prices.source.slice(0, 64), models: parsed };
 }
 
 /** Reads the store; a missing file is empty, an unreadable or invalid one is reported and treated as empty. */
@@ -120,6 +155,8 @@ function readStore(): StoreFile {
   let parsed: Record<string, unknown> | null;
   try { parsed = record(JSON.parse(raw)); }
   catch { parsed = null; }
+  // An older version is replaced quietly: it holds only observations the CLIs repeat.
+  if (typeof parsed?.schemaVersion === 'number' && parsed.schemaVersion < STORE_VERSION) return { backends: {} };
   const backends = parsed?.schemaVersion === STORE_VERSION ? record(parsed.backends) : null;
   if (!parsed || !backends) {
     process.stderr.write(`Warning: model store ${redactDiagnostic(file, 256)} is not valid; it is rebuilt from the CLIs.\n`);
@@ -185,4 +222,20 @@ export function readStoredPrices(): StoredPrices | undefined {
  */
 export async function recordPrices(prices: StoredPrices): Promise<void> {
   await updateStore(store => { store.prices = prices; });
+}
+
+/**
+ * Names every model the stored observations mention: catalog ids, agy's `<id>-<effort>`
+ * forms and the concrete models names resolved to. Prices are matched for these.
+ */
+export function readObservedModelNames(): string[] {
+  const names = new Set<string>();
+  for (const entry of Object.values(readStore().backends)) {
+    for (const model of entry?.catalog?.models ?? []) {
+      names.add(model.id);
+      if (model.effortRequired) for (const effort of model.efforts) names.add(`${model.id}-${effort}`);
+    }
+    for (const observed of Object.values(entry?.resolved ?? {})) names.add(observed.model);
+  }
+  return [...names];
 }

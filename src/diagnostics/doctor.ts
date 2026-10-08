@@ -2,7 +2,7 @@ import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfigForDiagnostics, recordDefaultModel } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
-import { listModelCandidates, selectModel, type ModelCandidate, type ModelSelection, type ModelSource } from '../backends/model-selection.js';
+import { catalogNames, listModelCandidates, selectModel, type ModelCandidate, type ModelSelection, type ModelSource } from '../backends/model-selection.js';
 import { redactDiagnostic } from '../redaction.js';
 import { isPriceListStale, readPrices } from '../backends/prices.js';
 import { decideConsent, type ConsentBasis } from '../backends/governance.js';
@@ -24,7 +24,7 @@ export interface DoctorDefaultModel {
   asks?: boolean;
 }
 
-/** The price list governance uses: where and when it was read, and how many models it prices. */
+/** The price list governance uses: where and when it was read, and how many offered models it prices. */
 export interface DoctorPrices {
   source: string;
   fetchedAt: string;
@@ -87,14 +87,15 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const measuredNow = new Set<ProviderId>();
   // An unwritable quota cache must not hide the rest of the diagnosis (CUR-004).
   const cacheNotes: string[] = [];
-  const [cached, catalogs, prices, inherited] = await Promise.all([
+  const [cached, catalogs, inherited] = await Promise.all([
     inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow,
       onCacheError: error => cacheNotes.push(`Quota cache not updated: ${redactDiagnostic(error.message, 512)}`) }),
     Promise.all(selected.map(id => readModelCatalog(id, { fresh: true }))),
-    // A list older than a week is read again; prices change rarely and approximate is enough.
-    readPrices({ refresh: true }),
     Promise.all(selected.map(id => probes[id]!.installed ? adapterRegistry[id].inheritedTools?.() : undefined)),
   ]);
+  // Prices of every listed and configured default model, read again when the list is a day old.
+  const configuredDefaults = selected.flatMap(id => [config.backends[id]?.defaultModel, probes[id]!.config?.defaultModel]).filter((model): model is string => typeof model === 'string');
+  const prices = await readPrices({ refresh: true, models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...configuredDefaults] });
   const inheritedTools: DoctorReport['inheritedTools'] = {};
   selected.forEach((id, index) => {
     const tools = inherited[index];
@@ -180,7 +181,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     backends,
     quotas,
     defaultModels,
-    prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: prices.entries.length, stale: isPriceListStale(prices) } : null,
+    prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
     selection,
     recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes],
     ...(configError ? { configError } : {}),
@@ -240,7 +241,7 @@ function formatQuota(quota: DoctorQuota | undefined): string {
  */
 export function formatDoctorSummary(report: DoctorReport): string {
   const list = report.prices;
-  const prices = list ? `prices ${list.source} ${list.fetchedAt.slice(0, 10)} (${list.models} models${list.stale ? ', stale: meets no price limit' : ''})`
+  const prices = list ? `prices ${list.source} ${list.fetchedAt.slice(0, 10)} (${list.models} models priced${list.stale ? ', stale: meets no price limit' : ''})`
     : 'no price list: every model asks, none meets a price limit';
   const ids = Object.keys(report.backends) as ProviderId[];
   const rows = Object.fromEntries(ids.map(id => [id, report.selection.filter(row => row.backend === id)])) as Record<ProviderId, ModelCandidate[]>;

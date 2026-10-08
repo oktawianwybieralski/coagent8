@@ -20,6 +20,7 @@ import { readModelCatalog, readObservedModel } from './probe-cache.js';
 import { findCatalogEntry } from './model-catalog.js';
 import { checkPriceLimit, priceEvidence, type PriceEvidence, type PriceList } from './prices.js';
 import { decideConsent, type ConsentBasis, type GovernanceSettings } from './governance.js';
+import { readPrices } from './prices.js';
 import type { AdapterProbeResult, CatalogModel, ModelCatalog } from './types.js';
 
 /**
@@ -53,8 +54,6 @@ export function catalogDefault(catalog: ModelCatalog | undefined): { model: stri
 export interface PriceConstraint {
   /** Strict limit in USD per million output tokens: a model priced at exactly this does not meet it. */
   below: number;
-  /** The price list the limit is checked against; undefined when none could be read. */
-  prices: PriceList | undefined;
   /** The call's `reasoning_effort`; a catalog model that does not accept it is not chosen. */
   effort?: string;
 }
@@ -110,7 +109,15 @@ export async function selectModel(id: ProviderId, probe: AdapterProbeResult, req
   let fallback: ModelSelection | undefined;
   try { fallback = await resolve(); }
   catch (err) { if (errorCodeOf(err) !== 'MODEL_UNAVAILABLE') throw err; }
-  return choosePricedModel(id, await readModelCatalog(id), fallback, options.constraint);
+  const catalog = await readModelCatalog(id);
+  // A limit needs current prices of every model it may choose from.
+  const prices = await readPrices({ current: true, models: [...catalogNames(catalog), ...(fallback ? [fallback.model] : [])] });
+  return choosePricedModel(id, catalog, fallback, options.constraint, prices);
+}
+
+/** Names a catalog's models as a turn may run them: each id and agy's `<id>-<effort>` forms. */
+export function catalogNames(catalog: ModelCatalog | undefined): string[] {
+  return (catalog?.models ?? []).flatMap(model => [model.id, ...(model.effortRequired ? model.efforts.map(effort => `${model.id}-${effort}`) : [])]);
 }
 
 /**
@@ -120,11 +127,12 @@ export async function selectModel(id: ProviderId, probe: AdapterProbeResult, req
  * @param id - Backend, for messages.
  * @param catalog - Its catalog, or undefined; without one only the default can be chosen.
  * @param fallback - The model the backend runs when none is named, if known.
- * @param constraint - The limit, the price list and the call's effort.
+ * @param constraint - The limit and the call's effort.
+ * @param prices - The price list the limit is checked against; undefined when none could be read.
  * @throws `PRICE_LIMIT` stating why neither the default nor a catalog model meets the limit.
  */
-export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint): ModelSelection {
-  const { below, prices } = constraint;
+export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint, prices: PriceList | undefined): ModelSelection {
+  const { below } = constraint;
   const effort = constraint.effort?.toLowerCase();
   const accepts = (entry: CatalogModel | undefined) => !effort || !entry || entry.efforts.includes(effort);
   const defaultReason = fallback ? checkPriceLimit(fallback.model, priceEvidence(prices, fallback.model), below) : undefined;

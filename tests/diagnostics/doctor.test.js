@@ -123,7 +123,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.match(summary, /\nagy: ready[^\n]*\n {2}models, USD per million output tokens: agy-model \? \[default, asks: no price\], gemini-3\.8-flash \(high\|low required\) 3\.75(\n|$)/,
       'the default and the catalog the CLI lists, with prices and the efforts a model needs');
     assert.match(summary, /\n {2}also accepted: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
-    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(19 models\)\n/);
+    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
     // The fixture models have no price, so the policy asks before each turn and doctor says so.
     assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
     assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 81% left/);
@@ -136,7 +136,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
       ['claude', 'claude-model', null, 'unknown', true, 'cli-config'],
     ]);
     const flash = report.selection.find(row => row.model === 'gemini-3.8-flash');
-    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false });
+    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, inputUsdPerMTok: 0.75, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false });
     assert.deepEqual(flash.approval, { required: false, basis: 'priced', reason: 'Its output costs 3.75 USD per million tokens.', rememberable: false });
     assert.equal(report.prices.stale, false);
 
@@ -217,7 +217,7 @@ test('the doctor summary drops whole model rows to stay within the inline bound 
   };
   const summary = formatDoctorSummary(report);
   assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, `${Buffer.byteLength(summary)} B`);
-  assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices openrouter 2026-09-01 \(300 models, stale: meets no price limit\)\n/);
+  assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices openrouter 2026-09-01 \(300 models priced, stale: meets no price limit\)\n/);
   const codexLine = summary.split('\n').find(line => line.includes('codex-catalog-model-0'));
   const counted = Number(codexLine.match(/, \+(\d+) more \(detail: full\); reasoning_effort low\|high$/)[1]);
   const shown = codexLine.replace(/^ {2}models, USD per million output tokens: /, '').replace(/, \+\d+ more.*$/, '').split(', ');

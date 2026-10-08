@@ -172,9 +172,7 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
   const below = args.output_price_below;
-  // A limit needs a current price list: a stale one is read again before anything is chosen.
-  const constraint: PriceConstraint | undefined = below === undefined ? undefined
-    : { below, prices: await readPrices({ current: true }), effort: args.reasoning_effort };
+  const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
   // Without a named model, only backends with a model below the limit are chosen from.
   const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
   const backend = previous ? await resolveBackend(previous.backend)
@@ -201,7 +199,8 @@ async function executeTaskInternal(prompt: string, publicInput: string, args: Ex
   }
   // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
   const assertPriceLimit = async () => {
-    const prices = await readPrices({ current: true });
+    // A limit needs a current price list: a week-old one is read again first.
+    const prices = await readPrices({ current: true, models: [model] });
     const evidence = priceEvidence(prices, model);
     const rejected = checkPriceLimit(model, evidence, below!);
     if (rejected) {

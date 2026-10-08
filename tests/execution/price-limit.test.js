@@ -121,7 +121,7 @@ test('the price is checked again after the user approves, right before the turn'
     assert.equal(readResult(ok).model, 'gpt-6-luna');
     assert.equal(asked, 1, 'an approval rule still applies to a model within the limit');
     const raised = { askConsent: async () => {
-      await recordPrices({ ...stored, fetchedAt: Date.now(), entries: stored.entries.map(([id, price]) => [id, id === 'openai/gpt-6-luna' ? 2 : price]) });
+      await recordPrices({ ...stored, fetchedAt: Date.now(), models: { ...stored.models, 'gpt-6-luna': { ...stored.models['gpt-6-luna'], output: 2 } } });
       return { approved: true };
     } };
     await assert.rejects(executeTask('x', 'x', { backend: 'codex', model: 'gpt-6-luna', output_price_below: 1 }, tempDir, null, null, raised), { code: 'PRICE_LIMIT', message: /costs 2 USD/ });
