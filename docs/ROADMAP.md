@@ -2212,6 +2212,22 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   exact-tarball consumer smoke pass (96 files, Node v26.10.0, Windows). No real
   backend turn was run. Native acceptance is
   listed in [the beta.2 checklist](VSCODE_BETA_2_CHECKLIST.md).
+- [x] Owner decision of 2026-10-08, replacing "config.json as the single source"
+  above: backend, model and approval options are also VS Code settings
+  (`coagent8.defaultBackend`, `coagent8.routing.*`, `coagent8.<backend>.defaultModel`,
+  `coagent8.approval.*`), all machine-scoped. The extension passes only values the
+  user set explicitly (`inspect().globalValue`) in `coagent8_EDITOR_SETTINGS`; a
+  scalar replaces the file value, the two model lists are added to the file lists.
+  Writes and remembered approvals change only the file, and the server never reads
+  or writes VS Code's settings.json. An invalid setting refuses execution and names
+  the setting. New commands: Open Settings, Reset Configuration (config.json) with
+  one replaced `config.json.backup`, and Show MCP Servers (`workbench.mcp.listServer`,
+  verified in VS Code source). The schema now describes every field, without
+  descriptions beside `$ref`; tags gain llm, mcp-server and vibe-coding. The CLI and
+  other MCP hosts still read only the file. Local typecheck, 5 editor-settings and
+  22 provider/onboarding fixtures pass. Native UI acceptance is NOT_RUN. VS Code's
+  extension editor has no Manifest tab (source: extensionEditor.ts), so the owner's
+  "Manifest and Configuration tabs" report needs a reference before any change.
 - No `vscode:uninstall` cleanup is currently implemented: the integration guide keeps the
   explicit preview/confirm cleanup command as the only path, and such a hook
   could not reach `globalState` either. Documentation tells users to run cleanup

@@ -7,6 +7,7 @@ import { readBoundedFileSync } from './execution/stream.js';
 import { withFileLock } from './sessions/lock.js';
 import { isValidModelIdentifier } from './backends/model-identifier.js';
 import type { GovernanceSettings } from './backends/governance.js';
+import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
 export type BackendId = ProviderId | 'smart_quota';
@@ -205,12 +206,13 @@ function defaultConfig(): CoAgent8Config {
 }
 
 /**
- * Loads and validates the configuration file, or the defaults when there is none.
+ * Loads and validates the configuration file, or the defaults when there is none. Writes
+ * start from this value, so VS Code settings are never copied into the file.
  * @throws `ToolError` (`POLICY_DENIED`) when the file exists but cannot be read, parsed or
  * validated: its routing policy (for example `allowedBackends`) cannot be applied, and
  * executing with the defaults instead could run a backend the user disabled.
  */
-export function loadConfig(): CoAgent8Config {
+function loadFileConfig(): CoAgent8Config {
   const configFile = getConfigFile();
   if (!fs.existsSync(configFile)) return defaultConfig();
   const unusable = (reason: string, cause: unknown) =>
@@ -223,6 +225,32 @@ export function loadConfig(): CoAgent8Config {
   catch (err) { throw unusable('Malformed JSON in the configuration file', err); }
   try { return validateConfig(parsed); }
   catch (err) { throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err); }
+}
+
+/**
+ * Loads the effective configuration: the file, then the explicit VS Code user settings the
+ * extension passed in `coagent8_EDITOR_SETTINGS`.
+ * @throws `ToolError` (`POLICY_DENIED`) when the file or a setting is unusable; the message
+ * names the file or the setting.
+ */
+export function loadConfig(): CoAgent8Config {
+  const base = loadFileConfig();
+  const unusable = (reason: string, cause: unknown) =>
+    new ToolError('POLICY_DENIED', `Configuration Error: ${reason}; fix it in the VS Code user settings. Its routing policy cannot be applied until then.`, { cause });
+  let settings: Partial<Record<EditorSettingKey, unknown>>;
+  try { settings = readEditorSettings(); }
+  catch (err) { throw unusable((err as Error).message, err); }
+  const combined = structuredClone(base) as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(settings) as [EditorSettingKey, unknown][]) {
+    // Each setting is validated alone first, so the error names the one to fix.
+    const single = structuredClone(base) as unknown as Record<string, unknown>;
+    applyEditorSetting(single, key, value);
+    try { validateConfig(single); }
+    catch (err) { throw unusable(`VS Code setting coagent8.${key}: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
+    applyEditorSetting(combined, key, value);
+  }
+  try { return validateConfig(combined); }
+  catch (err) { throw unusable(`VS Code settings coagent8.*: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
 }
 
 /**
@@ -248,7 +276,7 @@ function writeConfig(config: CoAgent8Config): void {
 }
 
 export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
-  const current = loadConfig();
+  const current = loadFileConfig();
   const merged = validateConfig({
     ...current,
     ...updates,
@@ -264,14 +292,15 @@ export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
 }
 
 /**
- * Adds a model the user approved with "remember" to `governance.neverAsk`.
+ * Adds a model the user approved with "remember" to `governance.neverAsk` of the file; the
+ * VS Code list `coagent8.approval.neverAskModels` is added to it, never replaced by it.
  * @returns Whether the list changed.
  * @throws When the configuration cannot be locked, read, validated or written.
  */
 export async function rememberApprovedModel(model: string): Promise<boolean> {
   ensureConfigDir();
   return withFileLock(getConfigFile(), async () => {
-    const current = loadConfig();
+    const current = loadFileConfig();
     if (current.governance.neverAsk.includes(model)) return false;
     writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }));
     return true;
@@ -279,7 +308,8 @@ export async function rememberApprovedModel(model: string): Promise<boolean> {
 }
 
 /**
- * Records a backend's default model unless the configuration already names one.
+ * Records a backend's default model in the file unless the file or a VS Code setting
+ * already names one.
  * @param id - Backend.
  * @param model - The model to record.
  * @returns Whether the model was written.
@@ -288,8 +318,8 @@ export async function rememberApprovedModel(model: string): Promise<boolean> {
 export async function recordDefaultModel(id: ProviderId, model: string): Promise<boolean> {
   ensureConfigDir();
   return withFileLock(getConfigFile(), async () => {
-    const current = loadConfig();
-    if (current.backends[id]?.defaultModel) return false;
+    if (loadConfig().backends[id]?.defaultModel) return false;
+    const current = loadFileConfig();
     writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }));
     return true;
   });

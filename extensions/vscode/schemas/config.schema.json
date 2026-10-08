@@ -1,43 +1,92 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CoAgent8 configuration",
+  "description": "Shared by the coagent8 CLI, its MCP server and every MCP host. In VS Code, CoAgent8 settings set in the user settings take precedence.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string", "maxLength": 2048, "description": "Optional schema location for a custom configuration path." },
-    "schemaVersion": { "const": 1, "default": 1 },
-    "defaultBackend": { "enum": [null, "codex", "claude", "gemini", "smart_quota"], "default": null },
+    "schemaVersion": { "const": 1, "default": 1, "description": "Configuration format version. Must be 1." },
+    "defaultBackend": {
+      "enum": [null, "codex", "claude", "gemini", "smart_quota"],
+      "default": null,
+      "description": "Backend used when a request does not name one. null chooses among routing.allowedBackends by routing.strategy. gemini is Antigravity. VS Code setting: coagent8.defaultBackend.",
+      "markdownEnumDescriptions": ["Automatic: choose among the allowed backends.", "Codex CLI.", "Claude Code CLI.", "Antigravity CLI (agy).", "Compatibility alias for routing.strategy smart_quota."]
+    },
     "routing": {
       "type": "object",
       "additionalProperties": false,
+      "description": "How automatic requests choose a backend.",
       "properties": {
-        "strategy": { "enum": ["fixed", "smart_quota"], "default": "fixed" },
-        "allowedBackends": { "type": "array", "items": { "enum": ["codex", "claude", "gemini"] }, "default": ["codex", "claude", "gemini"] }
+        "strategy": {
+          "enum": ["fixed", "smart_quota"],
+          "default": "fixed",
+          "description": "fixed always uses the default backend; smart_quota prefers a backend whose quota is not exhausted. VS Code setting: coagent8.routing.strategy.",
+          "markdownEnumDescriptions": ["Always use the default backend.", "Prefer a backend whose quota is not exhausted."]
+        },
+        "allowedBackends": {
+          "type": "array",
+          "items": { "enum": ["codex", "claude", "gemini"] },
+          "uniqueItems": true,
+          "default": ["codex", "claude", "gemini"],
+          "description": "Backends CoAgent8 may run. gemini is Antigravity. VS Code setting: coagent8.routing.allowedBackends."
+        }
       }
     },
     "backends": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Per-backend settings.",
       "properties": {
-        "codex": { "$ref": "#/definitions/backend" },
-        "claude": { "$ref": "#/definitions/backend" },
-        "gemini": { "$ref": "#/definitions/backend" }
+        "codex": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Codex CLI. VS Code setting: coagent8.codex.defaultModel." },
+        "claude": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Claude Code CLI. VS Code setting: coagent8.claude.defaultModel." },
+        "gemini": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Antigravity CLI (agy). VS Code setting: coagent8.gemini.defaultModel." }
       }
     },
     "governance": {
       "type": "object",
       "additionalProperties": false,
+      "description": "When CoAgent8 asks for your approval before a model runs. A calling agent cannot grant it.",
       "properties": {
-        "priceMultiplier": { "type": "number", "exclusiveMinimum": 1, "default": 2 },
-        "askAbovePrice": { "type": ["number", "null"], "minimum": 0, "default": 20, "description": "USD per million output tokens; null disables this threshold." },
-        "alwaysAsk": { "$ref": "#/definitions/models", "description": "Models requiring approval on every turn, including entries also in neverAsk." },
-        "neverAsk": { "$ref": "#/definitions/models", "description": "User-selected exemptions, unless the model is also in alwaysAsk." }
+        "priceMultiplier": {
+          "type": "number",
+          "exclusiveMinimum": 1,
+          "default": 2,
+          "description": "Ask before a model that costs at least this many times the backend's default model. VS Code setting: coagent8.approval.priceMultiplier."
+        },
+        "askAbovePrice": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": 20,
+          "description": "Ask before a model whose output price is at least this many USD per million tokens; null disables this threshold. VS Code setting: coagent8.approval.askAbovePrice."
+        },
+        "alwaysAsk": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/model" },
+          "default": [],
+          "description": "Models that always need your approval before they run, even when also listed in neverAsk. VS Code setting coagent8.approval.alwaysAskModels adds to this list."
+        },
+        "neverAsk": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/model" },
+          "default": [],
+          "description": "Models that run without asking, unless also listed in alwaysAsk. An approval with \"remember\" adds the model here. VS Code setting coagent8.approval.neverAskModels adds to this list."
+        }
       }
     }
   },
   "definitions": {
-    "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
-    "models": { "type": "array", "maxItems": 256, "items": { "$ref": "#/definitions/model" }, "default": [] },
-    "backend": { "type": "object", "additionalProperties": false, "properties": { "defaultModel": { "$ref": "#/definitions/model" } } }
+    "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$", "description": "Model identifier or CLI alias, for example opus." },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultModel": { "allOf": [{ "$ref": "#/definitions/model" }], "description": "Model used when a request names none. Recorded by doctor when missing." }
+      }
+    }
   }
 }

@@ -109,6 +109,15 @@ Storage root: `coagent8_DIR` or `~/.coagent8`.
 its session names one; it must be a valid model identifier. `governance`
 (`priceMultiplier`, `askAbovePrice`, `alwaysAsk`, `neverAsk`) is described under
 [model consent](#model-consent).
+A server started by the VS Code extension also receives the CoAgent8 settings
+the user set explicitly in VS Code user settings, in `coagent8_EDITOR_SETTINGS`
+(defaults and workspace values are not passed). A scalar setting replaces the file
+value; `coagent8.approval.alwaysAskModels` and `coagent8.approval.neverAskModels`
+are added to `alwaysAsk` and `neverAsk`. Writes (a recorded default model, a
+remembered approval) change only the file, never copying VS Code settings into
+it; doctor does not record a default model over one set in VS Code. An invalid setting refuses execution like an invalid file,
+naming the setting. The CLI and other MCP hosts read only the file.
+
 `routing.strategy` accepts `fixed` or `smart_quota`. For `auto`, a configured
 smart strategy takes precedence over the fixed default. An explicit provider
 wins, subject to `allowedBackends`, installation and execution support.

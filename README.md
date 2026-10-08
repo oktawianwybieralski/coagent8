@@ -124,7 +124,10 @@ macOS), type `CoAgent8` and select one:
 
 | Command | What it does | Changes |
 | --- | --- | --- |
+| `CoAgent8: Open Settings` | Opens CoAgent8's backend, model and approval settings in VS Code's Settings editor | None |
 | `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
+| `CoAgent8: Reset Configuration (config.json)` | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
+| `CoAgent8: Show MCP Servers` | Opens VS Code's `MCP: List Servers` | None |
 | `CoAgent8: Set Up Coding CLIs` | Checks Codex CLI, Claude Code CLI and Antigravity CLI. For a missing CLI it offers the vendor extension or the official standalone installer, waits until the CLI is found, then offers its sign-in command | Installs only what you choose, in the vendor's own location; registers no MCP server |
 | `CoAgent8: Refresh CLI Status` | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
 | `CoAgent8: Reset Setup State` | Repeats onboarding after confirmation and checks readiness without restarting | Clears remembered CLI choices and welcome dismissal; preserves configuration and sign-ins |
@@ -143,9 +146,10 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 3. Start CoAgent8 through **MCP: List Servers**, enable its tools in your chat,
    and request doctor, a consultation, and a review of current workspace changes.
    Native-host registration is a separate optional command.
-4. Configure models and consent through **Open Configuration (config.json)**.
-   Set `coagent8.configPath` in VS Code user settings to choose another file;
-   empty uses the default. Configuration stays the single source of truth. The welcome notification
+4. Configure backends, models and approval through **CoAgent8: Open Settings**.
+   A changed setting takes precedence over `config.json` in VS Code; the CLI and
+   other MCP hosts read only the file (**Open Configuration (config.json)**). Set
+   `coagent8.configPath` to choose another file; empty uses the default. The welcome notification
    appears on activation until a CLI is ready or you choose **Don't Show Again**.
 5. For a problem, ask for the issue tool's sanitized report and doctor output.
    Open the repository's [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)

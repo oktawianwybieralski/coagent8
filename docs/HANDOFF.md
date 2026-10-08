@@ -128,6 +128,14 @@ Typecheck, 19 provider/onboarding fixtures, build, VSIX inspection and exact
 tarball consumer smoke pass (96 files, Node v26.10.0, Windows). No real backend
 turn was run for this follow-up. Logs: .artifacts/setup-reset-*.
 
+Settings follow-up (owner decision 2026-10-08): backend, model and approval
+options are VS Code settings too, passed by the extension as explicit user values
+in `coagent8_EDITOR_SETTINGS`; config.json is no longer the only source in VS
+Code. Precedence and the new Open Settings, Reset Configuration and Show MCP
+Servers commands are described in the roadmap INSTALL entry and the runtime
+contract. The owner's request for Manifest and Configuration tabs is open: VS
+Code's extension editor has no Manifest tab, so the referenced view is needed.
+
 ~~~yaml
 task_id: DOCS-001
 mode: documentation

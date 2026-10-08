@@ -110,9 +110,28 @@ conversation. The chat host controls tool visibility, progress and approvals.
 
 ## Settings and commands
 
+Run **CoAgent8: Open Settings** or search for `CoAgent8` in VS Code's Settings.
+Every setting is user-only (machine-scoped): a workspace cannot change backends,
+models or approval rules.
+
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `coagent8.nodePath` | `node` | Node.js 24+ executable used to start the bundled MCP server; machine-scoped |
+| `coagent8.defaultBackend` | `auto` | Backend used when a request names none; `auto` chooses among the allowed backends |
+| `coagent8.routing.allowedBackends` | all three | Backends CoAgent8 may run (`gemini` is Antigravity) |
+| `coagent8.routing.strategy` | `fixed` | `fixed` uses the default backend; `smart_quota` prefers a backend with quota left |
+| `coagent8.codex.defaultModel`, `coagent8.claude.defaultModel`, `coagent8.gemini.defaultModel` | empty | Model when a request names none; empty uses config.json, then the CLI default |
+| `coagent8.approval.askAbovePrice` | `20` | Ask for approval before a model costing at least this many USD per million output tokens; `null` disables it |
+| `coagent8.approval.priceMultiplier` | `2` | Ask for approval before a model costing at least this many times the backend's default model |
+| `coagent8.approval.alwaysAskModels` | `[]` | Models that always need approval |
+| `coagent8.approval.neverAskModels` | `[]` | Models that run without asking, unless also in Always Ask Models |
+| `coagent8.configPath` | empty | Configuration file shared with the `coagent8` CLI and other MCP hosts |
+| `coagent8.nodePath` | `node` | Node.js 24+ executable used to start the bundled MCP server |
+
+A setting you change in VS Code takes precedence over the same option in the
+configuration file (normally `~/.coagent8/config.json`); a setting left at its
+default keeps the file value. The two model lists are added to the file's lists,
+and an approval with "remember" is saved in the file. The `coagent8` CLI and
+other MCP hosts read only the file.
 
 If Node.js is unavailable on PATH, set an absolute executable path in VS Code's
 settings. For example, on Windows:
@@ -123,16 +142,19 @@ settings. For example, on Windows:
 }
 ```
 
-Backend defaults, routing and model consent belong to the server configuration,
-normally `~/.coagent8/config.json`. The extension does not provide a model picker
-or a separate backend settings UI. See the
-[runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#configuration-and-routing).
+See the
+[runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/RUNTIME_CONTRACT.md#configuration-and-routing)
+for the configuration file.
 
 Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on macOS), type `CoAgent8` and
 select a command:
 
 | Command | What it does | Changes |
 | --- | --- | --- |
+| **CoAgent8: Open Settings** | Opens CoAgent8's settings in VS Code's Settings editor | None |
+| **CoAgent8: Open Configuration (config.json)** | Opens the configuration file, creating defaults only when absent | Creates a missing file; preserves existing contents |
+| **CoAgent8: Reset Configuration (config.json)** | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
+| **CoAgent8: Show MCP Servers** | Opens VS Code's **MCP: List Servers**, where CoAgent8 is started, stopped or restarted | None |
 | **CoAgent8: Set Up Coding CLIs** | Checks Codex CLI, Claude Code CLI and Antigravity CLI; offers installation and sign-in for the CLIs you select | Installs only what you choose; registers no MCP server |
 | **CoAgent8: Refresh CLI Status** | Checks versions, required controls and local sign-in again; **Show Details** opens the `CoAgent8 Setup` output | None |
 | **CoAgent8: Register or Repair Native Chat Hosts** | Optionally adds CoAgent8 to the selected CLIs' own MCP configuration after a confirmation | Writes the selected hosts' configuration, with private backups |
@@ -234,12 +256,12 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
   choose **Don't Show Again**. Dismissal and remembered CLI choices survive
   uninstall/reinstall in VS Code's stored state.
 
-Use **CoAgent8: Open Configuration (config.json)** to edit backend defaults and
-model consent. The file remains the single source of truth. The machine-scoped
-VS Code setting `coagent8.configPath` selects an absolute path or `~/...`; empty
-uses `coagent8_CONFIG` or `~/.coagent8/config.json`. This path is used for editing,
-the VS Code MCP provider and new native-host registrations. Models and consent
-are not duplicated as VS Code settings. Schema completion/validation covers
+Use **CoAgent8: Open Settings** for backends, models and approval in VS Code, or
+**CoAgent8: Open Configuration (config.json)** for the file shared with the CLI
+and other MCP hosts. The machine-scoped VS Code setting `coagent8.configPath`
+selects an absolute path or `~/...`; empty uses `coagent8_CONFIG` or
+`~/.coagent8/config.json`. This path is used for editing, the VS Code MCP
+provider and new native-host registrations. Schema completion/validation covers
 the ordinary path; newly created files include a `$schema` association.
 This command creates defaults only when the file is missing and preserves
 existing contents, including invalid JSON that needs repair. Existing custom
@@ -248,8 +270,9 @@ files need a `$schema` association if they do not already have one.
 Installation/update/uninstall uses the native Extensions view **Restart Extensions**
 action when VS Code requests it. **Developer: Restart Extension Host** is a different
 operation and does not apply added/removed extensions. CoAgent8 does not force a
-window reload. Node/config-path and MCP-definition changes refresh the provider;
-use **MCP: List Servers** to restart the CoAgent8 server. Bundled-server identity
+window reload. Changes to CoAgent8 settings and MCP definitions refresh the
+provider; a running server keeps its old values until it is restarted through
+**MCP: List Servers** (or **CoAgent8: Show MCP Servers**). Bundled-server identity
 also changes when a replacement VSIX keeps the same version number. Restart
 separate native chat hosts when their registrations changed.
 

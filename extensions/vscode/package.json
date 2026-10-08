@@ -11,7 +11,7 @@
   "repository": { "type": "git", "url": "https://github.com/oktawianwybieralski/coagent8.git" },
   "engines": { "vscode": "^1.101.0" },
   "categories": ["AI", "Chat"],
-  "keywords": ["mcp", "codex", "claude", "claude-code", "antigravity", "gemini", "code-review", "coding-agents"],
+  "keywords": ["mcp", "mcp-server", "llm", "vibe-coding", "codex", "claude", "claude-code", "antigravity", "gemini", "code-review", "coding-agents"],
   "galleryBanner": { "color": "#1f262e", "theme": "dark" },
   "preview": true,
   "markdown": "github",
@@ -27,7 +27,10 @@
   },
   "contributes": {
     "commands": [
+      { "command": "coagent8.openSettings", "title": "CoAgent8: Open Settings" },
       { "command": "coagent8.openConfiguration", "title": "CoAgent8: Open Configuration (config.json)" },
+      { "command": "coagent8.resetConfiguration", "title": "CoAgent8: Reset Configuration (config.json)" },
+      { "command": "coagent8.manageMcpServers", "title": "CoAgent8: Show MCP Servers" },
       { "command": "coagent8.setup", "title": "CoAgent8: Set Up Coding CLIs" },
       { "command": "coagent8.refreshCliStatus", "title": "CoAgent8: Refresh CLI Status" },
       { "command": "coagent8.resetSetupState", "title": "CoAgent8: Reset Setup State" },
@@ -39,17 +42,107 @@
     "configuration": {
       "title": "CoAgent8",
       "properties": {
+        "coagent8.defaultBackend": {
+          "type": "string",
+          "enum": ["auto", "codex", "claude", "gemini"],
+          "enumItemLabels": ["Automatic", "Codex", "Claude Code", "Antigravity"],
+          "markdownEnumDescriptions": ["Choose among the allowed backends by routing strategy.", "Codex CLI.", "Claude Code CLI.", "Antigravity CLI (agy)."],
+          "default": "auto",
+          "scope": "machine",
+          "order": 1,
+          "markdownDescription": "Backend used when a request does not name one. Overrides `defaultBackend` in config.json only when set here."
+        },
+        "coagent8.routing.allowedBackends": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["codex", "claude", "gemini"] },
+          "uniqueItems": true,
+          "default": ["codex", "claude", "gemini"],
+          "scope": "machine",
+          "order": 2,
+          "markdownDescription": "Backends CoAgent8 may run (`gemini` is Antigravity). Overrides `routing.allowedBackends` in config.json only when set here."
+        },
+        "coagent8.routing.strategy": {
+          "type": "string",
+          "enum": ["fixed", "smart_quota"],
+          "markdownEnumDescriptions": ["Always use the default backend.", "Prefer a backend whose quota is not exhausted."],
+          "default": "fixed",
+          "scope": "machine",
+          "order": 3,
+          "markdownDescription": "How an automatic request chooses a backend. Overrides `routing.strategy` in config.json only when set here."
+        },
+        "coagent8.codex.defaultModel": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$",
+          "patternErrorMessage": "Enter a Codex model identifier.",
+          "scope": "machine",
+          "order": 10,
+          "markdownDescription": "Model for Codex when a request names none. Empty uses `backends.codex.defaultModel` from config.json, then the CLI default."
+        },
+        "coagent8.claude.defaultModel": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$",
+          "patternErrorMessage": "Enter a model identifier or alias such as opus.",
+          "scope": "machine",
+          "order": 11,
+          "markdownDescription": "Model for Claude Code when a request names none. Empty uses `backends.claude.defaultModel` from config.json, then the CLI default."
+        },
+        "coagent8.gemini.defaultModel": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$",
+          "patternErrorMessage": "Enter a model identifier.",
+          "scope": "machine",
+          "order": 12,
+          "markdownDescription": "Model for Antigravity when a request names none. Empty uses `backends.gemini.defaultModel` from config.json, then the CLI default."
+        },
+        "coagent8.approval.askAbovePrice": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": 20,
+          "scope": "machine",
+          "order": 20,
+          "markdownDescription": "Ask for your approval before a model whose output price is at least this many USD per million tokens. `null` disables this threshold. Overrides `governance.askAbovePrice` in config.json only when set here."
+        },
+        "coagent8.approval.priceMultiplier": {
+          "type": "number",
+          "exclusiveMinimum": 1,
+          "default": 2,
+          "scope": "machine",
+          "order": 21,
+          "markdownDescription": "Ask for your approval before a model that costs at least this many times the backend's default model. Overrides `governance.priceMultiplier` in config.json only when set here."
+        },
+        "coagent8.approval.alwaysAskModels": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
+          "uniqueItems": true,
+          "maxItems": 256,
+          "default": [],
+          "scope": "machine",
+          "order": 22,
+          "markdownDescription": "Models that always need your approval before they run, even when listed in **Never Ask Models**. Added to `governance.alwaysAsk` in config.json."
+        },
+        "coagent8.approval.neverAskModels": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
+          "uniqueItems": true,
+          "maxItems": 256,
+          "default": [],
+          "scope": "machine",
+          "order": 23,
+          "markdownDescription": "Models that run without asking, unless listed in **Always Ask Models**. Added to `governance.neverAsk` in config.json, where an approval with \"remember\" is also saved."
+        },
         "coagent8.configPath": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Configuration file for CoAgent8. Use an absolute path or ~/; empty uses coagent8_CONFIG or ~/.coagent8/config.json. Backend, model and consent options remain in this file. Open it with [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration). Use MCP: List Servers to restart CoAgent8 after changing the path."
+          "order": 30,
+          "markdownDescription": "Configuration file shared with the `coagent8` CLI and other MCP hosts. Use an absolute path or ~/; empty uses coagent8_CONFIG or ~/.coagent8/config.json. Settings changed here take precedence in VS Code. Open it with [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration)."
         },
         "coagent8.nodePath": {
           "type": "string",
           "default": "node",
           "scope": "machine",
-          "markdownDescription": "Node.js 24+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH. Edit backend, model and consent options in [CoAgent8: Open Configuration (config.json)](command:coagent8.openConfiguration)."
+          "order": 31,
+          "markdownDescription": "Node.js 24+ executable used to run the bundled MCP server. Set an absolute executable path if Node.js is not on PATH."
         }
       }
     }

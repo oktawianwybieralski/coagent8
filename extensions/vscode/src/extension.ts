@@ -10,6 +10,8 @@ import { createHash } from 'node:crypto';
 import { getConfigFile, validateConfig } from '../../../src/config.js';
 import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
+import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
+import { resetConfigurationFile } from './configuration.js';
 
 const LABELS: Record<SetupClient, string> = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravity CLI' };
 /** Extensions whose bundled CLI paths the runtime receives through `coagent8_EXTENSION_PATHS`. */
@@ -31,7 +33,20 @@ function discoveryEnvironment(): NodeJS.ProcessEnv {
     const extension = vscode.extensions.getExtension(id);
     if (extension?.extensionUri.scheme === 'file') locations[client] = extension.extensionPath;
   }
-  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_CONFIG: configurationFile() };
+  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_CONFIG: configurationFile(), [EDITOR_SETTINGS_ENV]: editorSettings() };
+}
+/**
+ * Serializes the backend, model and approval settings the user set explicitly. Only the user
+ * value counts: defaults leave config.json in effect, and a workspace cannot change approval.
+ */
+function editorSettings(): string {
+  const configuration = vscode.workspace.getConfiguration('coagent8');
+  const values: Record<string, unknown> = {};
+  for (const key of Object.keys(EDITOR_SETTINGS)) {
+    const value = configuration.inspect(key)?.globalValue;
+    if (value !== undefined) values[key] = value;
+  }
+  return JSON.stringify(values);
 }
 /** Resolves the machine-scoped user setting without accepting workspace policy overrides. */
 function configurationFile(): string {
@@ -104,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const changed = new vscode.EventEmitter<void>();
   context.subscriptions.push(changed);
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('coagent8.nodePath') || event.affectsConfiguration('coagent8.configPath')) {
+    if (event.affectsConfiguration('coagent8')) {
       clearCliResolverCache(); changed.fire();
     }
   }));
@@ -118,6 +133,7 @@ export function activate(context: vscode.ExtensionContext): void {
       return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {
         coagent8_EXTENSION_PATHS: discoveryEnvironment().coagent8_EXTENSION_PATHS!,
         coagent8_CONFIG: configurationFile(),
+        [EDITOR_SETTINGS_ENV]: editorSettings(),
       }, `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
     },
   }));
@@ -288,6 +304,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }));
   }
   register('coagent8.refreshCliStatus', async () => { await summarize(await status('Refresh CLI Status')); });
+  register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:okidev.coagent8-mcp'); });
+  register('coagent8.manageMcpServers', async () => { await vscode.commands.executeCommand('workbench.mcp.listServer'); });
+  register('coagent8.resetConfiguration', async () => {
+    const file = configurationFile();
+    const dirty = vscode.workspace.textDocuments.some(document => document.uri.scheme === 'file' && path.resolve(document.uri.fsPath) === path.resolve(file) && document.isDirty);
+    if (dirty) throw new Error('Save or revert the configuration editor before resetting the file.');
+    const choice = await vscode.window.showWarningMessage(`Reset ${file} to defaults? The current file will be saved as ${path.basename(file)}.backup, replacing an earlier backup. CoAgent8 settings in VS Code, CLI sign-ins and MCP registrations will be retained.`, { modal: true }, 'Reset Configuration');
+    if (choice !== 'Reset Configuration') return;
+    const backup = await resetConfigurationFile(file, validateConfig({ $schema: vscode.Uri.file(context.asAbsolutePath('schemas/config.schema.json')).toString() }));
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(file)));
+    const next = await vscode.window.showInformationMessage(`CoAgent8 configuration reset.${backup ? ` Backup: ${backup}.` : ''} CoAgent8 settings set in VS Code still take precedence; reset them in Settings.`, 'Open Settings');
+    if (next === 'Open Settings') await vscode.commands.executeCommand('coagent8.openSettings');
+  });
   register('coagent8.resetSetupState', async () => {
     const choice = await vscode.window.showWarningMessage('Reset the remembered CLI selection and welcome dismissal? Configuration files, registrations and CLI sign-ins will be retained.', { modal: true }, 'Reset Setup State');
     if (choice !== 'Reset Setup State') return;

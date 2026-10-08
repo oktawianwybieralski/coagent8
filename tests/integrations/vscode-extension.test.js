@@ -6,7 +6,12 @@ const esbuild = require('esbuild');
 const fs = require('node:fs');
 const os = require('node:os');
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false } = {}) {
+/** A configuration change event with VS Code's semantics: a section matches itself and its parents. */
+function affects(...changed) {
+  return { affectsConfiguration(section) { return changed.some(key => key === section || key.startsWith(section + '.')); } };
+}
+
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [] } = {}) {
   const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
@@ -29,7 +34,8 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
       async openTextDocument(uri) { return { uri, text: fs.readFileSync(uri.fsPath, 'utf8') }; },
       onDidChangeConfiguration(listener) { configurationListener = listener; return { dispose }; },
       createFileSystemWatcher() { return { dispose, onDidChange(listener) { savedListener = listener; return { dispose }; }, onDidCreate() { return { dispose }; }, onDidDelete() { return { dispose }; } }; },
-      getConfiguration() { return { get(key, fallback) { return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback; } }; }, workspaceFolders: [],
+      getConfiguration() { return { get(key, fallback) { return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback; }, inspect() { return {}; } }; }, workspaceFolders: [],
+      textDocuments: dirtyFiles.map(file => ({ uri: { scheme: 'file', fsPath: file }, isDirty: true })),
     },
     lm: { registerMcpServerDefinitionProvider() { return { dispose }; } },
     commands: {
@@ -101,7 +107,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const module = { exports: {} };
   const statuses = ['codex', 'claude', 'agy'].map(client => ({ client, installed: installed.includes(client), compatibility: installed.includes(client) ? 'supported' : 'unknown', authentication: 'authenticated', ready: installed.includes(client), registered: false, action: blocked.includes(client) ? 'blocked' : 'missing', message: 'fixture' }));
   vm.runInNewContext(output.outputFiles[0].text, {
-    module, exports: module.exports, process, Buffer, statuses, discoverable, setTimeout, clearTimeout,
+    module, exports: module.exports, process, Buffer, statuses, discoverable, setTimeout, clearTimeout, setInterval, clearInterval,
     recordClients(clients) { registrations.push(Array.from(clients)); },
     recordCleanup(apply) { cleanupCalls.push(apply); },
     recordEvent(name) { events.push(name); },
@@ -119,7 +125,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   try {
     module.exports.activate(context);
     if (!activationOnly) await handlers[command]();
-    if (settingsChanged) configurationListener({ affectsConfiguration(key) { return key === 'coagent8.configPath'; } });
+    if (settingsChanged) configurationListener(affects('coagent8.configPath'));
     if (savedMcp) {
       const mcp = path.join(extensionRoot, 'User/mcp.json');
       fs.mkdirSync(path.dirname(mcp), { recursive: true });
@@ -193,6 +199,48 @@ test('Open Configuration creates defaults only when absent and opens malformed e
     if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('Reset Configuration needs confirmation, keeps one backup and refuses unsaved edits', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-config-reset-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'config.json');
+  const first = '{ "schemaVersion": 1, "defaultBackend": "codex" }\n';
+  fs.writeFileSync(file, first);
+  const options = { command: 'coagent8.resetConfiguration', configPath: file };
+  const cancelled = await runSetupPicker(options);
+  assert.equal(fs.readFileSync(file, 'utf8'), first);
+  assert.equal(fs.existsSync(file + '.backup'), false);
+  assert.match(cancelled.warnings[0], /config\.json\.backup, replacing an earlier backup/);
+  const dirty = await runSetupPicker({ ...options, action: 'Reset Configuration', dirtyFiles: [file] });
+  assert.match(dirty.errors[0], /Save or revert/);
+  assert.equal(fs.readFileSync(file, 'utf8'), first);
+  const reset = await runSetupPicker({ ...options, action: ['Reset Configuration', 'Open Settings'] });
+  assert.deepEqual(reset.errors, []);
+  assert.equal(fs.readFileSync(file + '.backup', 'utf8'), first);
+  const defaults = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.match(defaults.$schema, /schemas\/config\.schema\.json$/);
+  delete defaults.$schema;
+  assert.deepEqual(defaults, require('../../src/config.ts').validateConfig({}));
+  assert.equal(reset.openedFiles[0].uri.fsPath, file);
+  assert.deepEqual(reset.requests, [['coagent8.openSettings']]);
+  const second = fs.readFileSync(file, 'utf8');
+  await runSetupPicker({ ...options, action: 'Reset Configuration' });
+  assert.equal(fs.readFileSync(file + '.backup', 'utf8'), second, 'the next reset replaces the single backup');
+  assert.deepEqual(fs.readdirSync(directory).sort(), ['config.json', 'config.json.backup'], 'no lock, temporary or extra backup files remain');
+});
+
+test('settings and MCP server commands open the native VS Code views', async () => {
+  assert.deepEqual((await runSetupPicker({ command: 'coagent8.openSettings' })).requests, [['workbench.action.openSettings', '@ext:okidev.coagent8-mcp']]);
+  assert.deepEqual((await runSetupPicker({ command: 'coagent8.manageMcpServers' })).requests, [['workbench.mcp.listServer']]);
+});
+
+test('every registered command is contributed with a title and every contributed command is registered', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../../extensions/vscode/src/extension.ts'), 'utf8');
+  const registered = [...source.matchAll(/register\('(coagent8\.[A-Za-z]+)'/g)].map(match => match[1]).sort();
+  const contributed = require('../../extensions/vscode/package.json').contributes.commands;
+  assert.deepEqual(contributed.map(item => item.command).sort(), registered);
+  assert.ok(contributed.every(item => /^CoAgent8: /.test(item.title)));
 });
 
 test('the user configPath setting overrides the environment for editing and rejects relative paths', async () => {
@@ -333,6 +381,7 @@ test('cleanup cancellation is read-only and confirmation applies the exact previ
 
 test('VS Code provider uses bundled server, updates configuration/build identity, and disposes registrations', t => {
   let provider, providerId, configurationListener, extensionListener, nodePath = 'node', configPath = '';
+  const inspected = {};
   let extensionPath;
   let changes = 0, disposed = 0;
   const disposable = () => ({ dispose() { disposed++; } });
@@ -354,7 +403,7 @@ test('VS Code provider uses bundled server, updates configuration/build identity
       createFileSystemWatcher() { return { ...disposable(), onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable }; },
       getConfiguration(section) {
         assert.equal(section, 'coagent8');
-        return { get(key, fallback) { return key === 'configPath' ? configPath : nodePath ?? fallback; } };
+        return { get(key, fallback) { return key === 'configPath' ? configPath : nodePath ?? fallback; }, inspect(key) { return inspected[key]; } };
       },
     },
     lm: {
@@ -390,7 +439,7 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   assert.deepEqual(JSON.parse(definition.env.coagent8_EXTENSION_PATHS), {});
   assert.equal(definition.env.coagent8_CONFIG, path.resolve(require('../../src/config.ts').getConfigFile()));
   nodePath = ' C:\\Program Files\\nodejs\\node.exe ';
-  configurationListener({ affectsConfiguration(section) { return section === 'coagent8.nodePath'; } });
+  configurationListener(affects('coagent8.nodePath'));
   assert.equal(changes, 1);
   assert.equal(provider.provideMcpServerDefinitions()[0].command, nodePath.trim());
   configurationListener({ affectsConfiguration() { return false; } });
@@ -406,12 +455,23 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   extensionListener();
   assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EXTENSION_PATHS), {});
   configPath = path.join(root, 'custom configuration.json');
-  configurationListener({ affectsConfiguration(section) { return section === 'coagent8.configPath'; } });
+  configurationListener(affects('coagent8.configPath'));
   assert.equal(provider.provideMcpServerDefinitions()[0].env.coagent8_CONFIG, configPath);
   assert.equal(require('../../extensions/vscode/package.json').contributes.configuration.properties['coagent8.configPath'].scope, 'machine');
+  assert.equal(definition.env.coagent8_EDITOR_SETTINGS, '{}', 'contributed defaults leave config.json in effect');
+  Object.assign(inspected, {
+    'approval.neverAskModels': { defaultValue: [], globalValue: ['user-model'], workspaceValue: ['workspace-model'] },
+    defaultBackend: { defaultValue: 'auto', workspaceValue: 'gemini', workspaceFolderValue: 'gemini' },
+    'claude.defaultModel': { globalValue: 'opus' },
+  });
+  const before = changes;
+  configurationListener(affects('coagent8.approval.neverAskModels'));
+  assert.equal(changes, before + 1, 'a backend, model or approval setting refreshes the server definition');
+  assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EDITOR_SETTINGS),
+    { 'approval.neverAskModels': ['user-model'], 'claude.defaultModel': 'opus' }, 'only user values; a workspace cannot change backend or approval');
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'changed bundle, same package version');
   extensionListener();
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 14);
+  assert.equal(disposed, 17);
 });
