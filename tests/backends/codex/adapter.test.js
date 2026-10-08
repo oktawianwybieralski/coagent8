@@ -225,3 +225,23 @@ test('Codex reports the model the thread resolved rather than the requested one'
     delete process.env.CODEX_FIXTURE_MODE;
   }
 });
+
+test('Codex reads the account rate-limit windows from app-server without a thread or a turn', async () => {
+  const { codexAdapter } = require('../../../src/backends/codex/adapter.ts');
+  const quota = await codexAdapter.inspectQuota();
+  assert.deepEqual({ ...quota, buckets: undefined }, { measured: true, headroomPercent: 51, usedPercent: 49, resetsAt: '2026-10-14T08:56:39.000Z', window: 'weekly', buckets: undefined },
+    'the weekly window is the bottleneck');
+  assert.deepEqual(quota.buckets.map(b => [b.id, b.window, b.remainingFraction]), [['codex:primary', '5h', 0.86], ['codex:secondary', 'weekly', 0.51]]);
+  const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE, 'utf8'));
+  assert.deepEqual(capture.records.map(r => r.method), ['initialize', 'initialized', 'account/rateLimits/read'], 'no thread is started');
+  process.env.CODEX_FIXTURE_LIMITS = 'error';
+  try { assert.equal(await codexAdapter.inspectQuota(), undefined, 'an account without ChatGPT limits stays unmeasured'); }
+  finally { delete process.env.CODEX_FIXTURE_LIMITS; }
+});
+
+test('Codex rate limits without a measured window are no quota', () => {
+  const { parseCodexRateLimits } = require('../../../src/backends/codex/models.ts');
+  assert.equal(parseCodexRateLimits({}), undefined);
+  assert.equal(parseCodexRateLimits({ rateLimits: { primary: { usedPercent: null, windowDurationMins: 300 } } }), undefined);
+  assert.equal(parseCodexRateLimits({ rateLimits: { primary: { usedPercent: 120, windowDurationMins: 90, resetsAt: 'soon' } } }).buckets[0].window, '90m');
+});

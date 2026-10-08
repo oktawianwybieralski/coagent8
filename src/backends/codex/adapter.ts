@@ -8,7 +8,7 @@ import { isValidModelIdentifier } from '../model-identifier.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { createCodexStreamCollector } from './collector.js';
 import { codexAppServerArgs, createCodexAppSession } from './app-server.js';
-import { listCodexModels } from './models.js';
+import { listCodexModels, readCodexRateLimits } from './models.js';
 import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
 import { readBoundedFileSync } from '../../execution/stream.js';
@@ -184,6 +184,8 @@ export const codexAdapter: CliAdapter = {
   probe,
   execute,
   listModels: () => listCodexModels(configuredBackendCommand('codex'), VALID_REASONING_EFFORTS),
+  // ChatGPT sign-in limits from app-server; an API-key account has none and stays unmeasured.
+  inspectQuota: () => readCodexRateLimits(configuredBackendCommand('codex')),
 };
 
 export default codexAdapter;

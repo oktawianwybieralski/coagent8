@@ -99,6 +99,13 @@ function handle(message) {
       { id: 'gpt-5.6-luna', model: 'gpt-5.6-luna', hidden: false, isDefault: false, defaultReasoningEffort: 'medium', supportedReasoningEfforts: efforts(['low', 'medium', 'high', 'xhigh', 'max']) },
       { id: 'gpt-internal', model: 'gpt-internal', hidden: true, isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: efforts(['low']) },
     ] } });
+  } else if (method === 'account/rateLimits/read') {
+    // Shape of Codex app-server `account/rateLimits/read` (2026-10-08), account details removed;
+    // CODEX_FIXTURE_LIMITS=error answers with an error.
+    if (process.env.CODEX_FIXTURE_LIMITS === 'error') { send({ id, error: { code: -32600, message: 'not signed in with ChatGPT' } }); return; }
+    const bucket = { limitId: 'codex', limitName: null, primary: { usedPercent: 14, windowDurationMins: 300, resetsAt: 1791500090 },
+      secondary: { usedPercent: 49, windowDurationMins: 10080, resetsAt: 1791968199 }, credits: { hasCredits: false, unlimited: false, balance: '0' }, planType: 'plus', rateLimitReachedType: null };
+    send({ id, result: { ordinaryUsageAllowed: true, rateLimits: bucket, rateLimitsByLimitId: { codex: bucket } } });
   } else if (method === 'turn/start') {
     send({ id, result: { turn: { id: TURN, items: [], status: 'inProgress', error: null } } });
     runTurn();

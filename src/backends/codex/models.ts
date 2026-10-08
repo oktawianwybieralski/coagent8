@@ -1,12 +1,14 @@
 /**
- * Codex model catalog from `codex app-server` `model/list` (Codex CLI 0.160), which makes
- * no model call: about 0.1 to 0.7 s on Windows (2026-10-07).
+ * Codex metadata from `codex app-server` without a thread or a model call: the model catalog
+ * from `model/list` (Codex CLI 0.160, about 0.1 to 0.7 s on Windows, 2026-10-07) and the
+ * account's rate-limit windows from `account/rateLimits/read` (0.7 s, 2026-10-08).
  *
  * @packageDocumentation
  */
 import { BRAND } from '../../constants.js';
 import { runCommand, type StdinChannel } from '../../execution/process.js';
 import type { CatalogModel, ModelCatalog } from '../types.js';
+import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';
 import { codexAppServerArgs } from './app-server.js';
 
 /** Upper bound for the catalog read; a slower read leaves the selection unchecked. */
@@ -73,4 +75,65 @@ export async function listCodexModels(command: string, acceptedEfforts: readonly
   });
   if (failed || result.status !== 'completed' || !models.length) return undefined;
   return { models, source: 'codex app-server model/list' };
+}
+
+/** Names a window by its length: `5h`, `weekly`, else whole days, hours or minutes. */
+function windowLabel(minutes: number): string {
+  if (minutes === 10080) return 'weekly';
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+  return minutes % 60 === 0 ? `${minutes / 60}h` : `${minutes}m`;
+}
+
+/**
+ * Reads an `account/rateLimits/read` result: every bucket of `rateLimitsByLimitId` (else the
+ * single `rateLimits` view), each with its `primary` and `secondary` window, `usedPercent`
+ * 0 to 100, `windowDurationMins` and `resetsAt` in Unix seconds.
+ * @returns The bottleneck window and every measured window, or undefined when none is measured.
+ */
+export function parseCodexRateLimits(result: unknown): NativeQuota | undefined {
+  const answer = record(result);
+  const byId = record(answer?.rateLimitsByLimitId);
+  const buckets = (byId ? Object.values(byId) : [answer?.rateLimits]).map(record).filter((bucket): bucket is Record<string, unknown> => bucket !== null);
+  const windows: QuotaWindow[] = [];
+  for (const bucket of buckets) {
+    const limit = typeof bucket.limitId === 'string' ? bucket.limitId : 'codex';
+    for (const slot of ['primary', 'secondary'] as const) {
+      const window = record(bucket[slot]);
+      const used = window?.usedPercent, minutes = window?.windowDurationMins, resets = window?.resetsAt;
+      if (typeof used !== 'number' || !Number.isFinite(used) || typeof minutes !== 'number' || !(minutes > 0)) continue;
+      windows.push({ id: `${limit}:${slot}`, name: typeof bucket.limitName === 'string' ? bucket.limitName : limit, window: windowLabel(minutes),
+        remainingFraction: Math.max(0, Math.min(1, (100 - used) / 100)),
+        resetTime: typeof resets === 'number' && Number.isFinite(resets) ? new Date(resets * 1000).toISOString() : '' });
+    }
+  }
+  return summarizeQuotaWindows(windows);
+}
+
+/**
+ * Reads the signed-in account's Codex rate-limit windows, without a thread or a model call.
+ * @param command - The Codex executable.
+ * @returns The measured quota, or undefined when the server answers with an error (for
+ * example API-key sign-in without ChatGPT limits) or does not answer in time.
+ */
+export async function readCodexRateLimits(command: string): Promise<NativeQuota | undefined> {
+  let channel: StdinChannel | undefined, quota: NativeQuota | undefined;
+  const result = await runCommand(command, codexAppServerArgs(), {
+    timeoutMs: MODEL_LIST_TIMEOUT_MS, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024,
+    session: {
+      start(opened) {
+        channel = opened;
+        opened.send({ id: 1, method: 'initialize', params: { clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION } } });
+      },
+      interrupt(opened) { opened.close(); },
+    },
+    onStdoutLine(line) {
+      let message: Record<string, unknown> | null;
+      try { message = record(JSON.parse(line)); } catch { message = null; }
+      if (!message || typeof message.id !== 'number' || typeof message.method === 'string') return;
+      if (message.id === 1 && message.error === undefined) { channel?.send({ method: 'initialized' }); channel?.send({ id: 2, method: 'account/rateLimits/read' }); return; }
+      if (message.id === 2 && message.error === undefined) quota = parseCodexRateLimits(message.result);
+      channel?.close();
+    },
+  });
+  return result.status === 'completed' ? quota : undefined;
 }
