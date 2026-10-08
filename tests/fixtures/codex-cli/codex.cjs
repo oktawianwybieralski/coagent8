@@ -50,6 +50,8 @@ function runTurn() {
   item('item/completed', { type: 'reasoning', id: 'private', summary: ['PRIVATE_REASONING_NEVER_PERSIST'], content: [] });
   item('item/started', { type: 'commandExecution', id: 'read-1', command: 'PRIVATE_RAW_COMMAND', status: 'inProgress', exitCode: null });
   item('item/completed', { type: 'commandExecution', id: 'read-1', command: 'PRIVATE_RAW_COMMAND', status: 'completed', aggregatedOutput: 'PRIVATE_TOOL_OUTPUT', exitCode: 0 });
+  // `large-tool-output`: tool output fills more than the runner's 512 KB stdout copy before a small answer.
+  if (mode === 'large-tool-output') for (let i = 0; i < 8; i++) item('item/completed', { type: 'commandExecution', id: `read-big-${i}`, command: 'git diff', status: 'completed', aggregatedOutput: 'x'.repeat(100 * 1024), exitCode: 0 });
   item('item/started', { type: 'agentMessage', id: 'message-1', text: '' });
   notify('item/agentMessage/delta', { threadId, turnId: TURN, itemId: 'message-1', delta: 'Draft' });
   const text = 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';

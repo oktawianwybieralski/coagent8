@@ -172,9 +172,11 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (!error && (!initialized || !terminal)) error = { code: 'PROTOCOL_ERROR', message: 'Codex exited without a thread and terminal event.', retryable: false };
   if (!error && snapshot.interrupted) error = { code: 'PROCESS_ERROR', message: 'Codex interrupted the turn.', retryable: false };
   const status = result.status === 'cancelled' || result.status === 'timed_out' ? result.status : error ? 'failed' : 'completed';
+  // The answer is the collector's; the runner's bounded stdout copy of the protocol stream
+  // (tool output, deltas) is diagnostic, and filling it does not cut the answer.
   return { status, isError: status !== 'completed', output: snapshot.output, model: app.resolvedModel() ?? model,
     threadId, nativeSessionId: threadId, error, errorDetail: error?.message, exitCode: result.exitCode, signal: result.signal,
-    usage, truncated: result.isTruncated || snapshot.truncated || error?.code === 'BUFFER_LIMIT',
+    usage, truncated: snapshot.truncated || error?.code === 'BUFFER_LIMIT',
     continuationAvailable: initialized && !!threadId && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || '') };
 }
 

@@ -261,7 +261,8 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     threadId: s.nativeSessionId,
     exitCode: processResult.exitCode,
     signal: processResult.signal,
-    truncated: processResult.isTruncated || s.truncated || error?.code === 'BUFFER_LIMIT',
+    // The collector owns the answer; the runner's bounded stdout copy of the event stream is diagnostic.
+    truncated: s.truncated || error?.code === 'BUFFER_LIMIT',
     continuationAvailable: !!(s.nativeSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
   };
 }
