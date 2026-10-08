@@ -64,6 +64,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`cb8c30b`](https://github.com/oktawianwybieralski/coagent8/commit/cb8c30bdab0021175b313bba8631f39df6f64489) **backends:** One structured-error extractor parameterized per backend
 - [`651df5f`](https://github.com/oktawianwybieralski/coagent8/commit/651df5f9e6fdd965eb455b72b889f23d8a177eac) **progress:** Redact each progress message once, where it leaves for the client
 - [`09e4943`](https://github.com/oktawianwybieralski/coagent8/commit/09e4943d7e8e3efb4e95aafb7b7ebf819ab4e7be) **probes:** Share concurrent probe, catalog and model reads
+- [`b4f05f3`](https://github.com/oktawianwybieralski/coagent8/commit/b4f05f331bb57b023df728eba99e12d6a6728b88) **modules:** Extract contracts, storage, workspace and runtime
+- [`7b65910`](https://github.com/oktawianwybieralski/coagent8/commit/7b65910acd71305ae52863801fca6548e0428239) **mcp:** Separate execution from MCP presentation (S2)
 
 ### Fixed
 - [`0c11032`](https://github.com/oktawianwybieralski/coagent8/commit/0c1103211b9efab5872b3b2ae6bd79ca02de7014) **execution:** Enforce process identity and safe teardown on Windows
@@ -123,6 +125,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`fdbdf99`](https://github.com/oktawianwybieralski/coagent8/commit/fdbdf9977c72f615d03171bc5d377d958a5ad5f5) **history:** Reserve snapshot bytes before writing them
 - [`2e24b66`](https://github.com/oktawianwybieralski/coagent8/commit/2e24b66a902501e1dee47bad409904d9cbd77954) **history:** Cut fragments at UTF-8 character boundaries
 - [`e198a8b`](https://github.com/oktawianwybieralski/coagent8/commit/e198a8b73498085f1e3c1bcf8fed9a65898e6834) **prices:** Let shutdown wait for a background price read
+- [`3c36bf0`](https://github.com/oktawianwybieralski/coagent8/commit/3c36bf08eb5986142a9c8e1d8ff51121241375db) **backends:** Stop reporting a complete answer as truncated
+- [`7bd8ca0`](https://github.com/oktawianwybieralski/coagent8/commit/7bd8ca0a19a25b575870a0d9874acb932a36d9a2) **review:** Show the reviewer answer verbatim and report every block cause
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
