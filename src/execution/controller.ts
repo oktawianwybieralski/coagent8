@@ -33,14 +33,14 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { resolveBackend } from '../backends/routing.js';
+import { resolveBackend, resolveBackendForModel } from './routing.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
-import { checkModelSelection, findCatalogEntry } from '../backends/model-catalog.js';
-import { selectModel, type PriceConstraint } from '../backends/model-selection.js';
-import { checkPriceLimit, priceEvidence, readPrices } from '../backends/prices.js';
-import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../backends/governance.js';
-import { isValidModelIdentifier } from '../backends/model-identifier.js';
-import { consentFor } from '../backends/consent.js';
+import { checkModelSelection } from '../models/catalog.js';
+import { selectModel, type PriceConstraint } from './selection.js';
+import { checkPriceLimit, priceEvidence, readPrices } from '../models/prices.js';
+import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../models/governance.js';
+import { isValidModelIdentifier } from '../models/identifier.js';
+import { consentFor } from './consent.js';
 import { rememberApprovedModel } from '../config.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history.js';
@@ -120,27 +120,6 @@ export function composeExecutionCancellation(): void {
  */
 export async function waitForActiveExecutionTasks(): Promise<void> {
   await Promise.allSettled([...activeExecutionTasks]);
-}
-
-/**
- * Resolves the backend for a named model. `auto` routes to a backend whose CLI lists the
- * model, by id or alias; when none lists it, to one whose CLI decides itself: it runs
- * unlisted models (Claude Code) or lists none. An explicit backend is kept and its catalog
- * check reports a model it does not offer.
- * @throws `MODEL_UNAVAILABLE` naming each permitted backend that does not offer the model.
- */
-async function resolveBackendForModel(requested: string | undefined, model: string) {
-  const offers = (acceptUnlisted: boolean) => async (id: ProviderId) => {
-    const catalog = await readModelCatalog(id);
-    if (catalog && findCatalogEntry(catalog, model)) return undefined;
-    if (acceptUnlisted && (!catalog || catalog.acceptsUnlisted)) return undefined;
-    return new ToolError('MODEL_UNAVAILABLE', `does not list '${model}'; doctor lists its models.`);
-  };
-  try { return await resolveBackend(requested, { eligible: offers(false) }); }
-  catch (err) {
-    if (!(err instanceof ToolError) || err.code !== 'MODEL_UNAVAILABLE') throw err;
-    return resolveBackend(requested, { eligible: offers(true) });
-  }
 }
 
 /**

@@ -19,7 +19,7 @@ import { generateBugReport } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
 import type { ResolvedWorkspace } from '../workspace/workspace.js';
-import { providerForClient } from '../backends/routing.js';
+import { providerForClient } from '../execution/routing.js';
 
 /**
  * Execution tool result: markdown text only.

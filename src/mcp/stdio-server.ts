@@ -11,7 +11,7 @@ import { shutdownProcessRunner } from '../execution/process.js';
 import { redactDiagnostic } from '../redaction.js';
 import { pruneExpiredSessions } from '../sessions/session.js';
 import { waitForActiveExecutionTasks } from '../execution/controller.js';
-import { settlePriceReads } from '../backends/prices.js';
+import { settlePriceReads } from '../models/prices.js';
 
 export interface StdioServerOptions {
   /** Background maintenance started after the connection; shutdown waits for it. Defaults to the session sweep. */

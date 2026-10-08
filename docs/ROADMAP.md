@@ -67,8 +67,8 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 ## SIMPLIFY-001 - module boundary migration
 
 Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
-S1 implemented and verified, awaiting owner inspection; S2-S6 have not started.
-Automated dependency enforcement remains scheduled for S6. This is
+S1, S2, and S3 implemented and verified; S4-S6 have not started. Automated
+dependency enforcement remains scheduled for S6. This is
 the active plan, not an additional plan under docs/.local/. Work stays local;
 Git integration and publication remain owner-managed. Audit blockers retain
 priority. Apply the slices before expanding the affected owners for COAGENT
@@ -110,7 +110,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   no runtime or type imports from MCP; review completeness/post-turn snapshot
   checks, redaction, error status and Markdown-only execution answers survive.
   Evidence: [S2 implementation](HANDOFF.md#simplify-001-s2-implementation).
-- [ ] **S3 - Separate model policy from provider discovery.** Group catalog,
+- [x] **S3 - Separate model policy from provider discovery.** Group catalog,
   identifier, price, governance and model-store modules in models/. Split
   model-selection.ts and consent.ts: pure decisions stay there; registry,
   native observations, effective selection and user-consent sequencing belong
@@ -119,6 +119,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   backends. Supply observations through narrow contracts. Doctor and execution
   reuse the same selection policy. Acceptance: no models/backends cycle,
   duplicate policy or change to explicit-model, price-limit and consent rules.
+  Evidence: [S3 implementation](HANDOFF.md#simplify-001-s3-implementation).
 - [ ] **S4 - Split history by responsibility.** With storage extracted,
   split sessions/history.ts into history reader/recovery, writer and
   retention/capacity modules; place history-page.ts alongside them. Move safe

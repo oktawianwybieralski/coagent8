@@ -2,10 +2,11 @@ import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfigForDiagnostics, recordDefaultModel } from '../config.js';
 import { PROVIDERS, type ProviderId } from '../conversation.js';
 import { inspectQuotas } from '../backends/availability.js';
-import { catalogNames, listModelCandidates, selectModel, type ModelCandidate, type ModelSelection, type ModelSource } from '../backends/model-selection.js';
+import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
+import { selectModel } from '../execution/selection.js';
 import { redactDiagnostic } from '../redaction.js';
-import { isPriceListStale, readPrices } from '../backends/prices.js';
-import { decideConsent, type ConsentBasis } from '../backends/governance.js';
+import { isPriceListStale, readPrices } from '../models/prices.js';
+import { decideConsent, type ConsentBasis } from '../models/governance.js';
 import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools } from '../backends/types.js';
 import { adapterRegistry } from '../backends/registry.js';
 

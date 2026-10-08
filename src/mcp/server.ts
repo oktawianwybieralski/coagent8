@@ -29,8 +29,8 @@ import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from '../sessions/identity.js';
 import { getHistory } from '../sessions/history.js';
 import { composeExecutionCancellation, type ConsentPrompt } from '../execution/controller.js';
-import { providerForClient, setCallerProvider } from '../backends/routing.js';
-import { isValidModelIdentifier } from '../backends/model-identifier.js';
+import { providerForClient, setCallerProvider } from '../execution/routing.js';
+import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ToolArguments } from './arguments.js';
 
 export { SERVER_INSTRUCTIONS };

@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { adapterRegistry } from './registry.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
 import type { ProviderId } from '../conversation.js';
-import { readObservedModels, recordObservedModels } from './model-store.js';
+import { readObservedModels, recordObservedModels } from '../models/store.js';
 import type { AdapterProbeResult, CliAdapter, ModelCatalog } from './types.js';
 
 /** Upper bound for reusing a probe; doctor always probes afresh. */

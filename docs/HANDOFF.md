@@ -12,11 +12,11 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is SIMPLIFY-001: S0 baseline captured, S1 and S2 implemented and verified.
+The current task is SIMPLIFY-001: S0 baseline captured, S1, S2, and S3 implemented and verified.
 Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
-The owner requires a stop for inspection after each slice. S2 is complete, awaiting
-owner inspection before starting S3.
+The owner requires a stop for inspection after each slice. S3 is complete, awaiting
+owner inspection before starting S4.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -49,9 +49,9 @@ Source anchors:
 ## Next implementation
 
 The next authorized work boundary is owner inspection of
-[SIMPLIFY-001 S2](#simplify-001-s2-implementation). On continuation, execute S3 in the
+[SIMPLIFY-001 S3](#simplify-001-s3-implementation). On continuation, execute S4 in the
 [roadmap's order](ROADMAP.md#execution-checkpoints), with its caller updates and
-scope-based checks, then stop again. S1 and S2 modules are implemented and verified;
+scope-based checks, then stop again. S1, S2 and S3 modules are implemented and verified;
 automated dependency enforcement remains scheduled for S6.
 Recheck the current checkout rather than assuming that the baseline below is still current.
 The migration does not change the release status or make historical runtime evidence fresh.
@@ -307,7 +307,39 @@ Branch: `refactor/simplify-001`.
 - PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 
-Next action: stop after S2 for owner inspection and independent review (codex sol-6.1). Do not proceed to S3 without owner instruction.
+Next action: S2 completed and reviewed with VERDICT: READY.
+
+## SIMPLIFY-001 S3 implementation
+
+Captured 2026-10-09 after S3 implementation.
+Branch: `refactor/simplify-001`.
+
+### Modules and ownership changes:
+- `src/models/`: Dedicated model domain modules extracted with zero dependencies on `backends/`, `execution/`, or `mcp/`:
+  - `models/catalog.ts`: Pure catalog rules (`findCatalogEntry`, `describeModels`, `lookupName`, `checkModelSelection`).
+  - `models/identifier.ts`: Model identifier syntax validation (`isValidModelIdentifier`).
+  - `models/store.ts`: Pure disk store for `models.json` (`readObservedModels`, `recordObservedModels`, `readStoredPrices`, `recordPrices`, `readObservedModelNames`).
+  - `models/prices.ts`: Price evidence, fetching, matching, and limit checks (`readPrices`, `checkPriceLimit`, `priceEvidence`, `findPrice`, `isPriceListStale`, `matchPrices`, `parsePriceList`, `refreshPrices`, `settlePriceReads`).
+  - `models/governance.ts`: Pure consent rules (`decideConsent`, `consentRequiredMessage`, `consentDeclinedMessage`, `consentUnansweredMessage`).
+  - `models/selection.ts`: Pure selection policy decisions (`catalogDefault`, `catalogNames`, `choosePricedModel`, `listModelCandidates`, types `ModelCandidate`, `ModelSelection`, `ModelSource`, `PriceConstraint`).
+  - `models/index.ts`: Public barrel exports for `models/`.
+- `src/execution/`: Application operations extracted:
+  - `execution/selection.ts`: Native observation and effective model selection orchestration (`selectModel`), composing pure policy from `models/` with native probes from `backends/probe-cache.js`, `backends/registry.js`, and `config.js`. Shared by both execution and diagnostics (`doctor.ts`).
+  - `execution/consent.ts`: User consent sequencing (`consentFor`).
+  - `execution/routing.ts`: Provider routing composition moved from `backends/routing.ts` (`resolveBackend`, `resolveBackendForModel`, `providerForClient`, `setCallerProvider`).
+- `src/backends/`: Compatibility forwarding shims maintained at `src/backends/model-catalog.ts`, `src/backends/model-identifier.ts`, `src/backends/model-store.ts`, `src/backends/prices.ts`, `src/backends/governance.ts`, `src/backends/model-selection.ts`, `src/backends/consent.ts`, and `src/backends/routing.ts`.
+- Consumer updates: `src/execution/controller.ts`, `src/diagnostics/doctor.ts`, `src/backends/probe-cache.ts`, `src/mcp/server.ts`, `src/mcp/stdio-server.ts`, and `src/mcp/result.ts` updated to consume canonical modules from `models/` and `execution/`.
+- Architectural boundary invariants verified: `models/` has 0 dependencies on `backends/` or `execution/`; `backends/` has zero dependencies on application routing or selection orchestration.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `node tests/run.cjs tests/simplify-s3.test.js` (5/5 tests pass).
+- PASS: S3 scoped test suite: 57/57 tests pass (`tests/simplify-s3.test.js`, `tests/backends/model-catalog.test.js`, `tests/backends/model-identifier.test.js`, `tests/backends/model-selection.test.js`, `tests/backends/price-limit.test.js`, `tests/backends/governance.test.js`, `tests/backends/routing.test.js`, `tests/backends/probe-cache.test.js`, `tests/execution/model-routing.test.js`, `tests/execution/price-limit.test.js`, `tests/diagnostics/doctor.test.js`).
+- PASS: `node tests/run.cjs` full test suite (406 tests: 403 pass, 0 fail, 3 skipped, exit code 0).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+
+Next action: stop after S3 for owner inspection and independent review (codex sol-6.1). Do not proceed to S4 without owner instruction.
 
 ## Documentation disposition
 
