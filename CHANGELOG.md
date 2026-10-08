@@ -44,6 +44,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`42968d1`](https://github.com/oktawianwybieralski/coagent8/commit/42968d13e0309224ea7758b9a6e127765fa1de98) **routing:** Route a named model to a backend that lists it
 - [`d253e79`](https://github.com/oktawianwybieralski/coagent8/commit/d253e79f33563de9d4b8166d213e450bfaf839ca) **codex:** Read account rate limits from app-server
 - [`bbe411a`](https://github.com/oktawianwybieralski/coagent8/commit/bbe411aff0e29cbbdc787261df2ef5c42ee74b36) **prices:** Keep per-model prices for offered models and refresh daily
+- [`6896bdd`](https://github.com/oktawianwybieralski/coagent8/commit/6896bdd9497a098c83777084f7e91c93bcc17150) **mcp:** Frame every answer in a markdown code block
+- [`e8c8177`](https://github.com/oktawianwybieralski/coagent8/commit/e8c817718a2be6ab6c4f18c9b4f4bc48681c1fd1) **mcp:** Present results raw for Codex and in plaintext frames elsewhere
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
@@ -66,6 +68,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`09e4943`](https://github.com/oktawianwybieralski/coagent8/commit/09e4943d7e8e3efb4e95aafb7b7ebf819ab4e7be) **probes:** Share concurrent probe, catalog and model reads
 - [`b4f05f3`](https://github.com/oktawianwybieralski/coagent8/commit/b4f05f331bb57b023df728eba99e12d6a6728b88) **modules:** Extract contracts, storage, workspace and runtime
 - [`7b65910`](https://github.com/oktawianwybieralski/coagent8/commit/7b65910acd71305ae52863801fca6548e0428239) **mcp:** Separate execution from MCP presentation (S2)
+- [`a27209a`](https://github.com/oktawianwybieralski/coagent8/commit/a27209a40f77b914a919e1b4d077d14b8ec97520) **models:** Separate model policy from provider discovery (S3)
 
 ### Fixed
 - [`0c11032`](https://github.com/oktawianwybieralski/coagent8/commit/0c1103211b9efab5872b3b2ae6bd79ca02de7014) **execution:** Enforce process identity and safe teardown on Windows
@@ -127,6 +130,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`e198a8b`](https://github.com/oktawianwybieralski/coagent8/commit/e198a8b73498085f1e3c1bcf8fed9a65898e6834) **prices:** Let shutdown wait for a background price read
 - [`3c36bf0`](https://github.com/oktawianwybieralski/coagent8/commit/3c36bf08eb5986142a9c8e1d8ff51121241375db) **backends:** Stop reporting a complete answer as truncated
 - [`7bd8ca0`](https://github.com/oktawianwybieralski/coagent8/commit/7bd8ca0a19a25b575870a0d9874acb932a36d9a2) **review:** Show the reviewer answer verbatim and report every block cause
+- [`ed4a1db`](https://github.com/oktawianwybieralski/coagent8/commit/ed4a1dbfba3077bed76c28f2e4d8939dc5f56a0c) **agy:** Report a turn ended by a sandbox denial as a failure
+- [`0a932ac`](https://github.com/oktawianwybieralski/coagent8/commit/0a932acec72d8959b9e7a6600af251ff05752499) **setup:** Update owned Claude and agy registrations to the new runtime
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
