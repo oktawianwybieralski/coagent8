@@ -58,7 +58,7 @@ for tasks; introduce a scheduler only for actual dependency/concurrency work.
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
 | review | Bounded Git review, State Envelope and server-derived READY/BLOCKED |
-| doctor | Backend installation/auth/profile evidence, models/efforts/defaults with output prices and approval need, quotas and price-list metadata |
+| doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, defaults, quotas |
 | session | Workspace-scoped list/history/close; continuation uses session_handle |
 | cancel | Stops a known active/abandoned session turn; idle returns false |
 | issue | Sanitized report and prefilled GitHub issue link; does not submit it |
@@ -125,7 +125,13 @@ the first discovered choice without replacing an existing one.
 
 An explicit backend wins subject to allowedBackends, installation and execution
 support. Auto uses the configured route; absent a fixed default, one eligible
-backend runs directly, otherwise smart_quota behavior applies. It excludes
+backend runs directly, otherwise smart_quota behavior applies. A named model with
+auto runs on a backend whose catalog lists it (id or alias, compared without case,
+provider prefix or dot/dash difference), else on one whose CLI decides itself
+(runs unlisted names or lists none); a price limit narrows auto the same way. The
+configured default is kept when eligible and otherwise does not block the route.
+The provider prefix of a price entry never picks a backend: agy also serves
+Anthropic and OpenAI models. It excludes
 observed cooldowns, prefers another CLI than the caller's and ranks cached native
 headroom. Unknown headroom ranks as 50, not a measured value; equal ranks retain
 codex/agy/claude order. Caller identity affects preference only.
@@ -140,11 +146,14 @@ does not read the quota cache.
 
 Model precedence: request, continued session, configured backend default, CLI
 configured default, catalog default, first listed model, CLI-observed model.
-An unresolved choice fails before a turn. Claude resolves aliases/account default
-through system/init from its verified local /usage path before consent.
-Codex uses model/list; agy groups models by effort suffix; Claude has no catalog.
-A usable catalog rejects unknown models and unsupported/missing required effort.
-Without a usable catalog the CLI decides; Claude warns and ignores unsupported effort.
+An unresolved choice fails before a turn. A listed id or alias becomes the exact
+listed model before consent. Codex uses model/list; agy groups models by effort
+suffix; Claude answers a stream-json initialize request with each accepted name,
+the concrete model it resolves to, its efforts and the account default, without a
+user message or turn (0.9 s, 2.1.294). Claude also runs names it does not list;
+such a name is resolved through system/init of the local /usage run.
+A usable catalog rejects unknown models (except Claude's) and unsupported/missing
+required effort. Without a usable catalog the CLI decides.
 
 Probes cache for five minutes. Catalogs/resolved models cache in memory for five
 minutes and models.json for a day, keyed by hashed executable/config stamps and
@@ -159,15 +168,20 @@ can therefore write defaults and caches; it is not purely observational.
 ### Model consent
 
 The current price list is OpenRouter's public API or coagent8_PRICES_URL
-(HTTP(S) or local file). Fetches are bounded to 10 s/4 MiB. Only completion prices
-are stored as USD per million output tokens in models.json; variant IDs such as
-:batch/:free are excluded. This is neither input pricing nor a request estimate.
+(HTTP(S) or local file). Fetches are bounded to 10 s/4 MiB. Only the models the
+backends offer, and names a call needs, are stored in models.json (schema 2):
+output, uncached input and cached input USD per million tokens with the matched
+entry, or null when checked without a match. The whole list is not kept;
+variant IDs such as :batch/:free are excluded. A unit price is not a request estimate.
 
 Governance uses exact name matching, including normalized effort/date suffixes,
 then approximate extension matches; the highest matched price wins. An exact
 name match does not establish billing accuracy or handling of all context tiers.
-Doctor refreshes a list older than seven days; execution uses a stored list of
-any age and fetches only when absent, with shared reads and failure backoff.
+List prices change rarely: a stored list is used at once and read again in the
+background after a day. A call waits only when none is stored, when it needs an
+unchecked model, or with a price limit when the list is a week old; doctor health
+waits for a day-old list. Reads are shared, a failure is retried after five
+minutes and graceful shutdown waits for a background read (fetch-bounded).
 
 Consent is evaluated for the concrete model on every turn:
 
@@ -184,6 +198,8 @@ The calling agent cannot approve. Cancel is reported as unanswered, not a user's
 refusal. Consent is request/model-bound and precedes session acquisition/model
 execution; metadata probes may precede it. The form wait is bounded to five minutes
 and follows cancellation. Real UI display still needs client-specific acceptance.
+A refusal tells the caller to inform the user and to switch models only if the
+user asks; it never advises another model by itself (AX-003).
 
 The absence of an approval prompt does not prove that a model meets a user's price
 limit. NeverAsk, thresholds, default-model ratios and price staleness make those
@@ -210,9 +226,10 @@ usage, quota or bill; request estimates remain open in AX-001.
 - Without a named model the backend default runs when it meets the limit;
   otherwise the highest-priced catalog model below the limit, as a capability
   proxy, accepting the call's reasoning_effort (an agy model needing an effort
-  gets its first). A fixed backend (explicit or configured) stays fixed; auto
-  routing chooses only among backends with a qualifying model, then as usual.
-  Without a catalog (Claude) only the default or a named alias can qualify.
+  gets its first). An explicit backend stays fixed; auto keeps the configured
+  default when it has a qualifying model and otherwise chooses among backends
+  that have one, then as usual. Claude's catalog lists its aliases, so they qualify
+  like other listed models.
   No qualifying model is PRICE_LIMIT with each backend's reason.
 - The controller checks the concrete model before consent and again right before
   session acquisition, so a price list or configuration changed while the user
@@ -224,10 +241,12 @@ is the single owner for doctor, execution and the planned CLI models command.
 
 ### Doctor and readiness
 
-Summary and full call the same runDoctor. Both force backend/catalog refresh and
-read price metadata; quota: false skips separate native quota reads, not all probes.
-Backend narrows the scope. Full contains structured data with redacted strings
-bounded to 2,048 bytes. prices adds stale; selection lists every model of the
+doctor defaults to scope models: the model view from cached probes, catalogs and
+prices (runModelReport). It reads no quota, records nothing and refreshes only an
+expired cache. scope health runs runDoctor: it forces backend/catalog refresh,
+reads quota, records an absent default and reads a day-old price list again.
+Backend narrows either; the former quota argument is removed. detail full returns
+the same report as structured data with redacted strings bounded to 2,048 bytes. prices adds stale; selection lists every model of the
 installed diagnosed backends: backend, model, efforts/effortRequired, defaultSource
 on the default row, price (output USD per million tokens, matched entry,
 exact/approximate/unknown, list source, fetchedAt, stale) and approval
@@ -238,8 +257,9 @@ threshold; it drops whole rows from the longest list and counts them.
 
 Ready combines execution/profile/auth evidence and available quota. A native quota
 read can supply auth evidence, explaining agy's cold not-ready/success discrepancy.
-Codex auth is inferred from file/environment presence; Claude uses native login
-status. Unknown readiness is not proof that a turn will fail; successful execution
+Codex auth is inferred from file/environment presence and its 5-hour/weekly
+windows come from app-server account/rateLimits/read (ChatGPT sign-in, no thread);
+Claude uses native login status. Unknown readiness is not proof that a turn will fail; successful execution
 does not prove universal profile isolation. AX-004/005 separate these facts.
 
 ## Review contract
@@ -437,6 +457,8 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-08 | Native VS Code acceptance in the owner's VS Code precedes beta.2 ([checklist](ROADMAP.md#native-vs-code-acceptance)). |
 | 2026-10-08 | A price limit without a named model runs the default when it qualifies, else the highest-priced qualifying model; approval rules still apply to it. Without a catalog only the default qualifies; aliases are named by the caller, never by source literals. |
 | 2026-10-08 | The model-visible tool-definition budget rises to 5,500 bytes for the price limit, and the doctor summary bound falls to 3,900 bytes so agy shows it inline. |
+| 2026-10-08 | Model lists come from the CLIs (Claude through stream-json initialize); prices are kept only for offered models and refreshed daily; a named model routes by catalog, never by a price entry's provider. |
+| 2026-10-08 | doctor defaults to the cached model view; health is a scope and the quota argument is removed. Consent refusals no longer advise another model. |
 
 ## Known limitations
 

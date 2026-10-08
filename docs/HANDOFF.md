@@ -44,18 +44,25 @@ Source anchors:
 ## Next implementation
 
 AX-001/002 landed locally (contract in
-[ARCHITECTURE.md](ARCHITECTURE.md#price-limit)): doctor selection rows and a
-3,900-byte summary with output prices, match, freshness and approval;
-output_price_below on execution tools with strict, consent-independent checks
-before consent and before session acquisition; PRICE_LIMIT without substitution;
-auto choosing the qualifying default or the highest-priced qualifying model.
-Owner decisions of 2026-10-08 set that rule and the 5,500/3,900-byte budgets.
-A null or empty list price no longer parses as a free model.
+[ARCHITECTURE.md](ARCHITECTURE.md#price-limit)): output_price_below with strict,
+consent-independent checks before consent and before session acquisition;
+PRICE_LIMIT without substitution; auto choosing the qualifying default or the
+highest-priced qualifying model. Owner decisions of 2026-10-08 set that rule and
+the 5,500/3,900-byte budgets.
 
-Open from these items: request estimates and measured tokens (AX-001), a
-predictable plain consult without a per-call limit and concurrent root budgets
-(AX-002), and the fresh-client retest of the price task (AX-006). Claude Code has
-no catalog, so a constrained auto call uses only its default.
+Stage 1 of the model registry followed the same day, verified first against the
+installed CLIs without model turns (Claude Code 2.1.294 initialize lists 13 names
+with concrete models; Codex model/list and account/rateLimits/read; agy 1.3.1
+models lists Claude and GPT-OSS models too, so provider prefixes cannot route):
+Claude catalog with aliases; model-based auto routing; Codex quota; per-model
+stored prices (input, cached input, output) refreshed daily in the background;
+doctor's cached model view as default and scope health; consent refusals that
+do not advise another model.
+
+Open: stage 2 measured usage per turn (tokens, list-price cost, subscription
+window change for all three backends) and stage 3 pre-turn estimates and a
+predictable plain consult (AX-001/002); concurrent root budgets (AX-002); the
+fresh-client retest (AX-006).
 
 Next: independent review of this branch, then AX-003/004/005/006 for approval
 transport, effective config, readiness and fresh-client acceptance. Keep consent
@@ -91,21 +98,28 @@ now points directly to the three documents and includes a short usage path.
 
 ## Verification for this change
 
-Scope: runtime selection/schema change plus TSDoc and documentation, on Windows
-11, Node 26.10.0, source loaded through tsx:
+Scope: AX-001/002 and model-registry stage 1 (runtime, schema, TSDoc and docs),
+on Windows 11, Node 26.10.0, source loaded through tsx:
 
-- PASS: npm run typecheck (tsc --noEmit).
-- PASS: focused tests via node tests/run.cjs: new tests/backends/price-limit.test.js
-  and tests/execution/price-limit.test.js (boundary, stale/missing lists, aliases,
-  approximate and [1m] matches, invalid price fields, no match, explicit over-limit
-  model, neverAsk, routing filter, resume, config change, recheck after consent),
-  plus doctor, surface/budget, server and pipeline tests.
-- PASS: full suite, node tests/run.cjs: 377 tests, 374 pass, 3 skipped, 0 fail.
-- PASS: surface budgets: 5,478 of 5,500 tool-definition bytes, 507 of 512
+- PASS: stage-0 verification against installed CLIs without a model turn:
+  Claude Code 2.1.294 initialize (13 names with resolvedModel, 0.9 s, no result
+  event), Codex app-server model/list and account/rateLimits/read (5h/weekly,
+  0.7 s), agy 1.3.1 models. Read-only metadata calls, no paid backend call.
+- PASS: npm run typecheck.
+- PASS: focused tests via node tests/run.cjs, including price-limit (unit and
+  controller), model-routing, Claude catalog and alias selection, Codex rate
+  limits, per-model price storage/refresh, doctor model view and health scope,
+  surface/budget, server and pipeline tests.
+- PASS: full suite, node tests/run.cjs: 388 tests, 385 pass, 3 skipped, 0 fail.
+  One earlier full run failed "storage locks serialize actual competing Node
+  processes" once; it passed alone and in three later full runs. Unexplained,
+  not attributed to this change.
+- PASS: surface budgets: 5,459 of 5,500 tool-definition bytes, 507 of 512
   instruction characters.
 - PASS: npm run lint:docs, npm run docs (warnings as errors) and git diff --check.
 - NOT_RUN: build, consumer smoke and packaging (no bundle/package change claimed);
-  paid backend calls and native fresh-client retests (AX-006).
+  dependency-cycle tooling (SIMPLIFY-001 is not implemented); paid backend calls
+  and native fresh-client retests (AX-006).
 
 No independent review, six-job CI or native acceptance is established for this
 branch. Full native lifecycle and consent acceptance remain in ROADMAP.

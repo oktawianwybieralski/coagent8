@@ -80,7 +80,7 @@ fallback adds a workspace line to the result.
 Set `backend` for a predictable provider. Otherwise `auto` uses configuration,
 or selects among eligible providers using cached quota and cooldown evidence,
 preferring another CLI than the calling client's own. It does not retry a failed
-turn on another provider. Quota measurements can be stale; `doctor` can refresh
+turn on another provider. Quota measurements can be stale; `doctor` with `scope: "health"` can refresh
 them; a measurement older than 15 minutes counts as unmeasured. If the quota
 cache cannot be written, the automatic route continues with a warning.
 
@@ -177,7 +177,7 @@ files match the current workspace; otherwise use uncommitted changes.
 | --- | --- |
 | `consult` | Plain second opinion; optional architecture, debugging or implementation analysis |
 | `review` | Git changes reviewed with a State Envelope and a server-derived verdict |
-| `doctor` | Installation, versions, auth evidence, models, efforts and quota/cooldowns; summary by default, `detail: "full"` for data |
+| `doctor` | By default the cached model view: models, efforts, output prices, defaults and approval per backend; `scope: "health"` for installation, versions, auth evidence and quota/cooldowns; `detail: "full"` for data |
 | `session` | List sessions, page archived history or close a session |
 | `cancel` | Cancel the active turn of a known session |
 | `issue` | Prepare a sanitized report and prefilled issue link |
@@ -236,13 +236,13 @@ within the limit may still need the user's approval; approval and `neverAsk` do
 not satisfy a limit. Prices are public list prices per output token, not a
 request estimate or a bill.
 
-To choose yourself, `doctor` lists each model with its accepted efforts, output
-price (`~` approximate, `?` unknown), the default and why a model asks for
-approval (use `quota: false` if quota is irrelevant, and `backend` when already
-chosen; `detail: "full"` returns the same rows as data). Claude Code lists no
-catalog, so doctor prices only its default; name another alias, such as the one
-the user asked for, and the server checks the model it resolves to. For an
-explicit model use its exact ID and an accepted effort, keeping the limit:
+To choose yourself, call `doctor`: by default it lists, from cached data, each
+backend's models with accepted efforts, output price (`~` approximate,
+`?` unknown), the default and why a model asks for approval (`backend` narrows
+it; `detail: "full"` returns the same rows as data). Claude Code's aliases appear
+with the concrete model they run. A named model needs no `backend`: `auto` runs
+it where it is listed. For an explicit model use its ID or alias and an accepted
+effort, keeping the limit:
 
 ~~~json
 {

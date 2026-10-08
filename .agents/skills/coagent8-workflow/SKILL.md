@@ -11,8 +11,9 @@ For a simple question use consult with a self-contained proposal. Do not read th
 repository or run full diagnostics just to delegate arithmetic. Omit backend/model
 for ordinary defaults; select them when the user names one or supplies a constraint.
 
-Use doctor for models, efforts and output prices, with quota: false when quota is
-irrelevant and a backend filter when known. Summary/full perform the same work.
+doctor lists models, efforts, output prices and approval per backend from cached
+data by default; scope health diagnoses sign-in and quota. A named model needs no
+backend: auto runs it where its CLI lists it.
 For a user's price limit pass output_price_below (USD per million output tokens,
 strict) and omit model to let the server choose; see the README's
 [model selection guidance](../../../README.md#choosing-a-model-under-a-price-limit).

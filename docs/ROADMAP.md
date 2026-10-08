@@ -24,7 +24,7 @@ local and preserves the existing checkout.
 | Safety | Owned cleanup, hidden Windows launches, redaction, explicit model consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup; native acceptance |
 | Review | Completeness, snapshot/check gate, post-turn recheck, other-tree mismatch rejection | Other-tree review; independently observed checks and release hashes |
 | Storage/routing | Leases, best-effort bounded archives, cached catalogs/prices, optional quota-cache writes | Ephemeral calls, early handles, end-to-end deadlines |
-| Agent usability | Model/effort discovery with per-model prices, strict output price limit, result footer | Request estimates, effective config, consent transport, native first-use acceptance |
+| Agent usability | Cached model view with CLI catalogs (Claude included), per-model prices, model-based routing, strict output price limit, result footer | Measured usage and estimates, effective config, consent transport, native first-use acceptance |
 | Integrations | Shared config, optional setup, VSIX, owned registration/uninstall | Fresh lifecycle acceptance, client skills, public execution CLI |
 
 ## Agent usability gaps
@@ -79,8 +79,17 @@ do not create separate selection/policy implementations per client.
 - [ ] Separate unit prices, request estimates, measured tokens, quota and billing.
   Unknown stays unknown. Estimates identify input/output/cache/context-tier
   assumptions and provider evidence; a unit price is not a request estimate.
-  Done for unit prices (labelled list prices, unknown kept unknown); request
-  estimates and measured tokens are open.
+  Done for unit prices (labelled list prices with input and cached input, unknown
+  kept unknown); request estimates and measured tokens are open.
+- [x] Keep a model registry from the CLIs themselves: Codex model/list, agy models,
+  Claude stream-json initialize (aliases with concrete models); store prices only
+  for offered models, refreshed daily; route a named model by catalog (2026-10-08).
+- [ ] Record measured usage per turn: tokens (input, cached, output, reasoning) and
+  API-equivalent cost at list prices in the footer and store, plus the subscription
+  window change for all three backends (Codex account/rateLimits, agy and Claude
+  usage). Unmeasured stays unmeasured, never zero.
+- [ ] Estimate a turn before it runs from measured medians per backend, model and
+  tool; unknown without history.
 - [x] Test missing/stale lists, aliases, approximate matches, tiers, truncation
   and invalid price fields. Expose freshness/matching before selection.
 
@@ -108,7 +117,8 @@ do not create separate selection/policy implementations per client.
 - [ ] Report unsupported, advertised, displayed/verified, declined and unanswered
   approval states where observable. Capability advertisement does not prove UI.
 - [ ] Return model, policy reason and recovery. Preserve an explicit model after
-  denial; alternatives require user policy. Auto may skip an approval-requiring
+  denial; alternatives require user policy. Refusals no longer advise another
+  model (2026-10-08); recovery for form-less clients remains. Auto may skip an approval-requiring
   route only under a defined preference.
 - [ ] Design a user-controlled approval path for form-less clients, shared with
   CLI-FIRST-001: request/model/scope binding, expiry and replay protection.
@@ -121,6 +131,7 @@ do not create separate selection/policy implementations per client.
 
 - [ ] Separate cached selection metadata from explicit fresh diagnostics.
   Doctor can refresh caches and record an observed default; expose these effects.
+  Separated on 2026-10-08 (default model view, scope health); phase timing open.
   Bound/cancel native reads and measure cold/warm phases and total elapsed time.
 - [ ] Expose effective config/data location and provenance with diagnostic
   redaction: defaults, environment, explicit editor settings and backend overrides.
