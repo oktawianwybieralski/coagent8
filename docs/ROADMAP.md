@@ -91,6 +91,8 @@ Every stage publishes the exact artifact that passed its gate:
 - optional archival history;
 - clear tool contracts;
 - non-blocking startup;
+- public CLI execution and an MCP-to-CLI adapter with command/PATH support on
+  Windows, Linux and macOS, accepted before RC 1 (`CLI-FIRST-001`);
 - the bounded refactoring in `SURFACE-001`, `EXEC-001`, `ROUTING-MIGRATE-001`,
   `SESSION-001`, `HISTORY-002` and `SIMPLIFY-001`;
 - lower token cost per turn and per call across MCP clients (`CONTEXT-001`).
@@ -236,6 +238,7 @@ Prioritize active audit and desktop-safety work before cosmetic reorganization.
 | [Architecture](ARCHITECTURE.md) | Current component boundaries and dependency flow |
 | [Runtime contract](RUNTIME_CONTRACT.md) | Implemented tools, execution, errors, sessions, limits and known deviations |
 | This roadmap | Priorities, proposed changes, acceptance and remaining work |
+| [CLI-first feature](FEATURE_CLI_FIRST.md) | Proposed command/process contracts and research for `CLI-FIRST-001`; this roadmap owns its checklist and deadline |
 | [Project review](PROJECT_REVIEW_2026-10-05.md) | Audit findings (`AUD-*`), evidence and proposed fixes, bound to snapshots |
 | [Integration guide](VSCODE_INTEGRATION.md) | Optional setup, VSIX/plugin lifecycle and host-specific limits |
 | [Quality gate](../.agents/rules/04-quality-gate.md) | Scope-based local verification and full release validation |
@@ -292,8 +295,8 @@ folded into `SIMPLIFY-001`.
 | 2 (gates beta 3), owner may reorder | `CLAUDE-BACKEND-001`: Claude Code in restricted read-only mode with streaming and resume | Subscription authentication; per-run read-only check; typed failures from stream-json; adapter tests green in CI |
 | 2 (gates beta 3) | Remaining audit P1: `EXEC-001` probes, argv and consent; `CLI-INTERACT-001` forward compatibility; `SESSION-001` resource isolation; `LOCKS-001`; `WINDOWS-001` supervision cost | One cached probe per backend and no probe in `execute`; validated model identifiers; consent not assertable by the caller; unknown agy events tolerated; resources honor workspace ownership; no permanent lease |
 | 2 (gates beta 3), owner may reorder | `CONTEXT-001`: token cost and single-call success; the resolved-model and agy-denial fixes may land earlier | Measured budgets enforced by tests; minimal `{"proposal": ...}` call succeeds; resolved model and workspace in every result; client acceptance recorded for Claude Code and agy |
-| 3 (gates RC 1) | `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002` remainder, `SIMPLIFY-001`, audit P2 items | Safe auto-resume; activity liveness; deletions and deduplication with behavior preserved |
-| 4 (gates RC 1) | `INSTALL-001`, optional integrations | Setup/repair isolated from core and bundled separately; VSIX and host presentation verified only where supported |
+| 3 (gates RC 1) | `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002` remainder, `SIMPLIFY-001`, audit P2 items; `CLI-FIRST-001` execution and MCP adapter | Safe auto-resume; activity liveness; behavior-preserving simplification; CLI aliases, stdin and typed results; verified child consent/cancellation and preserved MCP contracts |
+| 4 (gates RC 1) | `INSTALL-001`, optional integrations; `CLI-FIRST-001` cross-platform command/PATH acceptance and TUI decision | Setup/repair isolated from core; supported VSIX/host evidence; fresh CLI package, safe user PATH operations on Windows/Linux/macOS, native CI evidence and documented optional TUI scope |
 | 5 (RC and final) | Remaining correctness, documentation and `RC-001`: candidate acceptance | Concrete milestone evidence; frozen scope; exact package passes full CI matrix and independent Reviewer approval |
 
 Small fixes should land independently. Choose incremental refactoring or a
@@ -2535,6 +2538,60 @@ user's chat view and are UI automation.
   bridge, token handling or hub transport is added. The preferred future shape
   and its lifecycle/cancellation constraints are in the investigation record.
 
+### `CLI-FIRST-001` - public CLI and MCP-to-CLI adapter
+
+**Status:** Planned, owner-requested on 2026-10-07. Required before
+`v1.0.0-rc.1`; no runtime work completed by recording this item. Follow existing
+audit blockers without enlarging the beta.2 gate. Orders 3-4 own implementation
+and acceptance. TUI remains optional unless explicitly added before scope freeze.
+
+The [feature specification](FEATURE_CLI_FIRST.md) records current-source findings,
+documentation sources, command examples and control/compatibility requirements.
+It specifies this milestone; this roadmap remains the single active plan.
+`CLI-INTERACT-001` concerns backend liveness and does not replace this work.
+
+- [ ] Extract shared action requests and typed results; keep controller/adapters,
+  policy, redaction and sessions single owners. Preserve existing MCP tool
+  schemas, Markdown-only execution responses, roots/resources and context budgets.
+- [ ] Add public consult/review/doctor/models/session/issue commands, `-b`/`-m`
+  aliases, explicit stdin input, bounded JSON/JSONL, help/version and stable exit
+  codes. Preserve setup/cleanup and no-argument stdio; add explicit `mcp`.
+- [ ] Validate backend/model/effort before a billable turn; suggest only
+  evidence-backed provider names. Distinguish catalogs, aliases and unavailable
+  metadata; never auto-correct, silently change a model or reject valid full
+  identifiers from an incomplete alias list.
+- [ ] Review the terminal-consent trust design and any required security-rule
+  extension. Until accepted, direct CLI cannot grant approval by flags/stdin/TTY
+  detection. MCP retains human elicitation for the concrete model and turn.
+- [ ] Make MCP execute the matching packaged CLI without a shell or PATH lookup.
+  Define validated, request-bound controls for consent/cancel/lifecycle; route
+  session cancellation to the owned child and preserve workspace/provider identity.
+- [ ] Verify EOF, parent/child crashes, consent cancellation, Ctrl+C, broken pipes,
+  concurrent turns and resume on supported platforms. Keep hidden Windows helpers,
+  bounded I/O and owned teardown; refuse live foreign-process cancellation.
+- [ ] Verify npm global/local commands and user PATH diagnosis, add/remove and
+  rollback on Windows, Linux and macOS. Check Windows shims plus POSIX executable
+  links/permissions and Bash/Zsh startup modes. Preserve unrelated/shared PATH
+  entries, shell profiles and registrations; no machine/system-profile or
+  postinstall mutations.
+- [ ] Extend the existing six-job OS/Node CI matrix with exact-artifact CLI,
+  shell/PATH and owned process lifecycle tests, including native macOS execution.
+  Record runner OS/architecture, tool versions, package hash and failure evidence;
+  add targeted jobs for any additional advertised architectures. Separate CI/PTY
+  evidence from unmeasured native host/UI/authentication claims. The owner's lack
+  of a Mac does not defer macOS CLI support.
+- [ ] Measure cold/warm process/probe counts, latency, memory and Windows startup
+  against the current execution path; verify fresh exact-tarball sibling versions.
+  Add no persistent worker without a recorded measurement-based decision.
+- [ ] Record a TUI selection or deferment after comparing a Node line interface
+  and an isolated Ink prototype. Keep UI dependencies out of ordinary MCP startup;
+  require native terminal acceptance for any UI advertised as supported.
+- [ ] Accept fixture-backed CLI/MCP contract and lifecycle coverage, native
+  Windows/Linux/macOS command/PATH evidence, package/migration checks, the full
+  supported CI matrix and independent hash-bound review before RC 1.
+  Record evidence against the candidate;
+  documentation/examples alone are not implementation acceptance.
+
 ### `SIMPLIFY-001` - deletions and deduplication
 
 **Status:** Implemented on stacked branches, not yet merged (AUD-P2-3 to AUD-P2-6,
@@ -3006,7 +3063,7 @@ Work items:
   test. Re-run the audit reproductions against the candidate.
 - [ ] Close the included core milestones (`SURFACE-001`, `EXEC-001`, `ROUTING-MIGRATE-001`,
   `SESSION-001`, `CLI-INTERACT-001`, `HISTORY-002`, `LOCKS-001`, `REDACTION-002`,
-  `PACKAGE-001`, `SIMPLIFY-001`) and applicable correctness, verification and
+  `PACKAGE-001`, `SIMPLIFY-001`, `CLI-FIRST-001`) and applicable correctness, verification and
   documentation work with evidence references. Record optional integration limits
   and conditional/deferred items explicitly.
 - [ ] No open P0/P1 issue from either beta.
@@ -3038,6 +3095,8 @@ Work on topic branches. This plan does not authorize push, merge or publication.
 Interactive auto-confirm, SQLite, generated diff UI and multi-backend consensus
 remain deferred. Activity-based inactivity supervision is scheduled under
 `CLI-INTERACT-001`; plain Markdown consult is implemented (`CONSULT-001`).
+Public CLI execution and the MCP adapter are required before RC 1 under
+`CLI-FIRST-001`; its optional TUI is not an auto-confirm mechanism.
 The [interactive CLI RFC](archive/RFC_INTERACTIVE_CLI_AND_TIMEOUTS.md) is historical discussion,
 not an instruction to implement or weaken consent.
 
