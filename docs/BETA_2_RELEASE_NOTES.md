@@ -39,8 +39,8 @@ Follow the [tester guide](../README.md#beta2-tester-guide).
 ## Known limitations
 
 The [runtime contract](RUNTIME_CONTRACT.md#7-known-limitations-and-deviations)
-owns the detailed list. Remaining limitations include duplicated concurrent probes,
-backend-only timeout accounting, mandatory
+owns the detailed list. Remaining limitations include backend-only timeout
+accounting, mandatory
 session storage even with history off, and no first-turn handle before return.
 Codex authentication is inferred; interactive approval and several native host
 flows remain unverified. POSIX unexpected-parent-death cleanup and an

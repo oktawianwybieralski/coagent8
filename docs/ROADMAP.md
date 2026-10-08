@@ -32,7 +32,7 @@ The local stack at `24052e3` is ahead of `release/v1.0.0`; integration is pendin
 | Desktop/process safety | Owned handles/groups, protocol interrupt, hidden hermetic fixture launches; recorded Windows native cleanup; Codex inherited-tool verification and nested-turn refusal | agy inherited tools (accepted limitation), POSIX parent-death cleanup, fresh candidate matrix |
 | Public output | Answer/diagnostic redaction split, plain consult, Markdown execution results, final-answer selection; structured review completeness and snapshot/check binding | Full review of another tree |
 | Storage/errors | Best-effort bounded archive, ENV off mode, workspace isolation, renewed leases, typed errors, single cooldown write | Ephemeral session mode, end-to-end budget |
-| Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Coalesced misses, fuller invalidation, catalog/default redesign |
+| Discovery/models | Six tools, roots, cached probes, best-effort catalogs, effective-model elicitation with explicit approval | Catalog/default redesign |
 | Packaging/verification | Untracked dist, tarball-derived plugin/VSIX, consumer provenance, coverage once per job configured | Exact release artifact, six-job CI, native/UI acceptance where advertised |
 | Governance | Consent by approximate price (relative to the default, 20 USD limit, remember for unknown prices); models and defaults from the CLIs and `config.json` (`CUR-010` closed locally) | Interactive approval UI acceptance |
 
@@ -1668,10 +1668,20 @@ schema field, tool argument or runtime bypass is authorized by this plan.
   from outside the repository got the new message for `opus`. Run inside the
   repository, Codex's `auto_review` approval reviewer rejected the MCP call itself,
   citing rule 01, before it reached CoAgent8.
-- [ ] `CUR-006`: coalesce concurrent probe/catalog misses; expand invalidation
+- [x] `CUR-006`: coalesce concurrent probe/catalog misses; expand invalidation
   for actual provider configuration/env selectors (including Codex home and
   Claude default aliases). Define refresh/failure behavior; acceptance measures
   process counts under concurrent calls and changes to those settings.
+  Local implementation on `fix/vsix-presentation` (2026-10-08): probes, catalog
+  reads and model observations share one read in progress per key; a failure
+  reaches every waiter and is not cached; a `fresh` read (doctor) starts its own.
+  Codex's configuration path follows `CODEX_HOME`, and Claude's probe stamps
+  `settings.json` under `CLAUDE_CONFIG_DIR`; alias variables were already in the
+  key (`ANTHROPIC_`/`CLAUDE_` prefixes). Project-level Claude settings are not
+  stamped. Regression: `tests/backends/probe-cache.test.js` (eight concurrent
+  misses: one probe and one catalog read; one observation per name; shared,
+  uncached failure; Codex home and Claude settings paths); both tests fail on the
+  previous source. Counts are of adapter calls with fixtures, not live processes.
 - [x] Correct the model/backend description promises: catalog validation is
   best-effort and quota is cached evidence. The documentation reconciliation
   measured 5,256 B against the 5,300 B budget; 15 source-loaded surface tests pass.

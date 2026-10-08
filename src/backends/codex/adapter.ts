@@ -17,7 +17,8 @@ import { turnEnvironment } from '../../execution/nested-turn.js';
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
 const CODEX_EXE = process.env.CODEX_PATH || 'codex';
-export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(os.homedir(), '.codex', 'config.toml');
+/** Codex reads `config.toml` from `CODEX_HOME` when it is set (CUR-006). */
+export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml');
 
 /** Upper bound for reading `config.toml`. */
 const CODEX_CONFIG_MAX_BYTES = 256 * 1024;

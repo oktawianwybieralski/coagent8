@@ -180,7 +180,12 @@ unsupported efforts.
 Completed probes are cached in memory for five minutes. Catalogs and observed
 models are cached in memory for five minutes and in `~/.coagent8/models.json`
 (observed state, not configuration) for a day, so a new server process does not
-ask the CLI again. Keys hash the executable/config file stamps, `PATH`/home
+ask the CLI again. Concurrent misses share one probe, catalog read or model
+request; a failure reaches every waiter and is not cached, so the next call asks
+again. A `fresh` read (doctor) starts its own. The config file stamp is Codex's
+`config.toml` under `CODEX_HOME` (or `CODEX_CONFIG_PATH`) and Claude Code's
+`settings.json` under `CLAUDE_CONFIG_DIR`; project-level Claude settings are not
+stamped. Keys hash the executable/config file stamps, `PATH`/home
 variables and every variable with a provider prefix (`ANTHROPIC_`, `CLAUDE_`,
 `CODEX_`, `OPENAI_`, `GEMINI_`, `AGY_`); the store holds only the hash. An
 unreadable store is reported and rebuilt; a failed write is reported and never
@@ -483,7 +488,6 @@ These are open implementation issues, not relaxed security requirements.
 | ID | Current limitation | Roadmap owner |
 | --- | --- | --- |
 | CUR-002 | Accepted limitation for agy (owner decision 2026-10-08): `--sandbox` turns can use the MCP servers of `~/.gemini/config/mcp_config.json` and of enabled plugins; agy's built-in documentation states that its agent shell receives the language-server address and CSRF token (not measured). Recursion into CoAgent8 is refused and doctor names the inherited tools. Codex is isolated and verified per thread (section 6) | `WINDOWS-001` / `EXEC-001` |
-| CUR-006 | Concurrent cache misses duplicate probes/catalog reads; invalidation omits some settings | `EXEC-001` |
 | CUR-007 | Timeout and duration omit preparation; agy headless host has a measured 180-second limit | `CLI-INTERACT-001` / `CONTEXT-001` |
 | CUR-008 | Sessions remain mandatory with archival disabled; first active handle is unavailable until return | `SESSION-001` / `HISTORY-002` |
 | CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |

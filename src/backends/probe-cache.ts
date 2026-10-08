@@ -27,6 +27,24 @@ const PROVIDER_ENVIRONMENT_PREFIXES = ['ANTHROPIC_', 'CLAUDE_', 'CODEX_', 'OPENA
 interface CachedProbe { adapter: CliAdapter; probeFn: CliAdapter['probe']; probe: AdapterProbeResult; key: string; at: number }
 const cache = new Map<ProviderId, CachedProbe>();
 
+/** Reads in progress, so concurrent misses share one CLI launch (CUR-006). */
+const inflight = new Map<string, { owner: unknown; promise: Promise<unknown> }>();
+
+/**
+ * Shares a read in progress under `key` while it belongs to the same adapter function.
+ * A failure is not cached: every waiter receives it and the next call starts a new read.
+ * @param join - False for a `fresh` read, which starts its own and is shared from then on.
+ */
+function coalesce<T>(key: string, owner: unknown, join: boolean, start: () => Promise<T>): Promise<T> {
+  const running = inflight.get(key);
+  if (join && running && running.owner === owner) return running.promise as Promise<T>;
+  const promise: Promise<T> = start().finally(() => {
+    if (inflight.get(key)?.promise === promise) inflight.delete(key);
+  });
+  inflight.set(key, { owner, promise });
+  return promise;
+}
+
 function fileStamp(file: string): string {
   try {
     const stat = fs.statSync(file);
@@ -62,7 +80,7 @@ function probeKey(probe: AdapterProbeResult): string {
 /**
  * Returns the backend's probe, reusing a cached result while its CLI, configuration and
  * selected environment stamps are unchanged and it is younger than the five-minute TTL.
- * Concurrent misses are not coalesced; the cache stores completed probes only.
+ * Concurrent misses share one probe; a failed probe is not cached.
  * @param id - Backend to probe.
  * @param options - `fresh` always probes and replaces the cached result (doctor).
  */
@@ -72,9 +90,12 @@ export async function probeBackend(id: ProviderId, options: { fresh?: boolean } 
   if (!options.fresh && cached && cached.adapter === adapter && cached.probeFn === adapter.probe && Date.now() - cached.at < PROBE_TTL_MS && cached.key === probeKey(cached.probe)) {
     return cached.probe;
   }
-  const probe = await adapter.probe();
-  cache.set(id, { adapter, probeFn: adapter.probe, probe, key: probeKey(probe), at: Date.now() });
-  return probe;
+  const probeFn = adapter.probe;
+  return coalesce(`probe:${id}`, probeFn, !options.fresh, async () => {
+    const probe = await probeFn.call(adapter);
+    cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
+    return probe;
+  });
 }
 
 interface CachedCatalog { listFn: CliAdapter['listModels']; catalog: ModelCatalog | undefined; key: string; at: number }
@@ -83,7 +104,7 @@ const catalogs = new Map<ProviderId, CachedCatalog>();
 /**
  * Returns the CLI's catalog: from memory for up to five minutes, else from `models.json`
  * for up to a day, else read from the CLI and recorded in both. Keys must match the
- * current installation. Concurrent misses can perform duplicate reads.
+ * current installation. Concurrent misses share one read.
  * @param id - Backend whose catalog to read.
  * @param options - `fresh` reads the CLI again (doctor).
  * @returns The catalog, or undefined when the CLI is not installed, has no catalog or
@@ -104,10 +125,13 @@ export async function readModelCatalog(id: ProviderId, options: { fresh?: boolea
     catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
     return catalog;
   }
-  const catalog = await adapter.listModels();
-  catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
-  if (catalog) await recordObservedModels(id, key, { catalog });
-  return catalog;
+  const listFn = adapter.listModels;
+  return coalesce(`catalog:${id}:${key}`, listFn, !options.fresh, async () => {
+    const catalog = await listFn.call(adapter);
+    catalogs.set(id, { listFn, catalog, key, at: Date.now() });
+    if (catalog) await recordObservedModels(id, key, { catalog });
+    return catalog;
+  });
 }
 
 interface CachedObservation { observeFn: CliAdapter['observeModel']; model: string | undefined; key: string; at: number }
@@ -116,7 +140,7 @@ const observations = new Map<string, CachedObservation>();
 /**
  * Returns the concrete model the CLI reports for a requested name, or for no name: from
  * memory for up to five minutes, else from `models.json` for up to a day, else asked from
- * the CLI (`observeModel`) and recorded in both.
+ * the CLI (`observeModel`) and recorded in both. Concurrent misses share one request.
  * @param id - Backend to ask.
  * @param requested - The requested name; omitted for the model the CLI runs without one.
  * @param options - `fresh` asks the CLI again (doctor).
@@ -137,8 +161,11 @@ export async function readObservedModel(id: ProviderId, requested?: string, opti
     observations.set(memoryKey, { observeFn: adapter.observeModel, model: stored.model, key, at: Date.now() });
     return stored.model;
   }
-  const model = await adapter.observeModel(requested, probe);
-  observations.set(memoryKey, { observeFn: adapter.observeModel, model, key, at: Date.now() });
-  if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
-  return model;
+  const observeFn = adapter.observeModel;
+  return coalesce(`observe:${memoryKey}:${key}`, observeFn, !options.fresh, async () => {
+    const model = await observeFn.call(adapter, requested, probe);
+    observations.set(memoryKey, { observeFn, model, key, at: Date.now() });
+    if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
+    return model;
+  });
 }

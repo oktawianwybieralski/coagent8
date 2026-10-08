@@ -62,8 +62,8 @@ Cooldowns are recorded once per rate-limited turn.
 
 Completed probes are cached in memory for up to five minutes. Catalogs and the
 models a CLI reports for a name are also kept in `models.json` for a day; keys
-hash file stamps and provider-prefixed environment. Concurrent misses are not
-coalesced. `backends/model-selection.ts` chooses the model of a turn from the
+hash file stamps and provider-prefixed environment. Concurrent misses share one
+read; a failed read is not cached. `backends/model-selection.ts` chooses the model of a turn from the
 call, session, configuration or CLI; the source names no model.
 Routing reads cached quota and cooldowns; `doctor` performs native quota reads.
 Automatic selection and `doctor` treat the quota cache as optional: a lock or

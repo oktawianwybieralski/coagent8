@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
 import { runCommand, type StdinChannel, type StdinSession } from '../../execution/process.js';
 import { redactDiagnostic } from '../../redaction.js';
 import { isValidModelIdentifier } from '../model-identifier.js';
@@ -15,6 +17,8 @@ export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => process.env.CLAUDE_PATH || CLAUDE_EXE;
+/** User settings, which can choose the default model; a change invalidates cached probes and observed models. */
+const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 
 /**
  * Reads installation, version and local login state without calling a model.
@@ -46,7 +50,7 @@ export async function probe(): Promise<AdapterProbeResult> {
     }
   } else authEvidence.push('Claude Code CLI not found.');
   if (installed && !executionSupported) authEvidence.push(`Claude Code ${version} is older than ${MIN_CLAUDE_VERSION.join('.')}, which the restricted profile and model reporting need.`);
-  return { id, name, installed, version, command, authStatus, authMethod, authEvidence, loginHint: 'claude auth login',
+  return { id, name, installed, version, command, configPath: claudeSettingsPath(), authStatus, authMethod, authEvidence, loginHint: 'claude auth login',
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
     modelSource: 'any Claude Code model or alias; the CLI reports the concrete model in system/init', executionSupported,
     capabilities: { resume: true, streaming: true, readOnlyVerified: executionSupported, reasoningEffort: true } };
