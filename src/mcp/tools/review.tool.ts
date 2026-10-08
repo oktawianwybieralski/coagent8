@@ -9,7 +9,7 @@ import { formatExecutionResult } from '../result.js';
 export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
-    description: 'Independent review of Git changes by another coding agent. Returns findings, then "> Verdict: READY" or "> Verdict: BLOCKED (reason)".',
+    description: 'Independent review of Git changes by another coding agent. Returns findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)".',
     inputSchema: {
       type: 'object',
       properties: {

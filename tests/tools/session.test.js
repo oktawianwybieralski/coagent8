@@ -205,8 +205,8 @@ test('formatExecutionResult produces clean Markdown with answer at top, and hand
   }, '', 'syn_sess_test123', { turn: 1, toolCount: 2, durationMs: 3450, historyAvailable: true });
 
   assert.equal(formatted.isError, false);
-  assert.ok(formatted.content[0].text.startsWith('```markdown\n# Analysis Result\nEverything looks good.\n```'));
-  assert.ok(formatted.content[0].text.includes('> CoAgent8: codex · provider default · 3.5s · 2 ops · syn_sess_test123 (ready)'));
+  assert.ok(formatted.content[0].text.startsWith('```plaintext\n# Analysis Result\nEverything looks good.\n```'));
+  assert.ok(formatted.content[0].text.includes('\n```plaintext\nCoAgent8: codex · provider default · 3.5s · 2 ops · syn_sess_test123 (ready)\n```'));
 
   // Test handleSessionHistory across two turns
   const s = createSession('codex', tempDir);

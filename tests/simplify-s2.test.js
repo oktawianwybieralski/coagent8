@@ -60,7 +60,7 @@ test('S2 neutral controller: executeTask returns neutral object without MCP mark
     assert.equal(formatted.content.length, 1);
     assert.equal(formatted.content[0].type, 'text');
     assert.ok(formatted.content[0].text.includes('Neutral evidence output'));
-    assert.ok(formatted.content[0].text.includes('> CoAgent8: agy · gemini-3.8-flash'));
+    assert.ok(formatted.content[0].text.includes('CoAgent8: agy · gemini-3.8-flash'));
   } finally {
     adapterRegistry.agy = originalAgy;
     fs.rmSync(tempDir, { recursive: true, force: true });

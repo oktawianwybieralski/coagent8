@@ -22,7 +22,7 @@ import { getCanonicalConsultToolDefinition, handleConsult } from './tools/consul
 import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js';
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
-import { formatExecutionResult, withWorkspace } from './result.js';
+import { formatExecutionResult, setResultStyle, withWorkspace } from './result.js';
 import { ToolError, errorCodeOf } from '../conversation.js';
 import { listSessions } from '../sessions/session.js';
 import { canonicalPath } from '../workspace/identity.js';
@@ -174,7 +174,11 @@ export function createServer(): Server {
     { capabilities: { tools: {}, resources: {} }, instructions: SERVER_INSTRUCTIONS }
   );
 
-  server.oninitialized = () => setCallerProvider(providerForClient(server.getClientVersion()?.name));
+  server.oninitialized = () => {
+    const client = server.getClientVersion()?.name;
+    setCallerProvider(providerForClient(client));
+    setResultStyle(client);
+  };
 
   // Client roots are read once per connection and again after the client reports a change.
   let clientRoots: Promise<string[]> | null = null;

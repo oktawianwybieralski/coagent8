@@ -7,7 +7,7 @@ import { formatExecutionResult } from '../result.js';
 export function getCanonicalConsultToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.CONSULT,
-    description: 'Second opinion from another coding agent on a question, design, bug or plan. Returns the answer, then "> CoAgent8:" lines: backend, model, seconds, session handle.',
+    description: 'Second opinion from another coding agent on a question, design, bug or plan. Returns the answer, then "CoAgent8:" lines: backend, model, seconds, session handle.',
     inputSchema: {
       type: 'object',
       properties: {

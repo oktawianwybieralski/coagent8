@@ -23,7 +23,7 @@ test('response formatting has no cooldown/storage writes and carries execution-o
   assert.ok(readResult(formatted).warnings[0].includes('REDACTED'));
 });
 
-test('formatExecutionResult enforces strict No-Emoji standard and clean blockquotes', async () => {
+test('formatExecutionResult enforces strict No-Emoji standard and a framed footer', async () => {
   const result = {
     status: 'completed',
     isError: false,
@@ -46,8 +46,7 @@ test('formatExecutionResult enforces strict No-Emoji standard and clean blockquo
   const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
   assert.ok(!emojiRegex.test(text), `Output should not contain any emojis: ${text}`);
 
-  // Verify clean blockquotes
-  assert.ok(text.endsWith('> CoAgent8: codex · gpt-6.1-sol · 4.5s · 3 ops · syn_sess_1234567890abcdef (turn 2, ready)'), 'one footer line');
+  assert.equal(text, '```plaintext\nSystem analysis successful.\n```\n\n```plaintext\nCoAgent8: codex · gpt-6.1-sol · 4.5s · 3 ops · syn_sess_1234567890abcdef (turn 2, ready)\n```', 'answer and footer each in a plaintext frame');
   assert.deepEqual(Object.keys(formatted), ['isError', 'content'], 'markdown is the only channel');
 });
 
@@ -57,13 +56,15 @@ test('formatExecutionResult omits a zero operation count and the first turn, and
     truncated: true, continuationAvailable: true,
   }, '', 'syn_sess_first', { turn: 1, toolCount: 0, durationMs: 7500, historyAvailable: true }, { warnings: ['slow backend'] });
   assert.ok(formatted.content[0].text.endsWith([
-    '> CoAgent8: claude · claude-haiku-4-5-20251001 · 7.5s · syn_sess_first (ready)',
-    '> Notice: Output reached buffer limit.',
-    '> Warning: slow backend',
-  ].join('\n>\n')), 'each footer line is its own quoted paragraph');
+    '```plaintext',
+    'CoAgent8: claude · claude-haiku-4-5-20251001 · 7.5s · syn_sess_first (ready)',
+    'Notice: Output reached buffer limit.',
+    'Warning: slow backend',
+    '```',
+  ].join('\n')), 'each footer field is its own line');
 });
 
-test('error formatting uses enterprise-grade blockquote without warning emojis', async () => {
+test('error formatting states the error first without warning emojis', async () => {
   const errorResult = {
     status: 'failed',
     isError: true,
@@ -88,7 +89,7 @@ test('error formatting uses enterprise-grade blockquote without warning emojis',
   const text = formatted.content[0].text;
   const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
   assert.ok(!emojiRegex.test(text), `Error output should not contain any emojis: ${text}`);
-  assert.ok(text.startsWith('> Error [RATE_LIMITED, retryable]: Provider quota exhausted.'), 'the error line says the same request may succeed later');
+  assert.ok(text.startsWith('Error [RATE_LIMITED, retryable]: Provider quota exhausted.'), 'the error line says the same request may succeed later');
 });
 
 test('formatExecutionResult appends issue reporting link strictly on fatal unrecoverable system errors', async () => {
@@ -108,7 +109,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     { turn: 1, toolCount: 0, durationMs: 100, historyAvailable: false }
   );
   const textProcessErr = resProcessErr.content[0].text;
-  assert.ok(textProcessErr.includes('> Report this issue: [Open pre-filled GitHub Issue](https://github.com/oktawianwybieralski/coagent8/issues/new?'));
+  assert.ok(textProcessErr.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?'));
   assert.ok(textProcessErr.includes('PROCESS_ERROR'));
 
   // 2. Fatal CLI_UNSUPPORTED
@@ -126,7 +127,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     null,
     { turn: 1, toolCount: 0, durationMs: 50, historyAvailable: false }
   );
-  assert.ok(resCliErr.content[0].text.includes('> Report this issue: [Open pre-filled GitHub Issue](https://github.com/oktawianwybieralski/coagent8/issues/new?'));
+  assert.ok(resCliErr.content[0].text.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?'));
 
   // 3. Fatal PROTOCOL_ERROR
   const resProtoErr = await formatExecutionResult(
@@ -143,7 +144,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     null,
     { turn: 1, toolCount: 0, durationMs: 80, historyAvailable: false }
   );
-  assert.ok(resProtoErr.content[0].text.includes('> Report this issue: [Open pre-filled GitHub Issue](https://github.com/oktawianwybieralski/coagent8/issues/new?'));
+  assert.ok(resProtoErr.content[0].text.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?'));
 
   // 4. Non-fatal RATE_LIMITED: must NOT append issue link
   const resRateLimited = await formatExecutionResult(
@@ -160,7 +161,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     null,
     { turn: 1, toolCount: 0, durationMs: 30, historyAvailable: false }
   );
-  assert.ok(!resRateLimited.content[0].text.includes('> Report this issue:'));
+  assert.ok(!resRateLimited.content[0].text.includes('Report this issue:'));
 
   // 5. Non-fatal ABORTED: must NOT append issue link
   const resAborted = await formatExecutionResult(
@@ -177,19 +178,20 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     null,
     { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false }
   );
-  assert.ok(!resAborted.content[0].text.includes('> Report this issue:'));
+  assert.ok(!resAborted.content[0].text.includes('Report this issue:'));
 });
 
 test('withWorkspace adds a line only for the server-directory fallback', () => {
   const { withWorkspace } = require('../../src/mcp/result.ts');
-  const base = { isError: false, content: [{ type: 'text', text: 'answer' }] };
+  const base = { isError: false, content: [{ type: 'text', text: '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: agy · m · 0.0s\n```' }] };
   assert.equal(withWorkspace(base, { path: tempDir, source: 'client_root' }), base, 'a client root costs no text');
   assert.equal(withWorkspace(base, { path: tempDir, source: 'argument' }), base, 'an explicit path costs no text');
   const fallback = withWorkspace(base, { path: tempDir, source: 'server_directory' });
-  assert.match(fallback.content[0].text, /^answer\n>\n> Workspace: .+ \(server directory\)$/, 'the note is its own quoted paragraph');
+  assert.match(fallback.content[0].text, /\n\n```plaintext\nCoAgent8: agy · m · 0\.0s\nWorkspace: .+ \(server directory\)\n```$/, 'the note is a line of the framed footer');
+  assert.ok(fallback.content[0].text.startsWith('```plaintext\nanswer\n```\n\n'), 'the answer frame is unchanged');
 });
 
-test('CONTEXT-001: an execution result is markdown only and its footer carries every field a caller acts on', async () => {
+test('CONTEXT-001: an execution result is text only and its footer carries every field a caller acts on', async () => {
   const meta = { turn: 2, toolCount: 1, durationMs: 1200, historyAvailable: false };
   const review = await formatExecutionResult('claude', {
     status: 'completed', isError: false, output: 'Summary without an envelope.', model: 'claude-haiku-4-5-20251001',
@@ -221,5 +223,25 @@ test('CONTEXT-001: an execution result is markdown only and its footer carries e
   }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }));
   assert.equal(consult.verdict, 'NOT_APPLICABLE', 'consult has no verdict line');
   assert.equal(consult.model, 'provider default');
-  assert.equal(consult.text, '```markdown\nanswer\n```\n\n> CoAgent8: agy · provider default · 0.0s');
+  assert.equal(consult.text, '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: agy · provider default · 0.0s\n```');
+});
+
+test('a Codex client gets raw lines, which it frames itself; other clients get plaintext frames', () => {
+  const { setResultStyle, withWorkspace } = require('../../src/mcp/result.ts');
+  const run = () => formatExecutionResult('agy', { status: 'completed', isError: false, output: 'REVIEW: 1\nVERDICT: READY', truncated: false, continuationAvailable: false },
+    '', 'syn_sess_raw', { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }, { warnings: ['multi\nline warning'] });
+  try {
+    setResultStyle('codex-mcp-client');
+    const raw = withWorkspace(run(), { path: tempDir, source: 'server_directory' });
+    assert.match(raw.content[0].text, /^REVIEW: 1\nVERDICT: READY\n\nCoAgent8: agy · provider default · 0\.0s · syn_sess_raw \(finished\)\nWarning: multi line warning\nWorkspace: .+ \(server directory\)$/);
+    assert.ok(!raw.content[0].text.includes('```'), 'no frame inside the frame Codex draws');
+    const read = readResult(raw);
+    assert.equal(read.style, 'raw');
+    assert.equal(read.answer, 'REVIEW: 1\nVERDICT: READY');
+    assert.deepEqual(read.warnings, ['multi line warning'], 'a field with a line break stays one footer line');
+    for (const client of ['claude-code', 'antigravity', 'Visual Studio Code', undefined]) {
+      setResultStyle(client);
+      assert.equal(readResult(run()).style, 'framed', String(client));
+    }
+  } finally { setResultStyle(undefined); }
 });

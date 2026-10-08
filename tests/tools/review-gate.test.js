@@ -42,7 +42,7 @@ test('the review answer is shown verbatim in a code block; the server verdict an
     '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
     { requireEnvelope: true, reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] } });
   const text = formatted.content[0].text;
-  assert.ok(text.startsWith('````markdown\n' + answer + '\n````\n'), "verbatim, fenced longer than the answer's own fence");
+  assert.ok(text.startsWith('````plaintext\n' + answer + '\n````\n'), "verbatim, fenced longer than the answer's own fence");
   assert.equal(readResult(formatted).answer, answer, 'the caller reads the answer unchanged inside the frame');
   assert.ok(!text.includes('VERDICT: BLOCKED'), 'the reviewer text is not rewritten');
   const { verdict, reason } = readResult(formatted);

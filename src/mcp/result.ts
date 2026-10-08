@@ -2,9 +2,10 @@
  * Canonical MCP result envelope for execution tools.
  *
  * @remarks
- * The answer loses escape sequences (`stripAnsi`), is redacted and is shown verbatim in a code block,
- * framed apart from the footer. When the tool requires a State Envelope, the server verdict with
- * its causes goes to the footer. When an unrecoverable process/protocol failure occurs
+ * The answer loses escape sequences (`stripAnsi`), is redacted and is shown verbatim, followed by
+ * the footer lines (`CoAgent8:`, `Verdict:`, ...). Codex gets both as raw text; other clients get
+ * each in its own plaintext block. When the tool requires a State Envelope, the server verdict
+ * with its causes goes to the footer. When an unrecoverable process/protocol failure occurs
  * (`PROCESS_ERROR`, `CLI_UNSUPPORTED`, `PROTOCOL_ERROR`), `formatExecutionResult` generates a
  * pre-filled GitHub issue URL in the response footer.
  *
@@ -18,6 +19,7 @@ import { generateBugReport } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
 import type { ResolvedWorkspace } from '../workspace/workspace.js';
+import { providerForClient } from '../backends/routing.js';
 
 /**
  * Execution tool result: markdown text only.
@@ -34,16 +36,38 @@ export interface ExecutionToolResult {
 }
 
 /**
- * Separates footer lines with an empty quoted line: consecutive `>` lines form one
- * markdown paragraph, so renderers would otherwise join them into a single line.
+ * How the connected client shows a tool result: `raw` lines for Codex, which frames a tool
+ * result as plain text itself, `framed` plaintext blocks for clients that render markdown,
+ * where unframed text blends into the panel and joins lines.
  */
-const FOOTER_LINE_BREAK = '\n>\n';
+export type ResultStyle = 'framed' | 'raw';
+/** Style of the connected client; a stdio server process serves exactly one client. */
+let resultStyle: ResultStyle = 'framed';
+
+/**
+ * Chooses the result style from the MCP `clientInfo.name`.
+ * @remarks Presentation only, never a security decision: the name is self-reported
+ * (owner decision 2026-10-09). An unknown client gets frames.
+ */
+export function setResultStyle(clientName: string | undefined): void {
+  resultStyle = providerForClient(clientName) === 'codex' ? 'raw' : 'framed';
+}
 
 /** Fences text with more backticks than any run inside it, so its own fences cannot close the block. */
-function codeBlock(text: string): string {
+function frame(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
-  return `${fence}markdown\n${text}\n${fence}`;
+  return `${fence}plaintext\n${text}\n${fence}`;
+}
+
+/** Shows a block of the result in the connected client's style. */
+function present(text: string): string {
+  return resultStyle === 'framed' ? frame(text) : text;
+}
+
+/** One footer line: line breaks inside a field would split it into other footer lines. */
+function footerLine(text: string): string {
+  return text.replace(/\s*\r?\n\s*/g, ' ');
 }
 
 export interface FormatExecutionOptions {
@@ -136,16 +160,13 @@ export function formatExecutionResult(
     verdict = 'NOT_APPLICABLE';
   }
 
-  const redacted = redactCredentialFormats(cleaned);
-  // The answer is framed apart from the footer, as its markdown source: unfenced markdown blends
-  // into the client panel and joins a review envelope's lines.
-  const output = redacted ? codeBlock(redacted) : redacted;
+  const output = redactCredentialFormats(cleaned);
   const parts: string[] = [];
   if (error) {
-    parts.push(`> Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);
-    if (output) parts.push(`Partial response:\n\n${output}`);
+    parts.push(`Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);
+    if (output) parts.push('Partial response:', present(output));
   } else {
-    parts.push(output || (res.status === 'completed' ? 'CLI completed with no public text.' : 'No public response.'));
+    parts.push(output ? present(output) : res.status === 'completed' ? 'CLI completed with no public text.' : 'No public response.');
   }
 
   const durationSec = (executionMeta.durationMs / 1000).toFixed(1);
@@ -155,28 +176,28 @@ export function formatExecutionResult(
   const session = activeHandle ? ` \u{b7} ${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
 
   const footerLines: string[] = [
-    `> CoAgent8: ${provider || 'CLI'} \u{b7} ${res.model || 'provider default'} \u{b7} ${durationSec}s${ops}${session}`,
+    `CoAgent8: ${provider || 'CLI'} \u{b7} ${res.model || 'provider default'} \u{b7} ${durationSec}s${ops}${session}`,
   ];
   if (verdict !== 'NOT_APPLICABLE') {
     // A failed run states its reason in the error line already.
     // The reason may quote the reviewer's own Blocked line.
-    footerLines.push(`> Verdict: ${verdict}${reason && !error ? ` (${redactCredentialFormats(reason)})` : ''}`);
+    footerLines.push(`Verdict: ${verdict}${reason && !error ? ` (${redactCredentialFormats(reason)})` : ''}`);
   }
-  if (priceNote) footerLines.push(`> Price: ${priceNote}`);
+  if (priceNote) footerLines.push(`Price: ${priceNote}`);
   if (res.truncated) {
-    footerLines.push('> Notice: Output reached buffer limit.');
+    footerLines.push('Notice: Output reached buffer limit.');
   }
   for (const warning of warnings) {
-    footerLines.push(`> Warning: ${warning}`);
+    footerLines.push(`Warning: ${warning}`);
   }
   if (error && (['PROCESS_ERROR', 'CLI_UNSUPPORTED', 'PROTOCOL_ERROR'] as string[]).includes(error.code)) {
     const bug = generateBugReport({
       errorMessage: `[${error.code}]: ${error.message}`,
       context: `Fatal unrecoverable error in ${provider || 'CLI'} during turn ${executionMeta.turn}`,
     });
-    footerLines.push(`> Report this issue: [Open pre-filled GitHub Issue](${bug.issueUrl})`);
+    footerLines.push(`Report this issue: ${bug.issueUrl}`);
   }
-  parts.push(footerLines.join(FOOTER_LINE_BREAK));
+  parts.push(present(footerLines.map(footerLine).join('\n')));
 
   return { isError: res.isError, content: [{ type: 'text', text: parts.join('\n\n') }] } satisfies ExecutionToolResult;
 }
@@ -189,8 +210,19 @@ export function formatExecutionResult(
 export function withWorkspace<T extends { content: Array<{ type: string; text?: string }> }>(result: T, workspace: ResolvedWorkspace): T {
   if (workspace.source !== 'server_directory') return result;
   const [first, ...rest] = result.content;
-  const note = `> Workspace: ${redactDiagnostic(workspace.path, 1024)} (server directory)`;
-  const content = first?.type === 'text' ? [{ ...first, text: `${first.text}${FOOTER_LINE_BREAK}${note}` }, ...rest] : [...result.content, { type: 'text', text: note }];
+  const note = footerLine(`Workspace: ${redactDiagnostic(workspace.path, 1024)} (server directory)`);
+  const content = first?.type === 'text' ? [{ ...first, text: withFooterLine(first.text ?? '', note) }, ...rest] : [...result.content, { type: 'text', text: present(note) }];
   return { ...result, content };
+}
+
+/** Adds a line to the footer, the last block of an execution result. */
+function withFooterLine(text: string, line: string): string {
+  if (resultStyle === 'raw') return `${text}\n${line}`;
+  // The footer's fence is the longest run in it, so its opening is the last one of that length.
+  const fence = /`{3,}$/.exec(text)?.[0];
+  const opening = fence === undefined ? -1 : text.lastIndexOf(`${fence}plaintext\n`);
+  if (fence === undefined || opening < 0) return `${text}\n\n${frame(line)}`;
+  const footer = text.slice(opening + fence.length + 'plaintext\n'.length, text.length - fence.length - 1);
+  return text.slice(0, opening) + frame(`${footer}\n${line}`);
 }
 
