@@ -587,6 +587,35 @@ export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
 }
 
 /**
+ * Adds bytes to the directory total before they are written, evicting the oldest other
+ * sessions when needed, so the total budget holds at every moment (CUR-012).
+ * @throws When eviction cannot free enough space.
+ */
+async function reserveCapacity(dir: string, bytes: number, keepHandle: string): Promise<void> {
+  await withFileLock(path.join(dir, '.capacity.lock'), async () => {
+    const metaFile = path.join(dir, '.capacity.meta');
+    let currentTotal = await readCapacityMeta(metaFile);
+    if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
+    if (currentTotal + bytes > TOTAL_LIMIT) {
+      const freed = await evictOldestSessions(dir, currentTotal + bytes - TOTAL_LIMIT, keepHandle);
+      currentTotal = Math.max(0, currentTotal - freed);
+      if (currentTotal + bytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
+    }
+    await writeCapacityMeta(metaFile, currentTotal + bytes);
+  });
+}
+
+/** Returns bytes reserved for a write that failed. */
+async function releaseCapacity(dir: string, bytes: number): Promise<void> {
+  try {
+    await withFileLock(path.join(dir, '.capacity.lock'), () => adjustCapacityMeta(path.join(dir, '.capacity.meta'), -bytes));
+  } catch {
+    // The write error is reported; a cache left high only makes the next eviction earlier,
+    // and the next directory scan recomputes it.
+  }
+}
+
+/**
  * Creates an append-only history writer for an active conversation turn.
  *
  * ### Streaming & Persistence Guarantees:
@@ -795,37 +824,13 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             }) + '\n';
             const headerBytes = Buffer.byteLength(header, 'utf8');
 
-            const capLockFile = path.join(dir, '.capacity.lock');
-            await withFileLock(capLockFile, async () => {
-              const metaFile = path.join(dir, '.capacity.meta');
-              let currentTotal = await readCapacityMeta(metaFile);
-              if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
-
-              if (currentTotal + headerBytes > TOTAL_LIMIT) {
-                const needed = currentTotal + headerBytes - TOTAL_LIMIT;
-                const freed = await evictOldestSessions(dir, needed, handle);
-                currentTotal = Math.max(0, currentTotal - freed);
-                if (currentTotal + headerBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
-              }
-
-              currentTotal += headerBytes;
-              await writeCapacityMeta(metaFile, currentTotal);
-            });
-
+            await reserveCapacity(dir, headerBytes, handle);
             try {
               await fs.appendFile(logFile, header, 'utf8');
               currentFileBytes = headerBytes;
               headerWritten = true;
             } catch (appendErr) {
-              try {
-                await withFileLock(capLockFile, async () => {
-                  const metaFile = path.join(dir, '.capacity.meta');
-                  await adjustCapacityMeta(metaFile, -headerBytes);
-                });
-              } catch {
-                // The append error is reported; a cache left high only makes the next eviction earlier,
-                // and the next directory scan recomputes it.
-              }
+              await releaseCapacity(dir, headerBytes);
               throw appendErr;
             }
           }
@@ -876,36 +881,12 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
         const appendBytes = Buffer.byteLength(appendLines, 'utf8');
         if (currentFileBytes + appendBytes > SESSION_LIMIT) throw new Error('History session limit reached.');
 
-        const capLockFile = path.join(dir, '.capacity.lock');
-        await withFileLock(capLockFile, async () => {
-          const metaFile = path.join(dir, '.capacity.meta');
-          let currentTotal = await readCapacityMeta(metaFile);
-          if (currentTotal == null) currentTotal = await calculateDirectoryBytes(dir);
-
-          if (currentTotal + appendBytes > TOTAL_LIMIT) {
-            const needed = currentTotal + appendBytes - TOTAL_LIMIT;
-            const freed = await evictOldestSessions(dir, needed, handle);
-            currentTotal = Math.max(0, currentTotal - freed);
-            if (currentTotal + appendBytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
-          }
-
-          currentTotal += appendBytes;
-          await writeCapacityMeta(metaFile, currentTotal);
-        });
-
+        await reserveCapacity(dir, appendBytes, handle);
         try {
           await fs.appendFile(logFile, appendLines, 'utf8');
           currentFileBytes += appendBytes;
         } catch (appendErr) {
-          try {
-            await withFileLock(capLockFile, async () => {
-              const metaFile = path.join(dir, '.capacity.meta');
-              await adjustCapacityMeta(metaFile, -appendBytes);
-            });
-          } catch {
-            // The append error is reported; a cache left high only makes the next eviction earlier,
-            // and the next directory scan recomputes it.
-          }
+          await releaseCapacity(dir, appendBytes);
           throw appendErr;
         }
 
@@ -920,12 +901,17 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             const jsonBytes = Buffer.byteLength(text);
             const oldJsonBytes = await sizeIfExists(jsonFile);
             const deltaBytes = jsonBytes - oldJsonBytes;
-            await atomicWrite(jsonFile, text);
-            if (deltaBytes !== 0) {
-              await withFileLock(capLockFile, async () => {
-                const metaFile = path.join(dir, '.capacity.meta');
-                await adjustCapacityMeta(metaFile, deltaBytes);
-              });
+            // A growing snapshot reserves its bytes before the write, like an append; a
+            // shrinking one releases them after it (CUR-012).
+            if (deltaBytes > 0) await reserveCapacity(dir, deltaBytes, handle);
+            try {
+              await atomicWrite(jsonFile, text);
+            } catch (writeErr) {
+              if (deltaBytes > 0) await releaseCapacity(dir, deltaBytes);
+              throw writeErr;
+            }
+            if (deltaBytes < 0) {
+              await withFileLock(path.join(dir, '.capacity.lock'), () => adjustCapacityMeta(path.join(dir, '.capacity.meta'), deltaBytes));
             }
           }
         }

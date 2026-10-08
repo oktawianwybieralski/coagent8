@@ -92,3 +92,28 @@ test('Concurrent writers strictly enforce 100MB TOTAL_LIMIT', async t => {
   const metaAfterDel = JSON.parse(fs.readFileSync(path.join(historyDir, '.capacity.meta'), 'utf8'));
   assert.ok(metaAfterDel.totalBytes < TOTAL_LIMIT - 500);
 });
+
+test('CUR-012: a snapshot near the total limit reserves its bytes before it is written', async t => {
+  const TOTAL_LIMIT = 100 * 1024 * 1024;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-history-snapshot-capacity-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  process.env.coagent8_DIR = dir;
+  const sess = createSession('gemini', dir);
+  const writer = createHistoryWriter(sess.sessionHandle, dir, 'gemini', 'turn-1');
+  writer.accept({ type: 'turn_started' });
+  for (let i = 0; i < 20; i++) {
+    writer.accept({ type: 'assistant_delta', messageId: 'msg-1', text: 'x'.repeat(1024) });
+    await writer.flush();
+  }
+  const historyDir = getHistoryDir();
+  const snapshot = path.join(historyDir, `${sess.sessionHandle}.json`);
+  const meta = path.join(historyDir, '.capacity.meta');
+  assert.equal(fs.existsSync(snapshot), false, 'streaming deltas are not materialized');
+  // Room for the small turn_finished append, not for the ~20 KiB snapshot.
+  fs.writeFileSync(meta, JSON.stringify({ totalBytes: TOTAL_LIMIT - 2048 }));
+  writer.accept({ type: 'turn_finished', status: 'completed' });
+  await assert.rejects(writer.flush(), /History total limit reached/);
+  assert.equal(fs.existsSync(snapshot), false, 'the refused snapshot was never written');
+  const total = JSON.parse(fs.readFileSync(meta, 'utf8')).totalBytes;
+  assert.ok(total <= TOTAL_LIMIT, `accounted total ${total} stays within the limit`);
+});

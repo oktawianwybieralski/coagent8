@@ -43,8 +43,8 @@ owns the detailed list. Remaining limitations include backend-only timeout
 accounting, mandatory
 session storage even with history off, and no first-turn handle before return.
 Codex authentication is inferred; interactive approval and several native host
-flows remain unverified. POSIX unexpected-parent-death cleanup and an
-instantaneous strict archive budget remain open. Other-revision tree review is
+flows remain unverified. POSIX unexpected-parent-death cleanup remains open.
+Other-revision tree review is
 not available in this beta; use current workspace changes.
 
 ## Feedback

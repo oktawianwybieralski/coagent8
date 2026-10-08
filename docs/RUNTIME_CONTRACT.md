@@ -385,9 +385,11 @@ still load. Credential redaction buffers an uncommitted tail across stream batch
 Cursors are opaque and revision-bound; writes between pages yield
 `HISTORY_CHANGED`. Resource reads are separate from pagination.
 Per-session append locking coexists with a short global capacity-accounting lock.
-The append budget is checked before writing. Materialized JSON is written before
-its byte delta is accounted, so 100 MiB is not a strict instantaneous disk ceiling
-(`CUR-012`, source inspection).
+Every write reserves its bytes in the 100 MiB total before it happens: log
+headers, appends and the growth of a materialized JSON snapshot (`CUR-012`). A
+refused reservation evicts the oldest other sessions first, then fails the archive
+write, never the turn. The accounted total is the ceiling; an atomic snapshot
+replacement briefly holds the old file and its temporary successor on disk.
 The 60 KiB streaming regression measured about 1.05 times response bytes on
 disk; it does not prove a universal CPU/memory complexity bound.
 
@@ -492,7 +494,6 @@ These are open implementation issues, not relaxed security requirements.
 | CUR-008 | Sessions remain mandatory with archival disabled; first active handle is unavailable until return | `SESSION-001` / `HISTORY-002` |
 | CUR-009 | Codex auth is inferred; live UI consent and several host integrations remain unverified | `DIAGNOSTICS-001` / `INSTALL-001` |
 | CUR-011 | POSIX unexpected-parent-death cleanup is not implemented | `WINDOWS-001` |
-| CUR-012 | Snapshot bytes are accounted after writing; the archive budget is not a strict instantaneous disk ceiling | `HISTORY-002` |
 | CUR-013 | Current-workspace guard implemented locally: other-tree review is refused before a turn; full review of another tree remains unavailable | `AUDIT-001` / `SURFACE-001` |
 
 The original `c265cdf` audit remains historical evidence. Its process-identity,

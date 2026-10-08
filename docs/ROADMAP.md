@@ -1967,10 +1967,19 @@ without a model call.
   altering storage. Preserve existing histories, recovery and pagination
   consistency. Do not delete user data outside the documented retention.
   Retention rules documented in `docs/RUNTIME_CONTRACT.md`, section 4.
-- [ ] `CUR-012`: enforce or explicitly specify snapshot capacity accounting.
+- [x] `CUR-012`: enforce or explicitly specify snapshot capacity accounting.
   Source writes materialized JSON before adding its byte delta, so the 100 MiB
   archive budget is not a strict instantaneous ceiling. Add a near-capacity
   snapshot regression before claiming the stronger bound.
+  Local implementation on `fix/vsix-presentation` (2026-10-08): one
+  `reserveCapacity` reserves every write before it happens (log header, append
+  and snapshot growth), evicting the oldest other sessions first; a failed write
+  releases its reservation and a shrinking snapshot releases its bytes afterwards.
+  The bound is on accounted bytes: an atomic replacement briefly holds the old
+  snapshot and its temporary successor. Regression:
+  `tests/sessions/history-capacity.test.js` (a ~20 KiB snapshot with 2 KiB left
+  is refused, never written, and the total stays within 100 MiB); it fails on the
+  previous source.
 
 ### `INSTALL-001` / `MIGRATION-001` - optional setup and presentation
 
