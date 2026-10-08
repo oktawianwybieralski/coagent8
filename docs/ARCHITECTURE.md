@@ -52,6 +52,50 @@ turns/processes, sessions own continuation and integrations own registrations.
 Calling another module does not transfer its responsibility. Extend these owners
 for tasks; introduce a scheduler only for actual dependency/concurrency work.
 
+### Dependency boundaries
+
+The table above describes the current checkout. The ownership below is the
+target for [SIMPLIFY-001](ROADMAP.md#simplify-001---module-boundary-migration),
+not a claim that the files have moved. It implements the
+[P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
+
+| Target owner | Responsibility and dependency direction |
+| --- | --- |
+| index.ts and explicit composition modules | Wire concrete implementations and dispatch startup; no domain policy. Keep optional setup loading lazy. |
+| mcp/ | Server, stdio lifecycle, schemas, MCP handlers, resources, elicitation and Markdown envelopes. Calls application operations; no application/domain module imports it. |
+| execution/ | Application turn lifecycle and selection orchestration; composes models, backends, sessions and review operations. Returns neutral results/evidence; consent and progress use narrow callbacks. |
+| execution/runtime/ | Owned process handles/groups, CLI command resolution, decoding and bounded streams. Shared by adapters and integrations; never imports the controller or application policy. |
+| models/ | Catalog/identifier rules, price evidence, model comparison, consent decisions and observed model storage. Uses contracts, storage and narrowly scoped configuration/security helpers; no concrete adapter registry or native CLI discovery. |
+| backends/ | Provider adapters, registry, native discovery, probe caching and quota observations. Depends on contracts, runtime primitives and model rules/storage; does not import application selection or transport handlers. |
+| sessions/ | Continuation, leases and history. Uses contracts, storage, security and workspace identity; no controller/transport dependency. |
+| review/ | Review input completeness, snapshot identity and verdict evaluation. Uses workspace/contracts; neither depends on MCP nor formats its envelope. |
+| config/ | Validated file/editor overrides and data/config locations. Uses contracts (including shared syntax validators), storage and security; no models/backends implementation, session service or policy execution. |
+| workspace/ | Workspace choice, canonical paths and bounded Git evidence collection. Uses contracts and runtime primitives; no sessions or MCP imports. MCP roots arrive as neutral data. |
+| storage/ | File locking, atomic writes and bounded file reads. No configuration, models, sessions, transports or application policy. |
+| security/ | Credential/diagnostic redaction, including safe stream boundaries. No history store, provider selection or transport dependencies. |
+| contracts/ | Shared provider identity, errors, events and execution/catalog/policy contracts. No implementation or SDK imports; domain-local types stay with their owner. |
+| diagnostics/ | Readiness and sanitized issue evidence composed from domain services/adapters. No MCP envelopes or dependency back from execution to diagnostic presentation. |
+| integrations/, extensions/vscode/ | Optional installation, registrations and editor UI using shared configuration and runtime mechanisms. Core execution never imports client setup/UI. |
+
+Keep generated assets in generated/ and branding metadata in constants.ts;
+tool names belong to MCP. Do not create empty directories for future milestones.
+The same direction applies to transitive runtime imports and type dependencies;
+an allowed import must not transitively load the caller or optional installer.
+
+Known migration edges include controller -> tools/result and tools/review-gate,
+config/model-cache/integrations -> sessions/lock, and bounded file consumers ->
+execution/stream. Moving model-selection unchanged would leave models -> backend
+registry/probes while backends use model rules/storage. Separate orchestration
+from policy before declaring that boundary complete. Provider routing that
+composes model selection belongs with application orchestration; native quota
+collection and cache ownership remain with backends.
+
+The current session.ts -> history.ts -> session.ts cycle also needs removal:
+history retention needs active-session evidence, not the session service itself.
+Use a narrow activity/lease contract without changing lock ordering or eviction
+protection. Configuration's model-name validation must use an independent syntax
+contract if models also consume configuration; do not create a config/models cycle.
+
 ## Current MCP contract
 
 | Tool | Contract |

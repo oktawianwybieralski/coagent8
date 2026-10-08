@@ -27,6 +27,7 @@ operation. Historical plans and RFCs do not override this direction.
    - **GitHub & branch protection**: Direct pushes to `main` strictly forbidden, green CI matrix, clean PR squash-and-merge.
    - **Verifiable reality**: Zero hallucinated claims, honest evidence, no weakened tests, synchronized metadata.
    - **Production reliability**: Strict TypeScript strict mode, leak-free process management, defensive schema validation.
+   - **Dependency boundaries (P0)**: One owner per capability; dependencies follow the architecture direction. No new runtime/type cycles, reverse dependencies or transport coupling in the engine. Existing violations require explicit migration, not copied patterns; see [core boundary rules](./.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
 
 1. **[P0: Security & Execution Profiles (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
    - Current mandatory read-only profiles: Codex app-server verifies readOnly/never and

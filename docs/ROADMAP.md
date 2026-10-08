@@ -64,6 +64,126 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 5. Accept CLI execution, supported clients/platforms and benchmarks
    (`CLI-FIRST-001`, `COAGENT-008`), then complete the release gates.
 
+## SIMPLIFY-001 - module boundary migration
+
+Local implementation plan requested on 2026-10-08. Status: rules/design only;
+no source migration or dependency enforcement has been implemented. This is
+the active plan, not an additional plan under docs/.local/. Work stays local;
+Git integration and publication remain owner-managed. Audit blockers retain
+priority. Apply the slices before expanding the affected owners for COAGENT
+and CLI-FIRST, without implementing those features as part of this refactor.
+
+Use the [target ownership map](ARCHITECTURE.md#dependency-boundaries) and
+[P0 rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
+Success means clear ownership and dependency direction, not fewer visible files.
+
+### Ordered slices and acceptance
+
+- [ ] **S0 - Capture the actual baseline.** Recheck branch, dirty files and
+  concurrent work before any move. Preserve the current checkout and local
+  changes; no automatic stash/reset/rebase or new checkout. Inventory runtime,
+  type-only, dynamic and re-export edges, cycles, package/build entrypoints,
+  source-importing tests, extension imports and generated references. Record
+  exact legacy edges with S1-S6 owners. Distinguish existing failures from
+  migration failures. Implement on an appropriate topic branch under the Git
+  rules when the owner integrates the existing local stack.
+- [ ] **S1 - Extract contracts and shared mechanisms.** Split conversation.ts
+  and the shared parts of backends/types.ts into cohesive contracts; keep
+  adapter-local types in backends. Move file locking/atomic writes from
+  sessions/lock.ts and bounded file reads from execution/stream.ts to storage/.
+  Keep byte/stream/process primitives in execution/runtime/; they must not
+  import the controller. Group configuration and separate data-directory
+  resolution from workspace choice in paths.ts. Move canonical workspace
+  identity to workspace/; session handle validation stays with sessions.
+  Acceptance: config, model stores and integrations no longer depend on
+  session implementation or application execution for file operations.
+- [ ] **S2 - Separate execution from MCP presentation.** Extract review input
+  and verdict policy into review/. Make the controller return a neutral result
+  with all evidence needed by handlers. Move formatting to the transport edge;
+  keep consent, cancellation and progress contracts independent of the SDK.
+  Then group server.ts, stdio-server.ts and transport parts of tools/ in mcp/.
+  Keep index.ts as dispatch/composition. Acceptance: execution and review have
+  no runtime or type imports from MCP; review completeness/post-turn snapshot
+  checks, redaction, error status and Markdown-only execution answers survive.
+- [ ] **S3 - Separate model policy from provider discovery.** Group catalog,
+  identifier, price, governance and model-store modules in models/. Split
+  model-selection.ts and consent.ts: pure decisions stay there; registry,
+  native observations, effective selection and user-consent sequencing belong
+  to application operations. Move the routing composition accordingly; keep
+  probes, native quota reads, cooldown/cache mechanisms and adapters in
+  backends. Supply observations through narrow contracts. Doctor and execution
+  reuse the same selection policy. Acceptance: no models/backends cycle,
+  duplicate policy or change to explicit-model, price-limit and consent rules.
+- [ ] **S4 - Split history by responsibility.** With storage extracted,
+  split sessions/history.ts into history reader/recovery, writer and
+  retention/capacity modules; place history-page.ts alongside them. Move safe
+  credential fragment boundaries together with redaction into security/.
+  Keep the session service entrypoint cohesive. Replace the current
+  session.ts/history.ts import cycle with a narrow activity/lease contract.
+  Extract one responsibility at a time; preserve lock order, reservations
+  and finalization semantics. Acceptance: history remains compatible on disk
+  and across restart; no session/history cycle or duplicated cache/capacity state.
+- [ ] **S5 - Finish consumers and physical layout.** Update diagnostics,
+  integrations, extension imports, tests, fixtures, scripts and documentation
+  to their owning modules. Mirror source owners in unit tests; retain e2e,
+  consumer, helpers and fixtures as distinct test purposes. Split remaining
+  mixed files only for demonstrated responsibility conflicts. Keep adapters
+  in provider directories and generated assets in generated/. Remove stale
+  internal forwarding files instead of leaving permanent import aliases.
+  Acceptance: no unresolved old paths, orphan modules, eager setup imports or
+  broken packaged entrypoints; preserve genuinely public compatibility paths.
+- [ ] **S6 - Enforce and accept the final boundaries.** Add an automated
+  dependency check using the real module graph, covering types, dynamic imports
+  and re-exports as well as ordinary imports. Prove it detects forbidden edges
+  and cycles with isolated fixtures. If staged earlier, allow only individually
+  recorded legacy edges with removal stages, never directory-wide exclusions;
+  remove those entries as slices land. Wire it into local and CI verification
+  without bypassing existing checks. Update the architecture's current map
+  only after source moves, and record evidence in HANDOFF. Independent review
+  and required remote checks precede merge; local passes are not release approval.
+
+Every slice includes its import/caller/test/reference updates and relevant
+checks; S5 is a final sweep, not permission to leave earlier slices broken.
+Separate mechanical moves from behavior-affecting boundary extraction so each
+diff is reviewable. Roll back only the owned slice against its recorded baseline,
+preserving concurrent edits and user data; never reset the whole workspace.
+
+### Risks and verification
+
+| Area | Preserve and verify |
+| --- | --- |
+| Concurrent local work | Re-read files immediately before edits; do not move modules while another change owns them. Stop the affected slice on a conflict and reconcile it without overwriting work. |
+| Import graph | Check types and runtime edges separately; avoid barrel-induced eager loading, split singleton caches and duplicate registries. A successful typecheck alone does not prove boundaries. |
+| Model/config state | Preserve precedence, exact/approximate/stale price handling, explicit selections, consent recheck timing, remembered approvals, observation keys and on-disk schemas. Re-inspect current source; the price work is evolving. |
+| Execution and review | Preserve cancellation propagation, active task tracking, session release, warnings/footer, typed failures and server-derived review acceptance. Moving formatting must not bypass security/review gates. |
+| Storage and history | Test lock contention/renewal, torn-tail recovery, capacity reservation/release, cache invalidation, retention and UTF-8 pagination. Preserve file paths, bytes and history compatibility. |
+| Redaction | Test secrets split across chunks and persisted bytes, credential-only answers and diagnostic home-path redaction. Moving redaction must not change when unsafe fragments become visible. |
+| Processes | Preserve hidden Windows children, owned teardown and protocol interruption; never switch to PID/name/PPID-selected cleanup. Directory changes do not establish native-host safety. |
+| Packaging | Check relative package.json/assets paths, setup.cjs sibling loading, generated icon output, build entrypoints, source tests, VSIX imports and tarball contents. Build before tests that consume dist. |
+
+Select checks using the [quality gate](../.agents/rules/04-quality-gate.md):
+
+- This rules/plan change: content/source/link review and git diff --check only.
+- S1: typecheck; config/editor, workspace, lock, stream, cache and affected
+  integration tests. Build/package/consumer checks when moved paths affect
+  entrypoints or shipped contents.
+- S2: typecheck, build, controller/pipeline, tool result/review, surface/server
+  and MCP/stdio e2e checks, including legacy aliases and workspace resources.
+- S3: typecheck and catalog/identifier/selection/governance/price-limit,
+  routing/probe/cache/doctor plus execution selection tests; adapter tests when
+  their discovery bindings change.
+- S4: typecheck, history/capacity/session/lock/redaction and controller-history
+  regressions, including interruption and restart recovery.
+- S5-S6: dependency-check fixtures, test discovery and docs tooling if affected;
+  full local package gate once for the combined shared-runtime refactor:
+  typecheck, build, full suite, package inspection and consumer smoke. Run
+  lint:docs/docs when source documentation changes. Preserve all required CI
+  jobs and distinguish fixture evidence from native client/OS acceptance.
+
+Do not repeat a passing full gate after every move. New failures or changes
+determine which checks must run again. Add behavioral regressions for uncovered
+risks, not tests that merely mirror the new directory tree.
+
 ## Agent usability acceptance
 
 All items below are planned, not available arguments. Extend existing owners;

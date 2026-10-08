@@ -16,6 +16,50 @@
 
 ---
 
+## Dependency and responsibility boundaries
+
+These are P0 engineering invariants, not directory naming preferences. The
+[architecture ownership map](../../docs/ARCHITECTURE.md#dependency-boundaries)
+defines the dependency direction; the
+[migration plan](../../docs/ROADMAP.md#simplify-001---module-boundary-migration)
+records existing violations and their removal. A directory move alone does not
+establish compliance.
+
+* **One owner per responsibility**: A module owns one coherent capability and
+  its side effects. Consumers call that owner; they do not copy its policy,
+  persistence, validation or lifecycle logic. New files belong to a named
+  capability, never to a generic `utils`, `common` or `shared` dumping ground.
+  File count and line count are signals for review, not arbitrary limits.
+* **Dependencies follow ownership**: Transport/UI layers call application
+  operations. Application operations compose domain services and provider
+  adapters. Domain policy and reusable mechanisms must not import their callers,
+  client transports, presentation code or installation/UI modules. Provider
+  adapters translate provider protocols; they do not own application routing or
+  user approval policy. Review all cross-boundary dependencies, including types.
+* **No new cycles or hidden reverse dependencies**: Do not introduce runtime or
+  type-only import cycles. Dynamic imports, re-exports, barrel files, global
+  registries and service locators cannot hide a forbidden dependency. Use a
+  narrow contract owned by the consumer or a genuinely shared contract, and
+  supply its implementation at the composition boundary. Do not move all types
+  into a common file merely to silence a dependency check.
+* **Contracts are independent**: Shared request/result/event contracts do not
+  load implementation modules or depend on MCP/editor/provider SDK types.
+  Execution returns transport-independent results and evidence. Transport
+  formatting must not own or weaken policy, redaction or review acceptance.
+* **Mechanisms do not acquire policy**: File locks, atomic writes, bounded I/O
+  and process primitives may implement their named effects, but must not load
+  user configuration, choose models, start sessions or register clients as an
+  incidental import/use effect. Optional integration code stays outside the
+  normal server startup dependency graph.
+* **Existing violations are migration debt, not precedents**: Inventory exact
+  edges and their removal stage before refactoring. Do not add edges to, expand
+  or conceal a legacy cycle. Untouched debt does not require an unrelated
+  rewrite. Each migration slice removes its declared violations and preserves
+  behavior, public contracts and stored data; update the ownership map and
+  verify the affected dependency graph. A new violation blocks acceptance.
+
+---
+
 ## 2. GitHub Integrity & Branch Governance
 * **Direct pushes to `main` are strictly forbidden.** Under no circumstances may an agent or contributor commit or push directly to `main` during normal development. The sole permitted exception is an explicit, owner-authorized history recovery procedure using atomic force-with-lease for incident mitigation.
 * **Isolated Feature & Release Branches**: All development must occur on dedicated topic branches (prefixes defined in `02-git-workflow.md`, including `docs/*`) created from and targeting the active release branch (`release/vX.Y.Z`, currently `release/v1.0.0`); only final release and hotfix PRs target `main`. See [02-git-workflow](02-git-workflow.md).

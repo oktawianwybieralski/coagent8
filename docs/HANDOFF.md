@@ -43,6 +43,18 @@ Source anchors:
 
 ## Next implementation
 
+The owner requested dependency rules before source reorganization on 2026-10-08.
+The P0 boundary rules and target architecture now have a local plan under
+[SIMPLIFY-001](ROADMAP.md#simplify-001---module-boundary-migration). This change
+is documentation only; source moves and automated dependency enforcement are
+pending. Start with S0's fresh baseline because selection/doctor changes are
+ongoing in this checkout. The migration does not change the release status or
+the runtime evidence recorded below.
+
+Rules/plan verification: source/content review and local Markdown link/anchor
+checks passed; added text uses ASCII and git diff --check passed. Runtime tests,
+builds and backend calls were not run for this prose-only change.
+
 AX-001/002 landed locally (contract in
 [ARCHITECTURE.md](ARCHITECTURE.md#price-limit)): output_price_below with strict,
 consent-independent checks before consent and before session acquisition;

@@ -53,6 +53,10 @@ splitting behavior, or precisely naming a coherent owner; generic names do not
 justify unrelated work. Follow the ownership boundaries in
 [ARCHITECTURE.md](../../docs/ARCHITECTURE.md#names-define-responsibility).
 
+Dependency direction and separation are mandatory
+[P0 invariants](00-core-invariants.md#dependency-and-responsibility-boundaries),
+not optional style. Directory names and type-only imports cannot exempt a module.
+
 ## TypeScript Documentation
 
 Follow [code documentation](../../docs/ARCHITECTURE.md#code-documentation-and-package-evidence) for TSDoc
