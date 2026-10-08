@@ -2224,10 +2224,27 @@ Owner acceptance of the installed VSIX, 2026-10-07 (`fix/vsix-presentation`):
   one replaced `config.json.backup`, and Show MCP Servers (`workbench.mcp.listServer`,
   verified in VS Code source). The schema now describes every field, without
   descriptions beside `$ref`; tags gain llm, mcp-server and vibe-coding. The CLI and
-  other MCP hosts still read only the file. Local typecheck, 5 editor-settings and
-  22 provider/onboarding fixtures pass. Native UI acceptance is NOT_RUN. VS Code's
-  extension editor has no Manifest tab (source: extensionEditor.ts), so the owner's
-  "Manifest and Configuration tabs" report needs a reference before any change.
+  other MCP hosts still read only the file.
+- [x] Owner requirement of 2026-10-08: uninstalling removes everything the extension
+  created, and a reinstall behaves like the first installation. VS Code source
+  (extensionLifecycle.ts postUninstall, extensionStorage.ts) shows that uninstall
+  deletes the extension's globalStorage folder but keeps its globalState, and never
+  touches ~/.coagent8. The extension now keeps onboarding choices in
+  `setup-state.json` and passes `coagent8_DIR` (sessions, history, caches) and the
+  default config.json in its globalStorage; earlier globalState keys are removed on
+  activation. The standalone CLI keeps ~/.coagent8; `coagent8.configPath` shares a
+  file deliberately. Settings fixes from owner testing: the three model settings
+  had an empty default failing their own pattern (shown red); `askAbovePrice` had a
+  nullable type without a Settings control. A manifest test now rejects both. VS
+  Code source (mcpService.ts updateCollectedServers, McpServerDefinition.equals)
+  confirms that a changed definition, including env, stops the running server and
+  it restarts on demand, so settings need no manual restart. The Manifest and
+  Configuration tabs and the "MCP Servers - Installed" list belong to mcp.json and
+  MCP gallery servers (mcpServerEditor.ts, mcpWorkbenchService.ts); an extension
+  provider appears in MCP: List Servers. Appearing there needs an MCP Registry
+  entry, an owner decision outside beta.2. Keywords gained model-context-protocol,
+  ai, ai-agents and second-opinion; pricing is Free. Local checks are listed in
+  the handoff; native acceptance is NOT_RUN.
 - No `vscode:uninstall` cleanup is currently implemented: the integration guide keeps the
   explicit preview/confirm cleanup command as the only path, and such a hook
   could not reach `globalState` either. Documentation tells users to run cleanup

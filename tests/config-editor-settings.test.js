@@ -104,3 +104,18 @@ test('every runtime setting is contributed to VS Code under the same key, scoped
     assert.ok(properties[`coagent8.${key}`].markdownDescription.length > 20, `${key} is described`);
   }
 });
+
+test('every contributed setting has an editable control and a default that passes its own validation', () => {
+  const properties = require('../extensions/vscode/package.json').contributes.configuration.properties;
+  for (const [key, schema] of Object.entries(properties)) {
+    assert.equal(typeof schema.type, 'string', `${key}: a nullable or mixed type has no Settings editor control`);
+    assert.ok(Object.hasOwn(schema, 'default'), `${key} has a default`);
+    if (schema.pattern) assert.match(schema.default, new RegExp(schema.pattern), `${key}: the default is shown as invalid`);
+    if (schema.enum) assert.ok(schema.enum.includes(schema.default), `${key}: the default is one of the choices`);
+  }
+});
+
+test('a cleared model field means no model chosen, not an invalid model', () => {
+  const config = withSettings({ 'codex.defaultModel': '', 'claude.defaultModel': '' }, loadConfig);
+  assert.deepEqual(config.backends, { codex: { defaultModel: 'file-codex' } });
+});

@@ -7,11 +7,11 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { getConfigFile, validateConfig } from '../../../src/config.js';
+import { validateConfig } from '../../../src/config.js';
 import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
-import { resetConfigurationFile } from './configuration.js';
+import { readSetupState, resetConfigurationFile, updateSetupState } from './configuration.js';
 
 const LABELS: Record<SetupClient, string> = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravity CLI' };
 /** Extensions whose bundled CLI paths the runtime receives through `coagent8_EXTENSION_PATHS`. */
@@ -26,14 +26,18 @@ const VENDOR_EXTENSIONS: Record<SetupClient, { id: string; name: string }> = {
 const CLI_WAIT_MS = 180_000;
 const CLI_POLL_MS = 2_000;
 
-/** Supplies actual installed paths to the independent runtime, never durable overrides. */
-function discoveryEnvironment(): NodeJS.ProcessEnv {
+/**
+ * Supplies actual installed paths to the independent runtime, never durable overrides.
+ * @param storage - The extension's global storage, which VS Code deletes on uninstall; the
+ * runtime keeps its sessions, history and caches there.
+ */
+function discoveryEnvironment(storage: string): NodeJS.ProcessEnv {
   const locations: Record<string, string> = {};
   for (const [client, id] of Object.entries(EXTENSIONS)) {
     const extension = vscode.extensions.getExtension(id);
     if (extension?.extensionUri.scheme === 'file') locations[client] = extension.extensionPath;
   }
-  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_CONFIG: configurationFile(), [EDITOR_SETTINGS_ENV]: editorSettings() };
+  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_DIR: storage, coagent8_CONFIG: configurationFile(storage), [EDITOR_SETTINGS_ENV]: editorSettings() };
 }
 /**
  * Serializes the backend, model and approval settings the user set explicitly. Only the user
@@ -48,10 +52,13 @@ function editorSettings(): string {
   }
   return JSON.stringify(values);
 }
-/** Resolves the machine-scoped user setting without accepting workspace policy overrides. */
-function configurationFile(): string {
+/**
+ * Resolves the configuration file: the machine-scoped user setting (never a workspace
+ * value), then `coagent8_CONFIG`, then config.json in the extension's global storage.
+ */
+function configurationFile(storage: string): string {
   const selected = vscode.workspace.getConfiguration('coagent8').get<string>('configPath', '').trim();
-  if (!selected) return path.resolve(getConfigFile());
+  if (!selected) return path.resolve(process.env.coagent8_CONFIG || path.join(storage, 'config.json'));
   const expanded = selected.startsWith('~/') || selected.startsWith('~\\') ? path.join(os.homedir(), selected.slice(2)) : selected;
   if (!path.isAbsolute(expanded)) throw new Error('CoAgent8: coagent8.configPath must be an absolute path or start with ~/; leave it empty to use the default.');
   return path.normalize(expanded);
@@ -116,6 +123,11 @@ async function waitForCli(title: string, found: () => boolean): Promise<boolean>
 }
 /** Registers the independent MCP provider and explicit onboarding/registration/cleanup actions. */
 export function activate(context: vscode.ExtensionContext): void {
+  const storage = context.globalStorageUri.fsPath;
+  // Earlier builds kept onboarding state in globalState, which VS Code keeps after uninstall.
+  for (const key of ['setupClients', 'setupOffered', 'setupDismissed']) {
+    if (context.globalState.get(key) !== undefined) context.globalState.update(key, undefined).then(undefined, showLifecycleError);
+  }
   const changed = new vscode.EventEmitter<void>();
   context.subscriptions.push(changed);
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
@@ -131,8 +143,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const command = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
       if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 24+ executable.');
       return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {
-        coagent8_EXTENSION_PATHS: discoveryEnvironment().coagent8_EXTENSION_PATHS!,
-        coagent8_CONFIG: configurationFile(),
+        coagent8_EXTENSION_PATHS: discoveryEnvironment(storage).coagent8_EXTENSION_PATHS!,
+        coagent8_DIR: storage,
+        coagent8_CONFIG: configurationFile(storage),
         [EDITOR_SETTINGS_ENV]: editorSettings(),
       }, `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
     },
@@ -174,7 +187,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (folders.length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
     clearCliResolverCache();
-    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment() };
+    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment(storage) };
   }
   let lastStatus: SetupStatus[] = [];
   /** One readable state per CLI; the full evidence is written only through Show Details. */
@@ -235,7 +248,7 @@ export function activate(context: vscode.ExtensionContext): void {
     try {
       const results = await status('Set Up Coding CLIs');
       if (hidden) return undefined;
-      const remembered = context.globalState.get<SetupClient[]>('setupClients');
+      const remembered = readSetupState(storage).setupClients;
       picker.items = results.map(result => ({ label: LABELS[result.client], client: result.client, description: describe(result) }));
       picker.selectedItems = picker.items.filter(item => remembered?.includes(item.client));
       picker.placeholder = 'Select CLIs to install or check (native-host registration is separate)';
@@ -307,7 +320,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:okidev.coagent8-mcp'); });
   register('coagent8.manageMcpServers', async () => { await vscode.commands.executeCommand('workbench.mcp.listServer'); });
   register('coagent8.resetConfiguration', async () => {
-    const file = configurationFile();
+    const file = configurationFile(storage);
     const dirty = vscode.workspace.textDocuments.some(document => document.uri.scheme === 'file' && path.resolve(document.uri.fsPath) === path.resolve(file) && document.isDirty);
     if (dirty) throw new Error('Save or revert the configuration editor before resetting the file.');
     const choice = await vscode.window.showWarningMessage(`Reset ${file} to defaults? The current file will be saved as ${path.basename(file)}.backup, replacing an earlier backup. CoAgent8 settings in VS Code, CLI sign-ins and MCP registrations will be retained.`, { modal: true }, 'Reset Configuration');
@@ -320,12 +333,12 @@ export function activate(context: vscode.ExtensionContext): void {
   register('coagent8.resetSetupState', async () => {
     const choice = await vscode.window.showWarningMessage('Reset the remembered CLI selection and welcome dismissal? Configuration files, registrations and CLI sign-ins will be retained.', { modal: true }, 'Reset Setup State');
     if (choice !== 'Reset Setup State') return;
-    for (const key of ['setupClients', 'setupOffered', 'setupDismissed']) await context.globalState.update(key, undefined);
+    await updateSetupState(storage, null);
     await showWelcome();
     await vscode.window.showInformationMessage('CoAgent8 setup state reset. The welcome notification appears only when no compatible signed-in CLI is ready.');
   });
   register('coagent8.openConfiguration', async () => {
-    const file = configurationFile();
+    const file = configurationFile(storage);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const defaults = validateConfig({ $schema: vscode.Uri.file(context.asAbsolutePath('schemas/config.schema.json')).toString() });
     try { fs.writeFileSync(file, JSON.stringify(defaults, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
@@ -336,7 +349,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const picked = await pickClients();
     if (!picked?.clients.length) return;
     const { results, clients: selected } = picked;
-    await context.globalState.update('setupClients', selected);
+    await updateSetupState(storage, { setupClients: selected });
     // Checks run again only after an installation or sign-in could have changed a CLI.
     let changed = false;
     for (const client of selected) {
@@ -378,14 +391,14 @@ export function activate(context: vscode.ExtensionContext): void {
     if (choice !== 'Remove Owned Registrations') return;
     const result = await cleanupClients({ home: os.homedir(), env: process.env, apply: preview.token });
     report(result, true);
-    if (!result.stateError && !result.results.some(item => item.action === 'blocked' || item.action === 'preserved')) await context.globalState.update('setupClients', []);
+    if (!result.stateError && !result.results.some(item => item.action === 'blocked' || item.action === 'preserved')) await updateSetupState(storage, { setupClients: [] });
     await vscode.window.showInformationMessage('Cleanup results are in CoAgent8 Setup. Restart native hosts to refresh cached catalogs. Uninstall the VSIX separately to remove its provider; profile databases and other extensions are retained.');
   });
   async function showWelcome(): Promise<void> {
-    if (vscode.env.remoteName || context.globalState.get<boolean>('setupDismissed')) return;
+    if (vscode.env.remoteName || readSetupState(storage).setupDismissed) return;
     if ((await status('Welcome CLI Check')).some(result => result.ready)) return;
     const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible signed-in coding CLI. Check existing CLIs or choose an installation.', 'Set Up CLIs', "Don't Show Again");
-    if (choice === "Don't Show Again") await context.globalState.update('setupDismissed', true);
+    if (choice === "Don't Show Again") await updateSetupState(storage, { setupDismissed: true });
     if (choice === 'Set Up CLIs') await vscode.commands.executeCommand('coagent8.setup');
   }
   void showWelcome().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`); });

@@ -133,8 +133,17 @@ options are VS Code settings too, passed by the extension as explicit user value
 in `coagent8_EDITOR_SETTINGS`; config.json is no longer the only source in VS
 Code. Precedence and the new Open Settings, Reset Configuration and Show MCP
 Servers commands are described in the roadmap INSTALL entry and the runtime
-contract. The owner's request for Manifest and Configuration tabs is open: VS
-Code's extension editor has no Manifest tab, so the referenced view is needed.
+contract.
+
+Uninstall follow-up (2026-10-08): the extension's data, configuration default and
+onboarding choices moved to its globalStorage, which VS Code deletes on uninstall;
+earlier globalState keys are removed on activation. Red settings and the nullable
+price threshold are fixed and guarded by a manifest test. The Manifest and
+Configuration tabs and the "MCP Servers - Installed" list cover only mcp.json and
+MCP gallery servers; publishing to the MCP Registry is an open owner decision.
+The owner's earlier reset attempt failed before changing anything because the
+one-off script refused to overwrite its previous backup; it now writes a new
+timestamped backup directory per run.
 
 ~~~yaml
 task_id: DOCS-001

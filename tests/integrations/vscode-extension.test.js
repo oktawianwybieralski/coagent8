@@ -11,15 +11,14 @@ function affects(...changed) {
   return { affectsConfiguration(section) { return changed.some(key => key === section || key.startsWith(section + '.')); } };
 }
 
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [] } = {}) {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, remembered, command = 'coagent8.setup', failInstall = false, blocked = [], vendorExtensions = [], discoverable = [], dismissed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, awaitState = false } = {}) {
   const handlers = {}, registrations = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
   const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
   const cleanupCalls = [];
-  const notifications = [], stateUpdates = [], openedFiles = [];
-  let selections;
-  const storedState = new Map([['setupClients', remembered], ['setupOffered', true], ['setupDismissed', dismissed], ['unrelatedFutureState', 'retained']]);
+  const notifications = [], legacyUpdates = [], openedFiles = [];
+  const legacy = new Map(Object.entries(legacyState));
   let savedListener, configurationListener;
   let definitionChanges = 0;
   const dispose = () => {};
@@ -114,12 +113,19 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
   const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-extension-'));
+  // Onboarding state lives in the extension's global storage, which VS Code deletes on uninstall.
+  const storage = path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp');
+  const stateFile = path.join(storage, 'setup-state.json');
+  const seeded = { ...(remembered === undefined ? {} : { setupClients: remembered }), ...(dismissed ? { setupDismissed: true } : {}) };
+  if (Object.keys(seeded).length) { fs.mkdirSync(storage, { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(seeded)); }
+  const readState = () => fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined;
+  const initialState = readState();
   fs.mkdirSync(path.join(extensionRoot, 'dist'));
   fs.writeFileSync(path.join(extensionRoot, 'dist/index.cjs'), 'fixture runtime');
   const context = {
     subscriptions: [],
-    globalStorageUri: { fsPath: path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp') },
-    globalState: { get(key) { return storedState.get(key); }, async update(key, value) { stateUpdates.push({ key, value }); if (value === undefined) storedState.delete(key); else storedState.set(key, value); if (key === 'setupClients') selections = value === undefined ? undefined : Array.from(value); } },
+    globalStorageUri: { fsPath: storage },
+    globalState: { get(key) { return legacy.get(key); }, async update(key, value) { legacyUpdates.push({ key, value }); if (value === undefined) legacy.delete(key); else legacy.set(key, value); } },
     asAbsolutePath(relative) { return path.join(extensionRoot, relative); },
   };
   try {
@@ -133,7 +139,17 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
       savedListener();
     }
     await new Promise(resolve => setImmediate(resolve));
-    return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, stateUpdates, storedState, openedFiles, definitionChanges };
+    // The welcome runs after activation; its locked state write completes asynchronously.
+    for (const deadline = Date.now() + 2000; awaitState && readState() === initialState;) {
+      assert.ok(Date.now() < deadline, 'the onboarding state was not written');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const finalState = readState();
+    const state = finalState === undefined ? undefined : JSON.parse(finalState);
+    const stateChanged = finalState !== initialState;
+    const selections = stateChanged && state?.setupClients ? Array.from(state.setupClients) : undefined;
+    const storageFiles = fs.existsSync(storage) ? fs.readdirSync(storage) : [];
+    return { selections, registrations, terminals, requests, errors, reports, cleanupCalls, progress, warnings, events, reveals, notifications, state, stateChanged, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
   } finally { fs.rmSync(extensionRoot, { recursive: true, force: true }); }
 }
 
@@ -141,10 +157,10 @@ test('welcome persists across legacy setupOffered profiles until ready or explic
   const first = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true });
   assert.equal(first.notifications.length, 1);
   assert.deepEqual(first.notifications[0].actions, ['Set Up CLIs', "Don't Show Again"]);
-  assert.deepEqual(first.stateUpdates, []);
+  assert.equal(first.stateChanged, false);
   assert.equal((await runSetupPicker({ installed: [], dismissed: false, activationOnly: true })).notifications.length, 1);
-  const dismissed = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true, action: "Don't Show Again" });
-  assert.deepEqual(dismissed.stateUpdates, [{ key: 'setupDismissed', value: true }]);
+  const dismissed = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true, action: "Don't Show Again", awaitState: true });
+  assert.deepEqual(dismissed.state, { setupDismissed: true });
   const suppressed = await runSetupPicker({ installed: [], dismissed: true, activationOnly: true });
   assert.equal(suppressed.notifications.length, 0);
   assert.equal(suppressed.events.length, 0, 'explicit dismissal avoids startup probes');
@@ -152,6 +168,14 @@ test('welcome persists across legacy setupOffered profiles until ready or explic
   assert.equal(ready.notifications.length, 0);
   assert.equal(ready.terminals.length, 0);
   assert.equal(ready.reveals.length, 0);
+});
+
+test('onboarding state from earlier builds is removed from globalState, which VS Code keeps after uninstall', async () => {
+  const result = await runSetupPicker({ installed: [], dismissed: false, activationOnly: true, legacyState: { setupClients: ['codex'], setupOffered: true, setupDismissed: true, unrelated: 'kept' } });
+  assert.deepEqual(result.legacyUpdates, ['setupClients', 'setupOffered', 'setupDismissed'].map(key => ({ key, value: undefined })));
+  assert.deepEqual([...result.legacy], [['unrelated', 'kept']]);
+  assert.equal(result.notifications.length, 1, 'a legacy dismissal does not suppress the first-install welcome');
+  assert.deepEqual((await runSetupPicker({ installed: [], dismissed: false, activationOnly: true })).legacyUpdates, [], 'nothing to remove');
 });
 
 test('setup reset clears only remembered choices and dismissal, rechecks readiness, and cancellation preserves state', async t => {
@@ -162,12 +186,11 @@ test('setup reset clears only remembered choices and dismissal, rechecks readine
   fs.writeFileSync(file, bytes);
   const options = { command: 'coagent8.resetSetupState', remembered: ['codex'], installed: [], configPath: file };
   const cancelled = await runSetupPicker(options);
-  assert.deepEqual(cancelled.stateUpdates, []);
-  assert.equal(cancelled.storedState.get('setupDismissed'), true);
-  assert.deepEqual(cancelled.storedState.get('setupClients'), ['codex']);
+  assert.equal(cancelled.stateChanged, false);
+  assert.deepEqual(cancelled.state, { setupClients: ['codex'], setupDismissed: true });
   const reset = await runSetupPicker({ ...options, action: 'Reset Setup State' });
-  assert.deepEqual(reset.stateUpdates, ['setupClients', 'setupOffered', 'setupDismissed'].map(key => ({ key, value: undefined })));
-  assert.deepEqual([...reset.storedState], [['unrelatedFutureState', 'retained']]);
+  assert.equal(reset.state, undefined, 'every remembered choice is removed');
+  assert.deepEqual(reset.storageFiles, [], 'no lock or temporary file remains');
   assert.ok(reset.notifications.some(item => item.actions.includes("Don't Show Again")), 'reset offers welcome again when no CLI is ready');
   assert.deepEqual(reset.registrations, []);
   assert.deepEqual(reset.cleanupCalls, []);
@@ -427,7 +450,7 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'dist'));
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'fixture bundle');
-  const context = { subscriptions: [], globalStorageUri: { fsPath: path.join(root, 'User/globalStorage/coagent8') }, asAbsolutePath(relative) { return path.join(root, relative); } };
+  const context = { subscriptions: [], globalStorageUri: { fsPath: path.join(root, 'User/globalStorage/coagent8') }, globalState: { get() { return undefined; } }, asAbsolutePath(relative) { return path.join(root, relative); } };
   module.exports.activate(context);
   assert.equal(providerId, require('../../extensions/vscode/package.json').contributes.mcpServerDefinitionProviders[0].id);
   const definition = provider.provideMcpServerDefinitions()[0];
@@ -437,7 +460,8 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   assert.equal(definition.args[0], path.join(root, 'dist/index.cjs'));
   assert.ok(definition.version.startsWith(require('../../package.json').version + '#'));
   assert.deepEqual(JSON.parse(definition.env.coagent8_EXTENSION_PATHS), {});
-  assert.equal(definition.env.coagent8_CONFIG, path.resolve(require('../../src/config.ts').getConfigFile()));
+  assert.equal(definition.env.coagent8_DIR, context.globalStorageUri.fsPath, 'runtime data lives in storage VS Code deletes on uninstall');
+  assert.equal(definition.env.coagent8_CONFIG, path.resolve(process.env.coagent8_CONFIG || path.join(context.globalStorageUri.fsPath, 'config.json')));
   nodePath = ' C:\\Program Files\\nodejs\\node.exe ';
   configurationListener(affects('coagent8.nodePath'));
   assert.equal(changes, 1);

@@ -32,6 +32,8 @@ function settingValue(key: EditorSettingKey, value: unknown): unknown {
  */
 export function applyEditorSetting(target: Record<string, unknown>, key: EditorSettingKey, value: unknown): void {
   const { field, list } = EDITOR_SETTINGS[key];
+  // A cleared model field in the Settings editor is stored as an empty string: no model chosen.
+  if (key.endsWith('.defaultModel') && value === '') return;
   let node = target;
   for (const segment of field.slice(0, -1)) {
     const nested = node[segment];

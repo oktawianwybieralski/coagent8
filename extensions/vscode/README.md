@@ -120,18 +120,30 @@ models or approval rules.
 | `coagent8.routing.allowedBackends` | all three | Backends CoAgent8 may run (`gemini` is Antigravity) |
 | `coagent8.routing.strategy` | `fixed` | `fixed` uses the default backend; `smart_quota` prefers a backend with quota left |
 | `coagent8.codex.defaultModel`, `coagent8.claude.defaultModel`, `coagent8.gemini.defaultModel` | empty | Model when a request names none; empty uses config.json, then the CLI default |
-| `coagent8.approval.askAbovePrice` | `20` | Ask for approval before a model costing at least this many USD per million output tokens; `null` disables it |
+| `coagent8.approval.askAbovePrice` | `20` | Ask for approval before a model costing at least this many USD per million output tokens (`null` in config.json disables it) |
 | `coagent8.approval.priceMultiplier` | `2` | Ask for approval before a model costing at least this many times the backend's default model |
 | `coagent8.approval.alwaysAskModels` | `[]` | Models that always need approval |
 | `coagent8.approval.neverAskModels` | `[]` | Models that run without asking, unless also in Always Ask Models |
-| `coagent8.configPath` | empty | Configuration file shared with the `coagent8` CLI and other MCP hosts |
+| `coagent8.configPath` | empty | Configuration file; empty uses the extension's own storage |
 | `coagent8.nodePath` | `node` | Node.js 24+ executable used to start the bundled MCP server |
 
 A setting you change in VS Code takes precedence over the same option in the
-configuration file (normally `~/.coagent8/config.json`); a setting left at its
-default keeps the file value. The two model lists are added to the file's lists,
-and an approval with "remember" is saved in the file. The `coagent8` CLI and
-other MCP hosts read only the file.
+configuration file; a setting left at its default keeps the file value. The two
+model lists are added to the file's lists, and an approval with "remember" is
+saved in the file. A changed setting changes the server definition: VS Code stops
+a running CoAgent8 server and starts it again on the next use, so no manual
+restart is needed.
+
+### Where the extension keeps data
+
+The extension keeps everything it creates in its VS Code global storage
+(`globalStorage/okidev.coagent8-mcp`): the configuration file, onboarding choices,
+sessions, history and caches. VS Code deletes this folder when the extension is
+uninstalled, so a later installation starts like the first one. The standalone
+`coagent8` CLI uses `~/.coagent8` instead; set `coagent8.configPath` to
+`~/.coagent8/config.json` to share the configuration file with it. VS Code
+settings, CLI sign-ins, external registrations and the CLI's `~/.coagent8` are not
+removed on uninstall.
 
 If Node.js is unavailable on PATH, set an absolute executable path in VS Code's
 settings. For example, on Windows:
@@ -189,7 +201,7 @@ Uninstalling the VSIX or restarting alone does not remove external registrations
 No production command deletes VS Code profile databases or cache tables.
 
 **CoAgent8: Reset Setup State** clears the remembered CLI selection and welcome
-dismissal through VS Code's storage API, then checks readiness again. Use it to
+dismissal, then checks readiness again. Use it to
 repeat onboarding without reinstalling or restarting the editor. It preserves
 configuration files, native-host registrations, histories and CLI sign-ins.
 The welcome appears only when no compatible signed-in CLI is ready.
@@ -207,7 +219,7 @@ Public answers redact recognized credential formats; diagnostics also redact
 home paths and sensitive configuration patterns. Redaction cannot guarantee
 that arbitrary private source content is removed.
 
-Public conversation history is stored locally under `~/.coagent8` by default.
+Public conversation history is stored locally in the extension's global storage (the CLI uses `~/.coagent8`).
 Archival is best-effort. `coagent8_HISTORY=off` disables archive files, while
 session records and execution leases remain required. Retention and storage
 bounds are specified in the
@@ -253,16 +265,16 @@ controls. For a reproducible problem, ask the chat agent to use `doctor` and
   acceptance remain partial. Package checks do not prove native backend
   readiness or a successful model turn.
 - The welcome notification appears on activation until a CLI is ready or you
-  choose **Don't Show Again**. Dismissal and remembered CLI choices survive
-  uninstall/reinstall in VS Code's stored state.
+  choose **Don't Show Again**. Uninstalling removes the dismissal and remembered
+  CLI choices with the extension's storage.
 
 Use **CoAgent8: Open Settings** for backends, models and approval in VS Code, or
-**CoAgent8: Open Configuration (config.json)** for the file shared with the CLI
-and other MCP hosts. The machine-scoped VS Code setting `coagent8.configPath`
-selects an absolute path or `~/...`; empty uses `coagent8_CONFIG` or
-`~/.coagent8/config.json`. This path is used for editing, the VS Code MCP
-provider and new native-host registrations. Schema completion/validation covers
-the ordinary path; newly created files include a `$schema` association.
+**CoAgent8: Open Configuration (config.json)** for the configuration file. The
+machine-scoped VS Code setting `coagent8.configPath` selects an absolute path or
+`~/...`; empty uses `coagent8_CONFIG`, then config.json in the extension's
+storage. This path is used for editing, the VS Code MCP provider and new
+native-host registrations. Schema completion/validation covers both default
+locations; newly created files include a `$schema` association.
 This command creates defaults only when the file is missing and preserves
 existing contents, including invalid JSON that needs repair. Existing custom
 files need a `$schema` association if they do not already have one.
@@ -271,8 +283,9 @@ Installation/update/uninstall uses the native Extensions view **Restart Extensio
 action when VS Code requests it. **Developer: Restart Extension Host** is a different
 operation and does not apply added/removed extensions. CoAgent8 does not force a
 window reload. Changes to CoAgent8 settings and MCP definitions refresh the
-provider; a running server keeps its old values until it is restarted through
-**MCP: List Servers** (or **CoAgent8: Show MCP Servers**). Bundled-server identity
+provider; VS Code stops a running server whose definition changed and starts it
+again on the next use. **MCP: List Servers** (or **CoAgent8: Show MCP Servers**)
+also starts, stops and restarts it. Bundled-server identity
 also changes when a replacement VSIX keeps the same version number. Restart
 separate native chat hosts when their registrations changed.
 
