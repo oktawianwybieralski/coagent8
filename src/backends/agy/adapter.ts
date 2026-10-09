@@ -10,7 +10,17 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
 import { resolveCliCommand } from '../../execution/cli-resolver.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
-import type { AdapterProbeResult, CatalogModel, ExecutionOptions, InheritedTools, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
+import {
+  DEFAULT_PROBE_TIMEOUT_MS,
+  DEFAULT_MODEL_LIST_TIMEOUT_MS,
+  type AdapterProbeResult,
+  type CatalogModel,
+  type ExecutionOptions,
+  type InheritedTools,
+  type ModelCatalog,
+  type TerminalExecutionResult,
+  type CliAdapter,
+} from '../types.js';
 import { errorCodeOf, type ExecutionError } from '../../contracts/index.js';
 
 export const id = 'agy';
@@ -86,7 +96,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   let version = 'unknown';
 
   // runCommand resolves the command and reports a missing or failing CLI in its result.
-  const res = await runCommand(rawCommand, ['--version'], { timeoutMs: 5000, env: agyEnvironment() });
+  const res = await runCommand(rawCommand, ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS, env: agyEnvironment() });
   if (res.exitCode === 0) {
     installed = true;
     version = res.stdout.trim() || 'installed';
@@ -143,7 +153,7 @@ export async function probe(): Promise<AdapterProbeResult> {
 export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
   if (!probe?.installed) return undefined;
   const resolved = resolveCliCommand(configuredBackendCommand('agy'));
-  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: 5000, env: agyEnvironment() });
+  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS, env: agyEnvironment() });
   if (usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
   let parsed: unknown;
   try { parsed = JSON.parse(usageRes.stdout); } catch { return undefined; }
@@ -300,7 +310,7 @@ export async function listModels(): Promise<ModelCatalog | undefined> {
     // Without a resolvable agy there is no catalog; the turn itself reports why agy cannot run.
     return undefined;
   }
-  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], { timeoutMs: 10_000, env: agyEnvironment() });
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], { timeoutMs: DEFAULT_MODEL_LIST_TIMEOUT_MS, env: agyEnvironment() });
   if (res.exitCode !== 0 || !res.stdout) return undefined;
   const models = parseAgyModels(res.stdout);
   return models.length ? { models, source: 'agy models' } : undefined;
@@ -352,7 +362,7 @@ export async function inheritedTools(): Promise<InheritedTools | undefined> {
   let resolved: ReturnType<typeof resolveCliCommand>;
   try { resolved = resolveCliCommand(configuredBackendCommand('agy')); }
   catch { return undefined; }
-  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], { timeoutMs: 10_000, env: agyEnvironment() });
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], { timeoutMs: DEFAULT_MODEL_LIST_TIMEOUT_MS, env: agyEnvironment() });
   if (res.exitCode !== 0) return undefined;
   let plugins: string[];
   try { plugins = listAgyPlugins(); }

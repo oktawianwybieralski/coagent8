@@ -121,9 +121,91 @@ export interface ExecutionOptions {
   onProgress?: (info: { message?: string; percent?: number }) => void;
   /** Existing thread or session ID for resuming multi-turn conversation. */
   threadId?: string | null;
-  /** Backend process-phase budget in milliseconds; defaults to 900,000, excluding controller preparation. */
+  /**
+   * Backend process-phase budget in milliseconds; defaults to {@link DEFAULT_EXECUTION_TIMEOUT_MS} (900,000 ms).
+   * @remarks Under the complete-call budget contract (`EXEC-001-T07`), this will be migrated to the full call lifecycle in T11.
+   */
   timeoutMs?: number;
   nativeSessionId?: string | null;
   onEvent?: (event: AdapterEvent) => void;
+}
+
+/**
+ * Default total execution timeout in milliseconds (15 minutes).
+ */
+export const DEFAULT_EXECUTION_TIMEOUT_MS = 900_000;
+
+/**
+ * Default process termination grace period in milliseconds before SIGKILL (3 seconds).
+ */
+export const DEFAULT_TEARDOWN_GRACE_MS = 3_000;
+
+/**
+ * Minimum allowable execution timeout in milliseconds (100 ms).
+ */
+export const MIN_EXECUTION_TIMEOUT_MS = 100;
+
+/**
+ * Maximum allowable execution timeout in milliseconds (30 minutes).
+ */
+export const MAX_EXECUTION_TIMEOUT_MS = 1_800_000;
+
+/**
+ * Status indicating whether an execution budget is actively running or stopped.
+ */
+export type BudgetStatus = 'active' | 'caller_aborted' | 'timed_out';
+
+/**
+ * Options configuring execution budget initialization.
+ */
+export interface ExecutionBudgetOptions {
+  /** Total call budget in milliseconds. Must be a finite positive number. */
+  totalBudgetMs?: number;
+  /** Reserved finite teardown allowance in milliseconds. Defaults to {@link DEFAULT_TEARDOWN_GRACE_MS}. */
+  teardownAllowanceMs?: number;
+  /** Optional monotonic clock returning milliseconds; defaults to performance.now. */
+  clock?: MonotonicClock;
+  /** Optional parent abort signal from the caller or host. */
+  parentSignal?: AbortSignal;
+}
+
+/**
+ * Monotonic budget contract tracking execution deadlines and distinguishing timeouts from caller aborts.
+ */
+export interface ExecutionBudget {
+  /** Start time in monotonic milliseconds. */
+  readonly startedAtMs: number;
+  /** Total budget duration in milliseconds. */
+  readonly totalBudgetMs: number;
+  /** Finite cleanup allowance duration in milliseconds. */
+  readonly teardownAllowanceMs: number;
+  /** Absolute monotonic deadline for the complete call including cleanup. */
+  readonly deadlineMs: number;
+  /** Monotonic deadline for primary execution before entering teardown. */
+  readonly executionDeadlineMs: number;
+  /** Remaining wall-clock time for the complete call in milliseconds, clamped to zero. */
+  remainingTotalMs(): number;
+  /** Remaining wall-clock time for the primary execution phase in milliseconds, clamped to zero. */
+  remainingExecutionMs(): number;
+  /** Remaining wall-clock time allocated for teardown in milliseconds, strictly bounded. */
+  remainingTeardownMs(): number;
+  /** Whether the primary execution deadline has been reached or exceeded. */
+  isExecutionExpired(): boolean;
+  /** Whether the total call deadline has been reached or exceeded. */
+  isTotalExpired(): boolean;
+  /** Whether the budget was cancelled by the caller host signal. */
+  isCallerAborted(): boolean;
+  /** Whether the budget has timed out due to deadline expiration. */
+  isTimedOut(): boolean;
+  /** Current lifecycle status of the budget. */
+  status(): BudgetStatus;
+  /** Reason why the budget stopped being active, or undefined if still active. */
+  abortReason(): unknown;
+  /** Abort signal that fires when primary execution deadline expires or parent signal aborts. */
+  readonly executionSignal: AbortSignal;
+  /** Abort signal that fires when absolute call deadline expires or parent signal aborts. */
+  readonly teardownSignal: AbortSignal;
+  /** Releases all scheduled timers and event listeners associated with this budget. */
+  dispose(): void;
 }
 

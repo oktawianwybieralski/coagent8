@@ -7,12 +7,12 @@
  */
 import { BRAND } from '../../brand.js';
 import { runCommand, type StdinChannel } from '../../execution/process.js';
-import type { CatalogModel, ModelCatalog } from '../types.js';
+import { DEFAULT_MODEL_LIST_TIMEOUT_MS, type CatalogModel, type ModelCatalog } from '../types.js';
 import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';
 import { codexAppServerArgs } from './app-server.js';
 
 /** Upper bound for the catalog read; a slower read leaves the selection unchecked. */
-const MODEL_LIST_TIMEOUT_MS = 10_000;
+const MODEL_LIST_TIMEOUT_MS = DEFAULT_MODEL_LIST_TIMEOUT_MS;
 /** Pages read at most; the 0.160 catalog fits in one. */
 const MAX_PAGES = 5;
 

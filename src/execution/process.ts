@@ -29,18 +29,23 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { resolveCliCommand } from './cli-resolver.js';
 import { createLineDecoder, truncateToByteLength } from './runtime/stream.js';
-import type { ExecutionError, TerminalStatus } from '../contracts/index.js';
+import {
+  DEFAULT_EXECUTION_TIMEOUT_MS,
+  DEFAULT_TEARDOWN_GRACE_MS,
+  type ExecutionError,
+  type TerminalStatus,
+} from '../contracts/index.js';
 import { errorCodeOf } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/redaction.js';
 
 /** Default buffer ceiling per output channel (stdout/stderr) in bytes (512 KiB). */
 const MAX_BUFFER_BYTES = 512 * 1024;
 /** Default execution deadline in milliseconds (15 minutes / 900,000 ms). */
-export const DEFAULT_TIMEOUT_MS = 900_000;
+export const DEFAULT_TIMEOUT_MS = DEFAULT_EXECUTION_TIMEOUT_MS;
 /** Maximum allowable standard input payload size in bytes (4 MiB). */
 const MAX_PROMPT_BYTES = 4 * 1024 * 1024;
 /** Default time a protocol CLI has to exit after an interrupt before it is stopped (layer 2). */
-export const INTERRUPT_GRACE_MS = 3000;
+export const INTERRUPT_GRACE_MS = DEFAULT_TEARDOWN_GRACE_MS;
 /** Default POSIX time between `SIGTERM` and `SIGKILL` for an owned process group. */
 export const SIGNAL_GRACE_MS = 250;
 /** Time stdout/stderr may stay open after the root exits before the runner stops reading. */

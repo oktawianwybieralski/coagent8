@@ -2,7 +2,13 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { runCommand } from '../../execution/process.js';
-import type { AdapterProbeResult, ExecutionOptions, CliAdapter, TerminalExecutionResult } from '../types.js';
+import {
+  DEFAULT_PROBE_TIMEOUT_MS,
+  type AdapterProbeResult,
+  type ExecutionOptions,
+  type CliAdapter,
+  type TerminalExecutionResult,
+} from '../types.js';
 import { validEventIdentifier, type ExecutionError } from '../../contracts/index.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 import { redactDiagnostic } from '../../security/redaction.js';
@@ -76,7 +82,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   const resolved = probeCommand('codex', 'OpenAI Codex CLI');
   if ('unresolved' in resolved) return resolved.unresolved;
   // runCommand reports a missing or failing CLI in its result; it does not reject.
-  const res = await runCommand(resolved.command, ['--version'], { timeoutMs: 5000 });
+  const res = await runCommand(resolved.command, ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
   if (res.exitCode === 0) {
     installed = true;
     version = res.stdout.trim() || 'installed';

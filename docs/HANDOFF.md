@@ -44,12 +44,12 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T04 (extract cohesive task preparation):
-T04a (create src/execution/preparation.ts encapsulating route resolution, effective model selection, expensive model confirmation/consent check, and context validation into a typed prepared-task object),
-and T04b (simplify src/execution/controller.ts by delegating preparation to the new module, ensuring single-snapshot lifecycle and clean failure isolation).
-Independent reviewer approval obtained (session syn_sess_c1790e360e1da6ed293df519, Turns 2-6: VERDICT: READY).
+The current completed task is EXEC-001-T07 (define the complete-call budget contract):
+T07a (settle timeout semantics in writing),
+T07b (implement budget arithmetic primitive in src/execution/runtime/budget.ts),
+and T07c (centralize timeout defaults in src/contracts/execution.ts and src/contracts/provider.ts).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T05 (reuse observations within preparation).
+Next pending card: EXEC-001-T08 (make native observations cancellable).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -855,6 +855,69 @@ Scope: guaranteed finalization scope immediately after turn token acquisition (`
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_e77db3251b9304938fe5c8f6`, Turn 2: `COVERAGE: COMPLETE`, `VERDICT: READY`).
+
+## EXEC-001-T07 complete-call budget contract
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: settle complete-call budget semantics in documentation (`EXEC-001-T07a`), implement neutral monotonic budget arithmetic primitive in `src/execution/runtime/budget.ts` (`T07b`), and centralize duplicated timeout defaults into contracts in `src/contracts/execution.ts` and `src/contracts/provider.ts` without altering adapter behavior (`T07c`).
+
+### Settle timeout semantics (T07a):
+1. **Start-before-Git**:
+   - In tools like `review`, workspace inspection (`git rev-parse`, `git status`, `git diff`) precedes task preparation. Under the complete-call budget contract, the monotonic deadline begins at the very start of the tool invocation.
+   - Time consumed by Git operations or workspace I/O is deducted from the complete-call budget, preventing stalled Git calls from granting extra model execution time.
+2. **Consent-counted timing**:
+   - Interactive user consent elicitation (bounded by `CONSENT_TIMEOUT_MS = 300_000`) elapses against the complete-call budget. The budget is not paused or reset while waiting for user approval.
+   - If the user approval exceeds the remaining budget, the call times out fail-closed with `TIMEOUT`.
+3. **Finite teardown allowance**:
+   - Primary execution deadline is separated from total call deadline: `executionDeadlineMs = deadlineMs - teardownAllowanceMs`.
+   - This reserves a dedicated finite window (`DEFAULT_TEARDOWN_GRACE_MS = 3_000` ms) for graceful child process tree termination (SIGINT->SIGKILL), session turn lease release, and history archiving before the absolute deadline.
+   - Teardown allowance is separate, finite, and strictly bounded (`Math.min(teardownAllowanceMs, remainingTotalMs)`), ensuring secondary cleanup cannot hang indefinitely even if primary execution finishes instantly.
+4. **Omitted, zero, and invalid timeout behavior**:
+   - Omitted (`undefined` / `null`): defaults to `DEFAULT_EXECUTION_TIMEOUT_MS = 900_000` ms (15 minutes).
+   - Zero, negative (`<= 0`), or non-finite (`NaN`, `Infinity`): fail closed immediately with error code `INPUT_LIMIT` (`Invalid deadline or buffer budget.`). No backend subprocess is spawned.
+   - Out of bounds (`< 100` or `> 1_800_000`): rejected by MCP schema validation (`MIN_EXECUTION_TIMEOUT_MS` and `MAX_EXECUTION_TIMEOUT_MS`).
+5. **Host cancellation vs timeout distinction**:
+   - Host cancellation (`parentSignal: AbortSignal`): reports status `cancelled`, error code `ABORTED`, retryable `false`.
+   - Monotonic deadline expiration: reports status `timed_out`, error code `TIMEOUT`, retryable `true`.
+   - Precedence: whichever event occurs first establishes the terminal status and error code; subsequent triggers cannot flip the status.
+6. **Migration of `timeout_ms`**:
+   - External MCP tool schema parameter `timeout_ms` (snake_case) maps cleanly to canonical internal TypeScript contracts (`ExecutionOptions.timeoutMs`, `ExecutionBudget`, and `ExecutionRequest.timeout_ms`).
+   - Public tool behavior remains backward compatible until full lifecycle propagation in T11.
+
+### Modules and ownership changes (T07b, T07c):
+- `src/contracts/execution.ts`:
+  - Exported timeout constants: `DEFAULT_EXECUTION_TIMEOUT_MS = 900_000`, `DEFAULT_TEARDOWN_GRACE_MS = 3_000`, `MIN_EXECUTION_TIMEOUT_MS = 100`, `MAX_EXECUTION_TIMEOUT_MS = 1_800_000`.
+  - Defined budget contracts: `BudgetStatus`, `ExecutionBudgetOptions`, and `ExecutionBudget`.
+  - Updated `ExecutionOptions.timeoutMs` documentation referencing centralized default and T11 complete-call migration.
+- `src/contracts/provider.ts`:
+  - Exported provider discovery constants: `DEFAULT_PROBE_TIMEOUT_MS = 5_000` and `DEFAULT_MODEL_LIST_TIMEOUT_MS = 10_000`.
+- `src/backends/types.ts`:
+  - Re-exported provider timeout constants for backend consumers.
+- `src/execution/process.ts`:
+  - Bound `DEFAULT_TIMEOUT_MS` to `DEFAULT_EXECUTION_TIMEOUT_MS` and `INTERRUPT_GRACE_MS` to `DEFAULT_TEARDOWN_GRACE_MS`.
+- `src/backends/codex/adapter.ts`, `src/backends/codex/models.ts`:
+  - Bound probe command to `DEFAULT_PROBE_TIMEOUT_MS` and `MODEL_LIST_TIMEOUT_MS` to `DEFAULT_MODEL_LIST_TIMEOUT_MS`.
+- `src/backends/claude/adapter.ts`:
+  - Bound probe `--version` commands in `probe` and `runLocalUsage` to `DEFAULT_PROBE_TIMEOUT_MS`.
+- `src/backends/agy/adapter.ts`:
+  - Bound probe and `/usage` commands to `DEFAULT_PROBE_TIMEOUT_MS`, and `models` and `mcp list` commands to `DEFAULT_MODEL_LIST_TIMEOUT_MS`.
+- `src/execution/runtime/budget.ts` (new module, owner: `execution`):
+  - Implemented `createExecutionBudget(options?: ExecutionBudgetOptions): ExecutionBudget`.
+  - Implemented `isValidBudgetDuration(val: unknown): val is number`.
+  - Built immutable monotonic arithmetic with single deadline calculation, separate finite teardown allowance, non-resetting boundary checks, sticky host cancellation vs timeout discrimination, distinct execution and teardown abort signals, and safe idempotent resource disposal.
+- `tests/execution/budget.test.js` (new test suite):
+  - Added 19 unit tests covering parameter defaults, custom allowances, monotonic progression, exact execution and total boundaries, already-expired non-resetting behavior, separate finite teardown allowance, host cancellation vs timeout precedence, unobserved deadline precedence, caller cancellation during teardown allowance, pre-aborted signals, and safe disposal.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 523 dependency edges, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 75/75 pass (`tests/execution/budget.test.js`, `tests/execution/process.test.js`, `tests/backends/codex/adapter.test.js`, `tests/backends/claude/adapter.test.js`, `tests/backends/agy/adapter.test.js`).
+- PASS: Dedicated budget tests: 19/19 pass (`tests/execution/budget.test.js`).
+- PASS: Full test suite: 509 tests: 506 pass, 0 fail, 3 skipped, exit code 0 (`node tests/run.cjs`).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_da0202ddbd686d31a839b346`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to Windows sandbox ENOMEM).
 
 ## Compact handoff contract
 

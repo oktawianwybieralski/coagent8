@@ -6,7 +6,7 @@ import { redactDiagnostic } from '../../security/redaction.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
-import type { AdapterProbeResult, CatalogModel, ExecutionOptions, ModelCatalog, TerminalExecutionResult, CliAdapter } from '../types.js';
+import { DEFAULT_PROBE_TIMEOUT_MS, type AdapterProbeResult, type CatalogModel, type ExecutionOptions, type ModelCatalog, type TerminalExecutionResult, type CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
@@ -30,7 +30,7 @@ export async function probe(): Promise<AdapterProbeResult> {
   const resolved = probeCommand('claude', name);
   if ('unresolved' in resolved) return resolved.unresolved;
   const command = resolved.command;
-  const res = await runCommand(command, ['--version'], { timeoutMs: 5000 });
+  const res = await runCommand(command, ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
   const installed = res.status === 'completed';
   const version = res.stdout.trim() || 'unknown';
   const executionSupported = installed && supportsClaudeVersion(version);
@@ -70,7 +70,7 @@ export async function probe(): Promise<AdapterProbeResult> {
 async function runLocalUsage(model: string | undefined, probe?: AdapterProbeResult): Promise<{ model?: string; usage: string } | undefined> {
   let version = probe?.version;
   if (!version || version === 'unknown') {
-    const verRes = await runCommand(claudeCommand(), ['--version'], { timeoutMs: 5000 });
+    const verRes = await runCommand(claudeCommand(), ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
     if (verRes.status !== 'completed') return undefined;
     version = verRes.stdout.trim();
   }

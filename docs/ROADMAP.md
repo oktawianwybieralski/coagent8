@@ -467,24 +467,25 @@ on T05. Report fixture and native teardown evidence separately.
 
 ### EXEC-001-T07 - define the complete-call budget contract
 
-- [ ] **T07a - settle timeout semantics in writing.** Start:
+- [x] **T07a - settle timeout semantics in writing.** Start:
   `src/contracts/execution.ts:ExecutionOptions`, `src/mcp/schema.ts` and timeout
   sites found by `rg` in execution/backends. Propose start-before-Git,
   consent-counted timing and a finite teardown allowance; specify omitted/zero/
   invalid timeout behavior, host cancellation and migration of `timeout_ms`.
   Done: HANDOFF records the owner's accepted semantics and chosen values;
   no unresolved choice is implemented by T07b. Check: P.
-- [ ] **T07b - implement budget arithmetic.** Add a **new** neutral budget
+- [x] **T07b - implement budget arithmetic.** Add a **new** neutral budget
   primitive alongside the timing owner; it uses one absolute monotonic deadline,
   reports remaining time and distinguishes timeout from caller abort. Done:
   already-expired, exact-boundary and repeated checks cannot reset the budget;
   cleanup allowance is separate and finite. Check: R and a **new** fake-clock
   budget test. Public timeout behavior remains unchanged until T11.
-- [ ] **T07c - centralize timeout defaults.** Move only duplicated settings
+- [x] **T07c - centralize timeout defaults.** Move only duplicated settings
   identified in T07a into their owning contract/config mechanism and update
   current consumers. Done: defaults have one owner and existing adapter behavior
   remains identical; no layer imports controller policy. Check: R, PROCESS and
   the affected provider adapter tests; docs checks for changed source comments.
+  Evidence: [EXEC-001-T07 implementation](HANDOFF.md#exec-001-t07-complete-call-budget-contract).
 
 Acceptance: the contract answers what happens when a deadline expires in every
 phase, including consent and cleanup. Owner inspection of this contract is the

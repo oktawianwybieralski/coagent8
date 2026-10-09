@@ -26,6 +26,11 @@ export type {
   QuotaCacheRecord,
 } from '../contracts/index.js';
 
+export {
+  DEFAULT_PROBE_TIMEOUT_MS,
+  DEFAULT_MODEL_LIST_TIMEOUT_MS,
+} from '../contracts/index.js';
+
 export interface AdapterProbeResult {
   /** Unique adapter identifier (e.g. 'codex', 'claude', 'agy'). */
   id?: string;
