@@ -18,9 +18,24 @@ Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
 The S6 follow-up is committed at `af9f7d2` after the owner requested a commit.
 The next planned work is EXEC-001-T01 through T12 in ROADMAP, covering measured
-preparation and the complete call lifecycle alongside AX-004. The tasks remain
-unimplemented; each has an owner inspection checkpoint. Prior independent
-approval does not approve the S6 follow-up or these future changes.
+preparation and the complete call lifecycle alongside AX-004. These are now
+stages containing 40 smaller task cards (T01a through T12d), with starting files,
+observable completion criteria and exact reusable test groups. Assign one card
+at a time; the next runtime-track card is EXEC-001-T01a (call/wait inventory,
+documentation only). All cards remain unimplemented. Owner inspection occurs
+after each card. Prior independent approval does not approve the S6 follow-up
+or these future changes.
+
+The 2026-10-09 roadmap refinement also separates AX implementation/native
+acceptance, adds coagent contract cards before speculative implementation and
+splits CLI/foundation acceptance into smaller assignments. Preserve the
+milestone acceptance criteria when expanding later code cards. This refinement
+changes plan/evidence prose only; validation is source/path/link review and
+git diff --check, not another runtime/package test run.
+PASS for this refinement: local links/anchors and source starting paths,
+40 ordered EXEC cards with unique IDs and valid references, all 36 listed
+test-group paths, ASCII punctuation and git diff --check. Runtime checks
+were not repeated for these Markdown-only changes.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
