@@ -67,7 +67,7 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 ## SIMPLIFY-001 - module boundary migration
 
 Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
-S1, S2, S3, S4, and S5 implemented and verified; S6 scheduled. This is
+S1, S2, S3, S4, S5, and S6 implemented and verified. This is
 the active plan, not an additional plan under docs/.local/. Work stays local;
 Git integration and publication remain owner-managed. Audit blockers retain
 priority. Apply the slices before expanding the affected owners for COAGENT
@@ -139,7 +139,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   Acceptance: no unresolved old paths, orphan modules, eager setup imports or
   broken packaged entrypoints; preserve genuinely public compatibility paths.
   Evidence: [S5 implementation](HANDOFF.md#simplify-001-s5-implementation).
-- [ ] **S6 - Enforce and accept the final boundaries.** Add an automated
+- [x] **S6 - Enforce and accept the final boundaries.** Add an automated
   dependency check using the real module graph, covering types, dynamic imports
   and re-exports as well as ordinary imports. Prove it detects forbidden edges
   and cycles with isolated fixtures. If staged earlier, allow only individually
@@ -148,6 +148,7 @@ Success means clear ownership and dependency direction, not fewer visible files.
   without bypassing existing checks. Update the architecture's current map
   only after source moves, and record evidence in HANDOFF. Independent review
   and required remote checks precede merge; local passes are not release approval.
+  Evidence: [S6 implementation](HANDOFF.md#simplify-001-s6-implementation).
 
 Every slice includes its import/caller/test/reference updates and relevant
 checks; S5 is a final sweep, not permission to leave earlier slices broken.

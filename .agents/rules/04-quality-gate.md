@@ -19,7 +19,7 @@ commit, branch operation or unchanged retry.
 | TSDoc/source documentation or documentation tooling | lint:docs and docs for affected comments/tooling; add typecheck/runtime checks if executable code or its dependencies changed. |
 | Runtime logic, schemas, adapters or routing | Typecheck and focused behavioral tests; build when runtime/bundle compatibility is affected. Broaden for shared contracts or unresolved integration risk. |
 | Process lifecycle, cancellation, sandbox, privacy or sessions | Typecheck and relevant unit/integration/failure-path tests on affected platforms. Verify owned cleanup and hidden Windows descendants; preserve meaningful assertions. |
-| Dependencies, build, package contents or entrypoints | Typecheck, build, package inspection, consumer smoke and affected regression tests. Package safety is not limited to changes in src/. |
+| Dependencies, build, package contents or entrypoints | Typecheck, check:dependencies, build, package inspection, consumer smoke and affected regression tests. Package safety is not limited to changes in src/. |
 | VS Code/setup integration | Relevant setup/provider tests and build/package checks; real host acceptance for changed installation/update/repair claims. Use isolated profiles and preserve working registrations. |
 | Test harness or CI | Discovery/selection/cleanup regressions and the affected suite; confirm required status checks remain valid. |
 

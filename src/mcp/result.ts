@@ -12,8 +12,7 @@
  * @packageDocumentation
  */
 
-import type { TerminalExecutionResult } from '../backends/types.js';
-import type { TaskExecutionResult, ExecutionMeta } from '../contracts/execution.js';
+import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult } from '../contracts/execution.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { generateBugReport } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';

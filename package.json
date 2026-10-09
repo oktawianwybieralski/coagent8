@@ -56,6 +56,7 @@
     "docs": "npm --prefix tooling/documentation run build",
     "build": "node scripts/build.cjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p extensions/vscode/tsconfig.json",
+    "check:dependencies": "node scripts/check-dependencies.cjs",
     "package:artifacts": "node scripts/package-artifacts.cjs",
     "package:vscode": "npm run package:artifacts && npm --prefix tooling/vscode run package",
     "start": "node dist/index.cjs",

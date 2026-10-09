@@ -54,10 +54,11 @@ for tasks; introduce a scheduler only for actual dependency/concurrency work.
 
 ### Dependency boundaries
 
-The table above describes the current checkout. The ownership below is the
-target for [SIMPLIFY-001](ROADMAP.md#simplify-001---module-boundary-migration),
-not a claim that the files have moved. It implements the
-[P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
+The table below describes the realized ownership and dependency direction
+completed in [SIMPLIFY-001](ROADMAP.md#simplify-001---module-boundary-migration).
+It implements the
+[P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries)
+and is enforced by automated verification (`scripts/check-dependencies.cjs`, `npm run check:dependencies`).
 
 | Target owner | Responsibility and dependency direction |
 | --- | --- |
@@ -82,19 +83,10 @@ tool names belong to MCP. Do not create empty directories for future milestones.
 The same direction applies to transitive runtime imports and type dependencies;
 an allowed import must not transitively load the caller or optional installer.
 
-Known migration edges include controller -> tools/result and tools/review-gate,
-config/model-cache/integrations -> sessions/lock, and bounded file consumers ->
-execution/stream. Moving model-selection unchanged would leave models -> backend
-registry/probes while backends use model rules/storage. Separate orchestration
-from policy before declaring that boundary complete. Provider routing that
-composes model selection belongs with application orchestration; native quota
-collection and cache ownership remain with backends.
-
-The current session.ts -> history.ts -> session.ts cycle also needs removal:
-history retention needs active-session evidence, not the session service itself.
-Use a narrow activity/lease contract without changing lock ordering or eviction
-protection. Configuration's model-name validation must use an independent syntax
-contract if models also consume configuration; do not create a config/models cycle.
+Historical migration debt (controller -> tools/result, config/model-cache ->
+sessions/lock, session/history cycles, and setup type cycles) has been fully
+eliminated across S1 through S5. S6 enforces the module graph with 0 allowed
+legacy exemptions, 0 dependency cycles, and automated boundary verification in CI.
 
 ## Current MCP contract
 

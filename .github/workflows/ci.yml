@@ -39,6 +39,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Verify dependency boundaries
+        run: npm run check:dependencies
+
       - name: Validate TSDoc comments
         run: npm run lint:docs
 

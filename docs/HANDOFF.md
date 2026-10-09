@@ -420,7 +420,53 @@ type cycles without changing public contracts or data formats.
 - PASS: `npm run docs` (TypeDoc generates `.artifacts/api-docs` with 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 
-Next action: stop after S5 for owner inspection and independent review (codex sol-6.1). Do not proceed to S6 without owner instruction.
+Next action: S5 complete; proceed to S6 under owner direction.
+
+## SIMPLIFY-001 S6 implementation
+
+Executed on 2026-10-09, Windows 11, Node v26.10.0, npm 11.19.1. Scope: automated
+dependency boundary and cycle enforcement, test fixtures for forbidden edges/cycles,
+wiring into local and CI verification, and updating architecture documentation.
+
+### Structural changes and boundary enforcement:
+- Added `scripts/check-dependencies.cjs`:
+  - Parses real module graph using TypeScript AST (`import`, `export`, `dynamic-import`, `require`, `type-query`, `import-equals`).
+  - Distinguishes runtime vs type-only elided edges via in-memory compiler emit.
+  - Implements Tarjan's Strongly Connected Components (SCC) algorithm to detect both runtime and type-level dependency cycles.
+  - Enforces architectural boundary rules across all 15 target owners with zero legacy exemptions allowed (`allowedLegacyEdges: []`).
+  - Reports unresolved relative imports, parse errors, cycles, and boundary violations with clear rule rationale and source line numbers.
+- Cleaned remaining indirect backend type import in `src/mcp/result.ts`:
+  - `TerminalExecutionResult` now imported directly from `../contracts/execution.js` instead of `../backends/types.js`.
+- Wired into tooling and verification workflows:
+  - Added `"check:dependencies": "node scripts/check-dependencies.cjs"` script to `package.json`.
+  - Added `Verify dependency boundaries` step to `.github/workflows/ci.yml`.
+  - Added `check:dependencies` to required local evidence in `.agents/rules/04-quality-gate.md`.
+  - Updated `docs/ARCHITECTURE.md` dependency boundaries section to reflect realized ownership.
+  - Updated `docs/ROADMAP.md` marking S6 complete.
+- Added comprehensive test suite `tests/simplify-s6.test.js`:
+  - Verifies that the real repository passes with 0 violations, 0 cycles, and 0 unresolved imports across 103 source files.
+  - Verifies accurate owner mapping for all layers.
+  - Uses isolated test fixtures to prove detection of forbidden edges (models -> backends, execution -> mcp, contracts -> storage).
+  - Uses isolated test fixtures to prove detection of runtime cycles and type-only cycles.
+  - Uses isolated test fixtures to prove detection of unresolved relative imports.
+  - Proves legacy exemption tracking accepts individually specified edges with removal stages and rejects unrecorded edges.
+  - Proves untracked source files are discovered and their forbidden edges/cycles flagged.
+  - Proves unallowed computed require/import calls in source modules are rejected.
+  - Proves runtime dependencies and cycles are accurately classified under ESM compiler options.
+  - Proves arbitrary computed targets in src/index.ts mentioning setup.cjs are rejected unless matching the fixed AST path.join(__dirname, 'setup.cjs').
+  - Proves discovery includes .mts and .cts modules and detects their forbidden edges and cycles.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (103 source files analyzed, 508 total edges, 344 runtime internal edges, 72 type-only internal edges, 1 computed call (0 violations), 0 legacy exemptions, 0 violations, 0 cycles, exit code 0).
+- PASS: `node tests/run.cjs tests/simplify-s6.test.js` (12/12 tests pass, duration 14.0 s).
+- PASS: `npm run build` (tsdown build completes cleanly in 419 ms).
+- PASS: `npm test` (`node tests/run.cjs` full test suite: 425 tests: 422 pass, 0 fail, 3 skipped, duration 107.8 s, exit code 0).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc generates `.artifacts/api-docs` with 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+
+Next action: S6 complete and verified. Independent review completed (codex sol-6.1, VERDICT: READY). Ready for owner inspection.
 
 ## Documentation disposition
 
