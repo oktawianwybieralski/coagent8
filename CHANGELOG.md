@@ -71,6 +71,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`a27209a`](https://github.com/oktawianwybieralski/coagent8/commit/a27209a40f77b914a919e1b4d077d14b8ec97520) **models:** Separate model policy from provider discovery (S3)
 - [`0db784d`](https://github.com/oktawianwybieralski/coagent8/commit/0db784d707b3e8f1a58e1a3b29ebdd6c5c7b67ad) **sessions:** Split history by responsibility and extract credential boundaries (S4)
 - [`4e4f471`](https://github.com/oktawianwybieralski/coagent8/commit/4e4f47115d0add848345bda62ed56399ee76e157) **layout:** Finish consumers, mirror test layout, and retire internal shims (S5)
+- [`4933834`](https://github.com/oktawianwybieralski/coagent8/commit/4933834825348d1af81d443f453c4cab849a7ee7) **boundaries:** Enforce automated dependency boundaries and cycle detection (S6)
 
 ### Fixed
 - [`0c11032`](https://github.com/oktawianwybieralski/coagent8/commit/0c1103211b9efab5872b3b2ae6bd79ca02de7014) **execution:** Enforce process identity and safe teardown on Windows
