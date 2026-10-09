@@ -44,12 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T07 (define the complete-call budget contract):
-T07a (settle timeout semantics in writing),
-T07b (implement budget arithmetic primitive in src/execution/runtime/budget.ts),
-and T07c (centralize timeout defaults in src/contracts/execution.ts and src/contracts/provider.ts).
+The current completed task is EXEC-001-T08b (implement shared-read waiter ownership).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T08 (make native observations cancellable).
+Next pending card: EXEC-001-T08c (bound Codex reads).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -978,6 +975,41 @@ Scope: define neutral deadline and cancellation context for backend observation 
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_481dd949396808a8b5424c1d`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to Windows sandbox ENOMEM).
+
+## EXEC-001-T08b shared-read waiter ownership
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: implement shared-read waiter ownership in `src/backends/probe-cache.ts` and verify concurrent races and isolation in `tests/backends/probe-cache.test.js`.
+
+### Implemented mechanisms:
+1. **Per-waiter cancellation and timeout isolation**:
+   - Each caller/waiter receives its own distinct Promise and lifecycle registration.
+   - Waiter abort signals (`abortSignal`), timeouts (`timeoutMs`), and budgets (`budget`) are evaluated per waiter.
+   - When an individual waiter cancels or times out, only that waiter's promise is detached and rejected (with `ToolError('ABORTED')` or `ToolError('TIMEOUT')`). Other active waiters waiting for the shared task continue uninterrupted.
+   - The shared underlying task receives strictly coordinator-owned context (`sharedContext = { abortSignal: newEntry.abortController.signal }`); caller timeouts and budgets are not forwarded to the shared task.
+2. **Last-waiter abort & immediate inflight eviction**:
+   - The shared coordinator tracks active registered waiters in a Set.
+   - When the last active waiter unregisters/cancels (active waiters count drops to 0), the coordinator triggers `abort()` on the shared `AbortController` and immediately evicts the entry from `inflight`.
+   - New incoming callers arriving after last-waiter cancellation start a fresh read and never coalesce onto an aborted/dying task.
+3. **Late settlement & replacement race protection**:
+   - In `finally`, `inflight.delete(key)` is gated strictly by identity check: `inflight.get(key) === entry`.
+   - A late-settling read (whether aborted or replaced by a `fresh: true` read) never evicts or disturbs a newer inflight entry.
+   - Fresh reads (`fresh: true`) overwrite `inflight` immediately; subsequent calls coalesce onto the fresh read.
+4. **Cache poisoning prevention on late settlement**:
+   - In `probeBackend`, `readModelCatalog`, and `readObservedModel`, cache updates are guarded by `isCurrentInflight(key, readContext)` and `!readContext.abortSignal.aborted`.
+   - Replaced or aborted reads never write obsolete results into memory or persistent model storage.
+5. **Deterministic resource cleanup**:
+   - Waiter cleanup guaranteed on settlement or detachment: timeout timers cleared via `clearTimeout` and signal event listeners removed via `removeEventListener`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 524 dependency edges, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 11 tests (11 pass, duration 1.0 s): `tests/backends/probe-cache.test.js`.
+- PASS: Full test suite: 520 tests (517 pass, 0 fail, 3 skipped, duration 111.9 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_969dbd07eb423f8cbf9d604a`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to Windows sandbox ENOMEM).
 
 ## Compact handoff contract
 

@@ -501,12 +501,12 @@ tests and documentation review. Depends on T06.
   Done: existing callers still work, actual support is not claimed prematurely,
   and a decision table specifies who owns cancellation and inflight removal.
   Check: R, CACHE/CODEX/CLAUDE/AGY for contract compatibility.
-  Evidence: [EXEC-001-T08a implementation](HANDOFF.md#exec-001-t08a-shared-read-and-deadline-context).
-- [ ] **T08b - implement shared-read waiter ownership.** Change only the
+- [x] **T08b - implement shared-read waiter ownership.** Change only the
   probe-cache coalescing mechanism and its neutral callbacks from T08a. Done:
   one cancelled waiter leaves another live waiter intact; the last waiter
   triggers owned abort; late settlement cannot remove a newer inflight entry.
   Check: R, CACHE with two-waiter/all-cancelled/replacement-race fixtures.
+  Evidence: [EXEC-001-T08b implementation](HANDOFF.md#exec-001-t08b-shared-read-waiter-ownership).
 - [ ] **T08c - bound Codex reads.** Start: `src/backends/codex/adapter.ts`,
   `models.ts`, `app-server.ts`. Implement context propagation for probe/catalog/
   quota paths of this backend only. Done: stalled fixture RPCs abort, pending

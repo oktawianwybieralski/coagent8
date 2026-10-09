@@ -11,6 +11,8 @@ const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { probeBackend } = require('../../src/backends/probe-cache.ts');
 const { resolveBackend } = require('../../src/execution/routing.ts');
 const { saveConfig } = require('../../src/config.ts');
+const { ToolError } = require('../../src/contracts/index.ts');
+const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -219,24 +221,337 @@ test('EXEC-001-T08a: probeBackend, readModelCatalog and readObservedModel forwar
   try {
     const probe = await probeBackend('codex', { fresh: true, context: testContext });
     assert.ok(probe.installed);
-    assert.equal(captured.probeCtx?.timeoutMs, 2500);
-    assert.equal(captured.probeCtx?.abortSignal, dummyController.signal);
+    assert.equal(captured.probeCtx?.timeoutMs, undefined, 'waiter timeout is isolated and not forwarded to shared task');
+    assert.ok(captured.probeCtx?.abortSignal);
+    assert.equal(captured.probeCtx?.abortSignal.aborted, false);
+    assert.notEqual(captured.probeCtx?.abortSignal, dummyController.signal, 'adapter receives shared coordinator signal, isolating caller signal');
 
     const catalog = await readModelCatalog('codex', { fresh: true, context: testContext });
     assert.ok(catalog);
-    assert.equal(captured.catalogCtx?.timeoutMs, 2500);
-    assert.equal(captured.catalogCtx?.abortSignal, dummyController.signal);
+    assert.equal(captured.catalogCtx?.timeoutMs, undefined);
+    assert.ok(captured.catalogCtx?.abortSignal);
+    assert.equal(captured.catalogCtx?.abortSignal.aborted, false);
+    assert.notEqual(captured.catalogCtx?.abortSignal, dummyController.signal);
 
     const observed = await readObservedModel('codex', 'test-model', { fresh: true, context: testContext });
     assert.equal(observed, 'test-observed-model');
-    assert.equal(captured.observeCtx?.timeoutMs, 2500);
-    assert.equal(captured.observeCtx?.abortSignal, dummyController.signal);
+    assert.equal(captured.observeCtx?.timeoutMs, undefined);
+    assert.ok(captured.observeCtx?.abortSignal);
+    assert.equal(captured.observeCtx?.abortSignal.aborted, false);
+    assert.notEqual(captured.observeCtx?.abortSignal, dummyController.signal);
 
     // Also verify backward compatibility when context is omitted
     captured.probeCtx = null;
     await probeBackend('codex', { fresh: true });
-    assert.equal(captured.probeCtx, undefined);
+    assert.ok(captured.probeCtx?.abortSignal);
+    assert.equal(captured.probeCtx?.timeoutMs, undefined);
   } finally {
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08b: two waiters on shared read - cancelling first waiter does not abort second waiter (per-waiter isolation)', async () => {
+  const original = adapterRegistry.codex;
+  let probeStarted = 0;
+  let probeCompleted = 0;
+  let capturedContext = null;
+  let resolveProbe;
+
+  const probePromise = new Promise((resolve) => {
+    resolveProbe = resolve;
+  });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async (context) => {
+      probeStarted++;
+      capturedContext = context;
+      await probePromise;
+      probeCompleted++;
+      return { installed: true, executionSupported: true };
+    },
+  };
+
+  try {
+    const controller1 = new AbortController();
+    const controller2 = new AbortController();
+
+    // Both waiters initiate probe on 'codex'
+    const waiter1Promise = probeBackend('codex', { fresh: true, context: { abortSignal: controller1.signal } });
+    const waiter2Promise = probeBackend('codex', { context: { abortSignal: controller2.signal } });
+
+    assert.equal(probeStarted, 1, 'underlying probe started once');
+    assert.equal(capturedContext.abortSignal.aborted, false, 'shared abort signal is not aborted');
+
+    // Abort waiter 1
+    controller1.abort(new Error('waiter 1 cancelled'));
+
+    // Waiter 1 must reject immediately with ABORTED
+    await assert.rejects(
+      waiter1Promise,
+      (err) => err instanceof ToolError && err.code === 'ABORTED',
+      'waiter 1 rejects with ABORTED immediately'
+    );
+
+    // Shared abort signal is STILL NOT aborted because waiter 2 is active
+    assert.equal(capturedContext.abortSignal.aborted, false, 'shared signal remains active after waiter 1 cancellation');
+    assert.equal(probeCompleted, 0, 'probe has not completed yet');
+
+    // Now underlying probe completes successfully
+    resolveProbe();
+
+    // Waiter 2 receives the result successfully
+    const result2 = await waiter2Promise;
+    assert.deepEqual(result2, { installed: true, executionSupported: true });
+    assert.equal(probeCompleted, 1, 'probe completed once');
+  } finally {
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08b: all waiters cancelled - last waiter aborts underlying task and evicts inflight entry immediately', async () => {
+  const original = adapterRegistry.codex;
+  let probeStarted = 0;
+  let capturedContext = null;
+  let finishProbe;
+
+  const probeGate = new Promise((resolve) => {
+    finishProbe = resolve;
+  });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async (context) => {
+      probeStarted++;
+      capturedContext = context;
+      await probeGate;
+      return { installed: true, executionSupported: true };
+    },
+  };
+
+  try {
+    const controller1 = new AbortController();
+    const controller2 = new AbortController();
+
+    const waiter1Promise = probeBackend('codex', { fresh: true, context: { abortSignal: controller1.signal } });
+    const waiter2Promise = probeBackend('codex', { context: { abortSignal: controller2.signal } });
+
+    assert.equal(probeStarted, 1);
+    assert.equal(capturedContext.abortSignal.aborted, false);
+
+    // Cancel waiter 1
+    controller1.abort();
+    await assert.rejects(waiter1Promise, (err) => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(capturedContext.abortSignal.aborted, false, 'shared read still running for waiter 2');
+
+    // Cancel waiter 2 (last remaining waiter)
+    controller2.abort();
+    await assert.rejects(waiter2Promise, (err) => err instanceof ToolError && err.code === 'ABORTED');
+
+    // Shared abort controller must be aborted immediately upon 0 active waiters
+    assert.equal(capturedContext.abortSignal.aborted, true, 'shared abort controller aborted by last waiter');
+
+    // New incoming caller must NOT join the aborted/evicted inflight entry
+    let probe2Started = 0;
+    adapterRegistry.codex.probe = async () => {
+      probe2Started++;
+      return { installed: true, executionSupported: true, second: true };
+    };
+
+    const newCallerPromise = probeBackend('codex');
+    const newResult = await newCallerPromise;
+    assert.equal(probe2Started, 1, 'new caller started fresh read rather than joining aborted inflight read');
+    assert.equal(newResult.second, true);
+
+    // Release the first stalled probe fixture
+    finishProbe();
+  } finally {
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08b: fresh: true replacement race - late settlement of old read does not delete new inflight entry', async () => {
+  const original = adapterRegistry.codex;
+  let probeCount = 0;
+  let finishOldProbe;
+  let finishNewProbe;
+
+  const oldProbeGate = new Promise((resolve) => { finishOldProbe = resolve; });
+  const newProbeGate = new Promise((resolve) => { finishNewProbe = resolve; });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async () => {
+      probeCount++;
+      const current = probeCount;
+      if (current === 1) {
+        await oldProbeGate;
+        return { installed: true, executionSupported: true, version: '1.0.0' };
+      } else {
+        await newProbeGate;
+        return { installed: true, executionSupported: true, version: '2.0.0' };
+      }
+    },
+  };
+
+  try {
+    // 1. Start old read (inflight entry 1)
+    const oldPromise = probeBackend('codex', { fresh: true });
+    assert.equal(probeCount, 1);
+
+    // 2. Start fresh read while old read is still inflight (replaces inflight with entry 2)
+    const freshPromise = probeBackend('codex', { fresh: true });
+    assert.equal(probeCount, 2);
+
+    // 3. A concurrent third caller joins without fresh: true -> must coalesce onto fresh read (entry 2)
+    const joinedPromise = probeBackend('codex');
+
+    // 4. Old probe settles FIRST (late settlement of replaced entry)
+    finishOldProbe();
+    const oldResult = await oldPromise;
+    assert.equal(oldResult.version, '1.0.0');
+
+    // 5. A fourth caller arrives after old probe settled, but before fresh probe settles
+    // Because old probe settlement did NOT delete entry 2 from inflight, caller 4 must coalesce onto entry 2
+    const fourthPromise = probeBackend('codex');
+    assert.equal(probeCount, 2, 'fourth caller coalesced onto fresh read, did not start a third read');
+
+    // 6. Now fresh probe settles
+    finishNewProbe();
+    const freshResult = await freshPromise;
+    const joinedResult = await joinedPromise;
+    const fourthResult = await fourthPromise;
+
+    assert.equal(freshResult.version, '2.0.0');
+    assert.equal(joinedResult.version, '2.0.0');
+    assert.equal(fourthResult.version, '2.0.0');
+    assert.equal(probeCount, 2, 'only two probe calls executed in total');
+  } finally {
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08b: per-waiter timeout via timeoutMs isolates from other waiters', async () => {
+  const original = adapterRegistry.codex;
+  let probeStarted = 0;
+  let resolveProbe;
+
+  const probeGate = new Promise((resolve) => { resolveProbe = resolve; });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async () => {
+      probeStarted++;
+      await probeGate;
+      return { installed: true, executionSupported: true };
+    },
+  };
+
+  try {
+    // Waiter 1 has a very short timeout (30 ms)
+    const waiter1Promise = probeBackend('codex', { fresh: true, context: { timeoutMs: 30 } });
+    // Waiter 2 has no timeout
+    const waiter2Promise = probeBackend('codex');
+
+    assert.equal(probeStarted, 1);
+
+    // Waiter 1 should time out with ToolError('TIMEOUT')
+    await assert.rejects(
+      waiter1Promise,
+      (err) => err instanceof ToolError && err.code === 'TIMEOUT',
+      'waiter 1 rejected with TIMEOUT error'
+    );
+
+    // Waiter 2 is still awaiting and resolves when probe finishes
+    resolveProbe();
+    const result2 = await waiter2Promise;
+    assert.deepEqual(result2, { installed: true, executionSupported: true });
+  } finally {
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08b: pre-aborted signal rejects immediately without starting probe', async () => {
+  const original = adapterRegistry.codex;
+  let probeStarted = 0;
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async () => {
+      probeStarted++;
+      return { installed: true, executionSupported: true };
+    },
+  };
+
+  try {
+    const controller = new AbortController();
+    controller.abort(new Error('pre-aborted'));
+
+    await assert.rejects(
+      probeBackend('codex', { fresh: true, context: { abortSignal: controller.signal } }),
+      (err) => err instanceof ToolError && err.code === 'ABORTED'
+    );
+
+    assert.equal(probeStarted, 0, 'probe was never launched for pre-aborted caller');
+  } finally {
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08b: initiating waiter timeout/budget is not passed to shared context, protecting concurrent waiters', async () => {
+  const original = adapterRegistry.codex;
+  let sharedContext = null;
+  let finishProbe;
+
+  const probeGate = new Promise((resolve) => { finishProbe = resolve; });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async (context) => {
+      sharedContext = context;
+      await probeGate;
+      return { installed: true, executionSupported: true };
+    },
+  };
+
+  let testBudget;
+  try {
+    testBudget = createExecutionBudget({ totalBudgetMs: 50_000 });
+    const waiter1Promise = probeBackend('codex', {
+      fresh: true,
+      context: { timeoutMs: 20, budget: testBudget },
+    });
+    const waiter2Promise = probeBackend('codex');
+
+    // Waiter 1 must time out
+    await assert.rejects(
+      waiter1Promise,
+      (err) => err instanceof ToolError && err.code === 'TIMEOUT'
+    );
+
+    // Shared context given to probe did NOT receive waiter 1's timeoutMs or budget
+    assert.equal(sharedContext?.timeoutMs, undefined, 'shared task has no caller timeoutMs');
+    assert.equal(sharedContext?.budget, undefined, 'shared task has no caller budget');
+    assert.equal(sharedContext?.abortSignal?.aborted, false, 'shared task was not aborted by waiter 1 timeout');
+
+    // Waiter 2 finishes successfully when probe resolves
+    finishProbe();
+    const result2 = await waiter2Promise;
+    assert.deepEqual(result2, { installed: true, executionSupported: true });
+  } finally {
+    if (testBudget) testBudget.dispose();
     adapterRegistry.codex = original;
   }
 });

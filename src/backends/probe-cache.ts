@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { adapterRegistry } from './registry.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
-import type { ProviderId } from '../contracts/index.js';
+import { ToolError, type ProviderId } from '../contracts/index.js';
 import { readObservedModels, recordObservedModels } from '../models/store.js';
 import type { AdapterProbeResult, CliAdapter, ModelCatalog, BackendReadContext } from './types.js';
 
@@ -27,13 +27,73 @@ const PROVIDER_ENVIRONMENT_PREFIXES = ['ANTHROPIC_', 'CLAUDE_', 'CODEX_', 'OPENA
 interface CachedProbe { adapter: CliAdapter; probeFn: CliAdapter['probe']; probe: AdapterProbeResult; key: string; at: number }
 const cache = new Map<ProviderId, CachedProbe>();
 
-/** Reads in progress, so concurrent misses share one CLI launch (CUR-006). */
-const inflight = new Map<string, { owner: unknown; promise: Promise<unknown> }>();
+interface InflightWaiter<T> {
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+  cleanup: () => void;
+  active: boolean;
+}
+
+interface InflightEntry<T> {
+  owner: unknown;
+  abortController: AbortController;
+  waiters: Set<InflightWaiter<T>>;
+  settled: boolean;
+  result?: { ok: true; value: T } | { ok: false; error: unknown };
+}
+
+/** Reads in progress, so concurrent misses share one CLI launch (CUR-006, EXEC-001-T08b). */
+const inflight = new Map<string, InflightEntry<unknown>>();
+
+function toAbortError(reason: unknown): ToolError {
+  if (reason instanceof ToolError) return reason;
+  if (reason instanceof Error) {
+    return new ToolError('ABORTED', reason.message, { cause: reason });
+  }
+  if (typeof reason === 'string' && reason.length > 0) {
+    return new ToolError('ABORTED', reason);
+  }
+  return new ToolError('ABORTED', 'Read operation was aborted by caller.');
+}
+
+function getPreAbortError(context?: BackendReadContext): ToolError | undefined {
+  if (!context) return undefined;
+  if (context.abortSignal?.aborted) {
+    return toAbortError(context.abortSignal.reason);
+  }
+  if (context.budget) {
+    if (context.budget.isCallerAborted()) {
+      const reason = context.budget.abortReason();
+      return reason instanceof ToolError ? reason : toAbortError(reason);
+    }
+    if (context.budget.isExecutionExpired() || context.budget.isTimedOut()) {
+      const reason = context.budget.abortReason();
+      return reason instanceof ToolError ? reason : new ToolError('TIMEOUT', 'Execution budget expired.');
+    }
+  }
+  if (context.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs <= 0) {
+    return new ToolError('TIMEOUT', 'Read operation timed out.');
+  }
+  return undefined;
+}
 
 /**
- * Shares a read in progress under `key` while it belongs to the same adapter function.
- * A failure is not cached: every waiter receives it and the next call starts a new read.
+ * Checks whether the shared read matching `readContext` is still the active inflight entry for `key`.
+ * Prevents evicted or replaced reads from poisoning persistent caches on late settlement (`EXEC-001-T08b`).
+ */
+function isCurrentInflight(key: string, readContext?: BackendReadContext): boolean {
+  if (!readContext?.abortSignal) return false;
+  const current = inflight.get(key);
+  return current !== undefined && current.abortController.signal === readContext.abortSignal;
+}
+
+/**
+ * Shares a read in progress under `key` while it belongs to the same adapter function (`EXEC-001-T08b`).
+ * Enforces per-waiter cancellation/timeout isolation, last-waiter owned abort, and safe inflight removal.
+ * @param key - Cache coalescence key.
+ * @param owner - Function identity to detect replaced adapters.
  * @param join - False for a `fresh` read, which starts its own and is shared from then on.
+ * @param start - Invokes the underlying observation task with a shared cancellation context.
  * @param context - Optional neutral read and cancellation context for the waiter.
  */
 function coalesce<T>(
@@ -43,13 +103,162 @@ function coalesce<T>(
   start: (context?: BackendReadContext) => Promise<T>,
   context?: BackendReadContext
 ): Promise<T> {
-  const running = inflight.get(key);
-  if (join && running && running.owner === owner) return running.promise as Promise<T>;
-  const promise: Promise<T> = start(context).finally(() => {
-    if (inflight.get(key)?.promise === promise) inflight.delete(key);
+  const preAbort = getPreAbortError(context);
+  if (preAbort) {
+    return Promise.reject(preAbort);
+  }
+
+  let entry: InflightEntry<T> | undefined;
+  const running = inflight.get(key) as InflightEntry<T> | undefined;
+  if (join && running && running.owner === owner && !running.abortController.signal.aborted) {
+    entry = running;
+  }
+
+  if (!entry) {
+    const newEntry: InflightEntry<T> = {
+      owner,
+      abortController: new AbortController(),
+      waiters: new Set(),
+      settled: false,
+    };
+    entry = newEntry;
+    inflight.set(key, newEntry as InflightEntry<unknown>);
+
+    const sharedContext: BackendReadContext = {
+      abortSignal: newEntry.abortController.signal,
+    };
+
+    let startPromise: Promise<T>;
+    try {
+      startPromise = start(sharedContext);
+    } catch (err) {
+      startPromise = Promise.reject(err);
+    }
+
+    startPromise
+      .then(
+        (value) => {
+          newEntry.settled = true;
+          newEntry.result = { ok: true, value };
+          for (const waiter of newEntry.waiters) {
+            if (waiter.active) {
+              waiter.active = false;
+              try { waiter.cleanup(); } catch { /* ignore */ }
+              waiter.resolve(value);
+            }
+          }
+          newEntry.waiters.clear();
+        },
+        (error) => {
+          newEntry.settled = true;
+          newEntry.result = { ok: false, error };
+          for (const waiter of newEntry.waiters) {
+            if (waiter.active) {
+              waiter.active = false;
+              try { waiter.cleanup(); } catch { /* ignore */ }
+              waiter.reject(error);
+            }
+          }
+          newEntry.waiters.clear();
+        }
+      )
+      .finally(() => {
+        if (inflight.get(key) === (newEntry as InflightEntry<unknown>)) {
+          inflight.delete(key);
+        }
+      })
+      .catch(() => {});
+  }
+
+  const currentEntry = entry;
+  return new Promise<T>((resolve, reject) => {
+    if (currentEntry.settled && currentEntry.result) {
+      if (currentEntry.result.ok) {
+        resolve(currentEntry.result.value);
+      } else {
+        reject(currentEntry.result.error);
+      }
+      return;
+    }
+
+    const waiter: InflightWaiter<T> = {
+      resolve,
+      reject,
+      cleanup: () => {},
+      active: true,
+    };
+
+    function detachWaiter(error: unknown): void {
+      if (!waiter.active) return;
+      waiter.active = false;
+      try { waiter.cleanup(); } catch { /* ignore */ }
+      currentEntry.waiters.delete(waiter);
+      waiter.reject(error);
+
+      if (currentEntry.waiters.size === 0 && !currentEntry.settled) {
+        currentEntry.abortController.abort(error);
+        if (inflight.get(key) === (currentEntry as InflightEntry<unknown>)) {
+          inflight.delete(key);
+        }
+      }
+    }
+
+    let timeoutId: NodeJS.Timeout | undefined;
+    const onAbort = () => {
+      detachWaiter(toAbortError(context?.abortSignal?.reason));
+    };
+    const onBudgetAbort = () => {
+      const budgetReason = context?.budget?.abortReason();
+      const reason = budgetReason instanceof ToolError
+        ? budgetReason
+        : context?.budget?.isTimedOut()
+          ? new ToolError('TIMEOUT', 'Execution budget expired.')
+          : toAbortError(budgetReason);
+      detachWaiter(reason);
+    };
+
+    waiter.cleanup = () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+      if (context?.abortSignal) {
+        context.abortSignal.removeEventListener('abort', onAbort);
+      }
+      if (context?.budget) {
+        context.budget.executionSignal.removeEventListener('abort', onBudgetAbort);
+      }
+    };
+
+    currentEntry.waiters.add(waiter);
+
+    if (context?.abortSignal) {
+      if (context.abortSignal.aborted) {
+        detachWaiter(toAbortError(context.abortSignal.reason));
+        return;
+      }
+      context.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    if (context?.budget) {
+      if (context.budget.isCallerAborted()) {
+        detachWaiter(toAbortError(context.budget.abortReason()));
+        return;
+      }
+      if (context.budget.isExecutionExpired() || context.budget.isTimedOut()) {
+        const reason = context.budget.abortReason();
+        detachWaiter(reason instanceof ToolError ? reason : new ToolError('TIMEOUT', 'Execution budget expired.'));
+        return;
+      }
+      context.budget.executionSignal.addEventListener('abort', onBudgetAbort, { once: true });
+    }
+
+    if (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        detachWaiter(new ToolError('TIMEOUT', `Read operation timed out after ${context.timeoutMs} ms.`));
+      }, context.timeoutMs);
+    }
   });
-  inflight.set(key, { owner, promise });
-  return promise;
 }
 
 function fileStamp(file: string): string {
@@ -108,9 +317,12 @@ export async function probeBackend(id: ProviderId, options: ProbeBackendOptions 
     return cached.probe;
   }
   const probeFn = adapter.probe;
-  return coalesce(`probe:${id}`, probeFn, !options.fresh, async (readContext) => {
+  const inflightKey = `probe:${id}`;
+  return coalesce(inflightKey, probeFn, !options.fresh, async (readContext) => {
     const probe = await probeFn.call(adapter, readContext);
-    cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
+    if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
+      cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
+    }
     return probe;
   }, options.context);
 }
@@ -178,10 +390,13 @@ export async function readModelCatalog(id: ProviderId, options: ReadModelCatalog
     return catalog;
   }
   const listFn = adapter.listModels;
-  return coalesce(`catalog:${id}:${key}`, listFn, !options.fresh, async (readContext) => {
+  const inflightKey = `catalog:${id}:${key}`;
+  return coalesce(inflightKey, listFn, !options.fresh, async (readContext) => {
     const catalog = await listFn.call(adapter, probe, readContext);
-    catalogs.set(id, { listFn, catalog, key, at: Date.now() });
-    if (catalog) await recordObservedModels(id, key, { catalog });
+    if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
+      catalogs.set(id, { listFn, catalog, key, at: Date.now() });
+      if (catalog) await recordObservedModels(id, key, { catalog });
+    }
     return catalog;
   }, options.context);
 }
@@ -218,10 +433,13 @@ export async function readObservedModel(
     return stored.model;
   }
   const observeFn = adapter.observeModel;
-  return coalesce(`observe:${memoryKey}:${key}`, observeFn, !options.fresh, async (readContext) => {
+  const observeInflightKey = `observe:${memoryKey}:${key}`;
+  return coalesce(observeInflightKey, observeFn, !options.fresh, async (readContext) => {
     const model = await observeFn.call(adapter, requested, probe, readContext);
-    observations.set(memoryKey, { observeFn, model, key, at: Date.now() });
-    if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
+    if (!readContext?.abortSignal?.aborted && isCurrentInflight(observeInflightKey, readContext)) {
+      observations.set(memoryKey, { observeFn, model, key, at: Date.now() });
+      if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
+    }
     return model;
   }, options.context);
 }
