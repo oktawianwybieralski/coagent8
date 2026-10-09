@@ -555,3 +555,61 @@ test('EXEC-001-T08b: initiating waiter timeout/budget is not passed to shared co
     adapterRegistry.codex = original;
   }
 });
+
+test('EXEC-001-T08f: probeBackend waiter detaches with TIMEOUT when budget executionSignal expires', async () => {
+  const original = adapterRegistry.codex;
+  let finishProbe;
+  const probeGate = new Promise(resolve => { finishProbe = resolve; });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async () => {
+      await probeGate;
+      return { installed: true, executionSupported: true };
+    },
+  };
+
+  let testBudget;
+  try {
+    testBudget = createExecutionBudget({ totalBudgetMs: 40, teardownAllowanceMs: 10 });
+    const waiterPromise = probeBackend('codex', {
+      fresh: true,
+      context: { budget: testBudget },
+    });
+
+    await assert.rejects(
+      waiterPromise,
+      (err) => err instanceof ToolError && err.code === 'TIMEOUT'
+    );
+    finishProbe();
+  } finally {
+    if (testBudget) testBudget.dispose();
+    adapterRegistry.codex = original;
+  }
+});
+
+test('EXEC-001-T08f: inspectQuotas forwards BackendReadContext and enforces pre-flight abort and timeout', async () => {
+  const { inspectQuotas } = require('../../src/backends/availability.ts');
+  const preAborted = new AbortController();
+  preAborted.abort(new Error('caller-abort'));
+
+  await assert.rejects(
+    inspectQuotas(false, null, { context: { abortSignal: preAborted.signal } }),
+    (err) => err instanceof ToolError && err.code === 'ABORTED'
+  );
+
+  let budget;
+  try {
+    budget = createExecutionBudget({ totalBudgetMs: 50, teardownAllowanceMs: 50 });
+    assert.equal(budget.isExecutionExpired(), true);
+
+    await assert.rejects(
+      inspectQuotas(false, null, { context: { budget } }),
+      (err) => err instanceof ToolError && err.code === 'TIMEOUT'
+    );
+  } finally {
+    if (budget) budget.dispose();
+  }
+});

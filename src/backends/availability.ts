@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { adapterRegistry } from './registry.js';
+import { probeBackend } from './probe-cache.js';
 import { loadConfig } from '../config.js';
 import { QuotaReport, QuotaCacheRecord } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
-import { PROVIDERS, ToolError, type ProviderId } from '../contracts/index.js';
+import { PROVIDERS, ToolError, type ProviderId, type BackendReadContext } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import type { AdapterProbeResult } from './types.js';
@@ -18,6 +19,16 @@ export interface AvailabilitySelectionOptions {
   callerProvider?: ProviderId | null;
   /** Receives a bounded warning when the quota cache cannot be updated; selection continues. */
   warnings?: string[];
+  /** Optional cancellation and timeout context (`EXEC-001-T08f`). */
+  context?: BackendReadContext;
+}
+export interface InspectQuotasOptions {
+  nativeQuota?: boolean;
+  only?: readonly ProviderId[];
+  measuredNow?: Set<ProviderId>;
+  onCacheError?: (error: Error) => void;
+  /** Optional cancellation and timeout context (`EXEC-001-T08f`). */
+  context?: BackendReadContext;
 }
 /** Headroom assumed for an unmeasured quota, so only measured headroom changes the preference order. */
 const UNMEASURED_HEADROOM_PERCENT = 50;
@@ -78,17 +89,29 @@ export async function writeQuotaCache(data: QuotaReport): Promise<void> { await 
  * @returns The report, including fresh carried-over native measurements and observed cooldowns.
  * @throws On cache write/lock failure when no `onCacheError` is given.
  */
-export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: { nativeQuota?: boolean; only?: readonly ProviderId[]; measuredNow?: Set<ProviderId>; onCacheError?: (error: Error) => void } = {}): Promise<QuotaReport> {
+export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: InspectQuotasOptions = {}): Promise<QuotaReport> {
+  if (options.context?.abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Quota inspection aborted by caller.');
+  }
+  if (options.context?.budget && (options.context.budget.isExecutionExpired() || options.context.budget.isTimedOut())) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before quota inspection.');
+  }
   const cache=readQuotaCache();
   if (!forceRefresh && !probesOverride && cache && Date.now()-cache.timestamp<QUOTA_CACHE_TTL_MS && PROVIDERS.every(id=>cache.data[id])) return cache.data;
-  const probes=probesOverride || Object.fromEntries(await Promise.all(PROVIDERS.map(async id=>[id,await adapterRegistry[id].probe()])));
+  const probes=probesOverride || Object.fromEntries(await Promise.all(PROVIDERS.map(async id=>[id,await probeBackend(id, { fresh: forceRefresh, context: options.context })])));
   const readNative = options.nativeQuota ?? !probesOverride;
   const native = Object.fromEntries(await Promise.all(PROVIDERS.map(async id => {
     const probe = probes[id];
     if (probe?.quota || !probe?.installed || !readNative) return [id, probe?.quota];
-    return [id, await adapterRegistry[id].inspectQuota?.(probe)];
+    return [id, await adapterRegistry[id].inspectQuota?.(probe, options.context)];
   }))) as Partial<Record<ProviderId, AdapterProbeResult['quota']>>;
   for (const id of PROVIDERS) if (native[id]?.measured) options.measuredNow?.add(id);
+  if (options.context?.abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Quota inspection aborted.');
+  }
+  if (options.context?.budget && (options.context.budget.isExecutionExpired() || options.context.budget.isTimedOut())) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired during quota inspection.');
+  }
   const measuredAt = new Date().toISOString();
   const merge = (latest: QuotaReport): QuotaReport => {
     const result: QuotaReport={};
@@ -206,7 +229,7 @@ export async function resetQuotaCooldown(id: string): Promise<void> {
 export async function selectSmartQuotaBackend(candidates: ProviderId[] | null = null, options: AvailabilitySelectionOptions = {}): Promise<ProviderId> {
   const config = options.config || loadConfig();
   const onCacheError = (error: Error) => options.warnings?.push(`Quota cache not updated; routing used the last readable data: ${redactDiagnostic(error.message, 512)}`);
-  const quotas = options.quotasOverride || await inspectQuotas(false, options.probesOverride, { onCacheError });
+  const quotas = options.quotasOverride || await inspectQuotas(false, options.probesOverride, { onCacheError, context: options.context });
   const installed = (candidates || PROVIDERS).filter(id =>
     config.routing.allowedBackends.includes(id) && quotas[id]?.installed &&
     quotas[id].executionSupported !== false && options.probesOverride?.[id]?.executionSupported !== false);

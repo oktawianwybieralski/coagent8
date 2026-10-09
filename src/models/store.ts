@@ -221,7 +221,12 @@ export function readStoredPrices(): StoredPrices | undefined {
  * @remarks Best-effort: a lock or write failure is reported on stderr, never thrown.
  */
 export async function recordPrices(prices: StoredPrices): Promise<void> {
-  await updateStore(store => { store.prices = prices; });
+  await updateStore(store => {
+    if (store.prices && store.prices.fetchedAt > prices.fetchedAt) {
+      return;
+    }
+    store.prices = prices;
+  });
 }
 
 /**

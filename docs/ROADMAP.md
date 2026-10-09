@@ -524,12 +524,13 @@ tests and documentation review. Depends on T06.
   sandbox/inherited-tool policy or mislabelling timeout as unauthenticated.
   Check: R, CACHE and `tests/backends/agy/adapter.test.js`; fetch current CLI docs.
   Evidence: [EXEC-001-T08e implementation](HANDOFF.md#exec-001-t08e-bound-agy-reads).
-- [ ] **T08f - bound price fetches and close shared-read races.** Start:
+- [x] **T08f - bound price fetches and close shared-read races.** Start:
   `src/models/prices.ts`, `src/backends/probe-cache.ts`,
   `src/backends/availability.ts`. Apply cancellation to owned price I/O and verify
   fresh/default reads, cache failures and last-waiter cancellation across the
   integrated providers. Done: late completions do not poison inflight/cache
   state; freshness and unknown-price policy remain unchanged. Check: R, CACHE/POLICY.
+  Evidence: [EXEC-001-T08f implementation](HANDOFF.md#exec-001-t08f-bound-price-fetches-and-close-shared-read-races).
 
 Acceptance: deliberately stalled fixture reads settle within their allocated
 budget, clean owned processes and do not poison concurrent calls. Verification:

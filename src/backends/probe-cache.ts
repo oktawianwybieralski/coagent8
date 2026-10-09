@@ -211,7 +211,7 @@ function coalesce<T>(
       const budgetReason = context?.budget?.abortReason();
       const reason = budgetReason instanceof ToolError
         ? budgetReason
-        : context?.budget?.isTimedOut()
+        : (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired())
           ? new ToolError('TIMEOUT', 'Execution budget expired.')
           : toAbortError(budgetReason);
       detachWaiter(reason);

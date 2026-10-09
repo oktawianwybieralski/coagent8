@@ -22,6 +22,7 @@
 import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { readObservedModelNames, readStoredPrices, recordPrices, type PriceRecord, type StoredPrices } from './store.js';
+import { ToolError, type BackendReadContext } from '../contracts/index.js';
 
 const DEFAULT_PRICES_URL = 'https://openrouter.ai/api/v1/models';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -131,9 +132,60 @@ export function findPrice(list: PriceList, model: string): ModelPrice | undefine
   return list.models[priceKey(model)] ?? undefined;
 }
 
-async function readSource(source: string): Promise<string> {
+/**
+ * Caps caller timeout to the operation's default bound (`EXEC-001-T08f`).
+ */
+export function boundReadTimeout(context: BackendReadContext | undefined, defaultMs: number): number {
+  if (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0) {
+    return Math.min(context.timeoutMs, defaultMs);
+  }
+  return defaultMs;
+}
+
+function toAbortError(reason: unknown): ToolError {
+  if (reason instanceof ToolError) return reason;
+  if (reason instanceof Error) {
+    return new ToolError('ABORTED', reason.message, { cause: reason });
+  }
+  if (typeof reason === 'string' && reason.length > 0) {
+    return new ToolError('ABORTED', reason);
+  }
+  return new ToolError('ABORTED', 'Read operation was aborted by caller.');
+}
+
+function getPreAbortError(context?: BackendReadContext): ToolError | undefined {
+  if (!context) return undefined;
+  if (context.abortSignal?.aborted) {
+    return toAbortError(context.abortSignal.reason);
+  }
+  if (context.budget) {
+    if (context.budget.isCallerAborted()) {
+      const reason = context.budget.abortReason();
+      return reason instanceof ToolError ? reason : toAbortError(reason);
+    }
+    if (context.budget.isExecutionExpired() || context.budget.isTimedOut()) {
+      const reason = context.budget.abortReason();
+      return reason instanceof ToolError ? reason : new ToolError('TIMEOUT', 'Execution budget expired.');
+    }
+  }
+  if (context.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs <= 0) {
+    return new ToolError('TIMEOUT', 'Read operation timed out.');
+  }
+  return undefined;
+}
+
+async function readSource(source: string, context?: BackendReadContext): Promise<string> {
+  const preAbort = getPreAbortError(context);
+  if (preAbort) throw preAbort;
+
   if (!/^https?:\/\//i.test(source)) return readBoundedFileSync(source, MAX_PRICE_LIST_BYTES);
-  const response = await fetch(source, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: { accept: 'application/json' } });
+
+  const timeoutMs = boundReadTimeout(context, FETCH_TIMEOUT_MS);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const callerSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  const effectiveSignal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal;
+
+  const response = await fetch(source, { signal: effectiveSignal, headers: { accept: 'application/json' } });
   if (!response.ok || !response.body) throw new Error(`price list answered HTTP ${response.status}`);
   const declared = Number(response.headers.get('content-length'));
   if (declared > MAX_PRICE_LIST_BYTES) throw new Error('price list exceeds the size limit');
@@ -147,61 +199,280 @@ async function readSource(source: string): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+interface PriceWaiter {
+  resolve: (value: PriceList | undefined) => void;
+  reject: (reason?: unknown) => void;
+  cleanup: () => void;
+  active: boolean;
+}
+
+interface PriceInflightEntry {
+  id: number;
+  abortController: AbortController;
+  waiters: Set<PriceWaiter>;
+  models: Set<string>;
+  settled: boolean;
+  result?: { ok: true; value: PriceList | undefined } | { ok: false; error: unknown };
+}
+
+let nextInflightId = 0;
+let latestInflightId = 0;
+let activeInflight: PriceInflightEntry | undefined;
+const runningPromises = new Set<Promise<unknown>>();
+let failedAt = 0;
+
+function isCurrentPriceInflight(entry: PriceInflightEntry, readContext?: BackendReadContext): boolean {
+  if (!readContext?.abortSignal) return false;
+  return activeInflight === entry && activeInflight.abortController.signal === readContext.abortSignal;
+}
+
+const covers = (list: PriceList | undefined, models: readonly string[]) => list !== undefined && models.every(model => priceKey(model) in list.models);
+
+/** Wait before an unreachable price source is tried again. */
+const RETRY_MS = 5 * 60 * 1000;
+
+/**
+ * Reads the list once at a time: concurrent callers join a read in progress (`EXEC-001-T08f`).
+ * Enforces per-waiter cancellation/timeout isolation, last-waiter abort, and late settlement safety.
+ */
+async function sharedRefresh(
+  models: readonly string[],
+  context?: BackendReadContext,
+  fresh = false
+): Promise<PriceList | undefined> {
+  const preAbort = getPreAbortError(context);
+  if (preAbort) {
+    return Promise.reject(preAbort);
+  }
+
+  let isJoiner = false;
+  let entry: PriceInflightEntry | undefined;
+  if (!fresh && activeInflight && !activeInflight.settled && !activeInflight.abortController.signal.aborted) {
+    entry = activeInflight;
+    isJoiner = true;
+    for (const m of models) entry.models.add(m);
+  }
+
+  if (!entry) {
+    if (!fresh && Date.now() - failedAt < RETRY_MS) {
+      return undefined;
+    }
+
+    const newEntry: PriceInflightEntry = {
+      id: ++nextInflightId,
+      abortController: new AbortController(),
+      waiters: new Set(),
+      models: new Set(models),
+      settled: false,
+    };
+    latestInflightId = newEntry.id;
+    entry = newEntry;
+    activeInflight = newEntry;
+
+    const sharedContext: BackendReadContext = {
+      abortSignal: newEntry.abortController.signal,
+    };
+
+    const executionPromise = (async () => {
+      let list: PriceList | undefined;
+      let fetchError: unknown;
+      try {
+        const source = process.env.coagent8_PRICES_URL || DEFAULT_PRICES_URL;
+        let entries: ListedPrice[] | undefined;
+        try {
+          entries = parsePriceList(JSON.parse(await readSource(source, sharedContext)));
+        } catch (err) {
+          if (sharedContext.abortSignal?.aborted) {
+            throw toAbortError(sharedContext.abortSignal.reason);
+          }
+          if (err instanceof ToolError && (err.code === 'ABORTED' || err.code === 'TIMEOUT')) {
+            throw err;
+          }
+          process.stderr.write(`Warning: model prices not read: ${redactDiagnostic((err as Error).message, 256)}\n`);
+          return undefined;
+        }
+        if (!entries) {
+          process.stderr.write('Warning: model prices not read: the price list names no priced model.\n');
+          return undefined;
+        }
+        const names = new Set([...readObservedModelNames(), ...Object.keys(readStoredPrices()?.models ?? {}), ...newEntry.models]);
+        list = {
+          fetchedAt: Date.now(),
+          source: source === DEFAULT_PRICES_URL ? 'openrouter' : 'coagent8_PRICES_URL',
+          models: matchPrices(entries, names),
+        };
+        if (!sharedContext.abortSignal?.aborted && isCurrentPriceInflight(newEntry, sharedContext)) {
+          await recordPrices(list);
+        }
+        return list;
+      } catch (err) {
+        fetchError = err;
+        throw err;
+      } finally {
+        newEntry.settled = true;
+        if (fetchError !== undefined) {
+          newEntry.result = { ok: false, error: fetchError };
+          const isAbortOrTimeout = Boolean(
+            sharedContext.abortSignal?.aborted ||
+            (fetchError instanceof ToolError && (fetchError.code === 'ABORTED' || fetchError.code === 'TIMEOUT')) ||
+            (fetchError instanceof Error && fetchError.name === 'AbortError')
+          );
+          if (!isAbortOrTimeout && (newEntry.id === latestInflightId || activeInflight === newEntry)) {
+            failedAt = Date.now();
+          }
+          for (const waiter of newEntry.waiters) {
+            if (waiter.active) {
+              waiter.active = false;
+              try { waiter.cleanup(); } catch { /* ignore */ }
+              waiter.reject(fetchError);
+            }
+          }
+        } else {
+          newEntry.result = { ok: true, value: list };
+          if (!sharedContext.abortSignal?.aborted && (newEntry.id === latestInflightId || activeInflight === newEntry)) {
+            failedAt = list ? 0 : Date.now();
+          }
+          for (const waiter of newEntry.waiters) {
+            if (waiter.active) {
+              waiter.active = false;
+              try { waiter.cleanup(); } catch { /* ignore */ }
+              waiter.resolve(list);
+            }
+          }
+        }
+        newEntry.waiters.clear();
+        if (activeInflight === newEntry) {
+          activeInflight = undefined;
+        }
+      }
+    })();
+
+    runningPromises.add(executionPromise);
+    executionPromise.finally(() => {
+      runningPromises.delete(executionPromise);
+    }).catch(() => {});
+  }
+
+  const targetEntry = entry;
+  const list = await new Promise<PriceList | undefined>((resolve, reject) => {
+    if (targetEntry.settled && targetEntry.result) {
+      if (targetEntry.result.ok) {
+        resolve(targetEntry.result.value);
+      } else {
+        reject(targetEntry.result.error);
+      }
+      return;
+    }
+
+    const waiter: PriceWaiter = {
+      resolve,
+      reject,
+      cleanup: () => {},
+      active: true,
+    };
+
+    function detachWaiter(error: unknown): void {
+      if (!waiter.active) return;
+      waiter.active = false;
+      try { waiter.cleanup(); } catch { /* ignore */ }
+      targetEntry.waiters.delete(waiter);
+      waiter.reject(error);
+
+      if (targetEntry.waiters.size === 0 && !targetEntry.settled) {
+        targetEntry.abortController.abort(error);
+        if (activeInflight === targetEntry) {
+          activeInflight = undefined;
+        }
+      }
+    }
+
+    let timeoutId: NodeJS.Timeout | undefined;
+    const onAbort = () => {
+      detachWaiter(toAbortError(context?.abortSignal?.reason));
+    };
+    const onBudgetAbort = () => {
+      const budgetReason = context?.budget?.abortReason();
+      const reason = budgetReason instanceof ToolError
+        ? budgetReason
+        : (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired())
+          ? new ToolError('TIMEOUT', 'Execution budget expired.')
+          : toAbortError(budgetReason);
+      detachWaiter(reason);
+    };
+
+    waiter.cleanup = () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+      if (context?.abortSignal) {
+        context.abortSignal.removeEventListener('abort', onAbort);
+      }
+      if (context?.budget) {
+        context.budget.executionSignal.removeEventListener('abort', onBudgetAbort);
+      }
+    };
+
+    targetEntry.waiters.add(waiter);
+
+    if (context?.abortSignal) {
+      if (context.abortSignal.aborted) {
+        detachWaiter(toAbortError(context.abortSignal.reason));
+        return;
+      }
+      context.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    if (context?.budget) {
+      if (context.budget.isCallerAborted()) {
+        detachWaiter(toAbortError(context.budget.abortReason()));
+        return;
+      }
+      if (context.budget.isExecutionExpired() || context.budget.isTimedOut()) {
+        const reason = context.budget.abortReason();
+        detachWaiter(reason instanceof ToolError ? reason : new ToolError('TIMEOUT', 'Execution budget expired.'));
+        return;
+      }
+      context.budget.executionSignal.addEventListener('abort', onBudgetAbort, { once: true });
+    }
+
+    if (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        detachWaiter(new ToolError('TIMEOUT', `Read operation timed out after ${context.timeoutMs} ms.`));
+      }, context.timeoutMs);
+    }
+  });
+
+  if (isJoiner && !covers(list, models)) {
+    if (Date.now() - failedAt < RETRY_MS) {
+      return undefined;
+    }
+    return sharedRefresh(models, context, false);
+  }
+
+  return list;
+}
+
 /**
  * Reads the price list from its source and stores the prices of the models the backends
  * offer, those checked before and `models`.
  * @param models - Further models to match, such as the one a call names.
+ * @param context - Optional cancellation and timeout context (`EXEC-001-T08f`).
  * @returns The prices, or undefined when the source is unreachable, too slow, too large or
  * malformed; the reason goes to stderr.
  */
-export async function refreshPrices(models: readonly string[] = []): Promise<PriceList | undefined> {
-  const source = process.env.coagent8_PRICES_URL || DEFAULT_PRICES_URL;
-  let entries: ListedPrice[] | undefined;
-  try { entries = parsePriceList(JSON.parse(await readSource(source))); }
-  catch (err) {
-    process.stderr.write(`Warning: model prices not read: ${redactDiagnostic((err as Error).message, 256)}\n`);
-    return undefined;
-  }
-  if (!entries) {
-    process.stderr.write('Warning: model prices not read: the price list names no priced model.\n');
-    return undefined;
-  }
-  const names = new Set([...readObservedModelNames(), ...Object.keys(readStoredPrices()?.models ?? {}), ...models]);
-  const list: PriceList = { fetchedAt: Date.now(), source: source === DEFAULT_PRICES_URL ? 'openrouter' : 'coagent8_PRICES_URL', models: matchPrices(entries, names) };
-  await recordPrices(list);
-  return list;
-}
-
-/** Wait before an unreachable price source is tried again. */
-const RETRY_MS = 5 * 60 * 1000;
-let running: Promise<PriceList | undefined> | undefined;
-let failedAt = 0;
-
-const covers = (list: PriceList | undefined, models: readonly string[]) => list !== undefined && models.every(model => priceKey(model) in list.models);
-
-/**
- * Reads the list once at a time: a caller joins a read in progress that covers its models,
- * and none starts within five minutes of a failure.
- */
-async function sharedRefresh(models: readonly string[]): Promise<PriceList | undefined> {
-  if (running) {
-    const joined = await running;
-    if (covers(joined, models)) return joined;
-  }
-  if (Date.now() - failedAt < RETRY_MS) return undefined;
-  const read = running = refreshPrices(models).finally(() => { if (running === read) running = undefined; });
-  const list = await read;
-  if (!list) failedAt = Date.now();
-  return list;
+export async function refreshPrices(models: readonly string[] = [], context?: BackendReadContext): Promise<PriceList | undefined> {
+  return sharedRefresh(models, context, true);
 }
 
 /**
- * Waits for a price read in progress, such as a background one, to store its result.
- * @remarks For graceful shutdown; the read is bounded by its 10-second fetch timeout and
- * reports its own failure.
+ * Waits for price reads in progress, such as a background one, to store their results.
+ * @remarks For graceful shutdown; reads are bounded by their fetch timeout and report their own failure.
  */
 export async function settlePriceReads(): Promise<void> {
-  await running;
+  if (runningPromises.size > 0) {
+    await Promise.allSettled([...runningPromises]);
+  }
 }
 
 /**
@@ -213,20 +484,45 @@ export function isPriceListStale(list: PriceList, now = Date.now()): boolean {
 }
 
 /**
+ * Options for reading model prices (`EXEC-001-T08f`).
+ */
+export interface ReadPricesOptions {
+  /** Models the call needs priced. */
+  models?: readonly string[];
+  /** When true, a list older than a week waits for a read (for calls with a price limit). */
+  current?: boolean;
+  /** When true, a list older than a day waits for a read (doctor). */
+  refresh?: boolean;
+  /** When true, always fetches afresh bypassing cache and inflight sharing (`EXEC-001-T08f`). */
+  fresh?: boolean;
+  /** Optional cancellation and deadline context for this read (`EXEC-001-T08f`). */
+  context?: BackendReadContext;
+}
+
+/**
  * Returns the stored prices, reading the list when needed (see the module remarks).
- * @param options - `models` the call needs priced; `current` for a call with a price limit,
- * which waits for a read of a list older than a week; `refresh` (doctor) waits for a read of
- * a list older than a day instead of leaving it to the background.
+ * @param options - `models` the call needs priced; `current` for a call with a price limit;
+ * `refresh` (doctor) waits for a read of a list older than a day; `fresh` always reads afresh;
+ * `context` supplies cancellation and timeout budget.
  * @returns The prices, or the stored ones when a read fails; undefined when none exist.
  */
-export async function readPrices(options: { models?: readonly string[]; current?: boolean; refresh?: boolean } = {}): Promise<PriceList | undefined> {
+export async function readPrices(options: ReadPricesOptions = {}): Promise<PriceList | undefined> {
+  const context = options.context;
+  const preAbort = getPreAbortError(context);
+  if (preAbort) throw preAbort;
+
   const models = options.models ?? [];
   const stored = readStoredPrices();
   const age = stored ? Date.now() - stored.fetchedAt : Infinity;
-  const wait = !covers(stored, models) || (options.current && age >= PRICE_STALE_MS) || (options.refresh && age >= PRICE_REFRESH_MS);
-  if (wait) return (await sharedRefresh(models)) ?? stored;
+  const wait = Boolean(options.fresh) || !covers(stored, models) || (options.current && age >= PRICE_STALE_MS) || (options.refresh && age >= PRICE_REFRESH_MS);
+  if (wait) {
+    const list = await sharedRefresh(models, context, Boolean(options.fresh));
+    return list ?? stored;
+  }
   // A day-old list stays in use while a background read replaces it; that read reports its own failure.
-  if (age >= PRICE_REFRESH_MS && !running) void sharedRefresh([]);
+  if (age >= PRICE_REFRESH_MS && !activeInflight) {
+    void sharedRefresh([], undefined, false).catch(() => {});
+  }
   return stored;
 }
 

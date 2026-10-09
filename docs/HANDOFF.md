@@ -1142,6 +1142,46 @@ Scope: bound agy (Antigravity/Gemini) observation reads (`probe`, `inspectQuota`
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_ee0682d203229ba6a3a802ae`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2/P3 issues; independent tests NOT_RUN due to read-only sandbox).
 
+## EXEC-001-T08f: bound price fetches and close shared-read races
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: bound model price fetches and close shared-read concurrency races across `src/models/prices.ts`, `src/models/store.ts`, `src/backends/probe-cache.ts`, and `src/backends/availability.ts`, with comprehensive unit tests in `tests/models/prices.test.js` and `tests/backends/probe-cache.test.js`.
+
+### Implemented mechanisms:
+1. **Context propagation & pre-flight checks**:
+   - `readPrices({ models, current, refresh, fresh, context })` and `refreshPrices(models, context)` accept optional `BackendReadContext` (`abortSignal`, `budget`, `timeoutMs`).
+   - Pre-flight validation checks `abortSignal?.aborted` (rejecting immediately with `ToolError('ABORTED')`), and `context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()` or non-positive `timeoutMs` (rejecting immediately with `ToolError('TIMEOUT')`) without initiating network or storage I/O.
+   - Timeout bounds implemented with `boundReadTimeout(context, defaultMs)` via `Math.min`.
+   - `readSource` bounds HTTP fetch with `FETCH_TIMEOUT_MS` (10s) and combines caller signal with timeout signal via `AbortSignal.any`.
+2. **Per-waiter cancellation & timeout isolation**:
+   - Multiple concurrent callers waiting on an in-flight read are tracked in `PriceInflightEntry.waiters`.
+   - Detaching/cancelling one waiter (via `abortSignal`, `budget.executionSignal`, or `timeoutMs`) rejects that waiter's promise without cancelling the shared coordinator or affecting concurrent waiters.
+3. **Last-waiter coordinator cancellation & eviction**:
+   - When the last active waiter detaches from an in-flight read, `targetEntry.abortController.abort(error)` is invoked and the entry is immediately evicted from `activeInflight`, releasing ongoing HTTP resources.
+4. **Late settlement & cache poisoning protection**:
+   - If an in-flight read is superseded (e.g. by `fresh: true`) or aborted, `isCurrentPriceInflight(entry, context)` prevents late completion from writing to disk.
+   - `src/models/store.ts` (`recordPrices`) guards against overwriting newer disk prices (`store.prices.fetchedAt > prices.fetchedAt`).
+   - Incremental entry IDs (`latestInflightId`) ensure that superseded/aborted reads never overwrite the 5-minute `failedAt` retry cooldown.
+   - Aborted or timed-out reads (`ToolError` with ABORTED or TIMEOUT) do not set `failedAt`, allowing subsequent retries to proceed immediately without cooldown.
+   - Successful reads that finished after last-waiter abort do not clear earlier genuine failure cooldowns.
+5. **Joiner follow-up reads & coalescing**:
+   - If a caller joins an in-flight read whose completed price list does not cover the caller's models, it automatically triggers a follow-up coalesced read (`sharedRefresh(models, context, false)`).
+   - In `readPrices`, `options.refresh` (doctor) participates in coalescing and honors retry cooldown, while `options.fresh` initiates an independent fresh read.
+6. **Availability & probe-cache integration**:
+   - `inspectQuotas` in `src/backends/availability.ts` accepts `BackendReadContext`, enforces pre-flight checks, and routes probe queries through `probeBackend(id, { fresh: forceRefresh, context: options.context })`.
+   - `selectSmartQuotaBackend` forwards `options.context` to `inspectQuotas`.
+   - `onBudgetAbort` in `src/backends/probe-cache.ts` properly detects `isExecutionExpired() || isTimedOut()`, mapping deadline expiration deterministically to `ToolError('TIMEOUT')`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 527 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 34 tests (34 pass, 0 fail, exit code 0): `tests/models/prices.test.js` (20 pass), `tests/backends/probe-cache.test.js` (14 pass).
+- PASS: Full test suite: 541 tests (538 pass, 0 fail, 3 skipped, duration 174.6 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_7ce0059e742deb4a45cbc367`, Turn 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;
