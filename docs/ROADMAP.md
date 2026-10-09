@@ -545,12 +545,13 @@ documentation before changing provider-specific CLI/API behavior. Depends on T07
   Done: stalled Git stops, partial input and failed recheck cannot be READY,
   and foreign-tree rejection survives. Check: R, REVIEW/PROCESS.
   Evidence: [EXEC-001-T09a implementation](HANDOFF.md#exec-001-t09a-bound-review-git-work).
-- [ ] **T09b - cancel lock waiters safely.** Start:
+- [x] **T09b - cancel lock waiters safely.** Start:
   `src/storage/lock.ts:withFileLock`. Cover both the in-process queue and on-disk
   lease contention; preserve queue progress, token ownership and renewal.
   Done: aborting the middle of three waiters does not strand the third or
   release another owner's lease. Check: R, LOCK and cross-process contention
   fixtures. Keep ordinary callers without context compatible.
+  Evidence: [EXEC-001-T09b implementation](HANDOFF.md#exec-001-t09b-cancel-lock-waiters-safely).
 - [ ] **T09c - stop session acquisition after expiry.** Start:
   `src/sessions/session.ts:acquireAndResolveSession` and history reservation
   callers. Pass the context into waits and check around synchronous boundaries.

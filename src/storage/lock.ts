@@ -23,6 +23,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readBoundedFile } from './read.js';
+import { ToolError } from '../contracts/error.js';
+import type { BackendReadContext, ExecutionBudget } from '../contracts/execution.js';
 
 /** Interval at which a holder renews its lease's modification time. */
 const LEASE_RENEW_MS = 2000;
@@ -121,6 +123,102 @@ export class LockTimeoutError extends Error {
 export const inProcessLocks = new Map<string, Promise<void>>();
 
 /**
+ * Options configuring file lock acquisition (`EXEC-001-T09b`).
+ */
+export interface FileLockOptions {
+  /** Maximum duration to wait before aborting with {@link LockTimeoutError} (default: 5000ms). */
+  timeoutMs?: number;
+  /** Optional cancellation signal for interrupting the wait. */
+  abortSignal?: AbortSignal;
+  /** Optional complete-call execution budget handle. */
+  budget?: ExecutionBudget;
+  /** Optional read or execution context containing abort signal and budget. */
+  context?: BackendReadContext;
+}
+
+function isAbortSignal(val: unknown): val is AbortSignal {
+  return (
+    val !== null &&
+    typeof val === 'object' &&
+    typeof (val as AbortSignal).addEventListener === 'function' &&
+    typeof (val as AbortSignal).aborted === 'boolean'
+  );
+}
+
+function combineSignals(
+  signal1?: AbortSignal | null,
+  signal2?: AbortSignal | null
+): AbortSignal | null {
+  const activeSignals = [signal1, signal2].filter((s): s is AbortSignal => !!s);
+  if (activeSignals.length === 0) return null;
+  if (activeSignals.length === 1) return activeSignals[0];
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(activeSignals);
+  }
+  const controller = new AbortController();
+  for (const s of activeSignals) {
+    if (s.aborted) {
+      controller.abort(s.reason);
+      return controller.signal;
+    }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+function toAbortError(reason: unknown, budget?: ExecutionBudget): ToolError {
+  if (budget && (budget.isExecutionExpired() || budget.isTimedOut())) {
+    const budgetReason = budget.abortReason();
+    if (budgetReason instanceof ToolError) return budgetReason;
+    return new ToolError('ABORTED', 'Execution budget expired while waiting for storage lock.');
+  }
+  if (reason instanceof ToolError) return reason;
+  if (reason instanceof Error) {
+    return new ToolError('ABORTED', reason.message, { cause: reason });
+  }
+  if (typeof reason === 'string' && reason.length > 0) {
+    return new ToolError('ABORTED', reason);
+  }
+  return new ToolError('ABORTED', 'Lock acquisition was aborted.');
+}
+
+function parseFileLockOptions(
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): {
+  timeoutMs: number;
+  abortSignal?: AbortSignal;
+  budget?: ExecutionBudget;
+  context?: BackendReadContext;
+} {
+  if (options === undefined || options === null) {
+    return { timeoutMs: 5000 };
+  }
+  if (typeof options === 'number') {
+    return { timeoutMs: options };
+  }
+  if (isAbortSignal(options)) {
+    return { timeoutMs: 5000, abortSignal: options };
+  }
+  if (typeof options === 'object') {
+    const raw = options as FileLockOptions & BackendReadContext;
+    const context = raw.context;
+    const budget = raw.budget ?? context?.budget;
+    const callerSignal = raw.abortSignal !== context?.abortSignal
+      ? combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined
+      : raw.abortSignal ?? context?.abortSignal;
+    let timeoutMs = raw.timeoutMs ?? context?.timeoutMs ?? 5000;
+    if (budget) {
+      const remaining = budget.remainingExecutionMs();
+      if (Number.isFinite(remaining)) {
+        timeoutMs = Math.min(timeoutMs, Math.max(0, remaining));
+      }
+    }
+    return { timeoutMs, abortSignal: callerSignal, budget, context };
+  }
+  return { timeoutMs: 5000 };
+}
+
+/**
  * Publishes a complete lease file, or reports that a lease already exists.
  * @returns True when this call created the lease.
  */
@@ -170,16 +268,33 @@ async function reclaimStaleLease(leaseFile: string, judged: { owner: LeaseOwner 
  * Executes an asynchronous function within an exclusive file lease lock.
  *
  * Combines in-process FIFO promise queuing with OS-level `.lease` file acquisition.
- * Handles stale process detection, atomic reclamation, and token-verified cleanup.
+ * Handles stale process detection, atomic reclamation, token-verified cleanup, and
+ * safe cancellation of queued waiters (`EXEC-001-T09b`).
  *
  * @typeParam T - Result of the asynchronous critical section.
  * @param resource - Canonical path of the resource or directory to lock.
  * @param fn - Asynchronous critical section callback.
- * @param timeoutMs - Maximum duration to wait before aborting with lock timeout (default: 5000ms).
+ * @param timeoutMsOrOptions - Lock timeout in milliseconds, cancellation signal, options object, or read context (default: 5000ms).
  * @returns Resolves with the result of `fn`.
- * @throws Error if the lock cannot be acquired within `timeoutMs`.
+ * @throws {@link LockTimeoutError} if the lock cannot be acquired within the timeout.
+ * @throws ToolError if the wait is aborted by signal or expired budget.
  */
-export async function withFileLock<T>(resource: string, fn: () => Promise<T>, timeoutMs = 5000): Promise<T> {
+export async function withFileLock<T>(
+  resource: string,
+  fn: () => Promise<T>,
+  timeoutMsOrOptions: number | AbortSignal | FileLockOptions | BackendReadContext = 5000
+): Promise<T> {
+  const { timeoutMs: effectiveTimeoutMs, abortSignal: callerSignal, budget, context } = parseFileLockOptions(timeoutMsOrOptions);
+  const effectiveSignal = combineSignals(callerSignal, budget?.executionSignal);
+
+  // Pre-flight check: if already cancelled or budget expired, reject immediately without entering queue or touching disk
+  if (effectiveSignal?.aborted) {
+    throw toAbortError(effectiveSignal.reason, budget);
+  }
+  if (budget && (budget.isCallerAborted() || budget.isExecutionExpired() || budget.isTimedOut())) {
+    throw toAbortError(budget.abortReason(), budget);
+  }
+
   const canonical = path.resolve(resource);
   const started = Date.now();
 
@@ -205,27 +320,48 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
   let owned = false;
   let renewal: NodeJS.Timeout | null = null;
   try {
-    const queueTimeout = Math.max(1, timeoutMs - (Date.now() - started));
+    const queueTimeout = Math.max(1, effectiveTimeoutMs - (Date.now() - started));
     let timerHandle: NodeJS.Timeout | null = null;
     const timer = new Promise<never>((_, reject) => {
       timerHandle = setTimeout(() => reject(new LockTimeoutError()), queueTimeout);
     });
+
+    let abortListener: (() => void) | null = null;
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (effectiveSignal) {
+        abortListener = () => {
+          reject(toAbortError(effectiveSignal.reason, budget));
+        };
+        effectiveSignal.addEventListener('abort', abortListener, { once: true });
+      }
+    });
+
     try {
-      await Promise.race([prev, timer]);
+      await Promise.race([prev, timer, abortPromise]);
       acquiredInProcess = true;
     } finally {
       if (timerHandle) clearTimeout(timerHandle);
+      if (abortListener && effectiveSignal) {
+        effectiveSignal.removeEventListener('abort', abortListener);
+      }
     }
 
     let collisionAttempt = 0;
     await fs.mkdir(path.dirname(leaseFile), { recursive: true, mode: 0o700 });
     for (;;) {
+      if (effectiveSignal?.aborted) {
+        throw toAbortError(effectiveSignal.reason, budget);
+      }
+      if (budget && (budget.isCallerAborted() || budget.isExecutionExpired() || budget.isTimedOut())) {
+        throw toAbortError(budget.abortReason(), budget);
+      }
+
       if (await publishLease(leaseFile, leasePayload)) break;
       const lease = await inspectLease(leaseFile);
       if (lease && isStale(lease) && await reclaimStaleLease(leaseFile, lease)) continue;
 
       const elapsed = Date.now() - started;
-      if (elapsed >= timeoutMs) {
+      if (elapsed >= effectiveTimeoutMs) {
         throw new LockTimeoutError();
       }
       // Jittered exponential backoff: 5ms -> 10ms -> 25ms -> 50ms, mitigating NTFS lock contention
@@ -233,11 +369,31 @@ export async function withFileLock<T>(resource: string, fn: () => Promise<T>, ti
       const maxDelay = 50;
       const exponential = Math.min(maxDelay, Math.floor(baseDelay * Math.pow(1.5, Math.min(collisionAttempt, 8))));
       const jitter = Math.floor(Math.random() * (baseDelay + 1));
-      const waitTime = Math.min(exponential + jitter, Math.max(1, timeoutMs - elapsed));
+      const waitTime = Math.min(exponential + jitter, Math.max(1, effectiveTimeoutMs - elapsed));
       collisionAttempt++;
-      await delay(waitTime);
+
+      if (effectiveSignal) {
+        try {
+          await delay(waitTime, undefined, { signal: effectiveSignal });
+        } catch (err) {
+          if (effectiveSignal.aborted) {
+            throw toAbortError(effectiveSignal.reason, budget);
+          }
+          throw err;
+        }
+      } else {
+        await delay(waitTime);
+      }
     }
+
     owned = true;
+    if (effectiveSignal?.aborted) {
+      throw toAbortError(effectiveSignal.reason, budget);
+    }
+    if (budget && (budget.isCallerAborted() || budget.isExecutionExpired() || budget.isTimedOut())) {
+      throw toAbortError(budget.abortReason(), budget);
+    }
+
     renewal = setInterval(() => {
       const now = new Date();
       fs.utimes(leaseFile, now, now).catch(() => { /* A lease removed or replaced meanwhile is not renewed. */ });

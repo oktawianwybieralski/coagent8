@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T09a (bound review Git work).
+The current completed task is EXEC-001-T09b (cancel lock waiters safely).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T09b (cancel lock waiters safely).
+Next pending card: EXEC-001-T09c (stop session acquisition after expiry).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1216,6 +1216,43 @@ Scope: bound review Git operations and child process lifecycle across `src/works
 - PASS: `npm run docs` (TypeDoc build clean, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_0d363c789ba2df6e39ebe9c0`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2/P3 issues).
+
+## EXEC-001-T09b: cancel lock waiters safely
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: safe cancellation of lock waiters across in-process FIFO queues and on-disk lease contention backoff in `src/storage/lock.ts`, with comprehensive concurrency and regression tests in `tests/storage/lock.test.js`.
+
+### Implemented mechanisms:
+1. **Polymorphic signature & context support**:
+   - `withFileLock(resource, fn, timeoutMsOrOptions)` accepts numeric timeout (`number`), direct `AbortSignal`, options object (`FileLockOptions`), or `BackendReadContext`, retaining 100% backward compatibility for legacy and uncontended callers (including `timeoutMs: 0`).
+   - Signal normalization merges `options.abortSignal`, `context.abortSignal`, and monotonic `budget.executionSignal` via `combineSignals`.
+   - `parseFileLockOptions` clamps effective acquisition timeout to monotonic `budget.remainingExecutionMs()` when an active budget is attached.
+2. **Pre-flight cancellation**:
+   - Immediately rejects with `ToolError('ABORTED')` if `effectiveSignal.aborted` or `budget.isCallerAborted() || budget.isExecutionExpired() || budget.isTimedOut()` before touching `inProcessLocks` or performing any filesystem operations.
+3. **In-process FIFO queue progress & cancellation**:
+   - Raced promise in `Promise.race([prev, timer, abortPromise])` listens to `effectiveSignal` abort events and cleans up listeners deterministically in `finally`.
+   - When a queued waiter (e.g. middle of three waiters) is cancelled or times out, its critical section does not run and it immediately releases its own in-process gate (`releaseInProcess()`).
+   - Because `chainedLock` chains off the previous waiter (`prev.then(() => currentGate, () => currentGate)`), subsequent queued waiters only proceed after the genuine predecessor finishes, strictly preserving FIFO progress without stranding the third waiter.
+   - Tail cleanup in `inProcessLocks` is preserved and executed via `chainedLock.finally` once earlier turns settle.
+4. **On-disk lease contention backoff cancellation**:
+   - Backoff wait in `delay(waitTime, undefined, { signal: effectiveSignal })` is interrupted immediately upon abort rather than sleeping out the full backoff duration.
+   - Contention loop continuously checks signal and budget status on every iteration before attempting `publishLease` or `reclaimStaleLease`.
+5. **Token ownership, lease renewal, and isolation**:
+   - Cancelled or timed-out contenders have `owned = false` and never execute `fs.rm` or interfere with foreign leases on disk.
+   - An active holder starts lease renewal (`LEASE_RENEW_MS = 2000`) and removes its lease on critical section exit only after verifying that the lease token matches `myToken`.
+   - If cancellation fires immediately after `publishLease` succeeds, `owned = true` guarantees token-verified lease deletion in `finally`, leaving no orphaned lease files.
+6. **Error distinction**:
+   - Lock acquisition expiration throws `LockTimeoutError`, whereas external signal cancellation or budget expiration throws `ToolError('ABORTED')`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 530 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 17 tests (17 pass, 0 fail, exit code 0): `tests/storage/lock.test.js`.
+- PASS: Full test suite: 563 tests (560 pass, 0 fail, 3 skipped, duration 154.1 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_e823e6e0bc8ff25dab630111`, Turn 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
 
 ## Compact handoff contract
 
