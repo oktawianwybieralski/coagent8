@@ -16,9 +16,11 @@ The current task is SIMPLIFY-001: S0-S6 implemented, with the two S6 enforcement
 gaps found in follow-up inspection corrected locally.
 Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
-The owner requires a stop for inspection after each slice. S6 follow-up is ready
-for owner inspection after its scope-based checks; prior independent approval
-does not approve this new diff.
+The S6 follow-up is committed at `af9f7d2` after the owner requested a commit.
+The next planned work is EXEC-001-T01 through T12 in ROADMAP, covering measured
+preparation and the complete call lifecycle alongside AX-004. The tasks remain
+unimplemented; each has an owner inspection checkpoint. Prior independent
+approval does not approve the S6 follow-up or these future changes.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -498,10 +500,12 @@ import in contracts, and contracts -> constants.ts -> mcp/constants.ts.
   turns/history and EOF passed. This is fixture evidence, not native CLI acceptance.
 - PASS: final diff/content/local-link review and git diff --check.
 
-Next action: owner inspection and an independent review of this follow-up before
-Git integration. No new
-independent review, remote CI, native-client acceptance, commit, merge or
-publication is established by this follow-up.
+Implementation commit: `af9f7d2`. Next action: independent review of this
+follow-up before Git integration, then EXEC-001-T01 baseline under the detailed
+[ROADMAP tasks](ROADMAP.md#exec-001---measured-preparation-and-complete-call-lifecycle).
+No new independent approval, remote CI or native-client acceptance is established.
+The subsequent plan edit requires content/local-link review and git diff --check;
+it does not change runtime behavior or require repeating the preceding tests.
 
 ## Documentation disposition
 

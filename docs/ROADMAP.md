@@ -1,6 +1,6 @@
 # CoAgent8 roadmap
 
-Updated 2026-10-08. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-09. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -56,7 +56,9 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 1. Preserve/finalize audit and desktop-safety fixes (`AUDIT-001`). Resolve
    relevant blockers before enabling affected capabilities.
 2. Fix agent-facing selection (`AX-001` through `AX-006`) while designing
-   the shared task/profile contract (`COAGENT-001/002`).
+   the shared task/profile contract (`COAGENT-001/002`). Complete the measured
+   execution work below (`EXEC-001-T01` through `T12`) before expanding the
+   affected lifecycle owners for writing or delegation.
 3. Deliver one host-led write/check/review/fix path, role configuration and
    skill installation (`COAGENT-003/004/005/007`).
 4. Add delegated coordination and parallel work (`COAGENT-006`), with root
@@ -217,6 +219,229 @@ Do not repeat a passing full gate after every move. New failures or changes
 determine which checks must run again. Add behavioral regressions for uncovered
 risks, not tests that merely mirror the new directory tree.
 
+## EXEC-001 - measured preparation and complete call lifecycle
+
+Plan requested on 2026-10-09 after SIMPLIFY-001. All tasks below are pending.
+This is the detailed work breakdown for existing `EXEC-001`,
+`CLI-INTERACT-001`/CUR-007 and the timing/configuration portions of `AX-004`;
+it does not create a second execution stack or replace the coagent roadmap.
+The S6 follow-up is committed at `af9f7d2`; its independent review remains
+required before integration. Resolve relevant audit blockers first.
+
+The inspection found repeated configuration/selection reads across routing,
+selection and consent. `loadConfig` reads and validates the file each time.
+The controller starts its duration timer after preparation and session
+acquisition, and passes the original timeout to the adapter. These are source
+observations, not measured bottlenecks or a demonstrated speedup. Preparation,
+consent, execution and finalization currently share one large lifecycle owner.
+
+Work sequentially in the listed order. Each task produces one reviewable
+change with its affected callers/tests/docs, actual evidence in HANDOFF and
+an owner inspection checkpoint before the next task. Recheck checkout identity
+and concurrent changes at each resumption. Source changes follow the scope-based
+[quality gate](../.agents/rules/04-quality-gate.md); plan-only work needs content,
+links and diff review. Update ARCHITECTURE only as contracts actually land.
+
+### EXEC-001-T01 - establish a reproducible baseline
+
+- [ ] Inventory the call path from MCP handler entry through review Git input,
+  routing, config, probes/catalogs, model selection, price checks, consent,
+  session acquisition, adapter execution, archive and cleanup. Name the actual
+  owner and existing bounds/cancellation support of each phase.
+- [ ] Capture fixture scenarios for plain consult, explicit model/effort,
+  price-constrained auto, continuation and review. Use identical isolated
+  config/CLI fixtures; distinguish cold caches, warm caches and concurrent calls.
+- [ ] Record commands, commit/tree, runtime/platform, repetitions, elapsed
+  distributions and counts of config reads/native launches. Store reproducible
+  evidence in HANDOFF; label unmeasured native/client overhead separately.
+
+Acceptance: another agent can reproduce the baseline; no performance claim
+depends on footer timing alone. Verification: inspect existing fixtures and run
+only the selected baseline scenarios. Depends on the S6 follow-up.
+
+### EXEC-001-T02 - measure phases without changing timeout behavior
+
+- [ ] Add transport-independent timing at the owning call boundary, using a
+  monotonic clock. Capture preparation, consent wait, session acquisition,
+  execution, finalization and total elapsed time, including failed/cancelled calls.
+- [ ] Represent overlapping probe/catalog work accurately; do not sum parallel
+  spans as total latency. Measure caller ToolSearch/host time separately.
+- [ ] Preserve the current meaning of `durationMs` until the explicit contract
+  migration in T11. Keep timings bounded and free of prompts, secrets and paths.
+
+Acceptance: deliberate fixture delays appear in the correct phase and total;
+instrumentation does not change routing, retries or timeouts. Verification:
+focused success/failure/timing fixtures and typecheck. Depends on T01.
+
+### EXEC-001-T03 - supply effective configuration with provenance
+
+- [ ] Define a request-scoped configuration view at the application boundary:
+  validated settings, effective config/data locations, source precedence and
+  a non-secret identity used to detect relevant changes.
+- [ ] Make routing/selection/consent consume this view through narrow contracts.
+  Keep file/editor/environment precedence and invalid-config failure behavior.
+  Reuse the existing config owner; do not add a global cache or service locator.
+- [ ] Supply redacted provenance to doctor under AX-004. Separate diagnostic
+  path disclosure from public answer redaction, and state restart requirements.
+
+Acceptance: stable preparation does not repeatedly read the same config;
+custom paths, old registration overrides and editor settings remain effective.
+Verification: config/editor/doctor tests, malformed and concurrently changed
+config fixtures, typecheck and dependency check. Depends on T02.
+
+### EXEC-001-T04 - extract cohesive task preparation
+
+- [ ] Extract request/session validation, provider resolution, concrete model
+  selection and explicit effort/catalog checks into an application preparation
+  operation. Return neutral data needed by the lifecycle controller.
+- [ ] Keep pure selection/governance rules in models/, native observations in
+  backends/ and continuation ownership in sessions/. Keep human consent and
+  session acquisition explicit subsequent phases.
+- [ ] Update all callers in this slice; introduce no permanent forwarding
+  shims, duplicated policy or transport imports in execution/.
+
+Acceptance: behavior and error codes match the baseline for plain, explicit,
+priced and continued calls; invalid/busy handles fail closed. Verification:
+selection/routing/price-limit/continuation regressions, typecheck and dependency
+check. Depends on T03. Treat this as structural extraction, not a speedup claim.
+
+### EXEC-001-T05 - reuse observations within preparation
+
+- [ ] Pass the resolved catalog/default-model observations between routing,
+  selection and consent. Remove only repeated work demonstrated by T01/T02.
+- [ ] Preserve cache keys, TTL/fresh-read semantics, alias resolution,
+  adapter-function identity and concurrent miss coalescing. Account for explicit
+  refreshes and changes to CLI/config/environment observations.
+- [ ] Retain mandatory price/policy revalidation after consent; request reuse
+  must not freeze stale evidence or silently change the selected model.
+
+Acceptance: fixture counters show which reads/launches were removed while
+selection, price limits and approval outcomes remain identical. Verification:
+probe-cache/selection/governance/price-change concurrency tests and a focused
+cold/warm baseline comparison. Depends on T04.
+
+### EXEC-001-T06 - guarantee finalization after resource acquisition
+
+- [ ] Establish one lifecycle owner for acquired turn tokens, history writer,
+  timers/listeners, active cancellation entries and settlement notifications.
+  Every acquired resource must enter a guaranteed finalization path immediately.
+- [ ] Attempt required cleanup independently when metadata, archive flush,
+  cooldown updates or review snapshot reads fail. Preserve fail-closed lease
+  results, best-effort archive warnings and continuation invalidation.
+- [ ] Bound owned teardown and preserve provider protocol interruption, hidden
+  Windows launches and process-handle/group ownership. Never detach cleanup
+  accidentally by returning from a Promise race.
+
+Acceptance: injected failure/cancellation at each acquisition/finalization
+boundary leaves no owned active entry, timer or turn lease without a reported
+outcome; archive failure does not erase a valid answer. Verification: controller,
+history/session and process failure-path tests on affected platforms. Depends
+on T05. Report fixture and native teardown evidence separately.
+
+### EXEC-001-T07 - define the complete-call budget contract
+
+- [ ] Specify the deadline start before preparation, including review input
+  collection. Define one absolute deadline and remaining budget, distinguish
+  user cancellation from timeout and centralize duplicated timeout defaults.
+- [ ] Specify consent accounting explicitly: elapsed consent wait is reported;
+  the proposed complete-call deadline continues during it. Heartbeats and
+  activity never extend the deadline. Describe migration from today's
+  process-only `timeout_ms` before changing caller-visible behavior.
+- [ ] Define a bounded cleanup allowance and host-limit handling. When safe
+  teardown exceeds the execution deadline, report the overrun honestly; do not
+  claim an exact response-time cap while owned resources are still running.
+
+Acceptance: the contract answers what happens when a deadline expires in every
+phase, including consent and cleanup. Owner inspection of this contract is the
+checkpoint before propagation. Verification: focused budget arithmetic/expiry
+tests and documentation review. Depends on T06.
+
+### EXEC-001-T08 - make native observations cancellable
+
+- [ ] Propagate remaining budget and cancellation into probe/catalog/model
+  observations, price refresh and native quota reads using neutral contracts.
+  Bound cold discovery as well as the eventual model process.
+- [ ] Define cancellation ownership for coalesced reads: one cancelled waiter
+  must not abort another live caller; stop an owned read when no valid waiter
+  remains. Prevent abandoned inflight/cache entries after timeout or failure.
+- [ ] Preserve optional cache-write behavior, exact price evidence and fresh
+  reads. Distinguish unavailable evidence from an authentication/quota failure.
+
+Acceptance: deliberately stalled fixture reads settle within their allocated
+budget, clean owned processes and do not poison concurrent calls. Verification:
+probe-cache, price fetch, native quota and process cancellation tests; Context7
+documentation before changing provider-specific CLI/API behavior. Depends on T07.
+
+### EXEC-001-T09 - bound Git collection and storage waits
+
+- [ ] Apply the same request context to review scope/input collection and the
+  post-turn snapshot recheck. Stop owned Git work on cancellation/deadline and
+  preserve completeness, snapshot binding and other-workspace rejection.
+- [ ] Make session acquisition/file-lock waits respect the remaining budget
+  without disturbing lock order, renewal, reservations or token ownership.
+  Check cancellation around synchronous boundaries that cannot be interrupted.
+- [ ] Preserve typed failures and state precisely which I/O cannot guarantee
+  immediate interruption; Promise rejection alone is not resource cleanup.
+
+Acceptance: stalled Git and contended-lock fixtures cannot start a model turn
+after expiry or leak a reservation; failed snapshot verification blocks READY.
+Verification: review/workspace, lock/session and controller cancellation
+regressions. Depends on T08.
+
+### EXEC-001-T10 - bind consent and revalidation to the budget
+
+- [ ] Make waiting for human consent cancellable under the T07 contract.
+  Bind any approval to the concrete backend/model and evaluated decision;
+  timeout, missing approval or a cancelled form cannot authorize execution.
+- [ ] Revalidate required price/config/selection evidence immediately before
+  session acquisition. If relevant evidence changed, fail closed or obtain
+  valid renewed consent within the original budget; never replace an explicit
+  model or introduce an unbounded approval/retry loop.
+- [ ] Preserve remembered-approval policy and storage-failure warnings.
+  Coordinate with AX-003 without implementing a parallel consent transport.
+
+Acceptance: cancellation, late replies, changed prices/config and invalidated
+approval never start an unauthorized turn. Verification: consent, governance,
+price-limit and MCP elicitation fixtures; native consent acceptance remains
+AX-003/006. Depends on T09.
+
+### EXEC-001-T11 - wire the complete call and migrate timing output
+
+- [ ] Create/pass the request context at consult/review entry, before Git work.
+  Pass only the remaining execution budget to the selected adapter and retain
+  the T06 finalization path after every terminal outcome.
+- [ ] Apply bounded timing/cancellation to explicit health diagnostics under
+  AX-004 while preserving cached model-view behavior and startup that does not
+  wait for backend probes. Reuse mechanisms without starting sessions in doctor.
+- [ ] Update neutral results, MCP descriptions/footer, README, source comments
+  and ARCHITECTURE together for the accepted timeout/timing contract. Preserve
+  error status, answer redaction and review gating; report phase/total timing
+  on failed calls as well as successes.
+
+Acceptance: total accounting includes every phase and cleanup; idle reasoning
+can remain silent without granting extra time. Verification: adapter/controller,
+MCP/stdio, review and doctor regressions, typecheck, dependency check, build and
+applicable docs checks. Depends on T10; caller-visible migration follows T07.
+
+### EXEC-001-T12 - compare results and bind independent acceptance
+
+- [ ] Repeat T01 scenarios with identical fixture delays/config, cold/warm
+  conditions, concurrent calls and errors. Report repeated phase/total timings,
+  config reads/native launches and correctness; attribute any improvement to
+  evidence and record regressions rather than inventing a speed target.
+- [ ] Run the combined applicable package gate once on the final candidate.
+  Preserve required six-job CI. Separate source tests, rebuilt bundle checks,
+  exact-tarball consumer checks and native client/platform evidence.
+- [ ] Obtain independent review for the actual committed scope with base,
+  candidate and tree identity, reviewer session/reference, check commands,
+  exits/logs and no unresolved P1/P2. Release acceptance additionally binds the
+  artifact SHA-256. A bare READY string or historical S6 audit is insufficient.
+
+Acceptance: HANDOFF makes the achieved behavior, measured differences and
+remaining native/remote limits reproducible. Follow-up coagent work reuses
+these owners; early handles, ephemeral modes and delegation stay in their
+existing SESSION-001/COAGENT milestones. Depends on T11.
+
 ## Agent usability acceptance
 
 All items below are planned, not available arguments. Extend existing owners;
@@ -281,6 +506,11 @@ do not create separate selection/policy implementations per client.
   changed model and actual rendered approval in advertised clients.
 
 ### AX-004 - diagnostics and effective configuration
+
+The shared configuration/timing/cancellation work is broken down in
+[EXEC-001](#exec-001---measured-preparation-and-complete-call-lifecycle),
+especially T02/T03/T08/T11/T12. The configuration and native acceptance items
+below retain their own acceptance criteria.
 
 - [ ] Separate cached selection metadata from explicit fresh diagnostics.
   Doctor can refresh caches and record an observed default; expose these effects.
@@ -352,7 +582,7 @@ Retain these work IDs; local fixes still need candidate acceptance.
 | `AUDIT-001` | Rerun original process/redaction/history/cooldown/error/config/lease/resource reproductions on the candidate. CUR-001/003/004/005/006/010/012 have local fixes; old reports do not reopen them. Independent scope/check evidence remains required. |
 | `WINDOWS-001` | CUR-011: POSIX parent-death cleanup. Native no-survivor/quiet-desktop evidence, including cold agy updater conditions. Never PID/name/PPID-select teardown; owned handles/groups and protocol interrupt only. |
 | `REDACTION-002` | Preserve credential-only answers, broader diagnostic redaction and split-stream secret handling in new task paths. |
-| `EXEC-001`, `CLI-INTERACT-001` | CUR-007: end-to-end deadline across Git/probes/consent/acquisition/execution/cleanup, explicit consent accounting and phase timing. Activity-aware idle policy permits silent reasoning without extending deadlines. Test cancel/EOF/output/crash/typed failures; account for measured agy host deadlines. |
+| `EXEC-001`, `CLI-INTERACT-001` | CUR-007: complete [T01-T12](#exec-001---measured-preparation-and-complete-call-lifecycle): reproducible baseline, phase timing, config/preparation reuse, guaranteed finalization, complete-call budget, cancellable observations/Git/storage/consent, transport migration and independent measured acceptance. Preserve activity-aware idle behavior and account for agy host deadlines. |
 | `SESSION-001`, `HISTORY-002` | CUR-008: return a session handle before the turn ends and allow calls without a disk session; this is separate from `coagent8_HISTORY=off`, which only disables archives. Specify how session modes `new`, `auto` and `none` relate to existing calls. Explicit invalid/busy handles fail closed; opt-in `auto` reuses a session of the same workspace/provider used within 15 minutes and starts a fresh one when that session is busy. Only a native expiry proven before execution permits one fresh retry within the original time budget. Preserve retention, pagination and migration of existing histories. |
 | `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Keep renewed token leases, single cooldown recording, honest quota and optional caches under concurrency. No retries of policy/sandbox/cancel/partial-execution errors. |
 | `SURFACE-001`, `CONSULT-001`, `CONTEXT-001`, `MCP-001`, `STARTUP-001` | Preserve the six tools, plain consult, client roots/resources and startup that does not wait for backend probes. Remove review instructions duplicated between tool descriptions and prompts; measure the definition-size budgets in native clients. Icon or UI claims need evidence from the host. Failures of a first call by a fresh agent belong to AX-006. |
