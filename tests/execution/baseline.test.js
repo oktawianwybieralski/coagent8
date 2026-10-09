@@ -114,10 +114,11 @@ function recordObservation(scenario, measuredCounters, extra = {}) {
     catalogReads: measuredCounters.catalogReads,
     adapterLaunches: measuredCounters.adapterLaunches,
     durationMs: measuredCounters.durationMs ?? NOT_MEASURED,
-    preparationDurationMs: NOT_MEASURED,
-    consentDurationMs: NOT_MEASURED,
-    acquisitionDurationMs: NOT_MEASURED,
-    finalizationDurationMs: NOT_MEASURED,
+    preparationDurationMs: measuredCounters.phases?.preparation ?? NOT_MEASURED,
+    consentDurationMs: measuredCounters.phases?.consent ?? NOT_MEASURED,
+    acquisitionDurationMs: measuredCounters.phases?.acquisition ?? NOT_MEASURED,
+    finalizationDurationMs: measuredCounters.phases?.finalization ?? NOT_MEASURED,
+    gitCollectionDurationMs: measuredCounters.phases?.git_collection ?? NOT_MEASURED,
     nativeProcessLaunchOverhead: NOT_MEASURED,
     clientTransportLatency: NOT_MEASURED,
     ...extra,
@@ -148,10 +149,12 @@ test('baseline: plain cold execution performs initial probe and launches adapter
   assert.equal(deltas.adapterLaunches, 1, 'cold run must launch adapter exactly once');
   assert.equal(outcome.isError, false);
 
-  const observation = recordObservation('plain_cold', { ...deltas, durationMs });
+  const observation = recordObservation('plain_cold', { ...deltas, durationMs, phases: outcome.meta.phases });
   assert.equal(observation.probes, 1);
   assert.equal(observation.adapterLaunches, 1);
-  assert.equal(observation.preparationDurationMs, NOT_MEASURED);
+  assert.ok(typeof observation.preparationDurationMs === 'number', 'preparation phase must be measured');
+  assert.ok(typeof outcome.meta.phases.execution === 'number', 'execution phase must be measured');
+  assert.ok(typeof outcome.meta.phases.finalization === 'number', 'finalization phase must be measured');
   assert.equal(observation.nativeProcessLaunchOverhead, NOT_MEASURED);
 });
 
@@ -176,10 +179,10 @@ test('baseline: plain warm execution reuses probe cache and avoids redundant pro
   assert.equal(deltas.adapterLaunches, 1, 'warm run launches adapter exactly once');
   assert.equal(outcome.isError, false);
 
-  const observation = recordObservation('plain_warm', { ...deltas, durationMs });
+  const observation = recordObservation('plain_warm', { ...deltas, durationMs, phases: outcome.meta.phases });
   assert.equal(observation.probes, 0);
   assert.equal(observation.adapterLaunches, 1);
-  assert.equal(observation.acquisitionDurationMs, NOT_MEASURED);
+  assert.ok(typeof observation.acquisitionDurationMs === 'number', 'acquisition phase must be measured');
 });
 
 test('baseline: explicit model and effort passes validated selection to adapter', async () => {
@@ -234,12 +237,12 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
   assert.equal(parsed.model, 'gpt-5.6-luna');
   assert.match(outcome.price || '', /below the limit of 5 USD/);
 
-  const observation = recordObservation('priced_auto', { ...deltas, durationMs }, {
+  const observation = recordObservation('priced_auto', { ...deltas, durationMs, phases: outcome.meta.phases }, {
     selectedModel: parsed.model,
     priceLimit: 5,
   });
   assert.equal(observation.adapterLaunches, 1);
-  assert.equal(observation.consentDurationMs, NOT_MEASURED);
+  assert.ok(typeof observation.consentDurationMs === 'number', 'consent phase must be measured');
 });
 
 test('baseline: continuation reuses session lease and propagates native session identity', async () => {
@@ -275,9 +278,10 @@ test('baseline: continuation reuses session lease and propagates native session 
   const observation = recordObservation('continuation', {
     ...deltas,
     durationMs,
+    phases: turn2.meta.phases,
   }, { turn: 2, handle: turn1.sessionHandle });
   assert.equal(observation.adapterLaunches, 1);
-  assert.equal(observation.finalizationDurationMs, NOT_MEASURED);
+  assert.ok(typeof observation.finalizationDurationMs === 'number', 'finalization phase must be measured');
 });
 
 test('baseline: review workflow collects git diff, evaluates state envelope, and passes gate', async () => {
@@ -328,7 +332,12 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
 
   const before = snapshotCounters(counters);
   const start = Date.now();
-  const reviewResult = await handleReview('review', {}, repoDir);
+  let reviewTrace = null;
+  const reviewResult = await handleReview('review', {}, repoDir, null, null, {
+    onTiming: trace => {
+      reviewTrace = trace;
+    },
+  });
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
 
@@ -337,12 +346,13 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
   const parsed = readResult(reviewResult);
   assert.equal(parsed.verdict, 'READY', 'state envelope verdict must evaluate to READY');
 
-  const observation = recordObservation('review', { ...deltas, durationMs }, {
+  const observation = recordObservation('review', { ...deltas, durationMs, phases: reviewTrace?.phases }, {
     verdict: 'READY',
     diffObserved: true,
   });
   assert.equal(observation.adapterLaunches, 1);
-  assert.equal(observation.preparationDurationMs, NOT_MEASURED);
+  assert.ok(typeof observation.preparationDurationMs === 'number', 'preparation phase must be measured');
+  assert.ok(typeof observation.gitCollectionDurationMs === 'number', 'git_collection phase must be measured');
 });
 
 test('baseline: concurrent runs coalesce probes and execute tasks concurrently behind barrier', async () => {

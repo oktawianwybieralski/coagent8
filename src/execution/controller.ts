@@ -53,9 +53,10 @@ import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { assertNotNestedTurn } from './nested-turn.js';
 import { stripAnsi } from './cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
-import type { TaskExecutionResult, ExecutionMeta } from '../contracts/execution.js';
+import type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace } from '../contracts/execution.js';
+import { createPhaseTracker } from './runtime/timing.js';
 
-export type { TaskExecutionResult, ExecutionMeta };
+export type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace };
 
 /**
  * Universal execution parameters accepted by execution tools and the run gateway.
@@ -90,6 +91,12 @@ export interface TaskOptions {
   reviewContext?: ReviewGateContext;
   /** Rechecks the workspace after the turn; a change or failed read blocks readiness. */
   verifyReviewSnapshot?: () => Promise<string | undefined>;
+  /** Optional observer callback receiving the timing trace, including on early errors. */
+  onTiming?: TimingObserver;
+  /** Optional custom monotonic clock for timing. */
+  clock?: MonotonicClock;
+  /** Optional existing phase tracker to compose spans into a single trace. */
+  tracker?: import('./runtime/timing.js').PhaseTracker;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -161,97 +168,156 @@ async function executeTaskInternal(
   onProgress?: ((info: { message?: string }) => void) | null,
   options: TaskOptions = {}
 ): Promise<TaskExecutionResult> {
-  // A server started by a backend inside a turn never starts another one (CUR-002).
-  assertNotNestedTurn();
-  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
-  // The model reaches CLI argv; option-like or whitespace values are rejected before any backend runs.
-  if (args.model !== undefined && !isValidModelIdentifier(args.model)) throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');
-  const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
-  if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
-  if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
-  const below = args.output_price_below;
-  const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
-  // Without a named model, only backends with a model below the limit are chosen from.
-  const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
-  const backend = previous ? await resolveBackend(previous.backend)
-    : args.model !== undefined ? await resolveBackendForModel(args.backend, args.model)
-    : await resolveBackend(args.backend, choosing ? { eligible: async (id, probe) => {
-      try { await selectModel(id, probe, {}, { constraint: choosing }); return undefined; }
-      catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
-    } } : {});
-  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
-  if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
-  // The model comes from the call, the session, the configuration or the CLI, never from the
-  // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
-  // every turn) and the turn name the same model.
-  const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model }, choosing ? { constraint: choosing } : {});
-  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
-  // A continuation keeps its session's selection: the effort follows the model it was chosen for.
-  const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
-  // An explicit model or effort is checked against the CLI's own catalog before the user is
-  // asked for consent and before a model call.
-  if (args.model !== undefined || args.reasoning_effort !== undefined) {
-    const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), model, args.reasoning_effort);
-    if (rejected) throw new ToolError(rejected.code, rejected.message);
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
-  }
-  // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
-  const assertPriceLimit = async () => {
-    // A limit needs a current price list: a week-old one is read again first.
-    const prices = await readPrices({ current: true, models: [model] });
-    const evidence = priceEvidence(prices, model);
-    const rejected = checkPriceLimit(model, evidence, below!);
-    if (rejected) {
-      throw new ToolError('PRICE_LIMIT', choosing ? `${rejected} The price list changed after the model was chosen; retry to choose again.`
-        : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${previous ? ' or start a new session' : ' or omit model'}.`);
-    }
-    return `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(below!.toFixed(4))} USD`;
+  const isOwnedTracker = !options.tracker;
+  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
+  const controllerSpans: Array<{ end: () => void }> = [];
+  const startControllerPhase = (name: string) => {
+    const handle = tracker.startPhase(name);
+    controllerSpans.push(handle);
+    return handle;
   };
-  if (below !== undefined) await assertPriceLimit();
-  // Asked on every turn, for the model this turn runs (EXEC-001: price, not name).
-  const decision = await consentFor(backend.id, backend.probe, model);
-  const consentWarnings: string[] = [];
-  if (decision.ask) {
-    if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));
-    const answer = await options.askConsent({ backend: backend.id, model, reason: decision.reason, offerRemember: decision.offerRemember });
-    if (!answer.approved) {
-      throw new ToolError('POLICY_DENIED', answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model));
+  const closeControllerSpans = () => {
+    for (const span of controllerSpans) {
+      span.end();
     }
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
-    if (decision.offerRemember && answer.remember) {
-      // The approval stands even when it cannot be stored; the next turn asks again.
-      try { await rememberApprovedModel(model); }
-      catch (err) { consentWarnings.push(`The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`); }
+  };
+
+  let traceEmitted = false;
+  const observerWarnings: string[] = [];
+  const recordObserverError = (err: unknown) => {
+    let msg = 'Unknown observer error.';
+    try {
+      if (err instanceof Error) msg = err.message;
+      else if (typeof err === 'string') msg = err;
+      else msg = String(err);
+    } catch {
+      msg = 'Unstringifiable error thrown.';
     }
-  }
-  // Rechecked right before the turn: the list or the limit's evidence may have changed while the user decided.
-  const priceNote = below === undefined ? undefined : await assertPriceLimit();
-  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while checking the price limit.');
-  await pruneExpiredSessions();
-  const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
-  if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
-  const session = acquired.session, handle = session.sessionHandle, token = session.turnToken!;
-  const writer = createHistoryWriter(handle, cwd, backend.id, randomUUID());
-  const cancelController = new AbortController();
-  const onCallerAbort = () => cancelController.abort();
-  if (abortSignal) {
-    if (abortSignal.aborted) cancelController.abort();
-    else abortSignal.addEventListener('abort', onCallerAbort, { once: true });
-  }
-  let notifySettled: () => void;
-  const settled = new Promise<void>(resolve => { notifySettled = resolve; });
-  activeSessionAborts.set(handle, {
-    abort: () => cancelController.abort(),
-    wait: async () => {
-      let timer: NodeJS.Timeout | undefined;
+    const warningMsg = `Timing observer failed: ${redactDiagnostic(msg, 256)}`;
+    if (!observerWarnings.includes(warningMsg)) {
+      observerWarnings.push(warningMsg);
+    }
+  };
+
+  let observerPromise: Promise<unknown> | undefined;
+  const emitTrace = (): ExecutionTrace => {
+    if (traceEmitted) return tracker.getTrace();
+    traceEmitted = true;
+    closeControllerSpans();
+    const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
+    if (options.onTiming) {
       try {
-        return await Promise.race([
-          settled.then(() => true),
-          new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5000); }),
-        ]);
-      } finally { clearTimeout(timer); }
-    },
-  });
+        const ret: unknown = options.onTiming(trace);
+        if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
+          observerPromise = (ret as Promise<unknown>).catch(recordObserverError);
+        }
+      } catch (err: unknown) {
+        recordObserverError(err);
+      }
+    }
+    return trace;
+  };
+
+  try {
+    const prepHandle = startControllerPhase('preparation');
+    // A server started by a backend inside a turn never starts another one (CUR-002).
+    assertNotNestedTurn();
+    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
+    // The model reaches CLI argv; option-like or whitespace values are rejected before any backend runs.
+    if (args.model !== undefined && !isValidModelIdentifier(args.model)) throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');
+    const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
+    if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
+    if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
+    const below = args.output_price_below;
+    const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
+    // Without a named model, only backends with a model below the limit are chosen from.
+    const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
+    const backend = previous ? await resolveBackend(previous.backend)
+      : args.model !== undefined ? await resolveBackendForModel(args.backend, args.model)
+      : await resolveBackend(args.backend, choosing ? { eligible: async (id, probe) => {
+        try { await selectModel(id, probe, {}, { constraint: choosing }); return undefined; }
+        catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
+      } } : {});
+    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
+    if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
+    // The model comes from the call, the session, the configuration or the CLI, never from the
+    // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
+    // every turn) and the turn name the same model.
+    const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model }, choosing ? { constraint: choosing } : {});
+    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
+    // A continuation keeps its session's selection: the effort follows the model it was chosen for.
+    const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
+    // An explicit model or effort is checked against the CLI's own catalog before the user is
+    // asked for consent and before a model call.
+    if (args.model !== undefined || args.reasoning_effort !== undefined) {
+      const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), model, args.reasoning_effort);
+      if (rejected) throw new ToolError(rejected.code, rejected.message);
+      if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
+    }
+    // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
+    const assertPriceLimit = async () => {
+      // A limit needs a current price list: a week-old one is read again first.
+      const prices = await readPrices({ current: true, models: [model] });
+      const evidence = priceEvidence(prices, model);
+      const rejected = checkPriceLimit(model, evidence, below!);
+      if (rejected) {
+        throw new ToolError('PRICE_LIMIT', choosing ? `${rejected} The price list changed after the model was chosen; retry to choose again.`
+          : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${previous ? ' or start a new session' : ' or omit model'}.`);
+      }
+      return `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(below!.toFixed(4))} USD`;
+    };
+    if (below !== undefined) await assertPriceLimit();
+    prepHandle.end();
+
+    const consentHandle = startControllerPhase('consent');
+    // Asked on every turn, for the model this turn runs (EXEC-001: price, not name).
+    const decision = await consentFor(backend.id, backend.probe, model);
+    const consentWarnings: string[] = [];
+    if (decision.ask) {
+      if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));
+      const answer = await options.askConsent({ backend: backend.id, model, reason: decision.reason, offerRemember: decision.offerRemember });
+      if (!answer.approved) {
+        throw new ToolError('POLICY_DENIED', answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model));
+      }
+      if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
+      if (decision.offerRemember && answer.remember) {
+        // The approval stands even when it cannot be stored; the next turn asks again.
+        try { await rememberApprovedModel(model); }
+        catch (err) { consentWarnings.push(`The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`); }
+      }
+    }
+    // Rechecked right before the turn: the list or the limit's evidence may have changed while the user decided.
+    const priceNote = below === undefined ? undefined : await assertPriceLimit();
+    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while checking the price limit.');
+    consentHandle.end();
+
+    const acqHandle = startControllerPhase('acquisition');
+    await pruneExpiredSessions();
+    const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
+    if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
+    const session = acquired.session, handle = session.sessionHandle, token = session.turnToken!;
+    const writer = createHistoryWriter(handle, cwd, backend.id, randomUUID());
+    const cancelController = new AbortController();
+    const onCallerAbort = () => cancelController.abort();
+    if (abortSignal) {
+      if (abortSignal.aborted) cancelController.abort();
+      else abortSignal.addEventListener('abort', onCallerAbort, { once: true });
+    }
+    let notifySettled: () => void;
+    const settled = new Promise<void>(resolve => { notifySettled = resolve; });
+    activeSessionAborts.set(handle, {
+      abort: () => cancelController.abort(),
+      wait: async () => {
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          return await Promise.race([
+            settled.then(() => true),
+            new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5000); }),
+          ]);
+        } finally { clearTimeout(timer); }
+      },
+    });
+    acqHandle.end();
   const started = Date.now(); let toolCount = 0, historyError: Error | undefined, sawPublicMessage = false;
   let lastEvent = Date.now();
   let lastPhase = 'Initialization';
@@ -292,145 +358,177 @@ async function executeTaskInternal(
   };
   let heartbeat: NodeJS.Timeout | undefined, flushTimer: NodeJS.Timeout | undefined;
   let result: TerminalExecutionResult;
+  const execHandle = startControllerPhase('execution');
   try {
     try {
       writer.accept({ type: 'turn_started' });
-      writer.accept({ type: 'user_message', text: publicInput });
+        writer.accept({ type: 'user_message', text: publicInput });
+        await writer.flush();
+      } catch (err) {
+        historyError = err as Error;
+      }
+      heartbeat = setInterval(() => {
+        const elapsedMs = Date.now() - lastEvent;
+        if (elapsedMs >= 10000) {
+          const totalElapsedSec = Math.floor((Date.now() - started) / 1000);
+          report(`Operation in progress (${lastPhase}, ${totalElapsedSec}s elapsed)...`);
+        }
+      }, 5000);
+      flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
+      const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
+        timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
+      const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
+      // Validate terminal results defensively, including adapters supplied at runtime.
+      const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
+      const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);
+      const protocolTrusted = validStatus && !contradictory;
+      const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
+      if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
+      result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
+        error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
+    } catch (err) {
+      const code = errorCodeOf(err);
+      result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
+    } finally {
+      execHandle.end();
+      if (heartbeat) clearInterval(heartbeat); if (flushTimer) clearInterval(flushTimer);
+      if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);
+    }
+
+    const finHandle = startControllerPhase('finalization');
+    const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...consentWarnings, ...adapterWarnings];
+
+    // Post-execution bookkeeping: session metadata (AUD-P1-3)
+    try {
+      const raw = result as ExecutionResult;
+      const protocolTrusted = !result.error || result.error.code !== 'PROTOCOL_ERROR';
+      if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) {
+        await updateSession(handle, {
+          threadId: raw.nativeSessionId || raw.threadId || null,
+          model: raw.model || model,
+          reasoningEffort,
+          cliVersion: backend.probe.version,
+          safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-read-only` : undefined,
+        }, token);
+      }
+      if (result.error?.code === 'SESSION_INVALID') {
+        await updateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: result.error.code }, token);
+      }
+    } catch (sessionErr) {
+      warnings.push(`Session update failed: ${redactDiagnostic((sessionErr as Error).message, 512)}`);
+      result = { ...result, continuationAvailable: false };
+      try {
+        await updateSession(handle, { state: 'invalidated' }, token);
+      } catch (invalidateErr) {
+        warnings.push(`Session could not be invalidated: ${redactDiagnostic((invalidateErr as Error).message, 512)}`);
+      }
+    }
+
+    // History archival finalization
+    try {
+      if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
+      if (result.error) writer.accept({ type: 'error', error: result.error });
+      writer.accept({ type: 'turn_finished', status: result.status });
       await writer.flush();
     } catch (err) {
-      historyError = err as Error;
+      if (!historyError) historyError = err as Error;
     }
-    heartbeat = setInterval(() => {
-      const elapsedMs = Date.now() - lastEvent;
-      if (elapsedMs >= 10000) {
-        const totalElapsedSec = Math.floor((Date.now() - started) / 1000);
-        report(`Operation in progress (${lastPhase}, ${totalElapsedSec}s elapsed)...`);
-      }
-    }, 5000);
-    flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
-    const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
-      timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
-    const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
-    // Validate terminal results defensively, including adapters supplied at runtime.
-    const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
-    const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);
-    const protocolTrusted = validStatus && !contradictory;
-    const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
-    if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
-    result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
-      error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
-  } catch (err) {
-    const code = errorCodeOf(err);
-    result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
-  } finally {
-    if (heartbeat) clearInterval(heartbeat); if (flushTimer) clearInterval(flushTimer);
-    if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);
-  }
 
-  const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...consentWarnings, ...adapterWarnings];
+    // Release session turn lease (fail-closed)
+    const released = await releaseSessionTurn(handle, token);
+    activeSessionAborts.delete(handle);
+    notifySettled!();
 
-  // Post-execution bookkeeping: session metadata (AUD-P1-3)
-  try {
-    const raw = result as ExecutionResult;
-    const protocolTrusted = !result.error || result.error.code !== 'PROTOCOL_ERROR';
-    if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) {
-      await updateSession(handle, {
-        threadId: raw.nativeSessionId || raw.threadId || null,
-        model: raw.model || model,
-        reasoningEffort,
-        cliVersion: backend.probe.version,
-        safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-read-only` : undefined,
-      }, token);
-    }
-    if (result.error?.code === 'SESSION_INVALID') {
-      await updateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: result.error.code }, token);
-    }
-  } catch (sessionErr) {
-    warnings.push(`Session update failed: ${redactDiagnostic((sessionErr as Error).message, 512)}`);
-    result = { ...result, continuationAvailable: false };
-    try {
-      await updateSession(handle, { state: 'invalidated' }, token);
-    } catch (invalidateErr) {
-      warnings.push(`Session could not be invalidated: ${redactDiagnostic((invalidateErr as Error).message, 512)}`);
-    }
-  }
-
-  // History archival finalization
-  try {
-    if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
-    if (result.error) writer.accept({ type: 'error', error: result.error });
-    writer.accept({ type: 'turn_finished', status: result.status });
-    await writer.flush();
-  } catch (err) {
-    if (!historyError) historyError = err as Error;
-  }
-
-  // Release session turn lease (fail-closed)
-  const released = await releaseSessionTurn(handle, token);
-  activeSessionAborts.delete(handle);
-  notifySettled!();
-
-  if (!released.ok && !cancelController.signal.aborted) {
-    result = {
-      ...result,
-      isError: true,
-      status: 'failed',
-      error: { code: 'SESSION_INVALID', message: redactDiagnostic(released.error), retryable: false },
-    };
-  }
-
-  if (historyError) {
-    warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
-  }
-
-  // Quota cooldown update: exactly one write per rate-limited turn, using the provider
-  // reset when the message states one and the tiered backoff otherwise.
-  try {
-    if (result.error?.code === 'RATE_LIMITED') {
-      const reset = parseResetTimestamp(result.error.message);
-      await recordQuotaCooldown(backend.id, reset?.cooldownMs, result.error.message.slice(0, 200) || undefined);
-    } else if (!result.isError && result.status === 'completed') {
-      await resetQuotaCooldown(backend.id);
-    }
-  } catch (error) {
-    warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
-  }
-
-  if (options.reviewContext && options.verifyReviewSnapshot) {
-    try { options.reviewContext.invalidatedReason = await options.verifyReviewSnapshot(); }
-    catch (error) { options.reviewContext.invalidatedReason = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`; }
-  }
-
-  let review: StateEnvelopeEvaluation | undefined;
-  if (options.requireEnvelope) {
-    if (result.isError || result.error) {
-      review = {
-        verdict: 'BLOCKED',
-        reason: result.error?.message || 'Execution error',
+    if (!released.ok && !cancelController.signal.aborted) {
+      result = {
+        ...result,
+        isError: true,
+        status: 'failed',
+        error: { code: 'SESSION_INVALID', message: redactDiagnostic(released.error), retryable: false },
       };
-    } else {
-      review = evaluateStateEnvelopeGate(
-        stripAnsi(result.output || '').trim(),
-        result.truncated,
-        true,
-        options.reviewContext
-      );
     }
-  }
 
-  return {
-    isError: result.isError,
-    provider: backend.id,
-    result,
-    sessionHandle: handle,
-    meta: {
-      turn: session.turnCount || 1,
-      toolCount,
-      durationMs: Date.now() - started,
-      historyAvailable: !writer.disabled && !historyError,
-    },
-    warnings,
-    price: priceNote,
-    review,
-  };
+    if (historyError) {
+      warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
+    }
+
+    // Quota cooldown update: exactly one write per rate-limited turn, using the provider
+    // reset when the message states one and the tiered backoff otherwise.
+    try {
+      if (result.error?.code === 'RATE_LIMITED') {
+        const reset = parseResetTimestamp(result.error.message);
+        await recordQuotaCooldown(backend.id, reset?.cooldownMs, result.error.message.slice(0, 200) || undefined);
+      } else if (!result.isError && result.status === 'completed') {
+        await resetQuotaCooldown(backend.id);
+      }
+    } catch (error) {
+      warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
+    }
+
+    if (options.reviewContext && options.verifyReviewSnapshot) {
+      try { options.reviewContext.invalidatedReason = await options.verifyReviewSnapshot(); }
+      catch (error) { options.reviewContext.invalidatedReason = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`; }
+    }
+
+    let review: StateEnvelopeEvaluation | undefined;
+    if (options.requireEnvelope) {
+      if (result.isError || result.error) {
+        review = {
+          verdict: 'BLOCKED',
+          reason: result.error?.message || 'Execution error',
+        };
+      } else {
+        review = evaluateStateEnvelopeGate(
+          stripAnsi(result.output || '').trim(),
+          result.truncated,
+          true,
+          options.reviewContext
+        );
+      }
+    }
+    finHandle.end();
+    const durationMs = Date.now() - started;
+
+    const trace = emitTrace();
+    if (observerPromise) {
+      let timer: NodeJS.Timeout | undefined;
+      let timedOut = false;
+      await Promise.race([
+        observerPromise,
+        new Promise<void>(resolve => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, 500);
+        }),
+      ]);
+      if (timer) clearTimeout(timer);
+      if (timedOut) {
+        observerWarnings.push('Timing observer timed out after 500ms.');
+      }
+    }
+    for (const w of observerWarnings) {
+      if (!warnings.includes(w)) warnings.push(w);
+    }
+
+    return {
+      isError: result.isError,
+      provider: backend.id,
+      result,
+      sessionHandle: handle,
+      meta: {
+        turn: session.turnCount || 1,
+        toolCount,
+        durationMs,
+        historyAvailable: !writer.disabled && !historyError,
+        phases: trace.phases,
+      },
+      warnings,
+      price: priceNote,
+      review,
+    };
+  } finally {
+    closeControllerSpans();
+    emitTrace();
+  }
 }

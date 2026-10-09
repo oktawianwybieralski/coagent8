@@ -336,18 +336,18 @@ only the selected baseline scenarios. Depends on the S6 follow-up.
 
 ### EXEC-001-T02 - measure phases without changing timeout behavior
 
-- [ ] **T02a - implement the timing primitive.** Start: `src/contracts/execution.ts`
+- [x] **T02a - implement the timing primitive.** Start: `src/contracts/execution.ts`
   and `src/execution/runtime/`. Add a **new** timing primitive with an injectable
   monotonic clock and bounded named phases. Done: nested/overlapping intervals
   preserve total wall time; closing a phase twice does not double-count it;
   no module imports MCP. Check: R and a **new** timing test with a fake clock.
-- [ ] **T02b - instrument the controller.** Start: `executeTask` and
+- [x] **T02b - instrument the controller.** Start: `executeTask` and
   `executeTaskInternal` in `src/execution/controller.ts`. Record preparation,
   consent, session acquisition, execution and finalization, including throws
   before session creation. Done: fixture delays enter the right spans and the
   existing `durationMs` retains its meaning. Use an internal observer for early
   failures rather than changing public error shape here. Check: R, LIFE/POLICY.
-- [ ] **T02c - instrument outer preparation and diagnostics.** Start:
+- [x] **T02c - instrument outer preparation and diagnostics.** Start:
   `src/mcp/tools/review.tool.ts`, `src/review/input.ts`,
   `src/diagnostics/doctor.ts`. Include Git collection and health/model-report
   work in a call-level trace; reuse the primitive without inventing a task

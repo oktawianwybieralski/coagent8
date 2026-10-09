@@ -1,14 +1,16 @@
 import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfigForDiagnostics, recordDefaultModel } from '../config.js';
-import { PROVIDERS, type ProviderId } from '../contracts/index.js';
+import { PROVIDERS, type ProviderId, type ModelCatalog } from '../contracts/index.js';
 import { inspectQuotas } from '../backends/availability.js';
 import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
 import { selectModel } from '../execution/selection.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { isPriceListStale, readPrices } from '../models/prices.js';
 import { decideConsent, type ConsentBasis } from '../models/governance.js';
-import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools } from '../backends/types.js';
+import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools, QuotaReport } from '../backends/types.js';
 import { adapterRegistry } from '../backends/registry.js';
+import { createPhaseTracker, type PhaseTracker } from '../execution/runtime/timing.js';
+import type { TimingObserver, MonotonicClock, ExecutionTrace } from '../contracts/execution.js';
 
 /** Native per-window quota details reused by the exported doctor report. */
 export type ProbeQuotaBuckets = NonNullable<AdapterProbeResult['quota']>['buckets'];
@@ -72,6 +74,8 @@ export interface DoctorReport {
    * model and CoAgent8 cannot disable (agy, `CUR-002`); only backends that report any.
    */
   inheritedTools: Partial<Record<ProviderId, InheritedTools>>;
+  /** Optional call-level execution trace measuring diagnostic phases. */
+  trace?: ExecutionTrace;
 }
 
 export interface DoctorOptions {
@@ -79,24 +83,52 @@ export interface DoctorOptions {
   backend?: ProviderId;
   /** `false` skips native quota reads that are not part of a probe. */
   quota?: boolean;
+  /** Optional existing phase tracker to compose spans into a single trace. */
+  tracker?: PhaseTracker;
+  /** Optional observer callback receiving the timing trace. */
+  onTiming?: TimingObserver;
+  /** Optional custom monotonic clock for timing. */
+  clock?: MonotonicClock;
 }
 
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
+  const isOwnedTracker = !options.tracker;
+  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const { config, error: configError } = loadConfigForDiagnostics();
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
-  const probes = Object.fromEntries(await Promise.all(selected.map(async id => [id, await probeBackend(id, { fresh: true })]))) as Partial<Record<ProviderId, AdapterProbeResult>>;
+  const probePromises = selected.map(async id => {
+    const span = tracker.startPhase('health_probes');
+    try {
+      return [id, await probeBackend(id, { fresh: true })] as const;
+    } finally {
+      span.end();
+    }
+  });
+  const probes = Object.fromEntries(await Promise.all(probePromises)) as Partial<Record<ProviderId, AdapterProbeResult>>;
   const measuredNow = new Set<ProviderId>();
   // An unwritable quota cache must not hide the rest of the diagnosis (CUR-004).
   const cacheNotes: string[] = [];
-  const [cached, catalogs, inherited] = await Promise.all([
-    inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow,
-      onCacheError: error => cacheNotes.push(`Quota cache not updated: ${redactDiagnostic(error.message, 512)}`) }),
-    Promise.all(selected.map(id => readModelCatalog(id, { fresh: true }))),
-    Promise.all(selected.map(id => probes[id]!.installed ? adapterRegistry[id].inheritedTools?.() : undefined)),
-  ]);
-  // Prices of every listed and configured default model, read again when the list is a day old.
-  const configuredDefaults = selected.flatMap(id => [config.backends[id]?.defaultModel, probes[id]!.config?.defaultModel]).filter((model): model is string => typeof model === 'string');
-  const prices = await readPrices({ refresh: true, models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...configuredDefaults] });
+  const modelSpan = tracker.startPhase('model_report');
+  let cached: QuotaReport;
+  let catalogs: (ModelCatalog | undefined)[];
+  let inherited: (InheritedTools | undefined)[];
+  let prices: Awaited<ReturnType<typeof readPrices>>;
+  try {
+    const [c, cats, inh] = await Promise.all([
+      inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow,
+        onCacheError: error => cacheNotes.push(`Quota cache not updated: ${redactDiagnostic(error.message, 512)}`) }),
+      Promise.all(selected.map(id => readModelCatalog(id, { fresh: true }))),
+      Promise.all(selected.map(id => probes[id]!.installed ? adapterRegistry[id].inheritedTools?.() : undefined)),
+    ]);
+    cached = c;
+    catalogs = cats;
+    inherited = inh;
+    // Prices of every listed and configured default model, read again when the list is a day old.
+    const configuredDefaults = selected.flatMap(id => [config.backends[id]?.defaultModel, probes[id]!.config?.defaultModel]).filter((model): model is string => typeof model === 'string');
+    prices = await readPrices({ refresh: true, models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...configuredDefaults] });
+  } finally {
+    modelSpan.end();
+  }
   const inheritedTools: DoctorReport['inheritedTools'] = {};
   selected.forEach((id, index) => {
     const tools = inherited[index];
@@ -171,6 +203,46 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     if (cached[id]) quotas[id] = quota?.buckets ? { ...cached[id], buckets: quota.buckets } : cached[id];
   }
 
+  const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
+  const observerNotes: string[] = [];
+  if (options.onTiming) {
+    const recordObserverError = (err: unknown) => {
+      let msg = 'Unknown observer error.';
+      try {
+        if (err instanceof Error) msg = err.message;
+        else if (typeof err === 'string') msg = err;
+        else msg = String(err);
+      } catch {
+        msg = 'Unstringifiable error thrown.';
+      }
+      const note = `Timing observer failure: ${redactDiagnostic(msg, 256)}`;
+      if (!observerNotes.includes(note)) observerNotes.push(note);
+    };
+
+    try {
+      const ret: unknown = options.onTiming(trace);
+      if (ret && typeof (ret as Promise<unknown>).then === 'function') {
+        let timer: NodeJS.Timeout | undefined;
+        let timedOut = false;
+        await Promise.race([
+          (ret as Promise<unknown>).catch(recordObserverError),
+          new Promise<void>(resolve => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              resolve();
+            }, 500);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (timedOut) {
+          observerNotes.push('Timing observer timed out after 500ms.');
+        }
+      }
+    } catch (err: unknown) {
+      recordObserverError(err);
+    }
+  }
+
   return {
     status: configError ? 'configuration_error' : !active.length ? 'degraded_no_active_backends' : recommendations.length ? 'partially_configured' : 'operational',
     active_backends: active,
@@ -184,9 +256,10 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     defaultModels,
     prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
     selection,
-    recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes],
+    recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes, ...observerNotes],
     ...(configError ? { configError } : {}),
     inheritedTools,
+    trace,
   };
 }
 
@@ -317,6 +390,7 @@ export interface ModelReport {
   backends: Partial<Record<ProviderId, ModelReportBackend>>;
   selection: ModelCandidate[];
   recommendations: string[];
+  trace?: ExecutionTrace;
 }
 
 /**
@@ -324,19 +398,36 @@ export interface ModelReport {
  * reused, prices are read only when none are stored or a listed model is unchecked.
  * @param options - `backend` narrows the view to one backend.
  */
-export async function runModelReport(options: { backend?: ProviderId } = {}): Promise<ModelReport> {
+export async function runModelReport(options: DoctorOptions = {}): Promise<ModelReport> {
+  const isOwnedTracker = !options.tracker;
+  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const { config, error: configError } = loadConfigForDiagnostics();
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
-  const probes = await Promise.all(selected.map(id => probeBackend(id)));
-  const catalogs = await Promise.all(selected.map((id, index) => probes[index].installed ? readModelCatalog(id) : undefined));
-  const recommendations: string[] = configError ? [configError] : [];
-  const defaults = await Promise.all(selected.map(async (id, index): Promise<ModelSelection | undefined> => {
-    if (!probes[index].installed || configError) return undefined;
-    try { return await selectModel(id, probes[index]); }
-    catch (err) { recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`); return undefined; }
+  const probes = await Promise.all(selected.map(async id => {
+    const span = tracker.startPhase('health_probes');
+    try {
+      return await probeBackend(id);
+    } finally {
+      span.end();
+    }
   }));
-  const prices = await readPrices({ models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...defaults.flatMap(selection => selection ? [selection.model] : [])] });
-  if (!prices) recommendations.push('No price list could be read: every model asks for approval and none meets a price limit.');
+  const modelSpan = tracker.startPhase('model_report');
+  let catalogs: (ModelCatalog | undefined)[];
+  let defaults: (ModelSelection | undefined)[];
+  let prices: Awaited<ReturnType<typeof readPrices>>;
+  const recommendations: string[] = configError ? [configError] : [];
+  try {
+    catalogs = await Promise.all(selected.map((id, index) => probes[index].installed ? readModelCatalog(id) : undefined));
+    defaults = await Promise.all(selected.map(async (id, index): Promise<ModelSelection | undefined> => {
+      if (!probes[index].installed || configError) return undefined;
+      try { return await selectModel(id, probes[index]); }
+      catch (err) { recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`); return undefined; }
+    }));
+    prices = await readPrices({ models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...defaults.flatMap(selection => selection ? [selection.model] : [])] });
+    if (!prices) recommendations.push('No price list could be read: every model asks for approval and none meets a price limit.');
+  } finally {
+    modelSpan.end();
+  }
   const backends: ModelReport['backends'] = {};
   selected.forEach((id, index) => {
     const probe = probes[index], catalog = catalogs[index], fallback = defaults[index];
@@ -346,12 +437,54 @@ export async function runModelReport(options: { backend?: ProviderId } = {}): Pr
       ...(catalog ? { catalogSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) } : {}),
       ...(!catalog && probe.availableModels?.length ? { availableModels: probe.availableModels } : {}) };
   });
+
+  const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
+  const observerNotes: string[] = [];
+  if (options.onTiming) {
+    const recordObserverError = (err: unknown) => {
+      let msg = 'Unknown observer error.';
+      try {
+        if (err instanceof Error) msg = err.message;
+        else if (typeof err === 'string') msg = err;
+        else msg = String(err);
+      } catch {
+        msg = 'Unstringifiable error thrown.';
+      }
+      const note = `Timing observer failure: ${redactDiagnostic(msg, 256)}`;
+      if (!observerNotes.includes(note)) observerNotes.push(note);
+    };
+
+    try {
+      const ret: unknown = options.onTiming(trace);
+      if (ret && typeof (ret as Promise<unknown>).then === 'function') {
+        let timer: NodeJS.Timeout | undefined;
+        let timedOut = false;
+        await Promise.race([
+          (ret as Promise<unknown>).catch(recordObserverError),
+          new Promise<void>(resolve => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              resolve();
+            }, 500);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (timedOut) {
+          observerNotes.push('Timing observer timed out after 500ms.');
+        }
+      }
+    } catch (err: unknown) {
+      recordObserverError(err);
+    }
+  }
+
   return {
     scope: 'models',
     prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
     backends,
     selection: selected.flatMap((id, index) => probes[index].installed ? listModelCandidates(id, catalogs[index], defaults[index], prices, config.governance) : []),
-    recommendations,
+    recommendations: [...recommendations, ...observerNotes],
+    trace,
   };
 }
 

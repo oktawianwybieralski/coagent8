@@ -9,6 +9,42 @@ import type { AdapterEvent, TerminalStatus } from './conversation.js';
 import type { ExecutionError } from './error.js';
 
 /**
+ * Monotonic clock returning time in milliseconds.
+ */
+export type MonotonicClock = () => number;
+
+/**
+ * A discrete span recorded during execution.
+ */
+export interface PhaseSpan {
+  readonly name: string;
+  readonly startMs: number;
+  readonly endMs?: number;
+  readonly durationMs?: number;
+}
+
+/**
+ * Trace record summarizing wall-clock execution time and phase breakdowns.
+ */
+export interface ExecutionTrace {
+  readonly totalDurationMs: number;
+  readonly phases: Record<string, number>;
+  readonly spans?: readonly PhaseSpan[];
+}
+
+/**
+ * Minimal timing tracer interface for recording phase spans.
+ */
+export interface TimingTracer {
+  startPhase(name: string): { end(): void };
+}
+
+/**
+ * Observer callback for execution timing events, including early failures.
+ */
+export type TimingObserver = (trace: ExecutionTrace) => void;
+
+/**
  * Execution metadata collected across the turn lifecycle.
  */
 export interface ExecutionMeta {
@@ -16,6 +52,7 @@ export interface ExecutionMeta {
   toolCount: number;
   durationMs: number;
   historyAvailable: boolean;
+  phases?: Record<string, number>;
 }
 
 /**

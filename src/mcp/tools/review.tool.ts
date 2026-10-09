@@ -5,6 +5,8 @@ import { collectReviewInput } from '../../review/index.js';
 import { assertReviewWorkspace } from '../../workspace/git.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
+import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
+import type { TimingObserver, MonotonicClock } from '../../contracts/execution.js';
 
 export function getCanonicalReviewToolDefinition() {
   return {
@@ -29,11 +31,36 @@ export async function handleReview(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent'> = {}
+  options: Pick<TaskOptions, 'askConsent'> & { onTiming?: TimingObserver; tracker?: PhaseTracker; clock?: MonotonicClock } = {}
 ) {
+  const isOwnedTracker = !options.tracker;
+  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
+  const gitHandle = tracker.startPhase('git_collection');
   const effectiveScope = args.scope || args.target;
-  const { info: scopeInfo, context } = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal);
-  await assertReviewWorkspace(scopeInfo, workspaceCwd, abortSignal);
+  let scopeInfo: Awaited<ReturnType<typeof collectReviewInput>>['info'];
+  let context: Awaited<ReturnType<typeof collectReviewInput>>['context'];
+  try {
+    const input = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker);
+    scopeInfo = input.info;
+    context = input.context;
+    await assertReviewWorkspace(scopeInfo, workspaceCwd, abortSignal);
+  } catch (err) {
+    gitHandle.end();
+    if (options.onTiming) {
+      try {
+        const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
+        const ret: unknown = options.onTiming(trace);
+        if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
+          (ret as Promise<unknown>).catch(() => {});
+        }
+      } catch {
+        // Isolate observer failure
+      }
+    }
+    throw err;
+  } finally {
+    gitHandle.end();
+  }
   const instructions = args.instructions || 'Review correctness, security, edge cases and architecture.';
   const snapshot = context.expectedSnapshot;
   // The answer is read in the caller's context: findings only, each as short as its evidence allows.
@@ -67,12 +94,24 @@ export async function handleReview(
     workspaceCwd,
     abortSignal,
     onProgress,
-    { requireEnvelope: true, askConsent: options.askConsent, reviewContext: context,
+    {
+      tracker,
+      requireEnvelope: true,
+      askConsent: options.askConsent,
+      reviewContext: context,
+      onTiming: options.onTiming,
+      clock: options.clock,
       verifyReviewSnapshot: async () => {
-        const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal);
-        await assertReviewWorkspace(after.info, workspaceCwd, abortSignal);
-        return after.context.expectedSnapshot !== snapshot || !after.context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
-      } }
+        const verifyHandle = tracker.startPhase('git_collection');
+        try {
+          const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker);
+          await assertReviewWorkspace(after.info, workspaceCwd, abortSignal);
+          return after.context.expectedSnapshot !== snapshot || !after.context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
+        } finally {
+          verifyHandle.end();
+        }
+      }
+    }
   );
   return formatExecutionResult(outcome);
 }

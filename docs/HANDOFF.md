@@ -44,15 +44,12 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is EXEC-001-T01 (establish a reproducible baseline): T01a
-(call/wait map) and T01b (fixture baseline harness) implemented.
-Current branch: `perf/exec-001-t01`, created from `refactor/simplify-001` at
-`42e4cbd` after the owner requested a new branch for EXEC-001-T01.
-The planned work is EXEC-001-T01 through T12 in ROADMAP, covering measured
-preparation and the complete call lifecycle alongside AX-004. These are stages
-containing 40 smaller task cards (T01a through T12d), with starting files,
-observable completion criteria and exact reusable test groups. Assign one card
-at a time; current card is EXEC-001-T01b (fixture baseline harness).
+The current completed task is EXEC-001-T02 (measure phases without changing timeout behavior):
+T02a (monotonic timing primitive), T02b (controller instrumentation across 5 phases with onTiming observer),
+and T02c (outer preparation, git_collection and diagnostic health_probes/model_report instrumentation).
+Independent reviewer approval obtained (Turn 10: VERDICT: READY).
+Current branch: `perf/exec-001`.
+Next pending card: EXEC-001-T03 (supply effective configuration with provenance).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
