@@ -46,6 +46,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`bbe411a`](https://github.com/oktawianwybieralski/coagent8/commit/bbe411aff0e29cbbdc787261df2ef5c42ee74b36) **prices:** Keep per-model prices for offered models and refresh daily
 - [`6896bdd`](https://github.com/oktawianwybieralski/coagent8/commit/6896bdd9497a098c83777084f7e91c93bcc17150) **mcp:** Frame every answer in a markdown code block
 - [`e8c8177`](https://github.com/oktawianwybieralski/coagent8/commit/e8c817718a2be6ab6c4f18c9b4f4bc48681c1fd1) **mcp:** Present results raw for Codex and in plaintext frames elsewhere
+- [`dc8353b`](https://github.com/oktawianwybieralski/coagent8/commit/dc8353bc9d9229a08b9eccc38354073dfdfdcf9d) **execution:** Implement phase timing and instrumentation (EXEC-001-T02)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
