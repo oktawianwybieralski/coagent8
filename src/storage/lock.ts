@@ -146,10 +146,9 @@ function isAbortSignal(val: unknown): val is AbortSignal {
 }
 
 export function combineSignals(
-  signal1?: AbortSignal | null,
-  signal2?: AbortSignal | null
+  ...signals: Array<AbortSignal | null | undefined>
 ): AbortSignal | null {
-  const activeSignals = [signal1, signal2].filter((s): s is AbortSignal => !!s);
+  const activeSignals = signals.filter((s): s is AbortSignal => !!s);
   if (activeSignals.length === 0) return null;
   if (activeSignals.length === 1) return activeSignals[0];
   if (typeof AbortSignal.any === 'function') {

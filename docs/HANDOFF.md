@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T09c (stop session acquisition after expiry).
+The current completed task is EXEC-001-T10a (cancel a pending approval).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T10a (cancel a pending approval).
+Next pending card: EXEC-001-T10b (revalidate just before acquisition).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1289,6 +1289,38 @@ Scope: stop session acquisition after expiry or cancellation across `src/session
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_15716fab30909ee18968f610`, Rounds 6, 8, 9: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T10a: cancel a pending approval
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: cancel pending approval and bind consent confirmation to the monotonic execution budget and request identity across `src/execution/preparation.ts`, `src/execution/controller.ts`, `src/mcp/server.ts`, and `src/storage/lock.ts`, verified with comprehensive unit and integration tests in `tests/execution/controller-consent.test.js`.
+
+### Implemented mechanisms:
+1. **Dynamic monotonic budget binding & elicitation timeout**:
+   - `server.elicitInput` in `src/mcp/server.ts:consentPrompt` calculates prompt timeout dynamically from `effectiveBudget.remainingExecutionMs()`, falling back to `CONSENT_TIMEOUT_MS = 5 * 60 * 1000` only when no budget is attached.
+   - Pre-flight checks reject immediately with typed `ToolError('TIMEOUT')` or `ToolError('ABORTED')` if the budget deadline or caller abort signal expired before elicitation starts.
+2. **Pending callback race and timeout protection**:
+   - In `src/execution/preparation.ts:confirmConsent`, `askConsent` is raced against caller abort signals and monotonic budget timers via `Promise.race([promptPromise, cancellationPromise])`.
+   - If a prompt callback hangs indefinitely or ignores the abort signal, caller cancellation or deadline expiration settles immediately without hanging, cleaning up event listeners and timers in `finally`.
+3. **Response identity binding & validation**:
+   - `ConsentPrompt` request and response strictly bind to the target `backend` and `model`.
+   - Any response mismatching the requested backend or model is rejected with `ToolError('POLICY_DENIED')`.
+4. **Late response and cancelled form protection**:
+   - Delayed responses arriving after budget deadline expiration or abort signal activation are rejected immediately with `ToolError('TIMEOUT')` or `ToolError('ABORTED')`.
+   - Form cancellation (`unanswered: true`), user decline (`approved: false`), unchecked approval, or conflicting responses (`approved: true` with `unanswered: true`) strictly reject with `ToolError('POLICY_DENIED')` and never execute the turn or invoke `rememberApprovedModel`.
+5. **Varargs signal combination and backward compatibility**:
+   - `combineSignals` in `src/storage/lock.ts` enhanced to accept arbitrary numbers of signals (`...signals`), safely merging caller signals, read context signals, and monotonic budget signals.
+   - Full backward compatibility preserved for legacy invocations without budgets or read contexts.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 534 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 11 tests (11 pass, 0 fail, exit code 0): `node tests/run.cjs tests/execution/controller-consent.test.js`.
+- PASS: Full test suite: 581 tests (578 pass, 0 fail, 3 skipped, duration 146.2 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audits conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_145162966167c55e46993eeb`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
 
 ## Compact handoff contract
 

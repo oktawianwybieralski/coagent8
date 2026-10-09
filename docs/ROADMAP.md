@@ -567,11 +567,12 @@ regressions. Depends on T08.
 
 ### EXEC-001-T10 - bind consent and revalidation to the budget
 
-- [ ] **T10a - cancel a pending approval.** Start: `ConsentPrompt` and the
+- [x] **T10a - cancel a pending approval.** Start: `ConsentPrompt` and the
   consent block in `src/execution/controller.ts`, plus elicitation in
   `src/mcp/server.ts`. Bind the response to this request/backend/model and the
   T07 deadline. Done: missing/false/late responses and cancelled forms cannot
   start a turn or remember approval. Check: R, POLICY/MCP with a delayed reply.
+  Evidence: [EXEC-001-T10a implementation](HANDOFF.md#exec-001-t10a-cancel-a-pending-approval).
 - [ ] **T10b - revalidate just before acquisition.** Start:
   `src/execution/consent.ts`, `src/models/governance.ts`, the controller's price
   checks and the T03 snapshot. Recheck changed identity/policy/price evidence.

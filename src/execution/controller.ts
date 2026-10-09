@@ -237,6 +237,8 @@ async function executeTaskInternal(
     const { priceNote, warnings: consentWarnings } = await prepared.confirmConsent({
       askConsent: options.askConsent,
       abortSignal,
+      budget: options.budget ?? options.context?.budget,
+      context: options.context,
     });
     consentHandle.end();
 

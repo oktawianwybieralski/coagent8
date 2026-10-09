@@ -23,8 +23,9 @@ import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { formatExecutionResult, setResultStyle, withWorkspace } from './result.js';
-import { ToolError, errorCodeOf } from '../contracts/index.js';
-import { listSessions } from '../sessions/session.js';
+import { ToolError, errorCodeOf, type ExecutionBudget } from '../contracts/index.js';
+import { listSessions, isBudgetExpired } from '../sessions/session.js';
+import { combineSignals } from '../storage/lock.js';
 import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from '../sessions/identity.js';
 import { getHistory } from '../sessions/history/index.js';
@@ -196,25 +197,80 @@ export function createServer(): Server {
 
   // A model the governance policy asks for runs only after the user approves it in the client
   // (AUD-P1-7). Without form elicitation there is no prompt and the controller refuses it.
-  function consentPrompt(signal: AbortSignal): ConsentPrompt | undefined {
+  function consentPrompt(signal?: AbortSignal | null, budget?: ExecutionBudget): ConsentPrompt | undefined {
     if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
-    return async ({ backend, model, reason, offerRemember }) => {
+    return async ({ backend, model, reason, offerRemember, budget: reqBudget, abortSignal: reqSignal }) => {
+      const effectiveBudget = reqBudget ?? budget;
+      const effectiveSignal = combineSignals(signal, reqSignal, effectiveBudget?.executionSignal);
+
+      if (effectiveSignal?.aborted || isBudgetExpired(effectiveBudget)) {
+        if (isBudgetExpired(effectiveBudget)) {
+          throw new ToolError('TIMEOUT', 'Execution budget expired before requesting user consent.');
+        }
+        throw new ToolError('ABORTED', 'Request cancelled before requesting user consent.');
+      }
+
+      let timeout: number;
+      if (effectiveBudget) {
+        const remaining = effectiveBudget.remainingExecutionMs();
+        if (remaining <= 0) {
+          throw new ToolError('TIMEOUT', 'Execution budget expired before requesting user consent.');
+        }
+        timeout = remaining;
+      } else {
+        timeout = CONSENT_TIMEOUT_MS;
+      }
+
       let answer: ElicitResult;
       try {
-        answer = await server.elicitInput({
-          message: `${BRAND.NAME}: run '${model}' on ${backend}? ${reason}`,
-          requestedSchema: { type: 'object', required: ['approve'], properties: {
-            approve: { type: 'boolean', title: `Run ${model}`, default: true },
-            ...(offerRemember ? { remember: { type: 'boolean', title: `Do not ask again for ${model}`, default: false } } : {}),
-          } },
-        }, { signal, timeout: CONSENT_TIMEOUT_MS });
+        answer = await server.elicitInput(
+          {
+            message: `${BRAND.NAME}: run '${model}' on ${backend}? ${reason}`,
+            requestedSchema: {
+              type: 'object',
+              required: ['approve'],
+              properties: {
+                approve: { type: 'boolean', title: `Run ${model}`, default: true },
+                ...(offerRemember ? { remember: { type: 'boolean', title: `Do not ask again for ${model}`, default: false } } : {}),
+              },
+            },
+          },
+          { signal: effectiveSignal ?? undefined, timeout }
+        );
       } catch (cause) {
-        if (signal.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.', { cause });
+        if (effectiveSignal?.aborted) {
+          if (isBudgetExpired(effectiveBudget)) {
+            throw new ToolError('TIMEOUT', 'Execution budget expired while waiting for user consent.', { cause });
+          }
+          throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.', { cause });
+        }
+        if (isBudgetExpired(effectiveBudget)) {
+          throw new ToolError('TIMEOUT', 'Execution budget expired while waiting for user consent.', { cause });
+        }
+        const causeMsg = (cause as Error)?.message || '';
+        if (/timed? ?out/i.test(causeMsg) || (cause as { code?: number })?.code === -32001) {
+          throw new ToolError('TIMEOUT', `The approval request for model '${model}' timed out.`, { cause });
+        }
         throw new ToolError('POLICY_DENIED', `The approval request for model '${model}' failed: ${(cause as Error).message}`, { cause });
       }
+
+      // Late response after deadline or cancellation during wait must not start a turn:
+      if (effectiveSignal?.aborted || isBudgetExpired(effectiveBudget)) {
+        if (isBudgetExpired(effectiveBudget)) {
+          throw new ToolError('TIMEOUT', 'Execution budget expired while waiting for user consent.');
+        }
+        throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
+      }
+
       // Only an accepted form with the box checked is consent (CUR-003); a missing field is not.
       const approved = answer.action === 'accept' && answer.content?.approve === true;
-      return { approved, unanswered: answer.action === 'cancel', remember: approved && offerRemember && answer.content?.remember === true };
+      return {
+        approved,
+        unanswered: answer.action === 'cancel',
+        remember: approved && offerRemember && answer.content?.remember === true,
+        backend,
+        model,
+      };
     };
   }
 

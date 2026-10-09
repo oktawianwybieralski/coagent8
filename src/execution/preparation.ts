@@ -12,7 +12,8 @@
 import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget } from '../contracts/index.js';
 import type { BackendReadContext } from '../backends/types.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
-import { getSession } from '../sessions/session.js';
+import { getSession, isBudgetExpired } from '../sessions/session.js';
+import { combineSignals } from '../storage/lock.js';
 import type { SessionRecord } from '../sessions/types.js';
 import { assertNotNestedTurn } from './nested-turn.js';
 import { loadConfigSnapshot, rememberApprovedModel, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
@@ -49,7 +50,15 @@ export type ConsentPrompt = (request: {
   model: string;
   reason: string;
   offerRemember: boolean;
-}) => Promise<{ approved: boolean; unanswered?: boolean; remember?: boolean }>;
+  budget?: ExecutionBudget;
+  abortSignal?: AbortSignal | null;
+}) => Promise<{
+  approved: boolean;
+  unanswered?: boolean;
+  remember?: boolean;
+  backend?: string;
+  model?: string;
+}>;
 
 /**
  * Options supplied during task preparation.
@@ -69,6 +78,10 @@ export interface PrepareTaskOptions {
 export interface ConfirmConsentOptions {
   askConsent?: ConsentPrompt;
   abortSignal?: AbortSignal | null;
+  /** Complete-call execution budget (`EXEC-001-T07`). */
+  budget?: ExecutionBudget;
+  /** Optional read context for observation reads (`EXEC-001-T08`). */
+  context?: BackendReadContext;
 }
 
 /**
@@ -286,30 +299,117 @@ export async function prepareTask(
   if (below !== undefined) await assertPriceLimit();
 
   const confirmConsent = async (consentOptions: ConfirmConsentOptions = {}): Promise<ConfirmConsentResult> => {
-    const sig = consentOptions.abortSignal ?? abortSignal;
+    const effectiveBudget = consentOptions.budget ?? options.budget ?? options.context?.budget ?? consentOptions.context?.budget;
+    const callerSignal = consentOptions.abortSignal !== undefined ? consentOptions.abortSignal : abortSignal;
+    const effectiveSignal = combineSignals(callerSignal, consentOptions.context?.abortSignal, effectiveBudget?.executionSignal);
+
+    const assertNotCancelledOrExpired = (phase: string) => {
+      if (effectiveSignal?.aborted) {
+        if (isBudgetExpired(effectiveBudget)) {
+          throw new ToolError('TIMEOUT', `Execution budget expired during ${phase}.`);
+        }
+        throw new ToolError('ABORTED', `Request cancelled during ${phase}.`);
+      }
+      if (isBudgetExpired(effectiveBudget)) {
+        throw new ToolError('TIMEOUT', `Execution budget expired during ${phase}.`);
+      }
+    };
+
+    assertNotCancelledOrExpired('consent confirmation');
+
     const decision = await consentFor(backend.id, backend.probe, model, {
       config: configSnapshot,
       defaultModel,
     });
     const consentWarnings: string[] = [];
 
+    assertNotCancelledOrExpired('consent confirmation');
+
     if (decision.ask) {
       if (!consentOptions.askConsent) {
         throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));
       }
-      const answer = await consentOptions.askConsent({
+      const promptPromise = consentOptions.askConsent({
         backend: backend.id,
         model,
         reason: decision.reason,
         offerRemember: decision.offerRemember,
+        budget: effectiveBudget,
+        abortSignal: effectiveSignal,
       });
-      if (!answer.approved) {
+
+      let abortListener: (() => void) | undefined;
+      let timer: NodeJS.Timeout | undefined;
+
+      const cancellationPromise = new Promise<never>((_, reject) => {
+        if (effectiveSignal?.aborted) {
+          if (isBudgetExpired(effectiveBudget)) {
+            reject(new ToolError('TIMEOUT', 'Execution budget expired during waiting for user consent.'));
+          } else {
+            reject(new ToolError('ABORTED', 'Request cancelled during waiting for user consent.'));
+          }
+          return;
+        }
+        abortListener = () => {
+          if (isBudgetExpired(effectiveBudget)) {
+            reject(new ToolError('TIMEOUT', 'Execution budget expired during waiting for user consent.'));
+          } else {
+            reject(new ToolError('ABORTED', 'Request cancelled during waiting for user consent.'));
+          }
+        };
+        effectiveSignal?.addEventListener('abort', abortListener, { once: true });
+
+        if (effectiveBudget) {
+          const remaining = effectiveBudget.remainingExecutionMs();
+          if (remaining <= 0) {
+            reject(new ToolError('TIMEOUT', 'Execution budget expired during waiting for user consent.'));
+            return;
+          }
+          timer = setTimeout(() => {
+            reject(new ToolError('TIMEOUT', 'Execution budget expired during waiting for user consent.'));
+          }, remaining);
+          if (typeof timer.unref === 'function') {
+            timer.unref();
+          }
+        }
+      });
+
+      let answer: Awaited<ReturnType<typeof consentOptions.askConsent>>;
+      try {
+        answer = await Promise.race([promptPromise, cancellationPromise]);
+      } finally {
+        if (abortListener && effectiveSignal) {
+          effectiveSignal.removeEventListener('abort', abortListener);
+        }
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+
+      // Bound response to this request/backend/model and T07 deadline:
+      // 1. Any cancellation or budget deadline expiration must reject immediately
+      assertNotCancelledOrExpired('waiting for user consent');
+
+      // 2. Response must match the requested backend and model if specified
+      if (
+        (answer.backend !== undefined && answer.backend !== backend.id) ||
+        (answer.model !== undefined && answer.model !== model)
+      ) {
+        throw new ToolError('POLICY_DENIED', `Consent response mismatch: expected approval for model '${model}' on ${backend.id}.`);
+      }
+
+      // 3. Unanswered/cancelled form or user decline must throw POLICY_DENIED
+      // Even if approved is true, unanswered indicates a cancelled/unanswered form (CUR-003)
+      if (answer.unanswered || !answer.approved) {
         throw new ToolError(
           'POLICY_DENIED',
           answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model)
         );
       }
-      if (sig?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
+
+      // 4. Double check not cancelled or expired before writing configuration
+      assertNotCancelledOrExpired('recording remembered approval');
+
       if (decision.offerRemember && answer.remember) {
         // The approval stands even when it cannot be stored; the next turn asks again.
         try {
@@ -324,7 +424,7 @@ export async function prepareTask(
 
     // Rechecked right before the turn: the list or the limit's evidence may have changed while the user decided.
     const priceNote = below === undefined ? undefined : await assertPriceLimit();
-    if (sig?.aborted) throw new ToolError('ABORTED', 'Request cancelled while checking the price limit.');
+    assertNotCancelledOrExpired('price limit verification');
 
     return { priceNote, warnings: consentWarnings };
   };
