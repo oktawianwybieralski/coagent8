@@ -439,11 +439,30 @@ test('cross-process contention: cancelling a contender never corrupts or release
   });
 
   let childStderr = '';
+  let childExited = false;
+  let childExitCode = null;
+  let childSpawnError = null;
+
   child.stderr.on('data', d => { childStderr += d; });
+  child.on('error', err => { childSpawnError = err; });
+  child.on('exit', code => {
+    childExited = true;
+    childExitCode = code;
+  });
 
   try {
-    // Wait for child to hold lock
+    // Wait for child to hold lock with bounded deadline and child exit detection
+    const waitDeadline = Date.now() + 5000;
     while (!fs.existsSync(readyFile)) {
+      if (childSpawnError) {
+        throw new Error(`Child process failed to spawn: ${childSpawnError.message}`);
+      }
+      if (childExited) {
+        throw new Error(`Child process exited prematurely with code ${childExitCode}: ${childStderr}`);
+      }
+      if (Date.now() > waitDeadline) {
+        throw new Error(`Timed out waiting for child to acquire lock: ${childStderr}`);
+      }
       await new Promise(r => setTimeout(r, 10));
     }
 
@@ -467,8 +486,61 @@ test('cross-process contention: cancelling a contender never corrupts or release
     assert.equal(fs.existsSync(`${resource}.lease`), true, 'Child lease must remain intact');
   } finally {
     // Tell child to finish
-    fs.writeFileSync(stopFile, 'stop');
-    await new Promise(resolve => child.on('exit', resolve));
+    try {
+      fs.writeFileSync(stopFile, 'stop');
+    } catch {
+      /* ignore if temp dir cleaned */
+    }
+
+    if (!childExited) {
+      await new Promise((resolve, reject) => {
+        let forceTimer = null;
+        let hardDeadlineTimer = null;
+        const cleanupTimers = () => {
+          clearTimeout(exitTimer);
+          if (forceTimer) clearTimeout(forceTimer);
+          if (hardDeadlineTimer) clearTimeout(hardDeadlineTimer);
+        };
+
+        const exitTimer = setTimeout(() => {
+          if (!childExited) {
+            try {
+              child.kill('SIGTERM');
+            } catch (kErr) {
+              /* ignore if already gone */
+            }
+            forceTimer = setTimeout(() => {
+              if (!childExited) {
+                try {
+                  child.kill('SIGKILL');
+                } catch (kErr) {
+                  /* ignore */
+                }
+              }
+            }, 1000);
+          }
+        }, 2000);
+
+        hardDeadlineTimer = setTimeout(() => {
+          cleanupTimers();
+          if (!childExited) {
+            reject(new Error(`Failed to confirm child process (PID ${child.pid}) termination within teardown deadline.`));
+          } else {
+            resolve();
+          }
+        }, 5000);
+
+        child.once('exit', () => {
+          cleanupTimers();
+          resolve();
+        });
+        child.once('error', err => {
+          cleanupTimers();
+          reject(err);
+        });
+      });
+    }
+
     if (childStderr) {
       assert.fail(`Child process failed: ${childStderr}`);
     }
