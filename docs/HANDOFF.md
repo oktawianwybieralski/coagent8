@@ -44,13 +44,12 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T03 (supply effective configuration with provenance):
-T03a (freshness and precedence specification), T03b (configuration snapshot loader with provenance),
-T03c (single snapshot passed through preparation in routing, selection, consent, controller),
-and T03d (doctor diagnostic provenance and custom-env recommendations).
-Independent reviewer approval obtained (session syn_sess_8a6da1da4c3e406e38687ab7, Turn 2: VERDICT: READY).
+The current completed task is EXEC-001-T04 (extract cohesive task preparation):
+T04a (create src/execution/preparation.ts encapsulating route resolution, effective model selection, expensive model confirmation/consent check, and context validation into a typed prepared-task object),
+and T04b (simplify src/execution/controller.ts by delegating preparation to the new module, ensuring single-snapshot lifecycle and clean failure isolation).
+Independent reviewer approval obtained (session syn_sess_c1790e360e1da6ed293df519, Turns 2-6: VERDICT: READY).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T04 (extract cohesive task preparation).
+Next pending card: EXEC-001-T05 (reuse observations within preparation).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -748,6 +747,35 @@ Scope: supply effective configuration with provenance across `src/config.ts`,
 - PASS: `node tests/run.cjs` full test suite (474 tests: 471 pass, 0 fail, 3 skipped, duration 149.0 s, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review approval obtained via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_8a6da1da4c3e406e38687ab7`, Turn 2: `VERDICT: READY`).
+
+## EXEC-001-T04 cohesive task preparation
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: extract cohesive task preparation into `src/execution/preparation.ts`, delegate lifecycle from `src/execution/controller.ts`, and add comprehensive unit test suite in `tests/execution/preparation.test.js`.
+
+### Modules and ownership changes:
+- `src/execution/preparation.ts` (new module, owner: `execution`):
+  - Created `validateTaskContext(args, cwd, options)`: verifies nested turn guard (`assertNotNestedTurn`), pre-resolution cancellation, model identifier constraints (`isValidModelIdentifier`), session existence, workspace binding, provider switch refusal, and native continuation support (`threadId`).
+  - Created `prepareTask(args, cwd, options)`: encapsulates single configuration snapshot loading/reuse, provider routing (`resolveBackend`, `resolveBackendForModel`), concrete model selection (`selectModel`), catalog capability validation (`checkModelSelection`), and user price ceiling enforcement (`assertPriceLimit`).
+  - Defined typed `PreparedTask` lifecycle contract exposing `backend`, `model`, `reasoningEffort`, `previousSession`, `configSnapshot`, `outputPriceBelow`, `assertPriceLimit`, and `confirmConsent`.
+  - Created `confirmTaskConsent(prepared, options)` / `prepared.confirmConsent(options)`: executes governance checks (`consentFor`), handles user approval/rejection (`askConsent`), persists remembered model consents (`rememberApprovedModel`), and re-asserts price ceilings immediately prior to session acquisition.
+- `src/execution/controller.ts`:
+  - Delegated `preparation` phase in `executeTaskInternal` to `prepareTask`, eliminating ~80 lines of inline routing, model selection, and validation boilerplate.
+  - Delegated `consent` phase in `executeTaskInternal` to `prepared.confirmConsent`, isolating expensive model confirmation while keeping consent and lease acquisition explicit.
+  - Re-exported universal execution types (`ExecutionRequest`, `ConsentPrompt`, `PreparedTask`, `PrepareTaskOptions`, `ConfirmConsentOptions`, `ConfirmConsentResult`) preserving backward compatibility for callers and MCP tool handlers.
+- `tests/execution/preparation.test.js` (new test suite):
+  - Added 6 granular unit tests covering invalid model identifier rejection, pre-aborted signal rejection, session/workspace/provider lock validation, single snapshot auto resolution, continuation parameter inheritance, and consent verification with price ceiling enforcement.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (104 source files analyzed, 520 dependency edges, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 66/66 pass (`tests/execution/preparation.test.js`, `tests/execution/routing.test.js`, `tests/execution/model-routing.test.js`, `tests/models/selection.test.js`, `tests/models/governance.test.js`, `tests/execution/price-limit.test.js`, `tests/sessions/session.test.js`, `tests/execution/controller-history.test.js`, `tests/execution/controller-cooldown.test.js`, `tests/execution/pipeline.test.js`, `tests/execution/baseline.test.js`).
+- PASS: Dedicated preparation tests: 6/6 pass (`tests/execution/preparation.test.js`).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings).
+- PASS: `node tests/run.cjs` full test suite (480 tests: 477 pass, 0 fail, 3 skipped, duration 144.5 s, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_c1790e360e1da6ed293df519`): Reviewer confirmed `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 findings.
 
 ## Compact handoff contract
 

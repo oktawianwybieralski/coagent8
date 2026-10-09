@@ -392,18 +392,19 @@ config fixtures, typecheck and dependency check. Depends on T02.
 
 ### EXEC-001-T04 - extract cohesive task preparation
 
-- [ ] **T04a - extract input/continuation validation.** Start:
+- [x] **T04a - extract input/continuation validation.** Start:
   `executeTaskInternal`, `src/sessions/session.ts:getSession` and
   `src/models/identifier.ts`. Move preparation validation to a **new** cohesive
   execution preparation owner; have the controller call it immediately.
   Done: invalid model, expired/foreign handle and provider-switch cases retain
   their errors and start no backend turn. Check: R, SELECT/SESSION/POLICY.
-- [ ] **T04b - extract provider/model preparation.** Move routing, concrete
+- [x] **T04b - extract provider/model preparation.** Move routing, concrete
   model/alias resolution and effort/catalog checks into the T04a owner, returning
   neutral prepared data to the controller. Keep price policy in models/, native
   reads in backends/, consent and lease acquisition explicit in the controller.
   Done: plain, named, priced and continued calls match baseline identity/effort;
   busy acquisition remains a later fail-closed operation. Check: R, SELECT/POLICY/LIFE.
+  Evidence: [EXEC-001-T04 implementation](HANDOFF.md#exec-001-t04-cohesive-task-preparation).
 
 Acceptance: behavior and error codes match the baseline for plain, explicit,
 priced and continued calls; invalid/busy handles fail closed. Verification:

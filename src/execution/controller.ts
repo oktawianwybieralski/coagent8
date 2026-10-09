@@ -33,16 +33,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { resolveBackend, resolveBackendForModel } from './routing.js';
-import { readModelCatalog } from '../backends/probe-cache.js';
-import { checkModelSelection } from '../models/catalog.js';
-import { selectModel, type PriceConstraint } from './selection.js';
-import { checkPriceLimit, priceEvidence, readPrices } from '../models/prices.js';
-import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../models/governance.js';
-import { isValidModelIdentifier } from '../models/identifier.js';
-import { consentFor } from './consent.js';
-import { loadConfigSnapshot, rememberApprovedModel } from '../config.js';
-import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
+import { loadConfigSnapshot } from '../config.js';
+import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
@@ -50,34 +42,33 @@ import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from 
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
-import { assertNotNestedTurn } from './nested-turn.js';
 import { stripAnsi } from './cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
 import type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace } from '../contracts/execution.js';
 import { createPhaseTracker } from './runtime/timing.js';
+import {
+  prepareTask,
+  type ExecutionRequest,
+  type ConsentPrompt,
+  type PreparedTask,
+  type PrepareTaskOptions,
+  type ConfirmConsentOptions,
+  type ConfirmConsentResult,
+} from './preparation.js';
 
-export type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace };
-
-/**
- * Universal execution parameters accepted by execution tools and the run gateway.
- */
-export interface ExecutionRequest {
-  backend?: string;
-  session_handle?: string;
-  model?: string;
-  reasoning_effort?: string;
-  timeout_ms?: number;
-  /** User's price limit in USD per million output tokens; strict (`AX-002`). */
-  output_price_below?: number;
-}
-
-/**
- * Asks the user, not the calling agent, to approve a model; `approved` is true only on the
- * user's approval, `unanswered` when the client cancelled the request without a decision, and
- * `remember` only when the request offered it and the user chose it.
- * The server implements it with MCP elicitation when the client supports it (AUD-P1-7).
- */
-export type ConsentPrompt = (request: { backend: string; model: string; reason: string; offerRemember: boolean }) => Promise<{ approved: boolean; unanswered?: boolean; remember?: boolean }>;
+export type {
+  TaskExecutionResult,
+  ExecutionMeta,
+  TimingObserver,
+  MonotonicClock,
+  ExecutionTrace,
+  ExecutionRequest,
+  ConsentPrompt,
+  PreparedTask,
+  PrepareTaskOptions,
+  ConfirmConsentOptions,
+  ConfirmConsentResult,
+};
 
 /** Per-call options of {@link executeTask} set by the server and tool handlers, never by tool arguments. */
 export interface TaskOptions {
@@ -221,82 +212,22 @@ async function executeTaskInternal(
   try {
     const prepHandle = startControllerPhase('preparation');
     const configSnapshot = loadConfigSnapshot();
-    // A server started by a backend inside a turn never starts another one (CUR-002).
-    assertNotNestedTurn();
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
-    // The model reaches CLI argv; option-like or whitespace values are rejected before any backend runs.
-    if (args.model !== undefined && !isValidModelIdentifier(args.model)) throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');
-    const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
-    if (args.session_handle && !previous) throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
-    if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
-    const below = args.output_price_below;
-    const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
-    // Without a named model, only backends with a model below the limit are chosen from.
-    const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
-    const backend = previous ? await resolveBackend(previous.backend, { config: configSnapshot })
-      : args.model !== undefined ? await resolveBackendForModel(args.backend, args.model, { config: configSnapshot })
-      : await resolveBackend(args.backend, {
-          config: configSnapshot,
-          ...(choosing ? { eligible: async (id, probe) => {
-            try { await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot }); return undefined; }
-            catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
-          } } : {}),
-        });
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
-    if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
-    // The model comes from the call, the session, the configuration or the CLI, never from the
-    // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
-    // every turn) and the turn name the same model.
-    const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model }, {
+    const prepared = await prepareTask(args, cwd, {
       config: configSnapshot,
-      ...(choosing ? { constraint: choosing } : {}),
+      abortSignal,
     });
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
-    // A continuation keeps its session's selection: the effort follows the model it was chosen for.
-    const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
-    // An explicit model or effort is checked against the CLI's own catalog before the user is
-    // asked for consent and before a model call.
-    if (args.model !== undefined || args.reasoning_effort !== undefined) {
-      const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), model, args.reasoning_effort);
-      if (rejected) throw new ToolError(rejected.code, rejected.message);
-      if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
-    }
-    // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
-    const assertPriceLimit = async () => {
-      // A limit needs a current price list: a week-old one is read again first.
-      const prices = await readPrices({ current: true, models: [model] });
-      const evidence = priceEvidence(prices, model);
-      const rejected = checkPriceLimit(model, evidence, below!);
-      if (rejected) {
-        throw new ToolError('PRICE_LIMIT', choosing ? `${rejected} The price list changed after the model was chosen; retry to choose again.`
-          : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${previous ? ' or start a new session' : ' or omit model'}.`);
-      }
-      return `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(below!.toFixed(4))} USD`;
-    };
-    if (below !== undefined) await assertPriceLimit();
     prepHandle.end();
 
     const consentHandle = startControllerPhase('consent');
-    // Asked on every turn, for the model this turn runs (EXEC-001: price, not name).
-    const decision = await consentFor(backend.id, backend.probe, model, { config: configSnapshot });
-    const consentWarnings: string[] = [];
-    if (decision.ask) {
-      if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));
-      const answer = await options.askConsent({ backend: backend.id, model, reason: decision.reason, offerRemember: decision.offerRemember });
-      if (!answer.approved) {
-        throw new ToolError('POLICY_DENIED', answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model));
-      }
-      if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while waiting for the user.');
-      if (decision.offerRemember && answer.remember) {
-        // The approval stands even when it cannot be stored; the next turn asks again.
-        try { await rememberApprovedModel(model); }
-        catch (err) { consentWarnings.push(`The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`); }
-      }
-    }
-    // Rechecked right before the turn: the list or the limit's evidence may have changed while the user decided.
-    const priceNote = below === undefined ? undefined : await assertPriceLimit();
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while checking the price limit.');
+    const { priceNote, warnings: consentWarnings } = await prepared.confirmConsent({
+      askConsent: options.askConsent,
+      abortSignal,
+    });
     consentHandle.end();
+
+    const backend = prepared.backend;
+    const model = prepared.model;
+    const reasoningEffort = prepared.reasoningEffort;
 
     const acqHandle = startControllerPhase('acquisition');
     await pruneExpiredSessions();
