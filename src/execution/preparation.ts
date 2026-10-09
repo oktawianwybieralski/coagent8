@@ -9,14 +9,14 @@
  * @packageDocumentation
  */
 
-import { ToolError, type ProviderId } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type ProviderId } from '../contracts/index.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import { getSession } from '../sessions/session.js';
 import type { SessionRecord } from '../sessions/types.js';
 import { assertNotNestedTurn } from './nested-turn.js';
 import { loadConfigSnapshot, rememberApprovedModel, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import { resolveBackend, resolveBackendForModel, type ResolvedBackend } from './routing.js';
-import { selectModel, type PriceConstraint } from './selection.js';
+import { selectModel, type ModelSelection, type PriceConstraint } from './selection.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../models/catalog.js';
 import { checkPriceLimit, priceEvidence, readPrices } from '../models/prices.js';
@@ -84,6 +84,8 @@ export interface PreparedTask {
   readonly previousSession: SessionRecord | null;
   readonly configSnapshot: ConfigSnapshot;
   readonly outputPriceBelow?: number;
+  /** Pre-observed backend default model as the relative-price governance reference (`EXEC-001-T05b`). */
+  readonly defaultModel?: string | null;
   readonly assertPriceLimit: () => Promise<string>;
   readonly confirmConsent: (options?: ConfirmConsentOptions) => Promise<ConfirmConsentResult>;
 }
@@ -173,6 +175,8 @@ export async function prepareTask(
   // Without a named model, only backends with a model below the limit are chosen from.
   const choosing = constraint && args.model === undefined && !previousSession ? constraint : undefined;
 
+  const choosingSelections = new Map<ProviderId, ModelSelection>();
+
   const backend = previousSession
     ? await resolveBackend(previousSession.backend, { config: configSnapshot })
     : args.model !== undefined
@@ -183,7 +187,8 @@ export async function prepareTask(
           ? {
               eligible: async (id, probe) => {
                 try {
-                  await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot });
+                  const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot });
+                  choosingSelections.set(id, sel);
                   return undefined;
                 } catch (err) {
                   if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) {
@@ -201,10 +206,17 @@ export async function prepareTask(
   // The model comes from the call, the session, the configuration or the CLI, never from the
   // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
   // every turn) and the turn name the same model.
-  const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previousSession?.model }, {
-    config: configSnapshot,
-    ...(choosing ? { constraint: choosing } : {}),
-  });
+  let selection: ModelSelection;
+  if (choosing && choosingSelections.has(backend.id)) {
+    selection = choosingSelections.get(backend.id)!;
+  } else {
+    selection = await selectModel(backend.id, backend.probe, { model: args.model, session: previousSession?.model }, {
+      config: configSnapshot,
+      catalog: backend.catalog,
+      ...(choosing ? { constraint: choosing } : {}),
+    });
+  }
+  const model = selection.model;
 
   if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
 
@@ -214,9 +226,31 @@ export async function prepareTask(
   // An explicit model or effort is checked against the CLI's own catalog before the user is
   // asked for consent and before a model call.
   if (args.model !== undefined || args.reasoning_effort !== undefined) {
-    const rejected = checkModelSelection(backend.id, await readModelCatalog(backend.id), model, args.reasoning_effort);
+    const catalog = await readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog });
+    const rejected = checkModelSelection(backend.id, catalog, model, args.reasoning_effort);
     if (rejected) throw new ToolError(rejected.code, rejected.message);
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
+  }
+
+  // Observe and retain the backend's default model as the relative-price governance reference (`EXEC-001-T05b`).
+  let defaultModel: string | null = null;
+  if (args.model === undefined && !previousSession && !choosing) {
+    // When no specific model or price constraint was requested, the selection itself is the default model.
+    defaultModel = model;
+  } else {
+    try {
+      const def = await selectModel(backend.id, backend.probe, {}, {
+        config: configSnapshot,
+        catalog: backend.catalog,
+      });
+      defaultModel = def.model;
+    } catch (err) {
+      if (errorCodeOf(err) === 'MODEL_UNAVAILABLE') {
+        defaultModel = null;
+      } else {
+        throw err;
+      }
+    }
   }
 
   // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
@@ -242,7 +276,10 @@ export async function prepareTask(
 
   const confirmConsent = async (consentOptions: ConfirmConsentOptions = {}): Promise<ConfirmConsentResult> => {
     const sig = consentOptions.abortSignal ?? abortSignal;
-    const decision = await consentFor(backend.id, backend.probe, model, { config: configSnapshot });
+    const decision = await consentFor(backend.id, backend.probe, model, {
+      config: configSnapshot,
+      defaultModel,
+    });
     const consentWarnings: string[] = [];
 
     if (decision.ask) {
@@ -288,6 +325,7 @@ export async function prepareTask(
     previousSession,
     configSnapshot,
     outputPriceBelow: below,
+    defaultModel,
     assertPriceLimit,
     confirmConsent,
   };

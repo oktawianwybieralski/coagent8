@@ -146,11 +146,13 @@ test('baseline: plain cold execution performs initial probe and launches adapter
   const deltas = counterDeltas(counters, before);
 
   assert.equal(deltas.probes, 1, 'cold run must probe backend exactly once');
+  assert.equal(deltas.catalogReads, 1, 'cold run must read catalog exactly once');
   assert.equal(deltas.adapterLaunches, 1, 'cold run must launch adapter exactly once');
   assert.equal(outcome.isError, false);
 
   const observation = recordObservation('plain_cold', { ...deltas, durationMs, phases: outcome.meta.phases });
   assert.equal(observation.probes, 1);
+  assert.equal(observation.catalogReads, 1);
   assert.equal(observation.adapterLaunches, 1);
   assert.ok(typeof observation.preparationDurationMs === 'number', 'preparation phase must be measured');
   assert.ok(typeof outcome.meta.phases.execution === 'number', 'execution phase must be measured');
@@ -166,6 +168,7 @@ test('baseline: plain warm execution reuses probe cache and avoids redundant pro
   // First run (warmup)
   await executeTask('warmup', 'warmup', { backend: 'codex' }, tempDir);
   assert.equal(counters.probes, 1);
+  assert.equal(counters.catalogReads, 0);
   assert.equal(counters.adapterLaunches, 1);
 
   // Second run (warm)
@@ -176,11 +179,13 @@ test('baseline: plain warm execution reuses probe cache and avoids redundant pro
   const deltas = counterDeltas(counters, before);
 
   assert.equal(deltas.probes, 0, 'warm run must reuse probe without reprobing');
+  assert.equal(deltas.catalogReads, 0, 'warm run must reuse catalog without re-reading');
   assert.equal(deltas.adapterLaunches, 1, 'warm run launches adapter exactly once');
   assert.equal(outcome.isError, false);
 
   const observation = recordObservation('plain_warm', { ...deltas, durationMs, phases: outcome.meta.phases });
   assert.equal(observation.probes, 0);
+  assert.equal(observation.catalogReads, 0);
   assert.equal(observation.adapterLaunches, 1);
   assert.ok(typeof observation.acquisitionDurationMs === 'number', 'acquisition phase must be measured');
 });
@@ -201,6 +206,7 @@ test('baseline: explicit model and effort passes validated selection to adapter'
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
 
+  assert.equal(deltas.catalogReads, 0, 'explicit model must reuse catalog without re-reading');
   assert.equal(deltas.adapterLaunches, 1);
   const last = counters.launches[counters.launches.length - 1];
   assert.equal(last.options.model, 'gpt-6-sol');
@@ -212,6 +218,7 @@ test('baseline: explicit model and effort passes validated selection to adapter'
     reasoningEffort: 'high',
   });
   assert.equal(observation.adapterLaunches, 1);
+  assert.equal(observation.catalogReads, 0);
   assert.equal(observation.clientTransportLatency, NOT_MEASURED);
 });
 
@@ -232,6 +239,7 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
 
+  assert.equal(deltas.catalogReads, 0, 'priced auto must reuse catalog without re-reading');
   assert.equal(deltas.adapterLaunches, 1);
   const parsed = readResult(outcome);
   assert.equal(parsed.model, 'gpt-5.6-luna');
@@ -242,6 +250,7 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
     priceLimit: 5,
   });
   assert.equal(observation.adapterLaunches, 1);
+  assert.equal(observation.catalogReads, 0);
   assert.ok(typeof observation.consentDurationMs === 'number', 'consent phase must be measured');
 });
 
@@ -269,6 +278,7 @@ test('baseline: continuation reuses session lease and propagates native session 
 
   assert.equal(deltas.adapterLaunches, 1, 'continuation turn launches adapter once');
   assert.equal(deltas.probes, 0, 'continuation reuses probed session backend');
+  assert.equal(deltas.catalogReads, 0, 'continuation reuses session catalog');
   assert.equal(turn2.meta.turn, 2, 'continuation turn number must advance to 2');
   assert.equal(turn2.sessionHandle, turn1.sessionHandle, 'continuation must keep identical session handle');
 

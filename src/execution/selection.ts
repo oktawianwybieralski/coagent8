@@ -22,7 +22,7 @@ import {
   type ModelSource,
   type PriceConstraint,
 } from '../models/selection.js';
-import type { AdapterProbeResult } from '../backends/types.js';
+import type { AdapterProbeResult, ModelCatalog } from '../backends/types.js';
 
 export type { ModelSelection, ModelSource, PriceConstraint };
 
@@ -37,7 +37,8 @@ export type { ModelSelection, ModelSource, PriceConstraint };
  * @param options - `observeAfresh` asks the CLI again instead of reusing an observed model
  * (doctor, which has just read the catalogs afresh). `constraint` applies a price limit when
  * neither the call nor a session names a model, as {@link choosePricedModel} describes; a
- * named model is returned as is and checked by the caller. `config` supplies an existing snapshot or configuration.
+ * named model is returned as is and checked by the caller. `config` supplies an existing snapshot or configuration;
+ * `catalog` reuses pre-observed catalog evidence from provider routing (`EXEC-001-T05a`).
  * @throws `MODEL_UNAVAILABLE` when no source names a model; `PRICE_LIMIT` when a constraint
  * applies and no model of this backend meets it.
  */
@@ -49,9 +50,10 @@ export async function selectModel(
     observeAfresh?: boolean;
     constraint?: PriceConstraint;
     config?: CoAgent8Config | ConfigSnapshot;
+    catalog?: ModelCatalog;
   } = {}
 ): Promise<ModelSelection> {
-  const observe = { fresh: options.observeAfresh };
+  const observe = { fresh: options.observeAfresh, probe };
   const adapter = adapterRegistry[id];
   const configObj = options.config
     ? ('config' in options.config ? options.config.config : options.config)
@@ -62,13 +64,35 @@ export async function selectModel(
     : configured ? { model: configured, source: 'config' }
     : probe.config?.defaultModel ? { model: probe.config.defaultModel, source: 'cli-config' }
     : undefined;
+
+  let currentCatalog: ModelCatalog | undefined = options.catalog;
+  let catalogFetched = false;
+
+  async function getCatalog(): Promise<ModelCatalog | undefined> {
+    if (options.observeAfresh) {
+      currentCatalog = await readModelCatalog(id, { fresh: true, probe });
+      catalogFetched = true;
+      return currentCatalog;
+    }
+    if (currentCatalog) {
+      currentCatalog = await readModelCatalog(id, { probe, catalog: currentCatalog });
+      catalogFetched = true;
+      return currentCatalog;
+    }
+    if (!catalogFetched) {
+      currentCatalog = await readModelCatalog(id, { probe });
+      catalogFetched = true;
+    }
+    return currentCatalog;
+  }
+
   async function resolve(): Promise<ModelSelection> {
     if (chosen) {
       // The session stores the model the CLI reported, which needs no second look.
       if (chosen.source === 'session') return chosen;
       // A listed name or alias becomes the exact form the CLI lists: `sonnet` the concrete
       // model it runs, `gpt-6-1-sol` the listed `gpt-6.1-sol`.
-      const catalog = await readModelCatalog(id);
+      const catalog = await getCatalog();
       const listed = catalog ? findCatalogEntry(catalog, chosen.model) : undefined;
       if (listed) return { model: listed.name, source: chosen.source };
       if (!adapter.observeModel) return chosen;
@@ -78,7 +102,8 @@ export async function selectModel(
       if (!observed) throw new ToolError('MODEL_UNAVAILABLE', `${id} did not report which model '${chosen.model}' runs, so it cannot be governed; check the CLI with doctor.`);
       return { model: observed, source: chosen.source };
     }
-    const fromCatalog = catalogDefault(await readModelCatalog(id));
+    const catalog = await getCatalog();
+    const fromCatalog = catalogDefault(catalog);
     if (fromCatalog) return fromCatalog;
     const observed = await readObservedModel(id, undefined, observe);
     if (observed) return { model: observed, source: 'observed' };
@@ -89,7 +114,7 @@ export async function selectModel(
   let fallback: ModelSelection | undefined;
   try { fallback = await resolve(); }
   catch (err) { if (errorCodeOf(err) !== 'MODEL_UNAVAILABLE') throw err; }
-  const catalog = await readModelCatalog(id);
+  const catalog = await getCatalog();
   // A limit needs current prices of every model it may choose from.
   const prices = await readPrices({ current: true, models: [...catalogNames(catalog), ...(fallback ? [fallback.model] : [])] });
   return choosePricedModel(id, catalog, fallback, options.constraint, prices);

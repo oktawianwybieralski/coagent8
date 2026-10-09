@@ -111,3 +111,78 @@ test('CUR-006: probes stamp the Codex home configuration and the Claude settings
     if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
   }
 });
+
+test('EXEC-001-T05: catalog observations expire on key mismatch, replaced adapter, and fresh requests', async () => {
+  const { readModelCatalog } = require('../../src/backends/probe-cache.ts');
+  const original = adapterRegistry.agy;
+  const executable = path.join(tempDir, 'agy-catalog-fixture.cjs');
+  const config = path.join(tempDir, 'agy-catalog-config.toml');
+  fs.writeFileSync(executable, 'console.log("1.0.0")\n');
+  fs.writeFileSync(config, '');
+  let catalogReads = 0;
+  const catalogData = { source: 'fixture', models: [{ id: 'gemini-3.8-flash', isDefault: true, efforts: ['low'] }] };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async () => ({
+      installed: true,
+      executionSupported: true,
+      command: executable,
+      configPath: config,
+    }),
+    listModels: async () => {
+      catalogReads++;
+      return { ...catalogData, readIndex: catalogReads };
+    },
+  };
+  const savedKey = process.env.GEMINI_API_KEY;
+  try {
+    // 1. Initial read
+    const cat1 = await readModelCatalog('agy');
+    assert.equal(catalogReads, 1, 'initial read calls listModels');
+    assert.equal(cat1.readIndex, 1);
+
+    // 2. Immediate reuse (same probe, key, adapter, and fresh=false)
+    const cat2 = await readModelCatalog('agy');
+    assert.equal(catalogReads, 1, 'subsequent read reuses cached catalog');
+
+    // 3. Passing catalog observation with matching key reuses without reading adapter
+    const cat3 = await readModelCatalog('agy', { catalog: cat1 });
+    assert.equal(catalogReads, 1, 'passing valid catalog observation reuses it');
+
+    // 4. Executable change causes probe and catalog invalidation
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(executable, later, later);
+    const cat4 = await readModelCatalog('agy');
+    assert.equal(catalogReads, 2, 'updated executable invalidates catalog and re-reads');
+
+    // 5. Config change causes invalidation
+    fs.writeFileSync(config, 'model = "new"\n');
+    const cat5 = await readModelCatalog('agy');
+    assert.equal(catalogReads, 3, 'updated config invalidates catalog and re-reads');
+
+    // 6. Environment credential change causes invalidation
+    process.env.GEMINI_API_KEY = 'changed-env-key';
+    const cat6 = await readModelCatalog('agy');
+    assert.equal(catalogReads, 4, 'updated environment invalidates catalog and re-reads');
+
+    // 7. Explicit fresh read (doctor) bypasses cache
+    const cat7 = await readModelCatalog('agy', { fresh: true });
+    assert.equal(catalogReads, 5, 'fresh: true forces new catalog read');
+
+    // 8. Replaced adapter function misses in-memory listFn, falling back to stored models.json
+    const prevList = adapterRegistry.agy.listModels;
+    adapterRegistry.agy.listModels = async () => prevList();
+    const cat8 = await readModelCatalog('agy');
+    assert.equal(catalogReads, 5, 'stored models.json answers when in-memory cache misses');
+    assert.equal(cat8.source, 'fixture');
+
+    // 9. Replaced adapter with fresh: true bypasses disk store and calls the new function
+    const cat9 = await readModelCatalog('agy', { fresh: true });
+    assert.equal(catalogReads, 6, 'fresh read calls the replaced adapter function');
+  } finally {
+    if (savedKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = savedKey;
+    adapterRegistry.agy = original;
+  }
+});

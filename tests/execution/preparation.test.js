@@ -236,3 +236,146 @@ test('prepareTask & confirmConsent: handles consent verification and price limit
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('EXEC-001-T05a: catalog observation obtained during routing is reused in model selection and check', async () => {
+  const original = { ...adapterRegistry };
+  try {
+    let catalogReads = 0;
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '1.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => {
+        catalogReads++;
+        return {
+          source: 'codex-catalog',
+          models: [
+            { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+            { id: 'gpt-6-astra', efforts: ['low'] },
+          ],
+        };
+      },
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+    });
+
+    const prepared = await prepareTask({ model: 'gpt-6-astra' }, tempDir);
+    assert.equal(prepared.backend.id, 'codex');
+    assert.equal(prepared.model, 'gpt-6-astra');
+    assert.equal(prepared.defaultModel, 'gpt-6.1-sol', 'defaultModel is kept distinct from requested model');
+    assert.ok(prepared.backend.catalog, 'catalog is attached to resolved backend');
+    assert.equal(catalogReads, 1, 'routing reads catalog once; model selection and validation reuse it');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T05b: defaultModel is reused in consent and handles missing backend default', async () => {
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '1.0.0',
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'] },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      backends: { codex: { defaultModel: undefined } },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+    });
+
+    // 1. With declared first-listed catalog default
+    const prep1 = await prepareTask({ model: 'gpt-6.1-sol' }, tempDir);
+    assert.equal(prep1.defaultModel, 'gpt-6.1-sol');
+
+    // 2. When backend has no catalog and no default model (unknown-default)
+    adapterRegistry.codex.listModels = undefined;
+    const prep2 = await prepareTask({ model: 'gpt-6.1-sol' }, tempDir);
+    assert.equal(prep2.defaultModel, null, 'unknown-default backend yields defaultModel = null');
+
+    // Confirming consent with defaultModel = null still runs governance cleanly
+    const consentRes = await prep2.confirmConsent();
+    assert.deepEqual(consentRes.warnings, []);
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T05c: price change while consent is pending triggers re-validation failure', async () => {
+  const { recordPrices } = require('../../src/models/store.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '1.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: ['gpt-6.1-sol'], neverAsk: [] },
+    });
+
+    // Initial price for gpt-6.1-sol is 10 USD; output_price_below limit is 15 USD.
+    const prepared = await prepareTask({ model: 'gpt-6.1-sol', output_price_below: 15 }, tempDir);
+    assert.equal(prepared.model, 'gpt-6.1-sol');
+
+    // While consent prompt is pending, price increases to 25 USD (above the 15 USD limit)
+    await assert.rejects(
+      prepared.confirmConsent({
+        askConsent: async () => {
+          await recordPrices({
+            fetchedAt: Date.now(),
+            source: 'openrouter',
+            models: {
+              'gpt-6.1-sol': { output: 25, input: 5, cachedInput: 2.5, matched: 'openai/gpt-6.1-sol', exact: true },
+            },
+          });
+          return { approved: true };
+        },
+      }),
+      {
+        code: 'PRICE_LIMIT',
+        message: /costs 25 USD per million output tokens.*not below 15 USD/,
+      }
+    );
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});

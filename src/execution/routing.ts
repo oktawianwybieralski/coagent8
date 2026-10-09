@@ -12,10 +12,18 @@ import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfig, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import { selectSmartQuotaBackend } from '../backends/availability.js';
 import { findCatalogEntry } from '../models/catalog.js';
-import type { AdapterProbeResult, CliAdapter } from '../backends/types.js';
+import type { AdapterProbeResult, CliAdapter, ModelCatalog } from '../backends/types.js';
 import { PROVIDERS, ToolError, type ProviderId } from '../contracts/index.js';
 
-export interface ResolvedBackend { id: ProviderId; adapter: CliAdapter; probe: AdapterProbeResult; isSmartQuota?: boolean; warnings?: string[] }
+export interface ResolvedBackend {
+  id: ProviderId;
+  adapter: CliAdapter;
+  probe: AdapterProbeResult;
+  isSmartQuota?: boolean;
+  warnings?: string[];
+  /** Catalog observation obtained during provider routing/eligibility (`EXEC-001-T05a`). */
+  catalog?: ModelCatalog;
+}
 
 /** CLI of the connected MCP client; a stdio server process serves exactly one client. */
 let callerProvider: ProviderId | null = null;
@@ -103,16 +111,22 @@ export async function resolveBackendForModel(
   model: string,
   options: { config?: CoAgent8Config | ConfigSnapshot } = {}
 ): Promise<ResolvedBackend> {
-  const offers = (acceptUnlisted: boolean) => async (id: ProviderId) => {
-    const catalog = await readModelCatalog(id);
+  const observedCatalogs = new Map<ProviderId, ModelCatalog>();
+  const offers = (acceptUnlisted: boolean) => async (id: ProviderId, probe: AdapterProbeResult) => {
+    const catalog = await readModelCatalog(id, { probe });
+    if (catalog) observedCatalogs.set(id, catalog);
     if (catalog && findCatalogEntry(catalog, model)) return undefined;
     if (acceptUnlisted && (!catalog || catalog.acceptsUnlisted)) return undefined;
     return new ToolError('MODEL_UNAVAILABLE', `does not list '${model}'; doctor lists its models.`);
   };
-  try { return await resolveBackend(requested, { eligible: offers(false), config: options.config }); }
-  catch (err) {
+  let resolved: ResolvedBackend;
+  try {
+    resolved = await resolveBackend(requested, { eligible: offers(false), config: options.config });
+  } catch (err) {
     if (!(err instanceof ToolError) || err.code !== 'MODEL_UNAVAILABLE') throw err;
-    return resolveBackend(requested, { eligible: offers(true), config: options.config });
+    resolved = await resolveBackend(requested, { eligible: offers(true), config: options.config });
   }
+  const catalog = observedCatalogs.get(resolved.id);
+  return catalog ? { ...resolved, catalog } : resolved;
 }
 

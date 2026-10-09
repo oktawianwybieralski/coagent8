@@ -98,6 +98,28 @@ export async function probeBackend(id: ProviderId, options: { fresh?: boolean } 
   });
 }
 
+/**
+ * Options for reading or validating model catalog observations (`EXEC-001-T05a`).
+ */
+export interface ReadModelCatalogOptions {
+  /** If true, reads afresh from the CLI adapter and bypasses existing cache/observations (doctor). */
+  fresh?: boolean;
+  /** Existing probe result if already available, avoiding redundant probe lookup and key calculation. */
+  probe?: AdapterProbeResult;
+  /** Existing catalog observation obtained for this backend to validate and reuse. */
+  catalog?: ModelCatalog;
+}
+
+/**
+ * Options for observing concrete models from native CLIs.
+ */
+export interface ReadObservedModelOptions {
+  /** If true, asks the CLI again and bypasses cached observations. */
+  fresh?: boolean;
+  /** Existing probe result if already available, avoiding redundant probe lookup. */
+  probe?: AdapterProbeResult;
+}
+
 interface CachedCatalog { listFn: CliAdapter['listModels']; catalog: ModelCatalog | undefined; key: string; at: number }
 const catalogs = new Map<ProviderId, CachedCatalog>();
 
@@ -106,19 +128,28 @@ const catalogs = new Map<ProviderId, CachedCatalog>();
  * for up to a day, else read from the CLI and recorded in both. Keys must match the
  * current installation. Concurrent misses share one read.
  * @param id - Backend whose catalog to read.
- * @param options - `fresh` reads the CLI again (doctor).
+ * @param options - `fresh` reads the CLI again (doctor); `probe` and `catalog` reuse pre-read evidence.
  * @returns The catalog, or undefined when the CLI is not installed, has no catalog or
  * did not answer; an unanswered read is kept in memory only, so a slow CLI is not asked on
  * every call and a later process asks again.
  */
-export async function readModelCatalog(id: ProviderId, options: { fresh?: boolean } = {}): Promise<ModelCatalog | undefined> {
+export async function readModelCatalog(id: ProviderId, options: ReadModelCatalogOptions = {}): Promise<ModelCatalog | undefined> {
   const adapter = adapterRegistry[id];
   if (!adapter.listModels) return undefined;
-  const probe = await probeBackend(id);
+  const probe = options.probe ?? await probeBackend(id);
   if (!probe.installed) return undefined;
   const key = probeKey(probe);
   const cached = catalogs.get(id);
-  if (!options.fresh && cached && cached.listFn === adapter.listModels && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) return cached.catalog;
+
+  if (!options.fresh) {
+    if (options.catalog && cached && cached.catalog === options.catalog && cached.key === key && cached.listFn === adapter.listModels && Date.now() - cached.at < PROBE_TTL_MS) {
+      return cached.catalog;
+    }
+    if (cached && cached.listFn === adapter.listModels && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) {
+      return cached.catalog;
+    }
+  }
+
   const stored = options.fresh ? undefined : readObservedModels(id, key)?.catalog;
   if (stored && Date.now() - stored.observedAt < STORED_TTL_MS) {
     const catalog: ModelCatalog = { models: stored.models, source: stored.source, ...(stored.acceptsUnlisted ? { acceptsUnlisted: true } : {}) };
@@ -143,13 +174,17 @@ const observations = new Map<string, CachedObservation>();
  * the CLI (`observeModel`) and recorded in both. Concurrent misses share one request.
  * @param id - Backend to ask.
  * @param requested - The requested name; omitted for the model the CLI runs without one.
- * @param options - `fresh` asks the CLI again (doctor).
+ * @param options - `fresh` asks the CLI again (doctor); `probe` reuses pre-probed evidence.
  * @returns The model, or undefined when the adapter cannot observe one or the CLI did not say.
  */
-export async function readObservedModel(id: ProviderId, requested?: string, options: { fresh?: boolean } = {}): Promise<string | undefined> {
+export async function readObservedModel(
+  id: ProviderId,
+  requested?: string,
+  options: ReadObservedModelOptions = {}
+): Promise<string | undefined> {
   const adapter = adapterRegistry[id];
   if (!adapter.observeModel) return undefined;
-  const probe = await probeBackend(id);
+  const probe = options.probe ?? await probeBackend(id);
   if (!probe.installed) return undefined;
   const key = probeKey(probe);
   const name = requested ?? '';

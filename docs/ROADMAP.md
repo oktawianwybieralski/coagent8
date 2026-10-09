@@ -413,23 +413,24 @@ check. Depends on T03. Treat this as structural extraction, not a speedup claim.
 
 ### EXEC-001-T05 - reuse observations within preparation
 
-- [ ] **T05a - reuse catalog evidence.** Start: `src/execution/selection.ts`,
+- [x] **T05a - reuse catalog evidence.** Start: `src/execution/selection.ts`,
   `src/execution/routing.ts`, `src/backends/probe-cache.ts`. Pass an observation
   obtained during provider eligibility into final model selection. Done: counts
   decrease only for duplicate reads with the same backend/key/freshness; a
   different key or explicit fresh request still reads again. Check: R, SELECT/CACHE.
-- [ ] **T05b - reuse the default-model price reference.** Start:
+- [x] **T05b - reuse the default-model price reference.** Start:
   `src/execution/consent.ts:consentFor` and the prepared data from T04b. Reuse
   the backend default observation, keeping it distinct from the requested
   model; preserve unknown-default handling and relative-price governance.
   Done: consent decisions match POLICY fixtures, including expensive explicit
   models and missing defaults, with fewer repeated observations. Check: R, POLICY/CACHE.
-- [ ] **T05c - verify invalidation and measure the delta.** Extend counting
+- [x] **T05c - verify invalidation and measure the delta.** Extend counting
   fixtures for TTL expiry, environment/executable/config changes, fresh doctor,
   replaced adapter and concurrent misses. Re-run the same baseline conditions.
   Done: each removed read is explained; changed prices while consent is pending
   still fail or revalidate, never reuse stale permission. Check: R, CACHE/POLICY
   and the T01b baseline; record speed as unproven if samples do not support it.
+  Evidence: [EXEC-001-T05 implementation](HANDOFF.md#exec-001-t05-reuse-observations-within-preparation).
 
 Acceptance: fixture counters show which reads/launches were removed while
 selection, price limits and approval outcomes remain identical. Verification:

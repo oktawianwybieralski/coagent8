@@ -777,6 +777,49 @@ Scope: extract cohesive task preparation into `src/execution/preparation.ts`, de
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_c1790e360e1da6ed293df519`): Reviewer confirmed `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 findings.
 
+## EXEC-001-T05 reuse observations within preparation
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: reuse catalog and default-model observations across provider routing, selection, and consent in task preparation (`EXEC-001-T05a`, `T05b`), and verify invalidation conditions and baseline observation counters (`T05c`).
+
+### Modules and ownership changes:
+- `src/backends/probe-cache.ts`:
+  - Added `ReadModelCatalogOptions` (`fresh`, `probe`, `catalog`) and `ReadObservedModelOptions` (`fresh`, `probe`).
+  - `readModelCatalog`: accepts optional `probe` and pre-observed `catalog`. Reuses cached evidence if and only if backend, adapter list function, key (executable/config/env stamps), and TTL (< 5 min) match; explicit `fresh: true` forces re-reading.
+  - `readObservedModel`: accepts optional `probe` to avoid redundant probe lookups and hashing.
+- `src/execution/routing.ts`:
+  - Added optional `catalog?: ModelCatalog` to `ResolvedBackend`.
+  - `resolveBackendForModel`: captures `catalog` observed during provider capability qualification (`offers`) and attaches it to `ResolvedBackend`.
+- `src/execution/selection.ts`:
+  - Added optional `catalog?: ModelCatalog` to `selectModel` options.
+  - Reuses catalog across initial resolution and priced fallback choices; validates catalog observation with `readModelCatalog` checking probe key, adapter, and TTL.
+- `src/execution/consent.ts`:
+  - Added `ConsentForOptions` supporting `defaultModel?: string | null`.
+  - When pre-observed `defaultModel` is supplied, skips redundant `selectModel` invocation while preserving unknown-default handling (`null -> undefined`) and relative-price governance.
+- `src/execution/preparation.ts`:
+  - `prepareTask`:
+    - Reuses catalog from provider routing (`backend.catalog`) in `selectModel`.
+    - When selecting under price constraints (`choosing`), captures and reuses selection from provider eligibility.
+    - Validates model and effort against catalog via `readModelCatalog` verifying probe key and TTL.
+    - Pre-observes backend default model once during preparation, recording `defaultModel?: string | null` on `PreparedTask`.
+    - Passes `defaultModel` to `consentFor` in `confirmConsent`.
+- `tests/backends/probe-cache.test.js`:
+  - Added tests for catalog cache invalidation: key changes (executable mtime, config changes, environment variable changes), fresh requests, replaced adapter functions, and memory misses falling back to stored `models.json`.
+- `tests/execution/preparation.test.js`:
+  - Added unit tests for catalog observation reuse, distinct requested vs default models, unknown-default handling, and dynamic price ceiling invalidation during pending consent.
+- `tests/execution/baseline.test.js`:
+  - Added assertions for `catalogReads` counters across cold, warm, explicit model, priced auto, and continuation runs.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (104 source files analyzed, 520 dependency edges, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 30/30 pass (`tests/execution/preparation.test.js`, `tests/backends/probe-cache.test.js`, `tests/execution/baseline.test.js`, `tests/models/selection.test.js`, `tests/models/governance.test.js`).
+- PASS: Full test suite: 484 tests: 481 pass, 0 fail, 3 skipped, duration 108.2s, exit code 0 (`node tests/run.cjs`).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_74de684872a8a8dc0d03f55c`, Turn 4: `COVERAGE: COMPLETE`, `VERDICT: READY`).
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;
