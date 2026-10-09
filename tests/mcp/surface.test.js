@@ -14,7 +14,7 @@ const {
   getAllCallableToolDefinitions,
   createServer,
 } = require('../../src/mcp/server.ts');
-const { CORE_CANONICAL_TOOL_NAMES } = require('../../src/constants.ts');
+const { CORE_CANONICAL_TOOL_NAMES } = require('../../src/mcp/constants.ts');
 const { LEGACY_ALIASES, handleLegacyAlias } = require('../../src/mcp/tools/legacy.ts');
 const { handleRun, runToolDefinition } = require('../../src/mcp/tools/run.tool.ts');
 const { createSession } = require('../../src/sessions/session.ts');

@@ -142,7 +142,9 @@ Success means clear ownership and dependency direction, not fewer visible files.
 - [x] **S6 - Enforce and accept the final boundaries.** Add an automated
   dependency check using the real module graph, covering types, dynamic imports
   and re-exports as well as ordinary imports. Prove it detects forbidden edges
-  and cycles with isolated fixtures. If staged earlier, allow only individually
+  and cycles with isolated fixtures. Enforce external MCP/editor SDK ownership
+  and indirect paths to transport or optional setup; forwarding modules must not
+  inherit entrypoint privileges. If staged earlier, allow only individually
   recorded legacy edges with removal stages, never directory-wide exclusions;
   remove those entries as slices land. Wire it into local and CI verification
   without bypassing existing checks. Update the architecture's current map

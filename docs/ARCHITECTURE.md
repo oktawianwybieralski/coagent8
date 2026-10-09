@@ -1,6 +1,7 @@
 # CoAgent8 architecture
 
-Updated 2026-10-08 against source at `1353fb9`. This document owns current runtime
+Updated 2026-10-09; SIMPLIFY-001 ownership and enforcement reflect the local
+follow-up to `f97ffeb`. This document owns current runtime
 contracts and the target orchestration design. [ROADMAP.md](ROADMAP.md) owns work
 order and acceptance; [HANDOFF.md](HANDOFF.md) owns current evidence. Source
 inspection is not native or release acceptance.
@@ -25,7 +26,7 @@ flowchart LR
     Host["MCP client"] --> Server["server: schemas, roots, consent"]
     Server --> Tools["tools: prompt, Git scope, result"]
     Tools --> Controller["execution: lifecycle"]
-    Controller --> Backend["backends: selection, policy, adapter"]
+    Controller --> Backend["backends: discovery and adapter"]
     Backend --> Process["owned CLI process"]
     Controller --> Session["sessions: leases and optional archive"]
     Process --> Result["public result and evidence"]
@@ -34,14 +35,18 @@ flowchart LR
 
 | Owner | Responsibility |
 | --- | --- |
-| src/index.ts, src/stdio-server.ts | Entry dispatch, stdio transport, maintenance and shutdown |
-| src/server.ts | Six tools, strict arguments, client roots, human elicitation, workspace resources |
-| src/tools/ | Task prompts, Git scope/completeness, review gate, management and result formatting |
-| src/execution/ | Turn lifecycle, cancellation/progress, owned processes, bounds and Git collection |
-| src/backends/ | Registry, executable/catalog discovery, routing, model/price policy, adapters and collectors |
+| src/index.ts, src/mcp/stdio-server.ts | Entry dispatch, stdio transport, maintenance and shutdown |
+| src/mcp/server.ts | Six tools, strict arguments, client roots, human elicitation, workspace resources |
+| src/mcp/tools/, src/mcp/result.ts | Task prompts, management and transport result formatting |
+| src/execution/ | Turn lifecycle, routing, model selection and consent orchestration |
+| src/execution/runtime/, runtime primitives | Owned processes, cancellation, decoding and buffer bounds |
+| src/backends/ | Registry, executable/catalog discovery, quota observations, adapters and collectors |
+| src/models/ | Catalog/identifier rules, model/price policy and observed model storage |
+| src/review/, src/workspace/ | Git scope, completeness, workspace identity and review verdict policy |
 | src/sessions/ | Workspace/provider identity, continuation, leases, archive retention/pagination |
 | src/config.ts, src/config-overrides.ts, src/paths.ts | File/editor configuration, effective overrides and canonical paths |
-| src/redaction.ts, src/conversation.ts | Answer/diagnostic redaction and event/error contracts |
+| src/security/, src/contracts/ | Answer/diagnostic redaction and shared event/error/result contracts |
+| src/storage/ | File locking, atomic writes and bounded file reads |
 | src/diagnostics/ | Doctor and sanitized issue reports |
 | src/integrations/, extensions/vscode/ | Optional registration, backups/rollback, owned runtime and editor UI |
 
@@ -78,7 +83,7 @@ and is enforced by automated verification (`scripts/check-dependencies.cjs`, `np
 | diagnostics/ | Readiness and sanitized issue evidence composed from domain services/adapters. No MCP envelopes or dependency back from execution to diagnostic presentation. |
 | integrations/, extensions/vscode/ | Optional installation, registrations and editor UI using shared configuration and runtime mechanisms. Core execution never imports client setup/UI. |
 
-Keep generated assets in generated/ and branding metadata in constants.ts;
+Keep generated assets in generated/ and branding metadata in brand.ts;
 tool names belong to MCP. Do not create empty directories for future milestones.
 The same direction applies to transitive runtime imports and type dependencies;
 an allowed import must not transitively load the caller or optional installer.
@@ -87,6 +92,14 @@ Historical migration debt (controller -> tools/result, config/model-cache ->
 sessions/lock, session/history cycles, and setup type cycles) has been fully
 eliminated across S1 through S5. S6 enforces the module graph with 0 allowed
 legacy exemptions, 0 dependency cycles, and automated boundary verification in CI.
+
+The checker retains external dependency identities and rejects MCP/editor SDK
+imports outside their owners, including type imports, type queries, dynamic
+imports, require calls and re-exports. The generated server icon is an explicitly
+owned MCP asset. Transport and optional setup isolation also covers complete
+dependency paths, with the path reported for each indirect violation. Unassigned
+source files receive no entrypoint privileges; only src/index.ts composes startup.
+The retired src/constants.ts forwarding module has no compatibility exemption.
 
 ## Current MCP contract
 

@@ -41,6 +41,12 @@ function normalizePath(filePath) {
 
 function getOwner(filePath) {
   const normalized = normalizePath(filePath);
+  if (normalized.startsWith('EXTERNAL:')) {
+    const specifier = normalized.slice('EXTERNAL:'.length);
+    if (specifier === '@modelcontextprotocol/sdk' || specifier.startsWith('@modelcontextprotocol/sdk/')) return 'mcp-sdk';
+    if (specifier === 'vscode' || specifier.startsWith('vscode/')) return 'editor-sdk';
+    return 'external';
+  }
   if (normalized.startsWith('extensions/')) return 'extensions';
   if (!normalized.startsWith('src/')) return 'other';
 
@@ -61,9 +67,8 @@ function getOwner(filePath) {
   if (p.startsWith('integrations/')) return 'integrations';
   if (p.startsWith('generated/')) return 'generated';
   if (p === 'brand.ts') return 'brand';
-  if (p === 'constants.ts') return 'constants';
   if (p === 'index.ts') return 'root';
-  return 'root';
+  return 'unknown';
 }
 
 const BOUNDARY_RULES = [
@@ -183,7 +188,7 @@ function isAllowedRootSetupCall(file, node, ts) {
 }
 
 function resolveSpecifier(fromFile, specifier, rootDir) {
-  if (!specifier.startsWith('.')) return null;
+  if (!specifier.startsWith('.')) return 'EXTERNAL:' + specifier;
 
   const fromAbs = path.resolve(rootDir, fromFile);
   const base = path.resolve(path.dirname(fromAbs), specifier);
@@ -449,68 +454,71 @@ function verifyBoundaries(edges, options = {}) {
 
   const violations = [];
 
+  // Transport isolation applies to the complete path, including erased type edges.
+  // Other owner rules apply to direct dependencies: application composition can
+  // legitimately reach lower-level mechanisms through its domain services.
+  const isolatedOwners = new Set(['mcp', 'integrations', 'extensions', 'mcp-sdk', 'editor-sdk']);
+  function isolationReason(from, to) {
+    const fromOwner = getOwner(from);
+    const toOwner = getOwner(to);
+    if (toOwner === 'mcp-sdk') {
+      if (fromOwner === 'mcp' || from === 'src/index.ts' || from === 'src/generated/server-icon.ts') return undefined;
+      return 'MCP SDK dependencies belong to mcp/ and the generated server icon asset, never application/domain modules.';
+    }
+    if (toOwner === 'editor-sdk') {
+      return fromOwner === 'extensions' ? undefined : 'Editor SDK dependencies belong to client extensions, never core server/runtime modules.';
+    }
+    if (fromOwner === toOwner) return undefined;
+    if (toOwner === 'extensions') return 'Core server/runtime in src/ must never depend on client extensions/ UI.';
+    if (toOwner === 'mcp' && from !== 'src/index.ts') return 'mcp/ is the transport edge; no application/domain module may depend on it.';
+    if (toOwner === 'integrations' && from !== 'src/index.ts') return 'integrations/ owns optional setup and registrations; core server/domain modules must not depend on it.';
+    return undefined;
+  }
+
+  function report(firstEdge, target, dependencyEdges, reason) {
+    violations.push({
+      from: firstEdge.from,
+      to: target,
+      fromOwner: getOwner(firstEdge.from),
+      toOwner: getOwner(target),
+      line: firstEdge.line,
+      spec: firstEdge.spec,
+      kind: firstEdge.kind,
+      runtime: dependencyEdges.every(edge => edge.runtime),
+      dependencyPath: [firstEdge.from, ...dependencyEdges.map(edge => edge.to)],
+      reason,
+    });
+  }
+
+  const adjacency = new Map();
   for (const edge of edges) {
     if (!edge.to || edge.to.startsWith('UNRESOLVED:')) continue;
-
+    if (!adjacency.has(edge.from)) adjacency.set(edge.from, []);
+    adjacency.get(edge.from).push(edge);
     const fromOwner = getOwner(edge.from);
     const toOwner = getOwner(edge.to);
+    const rule = forbiddenRulesMap.get(fromOwner);
+    const globalRule = forbiddenRulesMap.get('*');
+    const reason = isolationReason(edge.from, edge.to)
+      || (fromOwner !== toOwner && rule?.set.has(toOwner) ? rule.reason : undefined)
+      || (globalRule?.set.has(toOwner) ? globalRule.reason : undefined);
+    if (reason && !legacyMatch(edge)) report(edge, edge.to, [edge], reason);
+  }
 
-    if (fromOwner === toOwner) continue;
-
-    const checkRule = (ruleKey) => {
-      const rule = forbiddenRulesMap.get(ruleKey);
-      if (rule && rule.set.has(toOwner)) {
-        if (!legacyMatch(edge)) {
-          violations.push({
-            from: edge.from,
-            to: edge.to,
-            fromOwner,
-            toOwner,
-            line: edge.line,
-            spec: edge.spec,
-            kind: edge.kind,
-            runtime: edge.runtime,
-            reason: rule.reason,
-          });
+  for (const from of adjacency.keys()) {
+    const visited = new Set([from]);
+    const pending = [{ file: from, path: [] }];
+    for (let index = 0; index < pending.length; index++) {
+      const current = pending[index];
+      for (const edge of adjacency.get(current.file) || []) {
+        if (visited.has(edge.to)) continue;
+        visited.add(edge.to);
+        const dependencyEdges = [...current.path, edge];
+        if (dependencyEdges.length > 1 && isolatedOwners.has(getOwner(edge.to))) {
+          const reason = isolationReason(from, edge.to);
+          if (reason) report(dependencyEdges[0], edge.to, dependencyEdges, reason);
         }
-      }
-    };
-
-    checkRule(fromOwner);
-    checkRule('*');
-
-    // Specific additional checks:
-    // 1. Only root (index.ts) and constants.ts may import mcp/
-    if (toOwner === 'mcp' && fromOwner !== 'root' && fromOwner !== 'constants') {
-      if (!legacyMatch(edge)) {
-        violations.push({
-          from: edge.from,
-          to: edge.to,
-          fromOwner,
-          toOwner,
-          line: edge.line,
-          spec: edge.spec,
-          kind: edge.kind,
-          runtime: edge.runtime,
-          reason: 'mcp/ is the transport edge; no application/domain module may import it.',
-        });
-      }
-    }
-
-    // 2. Only root (index.ts) may import integrations/ (lazy require)
-    if (toOwner === 'integrations' && fromOwner !== 'root') {
-      if (!legacyMatch(edge)) {
-        violations.push({
-          from: edge.from,
-          to: edge.to,
-          fromOwner,
-          toOwner,
-          line: edge.line,
-          spec: edge.spec,
-          kind: edge.kind,
-          runtime: edge.runtime,
-          reason: 'integrations/ owns optional setup and registrations; core server/domain modules must not import it.',
-        });
+        pending.push({ file: edge.to, path: dependencyEdges });
       }
     }
   }
@@ -581,7 +589,7 @@ function checkDependencies(options = {}) {
       }
     }
 
-    files = Array.from(fileSet).sort();
+    files = Array.from(fileSet).filter(file => fs.existsSync(path.resolve(rootDir, file))).sort();
   }
 
   const { edges, computed, parseErrors } = buildModuleGraph(files, {
@@ -671,6 +679,7 @@ function runCli() {
     console.error(`BOUNDARY VIOLATIONS (${result.violations.length}):`);
     for (const v of result.violations) {
       console.error(`  ${v.from}:${v.line} (${v.fromOwner}) -> ${v.to} (${v.toOwner}) [${v.kind}]`);
+      if (v.dependencyPath.length > 2) console.error(`    Path: ${v.dependencyPath.join(' -> ')}`);
       console.error(`    Rule: ${v.reason}`);
     }
     console.error(``);

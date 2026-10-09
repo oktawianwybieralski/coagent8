@@ -1,6 +1,6 @@
 # CoAgent8 handoff
 
-Updated 2026-10-08. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-09. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
@@ -12,11 +12,13 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is SIMPLIFY-001: S0 baseline captured, S1, S2, S3, S4, and S5 implemented and verified.
+The current task is SIMPLIFY-001: S0-S6 implemented, with the two S6 enforcement
+gaps found in follow-up inspection corrected locally.
 Current branch: `refactor/simplify-001`, created from the preserved local stack
 at `ac394ad` after the owner authorized changing the branch.
-The owner requires a stop for inspection after each slice. S5 is complete, awaiting
-owner inspection before starting S6.
+The owner requires a stop for inspection after each slice. S6 follow-up is ready
+for owner inspection after its scope-based checks; prior independent approval
+does not approve this new diff.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
@@ -466,7 +468,40 @@ wiring into local and CI verification, and updating architecture documentation.
 - PASS: `npm run docs` (TypeDoc generates `.artifacts/api-docs` with 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 
-Next action: S6 complete and verified. Independent review completed (codex sol-6.1, VERDICT: READY). Ready for owner inspection.
+The original S6 implementation has a recorded independent review (codex
+sol-6.1, VERDICT: READY). That historical verdict does not approve later changes.
+
+### S6 enforcement follow-up (2026-10-09)
+
+Base: f97ffeb6e552752cfc2d0fa9e16238e927c115b4 on refactor/simplify-001.
+The owner requested fixes for two reproduced false passes: an external MCP SDK
+import in contracts, and contracts -> constants.ts -> mcp/constants.ts.
+
+- External imports now keep their identity for MCP/editor SDK ownership checks
+  across all supported declaration forms. Node imports remain permitted.
+- Indirect transport, SDK, editor and optional setup dependencies are checked
+  across runtime and type edges; violations report the full dependency path.
+- Unassigned modules no longer receive root composition privileges. Removed
+  src/constants.ts and updated its remaining test consumer to mcp/constants.ts.
+  The generated server icon remains an explicitly owned MCP asset.
+- Discovery excludes deleted tracked files from the analyzed source count.
+- Four new regression tests failed before the fix. After the fix, the scoped
+  S6/S5/S2/MCP surface suite passed 39/39, with no skips (19.3 s).
+- PASS: typecheck; check:dependencies (102 modules, 506 edges, 342 runtime
+  internal edges, 72 type-only internal edges; no violations/cycles/exemptions);
+  build; lint:docs; docs; npm pack --dry-run (123 packaged files).
+
+- PASS: consumer smoke on Windows/Node v26.10.0, using a newly packed tarball
+  (123 files), SHA-256
+  266aad67bcf29c2fdbe85cbb534a360db823c82801f4d79edb2e33707c996462.
+  Installed bin aliases, bundled SDK isolation, setup dispatch, fixture MCP
+  turns/history and EOF passed. This is fixture evidence, not native CLI acceptance.
+- PASS: final diff/content/local-link review and git diff --check.
+
+Next action: owner inspection and an independent review of this follow-up before
+Git integration. No new
+independent review, remote CI, native-client acceptance, commit, merge or
+publication is established by this follow-up.
 
 ## Documentation disposition
 

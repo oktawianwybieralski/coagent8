@@ -17,6 +17,84 @@ const {
 
 const root = path.resolve(__dirname, '..');
 
+function checkFixture(sources) {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-boundary-regression-'));
+  try {
+    for (const [file, source] of Object.entries(sources)) {
+      const target = path.join(fixtureRoot, file);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, source);
+    }
+    return checkDependencies({ rootDir: fixtureRoot, files: Object.keys(sources) });
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+test('S6 SDK boundaries: rejects transport SDK dependencies in every supported declaration form', () => {
+  const sdk = '@modelcontextprotocol/sdk/types.js';
+  const declarations = {
+    'import.ts': `import { value } from '${sdk}'; export const result = value;`,
+    'type-import.ts': `import type { Result } from '${sdk}'; export type Value = Result;`,
+    'reexport.ts': `export { value } from '${sdk}';`,
+    'type-reexport.ts': `export type { Result } from '${sdk}';`,
+    'type-query.ts': `export type Value = import('${sdk}').Result;`,
+    'dynamic.ts': `export const result = import('${sdk}');`,
+    'require.ts': `export const result = require('${sdk}');`,
+    'import-equals.cts': `import sdk = require('${sdk}'); export const result = sdk;`,
+  };
+  const sources = Object.fromEntries(Object.entries(declarations).map(([name, source]) => [`src/contracts/${name}`, source]));
+  const result = checkFixture(sources);
+  assert.equal(result.valid, false);
+  for (const file of Object.keys(sources)) {
+    assert.ok(result.violations.some(v => v.from === file && v.spec === sdk), `SDK dependency must be rejected: ${file}`);
+  }
+});
+
+test('S6 SDK boundaries: preserves transport assets and Node imports, rejects editor SDK in core', () => {
+  const allowed = checkFixture({
+    'src/mcp/server.ts': "import type { Result } from '@modelcontextprotocol/sdk/types.js'; export type Value = Result;",
+    'src/generated/server-icon.ts': "import type { Icon } from '@modelcontextprotocol/sdk/types.js'; export type Value = Icon;",
+    'src/contracts/node.ts': "import type { Buffer } from 'node:buffer'; export type Value = Buffer;",
+  });
+  assert.equal(allowed.valid, true, JSON.stringify(allowed.violations));
+  const rejected = checkFixture({
+    'src/contracts/editor.ts': "import type { ExtensionContext } from 'vscode'; export type Value = ExtensionContext;",
+    'src/generated/unrelated.ts': "export type { Result } from '@modelcontextprotocol/sdk/types.js';",
+  });
+  assert.equal(rejected.valid, false);
+  assert.ok(rejected.violations.some(v => v.from === 'src/contracts/editor.ts'));
+  assert.ok(rejected.violations.some(v => v.from === 'src/generated/unrelated.ts'));
+});
+
+test('S6 transitive boundaries: rejects the constants forwarding path and reports the complete path', () => {
+  const result = checkFixture({
+    'src/contracts/bad.ts': "export { value } from '../constants.js';",
+    'src/constants.ts': "export { value } from './mcp/constants.js';",
+    'src/mcp/constants.ts': 'export const value = 1;',
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.violations.some(v => v.from === 'src/constants.ts' && v.to === 'src/mcp/constants.ts'));
+  const transitive = result.violations.find(v => v.from === 'src/contracts/bad.ts' && v.to === 'src/mcp/constants.ts');
+  assert.ok(transitive, 'The contract must not acquire a transport dependency through a forwarding module');
+  assert.deepEqual(transitive.dependencyPath, ['src/contracts/bad.ts', 'src/constants.ts', 'src/mcp/constants.ts']);
+});
+
+test('S6 transitive boundaries: follows type-only and dynamic paths to SDK and optional setup', () => {
+  const result = checkFixture({
+    'src/contracts/bad.ts': "export type { Value } from '../brand.js';",
+    'src/brand.ts': "export type Value = import('@modelcontextprotocol/sdk/types.js').Result;",
+    'src/execution/bad.ts': "export const result = import('../generated/bridge.js');",
+    'src/generated/bridge.ts': "export { value } from '../integrations/setup.js';",
+    'src/integrations/setup.ts': 'export const value = 1;',
+  });
+  assert.equal(result.valid, false);
+  const sdk = result.violations.find(v => v.from === 'src/contracts/bad.ts' && v.toOwner === 'mcp-sdk');
+  assert.ok(sdk, 'Type-only forwarding must not hide an SDK dependency');
+  assert.equal(sdk.runtime, false);
+  assert.ok(result.violations.some(v => v.from === 'src/execution/bad.ts' && v.to === 'src/integrations/setup.ts'));
+});
+
 test('S6 boundary checker: real repository passes with 0 violations and 0 cycles', () => {
   const result = checkDependencies({ rootDir: root });
 
@@ -50,7 +128,8 @@ test('S6 owner mapping: accurately categorizes all layers', () => {
   assert.equal(getOwner('src/integrations/setup.ts'), 'integrations');
   assert.equal(getOwner('src/index.ts'), 'root');
   assert.equal(getOwner('src/brand.ts'), 'brand');
-  assert.equal(getOwner('src/constants.ts'), 'constants');
+  assert.equal(getOwner('src/constants.ts'), 'unknown');
+  assert.equal(getOwner('src/unassigned.ts'), 'unknown');
   assert.equal(getOwner('extensions/vscode/src/extension.ts'), 'extensions');
 });
 
