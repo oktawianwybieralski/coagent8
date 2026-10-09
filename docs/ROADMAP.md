@@ -519,10 +519,11 @@ tests and documentation review. Depends on T06.
   is used to obtain missing evidence. Check: R, CACHE/CLAUDE;
   fetch current CLI docs before protocol edits.
   Evidence: [EXEC-001-T08d implementation](HANDOFF.md#exec-001-t08d-bound-claude-reads).
-- [ ] **T08e - bound agy reads.** Start: `src/backends/agy/adapter.ts` and its
+- [x] **T08e - bound agy reads.** Start: `src/backends/agy/adapter.ts` and its
   discovery/quota callees. Done: stalled discovery cleans up without changing
   sandbox/inherited-tool policy or mislabelling timeout as unauthenticated.
   Check: R, CACHE and `tests/backends/agy/adapter.test.js`; fetch current CLI docs.
+  Evidence: [EXEC-001-T08e implementation](HANDOFF.md#exec-001-t08e-bound-agy-reads).
 - [ ] **T08f - bound price fetches and close shared-read races.** Start:
   `src/models/prices.ts`, `src/backends/probe-cache.ts`,
   `src/backends/availability.ts`. Apply cancellation to owned price I/O and verify

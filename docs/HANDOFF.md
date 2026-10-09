@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T08c (bound Codex reads).
+The current completed task is EXEC-001-T08e (bound agy reads).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T08d (bound Claude reads).
+Next pending card: EXEC-001-T08f (bound price fetches and close shared-read races).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1095,6 +1095,52 @@ Scope: bound Claude observation reads (`probe`, `observeModel`, `listModels`, `i
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_ec5f8854d53195c6c7788566`, Turn 2: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to read-only sandbox).
+
+## EXEC-001-T08e bound agy reads
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: bound agy (Antigravity/Gemini) observation reads (`probe`, `inspectQuota`, `listModels`, `inheritedTools`) by propagating `BackendReadContext` and `abortSignal` through `src/backends/agy/adapter.ts`, bounding subprocess timeouts, ensuring deterministic handle and process cleanup on aborted/stalled reads, and adding regression coverage in `tests/backends/agy/adapter.test.js` and `tests/fixtures/agy-cli/agy.cjs`.
+
+### Implemented mechanisms:
+1. **Context propagation & signal resolution**:
+   - `probe(context?: BackendReadContext)` in `src/backends/agy/adapter.ts` accepts `BackendReadContext`.
+   - `inspectQuota(probe, context)` on `agyAdapter` accepts and bounds the sandboxed `/usage` query.
+   - `listModels(probe, context)` accepts and bounds the `agy models` catalog query.
+   - `inheritedTools(context)` accepts and bounds the `agy mcp list` query.
+   - Centralized abort signal resolution helper `effectiveAbortSignal(context)` resolves `context?.abortSignal ?? context?.budget?.executionSignal`.
+2. **Pre-flight cancellation and budget deadline checks**:
+   - Added `checkPreflight(context, operation)` verifying `abortSignal?.aborted` (rejecting immediately with `ToolError('ABORTED')`) and `context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()` (rejecting with `ToolError('TIMEOUT')`).
+   - Pre-aborted queries skip process execution entirely, leaving 0 active processes.
+3. **Bounded subprocess timeouts & post-run budget attribution**:
+   - Added helper `boundReadTimeout(context, defaultMs)` which caps `context.timeoutMs` with `Math.min(context.timeoutMs, defaultMs)`. Applied across all 4 command launches: probe (`--version`), quota (`/usage`), catalog (`models`), and inherited tools (`mcp list`).
+   - Added `checkPostRun(res, context, operation)` verifying budget expiration (`isTimedOut()` or `isExecutionExpired()`) on cancellation, attributing timeout explicitly to `ToolError('TIMEOUT')`, or else `ToolError('ABORTED')`.
+   - Timed-out probe queries cleanly set `installed: false` and preserve `authStatus: 'unknown'`, never misclassifying timeout as `unauthenticated`.
+   - Quota queries retain `--sandbox` under all outcomes.
+4. **Fixture hang modes & process lifecycle safety**:
+   - Extended `tests/fixtures/agy-cli/agy.cjs` with hang simulation modes (`hang-probe`, `hang-quota` / `hang-usage`, `hang-models` / `hang-catalog`, `hang-mcp` / `hang-tools`) to verify clean cancellation and handle release across all 4 read paths.
+5. **Deterministic test coverage in `tests/backends/agy/adapter.test.js`**:
+   - Verified backward compatibility when `context` is omitted across all 4 operations.
+   - Verified pre-aborted signal rejection (`ToolError` with code `ABORTED`) with 0 spawned processes across probe, quota, catalog, and inherited tools.
+   - Verified pre-expired budget rejection (`ToolError` with code `TIMEOUT`) with 0 spawned processes across probe, quota, catalog, and inherited tools.
+   - Verified stalled probe cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified stalled quota read cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified stalled catalog read cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified stalled inherited tools read cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified fallback cancellation via `context.budget.executionSignal`.
+   - Verified stalled probe, quota, catalog, and inherited tools termination via `timeoutMs`, settling safely with 0 active processes.
+   - Verified stalled probe ended by budget expiration during run attributes deterministically to `ToolError('TIMEOUT')` with 0 active processes.
+   - Verified stalled quota, catalog, and inherited tools ended by budget expiration during run attribute to `ToolError('TIMEOUT')` with 0 active processes.
+   - Uses deterministic `waitForActiveProcess()` polling helper instead of fixed timers.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 525 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 39 tests (38 pass, 1 skipped POSIX-only, 0 fail, exit code 0): `tests/backends/agy/adapter.test.js` (27 pass, 1 skipped), `tests/backends/probe-cache.test.js` (11 pass).
+- PASS: Full test suite: 524 tests (521 pass, 0 fail, 3 skipped, duration 184.8 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_ee0682d203229ba6a3a802ae`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2/P3 issues; independent tests NOT_RUN due to read-only sandbox).
 
 ## Compact handoff contract
 

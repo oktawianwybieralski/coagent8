@@ -22,7 +22,7 @@ import {
   type TerminalExecutionResult,
   type CliAdapter,
 } from '../types.js';
-import { errorCodeOf, type ExecutionError } from '../../contracts/index.js';
+import { errorCodeOf, ToolError, type ExecutionError } from '../../contracts/index.js';
 
 export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';
@@ -31,6 +31,45 @@ const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+/** Caps caller timeout to the operation's default bound (`EXEC-001-T08e`). */
+function boundReadTimeout(context: BackendReadContext | undefined, defaultMs: number): number {
+  if (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0) {
+    return Math.min(context.timeoutMs, defaultMs);
+  }
+  return defaultMs;
+}
+
+function effectiveAbortSignal(context?: BackendReadContext): AbortSignal | undefined {
+  return context?.abortSignal ?? context?.budget?.executionSignal;
+}
+
+function checkPreflight(context: BackendReadContext | undefined, operation: string): void {
+  const signal = effectiveAbortSignal(context);
+  if (signal?.aborted) {
+    throw new ToolError('ABORTED', `${operation} cancelled before launch.`);
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', `Execution budget expired before ${operation.toLowerCase()}.`);
+  }
+}
+
+function checkPostRun(
+  res: { status: string; error?: { code?: string } },
+  context: BackendReadContext | undefined,
+  operation: string
+): void {
+  const signal = effectiveAbortSignal(context);
+  if (signal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
+    if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+      throw new ToolError('TIMEOUT', `Execution budget expired during ${operation.toLowerCase()}.`);
+    }
+    throw new ToolError('ABORTED', `${operation} cancelled.`);
+  }
+  if (res.status !== 'completed' && (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut())) {
+    throw new ToolError('TIMEOUT', `Execution budget expired during ${operation.toLowerCase()}.`);
+  }
+}
 
 export function resolveModelAndEffort(
   model?: string,
@@ -89,7 +128,8 @@ export function parseGeminiUsage(parsed: unknown): AdapterProbeResult['quota'] {
   return quota && { ...quota, window: quota.window || 'weekly' };
 }
 
-export async function probe(_context?: BackendReadContext): Promise<AdapterProbeResult> {
+export async function probe(context?: BackendReadContext): Promise<AdapterProbeResult> {
+  checkPreflight(context, 'Gemini probe');
   const resolvedCommand = probeCommand('agy', name);
   if ('unresolved' in resolvedCommand) return resolvedCommand.unresolved;
   const rawCommand = resolvedCommand.command;
@@ -97,7 +137,12 @@ export async function probe(_context?: BackendReadContext): Promise<AdapterProbe
   let version = 'unknown';
 
   // runCommand resolves the command and reports a missing or failing CLI in its result.
-  const res = await runCommand(rawCommand, ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS, env: agyEnvironment() });
+  const res = await runCommand(rawCommand, ['--version'], {
+    timeoutMs: boundReadTimeout(context, DEFAULT_PROBE_TIMEOUT_MS),
+    abortSignal: effectiveAbortSignal(context),
+    env: agyEnvironment(),
+  });
+  checkPostRun(res, context, 'Gemini probe');
   if (res.exitCode === 0) {
     installed = true;
     version = res.stdout.trim() || 'installed';
@@ -147,16 +192,27 @@ export async function probe(_context?: BackendReadContext): Promise<AdapterProbe
 /**
  * Reads agy's measured quota with `/usage`, which makes no model call.
  * @param probe - An installed probe result; nothing is read without one.
- * @param _context - Optional cancellation and deadline context.
+ * @param context - Optional cancellation and deadline context (`EXEC-001-T08e`).
  * @returns The measured quota, or undefined when agy does not report one.
  * @remarks Runs only from quota inspection (doctor), never on the request path, and with
  * the same `--sandbox` as every other agy launch.
  */
-export async function inspectQuota(probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<AdapterProbeResult['quota']> {
+export async function inspectQuota(probe?: AdapterProbeResult, context?: BackendReadContext): Promise<AdapterProbeResult['quota']> {
+  checkPreflight(context, 'Gemini quota read');
   if (!probe?.installed) return undefined;
-  const resolved = resolveCliCommand(configuredBackendCommand('agy'));
-  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS, env: agyEnvironment() });
-  if (usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
+  let resolved: ReturnType<typeof resolveCliCommand>;
+  try {
+    resolved = resolveCliCommand(configuredBackendCommand('agy'));
+  } catch {
+    return undefined;
+  }
+  const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], {
+    timeoutMs: boundReadTimeout(context, DEFAULT_PROBE_TIMEOUT_MS),
+    abortSignal: effectiveAbortSignal(context),
+    env: agyEnvironment(),
+  });
+  checkPostRun(usageRes, context, 'Gemini quota read');
+  if (usageRes.status !== 'completed' || usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
   let parsed: unknown;
   try { parsed = JSON.parse(usageRes.stdout); } catch { return undefined; }
   const payload = parsed as { status?: unknown; command?: { name?: unknown } } | null;
@@ -304,7 +360,8 @@ export function parseAgyModels(stdout: string): CatalogModel[] {
 }
 
 /** Reads the models agy offers with `agy models`, which makes no model call (about 2 s). */
-export async function listModels(_probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<ModelCatalog | undefined> {
+export async function listModels(_probe?: AdapterProbeResult, context?: BackendReadContext): Promise<ModelCatalog | undefined> {
+  checkPreflight(context, 'Gemini model list');
   let resolved: ReturnType<typeof resolveCliCommand>;
   try {
     resolved = resolveCliCommand(configuredBackendCommand('agy'));
@@ -312,8 +369,13 @@ export async function listModels(_probe?: AdapterProbeResult, _context?: Backend
     // Without a resolvable agy there is no catalog; the turn itself reports why agy cannot run.
     return undefined;
   }
-  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], { timeoutMs: DEFAULT_MODEL_LIST_TIMEOUT_MS, env: agyEnvironment() });
-  if (res.exitCode !== 0 || !res.stdout) return undefined;
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'models'], {
+    timeoutMs: boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
+    abortSignal: effectiveAbortSignal(context),
+    env: agyEnvironment(),
+  });
+  checkPostRun(res, context, 'Gemini model list');
+  if (res.status !== 'completed' || res.exitCode !== 0 || !res.stdout) return undefined;
   const models = parseAgyModels(res.stdout);
   return models.length ? { models, source: 'agy models' } : undefined;
 }
@@ -360,12 +422,18 @@ export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config'
  * without a model call. CoAgent8 cannot disable them (CUR-002); doctor names them.
  * @returns The inherited tools, or undefined when agy cannot be run or read.
  */
-export async function inheritedTools(_context?: BackendReadContext): Promise<InheritedTools | undefined> {
+export async function inheritedTools(context?: BackendReadContext): Promise<InheritedTools | undefined> {
+  checkPreflight(context, 'Gemini inherited tools read');
   let resolved: ReturnType<typeof resolveCliCommand>;
   try { resolved = resolveCliCommand(configuredBackendCommand('agy')); }
   catch { return undefined; }
-  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], { timeoutMs: DEFAULT_MODEL_LIST_TIMEOUT_MS, env: agyEnvironment() });
-  if (res.exitCode !== 0) return undefined;
+  const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], {
+    timeoutMs: boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
+    abortSignal: effectiveAbortSignal(context),
+    env: agyEnvironment(),
+  });
+  checkPostRun(res, context, 'Gemini inherited tools read');
+  if (res.status !== 'completed' || res.exitCode !== 0) return undefined;
   let plugins: string[];
   try { plugins = listAgyPlugins(); }
   catch { return undefined; }

@@ -18,12 +18,26 @@ const {
   parseGeminiUsage,
   probe: probeGemini,
   inspectQuota: inspectGeminiQuota,
+  probe: probeAgy,
+  inspectQuota: inspectAgyQuota,
+  listModels: listAgyModels,
+  inheritedTools: inheritedAgyTools,
+  agyAdapter,
 } = require('../../../src/backends/agy/adapter.ts');
 const { StreamReducer } = require('../../../src/execution/stream-reducer.ts');
+const { ToolError } = require('../../../src/contracts/index.ts');
+const { activeProcesses } = require('../../../src/execution/process.ts');
 /** The model the controller would select; the adapter never chooses one. */
 const MODEL = 'gemini-3.8-flash-high';
 const { createGeminiCollector } = require('../../../src/backends/agy/collector.ts');
 const { readResult } = require('../../helpers/result.cjs');
+
+async function waitForActiveProcess(timeoutMs = 2000) {
+  const start = Date.now();
+  while (activeProcesses.size === 0 && Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 10));
+  }
+}
 
 process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'quota-cache.json');
 
@@ -526,5 +540,271 @@ test('agy inherited tools: enabled MCP servers from `agy mcp list` and enabled d
     assert.deepEqual(await inheritedTools(), { mcpServers: ['coagent8'], plugins: [] });
   } finally {
     delete process.env.coagent8_FIXTURE_AGY_MCP;
+  }
+});
+
+test('EXEC-001-T08e: bound agy reads support backward compatibility when context is omitted', async () => {
+  const normalProbe = await probeAgy();
+  assert.equal(normalProbe.installed, true);
+  const normalQuota = await inspectAgyQuota(normalProbe);
+  assert.ok(normalQuota?.measured);
+  const normalCatalog = await listAgyModels(normalProbe);
+  assert.ok(normalCatalog?.models.length > 0);
+  assert.equal(normalCatalog?.source, 'agy models');
+  const normalTools = await inheritedAgyTools();
+  assert.ok(Array.isArray(normalTools?.mcpServers));
+});
+
+test('EXEC-001-T08e: bound agy reads reject pre-aborted signal before launch with 0 spawned processes', async () => {
+  const normalProbe = await probeAgy();
+  const preController = new AbortController();
+  preController.abort();
+  await assert.rejects(
+    probeAgy({ abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    inspectAgyQuota(normalProbe, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    listAgyModels(normalProbe, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    inheritedAgyTools({ abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    agyAdapter.probe({ abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  assert.equal(activeProcesses.size, 0, 'no process launched for pre-aborted reads');
+});
+
+test('EXEC-001-T08e: bound agy reads reject pre-expired budget before launch with 0 spawned processes', async () => {
+  const normalProbe = await probeAgy();
+  const expiredBudget = { isExecutionExpired: () => true, isTimedOut: () => true, executionSignal: new AbortController().signal };
+  await assert.rejects(
+    probeAgy({ budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    inspectAgyQuota(normalProbe, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    listAgyModels(normalProbe, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    inheritedAgyTools({ budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  assert.equal(activeProcesses.size, 0, 'no process launched for expired budgets');
+});
+
+test('EXEC-001-T08e: stalled agy reads abort via abortSignal, releasing processes and rejecting with ABORTED', async () => {
+  const normalProbe = await probeAgy();
+
+  // 1. Probe
+  process.env.AGY_FIXTURE_MODE = 'hang-probe';
+  try {
+    const probeCtrl = new AbortController();
+    const probePromise = probeAgy({ abortSignal: probeCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'probe process is running');
+    probeCtrl.abort();
+    await assert.rejects(probePromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'probe process cleaned up after abort');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // 2. Quota
+  process.env.AGY_FIXTURE_MODE = 'hang-usage';
+  try {
+    const quotaCtrl = new AbortController();
+    const quotaPromise = inspectAgyQuota(normalProbe, { abortSignal: quotaCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'quota process is running');
+    quotaCtrl.abort();
+    await assert.rejects(quotaPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'quota process cleaned up after abort');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // 3. Catalog
+  process.env.AGY_FIXTURE_MODE = 'hang-models';
+  try {
+    const catalogCtrl = new AbortController();
+    const catalogPromise = listAgyModels(normalProbe, { abortSignal: catalogCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'catalog process is running');
+    catalogCtrl.abort();
+    await assert.rejects(catalogPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'catalog process cleaned up after abort');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // 4. Inherited Tools
+  process.env.AGY_FIXTURE_MODE = 'hang-mcp';
+  try {
+    const toolsCtrl = new AbortController();
+    const toolsPromise = inheritedAgyTools({ abortSignal: toolsCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'tools process is running');
+    toolsCtrl.abort();
+    await assert.rejects(toolsPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'tools process cleaned up after abort');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+});
+
+test('EXEC-001-T08e: stalled agy probe falls back to budget.executionSignal cancellation', async () => {
+  process.env.AGY_FIXTURE_MODE = 'hang-probe';
+  try {
+    const budgetCtrl = new AbortController();
+    const liveBudget = { isExecutionExpired: () => false, isTimedOut: () => false, executionSignal: budgetCtrl.signal };
+    const budgetProbePromise = probeAgy({ budget: liveBudget });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'probe process is running under budget');
+    budgetCtrl.abort();
+    await assert.rejects(budgetProbePromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'probe process cleaned up after budget abort');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+});
+
+test('EXEC-001-T08e: stalled agy reads ended by timeoutMs clean up process without misclassifying authStatus', async () => {
+  const normalProbe = await probeAgy();
+
+  // Probe
+  process.env.AGY_FIXTURE_MODE = 'hang-probe';
+  try {
+    const timedOutProbe = await probeAgy({ timeoutMs: 150 });
+    assert.equal(timedOutProbe.installed, false);
+    assert.equal(timedOutProbe.authStatus, 'unknown', 'timeout does not misclassify auth as unauthenticated');
+    assert.equal(activeProcesses.size, 0, 'timed-out probe process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // Quota
+  process.env.AGY_FIXTURE_MODE = 'hang-usage';
+  try {
+    const timedOutQuota = await inspectAgyQuota(normalProbe, { timeoutMs: 150 });
+    assert.equal(timedOutQuota, undefined);
+    assert.equal(activeProcesses.size, 0, 'timed-out quota process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // Catalog
+  process.env.AGY_FIXTURE_MODE = 'hang-models';
+  try {
+    const timedOutCatalog = await listAgyModels(normalProbe, { timeoutMs: 150 });
+    assert.equal(timedOutCatalog, undefined);
+    assert.equal(activeProcesses.size, 0, 'timed-out catalog process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // Inherited Tools
+  process.env.AGY_FIXTURE_MODE = 'hang-mcp';
+  try {
+    const timedOutTools = await inheritedAgyTools({ timeoutMs: 150 });
+    assert.equal(timedOutTools, undefined);
+    assert.equal(activeProcesses.size, 0, 'timed-out tools process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+});
+
+test('EXEC-001-T08e: stalled agy reads ended by budget expiration during run reject with TIMEOUT', async () => {
+  const normalProbe = await probeAgy();
+
+  // Probe
+  process.env.AGY_FIXTURE_MODE = 'hang-probe';
+  try {
+    let expired = false;
+    const expCtrl = new AbortController();
+    const expBudget = {
+      isExecutionExpired: () => expired,
+      isTimedOut: () => expired,
+      executionSignal: expCtrl.signal,
+    };
+    const expPromise = probeAgy({ budget: expBudget, timeoutMs: 150 });
+    await waitForActiveProcess();
+    expired = true;
+    expCtrl.abort();
+    await assert.rejects(expPromise, err => err instanceof ToolError && err.code === 'TIMEOUT');
+    assert.equal(activeProcesses.size, 0, 'expired budget process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // Quota
+  process.env.AGY_FIXTURE_MODE = 'hang-usage';
+  try {
+    let expired = false;
+    const expCtrl = new AbortController();
+    const expBudget = {
+      isExecutionExpired: () => expired,
+      isTimedOut: () => expired,
+      executionSignal: expCtrl.signal,
+    };
+    const expPromise = inspectAgyQuota(normalProbe, { budget: expBudget, timeoutMs: 150 });
+    await waitForActiveProcess();
+    expired = true;
+    expCtrl.abort();
+    await assert.rejects(expPromise, err => err instanceof ToolError && err.code === 'TIMEOUT');
+    assert.equal(activeProcesses.size, 0, 'expired quota budget process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // Catalog
+  process.env.AGY_FIXTURE_MODE = 'hang-models';
+  try {
+    let expired = false;
+    const expCtrl = new AbortController();
+    const expBudget = {
+      isExecutionExpired: () => expired,
+      isTimedOut: () => expired,
+      executionSignal: expCtrl.signal,
+    };
+    const expPromise = listAgyModels(normalProbe, { budget: expBudget, timeoutMs: 150 });
+    await waitForActiveProcess();
+    expired = true;
+    expCtrl.abort();
+    await assert.rejects(expPromise, err => err instanceof ToolError && err.code === 'TIMEOUT');
+    assert.equal(activeProcesses.size, 0, 'expired catalog budget process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
+  }
+
+  // Inherited Tools
+  process.env.AGY_FIXTURE_MODE = 'hang-mcp';
+  try {
+    let expired = false;
+    const expCtrl = new AbortController();
+    const expBudget = {
+      isExecutionExpired: () => expired,
+      isTimedOut: () => expired,
+      executionSignal: expCtrl.signal,
+    };
+    const expPromise = inheritedAgyTools({ budget: expBudget, timeoutMs: 150 });
+    await waitForActiveProcess();
+    expired = true;
+    expCtrl.abort();
+    await assert.rejects(expPromise, err => err instanceof ToolError && err.code === 'TIMEOUT');
+    assert.equal(activeProcesses.size, 0, 'expired tools budget process cleaned up');
+  } finally {
+    delete process.env.AGY_FIXTURE_MODE;
   }
 });

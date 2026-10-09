@@ -3,8 +3,20 @@ const args = process.argv.slice(2);
 if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
   fs.appendFileSync(process.env.coagent8_FIXTURE_LAUNCH_LOG, JSON.stringify({ args, autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null }) + '\n');
 }
-if (args.includes('--version')) { console.log('1.2.16'); process.exit(0); }
+const mode = process.env.AGY_FIXTURE_MODE || process.env.coagent8_FIXTURE_MODE || 'success';
+if (args.includes('--version')) {
+  if (mode === 'hang-probe' || mode === 'hang-version') {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  console.log('1.2.16');
+  process.exit(0);
+}
 if (args[0] === 'mcp' && args[1] === 'list') {
+  if (mode === 'hang-mcp' || mode === 'hang-tools') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   // `agy mcp list` of agy 1.3.1 (2026-10-07); coagent8_FIXTURE_AGY_MCP lists [name, status] rows.
   const rows = JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]');
   if (!rows.length) { console.log('No MCP servers configured.'); process.exit(0); }
@@ -12,6 +24,10 @@ if (args[0] === 'mcp' && args[1] === 'list') {
   process.exit(0);
 }
 if (args.includes('models')) {
+  if (mode === 'hang-models' || mode === 'hang-catalog') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   // `agy models` of agy 1.3.1 (2026-10-07), abridged: a progress line, then `<id>\t<name>`.
   console.log(['Fetching available models...', 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)', 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
     'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)', 'gemini-3.1-pro-high\tGemini 3.1 Pro (High)', 'gemini-3.1-pro-low\tGemini 3.1 Pro (Low)',
@@ -33,8 +49,11 @@ if (args.includes('-p')) {
 }
 
 function run() {
-  const mode = process.env.coagent8_FIXTURE_MODE || 'success';
   if (prompt === '/usage') {
+    if (mode === 'hang-usage' || mode === 'hang-quota') {
+      setInterval(() => {}, 1000);
+      return;
+    }
     if (process.env.coagent8_FIXTURE_CAPTURE) fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }));
     if (mode === 'unauthenticated' || mode === 'auth') {
       console.log(JSON.stringify({ status: 'ERROR', error: 'Authentication required' }));
