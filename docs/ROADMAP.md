@@ -309,13 +309,13 @@ git diff --check
 
 ### EXEC-001-T01 - establish a reproducible baseline
 
-- [ ] **T01a - map calls and waits.** Start: `src/mcp/tools/consult.tool.ts`,
+- [x] **T01a - map calls and waits.** Start: `src/mcp/tools/consult.tool.ts`,
   `src/mcp/tools/review.tool.ts`, `src/execution/controller.ts` and direct
   routing/selection/consent/session callees. Change: HANDOFF only; add one row
   per phase with function, caller, side effect, timeout and abort support.
   Done: the map includes early exceptions, review Git work and finalization.
   Check: P; unknown behavior is labelled unverified, not inferred.
-- [ ] **T01b - prepare the baseline harness.** Start: `tests/helpers/environment.cjs`,
+- [x] **T01b - prepare the baseline harness.** Start: `tests/helpers/environment.cjs`,
   `tests/execution/price-limit.test.js`, `tests/backends/probe-cache.test.js` and
   `tests/fixtures/`. Add a **new** fixture-only baseline test under
   `tests/execution/`, using existing injection seams to count observations and
@@ -323,7 +323,7 @@ git diff --check
   and review. Done: cold runs reset only owned fixture state; warm/concurrent
   runs reuse it intentionally. Record counters that cannot yet be observed as
   NOT_MEASURED. Check: R, the new test and `tests/environment.test.js`.
-- [ ] **T01c - record baseline measurements.** Run the T01b command against the
+- [x] **T01c - record baseline measurements.** Run the T01b command against the
   recorded source identity; keep configuration, delays and repetition count in
   the evidence. Report individual samples and median/range, not a single fast
   run. Done: HANDOFF links reproducible logs and states platform, Node, commit,

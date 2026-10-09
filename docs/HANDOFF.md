@@ -12,19 +12,17 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current task is SIMPLIFY-001: S0-S6 implemented, with the two S6 enforcement
-gaps found in follow-up inspection corrected locally.
-Current branch: `refactor/simplify-001`, created from the preserved local stack
-at `ac394ad` after the owner authorized changing the branch.
-The S6 follow-up is committed at `af9f7d2` after the owner requested a commit.
-The next planned work is EXEC-001-T01 through T12 in ROADMAP, covering measured
-preparation and the complete call lifecycle alongside AX-004. These are now
-stages containing 40 smaller task cards (T01a through T12d), with starting files,
+The current task is EXEC-001-T01 (establish a reproducible baseline): T01a
+(call/wait map) and T01b (fixture baseline harness) implemented.
+Current branch: `perf/exec-001-t01`, created from `refactor/simplify-001` at
+`42e4cbd` after the owner requested a new branch for EXEC-001-T01.
+The planned work is EXEC-001-T01 through T12 in ROADMAP, covering measured
+preparation and the complete call lifecycle alongside AX-004. These are stages
+containing 40 smaller task cards (T01a through T12d), with starting files,
 observable completion criteria and exact reusable test groups. Assign one card
-at a time; the next runtime-track card is EXEC-001-T01a (call/wait inventory,
-documentation only). All cards remain unimplemented. Owner inspection occurs
-after each card. Prior independent approval does not approve the S6 follow-up
-or these future changes.
+at a time; current card is EXEC-001-T01b (fixture baseline harness).
+Owner inspection occurs after each card. Prior independent approval does not
+approve these future changes.
 
 The 2026-10-09 roadmap refinement also separates AX implementation/native
 acceptance, adds coagent contract cards before speculative implementation and
@@ -521,6 +519,117 @@ follow-up before Git integration, then EXEC-001-T01 baseline under the detailed
 No new independent approval, remote CI or native-client acceptance is established.
 The subsequent plan edit requires content/local-link review and git diff --check;
 it does not change runtime behavior or require repeating the preceding tests.
+
+## EXEC-001-T01a call and wait map
+
+Captured 2026-10-09 on branch `perf/exec-001-t01`.
+Scope: complete call lifecycle inventory across `src/mcp/tools/consult.tool.ts`,
+`src/mcp/tools/review.tool.ts`, `src/execution/controller.ts` and direct
+routing/selection/consent/session callees.
+Documentation-only card (Check: P).
+
+| Phase | Function | Caller | Side effect | Timeout | Abort support |
+| --- | --- | --- | --- | --- | --- |
+| Tool input formatting (consult) | `handleConsult` | MCP dispatch (`src/server.ts`) | In-memory string formatting of task header, proposal, focus questions, target files | None | Passes `abortSignal` to `executeTask` |
+| Review diff collection | `collectReviewInput` (`getReviewDiff`, `parseDiffStats`, `calculateSnapshotHash`) | `handleReview` in `src/mcp/tools/review.tool.ts` | Spawns child Git processes (`git status`, `git diff`, `git rev-parse`) | `GIT_COMMAND_TIMEOUT_MS` (5000 ms per Git invocation) | Forwarded via `abortSignal` to child process `execFile` |
+| Review workspace assertion | `assertReviewWorkspace` | `handleReview` in `src/mcp/tools/review.tool.ts` | Spawns `git rev-parse --show-toplevel` validating working tree | `GIT_COMMAND_TIMEOUT_MS` (5000 ms) | Forwarded via `abortSignal` to `execFile` |
+| Tool input formatting (review) | `handleReview` | MCP dispatch (`src/server.ts`) | Constructs State Envelope prompt template binding snapshot hash and diff | None | Passes `abortSignal` to `executeTask` |
+| Task concurrency tracking | `executeTask` | `handleConsult` / `handleReview` | Adds/removes active task Promise in `activeExecutionTasks` Set | None | Handled in `finally` block |
+| Nested-turn prevention | `assertNotNestedTurn` | `executeTaskInternal` in `src/execution/controller.ts` | Reads `COAGENT8_NESTED_TURN` environment variable; throws `ToolError('NESTED_TURN')` | None | Synchronous guard |
+| Model identifier validation | `isValidModelIdentifier` | `executeTaskInternal` | In-memory regex validation of `args.model`; throws `ToolError('INPUT_LIMIT')` | None | Synchronous guard |
+| Session validation | `getSession` | `executeTaskInternal` | Reads in-memory session map; validates workspace isolation; throws `ToolError('SESSION_INVALID')` | None | Synchronous check |
+| Provider resolution | `resolveBackend` / `resolveBackendForModel` | `executeTaskInternal` | Probes CLI binaries (`probeCodexCli`, `probeClaudeCli`, `probeAgyCli`); reads cached probe from disk/memory; spawns CLI `--version` on probe cache miss | Probe execution timeout (2000–5000 ms per CLI probe; unverified for custom probe) | Checked via `abortSignal?.aborted` before/after; CLI child probes do not inherit caller signal (unverified) |
+| Model selection | `selectModel` | `executeTaskInternal` | Matches model preferences and price constraints against backend probe capabilities | None | Checked via `abortSignal?.aborted` after selection |
+| Catalog validation | `checkModelSelection` (`readModelCatalog`) | `executeTaskInternal` | Reads CLI catalog cache from disk/memory; throws `ToolError` on unsupported model or effort | None | Checked via `abortSignal?.aborted` after check |
+| Pre-consent price check | `assertPriceLimit` (`readPrices`, `priceEvidence`, `checkPriceLimit`) | `executeTaskInternal` | Reads cached/stored pricing data; validates output price below ceiling; throws `ToolError('PRICE_LIMIT')` | Local read is synchronous; remote refresh fetch timeout is unverified | `abortSignal` not accepted by `readPrices` |
+| User consent evaluation & prompt | `consentFor` -> `options.askConsent` | `executeTaskInternal` | Evaluates consent policy; awaits MCP elicitation from client/user; on user 'remember' writes config via `rememberApprovedModel`; throws `ToolError('POLICY_DENIED')` on refusal/unanswered | No controller timeout; wait duration depends on human user / client UI response (unbounded until client abort) | Checked via `abortSignal?.aborted` after user response |
+| Post-consent price re-check | `assertPriceLimit` | `executeTaskInternal` | Re-verifies price limit against updated price list; throws `ToolError('PRICE_LIMIT')` | Same as pre-consent price check | Checked via `abortSignal?.aborted` |
+| Session pruning & turn lease | `pruneExpiredSessions`, `acquireAndResolveSession` | `executeTaskInternal` | Cleans expired sessions; atomically acquires session lease and generates turn token; throws `ToolError('SESSION_BUSY')` on contention | None | Session acquisition is atomic/synchronous; `abortSignal` checked prior |
+| History writer setup | `createHistoryWriter` | `executeTaskInternal` | Initializes append-only `HistoryWriter` stream and turn files | None | None |
+| Cancellation registration | `activeSessionAborts.set` | `executeTaskInternal` | Registers session abort controller and settlement promise for `cancelSessionExecution` | Cancel wait timeout (5000 ms) | Listens to caller `abortSignal` and session cancel calls |
+| Execution turn init | `writer.accept('turn_started')`, `writer.accept('user_message')` | `executeTaskInternal` | Appends turn header and user prompt to history buffer; flushes buffer | None | Handled inside try/catch (recorded to `historyError`) |
+| Heartbeat & flush timers | `setInterval` (heartbeat, flush) | `executeTaskInternal` | Schedules progress heartbeat (5 s interval, triggers at >= 10 s elapsed) and history flush (250 ms interval) | Intervals cleared in `finally` | Handled in `finally` block |
+| CLI adapter execution | `backend.adapter.execute` | `executeTaskInternal` | Spawns external CLI process (Codex app-server, Claude Code CLI, agy CLI); receives streamed events; bounds response at 1 MiB (`BufferLimitError`); redacts credentials | `args.timeout_ms` (passed to adapter as `options.timeoutMs`, defaulting to backend timeout e.g. 180 s / 300 s) | Wired to `cancelController.signal`; sends protocol interrupt / SIGTERM to child process tree |
+| Session metadata update | `updateSession` | `executeTaskInternal` (post-execution bookkeeping) | Persists threadId, model, reasoningEffort, cliVersion to session storage; invalidates on `SESSION_INVALID` | None | Non-abortable finalization; errors caught and added to `warnings` |
+| History finalization | `writer.accept('turn_finished')`, `writer.flush` | `executeTaskInternal` | Appends final turn status and output to history stream on disk | None | Non-abortable finalization; errors caught and added to `warnings` |
+| Turn lease release | `releaseSessionTurn`, `activeSessionAborts.delete` | `executeTaskInternal` | Atomically releases turn lease token, unblocking subsequent turns; settles cancellation promise | None | Non-abortable cleanup; fail-closed `SESSION_INVALID` on release failure |
+| Quota cooldown update | `recordQuotaCooldown` / `resetQuotaCooldown` | `executeTaskInternal` | Updates `.cooldown.json` under file lock on `RATE_LIMITED` error or resets cooldown on success | `withFileLock` lock timeout (2000 ms) | Non-abortable bookkeeping; errors caught and added to `warnings` |
+| Post-turn review snapshot recheck | `options.verifyReviewSnapshot` (`collectReviewInput`, `assertReviewWorkspace`) | `executeTaskInternal` (review turns only) | Re-runs Git status and diff to detect workspace mutation during turn; sets `invalidatedReason` | `GIT_COMMAND_TIMEOUT_MS` (5000 ms per Git invocation) | Forwarded via `abortSignal` to `execFile` |
+| State envelope evaluation | `evaluateStateEnvelopeGate` | `executeTaskInternal` (review turns only) | Parses review output string for State Envelope structure, verdict, coverage, and required checks | None | Pure synchronous string parsing |
+| Tool result formatting | `formatExecutionResult` | `handleConsult` / `handleReview` | Formats final markdown result with metadata footer (`CoAgent8: ...`) | None | Synchronous formatting |
+
+## EXEC-001-T01b baseline harness implementation
+
+Implemented 2026-10-09 on branch `perf/exec-001-t01`.
+Scope: fixture-only execution baseline harness in `tests/execution/baseline.test.js`.
+Uses existing injection seams (`adapterRegistry` instrumented fixtures) to measure
+observation counts (probes, catalog reads, launches) across plain cold/warm,
+explicit model/effort, priced auto, continuation, review, and concurrent runs.
+Unmeasured counters are recorded as `NOT_MEASURED`.
+
+Observations and coverage:
+- Plain cold: 1 probe, 1 launch; verifies cold runs probe and launch adapter.
+- Plain warm: 0 probe delta (cached probe reused), 1 launch; verifies warm runs avoid reprobing.
+- Explicit model/effort: verifies validated model/effort reaches adapter options.
+- Priced auto: verifies highest-priced qualifying model below ceiling is selected (`gpt-5.6-luna` for ceiling 5 USD).
+- Continuation: 1 launch, turn count advances to 2, native session ID propagated.
+- Review: 1 launch, git diff verified in prompt, State Envelope evaluated to `READY`.
+- Concurrent runs: 4 tasks execute concurrently, sharing a single coalesced probe (1 probe, 4 launches).
+- Counters not yet observable before T02 (preparation, consent, acquisition, finalization phase durations, native launch overhead, client transport latency) are explicitly recorded as `NOT_MEASURED`.
+
+Verification:
+- PASS: `npm run typecheck` (0 errors)
+- PASS: `npm run check:dependencies` (102 modules, 0 violations/cycles)
+- PASS: `node tests/run.cjs tests/execution/baseline.test.js tests/environment.test.js` (9/9 pass, 0 fail, 4.1 s)
+- PASS: `git diff --check`
+
+## EXEC-001-T01c baseline measurement evidence
+
+Captured 2026-10-09 on branch `perf/exec-001-t01`.
+Scope: reproducible baseline measurement execution across 5 repetitions of the
+T01b baseline test suite (`node tests/run.cjs tests/execution/baseline.test.js tests/environment.test.js`).
+
+Source & Environment Identity:
+- Platform: Windows 11 (`win32 x64`, OS release 10.0.26200)
+- Node: `v26.10.0`
+- Base Commit: `42e4cbd30f1d3d34e8ae8d388d57190f8d8e5a98`
+- Tree SHA: `d9b25d46f122b62a56e2c19d10ccd993f13cbba5`
+- Dirty Diff SHA-256: `21eba21b9637ab13d37c69006a3e8ab40696ff81d08b51039093cd2277bf4005`
+
+Execution Measurements (5 consecutive runs, 9/9 tests passed on each run):
+- Sample 1: Wall: 4301 ms | Test Runner: 3957.5 ms
+- Sample 2: Wall: 5468 ms | Test Runner: 5096.7 ms
+- Sample 3: Wall: 4547 ms | Test Runner: 3983.3 ms
+- Sample 4: Wall: 6401 ms | Test Runner: 6061.2 ms
+- Sample 5: Wall: 4926 ms | Test Runner: 4516.4 ms
+
+Summary Statistics:
+- Test Runner Duration: Median 4516.4 ms | Range [3957.5 ms .. 6061.2 ms]
+- Wall Clock Duration: Median 4926 ms | Range [4301 ms .. 6401 ms]
+
+Measured Observations per Scenario (actual counter deltas emitted by test harness):
+| Scenario | Probes | Catalog Reads | Adapter Launches | Observed Parameters |
+| --- | --- | --- | --- | --- |
+| Plain Cold | 1 | 1 | 1 | Initial probe miss; catalog read; adapter launched |
+| Plain Warm | 0 | 0 | 1 | Cached probe reused; 0 reprobes |
+| Explicit Model/Effort | 1 | 0 | 1 | Fresh fixture probed; `model: gpt-6-sol`, `effort: high` |
+| Priced Auto | 1 | 0 | 1 | Fresh fixture probed; ceiling 5 USD -> selected `gpt-5.6-luna` |
+| Continuation | 0 | 0 | 1 | Session backend reused; turn 2, native ID `codex-native-1` |
+| Review | 1 | 0 | 1 | Fresh fixture probed; diff inspected, verdict `READY` |
+| Concurrent (4 tasks) | 1 | 1 | 4 | Coalesced probe and catalog read; 4 concurrent tasks |
+
+Unmeasured Counters (retained as `NOT_MEASURED` until T02 phase instrumentation):
+- `preparationDurationMs`: `NOT_MEASURED`
+- `consentDurationMs`: `NOT_MEASURED`
+- `acquisitionDurationMs`: `NOT_MEASURED`
+- `finalizationDurationMs`: `NOT_MEASURED`
+- `nativeProcessLaunchOverhead`: `NOT_MEASURED`
+- `clientTransportLatency`: `NOT_MEASURED`
+
+Verification:
+- PASS: 5/5 repetitions exit code 0, 9/9 tests pass per run
+- PASS: `npm run typecheck`
+- PASS: `git diff --check`
 
 ## Documentation disposition
 
