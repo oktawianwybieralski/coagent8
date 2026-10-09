@@ -10,6 +10,7 @@ import type {
   ExecutionResult,
   TerminalExecutionResult,
   ExecutionOptions,
+  BackendReadContext,
   ModelCatalog,
 } from '../contracts/index.js';
 
@@ -18,6 +19,7 @@ export type {
   ExecutionResult,
   TerminalExecutionResult,
   ExecutionOptions,
+  BackendReadContext,
   CatalogModel,
   ModelCatalog,
   QuotaStatus,
@@ -25,6 +27,8 @@ export type {
   QuotaReport,
   QuotaCacheRecord,
 } from '../contracts/index.js';
+
+export type ReadContext = BackendReadContext;
 
 export {
   DEFAULT_PROBE_TIMEOUT_MS,
@@ -89,14 +93,14 @@ export interface CliAdapter {
   /** Human-readable backend name. */
   name: string;
   /** Probes the environment to verify CLI presence, version, and auth status. */
-  probe(): Promise<AdapterProbeResult>;
+  probe(context?: BackendReadContext): Promise<AdapterProbeResult>;
   /**
    * Asks the CLI, without a model turn, which concrete model it runs for a requested name, or
    * without one, for CLIs that resolve names themselves (Claude Code aliases, its account
    * default). The controller passes the answer to `execute`, so consent and the turn name
    * the same model. Undefined when the CLI cannot say.
    */
-  observeModel?(requested?: string, probe?: AdapterProbeResult): Promise<string | undefined>;
+  observeModel?(requested?: string, probe?: AdapterProbeResult, context?: BackendReadContext): Promise<string | undefined>;
   /**
    * Executes a prompt in a read-only sandboxed CLI process. `options.model` is the model the
    * controller selected; an adapter refuses a turn without one rather than let the CLI choose.
@@ -107,19 +111,19 @@ export interface CliAdapter {
    * Called by native quota diagnostics; ordinary routing reuses cached measurements.
    * Never called by `execute`.
    */
-  inspectQuota?(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']>;
+  inspectQuota?(probe?: AdapterProbeResult, context?: BackendReadContext): Promise<AdapterProbeResult['quota']>;
   /**
    * Reads the models the installed CLI offers, without a model call. Called when a turn
    * selects or checks a model, and by doctor; undefined when the CLI cannot say.
    * @param probe - The current probe, for the version and executable it found.
    */
-  listModels?(probe?: AdapterProbeResult): Promise<ModelCatalog | undefined>;
+  listModels?(probe?: AdapterProbeResult, context?: BackendReadContext): Promise<ModelCatalog | undefined>;
   /**
    * Reads, without a model call, the MCP servers and plugins of the user's CLI configuration
    * that its turns offer the model and the adapter cannot disable (`CUR-002`). Called only
    * by doctor; undefined when the CLI cannot say.
    */
-  inheritedTools?(): Promise<InheritedTools | undefined>;
+  inheritedTools?(context?: BackendReadContext): Promise<InheritedTools | undefined>;
 }
 
 /** Tools a backend's turns inherit from the user's CLI configuration. */

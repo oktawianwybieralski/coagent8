@@ -22,9 +22,18 @@ import {
   type ModelSource,
   type PriceConstraint,
 } from '../models/selection.js';
-import type { AdapterProbeResult, ModelCatalog } from '../backends/types.js';
+import type { AdapterProbeResult, ModelCatalog, BackendReadContext } from '../backends/types.js';
 
 export type { ModelSelection, ModelSource, PriceConstraint };
+
+export interface SelectModelOptions {
+  observeAfresh?: boolean;
+  constraint?: PriceConstraint;
+  config?: CoAgent8Config | ConfigSnapshot;
+  catalog?: ModelCatalog;
+  /** Optional cancellation and deadline context for backend reads (`EXEC-001-T08`). */
+  context?: BackendReadContext;
+}
 
 /**
  * Selects the model of a turn: the call's, else the session's, else the configured default,
@@ -46,14 +55,9 @@ export async function selectModel(
   id: ProviderId,
   probe: AdapterProbeResult,
   requested: { model?: string; session?: string } = {},
-  options: {
-    observeAfresh?: boolean;
-    constraint?: PriceConstraint;
-    config?: CoAgent8Config | ConfigSnapshot;
-    catalog?: ModelCatalog;
-  } = {}
+  options: SelectModelOptions = {}
 ): Promise<ModelSelection> {
-  const observe = { fresh: options.observeAfresh, probe };
+  const observe = { fresh: options.observeAfresh, probe, context: options.context };
   const adapter = adapterRegistry[id];
   const configObj = options.config
     ? ('config' in options.config ? options.config.config : options.config)
@@ -70,17 +74,17 @@ export async function selectModel(
 
   async function getCatalog(): Promise<ModelCatalog | undefined> {
     if (options.observeAfresh) {
-      currentCatalog = await readModelCatalog(id, { fresh: true, probe });
+      currentCatalog = await readModelCatalog(id, { fresh: true, probe, context: options.context });
       catalogFetched = true;
       return currentCatalog;
     }
     if (currentCatalog) {
-      currentCatalog = await readModelCatalog(id, { probe, catalog: currentCatalog });
+      currentCatalog = await readModelCatalog(id, { probe, catalog: currentCatalog, context: options.context });
       catalogFetched = true;
       return currentCatalog;
     }
     if (!catalogFetched) {
-      currentCatalog = await readModelCatalog(id, { probe });
+      currentCatalog = await readModelCatalog(id, { probe, context: options.context });
       catalogFetched = true;
     }
     return currentCatalog;

@@ -919,6 +919,66 @@ Scope: settle complete-call budget semantics in documentation (`EXEC-001-T07a`),
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_da0202ddbd686d31a839b346`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to Windows sandbox ENOMEM).
 
+## EXEC-001-T08a shared read and deadline context
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: define neutral deadline and cancellation context for backend observation reads (`BackendReadContext`), separate per-waiter deadline/cancellation ownership from shared-read inflight execution ownership, thread neutral context through adapter signatures and probe cache without claiming premature backend cancellation support, and establish an authoritative decision table for cancellation and inflight removal.
+
+### Shared read and waiter ownership model:
+1. **Per-waiter context (`BackendReadContext`)**:
+   - Each caller/waiter provides an independent observation context containing `abortSignal?: AbortSignal`, `timeoutMs?: number`, and optional `budget?: ExecutionBudget`.
+   - Distinct from turn-level `ExecutionOptions` (which controls prompt execution processes and session leases).
+   - Aborting or timing out an individual waiter affects only that waiter's promise and does not abort other active waiters waiting for the same coalesced result.
+2. **Shared-read ownership**:
+   - The coalescing layer in `src/backends/probe-cache.ts` manages the underlying in-flight observation task.
+   - The shared read is triggered on cache miss (or `fresh: true`).
+   - Only when all active waiters unregister/abort does the shared-read coordinator trigger abort on the underlying operation.
+
+### Decision table (cancellation & inflight removal):
+
+| Event / Scenario | Active Waiters | Inflight Entry State | Responsible Entity | Action / Cancellation Mechanism | Inflight Removal Ownership |
+| --- | --- | --- | --- | --- | --- |
+| Waiter cancellation / timeout (`abortSignal` fires or waiter `timeoutMs` expires) | `> 1` (other waiters remain) | Active | Waiter / Caller | Waiter promise rejects immediately with `ABORTED` or `TIMEOUT`. Waiter unregisters from shared read. Shared read continues running uninterrupted. | Do NOT remove from `inflight`. The entry stays in `inflight` for remaining and newly joining waiters. |
+| Last waiter cancellation / timeout (`abortSignal` fires or last waiter `timeoutMs` expires) | `0` (no waiters left) | Evicted immediately | Shared-Read Coordinator (`probe-cache`) | Coordinator triggers `sharedAbortController.abort()`, cancelling the underlying adapter operation / child process. | Coordinator removes key from `inflight` IMMEDIATELY upon 0 active waiters so new incoming callers do not join a doomed/aborted read. |
+| Normal completion (underlying read succeeds) | `>= 1` | Active | Underlying Read Task & Coordinator | Result is saved to cache / stored models. All registered active waiters resolve with the result. | Coordinator's `finally` handler removes key from `inflight` ONLY IF `inflight.get(key) === thisEntry`. |
+| Natural failure (underlying read throws/exits with error) | `>= 1` | Active | Underlying Read Task & Coordinator | All registered active waiters reject with the underlying error. Failure is not cached in persistent cache. | Coordinator's `finally` handler removes key from `inflight` ONLY IF `inflight.get(key) === thisEntry`. |
+| Late settlement of an aborted or replaced read (underlying task finishes after eviction) | `0` | Replaced or absent | Late settling task | Cleans up any owned child resources in `finally`. Does NOT cache the result. | Checks `inflight.get(key) === thisEntry`. Because entry was already evicted or replaced, does NOT delete or disturb any newer entry in `inflight`. |
+| Fresh read request (`options.fresh: true`) while a shared read is inflight | Any | Replaced with new read | New caller / Coordinator | `fresh: true` starts its own independent read (with its own context) and overwrites the `inflight` entry under that key so subsequent calls coalesce onto the fresh read. | When previous read settles, its identity check (`inflight.get(key) === oldEntry`) fails, ensuring the newer inflight entry remains intact. |
+
+### Modules and interface changes:
+- `src/contracts/execution.ts`:
+  - Exported `BackendReadContext` interface with `abortSignal?: AbortSignal`, `timeoutMs?: number`, and `budget?: ExecutionBudget`.
+- `src/backends/types.ts`:
+  - Re-exported `BackendReadContext` and `type ReadContext = BackendReadContext`.
+  - Updated `CliAdapter` interface: added optional `context?: BackendReadContext` to `probe`, `observeModel`, `inspectQuota`, `listModels`, and `inheritedTools`.
+- `src/backends/probe-cache.ts`:
+  - Exported `ProbeBackendOptions` interface with `fresh?: boolean` and `context?: BackendReadContext`.
+  - Updated `ReadModelCatalogOptions` and `ReadObservedModelOptions` with `context?: BackendReadContext`.
+  - Updated `coalesce` callback to accept `start: (context?: BackendReadContext) => Promise<T>` and forwarded `context` to adapter calls.
+- `src/backends/codex/adapter.ts`, `src/backends/claude/adapter.ts`, `src/backends/agy/adapter.ts`:
+  - Updated `probe`, `listModels`, `inspectQuota`, `observeModel`, and `inheritedTools` signatures to accept `context?: BackendReadContext` with backward-compatible defaults.
+- `src/execution/routing.ts`:
+  - Exported `ResolveBackendOptions` with `context?: BackendReadContext`.
+  - Forwarded `options.context` to `probeBackend` and `readModelCatalog` across `resolveBackend` and `resolveBackendForModel`.
+- `src/execution/selection.ts`:
+  - Exported `SelectModelOptions` with `context?: BackendReadContext`.
+  - Forwarded `options.context` to `readModelCatalog` and `readObservedModel`.
+- `src/execution/preparation.ts`:
+  - Updated `PrepareTaskOptions` with optional `budget?: ExecutionBudget`.
+  - Created composite `readContext = (abortSignal || budget) ? { abortSignal, budget } : undefined` and forwarded to routing, model selection, and catalog verification.
+- `tests/backends/probe-cache.test.js`:
+  - Added dedicated regression test verifying that `probeBackend`, `readModelCatalog`, and `readObservedModel` forward `BackendReadContext` to adapters cleanly and preserve backward compatibility when omitted.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 524 dependency edges, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 77 tests (76 pass, 0 fail, 1 skipped (POSIX only), duration 20.4 s): `tests/backends/probe-cache.test.js`, `tests/execution/budget.test.js`, `tests/execution/preparation.test.js`, `tests/backends/codex/adapter.test.js`, `tests/backends/claude/adapter.test.js`, `tests/backends/agy/adapter.test.js`.
+- PASS: Full test suite: 515 tests (512 pass, 0 fail, 3 skipped, duration 121.6 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_481dd949396808a8b5424c1d`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to Windows sandbox ENOMEM).
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;

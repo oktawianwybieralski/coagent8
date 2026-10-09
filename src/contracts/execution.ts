@@ -209,3 +209,20 @@ export interface ExecutionBudget {
   dispose(): void;
 }
 
+/**
+ * Cancellation and deadline context for backend observation reads (`EXEC-001-T08`).
+ *
+ * @remarks
+ * Encapsulates per-waiter cancellation and deadline semantics for non-turn backend
+ * reads (probes, model catalogs, observed models, quota inspection, and inherited tools).
+ * Distinct from turn-level {@link ExecutionOptions}.
+ */
+export interface BackendReadContext {
+  /** Optional cancellation signal for interrupting the observation read. */
+  abortSignal?: AbortSignal;
+  /** Optional operation-level timeout in milliseconds. */
+  timeoutMs?: number;
+  /** Optional complete-call execution budget handle if available. */
+  budget?: ExecutionBudget;
+}
+

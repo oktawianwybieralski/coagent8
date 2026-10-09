@@ -14,6 +14,7 @@ import {
   DEFAULT_PROBE_TIMEOUT_MS,
   DEFAULT_MODEL_LIST_TIMEOUT_MS,
   type AdapterProbeResult,
+  type BackendReadContext,
   type CatalogModel,
   type ExecutionOptions,
   type InheritedTools,
@@ -88,7 +89,7 @@ export function parseGeminiUsage(parsed: unknown): AdapterProbeResult['quota'] {
   return quota && { ...quota, window: quota.window || 'weekly' };
 }
 
-export async function probe(): Promise<AdapterProbeResult> {
+export async function probe(_context?: BackendReadContext): Promise<AdapterProbeResult> {
   const resolvedCommand = probeCommand('agy', name);
   if ('unresolved' in resolvedCommand) return resolvedCommand.unresolved;
   const rawCommand = resolvedCommand.command;
@@ -146,11 +147,12 @@ export async function probe(): Promise<AdapterProbeResult> {
 /**
  * Reads agy's measured quota with `/usage`, which makes no model call.
  * @param probe - An installed probe result; nothing is read without one.
+ * @param _context - Optional cancellation and deadline context.
  * @returns The measured quota, or undefined when agy does not report one.
  * @remarks Runs only from quota inspection (doctor), never on the request path, and with
  * the same `--sandbox` as every other agy launch.
  */
-export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
+export async function inspectQuota(probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<AdapterProbeResult['quota']> {
   if (!probe?.installed) return undefined;
   const resolved = resolveCliCommand(configuredBackendCommand('agy'));
   const usageRes = await runCommand(resolved.command, [...resolved.argsPrefix, '--sandbox', '--output-format', 'json', '-p', '/usage'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS, env: agyEnvironment() });
@@ -302,7 +304,7 @@ export function parseAgyModels(stdout: string): CatalogModel[] {
 }
 
 /** Reads the models agy offers with `agy models`, which makes no model call (about 2 s). */
-export async function listModels(): Promise<ModelCatalog | undefined> {
+export async function listModels(_probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<ModelCatalog | undefined> {
   let resolved: ReturnType<typeof resolveCliCommand>;
   try {
     resolved = resolveCliCommand(configuredBackendCommand('agy'));
@@ -358,7 +360,7 @@ export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config'
  * without a model call. CoAgent8 cannot disable them (CUR-002); doctor names them.
  * @returns The inherited tools, or undefined when agy cannot be run or read.
  */
-export async function inheritedTools(): Promise<InheritedTools | undefined> {
+export async function inheritedTools(_context?: BackendReadContext): Promise<InheritedTools | undefined> {
   let resolved: ReturnType<typeof resolveCliCommand>;
   try { resolved = resolveCliCommand(configuredBackendCommand('agy')); }
   catch { return undefined; }

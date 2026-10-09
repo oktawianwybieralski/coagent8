@@ -494,13 +494,14 @@ tests and documentation review. Depends on T06.
 
 ### EXEC-001-T08 - make native observations cancellable
 
-- [ ] **T08a - define read ownership and extend the contract.** Start:
+- [x] **T08a - define read ownership and extend the contract.** Start:
   `src/backends/types.ts:CliAdapter`, `src/backends/probe-cache.ts:coalesce` and
   the T07 budget. Define per-waiter deadline/abort versus shared-read ownership,
   then thread the neutral context through callers and adapter signatures.
   Done: existing callers still work, actual support is not claimed prematurely,
   and a decision table specifies who owns cancellation and inflight removal.
   Check: R, CACHE/CODEX/CLAUDE/AGY for contract compatibility.
+  Evidence: [EXEC-001-T08a implementation](HANDOFF.md#exec-001-t08a-shared-read-and-deadline-context).
 - [ ] **T08b - implement shared-read waiter ownership.** Change only the
   probe-cache coalescing mechanism and its neutral callbacks from T08a. Done:
   one cancelled waiter leaves another live waiter intact; the last waiter

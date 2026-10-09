@@ -9,7 +9,8 @@
  * @packageDocumentation
  */
 
-import { ToolError, errorCodeOf, type ProviderId } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget } from '../contracts/index.js';
+import type { BackendReadContext } from '../backends/types.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import { getSession } from '../sessions/session.js';
 import type { SessionRecord } from '../sessions/types.js';
@@ -56,6 +57,8 @@ export type ConsentPrompt = (request: {
 export interface PrepareTaskOptions {
   config?: ConfigSnapshot | CoAgent8Config;
   abortSignal?: AbortSignal | null;
+  /** Complete-call execution budget (`EXEC-001-T07`). */
+  budget?: ExecutionBudget;
 }
 
 /**
@@ -169,6 +172,9 @@ export async function prepareTask(
 
   const configSnapshot = asConfigSnapshot(options.config);
   const abortSignal = options.abortSignal;
+  const readContext: BackendReadContext | undefined = (abortSignal || options.budget)
+    ? { abortSignal: abortSignal ?? undefined, budget: options.budget }
+    : undefined;
 
   const below = args.output_price_below;
   const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
@@ -178,16 +184,17 @@ export async function prepareTask(
   const choosingSelections = new Map<ProviderId, ModelSelection>();
 
   const backend = previousSession
-    ? await resolveBackend(previousSession.backend, { config: configSnapshot })
+    ? await resolveBackend(previousSession.backend, { config: configSnapshot, context: readContext })
     : args.model !== undefined
-    ? await resolveBackendForModel(args.backend, args.model, { config: configSnapshot })
+    ? await resolveBackendForModel(args.backend, args.model, { config: configSnapshot, context: readContext })
     : await resolveBackend(args.backend, {
         config: configSnapshot,
+        context: readContext,
         ...(choosing
           ? {
               eligible: async (id, probe) => {
                 try {
-                  const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot });
+                  const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot, context: readContext });
                   choosingSelections.set(id, sel);
                   return undefined;
                 } catch (err) {
@@ -213,6 +220,7 @@ export async function prepareTask(
     selection = await selectModel(backend.id, backend.probe, { model: args.model, session: previousSession?.model }, {
       config: configSnapshot,
       catalog: backend.catalog,
+      context: readContext,
       ...(choosing ? { constraint: choosing } : {}),
     });
   }
@@ -226,7 +234,7 @@ export async function prepareTask(
   // An explicit model or effort is checked against the CLI's own catalog before the user is
   // asked for consent and before a model call.
   if (args.model !== undefined || args.reasoning_effort !== undefined) {
-    const catalog = await readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog });
+    const catalog = await readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog, context: readContext });
     const rejected = checkModelSelection(backend.id, catalog, model, args.reasoning_effort);
     if (rejected) throw new ToolError(rejected.code, rejected.message);
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
@@ -242,6 +250,7 @@ export async function prepareTask(
       const def = await selectModel(backend.id, backend.probe, {}, {
         config: configSnapshot,
         catalog: backend.catalog,
+        context: readContext,
       });
       defaultModel = def.model;
     } catch (err) {

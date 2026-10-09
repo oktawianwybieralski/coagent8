@@ -6,7 +6,7 @@ import { redactDiagnostic } from '../../security/redaction.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
-import { DEFAULT_PROBE_TIMEOUT_MS, type AdapterProbeResult, type CatalogModel, type ExecutionOptions, type ModelCatalog, type TerminalExecutionResult, type CliAdapter } from '../types.js';
+import { DEFAULT_PROBE_TIMEOUT_MS, type AdapterProbeResult, type BackendReadContext, type CatalogModel, type ExecutionOptions, type ModelCatalog, type TerminalExecutionResult, type CliAdapter } from '../types.js';
 import type { ExecutionError } from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
@@ -26,7 +26,7 @@ const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path
  * logged in, 1 when not). Token validity is proven only by an execution.
  * Read-only enforcement is checked on every run against `system/init`.
  */
-export async function probe(): Promise<AdapterProbeResult> {
+export async function probe(_context?: BackendReadContext): Promise<AdapterProbeResult> {
   const resolved = probeCommand('claude', name);
   if ('unresolved' in resolved) return resolved.unresolved;
   const command = resolved.command;
@@ -97,7 +97,7 @@ async function runLocalUsage(model: string | undefined, probe?: AdapterProbeResu
  * @returns Measured quota, or `undefined` when the CLI is older than the verified version,
  * the run reports a model turn or cost, or it prints no limits (API-key billing).
  */
-export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterProbeResult['quota']> {
+export async function inspectQuota(probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<AdapterProbeResult['quota']> {
   const run = await runLocalUsage(undefined, probe);
   return run ? parseClaudeUsage(run.usage) : undefined;
 }
@@ -108,8 +108,9 @@ export async function inspectQuota(probe?: AdapterProbeResult): Promise<AdapterP
  * `/usage` run: no model turn and no cost.
  * @param requested - The model or alias; omitted for the default.
  * @param probe - Probe result whose version is checked.
+ * @param _context - Optional cancellation and deadline context.
  */
-export async function observeModel(requested?: string, probe?: AdapterProbeResult): Promise<string | undefined> {
+export async function observeModel(requested?: string, probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<string | undefined> {
   if (requested !== undefined && !isValidModelIdentifier(requested)) return undefined;
   return (await runLocalUsage(requested, probe))?.model;
 }
@@ -151,10 +152,11 @@ export function parseClaudeModels(response: unknown): ModelCatalog | undefined {
  * `initialize` control request of a restricted stream-json session that receives no user
  * message: no model turn and no cost.
  * @param probe - The current probe; an unsupported version is not asked.
+ * @param _context - Optional cancellation and deadline context.
  * @returns The catalog, or undefined when the CLI does not answer, is older than
  * {@link MIN_CLAUDE_VERSION}, or reports a turn or result, which discards the read.
  */
-export async function listModels(probe?: AdapterProbeResult): Promise<ModelCatalog | undefined> {
+export async function listModels(probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<ModelCatalog | undefined> {
   if (probe && !probe.executionSupported) return undefined;
   const requestId = randomUUID();
   let channel: StdinChannel | undefined, response: unknown, turned = false;

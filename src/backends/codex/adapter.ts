@@ -6,6 +6,7 @@ import {
   DEFAULT_PROBE_TIMEOUT_MS,
   type AdapterProbeResult,
   type ExecutionOptions,
+  type BackendReadContext,
   type CliAdapter,
   type TerminalExecutionResult,
 } from '../types.js';
@@ -74,7 +75,7 @@ export function normalizeReasoningEffort(effort?: string | null, defaultEffort =
   return defaultEffort;
 }
 
-export async function probe(): Promise<AdapterProbeResult> {
+export async function probe(_context?: BackendReadContext): Promise<AdapterProbeResult> {
   const config = readCodexConfig();
   let installed = false;
   let version = 'unknown';
@@ -191,9 +192,9 @@ export const codexAdapter: CliAdapter = {
   name,
   probe,
   execute,
-  listModels: () => listCodexModels(configuredBackendCommand('codex'), VALID_REASONING_EFFORTS),
+  listModels: (_probe?: AdapterProbeResult, _context?: BackendReadContext) => listCodexModels(configuredBackendCommand('codex'), VALID_REASONING_EFFORTS),
   // ChatGPT sign-in limits from app-server; an API-key account has none and stays unmeasured.
-  inspectQuota: () => readCodexRateLimits(configuredBackendCommand('codex')),
+  inspectQuota: (_probe?: AdapterProbeResult, _context?: BackendReadContext) => readCodexRateLimits(configuredBackendCommand('codex')),
 };
 
 export default codexAdapter;

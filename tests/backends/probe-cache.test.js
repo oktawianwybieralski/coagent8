@@ -186,3 +186,57 @@ test('EXEC-001-T05: catalog observations expire on key mismatch, replaced adapte
     adapterRegistry.agy = original;
   }
 });
+
+test('EXEC-001-T08a: probeBackend, readModelCatalog and readObservedModel forward neutral BackendReadContext to adapters', async () => {
+  const { readModelCatalog, readObservedModel } = require('../../src/backends/probe-cache.ts');
+  const original = adapterRegistry.codex;
+  const captured = { probeCtx: null, catalogCtx: null, observeCtx: null };
+
+  const dummyController = new AbortController();
+  const testContext = {
+    abortSignal: dummyController.signal,
+    timeoutMs: 2500,
+  };
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => { throw new Error('must not run'); },
+    probe: async (context) => {
+      captured.probeCtx = context;
+      return { installed: true, executionSupported: true };
+    },
+    listModels: async (_probe, context) => {
+      captured.catalogCtx = context;
+      return { models: [{ id: 'test-model' }], source: 'fixture' };
+    },
+    observeModel: async (_requested, _probe, context) => {
+      captured.observeCtx = context;
+      return 'test-observed-model';
+    },
+  };
+
+  try {
+    const probe = await probeBackend('codex', { fresh: true, context: testContext });
+    assert.ok(probe.installed);
+    assert.equal(captured.probeCtx?.timeoutMs, 2500);
+    assert.equal(captured.probeCtx?.abortSignal, dummyController.signal);
+
+    const catalog = await readModelCatalog('codex', { fresh: true, context: testContext });
+    assert.ok(catalog);
+    assert.equal(captured.catalogCtx?.timeoutMs, 2500);
+    assert.equal(captured.catalogCtx?.abortSignal, dummyController.signal);
+
+    const observed = await readObservedModel('codex', 'test-model', { fresh: true, context: testContext });
+    assert.equal(observed, 'test-observed-model');
+    assert.equal(captured.observeCtx?.timeoutMs, 2500);
+    assert.equal(captured.observeCtx?.abortSignal, dummyController.signal);
+
+    // Also verify backward compatibility when context is omitted
+    captured.probeCtx = null;
+    await probeBackend('codex', { fresh: true });
+    assert.equal(captured.probeCtx, undefined);
+  } finally {
+    adapterRegistry.codex = original;
+  }
+});

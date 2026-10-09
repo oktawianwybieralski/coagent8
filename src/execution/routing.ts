@@ -12,8 +12,15 @@ import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
 import { loadConfig, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import { selectSmartQuotaBackend } from '../backends/availability.js';
 import { findCatalogEntry } from '../models/catalog.js';
-import type { AdapterProbeResult, CliAdapter, ModelCatalog } from '../backends/types.js';
+import type { AdapterProbeResult, CliAdapter, ModelCatalog, BackendReadContext } from '../backends/types.js';
 import { PROVIDERS, ToolError, type ProviderId } from '../contracts/index.js';
+
+export interface ResolveBackendOptions {
+  eligible?: (id: ProviderId, probe: AdapterProbeResult) => Promise<ToolError | undefined>;
+  config?: CoAgent8Config | ConfigSnapshot;
+  /** Optional cancellation and deadline context for backend reads (`EXEC-001-T08`). */
+  context?: BackendReadContext;
+}
 
 export interface ResolvedBackend {
   id: ProviderId;
@@ -56,10 +63,7 @@ export function setCallerProvider(provider: ProviderId | null): void {
  */
 export async function resolveBackend(
   requested?: string | null,
-  options: {
-    eligible?: (id: ProviderId, probe: AdapterProbeResult) => Promise<ToolError | undefined>;
-    config?: CoAgent8Config | ConfigSnapshot;
-  } = {}
+  options: ResolveBackendOptions = {}
 ): Promise<ResolvedBackend> {
   const config = options.config
     ? ('config' in options.config ? options.config.config : options.config)
@@ -71,7 +75,7 @@ export async function resolveBackend(
   const probes = new Map<ProviderId, AdapterProbeResult>();
   async function selected(id: ProviderId, smart = false): Promise<ResolvedBackend> {
     if (!candidates.includes(id)) throw new ToolError('POLICY_DENIED', `Provider '${id}' is disabled by routing.allowedBackends.`);
-    const probe = probes.get(id) || await probeBackend(id);
+    const probe = probes.get(id) || await probeBackend(id, { context: options.context });
     if (!probe.installed) throw new ToolError('CLI_NOT_FOUND', `Provider '${id}' is not installed; run doctor.`);
     if (probe.executionSupported === false) throw new ToolError('CLI_UNSUPPORTED', `Provider '${id}' version/profile is unsupported; run doctor.`);
     return { id, adapter: adapterRegistry[id], probe, isSmartQuota: smart };
@@ -79,7 +83,7 @@ export async function resolveBackend(
   const preferred = target && PROVIDERS.includes(target as ProviderId) ? target as ProviderId : undefined;
   if (preferred && !(raw === 'auto' && options.eligible)) return selected(preferred);
   if (target && !preferred && target !== 'smart_quota') throw new ToolError('INPUT_LIMIT', `Invalid routing target '${target}'.`);
-  const results = await Promise.all(candidates.map(async id => [id, await probeBackend(id)] as const));
+  const results = await Promise.all(candidates.map(async id => [id, await probeBackend(id, { context: options.context })] as const));
   for (const [id, probe] of results) probes.set(id, probe);
   const installed = candidates.filter(id => probes.get(id)?.installed && probes.get(id)?.executionSupported !== false);
   if (!installed.length) throw candidates.some(id=>probes.get(id)?.installed) ? new ToolError('CLI_UNSUPPORTED', 'No installed permitted CLI supports execution; run doctor.') : new ToolError('CLI_NOT_FOUND', 'No permitted CLI installed; run doctor.');
@@ -109,11 +113,11 @@ export async function resolveBackend(
 export async function resolveBackendForModel(
   requested: string | undefined,
   model: string,
-  options: { config?: CoAgent8Config | ConfigSnapshot } = {}
+  options: { config?: CoAgent8Config | ConfigSnapshot; context?: BackendReadContext } = {}
 ): Promise<ResolvedBackend> {
   const observedCatalogs = new Map<ProviderId, ModelCatalog>();
   const offers = (acceptUnlisted: boolean) => async (id: ProviderId, probe: AdapterProbeResult) => {
-    const catalog = await readModelCatalog(id, { probe });
+    const catalog = await readModelCatalog(id, { probe, context: options.context });
     if (catalog) observedCatalogs.set(id, catalog);
     if (catalog && findCatalogEntry(catalog, model)) return undefined;
     if (acceptUnlisted && (!catalog || catalog.acceptsUnlisted)) return undefined;
@@ -121,10 +125,10 @@ export async function resolveBackendForModel(
   };
   let resolved: ResolvedBackend;
   try {
-    resolved = await resolveBackend(requested, { eligible: offers(false), config: options.config });
+    resolved = await resolveBackend(requested, { eligible: offers(false), config: options.config, context: options.context });
   } catch (err) {
     if (!(err instanceof ToolError) || err.code !== 'MODEL_UNAVAILABLE') throw err;
-    resolved = await resolveBackend(requested, { eligible: offers(true), config: options.config });
+    resolved = await resolveBackend(requested, { eligible: offers(true), config: options.config, context: options.context });
   }
   const catalog = observedCatalogs.get(resolved.id);
   return catalog ? { ...resolved, catalog } : resolved;
