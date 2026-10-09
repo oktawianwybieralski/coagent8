@@ -1,3 +1,18 @@
+/**
+ * VS Code editor setting overrides and precedence mapping (`EXEC-001-T03a`).
+ *
+ * @remarks
+ * ## Precedence Rules
+ * - Settings passed in `coagent8_EDITOR_SETTINGS` take precedence over file-level configuration.
+ * - Scalar settings (`defaultBackend`, `routing.strategy`, backend defaults, approval thresholds)
+ *   replace the corresponding values from `config.json`.
+ * - Model list settings (`approval.alwaysAskModels`, `approval.neverAskModels`) are appended to
+ *   the file lists so that remembered approvals in `config.json` remain active.
+ * - Provenance tracking distinguishes scalar replacements (`editor`) from list merges (`merged`).
+ *
+ * @packageDocumentation
+ */
+
 /** Environment variable through which the VS Code extension passes explicit user settings. */
 export const EDITOR_SETTINGS_ENV = 'coagent8_EDITOR_SETTINGS';
 

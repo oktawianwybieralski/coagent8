@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 import { ToolError, errorCodeOf, type ProviderId } from '../contracts/index.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import { adapterRegistry } from '../backends/registry.js';
 import { readModelCatalog, readObservedModel } from '../backends/probe-cache.js';
 import { findCatalogEntry } from '../models/catalog.js';
@@ -37,7 +37,7 @@ export type { ModelSelection, ModelSource, PriceConstraint };
  * @param options - `observeAfresh` asks the CLI again instead of reusing an observed model
  * (doctor, which has just read the catalogs afresh). `constraint` applies a price limit when
  * neither the call nor a session names a model, as {@link choosePricedModel} describes; a
- * named model is returned as is and checked by the caller.
+ * named model is returned as is and checked by the caller. `config` supplies an existing snapshot or configuration.
  * @throws `MODEL_UNAVAILABLE` when no source names a model; `PRICE_LIMIT` when a constraint
  * applies and no model of this backend meets it.
  */
@@ -45,11 +45,18 @@ export async function selectModel(
   id: ProviderId,
   probe: AdapterProbeResult,
   requested: { model?: string; session?: string } = {},
-  options: { observeAfresh?: boolean; constraint?: PriceConstraint } = {}
+  options: {
+    observeAfresh?: boolean;
+    constraint?: PriceConstraint;
+    config?: CoAgent8Config | ConfigSnapshot;
+  } = {}
 ): Promise<ModelSelection> {
   const observe = { fresh: options.observeAfresh };
   const adapter = adapterRegistry[id];
-  const configured = loadConfig().backends[id]?.defaultModel;
+  const configObj = options.config
+    ? ('config' in options.config ? options.config.config : options.config)
+    : loadConfig();
+  const configured = configObj.backends[id]?.defaultModel;
   const chosen: ModelSelection | undefined = requested.model ? { model: requested.model, source: 'request' }
     : requested.session ? { model: requested.session, source: 'session' }
     : configured ? { model: configured, source: 'config' }

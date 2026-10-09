@@ -361,28 +361,29 @@ focused success/failure/timing fixtures and typecheck. Depends on T01.
 
 ### EXEC-001-T03 - supply effective configuration with provenance
 
-- [ ] **T03a - specify snapshot freshness.** Start: `loadConfig`, `getConfigFile`
+- [x] **T03a - specify snapshot freshness.** Start: `loadConfig`, `getConfigFile`
   in `src/config.ts`, `src/config-overrides.ts` and `src/paths.ts`. Document the
   current precedence and which settings must be re-read after consent. Define
   a request-local view and non-secret change identity. Done: cases for config
   path changes, invalid JSON, editor overrides and governance changes have an
   explicit expected outcome. Check: P; settle these choices before T03b.
-- [ ] **T03b - return settings and provenance together.** Implement T03a in the
+- [x] **T03b - return settings and provenance together.** Implement T03a in the
   existing config owner. Done: one load returns validated effective settings
   and each setting's source; defaults and malformed config behave as before;
   public diagnostic identities contain no raw secrets. Check: R, CONFIG.
-- [ ] **T03c - pass one view through preparation.** Start:
+- [x] **T03c - pass one view through preparation.** Start:
   `src/execution/routing.ts`, `selection.ts`, `consent.ts` and `controller.ts`.
   Supply the view explicitly and update all callers in this change. Done:
   unchanged preparation reads once, required post-consent revalidation still
   occurs and concurrent requests cannot overwrite each other's settings.
   Check: R, CONFIG/SELECT/POLICY; use counting fixture evidence from T01b.
-- [ ] **T03d - show redacted provenance in doctor.** Start:
+- [x] **T03d - show redacted provenance in doctor.** Start:
   `src/diagnostics/doctor.ts`, `src/mcp/tools/doctor.tool.ts` and
   `src/security/redaction.ts`. Use T03b data without copying precedence logic.
   Done: custom paths/old registration overrides are understandable, secrets
   and home paths are redacted, summary remains bounded and invalid config
   produces diagnostic evidence. Check: R, DOCTOR/MCP and REDACT if changed.
+  Evidence: [EXEC-001-T03 implementation](HANDOFF.md#exec-001-t03-effective-configuration-with-provenance).
 
 Acceptance: stable preparation does not repeatedly read the same config;
 custom paths, old registration overrides and editor settings remain effective.

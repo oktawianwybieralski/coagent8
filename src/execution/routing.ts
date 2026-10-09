@@ -9,7 +9,7 @@
  */
 import { adapterRegistry } from '../backends/registry.js';
 import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import { selectSmartQuotaBackend } from '../backends/availability.js';
 import { findCatalogEntry } from '../models/catalog.js';
 import type { AdapterProbeResult, CliAdapter } from '../backends/types.js';
@@ -41,14 +41,22 @@ export function setCallerProvider(provider: ProviderId | null): void {
  * Resolves the backend of a turn: an explicit backend, else the configured default, else one
  * chosen like smart_quota among the permitted installed CLIs.
  * @param requested - The call's or session's backend; `auto` or absent for the configured route.
- * @param options - `eligible` narrows an `auto` route: it returns why a backend cannot run the
- * turn, such as not listing the named model or having none below a user's price limit
- * (`AX-002`), or undefined. The configured default is kept when eligible; otherwise the
+ * @param options - `eligible` narrows an `auto` route; `config` supplies an existing snapshot or configuration.
+ * The configured default is kept when eligible; otherwise the
  * route chooses among the eligible backends. An explicit backend is never replaced.
  * @throws The reasons of every backend `eligible` rejected, with the first one's code, when none remains.
  */
-export async function resolveBackend(requested?: string | null, options: { eligible?: (id: ProviderId, probe: AdapterProbeResult) => Promise<ToolError | undefined> } = {}): Promise<ResolvedBackend> {
-  const config = loadConfig(), allowed = config.routing.allowedBackends;
+export async function resolveBackend(
+  requested?: string | null,
+  options: {
+    eligible?: (id: ProviderId, probe: AdapterProbeResult) => Promise<ToolError | undefined>;
+    config?: CoAgent8Config | ConfigSnapshot;
+  } = {}
+): Promise<ResolvedBackend> {
+  const config = options.config
+    ? ('config' in options.config ? options.config.config : options.config)
+    : loadConfig();
+  const allowed = config.routing.allowedBackends;
   const raw = requested || 'auto';
   let target = raw === 'auto' ? (config.routing.strategy === 'smart_quota' ? 'smart_quota' : config.defaultBackend) : raw;
   const candidates = PROVIDERS.filter(id => allowed.includes(id));
@@ -90,17 +98,21 @@ export async function resolveBackend(requested?: string | null, options: { eligi
  * check reports a model it does not offer.
  * @throws `MODEL_UNAVAILABLE` naming each permitted backend that does not offer the model.
  */
-export async function resolveBackendForModel(requested: string | undefined, model: string): Promise<ResolvedBackend> {
+export async function resolveBackendForModel(
+  requested: string | undefined,
+  model: string,
+  options: { config?: CoAgent8Config | ConfigSnapshot } = {}
+): Promise<ResolvedBackend> {
   const offers = (acceptUnlisted: boolean) => async (id: ProviderId) => {
     const catalog = await readModelCatalog(id);
     if (catalog && findCatalogEntry(catalog, model)) return undefined;
     if (acceptUnlisted && (!catalog || catalog.acceptsUnlisted)) return undefined;
     return new ToolError('MODEL_UNAVAILABLE', `does not list '${model}'; doctor lists its models.`);
   };
-  try { return await resolveBackend(requested, { eligible: offers(false) }); }
+  try { return await resolveBackend(requested, { eligible: offers(false), config: options.config }); }
   catch (err) {
     if (!(err instanceof ToolError) || err.code !== 'MODEL_UNAVAILABLE') throw err;
-    return resolveBackend(requested, { eligible: offers(true) });
+    return resolveBackend(requested, { eligible: offers(true), config: options.config });
   }
 }
 

@@ -41,7 +41,7 @@ import { checkPriceLimit, priceEvidence, readPrices } from '../models/prices.js'
 import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../models/governance.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import { consentFor } from './consent.js';
-import { rememberApprovedModel } from '../config.js';
+import { loadConfigSnapshot, rememberApprovedModel } from '../config.js';
 import { acquireAndResolveSession, getSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
@@ -220,6 +220,7 @@ async function executeTaskInternal(
 
   try {
     const prepHandle = startControllerPhase('preparation');
+    const configSnapshot = loadConfigSnapshot();
     // A server started by a backend inside a turn never starts another one (CUR-002).
     assertNotNestedTurn();
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before provider resolution.');
@@ -232,18 +233,24 @@ async function executeTaskInternal(
     const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
     // Without a named model, only backends with a model below the limit are chosen from.
     const choosing = constraint && args.model === undefined && !previous ? constraint : undefined;
-    const backend = previous ? await resolveBackend(previous.backend)
-      : args.model !== undefined ? await resolveBackendForModel(args.backend, args.model)
-      : await resolveBackend(args.backend, choosing ? { eligible: async (id, probe) => {
-        try { await selectModel(id, probe, {}, { constraint: choosing }); return undefined; }
-        catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
-      } } : {});
+    const backend = previous ? await resolveBackend(previous.backend, { config: configSnapshot })
+      : args.model !== undefined ? await resolveBackendForModel(args.backend, args.model, { config: configSnapshot })
+      : await resolveBackend(args.backend, {
+          config: configSnapshot,
+          ...(choosing ? { eligible: async (id, probe) => {
+            try { await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot }); return undefined; }
+            catch (err) { if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) return err; throw err; }
+          } } : {}),
+        });
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
     if (previous && !previous.threadId) throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
     // The model comes from the call, the session, the configuration or the CLI, never from the
     // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
     // every turn) and the turn name the same model.
-    const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model }, choosing ? { constraint: choosing } : {});
+    const { model } = await selectModel(backend.id, backend.probe, { model: args.model, session: previous?.model }, {
+      config: configSnapshot,
+      ...(choosing ? { constraint: choosing } : {}),
+    });
     if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
     // A continuation keeps its session's selection: the effort follows the model it was chosen for.
     const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previous?.model ? previous?.reasoningEffort : undefined);
@@ -271,7 +278,7 @@ async function executeTaskInternal(
 
     const consentHandle = startControllerPhase('consent');
     // Asked on every turn, for the model this turn runs (EXEC-001: price, not name).
-    const decision = await consentFor(backend.id, backend.probe, model);
+    const decision = await consentFor(backend.id, backend.probe, model, { config: configSnapshot });
     const consentWarnings: string[] = [];
     if (decision.ask) {
       if (!options.askConsent) throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));

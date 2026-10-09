@@ -50,6 +50,54 @@ export function getConfigFile(): string {
   return process.env.coagent8_CONFIG || path.join(getDataDir(), 'config.json');
 }
 
+/**
+ * Returns whether the configuration file path originates from a custom environment override
+ * (`coagent8_CONFIG`) or the default directory.
+ */
+export function getConfigFileOrigin(): 'custom-env' | 'default-path' {
+  return process.env.coagent8_CONFIG ? 'custom-env' : 'default-path';
+}
+
+/**
+ * Origin of a configuration value: default, file on disk, VS Code editor setting, or merged lists.
+ */
+export type SettingSource = 'default' | 'file' | 'editor' | 'merged';
+
+/**
+ * Provenance tracking the file resolution, disk presence, and per-setting origin.
+ */
+export interface ConfigProvenance {
+  /** Resolved path to the configuration file. */
+  configFile: string;
+  /** Whether the path originates from `coagent8_CONFIG` or the default data directory. */
+  configFileOrigin: 'custom-env' | 'default-path';
+  /** Whether the configuration file existed on disk when loaded. */
+  fileExisted: boolean;
+  /** File stats (mtime and size) when the file existed. */
+  fileStat?: { mtimeMs: number; size: number };
+  /** Explicit VS Code editor settings keys applied from `coagent8_EDITOR_SETTINGS`. */
+  editorOverridesApplied: EditorSettingKey[];
+  /** Editor settings present in environment but unapplied (e.g. diagnostic fallback on invalid file). */
+  editorOverridesAttempted?: EditorSettingKey[];
+  /** Provenance of individual configuration settings. */
+  sources: Record<string, SettingSource>;
+}
+
+/**
+ * Request-local configuration snapshot capturing validated effective settings, provenance,
+ * and a non-secret deterministic change identity.
+ */
+export interface ConfigSnapshot {
+  /** Validated effective configuration. */
+  config: CoAgent8Config;
+  /** Origin and provenance details for this configuration view. */
+  provenance: ConfigProvenance;
+  /** Deterministic SHA-256 hex digest representing this configuration state (contains no raw secrets). */
+  changeIdentity: string;
+  /** Error message if the configuration file was unreadable, malformed, or invalid (diagnostics only). */
+  error?: string;
+}
+
 /** Longest accepted `backends.<id>.executable`. */
 const MAX_EXECUTABLE_LENGTH = 1024;
 function isValidExecutable(value: unknown): boolean {
@@ -242,6 +290,164 @@ function loadFileConfig(configFile = getConfigFile()): CoAgent8Config {
   catch (err) { throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err); }
 }
 
+function collectSources(
+  rawFile: Record<string, unknown> | null,
+  editorSettings: Partial<Record<EditorSettingKey, unknown>>
+): Record<string, SettingSource> {
+  const sources: Record<string, SettingSource> = {
+    defaultBackend: 'default',
+    'routing.strategy': 'default',
+    'routing.allowedBackends': 'default',
+    'governance.priceMultiplier': 'default',
+    'governance.askAbovePrice': 'default',
+    'governance.alwaysAsk': 'default',
+    'governance.neverAsk': 'default',
+  };
+
+  if (rawFile) {
+    if (rawFile.defaultBackend !== undefined) sources.defaultBackend = 'file';
+    if (rawFile.routing && typeof rawFile.routing === 'object' && !Array.isArray(rawFile.routing)) {
+      const r = rawFile.routing as Record<string, unknown>;
+      if (r.strategy !== undefined) sources['routing.strategy'] = 'file';
+      if (r.allowedBackends !== undefined) sources['routing.allowedBackends'] = 'file';
+    }
+    if (rawFile.backends && typeof rawFile.backends === 'object' && !Array.isArray(rawFile.backends)) {
+      for (const [id, val] of Object.entries(rawFile.backends as Record<string, unknown>)) {
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          const b = val as Record<string, unknown>;
+          if (b.defaultModel !== undefined) sources[`backends.${id}.defaultModel`] = 'file';
+          if (b.executable !== undefined) sources[`backends.${id}.executable`] = 'file';
+        }
+      }
+    }
+    if (rawFile.governance && typeof rawFile.governance === 'object' && !Array.isArray(rawFile.governance)) {
+      const g = rawFile.governance as Record<string, unknown>;
+      if (g.priceMultiplier !== undefined) sources['governance.priceMultiplier'] = 'file';
+      if (g.askAbovePrice !== undefined) sources['governance.askAbovePrice'] = 'file';
+      if (g.alwaysAsk !== undefined) sources['governance.alwaysAsk'] = 'file';
+      if (g.neverAsk !== undefined) sources['governance.neverAsk'] = 'file';
+    }
+  }
+
+  for (const key of Object.keys(editorSettings) as EditorSettingKey[]) {
+    if (key === 'defaultBackend') sources.defaultBackend = 'editor';
+    else if (key === 'routing.strategy') sources['routing.strategy'] = 'editor';
+    else if (key === 'routing.allowedBackends') sources['routing.allowedBackends'] = 'editor';
+    else if (key === 'codex.defaultModel') sources['backends.codex.defaultModel'] = 'editor';
+    else if (key === 'claude.defaultModel') sources['backends.claude.defaultModel'] = 'editor';
+    else if (key === 'agy.defaultModel') sources['backends.agy.defaultModel'] = 'editor';
+    else if (key === 'approval.priceMultiplier') sources['governance.priceMultiplier'] = 'editor';
+    else if (key === 'approval.askAbovePrice') sources['governance.askAbovePrice'] = 'editor';
+    else if (key === 'approval.alwaysAskModels') {
+      sources['governance.alwaysAsk'] = sources['governance.alwaysAsk'] === 'file' ? 'merged' : 'editor';
+    } else if (key === 'approval.neverAskModels') {
+      sources['governance.neverAsk'] = sources['governance.neverAsk'] === 'file' ? 'merged' : 'editor';
+    }
+  }
+
+  return sources;
+}
+
+function computeChangeIdentity(config: CoAgent8Config, provenance: ConfigProvenance): string {
+  const payload = JSON.stringify({
+    schemaVersion: config.schemaVersion,
+    defaultBackend: config.defaultBackend,
+    routing: config.routing,
+    backends: config.backends,
+    governance: config.governance,
+    origin: provenance.configFileOrigin,
+    overrides: provenance.editorOverridesApplied,
+    existed: provenance.fileExisted,
+  });
+  return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16);
+}
+
+/**
+ * Loads a point-in-time configuration snapshot combining the validated effective settings,
+ * disk provenance, and deterministic non-secret change identity.
+ *
+ * @param configFile - Path to configuration file (defaults to `getConfigFile()`).
+ * @returns Immutable request-local `ConfigSnapshot`.
+ * @throws `ToolError` (`POLICY_DENIED`) when the file exists but cannot be read or validated.
+ */
+export function loadConfigSnapshot(configFile = getConfigFile()): ConfigSnapshot {
+  const configFileOrigin = getConfigFileOrigin();
+  const fileExisted = fs.existsSync(configFile);
+  let fileStat: { mtimeMs: number; size: number } | undefined;
+  let parsedRaw: Record<string, unknown> | null = null;
+  let base: CoAgent8Config;
+
+  if (fileExisted) {
+    try {
+      const stat = fs.statSync(configFile);
+      fileStat = { mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch {
+      // Best-effort stat
+    }
+    const unusable = (reason: string, cause: unknown) =>
+      new ToolError('POLICY_DENIED', `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`, { cause });
+    let raw: string;
+    try { raw = readBoundedFileSync(configFile); }
+    catch (err) { throw unusable(`the file cannot be read: ${(err as Error).message}`, err); }
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); }
+    catch (err) { throw unusable('Malformed JSON in the configuration file', err); }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      parsedRaw = parsed as Record<string, unknown>;
+    }
+    try { base = validateConfig(parsed); }
+    catch (err) { throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err); }
+  } else {
+    base = defaultConfig();
+  }
+
+  const unusableEditor = (reason: string, cause: unknown) =>
+    new ToolError('POLICY_DENIED', `Configuration Error: ${reason}; fix it in the VS Code user settings. Its routing policy cannot be applied until then.`, { cause });
+  let settings: Partial<Record<EditorSettingKey, unknown>>;
+  try { settings = readEditorSettings(); }
+  catch (err) { throw unusableEditor((err as Error).message, err); }
+
+  const editorOverridesApplied = Object.keys(settings) as EditorSettingKey[];
+  const combined = structuredClone(base) as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(settings) as [EditorSettingKey, unknown][]) {
+    // Each setting is validated alone first, so the error names the one to fix.
+    const single = structuredClone(base) as unknown as Record<string, unknown>;
+    applyEditorSetting(single, key, value);
+    try { validateConfig(single); }
+    catch (err) { throw unusableEditor(`VS Code setting coagent8.${key}: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
+    applyEditorSetting(combined, key, value);
+  }
+  let effective: CoAgent8Config;
+  try { effective = validateConfig(combined); }
+  catch (err) { throw unusableEditor(`VS Code settings coagent8.*: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
+
+  const sources = collectSources(parsedRaw, settings);
+  const provenance: ConfigProvenance = {
+    configFile,
+    configFileOrigin,
+    fileExisted,
+    ...(fileStat ? { fileStat } : {}),
+    editorOverridesApplied,
+    sources,
+  };
+  const changeIdentity = computeChangeIdentity(effective, provenance);
+
+  const snapshot: ConfigSnapshot = {
+    config: effective,
+    provenance,
+    changeIdentity,
+  };
+  configLoadObserver?.(snapshot);
+  return snapshot;
+}
+
+let configLoadObserver: ((snapshot: ConfigSnapshot) => void) | null = null;
+
+/** Sets an observer callback invoked whenever a configuration snapshot is loaded. */
+export function setConfigLoadObserver(observer: ((snapshot: ConfigSnapshot) => void) | null): void {
+  configLoadObserver = observer;
+}
+
 /**
  * Loads the effective configuration: the file, then the explicit VS Code user settings the
  * extension passed in `coagent8_EDITOR_SETTINGS`.
@@ -249,23 +455,44 @@ function loadFileConfig(configFile = getConfigFile()): CoAgent8Config {
  * names the file or the setting.
  */
 export function loadConfig(): CoAgent8Config {
-  const base = loadFileConfig();
-  const unusable = (reason: string, cause: unknown) =>
-    new ToolError('POLICY_DENIED', `Configuration Error: ${reason}; fix it in the VS Code user settings. Its routing policy cannot be applied until then.`, { cause });
-  let settings: Partial<Record<EditorSettingKey, unknown>>;
-  try { settings = readEditorSettings(); }
-  catch (err) { throw unusable((err as Error).message, err); }
-  const combined = structuredClone(base) as unknown as Record<string, unknown>;
-  for (const [key, value] of Object.entries(settings) as [EditorSettingKey, unknown][]) {
-    // Each setting is validated alone first, so the error names the one to fix.
-    const single = structuredClone(base) as unknown as Record<string, unknown>;
-    applyEditorSetting(single, key, value);
-    try { validateConfig(single); }
-    catch (err) { throw unusable(`VS Code setting coagent8.${key}: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
-    applyEditorSetting(combined, key, value);
+  return loadConfigSnapshot().config;
+}
+
+/**
+ * Loads configuration snapshot for diagnostics: an unusable file yields defaults with error details.
+ */
+export function loadConfigSnapshotForDiagnostics(configFile = getConfigFile()): ConfigSnapshot {
+  try {
+    return loadConfigSnapshot(configFile);
+  } catch (err) {
+    if (err instanceof ToolError && err.message.startsWith('Configuration Error:')) {
+      const configFileOrigin = getConfigFileOrigin();
+      const fileExisted = fs.existsSync(configFile);
+      const effective = defaultConfig();
+      let editorSettings: Partial<Record<EditorSettingKey, unknown>> = {};
+      try { editorSettings = readEditorSettings(); } catch { /* ignore for fallback */ }
+      const editorOverridesAttempted = Object.keys(editorSettings) as EditorSettingKey[];
+      const sources = collectSources(null, {});
+      const provenance: ConfigProvenance = {
+        configFile,
+        configFileOrigin,
+        fileExisted,
+        editorOverridesApplied: [],
+        ...(editorOverridesAttempted.length ? { editorOverridesAttempted } : {}),
+        sources,
+      };
+      const changeIdentity = computeChangeIdentity(effective, provenance);
+      const snapshot: ConfigSnapshot = {
+        config: effective,
+        provenance,
+        changeIdentity,
+        error: err.message,
+      };
+      configLoadObserver?.(snapshot);
+      return snapshot;
+    }
+    throw err;
   }
-  try { return validateConfig(combined); }
-  catch (err) { throw unusable(`VS Code settings coagent8.*: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
 }
 
 /**
@@ -273,11 +500,8 @@ export function loadConfig(): CoAgent8Config {
  * error, so doctor can still report the backends.
  */
 export function loadConfigForDiagnostics(): { config: CoAgent8Config; error?: string } {
-  try { return { config: loadConfig() }; }
-  catch (err) {
-    if (err instanceof ToolError && err.message.startsWith('Configuration Error:')) return { config: defaultConfig(), error: err.message };
-    throw err;
-  }
+  const snapshot = loadConfigSnapshotForDiagnostics();
+  return { config: snapshot.config, ...(snapshot.error ? { error: snapshot.error } : {}) };
 }
 
 function writeConfig(config: CoAgent8Config, configFile = getConfigFile()): void {

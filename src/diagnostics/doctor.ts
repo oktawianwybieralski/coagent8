@@ -1,5 +1,5 @@
 import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
-import { loadConfigForDiagnostics, recordDefaultModel } from '../config.js';
+import { loadConfigSnapshotForDiagnostics, recordDefaultModel, type ConfigSnapshot } from '../config.js';
 import { PROVIDERS, type ProviderId, type ModelCatalog } from '../contracts/index.js';
 import { inspectQuotas } from '../backends/availability.js';
 import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
@@ -36,6 +36,24 @@ export interface DoctorPrices {
   stale: boolean;
 }
 
+/** Redacted configuration provenance and identity reported by diagnostics. */
+export interface DoctorConfigProvenance {
+  /** Path to configuration file, with user home directory redacted. */
+  path: string;
+  /** Whether the path came from `coagent8_CONFIG` environment override or default directory. */
+  origin: 'custom-env' | 'default-path';
+  /** Whether the configuration file existed on disk. */
+  existed: boolean;
+  /** Active VS Code editor settings keys applied as overrides. */
+  overrides: string[];
+  /** Editor settings present in environment but inactive due to configuration error. */
+  attemptedOverrides?: string[];
+  /** Deterministic non-secret SHA-256 change identity. */
+  changeIdentity: string;
+  /** Error message if the configuration file was malformed or invalid. */
+  error?: string;
+}
+
 /**
  * Byte bound of the summary: agy shows a result of up to about 3,950 bytes inline and saves
  * a larger one to a file its model must read (owner decision of 2026-10-08).
@@ -69,6 +87,8 @@ export interface DoctorReport {
   ready_backends: ProviderId[];
   /** Why the configuration file is unusable; the report then shows the defaults and execution is refused. */
   configError?: string;
+  /** Provenance and change identity of the configuration snapshot used for diagnostics. */
+  configProvenance?: DoctorConfigProvenance;
   /**
    * MCP servers and plugins of the user's CLI configuration that a backend's turns offer the
    * model and CoAgent8 cannot disable (agy, `CUR-002`); only backends that report any.
@@ -94,7 +114,27 @@ export interface DoctorOptions {
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
-  const { config, error: configError } = loadConfigForDiagnostics();
+  const snapshot = loadConfigSnapshotForDiagnostics();
+  const { config, error: configError } = snapshot;
+  const configProvenance: DoctorConfigProvenance = {
+    path: redactDiagnostic(snapshot.provenance.configFile),
+    origin: snapshot.provenance.configFileOrigin,
+    existed: snapshot.provenance.fileExisted,
+    overrides: snapshot.provenance.editorOverridesApplied,
+    ...(snapshot.provenance.editorOverridesAttempted?.length ? { attemptedOverrides: snapshot.provenance.editorOverridesAttempted } : {}),
+    changeIdentity: snapshot.changeIdentity,
+    ...(configError ? { error: configError } : {}),
+  };
+  const configNotes: string[] = [];
+  if (configProvenance.origin === 'custom-env') {
+    configNotes.push(`configuration: custom path active from coagent8_CONFIG (${configProvenance.path})`);
+  }
+  if (configProvenance.overrides.length) {
+    configNotes.push(`configuration: ${configProvenance.overrides.length} editor setting override(s) active (${configProvenance.overrides.join(', ')})`);
+  }
+  if (configProvenance.attemptedOverrides?.length) {
+    configNotes.push(`configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`);
+  }
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
   const probePromises = selected.map(async id => {
     const span = tracker.startPhase('health_probes');
@@ -256,8 +296,9 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     defaultModels,
     prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
     selection,
-    recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes, ...observerNotes],
+    recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes, ...configNotes, ...observerNotes],
     ...(configError ? { configError } : {}),
+    configProvenance,
     inheritedTools,
     trace,
   };
@@ -390,6 +431,8 @@ export interface ModelReport {
   backends: Partial<Record<ProviderId, ModelReportBackend>>;
   selection: ModelCandidate[];
   recommendations: string[];
+  /** Provenance and change identity of the configuration snapshot used for diagnostics. */
+  configProvenance?: DoctorConfigProvenance;
   trace?: ExecutionTrace;
 }
 
@@ -401,7 +444,27 @@ export interface ModelReport {
 export async function runModelReport(options: DoctorOptions = {}): Promise<ModelReport> {
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
-  const { config, error: configError } = loadConfigForDiagnostics();
+  const snapshot = loadConfigSnapshotForDiagnostics();
+  const { config, error: configError } = snapshot;
+  const configProvenance: DoctorConfigProvenance = {
+    path: redactDiagnostic(snapshot.provenance.configFile),
+    origin: snapshot.provenance.configFileOrigin,
+    existed: snapshot.provenance.fileExisted,
+    overrides: snapshot.provenance.editorOverridesApplied,
+    ...(snapshot.provenance.editorOverridesAttempted?.length ? { attemptedOverrides: snapshot.provenance.editorOverridesAttempted } : {}),
+    changeIdentity: snapshot.changeIdentity,
+    ...(configError ? { error: configError } : {}),
+  };
+  const configNotes: string[] = [];
+  if (configProvenance.origin === 'custom-env') {
+    configNotes.push(`configuration: custom path active from coagent8_CONFIG (${configProvenance.path})`);
+  }
+  if (configProvenance.overrides.length) {
+    configNotes.push(`configuration: ${configProvenance.overrides.length} editor setting override(s) active (${configProvenance.overrides.join(', ')})`);
+  }
+  if (configProvenance.attemptedOverrides?.length) {
+    configNotes.push(`configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`);
+  }
   const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
   const probes = await Promise.all(selected.map(async id => {
     const span = tracker.startPhase('health_probes');
@@ -483,7 +546,8 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
     prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
     backends,
     selection: selected.flatMap((id, index) => probes[index].installed ? listModelCandidates(id, catalogs[index], defaults[index], prices, config.governance) : []),
-    recommendations: [...recommendations, ...observerNotes],
+    recommendations: [...recommendations, ...configNotes, ...observerNotes],
+    configProvenance,
     trace,
   };
 }

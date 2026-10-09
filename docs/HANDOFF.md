@@ -44,12 +44,13 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T02 (measure phases without changing timeout behavior):
-T02a (monotonic timing primitive), T02b (controller instrumentation across 5 phases with onTiming observer),
-and T02c (outer preparation, git_collection and diagnostic health_probes/model_report instrumentation).
-Independent reviewer approval obtained (Turn 10: VERDICT: READY).
+The current completed task is EXEC-001-T03 (supply effective configuration with provenance):
+T03a (freshness and precedence specification), T03b (configuration snapshot loader with provenance),
+T03c (single snapshot passed through preparation in routing, selection, consent, controller),
+and T03d (doctor diagnostic provenance and custom-env recommendations).
+Independent reviewer approval obtained (session syn_sess_8a6da1da4c3e406e38687ab7, Turn 2: VERDICT: READY).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T03 (supply effective configuration with provenance).
+Next pending card: EXEC-001-T04 (extract cohesive task preparation).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -709,6 +710,45 @@ on Windows 11, Node 26.10.0, source loaded through tsx:
 No independent review, six-job CI or native acceptance is established for this
 branch. Full native lifecycle and consent acceptance remain in ROADMAP.
 
+## EXEC-001-T03 effective configuration with provenance
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: supply effective configuration with provenance across `src/config.ts`,
+`src/config-overrides.ts`, `src/paths.ts`, `src/execution/routing.ts`,
+`src/execution/selection.ts`, `src/execution/consent.ts`, `src/execution/controller.ts`,
+`src/diagnostics/doctor.ts`, and `tests/config-snapshot.test.js`.
+
+### Modules and ownership changes:
+- `src/config.ts`:
+  - Added `ConfigSnapshot`, `ConfigProvenance`, `SettingSource` types, and `getConfigFileOrigin()`.
+  - Added `loadConfigSnapshot(configFile)` returning immutable request-local snapshot containing effective `CoAgent8Config`, granular per-setting source origin mapping (`default`, `file`, `editor`, `merged`), file stats, applied editor overrides, and non-secret 16-character SHA-256 `changeIdentity`.
+  - Added `loadConfigSnapshotForDiagnostics(configFile)`: upon configuration errors, returns untouched defaults (`defaultConfig()`), records attempted unapplied editor settings separately in `editorOverridesAttempted`, sets `editorOverridesApplied: []`, and attributes all sources to `'default'`, ensuring truthful fallback diagnostic provenance.
+  - Added `setConfigLoadObserver(observer)` for test and telemetry observation.
+  - Preserved backward compatibility: `loadConfig()` returns `loadConfigSnapshot().config` and `loadConfigForDiagnostics()` returns `{ config: snapshot.config, error: snapshot.error }`.
+- `src/config-overrides.ts`:
+  - Added package documentation specifying scalar replacement vs list merging (`alwaysAsk`, `neverAsk`) precedence rules.
+- `src/paths.ts`:
+  - Documented `coagent8_DIR` environment precedence and provenance origin tracking.
+- `src/execution/`:
+  - Updated `resolveBackend`, `resolveBackendForModel`, `selectModel`, and `consentFor` to accept optional `config` (`ConfigSnapshot | CoAgent8Config`), eliminating duplicate configuration loading.
+  - Updated `controller.ts` (`executeTaskInternal`): loads `configSnapshot = loadConfigSnapshot()` exactly once at preparation start and threads it through `resolveBackend`, `selectModel`, and `consentFor`.
+- `src/diagnostics/doctor.ts`:
+  - Added `DoctorConfigProvenance` interface exposing `path` (redacted via `redactDiagnostic`), `origin` (`custom-env` vs `default-path`), `existed`, `overrides`, `attemptedOverrides`, `changeIdentity`, and `error`.
+  - Updated `DoctorReport` and `ModelReport` to include `configProvenance`.
+  - Added clear recommendation notes distinguishing active custom paths (`coagent8_CONFIG`), active editor overrides, and inactive attempted overrides when configuration loading fails.
+  - Retained strict byte bounds (`DOCTOR_SUMMARY_MAX_BYTES: 3900`) in `formatDoctorSummary` and `formatModelSummary`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (103 source files, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 86/86 pass (`tests/config-snapshot.test.js`, `tests/config.test.js`, `tests/config-editor-settings.test.js`, `tests/execution/routing.test.js`, `tests/execution/model-routing.test.js`, `tests/models/selection.test.js`, `tests/models/governance.test.js`, `tests/execution/price-limit.test.js`, `tests/diagnostics/doctor.test.js`, `tests/mcp/server.test.js`, `tests/mcp/result.test.js`, `tests/mcp/surface.test.js`, `tests/mcp/tools/doctor.test.js`, `tests/execution/baseline.test.js`).
+- PASS: Single-load preparation regression: `tests/config-snapshot.test.js` verified preparation executes with exactly 1 snapshot load.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings).
+- PASS: `node tests/run.cjs` full test suite (474 tests: 471 pass, 0 fail, 3 skipped, duration 149.0 s, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review approval obtained via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_8a6da1da4c3e406e38687ab7`, Turn 2: `VERDICT: READY`).
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;
@@ -716,3 +756,4 @@ workspace/branch/target plus base/candidate or dirty-diff identity; changes;
 checks with commands, platform, PASS/FAIL/NOT_RUN and evidence; unresolved work and
 next action. Link to rules instead of copying them. A reviewer needs original
 requirements and the actual candidate, not just an implementation summary.
+
