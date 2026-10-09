@@ -49,6 +49,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`dc8353b`](https://github.com/oktawianwybieralski/coagent8/commit/dc8353bc9d9229a08b9eccc38354073dfdfdcf9d) **execution:** Implement phase timing and instrumentation (EXEC-001-T02)
 - [`d6fb71e`](https://github.com/oktawianwybieralski/coagent8/commit/d6fb71ef2b7ba7a515865eacd483a4db97586223) **config:** Supply effective configuration with provenance (EXEC-001-T03)
 - [`76b9560`](https://github.com/oktawianwybieralski/coagent8/commit/76b95608f5f84276ce3f9781faeb2a8fbd58a3a2) **execution:** Reuse observations within preparation (EXEC-001-T05)
+- [`5f267fe`](https://github.com/oktawianwybieralski/coagent8/commit/5f267fecb47bc8d05bd4bd9b76738325885822cb) **execution:** Guarantee finalization after resource acquisition (EXEC-001-T06)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
