@@ -153,6 +153,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`0a932ac`](https://github.com/oktawianwybieralski/coagent8/commit/0a932acec72d8959b9e7a6600af251ff05752499) **setup:** Update owned Claude and agy registrations to the new runtime
 - [`af9f7d2`](https://github.com/oktawianwybieralski/coagent8/commit/af9f7d2f1b6869f053e6b20b8d6ff59d811edf7d) **boundaries:** Reject SDK and indirect transport dependencies
 - [`a90cd40`](https://github.com/oktawianwybieralski/coagent8/commit/a90cd40ca21d499688e28a2754ce8b5126d6c7c8) **tests:** Bound concurrency barrier and ensure guaranteed task settlement
+- [`ad25d4e`](https://github.com/oktawianwybieralski/coagent8/commit/ad25d4e2810dedc7891a9d57ebbc9b9770318579) **tests:** Bound child readiness and teardown in lock contention test (EXEC-001-T09b)
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
