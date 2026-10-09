@@ -27,6 +27,8 @@ const {
   getSessionFilePath,
 } = require('../../src/sessions/session.ts');
 const { withFileLock } = require('../../src/storage/lock.ts');
+const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
+const { ToolError } = require('../../src/contracts/error.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -369,4 +371,249 @@ test('closing expired, invalidated or already closed sessions checks workspace u
     await handleCloseSession({session_handle:s.sessionHandle,workspace_path:tempDir});
     assert.equal(JSON.parse(fs.readFileSync(file)).state,'closed');
   }
+});
+
+test('EXEC-001-T09c: aborting contender waiting for busy session lock rejects without corrupting active turn or stranding subsequent contenders', async () => {
+  const sess = createSession('codex', path.join(tempDir, 'contender-abort-test'));
+  const handle = sess.sessionHandle;
+  const file = getSessionFilePath(handle);
+
+  // 1. Acquire active turn on the session
+  const turn1 = await acquireSessionTurn(handle);
+  assert.equal(turn1.ok, true);
+  const activeToken = turn1.data.token;
+  assert.equal(getSession(handle).turnToken, activeToken);
+
+  // 2. Simulate storage lock contention: hold session file lock
+  let lockAcquired;
+  const lockAcquiredPromise = new Promise(resolve => { lockAcquired = resolve; });
+  let allowLockRelease;
+  const allowLockReleasePromise = new Promise(resolve => { allowLockRelease = resolve; });
+
+  const holdingLockPromise = withFileLock(file, async () => {
+    lockAcquired();
+    await allowLockReleasePromise;
+  });
+
+  await lockAcquiredPromise;
+
+  // 3. Contender 2 attempts acquisition with abortSignal while lock is held
+  const ac2 = new AbortController();
+  const contender2Promise = acquireSessionTurn(handle, { abortSignal: ac2.signal });
+
+  // Contender 3 queues up behind Contender 2
+  const contender3Promise = acquireSessionTurn(handle);
+
+  // 4. Abort Contender 2 while waiting in queue
+  ac2.abort();
+
+  // Contender 2 must reject immediately with ABORTED ToolError
+  await assert.rejects(contender2Promise, err => {
+    assert.ok(err instanceof ToolError, 'Must throw ToolError');
+    assert.equal(err.code, 'ABORTED', 'Error code must be ABORTED');
+    return true;
+  });
+
+  // 5. Active turn must remain completely untouched
+  const sessionDuring = getSession(handle);
+  assert.ok(sessionDuring, 'Session record must exist');
+  assert.equal(sessionDuring.turnToken, activeToken, 'Active turn token must not be modified or cleared');
+  assert.equal(sessionDuring.activePid, process.pid, 'Active PID must remain process.pid');
+
+  // 6. Release file lock so Contender 3 can proceed
+  allowLockRelease();
+  await holdingLockPromise;
+
+  // Contender 3 finishes lock wait and receives busy (since active turn is still executing)
+  const result3 = await contender3Promise;
+  assert.equal(result3.ok, false, 'Contender 3 sees session busy');
+  assert.ok(result3.error.includes('busy executing another turn'));
+
+  // 7. Cleanly release active turn 1
+  await releaseSessionTurn(handle, activeToken);
+
+  // 8. Subsequent contender 4 acquires cleanly without hanging or being stranded
+  const contender4 = await acquireSessionTurn(handle);
+  assert.equal(contender4.ok, true, 'Subsequent contender acquires successfully');
+  assert.notEqual(contender4.data.token, activeToken);
+  await releaseSessionTurn(handle, contender4.data.token);
+});
+
+test('EXEC-001-T09c: expired execution budget before or during session acquisition rejects without leaving turnToken or orphaned session', async () => {
+  // Case A: Pre-expired budget for new session creation
+  const expiredBudget = createExecutionBudget({ totalBudgetMs: 1, teardownAllowanceMs: 1 });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(expiredBudget.isExecutionExpired(), true, 'Budget must be expired');
+
+  const dir = getSessionsDir();
+  const filesBefore = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+
+  await assert.rejects(
+    acquireAndResolveSession(null, 'codex', tempDir, { budget: expiredBudget }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    }
+  );
+
+  const filesAfter = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  assert.deepEqual(filesAfter, filesBefore, 'No orphaned session file should be created for pre-expired budget');
+
+  // Case B: Pre-expired budget on existing session
+  const sess = createSession('codex', path.join(tempDir, 'existing-expired-test'));
+  const handle = sess.sessionHandle;
+  const initialRecord = getSession(handle);
+  assert.equal(initialRecord.turnToken, null);
+
+  await assert.rejects(
+    acquireAndResolveSession(handle, 'codex', path.join(tempDir, 'existing-expired-test'), { budget: expiredBudget }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    }
+  );
+
+  const recordAfter = getSession(handle);
+  assert.equal(recordAfter.turnToken, null, 'No turnToken created on existing session');
+  assert.equal(recordAfter.state, 'idle', 'Session remains idle');
+  assert.equal(recordAfter.activePid, null, 'ActivePid remains null');
+
+  // Case C: Budget expires while waiting for session lock
+  const file = getSessionFilePath(handle);
+  let lockAcquired;
+  const lockAcquiredPromise = new Promise(resolve => { lockAcquired = resolve; });
+  let allowLockRelease;
+  const allowLockReleasePromise = new Promise(resolve => { allowLockRelease = resolve; });
+
+  const lockHold = withFileLock(file, async () => {
+    lockAcquired();
+    await allowLockReleasePromise;
+  });
+
+  await lockAcquiredPromise;
+
+  // Short budget that expires while waiting for lock
+  const shortBudget = createExecutionBudget({ totalBudgetMs: 50, teardownAllowanceMs: 25 });
+  const inFlightPromise = acquireSessionTurn(handle, { budget: shortBudget });
+
+  await assert.rejects(
+    inFlightPromise,
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    }
+  );
+
+  allowLockRelease();
+  await lockHold;
+
+  const recordAfterContention = getSession(handle);
+  assert.equal(recordAfterContention.turnToken, null, 'No orphaned turnToken after in-flight timeout');
+  assert.equal(recordAfterContention.state, 'idle', 'Session remains idle');
+});
+
+test('EXEC-001-T09c: acquireSessionTurn surfaces expiry ToolError even if rollback write fails', async () => {
+  const sess = createSession('codex', path.join(tempDir, 'failed-rollback-test'));
+  const handle = sess.sessionHandle;
+  const ac = new AbortController();
+
+  const fsp = require('node:fs/promises');
+  const originalRename = fsp.rename;
+  let callCount = 0;
+  fsp.rename = async function (...args) {
+    if (typeof args[1] === 'string' && args[1].includes(handle)) {
+      callCount++;
+      if (callCount === 1) {
+        ac.abort();
+        return originalRename.apply(this, args);
+      }
+      throw new Error('EIO: simulated disk write failure during rollback');
+    }
+    return originalRename.apply(this, args);
+  };
+
+  try {
+    await assert.rejects(
+      acquireSessionTurn(handle, { abortSignal: ac.signal }),
+      err => {
+        assert.ok(err instanceof ToolError, 'Must surface ToolError despite rollback failure');
+        assert.equal(err.code, 'ABORTED');
+        return true;
+      }
+    );
+  } finally {
+    fsp.rename = originalRename;
+  }
+
+  // Verify that this process holds no active turn ownership in memory
+  await assert.rejects(
+    updateSession(handle, { threadId: 'thread-test' }),
+    err => {
+      assert.ok(err.message.includes('Turn ownership mismatch'));
+      return true;
+    }
+  );
+});
+
+test('EXEC-001-T09c: session lock timeout under contention returns {ok:false} when options are provided without expiry', async () => {
+  const sess = createSession('codex', path.join(tempDir, 'lock-contention-options-test'));
+  const handle = sess.sessionHandle;
+  const file = getSessionFilePath(handle);
+
+  let lockHeld;
+  const lockHeldPromise = new Promise(resolve => { lockHeld = resolve; });
+  let allowRelease;
+  const allowReleasePromise = new Promise(resolve => { allowRelease = resolve; });
+
+  const hold = withFileLock(file, async () => {
+    lockHeld();
+    await allowReleasePromise;
+  });
+
+  await lockHeldPromise;
+
+  const result = await acquireSessionTurn(handle, { timeoutMs: 30 });
+  assert.equal(result.ok, false, 'Must return {ok:false} rather than throwing on plain contention timeout');
+  assert.ok(result.error, 'Must provide error message');
+
+  allowRelease();
+  await hold;
+});
+
+test('EXEC-001-T09c: acquireSessionTurn rejects with TIMEOUT when real budget remainingExecutionMs reaches zero at sub-millisecond boundary', async () => {
+  const sess = createSession('codex', path.join(tempDir, 'budget-zero-remaining-test'));
+  const handle = sess.sessionHandle;
+
+  let currentClock = 1000;
+  const customClock = () => currentClock;
+  const realBudget = createExecutionBudget({
+    totalBudgetMs: 100,
+    teardownAllowanceMs: 20,
+    clock: customClock,
+  });
+
+  // Advance clock to 1079.8ms:
+  // executionDeadlineMs is 1080ms.
+  // remainingExecutionMs = Math.floor(1080 - 1079.8) = Math.floor(0.2) = 0.
+  // isExecutionExpired = 1079.8 >= 1080 = false.
+  currentClock = 1079.8;
+  assert.equal(realBudget.remainingExecutionMs(), 0, 'remainingExecutionMs must be 0');
+  assert.equal(realBudget.isExecutionExpired(), false, 'isExecutionExpired must be false at 1079.8ms');
+
+  await assert.rejects(
+    acquireSessionTurn(handle, { budget: realBudget }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      assert.match(err.message, /Execution budget expired/);
+      return true;
+    }
+  );
+
+  const s = getSession(handle);
+  assert.equal(s.turnToken, null);
+  assert.equal(s.state, 'idle');
 });

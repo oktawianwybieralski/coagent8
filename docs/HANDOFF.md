@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T09b (cancel lock waiters safely).
+The current completed task is EXEC-001-T09c (stop session acquisition after expiry).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T09c (stop session acquisition after expiry).
+Next pending card: EXEC-001-T10a (cancel a pending approval).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1253,6 +1253,42 @@ Scope: safe cancellation of lock waiters across in-process FIFO queues and on-di
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_e823e6e0bc8ff25dab630111`, Turn 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T09c: stop session acquisition after expiry
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: stop session acquisition after expiry or cancellation across `src/sessions/session.ts`, `src/execution/controller.ts`, `src/sessions/history/writer.ts`, and `src/sessions/history/retention.ts`, verified with concurrency and lifecycle tests in `tests/sessions/session.test.js` and `tests/execution/controller-finalization.test.js`.
+
+### Implemented mechanisms:
+1. **Polymorphic context and budget propagation**:
+   - `acquireAndResolveSession`, `acquireSessionTurn`, and `withSessionLock` accept optional timeout (`number`), direct `AbortSignal`, options object (`FileLockOptions`), or `BackendReadContext`, maintaining 100% backward compatibility for existing callers without options.
+   - `parseSessionOptions` extracts `budget` and computes `effectiveSignal` combining caller signals with `budget.executionSignal`.
+   - Shared helpers `isBudgetExpired`, `isSessionExpired`, and `assertSessionNotExpired` unify monotonic budget expiration (`isExecutionExpired() || isTimedOut() || remainingExecutionMs() <= 0`) and signal cancellation checks across `session.ts` and `controller.ts:assertSessionContextNotExpired`.
+2. **Pre-flight & synchronous boundary checks**:
+   - Immediate rejection with `ToolError('ABORTED')` or `ToolError('TIMEOUT')` before resolving or creating new session files on disk.
+   - Additional pre-flight checks inside `acquireSessionTurn` before lock acquisition and within the locked critical section before record mutation.
+3. **Uninterruptible atomic I/O documentation & rollback guarantees**:
+   - Atomic file writes (`atomicWrite` via `fs.rename`) represent uninterruptible OS operations.
+   - If cancellation or budget expiration occurs across a write boundary immediately after saving running turn state, locked rollback to `idle` state is executed: `turnToken` is nulled, `activePid` and `activeTurnAt` are cleared, `turnCount` is decremented, and in-process tracking (`ownedTurns.delete(handle)`) is cleaned up.
+   - Newly initialized empty session files from `acquireAndResolveSession` are unlinked upon abort or failure, leaving no orphaned session files on disk.
+4. **Fault isolation and rollback failure resilience**:
+   - If rollback file write fails due to simulated or unexpected OS disk error (e.g. `EIO`), a warning is logged to stderr, memory state is cleaned up, and the cancellation/expiry `ToolError` is still surfaced without hanging.
+5. **Lock contention timeout vs cancellation contract**:
+   - Contention timeout under ordinary options without cancellation returns `{ ok: false, error }`, allowing `controller.ts` to map it to `SESSION_BUSY`.
+   - Aborting contenders or expiring execution budgets reject with typed `ToolError('ABORTED')` or `ToolError('TIMEOUT')` without corrupting active turns or stranding subsequent contenders.
+6. **History reservation bounding**:
+   - History writer initialization (`createHistoryWriter`) bounds initial pruning and header capacity reservation (`initLockOptions`), preventing leaked byte reservations when aborted before execution.
+   - Subsequent event appends and terminal `turn_finished` flushes run unbounded to uphold Primary Task Supremacy.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 532 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 31 tests (31 pass, 0 fail, exit code 0): `node tests/run.cjs tests/sessions/session.test.js tests/execution/controller-finalization.test.js`.
+- PASS: Full test suite: 569 tests (566 pass, 0 fail, 3 skipped, duration 139.1 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_15716fab30909ee18968f610`, Rounds 6, 8, 9: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
 
 ## Compact handoff contract
 

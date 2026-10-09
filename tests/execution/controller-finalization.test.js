@@ -40,6 +40,8 @@ const {
   releaseSessionTurn,
   cancelSession,
 } = require('../../src/sessions/session.ts');
+const { getHistoryDir, readCapacityMeta, calculateDirectoryBytes, createHistoryWriter, reserveCapacity } = require('../../src/sessions/history/index.ts');
+const { ToolError } = require('../../src/contracts/error.ts');
 const { saveConfig } = require('../../src/config.ts');
 const { readResult } = require('../helpers/result.cjs');
 
@@ -546,4 +548,103 @@ test('T06c: finishing turn does not delete replacement turn registration in acti
   assert.equal(turn2Cancelled, true, 'Turn 2 must have observed abort signal');
 });
 
+test('EXEC-001-T09c: cancellation during history writer initialization releases turn lease and leaks no capacity reservation', async () => {
+  setupMockAdapter(async () => {
+    throw new Error('Adapter must not execute if writer initialization is cancelled');
+  });
+
+  const session = await createTestSession();
+  const handle = session.sessionHandle;
+  const historyDir = getHistoryDir();
+  const metaFile = path.join(historyDir, '.capacity.meta');
+
+  // Measure initial capacity meta and directory bytes
+  const initialMeta = await readCapacityMeta(metaFile);
+  const initialBytes = await calculateDirectoryBytes(historyDir);
+
+  const ac = new AbortController();
+
+  await assert.rejects(
+    async () => {
+      await executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir, ac.signal, null, {
+        createHistoryWriter: () => {
+          ac.abort(new Error('Caller cancelled during writer initialization'));
+          throw new ToolError('ABORTED', 'Writer initialization cancelled');
+        },
+      });
+    },
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+
+  // Assert that turn lease was released immediately (activePid is null, turn can be acquired)
+  const sessionAfter = getSession(handle);
+  assert.equal(sessionAfter.activePid, null, 'Session activePid must be null after cancellation');
+  assert.equal(sessionAfter.turnToken, null, 'Turn token must be null after cancellation');
+
+  const acquireCheck = await acquireSessionTurn(handle);
+  assert.equal(acquireCheck.ok, true, 'Subsequent turn acquisition must succeed immediately');
+  await releaseSessionTurn(handle, acquireCheck.data.token);
+
+  // Assert no capacity reservation leaked
+  const metaAfter = await readCapacityMeta(metaFile);
+  const bytesAfter = await calculateDirectoryBytes(historyDir);
+  assert.equal(metaAfter, initialMeta, 'Capacity meta must not leak reserved bytes');
+  assert.equal(bytesAfter, initialBytes, 'Directory bytes must remain unchanged');
+});
+
+test('EXEC-001-T09c: real history writer with cancelled context rejects reserveCapacity without leaking bytes', async () => {
+  const session = await createTestSession();
+  const handle = session.sessionHandle;
+  const historyDir = getHistoryDir();
+  const metaFile = path.join(historyDir, '.capacity.meta');
+
+  const initialMeta = await readCapacityMeta(metaFile);
+  const initialBytes = await calculateDirectoryBytes(historyDir);
+
+  const ac = new AbortController();
+  ac.abort();
+
+  // 1. Direct reserveCapacity with aborted signal rejects and leaves meta unchanged
+  await assert.rejects(
+    async () => {
+      await reserveCapacity(historyDir, 1024, handle, { abortSignal: ac.signal });
+    },
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+
+  let metaAfter = await readCapacityMeta(metaFile);
+  assert.equal(metaAfter, initialMeta, 'Capacity meta must remain unchanged after aborted reserveCapacity');
+
+  // 2. Real createHistoryWriter with aborted signal rejects on flush and leaves meta unchanged
+  const writer = createHistoryWriter(handle, tempDir, 'agy', randomUUID(), { abortSignal: ac.signal });
+  writer.accept({
+    type: 'assistant_message',
+    messageId: randomUUID(),
+    text: 'Message under aborted signal',
+  });
+
+  await assert.rejects(
+    async () => {
+      await writer.flush();
+    },
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+
+  metaAfter = await readCapacityMeta(metaFile);
+  const bytesAfter = await calculateDirectoryBytes(historyDir);
+  assert.equal(metaAfter, initialMeta, 'Capacity meta must remain unchanged after aborted writer flush');
+  assert.equal(bytesAfter, initialBytes, 'Directory bytes must remain unchanged');
+});
 

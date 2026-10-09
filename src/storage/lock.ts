@@ -145,7 +145,7 @@ function isAbortSignal(val: unknown): val is AbortSignal {
   );
 }
 
-function combineSignals(
+export function combineSignals(
   signal1?: AbortSignal | null,
   signal2?: AbortSignal | null
 ): AbortSignal | null {
@@ -339,6 +339,14 @@ export async function withFileLock<T>(
     try {
       await Promise.race([prev, timer, abortPromise]);
       acquiredInProcess = true;
+    } catch (raceErr) {
+      if (budget && (budget.isExecutionExpired() || budget.isTimedOut())) {
+        throw toAbortError(budget.abortReason(), budget);
+      }
+      if (effectiveSignal?.aborted) {
+        throw toAbortError(effectiveSignal.reason, budget);
+      }
+      throw raceErr;
     } finally {
       if (timerHandle) clearTimeout(timerHandle);
       if (abortListener && effectiveSignal) {

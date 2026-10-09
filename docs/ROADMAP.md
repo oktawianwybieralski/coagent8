@@ -552,12 +552,13 @@ documentation before changing provider-specific CLI/API behavior. Depends on T07
   release another owner's lease. Check: R, LOCK and cross-process contention
   fixtures. Keep ordinary callers without context compatible.
   Evidence: [EXEC-001-T09b implementation](HANDOFF.md#exec-001-t09b-cancel-lock-waiters-safely).
-- [ ] **T09c - stop session acquisition after expiry.** Start:
+- [x] **T09c - stop session acquisition after expiry.** Start:
   `src/sessions/session.ts:acquireAndResolveSession` and history reservation
   callers. Pass the context into waits and check around synchronous boundaries.
   Done: cancellation during acquisition creates no executable turn or leaked
   reservation; partial acquisition is finalized through T06. Check: R, SESSION/
   LIFE/LOCK; document I/O that cannot be interrupted immediately.
+  Evidence: [EXEC-001-T09c implementation](HANDOFF.md#exec-001-t09c-stop-session-acquisition-after-expiry).
 
 Acceptance: stalled Git and contended-lock fixtures cannot start a model turn
 after expiry or leak a reservation; failed snapshot verification blocks READY.

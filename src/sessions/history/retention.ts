@@ -11,12 +11,13 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { withFileLock, atomicWrite, LockTimeoutError } from '../../storage/lock.js';
+import { withFileLock, atomicWrite, LockTimeoutError, type FileLockOptions } from '../../storage/lock.js';
 import { readBoundedFile } from '../../storage/read.js';
 import { sanitizeHandle } from '../identity.js';
 import { TOTAL_LIMIT, getHistoryDir, statIfExists, sizeIfExists } from './types.js';
 import { isSessionActive } from '../activity.js';
 import type { SessionActivityChecker } from '../activity.js';
+import type { BackendReadContext } from '../../contracts/index.js';
 
 let activityChecker: SessionActivityChecker = isSessionActive;
 
@@ -227,11 +228,14 @@ export async function pruneHistoryDirectoryInternal(dir: string, extraBytes = 0,
  * @param extraBytes - Expected additional bytes to allocate in the current write.
  * @returns Total storage bytes currently occupied after pruning.
  */
-export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
+export async function pruneHistoryDirectory(
+  extraBytes = 0,
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): Promise<number> {
   if (process.env.coagent8_HISTORY === 'off') return 0;
   const dir = getHistoryDir();
   await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-  return withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, extraBytes));
+  return withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, extraBytes), options);
 }
 
 /**
@@ -240,7 +244,12 @@ export async function pruneHistoryDirectory(extraBytes = 0): Promise<number> {
  *
  * @throws When eviction cannot free enough space.
  */
-export async function reserveCapacity(dir: string, bytes: number, keepHandle: string): Promise<void> {
+export async function reserveCapacity(
+  dir: string,
+  bytes: number,
+  keepHandle: string,
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): Promise<void> {
   await withFileLock(path.join(dir, '.capacity.lock'), async () => {
     const metaFile = path.join(dir, '.capacity.meta');
     let currentTotal = await readCapacityMeta(metaFile);
@@ -251,7 +260,7 @@ export async function reserveCapacity(dir: string, bytes: number, keepHandle: st
       if (currentTotal + bytes > TOTAL_LIMIT) throw new Error('History total limit reached.');
     }
     await writeCapacityMeta(metaFile, currentTotal + bytes);
-  });
+  }, options);
 }
 
 /** Returns bytes reserved for a write that failed. */

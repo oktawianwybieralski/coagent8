@@ -4,8 +4,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions } from './types.js';
 import { getDataDir } from '../paths.js';
-import { atomicWrite, withFileLock } from '../storage/lock.js';
-import { PROVIDERS } from '../contracts/index.js';
+import { atomicWrite, withFileLock, combineSignals, type FileLockOptions } from '../storage/lock.js';
+import { PROVIDERS, ToolError, type BackendReadContext, type ExecutionBudget } from '../contracts/index.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.js';
 import { canonicalPath } from '../workspace/identity.js';
@@ -50,13 +50,92 @@ export function getSession(handle: string, options: GetSessionOptions = {}): Ses
   if ((options.backend && s.backend !== options.backend) || (options.workspace && canonicalPath(s.workspace) !== canonicalPath(options.workspace))) return null;
   return s;
 }
-async function withSessionLock<T>(handle: string, fn: (file: string) => T | Promise<T>): Promise<SessionResult<T>> {
-  const file = getSessionFilePath(handle); if (!file) return { ok: false, error: 'Invalid session handle format' };
+function parseSessionOptions(
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): {
+  budget?: ExecutionBudget;
+  effectiveSignal?: AbortSignal | null;
+} {
+  if (options === undefined || options === null || typeof options === 'number') {
+    return {};
+  }
+  if (typeof options === 'object' && 'aborted' in options && typeof (options as AbortSignal).addEventListener === 'function') {
+    const sig = options as AbortSignal;
+    return { effectiveSignal: sig };
+  }
+  if (typeof options === 'object') {
+    const raw = options as FileLockOptions & BackendReadContext;
+    const context = raw.context ?? (raw.budget || raw.abortSignal ? raw : undefined);
+    const budget = raw.budget ?? context?.budget;
+    const callerSignal = raw.abortSignal !== context?.abortSignal
+      ? combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined
+      : raw.abortSignal ?? context?.abortSignal;
+    const effectiveSignal = combineSignals(callerSignal, budget?.executionSignal);
+    return { budget, effectiveSignal };
+  }
+  return {};
+}
+
+export function isBudgetExpired(budget?: ExecutionBudget): boolean {
+  if (!budget) return false;
+  return budget.isExecutionExpired() || budget.isTimedOut() || budget.remainingExecutionMs() <= 0;
+}
+
+export function isSessionExpired(
+  effectiveSignal?: AbortSignal | null,
+  budget?: ExecutionBudget
+): boolean {
+  if (effectiveSignal?.aborted) return true;
+  return isBudgetExpired(budget);
+}
+
+export function assertSessionNotExpired(
+  effectiveSignal?: AbortSignal | null,
+  budget?: ExecutionBudget,
+  phase = 'Session acquisition'
+): void {
+  if (effectiveSignal?.aborted) {
+    if (isBudgetExpired(budget)) {
+      throw new ToolError('TIMEOUT', `Execution budget expired during ${phase.toLowerCase()}.`);
+    }
+    throw new ToolError('ABORTED', `${phase} was aborted.`);
+  }
+  if (isBudgetExpired(budget)) {
+    throw new ToolError('TIMEOUT', `Execution budget expired during ${phase.toLowerCase()}.`);
+  }
+}
+
+async function withSessionLock<T>(
+  handle: string,
+  fn: (file: string) => T | Promise<T>,
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): Promise<SessionResult<T>> {
+  const file = getSessionFilePath(handle);
+  if (!file) return { ok: false, error: 'Invalid session handle format' };
   try {
-    return await withFileLock(file, async () => {
-      return { ok: true, data: await fn(file) };
-    });
-  } catch (err) { return { ok: false, error: (err as Error).message }; }
+    return await withFileLock(
+      file,
+      async () => {
+        return { ok: true, data: await fn(file) };
+      },
+      options
+    );
+  } catch (err) {
+    if (options !== undefined && typeof options !== 'number') {
+      if (err instanceof ToolError) {
+        const { budget } = parseSessionOptions(options);
+        if (isBudgetExpired(budget)) {
+          throw new ToolError('TIMEOUT', 'Execution budget expired while waiting for session lock.');
+        }
+        throw err;
+      }
+      const { effectiveSignal, budget } = parseSessionOptions(options);
+      if (isSessionExpired(effectiveSignal, budget)) {
+        assertSessionNotExpired(effectiveSignal, budget, 'Session lock');
+      }
+    }
+    return { ok: false, error: (err as Error).message };
+  }
 }
 export function createSession(backend: string, workspace = process.cwd(), threadId: string | null = null): SessionRecord {
   if (!PROVIDERS.includes(backend as typeof PROVIDERS[number])) throw new Error('Invalid session provider.');
@@ -66,15 +145,77 @@ export function createSession(backend: string, workspace = process.cwd(), thread
   saveSessionFile(getSessionFilePath(handle)!, s);
   return s;
 }
-export async function acquireSessionTurn(handle: string): Promise<SessionResult<{ token: string }>> {
+
+/**
+ * Atomically acquires turn ownership on an idle session record.
+ *
+ * Checks cancellation signals and execution budget before lock acquisition,
+ * during the lock wait, and across synchronous boundaries immediately after write.
+ * Atomic file writes (`atomicWrite` via `fs.rename`) represent uninterruptible OS
+ * operations; if cancellation occurs across a write boundary, rollback to idle is
+ * attempted and turn ownership is revoked. If rollback write fails due to OS I/O error,
+ * the record remains until stale recovery reclaims it.
+ *
+ * @param handle - Valid session handle.
+ * @param options - Optional timeout, cancellation signal, lock options, or read context (`EXEC-001-T09c`).
+ * @returns Object with `ok: true` and `{ token }` on success, or `{ ok: false, error }` if busy/expired.
+ * @throws ToolError if the acquisition wait is aborted or execution budget expired.
+ */
+export async function acquireSessionTurn(
+  handle: string,
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): Promise<SessionResult<{ token: string }>> {
+  const { effectiveSignal, budget } = parseSessionOptions(options);
+  assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
+
   const locked = await withSessionLock(handle, async file => {
-    const s = getSession(handle); if (!s) return { ok: false, error: 'Invalid or expired session handle.' };
+    const s = getSession(handle);
+    if (!s) return { ok: false, error: 'Invalid or expired session handle.' };
     if (active(s)) return { ok: false, error: 'Session is currently busy executing another turn.' };
-    const token = crypto.randomUUID(); s.turnToken = token; s.activePid = process.pid; s.activeTurnAt = Date.now(); s.state = 'running'; s.turnCount = (s.turnCount || 0) + 1;
-    s.lastUsedAt = new Date().toISOString(); await atomicWrite(file, JSON.stringify(s)); ownedTurns.set(handle, token);
+
+    assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
+
+    const token = crypto.randomUUID();
+    s.turnToken = token;
+    s.activePid = process.pid;
+    s.activeTurnAt = Date.now();
+    s.state = 'running';
+    s.turnCount = (s.turnCount || 0) + 1;
+    s.lastUsedAt = new Date().toISOString();
+
+    // Persist turn record atomically.
+    // Note: atomicWrite and fs.rename are atomic OS operations that cannot be
+    // interrupted mid-stream without risking corrupted temporary state on disk.
+    await atomicWrite(file, JSON.stringify(s));
+
+    // Verify cancellation status immediately across synchronous boundary after write
+    if (isSessionExpired(effectiveSignal, budget)) {
+      s.turnToken = null;
+      s.activePid = null;
+      s.activeTurnAt = null;
+      s.state = 'idle';
+      s.turnCount = Math.max(0, (s.turnCount || 1) - 1);
+      s.lastUsedAt = new Date().toISOString();
+      try {
+        await atomicWrite(file, JSON.stringify(s));
+      } catch (rollbackErr) {
+        process.stderr.write(`Warning: failed to persist session rollback for ${handle}: ${(rollbackErr as Error).message}\n`);
+      } finally {
+        ownedTurns.delete(handle);
+      }
+      assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
+    }
+
+    ownedTurns.set(handle, token);
     return { ok: true, data: { token } };
-  });
-  return locked.data || { ok: false, error: locked.error };
+  }, options);
+
+  if (!locked.ok) {
+    assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
+    return { ok: false, error: locked.error };
+  }
+
+  return locked.data!;
 }
 export async function releaseSessionTurn(handle: string, token = ownedTurns.get(handle)): Promise<SessionResult> {
   const locked = await withSessionLock(handle, async file => {
@@ -115,10 +256,91 @@ export async function closeSession(handle: string, workspace?: string): Promise<
   }
   return locked.data || false;
 }
-export async function acquireAndResolveSession(handle?: string | null, backend = 'codex', workspace = process.cwd()): Promise<AcquireSessionResult> {
+/**
+ * Resolves or initializes a session and atomically acquires exclusive turn ownership.
+ *
+ * Checks cancellation signals and execution budget before creating or resolving session,
+ * during lock acquisition waits, and across synchronous boundaries immediately after write.
+ * Atomic file writes (`atomicWrite` via `fs.rename`) represent uninterruptible OS
+ * operations; if cancellation occurs across a write boundary, rollback to idle is
+ * attempted, any newly initialized empty session file is removed, and turn token is revoked.
+ *
+ * @param handle - Optional existing session handle to resume.
+ * @param backend - Target CLI provider (default: 'codex').
+ * @param workspace - Absolute canonical workspace path.
+ * @param options - Optional cancellation signal, execution budget, read context, or lock options (`EXEC-001-T09c`).
+ * @returns Resolved session record with active turn token, or error description.
+ * @throws ToolError if acquisition is aborted or execution budget expired.
+ */
+export async function acquireAndResolveSession(
+  handle?: string | null,
+  backend = 'codex',
+  workspace = process.cwd(),
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+): Promise<AcquireSessionResult> {
+  const { effectiveSignal, budget } = parseSessionOptions(options);
+  assertSessionNotExpired(effectiveSignal, budget, 'Session acquisition');
+
+  const isNewSession = !handle;
   const s = handle ? getSession(handle, { backend, workspace }) : createSession(backend, workspace);
   if (!s) return { error: 'Invalid or expired session handle (workspace/provider mismatch or invalidation).' };
-  const acquired = await acquireSessionTurn(s.sessionHandle); if (!acquired.ok) return { error: acquired.error };
+
+  let acquired: SessionResult<{ token: string }>;
+  try {
+    acquired = await acquireSessionTurn(s.sessionHandle, options);
+  } catch (err) {
+    if (isNewSession) {
+      const file = getSessionFilePath(s.sessionHandle);
+      if (file) {
+        try { fs.rmSync(file, { force: true }); } catch { /* ignore cleanup error */ }
+      }
+    }
+    throw err;
+  }
+
+  if (!acquired.ok) {
+    if (isNewSession) {
+      const file = getSessionFilePath(s.sessionHandle);
+      if (file) {
+        try { fs.rmSync(file, { force: true }); } catch { /* ignore cleanup error */ }
+      }
+    }
+    return { error: acquired.error };
+  }
+
+  if (isSessionExpired(effectiveSignal, budget)) {
+    if (acquired.data?.token) {
+      const rollbackTurn = async (file: string) => {
+        const rec = readRecord(file, s.sessionHandle);
+        if (rec && rec.turnToken === acquired.data?.token) {
+          rec.activePid = null;
+          rec.activeTurnAt = null;
+          rec.turnToken = null;
+          rec.state = 'idle';
+          rec.turnCount = Math.max(0, (rec.turnCount || 1) - 1);
+          rec.lastUsedAt = new Date().toISOString();
+          await atomicWrite(file, JSON.stringify(rec));
+          ownedTurns.delete(s.sessionHandle);
+        }
+      };
+      let rollbackResult = await withSessionLock(s.sessionHandle, rollbackTurn);
+      if (!rollbackResult.ok) {
+        rollbackResult = await withSessionLock(s.sessionHandle, rollbackTurn);
+      }
+      ownedTurns.delete(s.sessionHandle);
+      if (!rollbackResult.ok) {
+        process.stderr.write(`Warning: failed to rollback session turn for ${s.sessionHandle}: ${rollbackResult.error}\n`);
+      }
+    }
+    if (isNewSession) {
+      const file = getSessionFilePath(s.sessionHandle);
+      if (file) {
+        try { fs.rmSync(file, { force: true }); } catch { /* ignore cleanup error */ }
+      }
+    }
+    assertSessionNotExpired(effectiveSignal, budget, 'Session acquisition');
+  }
+
   return { session: getSession(s.sessionHandle)! };
 }
 export function resolveOrInitSession(handle?: string | null, backend = 'codex', workspace = process.cwd()): AcquireSessionResult {

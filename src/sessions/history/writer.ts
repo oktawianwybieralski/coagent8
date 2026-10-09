@@ -15,11 +15,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { withFileLock, atomicWrite } from '../../storage/lock.js';
+import { withFileLock, atomicWrite, type FileLockOptions } from '../../storage/lock.js';
 import { canonicalPath } from '../../workspace/identity.js';
 import { truncateToByteLength } from '../../execution/runtime/stream.js';
 import { computeSafeCommitPoint, redactCredentialFormats } from '../../security/index.js';
-import type { AdapterEvent, ConversationEvent, ProviderId } from '../../contracts/index.js';
+import type { AdapterEvent, ConversationEvent, ProviderId, BackendReadContext, ExecutionBudget } from '../../contracts/index.js';
 import {
   SESSION_LIMIT,
   getHistoryDir,
@@ -44,9 +44,16 @@ import {
  * @param workspace - Absolute canonical workspace path.
  * @param provider - Execution provider ID (e.g. 'codex', 'agy', 'claude').
  * @param turnId - Unique turn UUID for event correlation.
+ * @param options - Optional context, abort signal, or execution budget (`EXEC-001-T09c`).
  * @returns Object exposing `accept(event)`, `flush()`, and `disabled`.
  */
-export function createHistoryWriter(handle: string, workspace: string, provider: ProviderId, turnId: string) {
+export function createHistoryWriter(
+  handle: string,
+  workspace: string,
+  provider: ProviderId,
+  turnId: string,
+  options?: { context?: BackendReadContext; abortSignal?: AbortSignal; budget?: ExecutionBudget }
+) {
   const pending: AdapterEvent[] = [];
   const rawAssembled = new Map<string, string>();
   const emittedRedactedText = new Map<string, string>();
@@ -157,6 +164,11 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
     const batch = coalesced.map(sanitize);
     if (!batch.length) return;
 
+    const isInitialBatch = !headerWritten && !isTurnFinished;
+    const initLockOptions: FileLockOptions | undefined = isInitialBatch
+      ? (options?.context ?? (options?.abortSignal || options?.budget ? { abortSignal: options.abortSignal, budget: options.budget } : undefined))
+      : undefined;
+
     chain = chain.then(async () => {
       const dir = getHistoryDir();
       await fs.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -164,7 +176,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
       await withFileLock(sessionLockFile, async () => {
         if (!hasPruned) {
           hasPruned = true;
-          await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, 0, handle));
+          await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, 0, handle), initLockOptions);
         }
 
         const logFile = logFileFor(handle);
@@ -215,7 +227,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
                   await withFileLock(capLockFile, async () => {
                     const metaFile = path.join(dir, '.capacity.meta');
                     await adjustCapacityMeta(metaFile, -truncatedBytes);
-                  });
+                  }, initLockOptions);
                 }
               }
             }
@@ -236,7 +248,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
             }) + '\n';
             const headerBytes = Buffer.byteLength(header, 'utf8');
 
-            await reserveCapacity(dir, headerBytes, handle);
+            await reserveCapacity(dir, headerBytes, handle, initLockOptions);
             try {
               await fs.appendFile(logFile, header, 'utf8');
               currentFileBytes = headerBytes;
@@ -329,7 +341,7 @@ export function createHistoryWriter(handle: string, workspace: string, provider:
         }
 
         invalidateHistoryCache(handle);
-      });
+      }, initLockOptions);
     }).catch(err => {
       writeError = err;
       writerDisabled = true;

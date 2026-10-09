@@ -34,10 +34,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { loadConfigSnapshot } from '../config.js';
-import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, type CancelOutcome } from '../sessions/session.js';
+import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
+import { combineSignals } from '../storage/lock.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
@@ -243,10 +244,30 @@ async function executeTaskInternal(
     const model = prepared.model;
     const reasoningEffort = prepared.reasoningEffort;
 
+    const sessionContext: BackendReadContext = {
+      ...options.context,
+      abortSignal: combineSignals(options.context?.abortSignal, abortSignal) ?? undefined,
+      budget: options.budget ?? options.context?.budget,
+    };
+
+    const assertSessionContextNotExpired = (timing: 'before' | 'immediately after') => {
+      const effectiveSignal = combineSignals(sessionContext.abortSignal, sessionContext.budget?.executionSignal);
+      assertSessionNotExpired(effectiveSignal, sessionContext.budget, `session acquisition (${timing})`);
+    };
+
     const acqHandle = startControllerPhase('acquisition');
-    await pruneExpiredSessions();
-    const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
-    if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
+    let acquired: Awaited<ReturnType<typeof acquireAndResolveSession>>;
+    try {
+      assertSessionContextNotExpired('before');
+      await pruneExpiredSessions();
+      assertSessionContextNotExpired('before');
+
+      acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd, sessionContext);
+      if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
+    } catch (err) {
+      acqHandle.end();
+      throw err;
+    }
     const session = acquired.session, handle = session.sessionHandle, token = session.turnToken!;
 
     let notifySettled!: () => void;
@@ -261,6 +282,8 @@ async function executeTaskInternal(
     let flushTimer: NodeJS.Timeout | undefined;
 
     try {
+      assertSessionContextNotExpired('immediately after');
+
       if (abortSignal) {
         if (abortSignal.aborted) cancelController.abort();
         else {
@@ -287,7 +310,7 @@ async function executeTaskInternal(
       }
 
       const writerFactory = options.createHistoryWriter ?? createHistoryWriter;
-      const writer = writerFactory(handle, cwd, backend.id, randomUUID());
+      const writer = writerFactory(handle, cwd, backend.id, randomUUID(), { context: sessionContext });
       acqHandle.end();
 
       const started = Date.now(); let toolCount = 0, historyError: Error | undefined, sawPublicMessage = false;
