@@ -57,6 +57,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`dfc69df`](https://github.com/oktawianwybieralski/coagent8/commit/dfc69dfff5d2852fb30a021c24d1343ae86bfe78) **claude:** Bound probe, catalog, and quota reads (EXEC-001-T08d)
 - [`297716c`](https://github.com/oktawianwybieralski/coagent8/commit/297716c279178a16ee6637cba08cfc336ae2a200) **agy:** Bound probe, catalog, quota, and tool reads (EXEC-001-T08e)
 - [`6823a87`](https://github.com/oktawianwybieralski/coagent8/commit/6823a874bb143f77ef9ae0eadfd27dee2f2004f3) **prices:** Bound price fetches and close shared-read races (EXEC-001-T08f)
+- [`27f4881`](https://github.com/oktawianwybieralski/coagent8/commit/27f4881abccea58dd07f52c6c78b18509428a2cc) **review:** Bound review Git work and process lifecycle (EXEC-001-T09a)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
