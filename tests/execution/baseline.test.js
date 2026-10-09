@@ -350,7 +350,13 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
   let activeExecutions = 0;
   let maxActiveExecutions = 0;
   let releaseBarrier;
-  const barrierPromise = new Promise(resolve => { releaseBarrier = resolve; });
+  let barrierTimeout;
+  const barrierPromise = new Promise(resolve => {
+    releaseBarrier = resolve;
+    barrierTimeout = setTimeout(() => {
+      resolve();
+    }, 5000);
+  });
 
   const { adapter, counters } = createInstrumentedFixture('agy', [
     { id: 'gemini-3.8-flash', efforts: ['low', 'high'], isDefault: true },
@@ -361,10 +367,14 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
         maxActiveExecutions = activeExecutions;
       }
       if (activeExecutions === concurrency) {
+        clearTimeout(barrierTimeout);
         releaseBarrier();
       }
-      await barrierPromise;
-      activeExecutions--;
+      try {
+        await barrierPromise;
+      } finally {
+        activeExecutions--;
+      }
       return {
         status: 'completed',
         isError: false,
@@ -381,11 +391,18 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
 
   const before = snapshotCounters(counters);
   const start = Date.now();
-  const results = await Promise.all(
-    Array.from({ length: concurrency }, (_, i) =>
-      executeTask(`concurrent prompt ${i}`, `concurrent input ${i}`, { backend: 'agy' }, tempDir)
-    )
+  const taskPromises = Array.from({ length: concurrency }, (_, i) =>
+    executeTask(`concurrent prompt ${i}`, `concurrent input ${i}`, { backend: 'agy' }, tempDir)
   );
+
+  let results;
+  try {
+    results = await Promise.all(taskPromises);
+  } finally {
+    clearTimeout(barrierTimeout);
+    releaseBarrier();
+    await Promise.allSettled(taskPromises);
+  }
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
 
