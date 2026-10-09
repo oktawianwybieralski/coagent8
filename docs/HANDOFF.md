@@ -1050,6 +1050,52 @@ Scope: bound Codex observation reads (`probe`, `listModels`, `inspectQuota`) by 
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_49b61bc0a5e28bab847e0b4d`, Turn 2: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to Windows sandbox ENOMEM).
 
+## EXEC-001-T08d bound Claude reads
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: bound Claude observation reads (`probe`, `observeModel`, `listModels`, `inspectQuota`) by propagating `BackendReadContext` and `abortSignal` through `src/backends/claude/adapter.ts`, bounding subprocess timeouts, ensuring deterministic handle cleanup on aborted/stalled reads, and adding regression coverage in `tests/backends/claude/adapter.test.js` and `tests/fixtures/claude-cli/claude.cjs`.
+
+### Implemented mechanisms:
+1. **Context propagation & signal resolution**:
+   - `probe(context?: BackendReadContext)` in `src/backends/claude/adapter.ts` accepts `BackendReadContext`.
+   - `observeModel(requested, probe, context)` and `inspectQuota(probe, context)` on `claudeAdapter` accept and forward `context` to `runLocalUsage`.
+   - `runLocalUsage(model, probe, context)` accepts `context` and bounds both `--version` and `/usage` runs.
+   - `listModels(probe, context)` accepts `context` and bounds the restricted stream-json session.
+   - Effective abort signal is resolved via `context?.abortSignal ?? context?.budget?.executionSignal`, providing fallback cancellation when composite budgets expire.
+2. **Pre-flight cancellation and budget deadline checks**:
+   - Before launching child processes, `probe`, `runLocalUsage`, `observeModel`, `inspectQuota`, and `listModels` verify `abortSignal?.aborted` (rejecting immediately with `ToolError('ABORTED')`) and `context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()` (rejecting with `ToolError('TIMEOUT')`).
+   - Pre-aborted queries skip process execution entirely, leaving 0 active processes.
+3. **Bounded subprocess timeouts & post-run budget attribution**:
+   - Added helper `boundReadTimeout(context, defaultMs)` which caps `context.timeoutMs` with `Math.min(context.timeoutMs, defaultMs)`. Applied across all 5 command launches: probe (`--version`, `auth status`), local usage (`--version`, `/usage`), and catalog (`initialize`).
+   - Cancellation checks verify budget expiration (`isTimedOut()` or `isExecutionExpired()`) and attribute timeout explicitly to `ToolError('TIMEOUT')`.
+   - Post-run budget expiration checks are guarded by `res.status !== 'completed'`, ensuring completed reads preserve their results.
+4. **Guaranteed handle & channel cleanup**:
+   - In `listModels`, stream-json session channel interactions are enclosed in `try { ... } finally { channel?.close(); }`, guaranteeing stdin channel closure under any outcome.
+   - Fixture `tests/fixtures/claude-cli/claude.cjs` supports simulated hang modes (`hang-probe`, `hang-auth`, `hang-usage`, `hang-catalog`, `hang-after-channel-close`) to verify clean cancellation and handle release.
+5. **Deterministic test coverage in `tests/backends/claude/adapter.test.js`**:
+   - Verified backward compatibility when `context` is omitted.
+   - Verified pre-aborted signal rejection (`ToolError` with code `ABORTED`) with 0 spawned processes across probe, observe, catalog, and quota.
+   - Verified pre-expired budget rejection (`ToolError` with code `TIMEOUT`) with 0 spawned processes across probe, observe, catalog, and quota.
+   - Verified stalled probe cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified stalled catalog read cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified stalled observeModel cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified stalled quota read cancellation via `abortSignal`, releasing processes (`activeProcesses.size === 0`) and rejecting with `ABORTED`.
+   - Verified fallback cancellation via `context.budget.executionSignal`.
+   - Verified stalled probe, quota, and catalog termination via `timeoutMs`, settling safely with 0 active processes.
+   - Verified stalled catalog hanging on EOF after `channel.close()` safely terminates on timeout with 0 active processes.
+   - Verified stalled probe ended by budget expiration during run attributes deterministically to `ToolError('TIMEOUT')` with 0 active processes.
+   - Replaced fixed sleep with deterministic `waitForActiveProcess()` polling helper to eliminate test flakiness.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (106 source files analyzed, 538 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 24 tests (24 pass, 0 fail, exit code 0): `tests/backends/claude/adapter.test.js` (13 pass), `tests/backends/probe-cache.test.js` (11 pass).
+- PASS: Full test suite: 523 tests (520 pass, 0 fail, 3 skipped, duration 154.1 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_ec5f8854d53195c6c7788566`, Turn 2: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues; independent tests NOT_RUN due to read-only sandbox).
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;

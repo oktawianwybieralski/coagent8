@@ -4,14 +4,29 @@ const fs = require('node:fs');
 const path = require('node:path');
 const argv = process.argv.slice(2);
 const env = process.env;
-if (argv.includes('--version')) { console.log(env.CLAUDE_FIXTURE_VERSION || '2.1.289 (Claude Code)'); process.exit(0); }
+if (argv.includes('--version')) {
+  if (env.CLAUDE_FIXTURE_MODE === 'hang-probe' || env.CLAUDE_FIXTURE_SCENARIO === 'hang-probe') {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  console.log(env.CLAUDE_FIXTURE_VERSION || '2.1.289 (Claude Code)');
+  process.exit(0);
+}
 if (argv[0] === 'auth' && argv[1] === 'status') {
+  if (env.CLAUDE_FIXTURE_MODE === 'hang-auth' || env.CLAUDE_FIXTURE_SCENARIO === 'hang-auth') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   const loggedIn = env.CLAUDE_FIXTURE_LOGGED_IN !== '0';
   console.log(JSON.stringify({ loggedIn, authMethod: loggedIn ? 'claude.ai' : 'none', apiProvider: 'firstParty' }, null, 2));
   process.exit(loggedIn ? 0 : 1);
 }
 const valueOf = flag => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
 if (argv.at(-1) === '/usage') {
+  if (env.CLAUDE_FIXTURE_MODE === 'hang-usage' || env.CLAUDE_FIXTURE_SCENARIO === 'hang-usage') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   if (env.CLAUDE_FIXTURE_CAPTURE) fs.writeFileSync(env.CLAUDE_FIXTURE_CAPTURE, JSON.stringify({ argv, stdin: '' }));
   const usage = JSON.parse(fs.readFileSync(path.join(__dirname, 'recordings', 'usage-subscription.json'), 'utf8'));
   if (env.CLAUDE_FIXTURE_USAGE === 'api-key') usage.result = 'You are currently using API billing.';
@@ -76,6 +91,10 @@ function answer() {
 // each with the concrete model it resolves to; CLAUDE_FIXTURE_MODELS adds or remaps names and
 // CLAUDE_FIXTURE_CATALOG=error answers with an error.
 function initialize(request) {
+  if (env.CLAUDE_FIXTURE_MODE === 'hang-catalog' || env.CLAUDE_FIXTURE_SCENARIO === 'hang-catalog') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   if (env.CLAUDE_FIXTURE_CATALOG === 'error') {
     send({ type: 'control_response', response: { subtype: 'error', request_id: request.request_id, error: 'initialize failed' } });
     return;
@@ -111,6 +130,11 @@ process.stdin.on('data', chunk => {
   }
 });
 process.stdin.on('end', () => {
+  if (env.CLAUDE_FIXTURE_MODE === 'hang-catalog' || env.CLAUDE_FIXTURE_SCENARIO === 'hang-catalog') return;
+  if (env.CLAUDE_FIXTURE_MODE === 'hang-after-channel-close') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   capture();
   clearInterval(interruptible);
   if (process.exitCode === undefined) process.exitCode = exitCode;

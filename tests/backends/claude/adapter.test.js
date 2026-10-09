@@ -12,7 +12,7 @@ async function withFixture(run){
   const previous={...process.env};
   try{
     process.env.CLAUDE_PATH=path.resolve(__dirname,'../../fixtures/claude-cli/claude.cjs');process.env.CLAUDE_FIXTURE_CAPTURE=capture;
-    delete process.env.CLAUDE_FIXTURE_SCENARIO;delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+    delete process.env.CLAUDE_FIXTURE_SCENARIO;delete process.env.CLAUDE_FIXTURE_MODE;delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
     const captured=()=>{if(!fs.existsSync(capture))return null;const value=JSON.parse(fs.readFileSync(capture,'utf8'));fs.unlinkSync(capture);return value;};
     await run({dir,captured});
   }finally{for(const key of Object.keys(process.env))if(!(key in previous))delete process.env[key];Object.assign(process.env,previous);fs.rmSync(dir,{recursive:true,force:true});}
@@ -203,4 +203,218 @@ test('selection resolves a listed Claude alias through the catalog and observes 
   assert.equal(captured(),null,'no CLI run: the catalog answers');
   assert.deepEqual(await selectModel('claude',probe,{model:'claude-opus-4-1'}),{model:'claude-opus-4-1',source:'request'});
   assert.equal(captured().argv.at(-1),'/usage','an unlisted name is resolved by the CLI itself');
+}));
+
+test('EXEC-001-T08d: probe, listModels, observeModel, and inspectQuota abort deterministically via abortSignal and release handles', () => withFixture(async ({ dir }) => {
+  const { ToolError } = require('../../../src/contracts/index.ts');
+  const { activeProcesses } = require('../../../src/execution/process.ts');
+  const { claudeAdapter, probe, listModels, observeModel, inspectQuota } = require('../../../src/backends/claude/adapter.ts');
+
+  async function waitForActiveProcess(timeoutMs = 3000) {
+    const start = Date.now();
+    while (activeProcesses.size === 0 && Date.now() - start < timeoutMs) {
+      await new Promise(r => setTimeout(r, 10));
+    }
+  }
+
+  // 1. Backward compatibility without context
+  const normalProbe = await probe();
+  assert.equal(normalProbe.installed, true);
+  const normalCatalog = await listModels({ executionSupported: true });
+  assert.ok(normalCatalog?.models.length > 0);
+  assert.equal(normalCatalog?.source, 'claude stream-json initialize');
+  const normalObserved = await observeModel('sonnet', { executionSupported: true, version: '2.1.289' });
+  assert.equal(normalObserved, 'claude-sonnet-4-6');
+  const normalQuota = await inspectQuota({ executionSupported: true, version: '2.1.289' });
+  assert.ok(normalQuota?.measured);
+
+  // 2. Pre-aborted signal rejects immediately before launching process
+  const preController = new AbortController();
+  preController.abort();
+  await assert.rejects(
+    probe({ abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    listModels(undefined, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    observeModel(undefined, undefined, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    inspectQuota(undefined, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    claudeAdapter.probe({ abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  assert.equal(activeProcesses.size, 0, 'no process launched for pre-aborted reads');
+
+  // 3. Pre-expired budget rejects with TIMEOUT before launch
+  const expiredBudget = { isExecutionExpired: () => true, isTimedOut: () => true, executionSignal: new AbortController().signal };
+  await assert.rejects(
+    probe({ budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    listModels(undefined, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    observeModel(undefined, undefined, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    inspectQuota(undefined, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  assert.equal(activeProcesses.size, 0, 'no process launched for expired budgets');
+
+  // 4. Stalled probe (--version) aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-probe';
+  try {
+    const probeCtrl = new AbortController();
+    const probePromise = probe({ abortSignal: probeCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'probe process is running');
+    probeCtrl.abort();
+    await assert.rejects(probePromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'probe process cleaned up after abort');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 5. Stalled probe (auth status) aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-auth';
+  try {
+    const authCtrl = new AbortController();
+    const authPromise = probe({ abortSignal: authCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'auth status process is running');
+    authCtrl.abort();
+    await assert.rejects(authPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'auth process cleaned up after abort');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 6. Stalled catalog read aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-catalog';
+  try {
+    const catalogCtrl = new AbortController();
+    const catalogPromise = listModels({ executionSupported: true }, { abortSignal: catalogCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'catalog process is running');
+    catalogCtrl.abort();
+    await assert.rejects(catalogPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'catalog process cleaned up after abort');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 7. Stalled observeModel aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-usage';
+  try {
+    const observeCtrl = new AbortController();
+    const observePromise = observeModel('sonnet', { executionSupported: true, version: '2.1.289' }, { abortSignal: observeCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'observe process is running');
+    observeCtrl.abort();
+    await assert.rejects(observePromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'observe process cleaned up after abort');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 8. Stalled inspectQuota aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-usage';
+  try {
+    const quotaCtrl = new AbortController();
+    const quotaPromise = inspectQuota({ executionSupported: true, version: '2.1.289' }, { abortSignal: quotaCtrl.signal });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'quota process is running');
+    quotaCtrl.abort();
+    await assert.rejects(quotaPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'quota process cleaned up after abort');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 9. Fallback to context?.budget?.executionSignal
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-probe';
+  try {
+    const budgetCtrl = new AbortController();
+    const liveBudget = { isExecutionExpired: () => false, isTimedOut: () => false, executionSignal: budgetCtrl.signal };
+    const budgetProbePromise = probe({ budget: liveBudget });
+    await waitForActiveProcess();
+    assert.ok(activeProcesses.size >= 1, 'probe process is running under budget');
+    budgetCtrl.abort();
+    await assert.rejects(budgetProbePromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'probe process cleaned up after budget abort');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 10. Stalled probe ended by timeoutMs cleans up process and settles
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-probe';
+  try {
+    const timedOutProbe = await probe({ timeoutMs: 150 });
+    assert.equal(timedOutProbe.installed, false);
+    assert.equal(activeProcesses.size, 0, 'timed-out probe process cleaned up');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 11. Stalled usage ended by timeoutMs cleans up process and returns undefined
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-usage';
+  try {
+    const timedOutQuota = await inspectQuota({ executionSupported: true, version: '2.1.289' }, { timeoutMs: 150 });
+    assert.equal(timedOutQuota, undefined);
+    assert.equal(activeProcesses.size, 0, 'timed-out quota process cleaned up');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 12. Stalled catalog ended by timeoutMs cleans up channel and process and returns undefined
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-catalog';
+  try {
+    const timedOutCatalog = await listModels({ executionSupported: true }, { timeoutMs: 150 });
+    assert.equal(timedOutCatalog, undefined);
+    assert.equal(activeProcesses.size, 0, 'timed-out catalog process cleaned up');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 13. Stalled catalog after channel close: channel.close() was called, but process hangs on EOF until timeout
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-after-channel-close';
+  try {
+    const hungAfterClose = await listModels({ executionSupported: true }, { timeoutMs: 150 });
+    assert.equal(hungAfterClose, undefined, 'stalled process after channel close safely terminated on timeout');
+    assert.equal(activeProcesses.size, 0, 'process after channel close cleaned up');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
+
+  // 14. Stalled probe ended by budget expiration during run throws TIMEOUT
+  process.env.CLAUDE_FIXTURE_MODE = 'hang-probe';
+  try {
+    let expired = false;
+    const expCtrl = new AbortController();
+    const expBudget = {
+      isExecutionExpired: () => expired,
+      isTimedOut: () => expired,
+      executionSignal: expCtrl.signal,
+    };
+    const expPromise = probe({ budget: expBudget, timeoutMs: 150 });
+    await waitForActiveProcess();
+    expired = true;
+    expCtrl.abort();
+    await assert.rejects(expPromise, err => err instanceof ToolError && err.code === 'TIMEOUT');
+    assert.equal(activeProcesses.size, 0, 'expired budget process cleaned up');
+  } finally {
+    delete process.env.CLAUDE_FIXTURE_MODE;
+  }
 }));

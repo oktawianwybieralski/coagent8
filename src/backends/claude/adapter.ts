@@ -7,7 +7,7 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import { DEFAULT_PROBE_TIMEOUT_MS, type AdapterProbeResult, type BackendReadContext, type CatalogModel, type ExecutionOptions, type ModelCatalog, type TerminalExecutionResult, type CliAdapter } from '../types.js';
-import type { ExecutionError } from '../../contracts/index.js';
+import { ToolError, type ExecutionError } from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
@@ -20,24 +20,69 @@ const claudeCommand = () => configuredBackendCommand('claude');
 /** User settings, which can choose the default model; a change invalidates cached probes and observed models. */
 const claudeSettingsPath = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'settings.json');
 
+/** Caps caller timeout to the operation's default bound (`EXEC-001-T08d`). */
+function boundReadTimeout(context: BackendReadContext | undefined, defaultMs: number): number {
+  if (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0) {
+    return Math.min(context.timeoutMs, defaultMs);
+  }
+  return defaultMs;
+}
+
 /**
  * Reads installation, version and local login state without calling a model.
  * @remarks `claude auth status` reports the CLI's own login state (exit 0 when
  * logged in, 1 when not). Token validity is proven only by an execution.
  * Read-only enforcement is checked on every run against `system/init`.
  */
-export async function probe(_context?: BackendReadContext): Promise<AdapterProbeResult> {
+export async function probe(context?: BackendReadContext): Promise<AdapterProbeResult> {
+  const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Claude probe cancelled before launch.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before probing Claude.');
+  }
   const resolved = probeCommand('claude', name);
   if ('unresolved' in resolved) return resolved.unresolved;
   const command = resolved.command;
-  const res = await runCommand(command, ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
+  const res = await runCommand(command, ['--version'], {
+    timeoutMs: boundReadTimeout(context, DEFAULT_PROBE_TIMEOUT_MS),
+    abortSignal,
+  });
+  if (abortSignal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
+    if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+      throw new ToolError('TIMEOUT', 'Execution budget expired during Claude probe.');
+    }
+    throw new ToolError('ABORTED', 'Claude probe cancelled.');
+  }
+  if (res.status !== 'completed' && (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut())) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired during Claude probe.');
+  }
   const installed = res.status === 'completed';
   const version = res.stdout.trim() || 'unknown';
   const executionSupported = installed && supportsClaudeVersion(version);
   let authStatus = 'unknown', authMethod: string | undefined;
   const authEvidence: string[] = [];
   if (installed) {
-    const auth = await runCommand(command, ['auth', 'status', '--json'], { timeoutMs: 10000 });
+    if (abortSignal?.aborted) {
+      throw new ToolError('ABORTED', 'Claude probe cancelled before reading auth status.');
+    }
+    if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+      throw new ToolError('TIMEOUT', 'Execution budget expired before reading Claude auth status.');
+    }
+    const auth = await runCommand(command, ['auth', 'status', '--json'], {
+      timeoutMs: boundReadTimeout(context, 10000),
+      abortSignal,
+    });
+    if (abortSignal?.aborted || auth.error?.code === 'ABORTED' || auth.status === 'cancelled') {
+      if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+        throw new ToolError('TIMEOUT', 'Execution budget expired during Claude probe.');
+      }
+      throw new ToolError('ABORTED', 'Claude probe cancelled.');
+    }
+    if (auth.status !== 'completed' && (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut())) {
+      throw new ToolError('TIMEOUT', 'Execution budget expired during Claude probe.');
+    }
     let parsed: Record<string, unknown> | null = null;
     try {
       const value: unknown = JSON.parse(auth.stdout);
@@ -62,22 +107,68 @@ export async function probe(_context?: BackendReadContext): Promise<AdapterProbe
  * Runs `claude -p /usage`, a local command, in the restricted profile with stream-json output.
  * @param model - The `--model` to pass; omitted for the model Claude Code runs without one.
  * @param probe - Probe result whose version is checked; `--version` runs when it has none.
+ * @param context - Optional cancellation and deadline context (`EXEC-001-T08d`).
  * @returns The model `system/init` reports and the usage text, or undefined when the CLI is
  * older than {@link MIN_CLAUDE_VERSION}, fails, or reports any model turn or cost.
  * @remarks Nothing reaches a model on a verified version; a turn or cost a later version
  * might report discards the run.
  */
-async function runLocalUsage(model: string | undefined, probe?: AdapterProbeResult): Promise<{ model?: string; usage: string } | undefined> {
+async function runLocalUsage(
+  model: string | undefined,
+  probe?: AdapterProbeResult,
+  context?: BackendReadContext
+): Promise<{ model?: string; usage: string } | undefined> {
+  const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Claude usage read cancelled before launch.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before reading Claude usage.');
+  }
   let version = probe?.version;
   if (!version || version === 'unknown') {
-    const verRes = await runCommand(claudeCommand(), ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
-    if (verRes.status !== 'completed') return undefined;
+    const verRes = await runCommand(claudeCommand(), ['--version'], {
+      timeoutMs: boundReadTimeout(context, DEFAULT_PROBE_TIMEOUT_MS),
+      abortSignal,
+    });
+    if (abortSignal?.aborted || verRes.error?.code === 'ABORTED' || verRes.status === 'cancelled') {
+      if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+        throw new ToolError('TIMEOUT', 'Execution budget expired reading Claude version.');
+      }
+      throw new ToolError('ABORTED', 'Claude usage read cancelled.');
+    }
+    if (verRes.status !== 'completed') {
+      if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+        throw new ToolError('TIMEOUT', 'Execution budget expired reading Claude version.');
+      }
+      return undefined;
+    }
     version = verRes.stdout.trim();
   }
   if (!supportsClaudeVersion(version)) return undefined;
+
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Claude usage read cancelled before running usage command.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before running Claude usage command.');
+  }
+
   const res = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
     '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
-    ...(model ? ['--model', model] : []), '--output-format', 'stream-json', '--verbose', '/usage'], { timeoutMs: 15000 });
+    ...(model ? ['--model', model] : []), '--output-format', 'stream-json', '--verbose', '/usage'], {
+    timeoutMs: boundReadTimeout(context, 15000),
+    abortSignal,
+  });
+  if (abortSignal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
+    if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+      throw new ToolError('TIMEOUT', 'Execution budget expired during Claude usage read.');
+    }
+    throw new ToolError('ABORTED', 'Claude usage read cancelled.');
+  }
+  if (res.status !== 'completed' && (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut())) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired during Claude usage read.');
+  }
   if (res.status !== 'completed') return undefined;
   let reported: unknown, result: Record<string, unknown> | undefined;
   for (const line of res.stdout.split(/\r?\n/)) {
@@ -94,11 +185,19 @@ async function runLocalUsage(model: string | undefined, probe?: AdapterProbeResu
 /**
  * Reads subscription limits from `claude -p /usage`, a local command that makes no model call.
  * @param probe - Optional probe result with pre-collected version to avoid re-invoking `--version`.
+ * @param context - Optional cancellation and deadline context (`EXEC-001-T08d`).
  * @returns Measured quota, or `undefined` when the CLI is older than the verified version,
  * the run reports a model turn or cost, or it prints no limits (API-key billing).
  */
-export async function inspectQuota(probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<AdapterProbeResult['quota']> {
-  const run = await runLocalUsage(undefined, probe);
+export async function inspectQuota(probe?: AdapterProbeResult, context?: BackendReadContext): Promise<AdapterProbeResult['quota']> {
+  const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Claude quota read cancelled before launch.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before reading Claude quota.');
+  }
+  const run = await runLocalUsage(undefined, probe, context);
   return run ? parseClaudeUsage(run.usage) : undefined;
 }
 
@@ -108,11 +207,18 @@ export async function inspectQuota(probe?: AdapterProbeResult, _context?: Backen
  * `/usage` run: no model turn and no cost.
  * @param requested - The model or alias; omitted for the default.
  * @param probe - Probe result whose version is checked.
- * @param _context - Optional cancellation and deadline context.
+ * @param context - Optional cancellation and deadline context (`EXEC-001-T08d`).
  */
-export async function observeModel(requested?: string, probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<string | undefined> {
+export async function observeModel(requested?: string, probe?: AdapterProbeResult, context?: BackendReadContext): Promise<string | undefined> {
+  const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Claude model observation cancelled before launch.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before observing Claude model.');
+  }
   if (requested !== undefined && !isValidModelIdentifier(requested)) return undefined;
-  return (await runLocalUsage(requested, probe))?.model;
+  return (await runLocalUsage(requested, probe, context))?.model;
 }
 
 /** Upper bound for the catalog read; 0.9 s measured on Claude Code 2.1.294 (2026-10-08). */
@@ -152,37 +258,59 @@ export function parseClaudeModels(response: unknown): ModelCatalog | undefined {
  * `initialize` control request of a restricted stream-json session that receives no user
  * message: no model turn and no cost.
  * @param probe - The current probe; an unsupported version is not asked.
- * @param _context - Optional cancellation and deadline context.
+ * @param context - Optional cancellation and deadline context (`EXEC-001-T08d`).
  * @returns The catalog, or undefined when the CLI does not answer, is older than
- * {@link MIN_CLAUDE_VERSION}, or reports a turn or result, which discards the read.
+ * {@link MIN_CLAUDE_VERSION}, or reports a turn or result, which discards the run.
  */
-export async function listModels(probe?: AdapterProbeResult, _context?: BackendReadContext): Promise<ModelCatalog | undefined> {
+export async function listModels(probe?: AdapterProbeResult, context?: BackendReadContext): Promise<ModelCatalog | undefined> {
+  const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Claude model list cancelled before launch.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before reading Claude models.');
+  }
   if (probe && !probe.executionSupported) return undefined;
   const requestId = randomUUID();
   let channel: StdinChannel | undefined, response: unknown, turned = false;
-  const result = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
-    '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
-    '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'], {
-    timeoutMs: MODEL_LIST_TIMEOUT_MS, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024,
-    session: {
-      start(opened) { channel = opened; opened.send({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize' } }); },
-      interrupt(opened) { opened.close(); },
-    },
-    onStdoutLine(line) {
-      let event: Record<string, unknown> | null;
-      try { event = record(JSON.parse(line)); } catch { event = null; }
-      if (!event) return;
-      if (event.type === 'result' || event.type === 'assistant') turned = true;
-      const answer = record(event.response);
-      if (event.type === 'control_response' && answer?.request_id === requestId) {
-        response = answer.subtype === 'success' ? answer.response : undefined;
-        // Closing stdin before any user message ends the session without a turn.
-        channel?.close();
+  const timeoutMs = boundReadTimeout(context, MODEL_LIST_TIMEOUT_MS);
+  try {
+    const result = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
+      '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
+      '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'], {
+      timeoutMs, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024,
+      abortSignal,
+      session: {
+        start(opened) { channel = opened; opened.send({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize' } }); },
+        interrupt(opened) { opened.close(); },
+      },
+      onStdoutLine(line) {
+        let event: Record<string, unknown> | null;
+        try { event = record(JSON.parse(line)); } catch { event = null; }
+        if (!event) return;
+        if (event.type === 'result' || event.type === 'assistant') turned = true;
+        const answer = record(event.response);
+        if (event.type === 'control_response' && answer?.request_id === requestId) {
+          response = answer.subtype === 'success' ? answer.response : undefined;
+          // Closing stdin before any user message ends the session without a turn.
+          channel?.close();
+        }
+      },
+    });
+    if (abortSignal?.aborted || result.error?.code === 'ABORTED' || result.status === 'cancelled') {
+      if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+        throw new ToolError('TIMEOUT', 'Execution budget expired reading Claude models.');
       }
-    },
-  });
-  if (turned || result.status !== 'completed') return undefined;
-  return parseClaudeModels(response);
+      throw new ToolError('ABORTED', 'Claude model list cancelled.');
+    }
+    if (result.status !== 'completed' && (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut())) {
+      throw new ToolError('TIMEOUT', 'Execution budget expired reading Claude models.');
+    }
+    if (turned || result.status !== 'completed') return undefined;
+    return parseClaudeModels(response);
+  } finally {
+    channel?.close();
+  }
 }
 
 /**

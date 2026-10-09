@@ -513,11 +513,12 @@ tests and documentation review. Depends on T06.
   promises settle and owned handles close. Check: R, CACHE and
   `tests/backends/codex/adapter.test.js`; fetch current CLI docs before API edits.
   Evidence: [EXEC-001-T08c implementation](HANDOFF.md#exec-001-t08c-bound-codex-reads).
-- [ ] **T08d - bound Claude reads.** Start: `src/backends/claude/adapter.ts`,
+- [x] **T08d - bound Claude reads.** Start: `src/backends/claude/adapter.ts`,
   `usage.ts`. Cover probe, model observation/catalog and native quota reads.
   Done: stalled initialize/usage fixtures clean up, and no native model call
   is used to obtain missing evidence. Check: R, CACHE/CLAUDE;
   fetch current CLI docs before protocol edits.
+  Evidence: [EXEC-001-T08d implementation](HANDOFF.md#exec-001-t08d-bound-claude-reads).
 - [ ] **T08e - bound agy reads.** Start: `src/backends/agy/adapter.ts` and its
   discovery/quota callees. Done: stalled discovery cleans up without changing
   sandbox/inherited-tool policy or mislabelling timeout as unauthenticated.
