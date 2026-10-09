@@ -75,6 +75,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`4e4f471`](https://github.com/oktawianwybieralski/coagent8/commit/4e4f47115d0add848345bda62ed56399ee76e157) **layout:** Finish consumers, mirror test layout, and retire internal shims (S5)
 - [`4933834`](https://github.com/oktawianwybieralski/coagent8/commit/4933834825348d1af81d443f453c4cab849a7ee7) **boundaries:** Enforce automated dependency boundaries and cycle detection (S6)
 - [`8fb6325`](https://github.com/oktawianwybieralski/coagent8/commit/8fb6325a6e14983dcde6459f04886c98a8a4a2e1) **execution:** Establish reproducible baseline and call map (EXEC-001-T01)
+- [`83214ff`](https://github.com/oktawianwybieralski/coagent8/commit/83214ff89aca16a5b0f2eff682514401fa46272f) **execution:** Extract cohesive task preparation (EXEC-001-T04)
 
 ### Fixed
 - [`0c11032`](https://github.com/oktawianwybieralski/coagent8/commit/0c1103211b9efab5872b3b2ae6bd79ca02de7014) **execution:** Enforce process identity and safe teardown on Windows
