@@ -910,7 +910,10 @@ documentation through Context7 before implementing adapters.
 
 ## Remaining foundation work
 
-Retain these work IDs; local fixes still need candidate acceptance.
+Retain these work IDs; local fixes still need candidate acceptance. For the
+reviewed source-analysis findings, use the existing
+[AUDIT-001 follow-up cards](#audit-001---corrected-analysis-follow-up)
+instead of creating a duplicate assignment.
 
 These rows are acceptance inventories, not permission to rewrite every listed
 subsystem. For an assigned row, first select one finding/behavior and one
@@ -948,6 +951,329 @@ condition in the inventory when splitting; a narrower card does not waive it.
 | `ERRORS-001`, `SIMPLIFY-001`, `DOCS-001` | Finish the review of I/O errors and empty catch blocks so every failure is actionable; type auth, quota, context-length and crash failures; remove duplicated timeout constants. Refactor only where a module holds unrelated responsibilities, and document logic that is hard to follow. Do not change behavior merely to rename folders. |
 | `PACKAGE-001`, `TESTS-001`, `VERIFY-SCOPE-001`, `VERIFY-001` | `dist/` stays untracked; the VSIX and plugin payloads are derived from the npm tarball. Tests prove they remove only their own temporary files and keep logs that explain a failure. Accept in CI the change that runs the suite once per matrix job through `test:coverage` instead of a separate full run. Report source tests, bundle checks, exact-artifact checks and native-host evidence separately. |
 | `CHANGELOG-001`, `REPO-001` | Keep generated changelog/pre-push/title checks and license notices. GitHub release-note API, protections and registry state need owner-led verification; no automatic history/npm action. |
+
+## AUDIT-001 - corrected analysis follow-up
+
+Planned 2026-10-09 after checking the local source-analysis report against the
+code at `b1dbd99`. This section is the executable task list; local analysis
+files are historical input. All cards below are pending. This planning update
+does not authorize running the whole queue or mark any runtime defect fixed.
+
+### Triage and preserved contracts
+
+| Claim | Disposition |
+| --- | --- |
+| Unlocked configuration read-modify-write | Plausible lost-update defect; reproduce before changing signatures. |
+| Quota read errors become an empty merge base | Plausible persisted cooldown loss; distinguish missing data from unreadable existing data. |
+| Synchronous rename without retry | Reliability hypothesis, not proof of a Windows incident; test each caller separately. |
+| Unbounded observation map | Confirmed absence of entry eviction; determine reachable growth and a bounded policy. TTL already exists. |
+| Whole-log read for torn-tail recovery | Confirmed extra full read; measure separately from the reader's existing load. |
+| Diff redaction removes later diagnostics | Confirmed conservative behavior; any narrower boundary needs privacy evidence first. |
+| AWS trailing "a" is a regex bug | Rejected. Partial prefixes are intentional; earlier authorization/AIza checks also match it. The caller is history persistence. |
+| agy JSON parse escapes the process supervisor | Rejected. The supervisor catches callback errors and returns PROTOCOL_ERROR. |
+| workspace importing process primitives violates layering | Rejected. The architecture and dependency checker explicitly allow these primitives. |
+| Two price-limit checks are redundant | Rejected. Preserve checks before consent and immediately before session acquisition. |
+| doctor health must never record a default | Rejected as a defect: health behavior is documented; models view is distinct. |
+| Doctor tool has no final byte bound | Rejected. The MCP handler applies the bound after formatting. |
+| Entry point needs ESM modernization | Rejected. The package/build is CommonJS with deliberate lazy setup loading. |
+| Missing session barrel export, Node types, duplicate helpers, long modules | No demonstrated contract defect; no automatic cleanup task. |
+
+Keep complete lease publication, token-aware reclamation, per-flush capacity
+accounting, existing history formats/pagination, exact/approximate price
+semantics and backend protocol compatibility. Do not replace lease publication
+with open-then-write, delete a judged-stale lease without ownership validation,
+remove a price check, weaken secret-prefix handling, replace price matching
+with an alias table, or remove collector dialects under these cards.
+Do not introduce a general utilities module or rename folders to satisfy style.
+
+### Assignment protocol
+
+- Assign **one full card ID** per model turn. Read this section, that card's
+  starting files and the relevant architecture contract. Do not reread all
+  analysis reports or attempt an entire track.
+- Recheck the checkout and prerequisite evidence. Dependencies below are
+  completion requirements, not permission to edit another agent's work.
+- Each reproduction records input, expected/actual behavior, source identity,
+  command and persisted bytes or other directly measured property. Use isolated
+  fixture state and deterministic synchronization; timing sleeps are not proof
+  of a race. Never use live credentials, registrations or paid model calls.
+- A reproduction-only card may expose an expected failure locally. Label it
+  REPRODUCED and keep the regression for its paired fix; do not weaken assertions,
+  commit/publish a known-red candidate, or describe that as a green gate.
+- If the hypothesis is not reproduced, record NOT_REPRODUCED and the limits of
+  the experiment. Skip its fix until a concrete failing case exists. A missing
+  fixture capability is NOT_RUN, not a reason to rewrite production for the test.
+- Prefer existing fixture/injection seams. Any new seam must be narrow, owned
+  by the affected capability and justified; no global filesystem monkey-patching.
+- A fix changes only its behavior and necessary callers/tests. If it needs a
+  contract decision outside the card, record the precise open decision and stop
+  dependent implementation; continue no unrelated refactoring.
+- Use existing **P/R** checks and test groups above. A listed test path is passed
+  to `node tests/run.cjs`. Async signature changes also require every affected
+  caller test found by search, even if outside the named group. Build/package
+  changes and source comments follow the scope-based quality rule.
+- Update the card and a concise evidence entry in HANDOFF when done; report
+  files changed, actual checks, evidence limits and next eligible card. Stop
+  after the assigned card for the existing owner checkpoint.
+- Architecture changes belong in ARCHITECTURE; no local note is an instruction.
+  Git integration, publication and release approval retain their existing gates.
+
+Suggested handoff prompt:
+
+~~~text
+Implement only <full card ID> from docs/ROADMAP.md.
+Check its dependencies against docs/HANDOFF.md and the current source.
+Stay within its Change scope and preserve the contracts listed above.
+Run its Checks, record actual evidence, and stop after this card.
+If the reproduction fails to establish the defect, do not implement its fix.
+~~~
+
+### Order and ownership
+
+Start with A01-A03 (QUOTA-001/ERRORS-001), then A04-A05
+(LOCKS-001/config). Address A06-A07 (configuration write reliability) next.
+A08-A09 (SESSION-001) and A10-A12 (INSTALL-001) are separate conditional
+write-reliability tracks. A13-A15 (EXEC-001 cache) and A16-A18 (HISTORY-002)
+are measured optimizations after correctness work. A19-A20
+(REDACTION-002/diagnostic privacy) are conditional. A21 closes this batch.
+
+These are subordinate cards of existing foundation owners, not a replacement
+for EXEC-001. Coordinate shared-file changes with EXEC-001-T03/T05 (config/cache),
+T06 (session cleanup), T08 (cancellable observations) and T09 (storage waits).
+Reuse whichever contracts are already implemented; do not build a second
+cache, retry framework or timeout system. If an EXEC card has already resolved
+a case, cite its exact evidence and skip duplicate implementation.
+
+### Quota cache: retain other providers on read failure
+
+- [ ] **AUDIT-001-A01 - reproduce quota state loss.**
+  Depends: none. Start: `src/backends/availability.ts`,
+  `src/storage/read.ts`, `tests/backends/availability.test.js`.
+  Change: fixture/regression only; seed two active provider cooldowns, simulate
+  an I/O failure reading the existing cache inside the locked update, and attempt
+  an update of just one provider. Cover inspectQuotas and recordQuotaCooldown.
+  Done: inspect actual file bytes after the attempt; distinguish observed loss
+  from the separate missing-file case. Keep injection scoped to owned fixture I/O.
+  Checks: the focused availability test; P for the evidence.
+
+- [ ] **AUDIT-001-A02 - preserve read-failure identity.**
+  Depends: A01 reproduces loss. Start: `src/backends/availability.ts:readQuotaCache`
+  and its callers. Change: define an internal read result that distinguishes
+  missing, valid, invalid content and I/O failure; preserve the public
+  best-effort read contract where needed. No writer behavior change in this card.
+  Done: ENOENT differs from EBUSY/EPERM/EACCES, malformed JSON and oversize input;
+  locked writers can obtain the distinction without a second storage owner.
+  Checks: R, `tests/backends/availability.test.js`; record A01's still-open failure
+  explicitly if it is not yet fixed.
+
+- [ ] **AUDIT-001-A03 - refuse destructive quota merges.**
+  Depends: A02. Start: inspectQuotas and recordQuotaCooldown in
+  `src/backends/availability.ts`.
+  Change: use the classified read inside the lock; create missing caches, but
+  skip/propagate a failed read of an existing file before any write. Do not
+  replace unreadable state with an unlocked stale in-memory copy. Preserve
+  existing best-effort warnings and successful primary answers.
+  Done: A01 passes, another provider's persisted cooldown survives, and optional
+  cache failures produce warnings without a successful write claim.
+  Checks: R, `tests/backends/availability.test.js`,
+  `tests/execution/controller-cooldown.test.js`, `tests/config.test.js`.
+
+### Configuration: serialize every writer
+
+- [ ] **AUDIT-001-A04 - prove the unlocked configuration writer.**
+  Depends: none; schedule after A03 or its documented non-reproduction.
+  Start: `src/config.ts:saveConfig`, setDefaultBackend, rememberApprovedModel,
+  recordDefaultModel; `tests/config.test.js`, `tests/storage/lock.test.js`.
+  Change: fixture/regression only. An owned helper process holds the same file
+  lease, signals that it has read state, then coordinates a competing saveConfig
+  update and release using explicit messages.
+  Done: demonstrate lease bypass/lost fields using final parsed configuration;
+  include a control with two lease-respecting writers.
+  Checks: focused config regression and P; helper processes clean up owned handles.
+
+- [ ] **AUDIT-001-A05 - serialize saveConfig and migrate its callers.**
+  Depends: A04 reproduces the defect. Start: `src/config.ts`; search all source,
+  extension and test callers of saveConfig/setDefaultBackend before editing.
+  Change: put the entire read-modify-write under the existing file lease.
+  If asynchronous signatures are necessary, migrate all callers in this card;
+  retain current write implementation until A07. Preserve editor/file precedence.
+  Done: concurrent updates retain unrelated fields; no unawaited call or changed
+  error assertion remains; malformed config still fails closed.
+  Checks: R, CONFIG, POLICY, DOCTOR and every affected caller test found by search.
+  Do not mark the card complete with only a typecheck.
+
+### Write reliability: separate each caller's contract
+
+- [ ] **AUDIT-001-A06 - reproduce transient configuration write failure.**
+  Depends: A05 or documented skip. Start: `src/config.ts:writeConfig`,
+  `src/storage/lock.ts:atomicWrite`, `tests/storage/lock.test.js`,
+  `tests/config.test.js`.
+  Change: fixture/regression only for transient destination sharing failure and
+  permanent write failure. Prefer an owned native Windows sharing fixture;
+  distinguish simulated error handling from native Windows evidence.
+  Done: record errors, attempts, old/new destination bytes and temporary-file
+  cleanup. Do not claim every open read handle blocks rename.
+  Checks: focused reproduction; existing atomic-write coverage; P.
+
+- [ ] **AUDIT-001-A07 - reuse atomicWrite for configuration.**
+  Depends: A06 establishes a failure addressed by existing atomicWrite.
+  Start: `src/config.ts:writeConfig` and every writer calling it.
+  Change: await the existing atomic writer within the configuration lease;
+  migrate affected callers together. Keep validation and file/editor precedence.
+  Done: transient case completes, permanent failure is surfaced, old bytes are
+  preserved on failed replacement, and no caller reports success before writing.
+  Checks: R, CONFIG, LOCK, POLICY, DOCTOR and affected caller tests.
+  Share retry/deadline behavior with EXEC-001-T09; add no parallel retry loop.
+
+- [ ] **AUDIT-001-A08 - check initial session publication separately.**
+  Depends: none. Start: `src/sessions/session.ts:saveSessionFile`, createSession,
+  acquireAndResolveSession, resolveSession; `tests/sessions/session.test.js`.
+  Change: fixture/reproduction only for initial creation, failed publication and
+  temporary cleanup. Inventory all synchronous callers before proposing async work.
+  Done: establish whether a real reachable failure exists; a new UUID destination
+  is not the same case as overwriting an existing configuration.
+  Checks: focused session test and P; label native Windows cases NOT_RUN if absent.
+
+- [ ] **AUDIT-001-A09 - fix reproduced session publication failure.**
+  Depends: A08 reproduces a defect. Start: the A08 call-site inventory.
+  Change: use the existing storage owner for the identified failure; if creation
+  becomes async, migrate all callers/tests together. No session-mode redesign.
+  Done: no session handle is returned before durable publication, no turn is
+  acquired after failed creation, and continuation/lease behavior is unchanged.
+  Checks: R, `tests/sessions/session.test.js`, LIFE and affected callers.
+  Preserve EXEC-001-T06's cleanup contract.
+
+- [ ] **AUDIT-001-A10 - specify safe retries for setup writes.**
+  Depends: none. Start: `src/integrations/setup-storage.ts:writeChecked`,
+  `src/integrations/setup.ts`, `src/integrations/cleanup.ts`.
+  Change: document the smallest write contract in ARCHITECTURE and caller inventory
+  in HANDOFF: before-content checks, existing mode bits, new-file privacy,
+  backups, rollback and error propagation.
+  Done: identify which semantics plain atomicWrite lacks and where bounded retry
+  belongs; record the residual external-editor race without promising universal
+  compare-and-swap. No production edit.
+  Checks: P. Reuse the storage owner; no second lease or generic I/O framework.
+
+- [ ] **AUDIT-001-A11 - reproduce setup sharing and conflict cases.**
+  Depends: A10. Start: `tests/integrations/setup.test.js`,
+  `tests/integrations/cleanup.test.js`, A10's contract.
+  Change: isolated fixtures for transient replacement failure, an external edit
+  during the wait, permanent failure and rollback. Scope mode assertions to
+  platforms that support them.
+  Done: expected before/after bytes, permissions and rollback state are explicit;
+  manual registrations and unrelated entries survive.
+  Checks: these two focused files; P for native/simulated evidence limits.
+
+- [ ] **AUDIT-001-A12 - implement only the verified setup write contract.**
+  Depends: A11 reproduces a defect and A10 has no unresolved design decision.
+  Start: writeChecked and its setup/cleanup callers.
+  Change: implement the bounded retry contract while preserving content checks,
+  permissions, backups and rollback. Migrate async callers together if needed.
+  Done: all A11 cases pass; permanent errors remain actionable; unrelated edits
+  observed before replacement are not overwritten. No unconditional atomicWrite swap.
+  Checks: R, LOCK, both A11 test files; build/package checks per scope, building
+  first if tests execute dist. Native acceptance remains separate.
+
+### Observation cache: bound storage without stale decisions
+
+- [ ] **AUDIT-001-A13 - establish reachable observation growth.**
+  Depends: none; align with EXEC-001-T05/T08 before editing shared files.
+  Start: `src/backends/probe-cache.ts:readObservedModel`,
+  `tests/backends/probe-cache.test.js`, model selection callers.
+  Change: fixture-only sequence of distinct valid requested names using the
+  existing adapter seam. Record hit/miss counts and retained-entry evidence.
+  Done: establish reachable cardinality without launching real CLIs; distinguish
+  observations from provider-keyed probe/catalog maps and in-flight promises.
+  Checks: focused probe-cache test; P. No timing-only memory-leak claim.
+
+- [ ] **AUDIT-001-A14 - bound the observation map.**
+  Depends: A13 establishes growth. Start: `src/backends/probe-cache.ts`.
+  Change: a named maximum of 100 retained observations with least-recently-used
+  eviction; remove stale entries when encountered. Keep current freshness and
+  executable/config/environment stamps and separate in-flight work.
+  Done: retained entries never exceed the cap; an evicted name is safely reread;
+  repeated hits remain cached; an active shared request is not evicted/cancelled.
+  Checks: R, `tests/backends/probe-cache.test.js`, SELECT, POLICY.
+  Do not delay stamp checks until TTL expiry.
+
+- [ ] **AUDIT-001-A15 - verify cache invalidation and coalescing.**
+  Depends: A14. Start: existing probe-cache tests and EXEC-001-T08 evidence.
+  Change: reuse existing tests; add only missing boundary cases for cap+1 names,
+  expiry, environment/config/executable changes, failed reads and shared requests.
+  Done: eviction changes resource bounds without stale routing/consent, poisoned
+  in-flight entries or extra launches on a shared miss.
+  Checks: R, CACHE, SELECT, POLICY; record observed counters, not speed estimates.
+
+### History tail: measure before changing recovery
+
+- [ ] **AUDIT-001-A16 - measure the extra history read.**
+  Depends: none. Start: `src/sessions/history/writer.ts`,
+  `src/sessions/history/reader.ts`, `tests/sessions/history.test.js`.
+  Change: isolated fixture measurement near SESSION_LIMIT, separating load(handle)
+  from the additional torn-tail read. Record bytes read, elapsed samples and
+  fixture size; mark unavailable counters NOT_MEASURED.
+  Done: quantify the targeted extra read; no claim that changing it eliminates
+  all full-history reads or snapshot writes.
+  Checks: focused measurement and existing history tests; P for evidence.
+
+- [ ] **AUDIT-001-A17 - specify bounded tail recovery cases.**
+  Depends: A16 shows useful work to remove.
+  Start: writer tail-recovery block and existing history/capacity fixtures.
+  Change: specify recovery in ARCHITECTURE and prepare behavioral cases for
+  empty logs, trailing blank lines, valid final JSON without newline, invalid
+  suffix, records larger than 8 KiB, UTF-8 boundaries and header-only logs.
+  Done: algorithm reads backward in bounded blocks until a complete record or
+  file start; records have no assumed 4-8 KiB maximum. Define exact truncation
+  offsets, sequence continuity and capacity-byte adjustment.
+  Checks: P and focused fixture cases; preserve valid historical bytes.
+
+- [ ] **AUDIT-001-A18 - replace only the extra tail scan.**
+  Depends: A17's cases and algorithm are settled.
+  Start: `src/sessions/history/writer.ts`; a history-owned helper only if needed.
+  Change: implement descriptor-based tail scanning under the existing lock,
+  closing the descriptor on all paths. Keep load, snapshot, retention and paging.
+  Done: A17 cases pass; capacity tracks actual removed bytes; complete records
+  survive; A16 measurement reports actual before/after work and any worst case.
+  Checks: R, `tests/sessions/history.test.js`,
+  `tests/sessions/history-capacity.test.js`,
+  `tests/execution/controller-history.test.js`, REDACT.
+  No compaction or deferred capacity reservation in this task.
+
+### Diagnostic diff privacy: conditional improvement
+
+- [ ] **AUDIT-001-A19 - establish safe diagnostic boundaries.**
+  Depends: none. Start: `src/diagnostics/issue.ts:sanitizeText`,
+  `tests/diagnostics/issue.test.js`, `tests/mcp/tools/issue.test.js`.
+  Change: fixtures demonstrate useful text lost after diffs, including multiple
+  files, hunks, blank lines, misleading headings, fences and secret-looking text.
+  Done: identify an unambiguous boundary supplied by structured input or framing;
+  blank lines and arbitrary headings alone are not trusted delimiters.
+  Record whether an improvement is possible without changing the public contract.
+  Checks: focused issue tests and P. If not, retain conservative redaction and skip A20.
+
+- [ ] **AUDIT-001-A20 - preserve diagnostics only at proven boundaries.**
+  Depends: A19 establishes a safe compatible improvement.
+  Start: `src/diagnostics/issue.ts` and the A19 fixtures.
+  Change: implement that boundary, retaining conservative removal for ambiguous
+  input. Do not use a shorter greedy regex as the acceptance criterion.
+  Done: actual report text/URL retains intended diagnostics and contains neither
+  private diff payload nor credentials; byte limits remain enforced.
+  Checks: R, both A19 test files and REDACT.
+
+### Batch acceptance
+
+- [ ] **AUDIT-001-A21 - reconcile evidence and request independent review.**
+  Depends: all preceding cards have PASS, documented skip, or explicit open status.
+  Start: this section, HANDOFF and the actual diff.
+  Change: document implemented behavior, source identity, reproducible checks,
+  skipped hypotheses and remaining native/platform work. Reuse valid checks;
+  run only missing checks required by the final combined scope.
+  Done: no discarded recommendation was implemented; no expected-red test is
+  represented as green; all affected caller migrations are complete. Independent
+  review is a separate reviewer activity bound to the candidate and required
+  before merge; author evidence cannot mark release READY.
+  Checks: P plus the scope-based combined gate; release/package/native/CI evidence
+  remains distinct. No automatic commit, push, merge or publication.
 
 ### Audit traceability
 

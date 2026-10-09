@@ -4,6 +4,38 @@ Updated 2026-10-09. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## Analysis follow-up planning
+
+The owner requested correction of the local source-analysis plan and small
+assignments for a less capable implementation model on 2026-10-09. The active
+queue is [AUDIT-001 corrected analysis follow-up](ROADMAP.md#audit-001---corrected-analysis-follow-up):
+21 pending cards, A01-A21, with reproduction gates, dependencies, starting files,
+acceptance cases and scope-based checks. No implementation card was started by
+this documentation change. On assignment, start with AUDIT-001-A01; existing
+EXEC work/evidence below is preserved, and shared-owner changes must be coordinated.
+
+The source assessment used b1dbd99. It rejected the claimed agy unhandled parser
+crash, forbidden workspace/runtime dependency, AWS prefix bug, missing doctor
+tool bound and ESM build issue. Lease publication/reclamation, both price checks,
+documented health diagnostics and history capacity accounting remain contracts.
+Quota state loss, configuration locking and caller-specific I/O failures need
+reproductions; cache and history optimizations need bounded behavioral evidence.
+No P0 incident or native Windows sharing failure was established by that report.
+
+Prior assessment evidence, not rerun for this prose change: dependency checker
+PASS; agy adapter plus price-limit tests 26 passed, 1 POSIX-only skipped on
+Windows, 0 failed. The local SUMMARY/INDEX are corrected reference material;
+all 11 historical module reports now carry superseded notices. Required task
+instructions live in ROADMAP and do not depend on those untracked local files.
+
+Documentation validation PASS: content review against source/contracts,
+21 ordered unique cards with required fields and earlier-card dependencies,
+30 source/test references, 38 local links/anchors plus the foundation-section
+cross-reference, 11 superseded notices, ASCII roadmap addition and
+git diff --check. Runtime tests, builds and backend calls were not rerun for
+this prose-only update. No source, architecture contract or Git integration
+change is included.
+
 ## Scope and decisions
 
 The owner requested analysis of three agents' arithmetic trials and consolidation
