@@ -135,6 +135,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`7bd8ca0`](https://github.com/oktawianwybieralski/coagent8/commit/7bd8ca0a19a25b575870a0d9874acb932a36d9a2) **review:** Show the reviewer answer verbatim and report every block cause
 - [`ed4a1db`](https://github.com/oktawianwybieralski/coagent8/commit/ed4a1dbfba3077bed76c28f2e4d8939dc5f56a0c) **agy:** Report a turn ended by a sandbox denial as a failure
 - [`0a932ac`](https://github.com/oktawianwybieralski/coagent8/commit/0a932acec72d8959b9e7a6600af251ff05752499) **setup:** Update owned Claude and agy registrations to the new runtime
+- [`af9f7d2`](https://github.com/oktawianwybieralski/coagent8/commit/af9f7d2f1b6869f053e6b20b8d6ff59d811edf7d) **boundaries:** Reject SDK and indirect transport dependencies
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
