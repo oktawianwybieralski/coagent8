@@ -439,24 +439,25 @@ cold/warm baseline comparison. Depends on T04.
 
 ### EXEC-001-T06 - guarantee finalization after resource acquisition
 
-- [ ] **T06a - guard acquisition and registration.** Start:
+- [x] **T06a - guard acquisition and registration.** Start:
   `src/execution/controller.ts` around `acquireAndResolveSession`, writer
   creation, `activeSessionAborts` and timer/listener registration. Enter a
   guaranteed finalization scope immediately after acquiring the turn token.
   Done: injected writer/registration failure releases owned state and settles
   waiters. Check: R, LIFE/SESSION with failure after each acquisition boundary.
-- [ ] **T06b - isolate finalization failures.** In that scope, ensure metadata
+- [x] **T06b - isolate finalization failures.** In that scope, ensure metadata
   failure, archive failure and lease failure cannot skip the other mandatory
   cleanup attempts. Preserve warning/error priority and continuation invalidation.
   Done: archive failure keeps a valid answer, lease failure remains fail-closed,
   cooldown is recorded at most once, failed snapshot recheck cannot yield READY.
   Check: R, LIFE/SESSION/REVIEW.
-- [ ] **T06c - verify cancellation settlement.** Start:
+- [x] **T06c - verify cancellation settlement.** Start:
   `cancelSessionExecution`, `waitForActiveExecutionTasks` and
   `src/execution/process.ts`. Cover cancel/EOF during execution and finalization
   without changing process ownership. Done: awaited settlement means timers,
   listeners and owned children have completed cleanup; no orphaned raced promise
   is treated as completion. Check: R, PROCESS/LIFE/E2E; report platform limits.
+  Evidence: [EXEC-001-T06 implementation](HANDOFF.md#exec-001-t06-guarantee-finalization-after-resource-acquisition).
 
 Acceptance: injected failure/cancellation at each acquisition/finalization
 boundary leaves no owned active entry, timer or turn lease without a reported

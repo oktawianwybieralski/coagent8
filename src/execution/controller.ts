@@ -88,6 +88,14 @@ export interface TaskOptions {
   clock?: MonotonicClock;
   /** Optional existing phase tracker to compose spans into a single trace. */
   tracker?: import('./runtime/timing.js').PhaseTracker;
+  /** Optional factory override to inject history writer errors or custom writers during tests. */
+  createHistoryWriter?: (handle: string, workspace: string, provider: ProviderId, turnId: string) => ReturnType<typeof createHistoryWriter>;
+  /** Optional hook to simulate failure immediately during turn registration. */
+  simulateRegistrationFault?: () => void;
+  /** Optional hook to simulate metadata update failure during finalization. */
+  updateSession?: typeof updateSession;
+  /** Optional hook to simulate lease release failure during finalization. */
+  releaseSessionTurn?: typeof releaseSessionTurn;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -234,237 +242,316 @@ async function executeTaskInternal(
     const acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd);
     if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
     const session = acquired.session, handle = session.sessionHandle, token = session.turnToken!;
-    const writer = createHistoryWriter(handle, cwd, backend.id, randomUUID());
-    const cancelController = new AbortController();
-    const onCallerAbort = () => cancelController.abort();
-    if (abortSignal) {
-      if (abortSignal.aborted) cancelController.abort();
-      else abortSignal.addEventListener('abort', onCallerAbort, { once: true });
-    }
-    let notifySettled: () => void;
+
+    let notifySettled!: () => void;
     const settled = new Promise<void>(resolve => { notifySettled = resolve; });
-    activeSessionAborts.set(handle, {
-      abort: () => cancelController.abort(),
-      wait: async () => {
-        let timer: NodeJS.Timeout | undefined;
-        try {
-          return await Promise.race([
-            settled.then(() => true),
-            new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5000); }),
-          ]);
-        } finally { clearTimeout(timer); }
-      },
-    });
-    acqHandle.end();
-  const started = Date.now(); let toolCount = 0, historyError: Error | undefined, sawPublicMessage = false;
-  let lastEvent = Date.now();
-  let lastPhase = 'Initialization';
-  const adapterWarnings = new Set<string>();
-  // The progress reporter redacts each message once, where it leaves for the client.
-  const report = (message: string) => onProgress?.({ message });
-  const receive = (event: AdapterEvent) => {
-    if (event.type === 'user_message' || event.type === 'turn_started' || event.type === 'turn_finished') return;
-    lastEvent = Date.now();
-    if (event.type !== 'status') {
+    const cancelController = new AbortController();
+    let callerAbortListenerAdded = false;
+    const onCallerAbort = () => cancelController.abort();
+    let abortEntry: { abort: () => void; wait: () => Promise<boolean> } | undefined;
+    let abortEntryRegistered = false;
+    let turnReleased = false;
+    let heartbeat: NodeJS.Timeout | undefined;
+    let flushTimer: NodeJS.Timeout | undefined;
+
+    try {
+      if (abortSignal) {
+        if (abortSignal.aborted) cancelController.abort();
+        else {
+          abortSignal.addEventListener('abort', onCallerAbort, { once: true });
+          callerAbortListenerAdded = true;
+        }
+      }
+      abortEntry = {
+        abort: () => cancelController.abort(),
+        wait: async () => {
+          let timer: NodeJS.Timeout | undefined;
+          try {
+            return await Promise.race([
+              settled.then(() => true),
+              new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5000); }),
+            ]);
+          } finally { clearTimeout(timer); }
+        },
+      };
+      activeSessionAborts.set(handle, abortEntry);
+      abortEntryRegistered = true;
+      if (options.simulateRegistrationFault) {
+        options.simulateRegistrationFault();
+      }
+
+      const writerFactory = options.createHistoryWriter ?? createHistoryWriter;
+      const writer = writerFactory(handle, cwd, backend.id, randomUUID());
+      acqHandle.end();
+
+      const started = Date.now(); let toolCount = 0, historyError: Error | undefined, sawPublicMessage = false;
+      let lastEvent = Date.now();
+      let lastPhase = 'Initialization';
+      const adapterWarnings = new Set<string>();
+      // The progress reporter redacts each message once, where it leaves for the client.
+      const report = (message: string) => onProgress?.({ message });
+      const receive = (event: AdapterEvent) => {
+        if (event.type === 'user_message' || event.type === 'turn_started' || event.type === 'turn_finished') return;
+        lastEvent = Date.now();
+        if (event.type !== 'status') {
+          try {
+            writer.accept(event);
+          } catch (err) {
+            if (!historyError) historyError = err as Error;
+          }
+        }
+        if (event.type === 'assistant_delta' || event.type === 'assistant_message') sawPublicMessage = true;
+        if (event.type === 'tool_finished') {
+          toolCount++;
+          const name = event.name === 'command_execution' ? 'sandbox command' : event.name;
+          report(`Completed: ${name} (${event.success ? 'success' : 'error'})`);
+        } else if (event.type === 'tool_started') {
+          const name = event.name === 'command_execution' ? 'sandbox command' : event.name;
+          lastPhase = `Tool (${name})`;
+          report(`Running: ${name}...`);
+        } else if (event.type === 'status') {
+          lastPhase = event.message;
+          report(event.message);
+        } else if (event.type === 'warning') {
+          report(`Warning: ${event.message}`);
+          if (adapterWarnings.size < MAX_ADAPTER_WARNINGS) adapterWarnings.add(event.message);
+        } else if (event.type === 'error') {
+          report(`Error: ${event.error.message}`);
+        } else if (event.type === 'assistant_message') {
+          lastPhase = 'Formulating response';
+          report('Formulating response...');
+        }
+      };
+
+      let result: TerminalExecutionResult;
+      const execHandle = startControllerPhase('execution');
       try {
-        writer.accept(event);
+        try {
+          writer.accept({ type: 'turn_started' });
+          writer.accept({ type: 'user_message', text: publicInput });
+          await writer.flush();
+        } catch (err) {
+          historyError = err as Error;
+        }
+        heartbeat = setInterval(() => {
+          const elapsedMs = Date.now() - lastEvent;
+          if (elapsedMs >= 10000) {
+            const totalElapsedSec = Math.floor((Date.now() - started) / 1000);
+            report(`Operation in progress (${lastPhase}, ${totalElapsedSec}s elapsed)...`);
+          }
+        }, 5000);
+        flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
+        const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
+          timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
+        const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
+        // Validate terminal results defensively, including adapters supplied at runtime.
+        const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
+        const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);
+        const protocolTrusted = validStatus && !contradictory;
+        const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
+        if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
+        result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
+          error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
+      } catch (err) {
+        const code = errorCodeOf(err);
+        result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
+      } finally {
+        execHandle.end();
+        if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; }
+        if (flushTimer) { clearInterval(flushTimer); flushTimer = undefined; }
+        if (callerAbortListenerAdded && abortSignal) {
+          abortSignal.removeEventListener('abort', onCallerAbort);
+          callerAbortListenerAdded = false;
+        }
+      }
+
+      const finHandle = startControllerPhase('finalization');
+      const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...consentWarnings, ...adapterWarnings];
+      const rawExecutionError = result.error;
+
+      // Post-execution bookkeeping: session metadata (AUD-P1-3)
+      const doUpdateSession = options.updateSession ?? updateSession;
+      try {
+        const raw = result as ExecutionResult;
+        const protocolTrusted = !result.error || result.error.code !== 'PROTOCOL_ERROR';
+        if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) {
+          await doUpdateSession(handle, {
+            threadId: raw.nativeSessionId || raw.threadId || null,
+            model: raw.model || model,
+            reasoningEffort,
+            cliVersion: backend.probe.version,
+            safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-read-only` : undefined,
+          }, token);
+        }
+        if (result.error?.code === 'SESSION_INVALID') {
+          await doUpdateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: result.error.code }, token);
+        }
+      } catch (sessionErr) {
+        warnings.push(`Session update failed: ${redactDiagnostic((sessionErr as Error).message, 512)}`);
+        result = { ...result, continuationAvailable: false };
+        try {
+          await doUpdateSession(handle, { state: 'invalidated' }, token);
+        } catch (invalidateErr) {
+          warnings.push(`Session could not be invalidated: ${redactDiagnostic((invalidateErr as Error).message, 512)}`);
+        }
+      }
+
+      // History archival finalization (Primary Task Supremacy: archive failure preserves valid answer)
+      try {
+        if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
+        if (result.error) writer.accept({ type: 'error', error: result.error });
+        writer.accept({ type: 'turn_finished', status: result.status });
+        await writer.flush();
       } catch (err) {
         if (!historyError) historyError = err as Error;
       }
-    }
-    if (event.type === 'assistant_delta' || event.type === 'assistant_message') sawPublicMessage = true;
-    if (event.type === 'tool_finished') {
-      toolCount++;
-      const name = event.name === 'command_execution' ? 'sandbox command' : event.name;
-      report(`Completed: ${name} (${event.success ? 'success' : 'error'})`);
-    } else if (event.type === 'tool_started') {
-      const name = event.name === 'command_execution' ? 'sandbox command' : event.name;
-      lastPhase = `Tool (${name})`;
-      report(`Running: ${name}...`);
-    } else if (event.type === 'status') {
-      lastPhase = event.message;
-      report(event.message);
-    } else if (event.type === 'warning') {
-      report(`Warning: ${event.message}`);
-      if (adapterWarnings.size < MAX_ADAPTER_WARNINGS) adapterWarnings.add(event.message);
-    } else if (event.type === 'error') {
-      report(`Error: ${event.error.message}`);
-    } else if (event.type === 'assistant_message') {
-      lastPhase = 'Formulating response';
-      report('Formulating response...');
-    }
-  };
-  let heartbeat: NodeJS.Timeout | undefined, flushTimer: NodeJS.Timeout | undefined;
-  let result: TerminalExecutionResult;
-  const execHandle = startControllerPhase('execution');
-  try {
-    try {
-      writer.accept({ type: 'turn_started' });
-        writer.accept({ type: 'user_message', text: publicInput });
-        await writer.flush();
-      } catch (err) {
-        historyError = err as Error;
-      }
-      heartbeat = setInterval(() => {
-        const elapsedMs = Date.now() - lastEvent;
-        if (elapsedMs >= 10000) {
-          const totalElapsedSec = Math.floor((Date.now() - started) / 1000);
-          report(`Operation in progress (${lastPhase}, ${totalElapsedSec}s elapsed)...`);
-        }
-      }, 5000);
-      flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
-      const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
-        timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
-      const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
-      // Validate terminal results defensively, including adapters supplied at runtime.
-      const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
-      const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);
-      const protocolTrusted = validStatus && !contradictory;
-      const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
-      if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
-      result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
-        error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
-    } catch (err) {
-      const code = errorCodeOf(err);
-      result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
-    } finally {
-      execHandle.end();
-      if (heartbeat) clearInterval(heartbeat); if (flushTimer) clearInterval(flushTimer);
-      if (abortSignal) abortSignal.removeEventListener('abort', onCallerAbort);
-    }
 
-    const finHandle = startControllerPhase('finalization');
-    const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...consentWarnings, ...adapterWarnings];
-
-    // Post-execution bookkeeping: session metadata (AUD-P1-3)
-    try {
-      const raw = result as ExecutionResult;
-      const protocolTrusted = !result.error || result.error.code !== 'PROTOCOL_ERROR';
-      if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) {
-        await updateSession(handle, {
-          threadId: raw.nativeSessionId || raw.threadId || null,
-          model: raw.model || model,
-          reasoningEffort,
-          cliVersion: backend.probe.version,
-          safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-read-only` : undefined,
-        }, token);
-      }
-      if (result.error?.code === 'SESSION_INVALID') {
-        await updateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: result.error.code }, token);
-      }
-    } catch (sessionErr) {
-      warnings.push(`Session update failed: ${redactDiagnostic((sessionErr as Error).message, 512)}`);
-      result = { ...result, continuationAvailable: false };
+      // Release session turn lease (fail-closed)
+      const doReleaseSessionTurn = options.releaseSessionTurn ?? releaseSessionTurn;
+      let releaseError: string | undefined;
       try {
-        await updateSession(handle, { state: 'invalidated' }, token);
-      } catch (invalidateErr) {
-        warnings.push(`Session could not be invalidated: ${redactDiagnostic((invalidateErr as Error).message, 512)}`);
+        turnReleased = true;
+        const released = await doReleaseSessionTurn(handle, token);
+        if (!released.ok) {
+          releaseError = released.error || 'Failed to release session turn lease';
+        }
+      } catch (err) {
+        releaseError = (err as Error).message || 'Failed to release session turn lease';
       }
-    }
 
-    // History archival finalization
-    try {
-      if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
-      if (result.error) writer.accept({ type: 'error', error: result.error });
-      writer.accept({ type: 'turn_finished', status: result.status });
-      await writer.flush();
-    } catch (err) {
-      if (!historyError) historyError = err as Error;
-    }
-
-    // Release session turn lease (fail-closed)
-    const released = await releaseSessionTurn(handle, token);
-    activeSessionAborts.delete(handle);
-    notifySettled!();
-
-    if (!released.ok && !cancelController.signal.aborted) {
-      result = {
-        ...result,
-        isError: true,
-        status: 'failed',
-        error: { code: 'SESSION_INVALID', message: redactDiagnostic(released.error), retryable: false },
-      };
-    }
-
-    if (historyError) {
-      warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
-    }
-
-    // Quota cooldown update: exactly one write per rate-limited turn, using the provider
-    // reset when the message states one and the tiered backoff otherwise.
-    try {
-      if (result.error?.code === 'RATE_LIMITED') {
-        const reset = parseResetTimestamp(result.error.message);
-        await recordQuotaCooldown(backend.id, reset?.cooldownMs, result.error.message.slice(0, 200) || undefined);
-      } else if (!result.isError && result.status === 'completed') {
-        await resetQuotaCooldown(backend.id);
-      }
-    } catch (error) {
-      warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
-    }
-
-    if (options.reviewContext && options.verifyReviewSnapshot) {
-      try { options.reviewContext.invalidatedReason = await options.verifyReviewSnapshot(); }
-      catch (error) { options.reviewContext.invalidatedReason = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`; }
-    }
-
-    let review: StateEnvelopeEvaluation | undefined;
-    if (options.requireEnvelope) {
-      if (result.isError || result.error) {
-        review = {
-          verdict: 'BLOCKED',
-          reason: result.error?.message || 'Execution error',
+      if (releaseError && !cancelController.signal.aborted) {
+        result = {
+          ...result,
+          isError: true,
+          status: 'failed',
+          error: { code: 'SESSION_INVALID', message: redactDiagnostic(releaseError), retryable: false },
+          continuationAvailable: false,
         };
-      } else {
-        review = evaluateStateEnvelopeGate(
-          stripAnsi(result.output || '').trim(),
-          result.truncated,
-          true,
-          options.reviewContext
-        );
       }
-    }
-    finHandle.end();
-    const durationMs = Date.now() - started;
 
-    const trace = emitTrace();
-    if (observerPromise) {
-      let timer: NodeJS.Timeout | undefined;
-      let timedOut = false;
-      await Promise.race([
-        observerPromise,
-        new Promise<void>(resolve => {
-          timer = setTimeout(() => {
-            timedOut = true;
-            resolve();
-          }, 500);
-        }),
-      ]);
-      if (timer) clearTimeout(timer);
-      if (timedOut) {
-        observerWarnings.push('Timing observer timed out after 500ms.');
+      if (historyError) {
+        warnings.push(`History not saved: ${redactDiagnostic(historyError.message, 512)}`);
       }
-    }
-    for (const w of observerWarnings) {
-      if (!warnings.includes(w)) warnings.push(w);
-    }
 
-    return {
-      isError: result.isError,
-      provider: backend.id,
-      result,
-      sessionHandle: handle,
-      meta: {
-        turn: session.turnCount || 1,
-        toolCount,
-        durationMs,
-        historyAvailable: !writer.disabled && !historyError,
-        phases: trace.phases,
-      },
-      warnings,
-      price: priceNote,
-      review,
-    };
+      // Quota cooldown update: exactly one write per rate-limited or completed turn
+      try {
+        const rateErr = (result.error?.code === 'RATE_LIMITED' ? result.error : undefined)
+          ?? (rawExecutionError?.code === 'RATE_LIMITED' ? rawExecutionError : undefined);
+        if (rateErr) {
+          const reset = parseResetTimestamp(rateErr.message);
+          await recordQuotaCooldown(backend.id, reset?.cooldownMs, rateErr.message.slice(0, 200) || undefined);
+        } else if (!result.isError && result.status === 'completed') {
+          await resetQuotaCooldown(backend.id);
+        }
+      } catch (error) {
+        warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
+      }
+
+      // Review snapshot verification & gate evaluation: failed snapshot recheck cannot yield READY
+      let snapshotError: string | undefined;
+      if (options.verifyReviewSnapshot) {
+        try {
+          snapshotError = await options.verifyReviewSnapshot();
+        } catch (error) {
+          snapshotError = `Cannot verify review snapshot: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`;
+        }
+      }
+
+      let reviewContext = options.reviewContext;
+      if (snapshotError) {
+        if (!reviewContext) {
+          reviewContext = {
+            expectedSnapshot: '',
+            requiredChecks: [],
+            inputComplete: true,
+            invalidatedReason: snapshotError,
+          };
+        } else {
+          reviewContext.invalidatedReason = snapshotError;
+        }
+      }
+
+      let review: StateEnvelopeEvaluation | undefined;
+      if (options.requireEnvelope) {
+        if (result.isError || result.error) {
+          review = {
+            verdict: 'BLOCKED',
+            reason: result.error?.message || 'Execution error',
+          };
+        } else {
+          review = evaluateStateEnvelopeGate(
+            stripAnsi(result.output || '').trim(),
+            result.truncated,
+            true,
+            reviewContext
+          );
+        }
+      }
+      finHandle.end();
+      const durationMs = Date.now() - started;
+
+      const trace = emitTrace();
+      if (observerPromise) {
+        let timer: NodeJS.Timeout | undefined;
+        let timedOut = false;
+        await Promise.race([
+          observerPromise,
+          new Promise<void>(resolve => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              resolve();
+            }, 500);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (timedOut) {
+          observerWarnings.push('Timing observer timed out after 500ms.');
+        }
+      }
+      for (const w of observerWarnings) {
+        if (!warnings.includes(w)) warnings.push(w);
+      }
+
+      return {
+        isError: result.isError,
+        provider: backend.id,
+        result,
+        sessionHandle: handle,
+        meta: {
+          turn: session.turnCount || 1,
+          toolCount,
+          durationMs,
+          historyAvailable: !writer.disabled && !historyError,
+          phases: trace.phases,
+        },
+        warnings,
+        price: priceNote,
+        review,
+      };
+    } finally {
+      if (heartbeat) clearInterval(heartbeat);
+      if (flushTimer) clearInterval(flushTimer);
+      if (callerAbortListenerAdded && abortSignal) {
+        abortSignal.removeEventListener('abort', onCallerAbort);
+        callerAbortListenerAdded = false;
+      }
+      if (!turnReleased) {
+        turnReleased = true;
+        try {
+          const doRelease = options.releaseSessionTurn ?? releaseSessionTurn;
+          await doRelease(handle, token);
+        } catch {
+          // ignore error in emergency fallback release
+        }
+      }
+      if (abortEntryRegistered) {
+        if (activeSessionAborts.get(handle) === abortEntry) {
+          activeSessionAborts.delete(handle);
+        }
+        abortEntryRegistered = false;
+      }
+      notifySettled();
+    }
   } finally {
     closeControllerSpans();
     emitTrace();

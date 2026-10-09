@@ -108,8 +108,16 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_
     if (process.platform === 'win32') {
       if (hasExited(proc)) return;
       const exited = new Promise<void>(resolve => {
-        const timer = setTimeout(resolve, WINDOWS_EXIT_WAIT_MS);
-        proc.once('exit', () => { clearTimeout(timer); resolve(); });
+        let timer: NodeJS.Timeout | undefined;
+        const onExit = () => {
+          if (timer) clearTimeout(timer);
+          resolve();
+        };
+        timer = setTimeout(() => {
+          proc.removeListener('exit', onExit);
+          resolve();
+        }, WINDOWS_EXIT_WAIT_MS);
+        proc.once('exit', onExit);
       });
       proc.kill();
       await exited;
@@ -129,8 +137,8 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_
 export async function terminateAllProcesses(): Promise<void> {
   const runs = [...activeRuns.values()], processes = [...activeProcesses];
   for (const run of runs) run.cancel();
-  await Promise.all(runs.map(run => run.done));
-  await Promise.all(processes.map(proc => terminateProcessTree(proc)));
+  await Promise.allSettled(runs.map(run => run.done));
+  await Promise.allSettled(processes.map(proc => terminateProcessTree(proc)));
 }
 
 /**
@@ -311,7 +319,11 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       catch (err) { stopped = failure(callbackErrorCode(err), (err as Error).message); }
       stdout = truncateToByteLength(stdout + outDecoder.end(), limit);
       stderr = truncateToByteLength(stderr + errDecoder.end(), limit);
-      await terminateProcessTree(child, signalGrace);
+      try {
+        await terminateProcessTree(child, signalGrace);
+      } catch {
+        // teardown safety
+      }
       activeProcesses.delete(child); activeRuns.delete(child);
       resolve({ ...(stopped || { status: exitCode === 0 && !signal ? 'completed' : 'failed' }), stdout, stderr, exitCode, signal, isTruncated: truncated });
     });
@@ -319,7 +331,14 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     options.abortSignal?.addEventListener('abort', cancel, { once: true });
     if (options.abortSignal?.aborted) cancel();
     if (stopped) return;
-    if (!session) { child.stdin?.end(options.stdinInput || '', 'utf8'); return; }
+    if (!session) {
+      try {
+        child.stdin?.end(options.stdinInput || '', 'utf8');
+      } catch (err) {
+        stop(callbackErrorCode(err), (err as Error).message);
+      }
+      return;
+    }
     try {
       session.start(channel, options.stdinInput || '');
       started = true;

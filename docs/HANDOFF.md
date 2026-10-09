@@ -820,6 +820,42 @@ Scope: reuse catalog and default-model observations across provider routing, sel
 - PASS: `git diff --check` (clean whitespace and diff markers).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_74de684872a8a8dc0d03f55c`, Turn 4: `COVERAGE: COMPLETE`, `VERDICT: READY`).
 
+## EXEC-001-T06 guarantee finalization after resource acquisition
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: guaranteed finalization scope immediately after turn token acquisition (`EXEC-001-T06a`), isolation of metadata, archive, lease, and cooldown failures preserving Primary Task Supremacy and fail-closed lease invariant (`T06b`), and cancellation settlement guarantees for awaited processes and tasks (`T06c`).
+
+### Modules and ownership changes:
+- `src/execution/controller.ts`:
+  - Entered guaranteed `try/finally` finalization scope immediately upon acquiring `session.turnToken` in `acquireAndResolveSession`.
+  - Injected writer creation or registration failures release the turn lease, clear `activeSessionAborts`, and resolve `settled` waiters.
+  - Isolated metadata update failures: records `Session update failed` warning, invalidates continuation (`continuationAvailable: false`), attempts session invalidation, and proceeds to remaining cleanup steps.
+  - Isolated history archival failures: preserves valid user responses (Primary Task Supremacy), records `History not saved` warning, sets `historyAvailable: false`, and releases the turn lease cleanly.
+  - Isolated lease release failures: enforces fail-closed behavior (`isError: true`, status `failed`, code `SESSION_INVALID`), invalidates continuation, and prevents READY review verdicts.
+  - Bound quota cooldown to at most once per turn, capturing rate-limited errors even when overridden by subsequent lease release failures.
+  - Enforced review snapshot check: failed or thrown snapshot rechecks set `reviewContext.invalidatedReason` and guarantee review verdict cannot yield READY.
+  - Protected concurrent turn registrations: `finally` deletes `activeSessionAborts` entry if and only if the map entry still matches the current turn's `abortEntry` instance.
+  - Succeeded cancellation and `waitForActiveExecutionTasks` guarantee all timers, listeners, processes, and session turn leases have fully settled.
+- `src/execution/process.ts`:
+  - `terminateProcessTree`: on Windows, unregisters the `exit` listener on timeout to prevent listener leaks.
+  - `terminateAllProcesses`: uses `Promise.allSettled` across runs and processes.
+  - `runCommand`: safely guards `child.stdin.end` and `close` handler process tree termination in `try/catch`.
+- `src/storage/lock.ts`:
+  - `inspectLease`: tolerates transient Windows file-sharing errors (`EPERM`, `EBUSY`) during concurrent contender inspections, allowing exponential jittered backoff loop to retry without throwing.
+- `tests/execution/controller-finalization.test.js`:
+  - Added 11 granular unit and integration tests covering acquisition failure recovery, registration failure recovery, metadata failure isolation, archive failure answer preservation, fail-closed lease failure, single-write cooldown, review snapshot recheck rejection, cancellation settlement during execution, cancellation settlement during finalization, replacement turn abort registration protection, and `waitForActiveExecutionTasks` settlement.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode).
+- PASS: `npm run check:dependencies` (104 source files analyzed, 520 dependency edges, 0 violations, 0 cycles).
+- PASS: Scoped test suite: 91/91 pass (`tests/execution/controller-finalization.test.js`, `tests/execution/controller-history.test.js`, `tests/execution/controller-cooldown.test.js`, `tests/execution/controller-timing.test.js`, `tests/execution/process.test.js`, `tests/sessions/session.test.js`, `tests/storage/lock.test.js`, `tests/execution/pipeline.test.js`, `tests/execution/preparation.test.js`, `tests/mcp/tools/session.test.js`).
+- PASS: Dedicated finalization tests: 11/11 pass (`tests/execution/controller-finalization.test.js`).
+- PASS: Full test suite: 494 tests: 491 pass, 0 fail, 3 skipped, duration 137.8s, exit code 0 (`node tests/run.cjs`).
+- PASS: `npm run lint:docs` (0 warnings, 0 errors).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings).
+- PASS: `git diff --check` (clean whitespace and diff markers).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_e77db3251b9304938fe5c8f6`, Turn 2: `COVERAGE: COMPLETE`, `VERDICT: READY`).
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;

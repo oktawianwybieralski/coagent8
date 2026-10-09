@@ -37,14 +37,18 @@ interface LeaseOwner { token?: string; pid?: number; createdAt?: number }
 async function inspectLease(file: string): Promise<{ owner: LeaseOwner | null; mtimeMs: number } | null> {
   let mtimeMs: number;
   try { mtimeMs = (await fs.stat(file)).mtimeMs; }
-  catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null; throw err; }
+  catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY'))) return null;
+    throw err;
+  }
   let owner: LeaseOwner | null = null;
   try {
     const parsed: unknown = JSON.parse(await readBoundedFile(file, 1024));
     if (parsed && typeof parsed === 'object' && typeof (parsed as LeaseOwner).token === 'string') owner = parsed as LeaseOwner;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return null;
+    if (code === 'ENOENT' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY'))) return null;
     // Unparsable or oversized content is judged by age below; other I/O errors propagate.
     if (!(err instanceof SyntaxError) && code !== 'BUFFER_LIMIT') throw err;
   }
