@@ -54,6 +54,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`e12ba41`](https://github.com/oktawianwybieralski/coagent8/commit/e12ba41d1215aad3b52f9a076ad26303530d1a64) **backends:** Define shared read and deadline context (EXEC-001-T08a)
 - [`eda6a90`](https://github.com/oktawianwybieralski/coagent8/commit/eda6a90a81bd7183a50595070456c47ac8176161) **backends:** Implement shared-read waiter ownership (EXEC-001-T08b)
 - [`92e1f87`](https://github.com/oktawianwybieralski/coagent8/commit/92e1f876d77801e448eae77fbea9924652f766b6) **codex:** Bound probe, catalog, and quota reads (EXEC-001-T08c)
+- [`dfc69df`](https://github.com/oktawianwybieralski/coagent8/commit/dfc69dfff5d2852fb30a021c24d1343ae86bfe78) **claude:** Bound probe, catalog, and quota reads (EXEC-001-T08d)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
