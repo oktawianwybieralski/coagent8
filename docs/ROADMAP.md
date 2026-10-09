@@ -507,11 +507,12 @@ tests and documentation review. Depends on T06.
   triggers owned abort; late settlement cannot remove a newer inflight entry.
   Check: R, CACHE with two-waiter/all-cancelled/replacement-race fixtures.
   Evidence: [EXEC-001-T08b implementation](HANDOFF.md#exec-001-t08b-shared-read-waiter-ownership).
-- [ ] **T08c - bound Codex reads.** Start: `src/backends/codex/adapter.ts`,
+- [x] **T08c - bound Codex reads.** Start: `src/backends/codex/adapter.ts`,
   `models.ts`, `app-server.ts`. Implement context propagation for probe/catalog/
   quota paths of this backend only. Done: stalled fixture RPCs abort, pending
   promises settle and owned handles close. Check: R, CACHE and
   `tests/backends/codex/adapter.test.js`; fetch current CLI docs before API edits.
+  Evidence: [EXEC-001-T08c implementation](HANDOFF.md#exec-001-t08c-bound-codex-reads).
 - [ ] **T08d - bound Claude reads.** Start: `src/backends/claude/adapter.ts`,
   `usage.ts`. Cover probe, model observation/catalog and native quota reads.
   Done: stalled initialize/usage fixtures clean up, and no native model call

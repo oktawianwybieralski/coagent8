@@ -10,7 +10,7 @@ import {
   type CliAdapter,
   type TerminalExecutionResult,
 } from '../types.js';
-import { validEventIdentifier, type ExecutionError } from '../../contracts/index.js';
+import { ToolError, validEventIdentifier, type ExecutionError } from '../../contracts/index.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { createCodexStreamCollector } from './collector.js';
@@ -75,7 +75,14 @@ export function normalizeReasoningEffort(effort?: string | null, defaultEffort =
   return defaultEffort;
 }
 
-export async function probe(_context?: BackendReadContext): Promise<AdapterProbeResult> {
+export async function probe(context?: BackendReadContext): Promise<AdapterProbeResult> {
+  const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
+  if (abortSignal?.aborted) {
+    throw new ToolError('ABORTED', 'Codex probe cancelled before launch.');
+  }
+  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+    throw new ToolError('TIMEOUT', 'Execution budget expired before probing Codex.');
+  }
   const config = readCodexConfig();
   let installed = false;
   let version = 'unknown';
@@ -83,7 +90,15 @@ export async function probe(_context?: BackendReadContext): Promise<AdapterProbe
   const resolved = probeCommand('codex', 'OpenAI Codex CLI');
   if ('unresolved' in resolved) return resolved.unresolved;
   // runCommand reports a missing or failing CLI in its result; it does not reject.
-  const res = await runCommand(resolved.command, ['--version'], { timeoutMs: DEFAULT_PROBE_TIMEOUT_MS });
+  const res = await runCommand(resolved.command, ['--version'], {
+    timeoutMs: (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0)
+      ? context.timeoutMs
+      : DEFAULT_PROBE_TIMEOUT_MS,
+    abortSignal,
+  });
+  if (abortSignal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
+    throw new ToolError('ABORTED', 'Codex probe cancelled.');
+  }
   if (res.exitCode === 0) {
     installed = true;
     version = res.stdout.trim() || 'installed';
@@ -192,9 +207,11 @@ export const codexAdapter: CliAdapter = {
   name,
   probe,
   execute,
-  listModels: (_probe?: AdapterProbeResult, _context?: BackendReadContext) => listCodexModels(configuredBackendCommand('codex'), VALID_REASONING_EFFORTS),
+  listModels: (_probe?: AdapterProbeResult, context?: BackendReadContext) =>
+    listCodexModels(configuredBackendCommand('codex'), VALID_REASONING_EFFORTS, context),
   // ChatGPT sign-in limits from app-server; an API-key account has none and stays unmeasured.
-  inspectQuota: (_probe?: AdapterProbeResult, _context?: BackendReadContext) => readCodexRateLimits(configuredBackendCommand('codex')),
+  inspectQuota: (_probe?: AdapterProbeResult, context?: BackendReadContext) =>
+    readCodexRateLimits(configuredBackendCommand('codex'), context),
 };
 
 export default codexAdapter;

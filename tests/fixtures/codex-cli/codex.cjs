@@ -5,9 +5,16 @@
 // client message and the prompt.
 const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (args.includes('--version')) { console.log('codex-cli 0.162.0'); process.exit(0); }
-if (args[0] !== 'app-server') { console.error(`unexpected arguments ${args.join(' ')}`); process.exit(2); }
 const mode = process.env.CODEX_FIXTURE_MODE || 'success';
+if (args.includes('--version')) {
+  if (mode === 'hang-probe') {
+    setInterval(() => {}, 1000);
+    return;
+  }
+  console.log('codex-cli 0.162.0');
+  process.exit(0);
+}
+if (args[0] !== 'app-server') { console.error(`unexpected arguments ${args.join(' ')}`); process.exit(2); }
 const THREAD = '11111111-aaaa-bbbb-cccc-123456789012', TURN = '019a0000-0000-7000-8000-000000000001';
 // Measured on Codex 0.162 (2026-10-07): layers merge, so only `enabled = false` per server in
 // the thread's `config` disables a configured server; `-c features.<name>=false` turns a
@@ -93,6 +100,7 @@ function handle(message) {
     send({ id, result: { thread: { id: threadId, turns: [] }, model: mode === 'resolved-model' ? 'gpt-6.1-sol-2026-10-01' : params.model, modelProvider: 'openai', serviceTier: null, cwd: params.cwd,
       approvalPolicy: mode === 'approvals-on' ? 'on-request' : 'never', sandbox, reasoningEffort: null } });
   } else if (method === 'model/list') {
+    if (mode === 'hang-models') return;
     // Shape of Codex 0.160 `model/list` (2026-10-07), abridged; one hidden entry is not offered.
     const efforts = names => names.map(reasoningEffort => ({ reasoningEffort, description: reasoningEffort }));
     send({ id, result: { nextCursor: null, data: [
@@ -102,6 +110,7 @@ function handle(message) {
       { id: 'gpt-internal', model: 'gpt-internal', hidden: true, isDefault: false, defaultReasoningEffort: 'low', supportedReasoningEfforts: efforts(['low']) },
     ] } });
   } else if (method === 'account/rateLimits/read') {
+    if (mode === 'hang-limits') return;
     // Shape of Codex app-server `account/rateLimits/read` (2026-10-08), account details removed;
     // CODEX_FIXTURE_LIMITS=error answers with an error.
     if (process.env.CODEX_FIXTURE_LIMITS === 'error') { send({ id, error: { code: -32600, message: 'not signed in with ChatGPT' } }); return; }
@@ -130,5 +139,5 @@ process.stdin.on('data', chunk => {
     handle(message);
   }
 });
-process.stdin.on('end', () => { capture(); process.exit(); });
+process.stdin.on('end', () => { if (mode === 'hang-probe') return; capture(); process.exit(); });
 setInterval(() => {}, 1000);

@@ -9,7 +9,7 @@ process.env.OMNIAGENT_DIR = path.join(directory,'legacy');
 process.env.CODEX_PATH = path.resolve(__dirname, '../../fixtures/codex-cli/codex.cjs');
 process.env.CODEX_FIXTURE_CAPTURE = path.join(directory,'capture.json');
 process.env.CODEX_CONFIG_PATH = path.join(directory,'config.toml');
-const {execute, probe, readCodexConfig, normalizeReasoningEffort} = require('../../../src/backends/codex/adapter.ts');
+const {execute, probe, readCodexConfig, normalizeReasoningEffort, codexAdapter} = require('../../../src/backends/codex/adapter.ts');
 const {executeTask} = require('../../../src/execution/controller.ts');
 const {sessionHistory} = require('../../../src/sessions/history/index.ts');
 const {getSession} = require('../../../src/sessions/session.ts');
@@ -254,4 +254,93 @@ test('Codex rate limits without a measured window are no quota', () => {
   assert.equal(parseCodexRateLimits({}), undefined);
   assert.equal(parseCodexRateLimits({ rateLimits: { primary: { usedPercent: null, windowDurationMins: 300 } } }), undefined);
   assert.equal(parseCodexRateLimits({ rateLimits: { primary: { usedPercent: 120, windowDurationMins: 90, resetsAt: 'soon' } } }).buckets[0].window, '90m');
+});
+
+test('EXEC-001-T08c: probe, listModels, and inspectQuota abort deterministically via abortSignal and release handles', async () => {
+  const { ToolError } = require('../../../src/contracts/index.ts');
+  const { activeProcesses } = require('../../../src/execution/process.ts');
+
+  // 1. Backward compatibility without context
+  const normalProbe = await codexAdapter.probe();
+  assert.equal(normalProbe.installed, true);
+  const normalCatalog = await codexAdapter.listModels();
+  assert.ok(normalCatalog?.models.length > 0);
+  assert.equal(normalCatalog?.source, 'codex app-server model/list');
+  const normalQuota = await codexAdapter.inspectQuota();
+  assert.ok(normalQuota?.measured);
+
+  // 2. Pre-aborted signal rejects immediately before launching process
+  const preController = new AbortController();
+  preController.abort();
+  await assert.rejects(
+    codexAdapter.probe({ abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    codexAdapter.listModels(undefined, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  await assert.rejects(
+    codexAdapter.inspectQuota(undefined, { abortSignal: preController.signal }),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+  assert.equal(activeProcesses.size, 0, 'no process launched for pre-aborted reads');
+
+  // 3. Pre-expired budget rejects with TIMEOUT before launch
+  const expiredBudget = { isExecutionExpired: () => true, isTimedOut: () => true, executionSignal: new AbortController().signal };
+  await assert.rejects(
+    codexAdapter.probe({ budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    codexAdapter.listModels(undefined, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  await assert.rejects(
+    codexAdapter.inspectQuota(undefined, { budget: expiredBudget }),
+    err => err instanceof ToolError && err.code === 'TIMEOUT'
+  );
+  assert.equal(activeProcesses.size, 0, 'no process launched for expired budgets');
+
+  // 4. Stalled probe aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CODEX_FIXTURE_MODE = 'hang-probe';
+  try {
+    const probeCtrl = new AbortController();
+    const probePromise = codexAdapter.probe({ abortSignal: probeCtrl.signal });
+    await new Promise(r => setTimeout(r, 60));
+    assert.ok(activeProcesses.size >= 1, 'probe process is running');
+    probeCtrl.abort();
+    await assert.rejects(probePromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'probe process cleaned up after abort');
+  } finally {
+    delete process.env.CODEX_FIXTURE_MODE;
+  }
+
+  // 5. Stalled catalog read aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CODEX_FIXTURE_MODE = 'hang-models';
+  try {
+    const catalogCtrl = new AbortController();
+    const catalogPromise = codexAdapter.listModels(undefined, { abortSignal: catalogCtrl.signal });
+    await new Promise(r => setTimeout(r, 60));
+    assert.ok(activeProcesses.size >= 1, 'catalog process is running');
+    catalogCtrl.abort();
+    await assert.rejects(catalogPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'catalog process cleaned up after abort');
+  } finally {
+    delete process.env.CODEX_FIXTURE_MODE;
+  }
+
+  // 6. Stalled quota read aborts via abortSignal, releases process and rejects with ABORTED
+  process.env.CODEX_FIXTURE_MODE = 'hang-limits';
+  try {
+    const quotaCtrl = new AbortController();
+    const quotaPromise = codexAdapter.inspectQuota(undefined, { abortSignal: quotaCtrl.signal });
+    await new Promise(r => setTimeout(r, 60));
+    assert.ok(activeProcesses.size >= 1, 'quota process is running');
+    quotaCtrl.abort();
+    await assert.rejects(quotaPromise, err => err instanceof ToolError && err.code === 'ABORTED');
+    assert.equal(activeProcesses.size, 0, 'quota process cleaned up after abort');
+  } finally {
+    delete process.env.CODEX_FIXTURE_MODE;
+  }
 });
