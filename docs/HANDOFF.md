@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T08e (bound agy reads).
+The current completed task is EXEC-001-T09a (bound review Git work).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T08f (bound price fetches and close shared-read races).
+Next pending card: EXEC-001-T09b (cancel lock waiters safely).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1181,6 +1181,41 @@ Scope: bound model price fetches and close shared-read concurrency races across 
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_7ce0059e742deb4a45cbc367`, Turn 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T09a: bound review Git work
+
+Implemented 2026-10-09 on branch `perf/exec-001`.
+Scope: bound review Git operations and child process lifecycle across `src/workspace/git.ts`, `src/review/input.ts`, `src/review/index.ts`, `src/mcp/tools/review.tool.ts`, `src/execution/controller.ts`, and `src/execution/preparation.ts`, with comprehensive unit and integration tests in `tests/workspace/git.test.js` and `tests/mcp/tools/review.test.js`.
+
+### Implemented mechanisms:
+1. **Context & Budget Propagation**:
+   - `runGit(args, cwd, abortSignalOrContext, timeoutMs, onTruncated, explicitContext)` accepts both `AbortSignal` and `BackendReadContext`.
+   - `collectGitScope`, `snapshotId`, `assertReviewWorkspace`, and `collectReviewInput` accept optional `BackendReadContext` and propagate it through every Git command, diff collection, and hash computation.
+   - `boundGitTimeout(context, defaultMs)` clamps individual command deadlines to remaining execution budget (`budget.remainingExecutionMs()`) or caller `timeoutMs`.
+   - `effectiveSignal` unifies caller `abortSignal`, `context.abortSignal`, and `budget.executionSignal` via `combineSignals`.
+2. **Process Lifecycle & Cleanup**:
+   - `runCommand`'s underlying supervisor guarantees that on child exit/close, `terminateProcessTree(child, signalGrace)` is awaited and the process is deleted from `activeProcesses` before resolving.
+   - Pre-flight validation via `assertNotExpired(effectiveSignal, context, phase, true)` rejects before launch if the signal was aborted (`ToolError('ABORTED')`) or budget expired / deadline non-positive (`ToolError('TIMEOUT')`), spawning 0 subprocesses.
+   - In-flight aborts or budget expirations terminate the child process tree and reject with `ToolError('ABORTED')` or `ToolError('TIMEOUT')`.
+   - In `collectGitScope`, the untracked file traversal checks `assertNotExpired` on each iteration to prevent runaway loops.
+3. **Integrity & Verdict Protection (Stalled Git / Partial Input / Failed Recheck)**:
+   - In `collectGitScope` and `snapshotId`, `ABORTED` and `TIMEOUT` errors are rethrown immediately, preventing erroneous fallbacks to "no HEAD" or "no-commit".
+   - `snapshotId`'s no-commit fallback delegates directly to `runGit(['rev-parse', '--git-dir'], ...)` preserving error typing and timeout bounds.
+   - During review recheck (`verifyReviewSnapshot`), `collectReviewInput` and `assertReviewWorkspace` run with the bound context; any failure (timeout, aborted signal, dirty/foreign workspace, or changed snapshot digest) populates `snapshotError`, setting `reviewContext.invalidatedReason`.
+   - `evaluateStateEnvelopeGate` evaluates `context.invalidatedReason` and `!context.inputComplete` deterministically to `VERDICT: BLOCKED`, overriding any reported `READY` from model answers.
+   - Foreign-tree rejection (`assertReviewWorkspace`) remains strictly enforced with `ToolError('POLICY_DENIED')`.
+4. **Backward Compatibility**:
+   - `normalizeSignalAndContext` cleanly handles callers passing `AbortSignal | null`, `BackendReadContext`, or both. Legacy callers without context continue to execute with default bounds.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 528 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 16 tests (16 pass, 0 fail, exit code 0): `tests/workspace/git.test.js` (15 pass), `tests/workspace/git-fixture.test.js` (1 pass).
+- PASS: Full test suite: 556 tests (553 pass, 0 fail, 3 skipped, duration 214.2 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audit conducted via MCP `coagent8` `review` (backend `claude`, model `claude-sonnet-5-5`, session `syn_sess_0d363c789ba2df6e39ebe9c0`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2/P3 issues).
 
 ## Compact handoff contract
 

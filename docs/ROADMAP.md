@@ -539,11 +539,12 @@ documentation before changing provider-specific CLI/API behavior. Depends on T07
 
 ### EXEC-001-T09 - bound Git collection and storage waits
 
-- [ ] **T09a - bound review Git work.** Start: `src/workspace/git.ts:runGit`,
+- [x] **T09a - bound review Git work.** Start: `src/workspace/git.ts:runGit`,
   `collectGitScope`, `snapshotId` and `src/review/input.ts`. Pass the request
   budget through collection and recheck; await owned process cleanup on expiry.
   Done: stalled Git stops, partial input and failed recheck cannot be READY,
   and foreign-tree rejection survives. Check: R, REVIEW/PROCESS.
+  Evidence: [EXEC-001-T09a implementation](HANDOFF.md#exec-001-t09a-bound-review-git-work).
 - [ ] **T09b - cancel lock waiters safely.** Start:
   `src/storage/lock.ts:withFileLock`. Cover both the in-process queue and on-disk
   lease contention; preserve queue progress, token ownership and renewal.

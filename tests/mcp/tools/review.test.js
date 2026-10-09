@@ -12,6 +12,8 @@ const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { readResult } = require('../../helpers/result.cjs');
 const { collectReviewInput } = require('../../../src/review/input.ts');
+const { createExecutionBudget } = require('../../../src/execution/runtime/budget.ts');
+const { ToolError } = require('../../../src/contracts/error.ts');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('review prompt names the snapshot, asks for the bounded envelope, and a matching answer passes the gate', async () => {
@@ -145,4 +147,111 @@ test('gitlink summaries never establish complete review input, even when dirty c
   const { evaluateStateEnvelopeGate } = require('../../../src/review/gate.ts');
   const output = `REVIEW: 1\nSNAPSHOT: ${after.context.expectedSnapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`;
   assert.equal(evaluateStateEnvelopeGate(output, false, true, after.context).verdict, 'BLOCKED');
+});
+
+test('recheck failure or workspace mutation during review turn blocks READY verdict', async () => {
+  const repo = path.join(tempDir, 'recheck-fail');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'file.ts'), 'const x = 1;\n'); git('add', '.'); git('commit', '-qm', 'initial');
+  fs.writeFileSync(path.join(repo, 'file.ts'), 'const x = 2;\n');
+
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async prompt => {
+      // Simulate workspace change during turn execution
+      fs.writeFileSync(path.join(repo, 'file.ts'), 'const x = 3;\n');
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      return {
+        status: 'completed',
+        isError: false,
+        output: [
+          'REVIEW: 1',
+          `SNAPSHOT: ${snapshot}`,
+          'COVERAGE: COMPLETE',
+          'VERDICT: READY',
+          'Reviewed: file.ts',
+          'CHECKS: typecheck=PASS; tests=PASS',
+          'END_REVIEW',
+        ].join('\n'),
+      };
+    },
+  };
+
+  try {
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const result = await handleReview('review', {}, repo);
+    const { verdict, reason } = readResult(result);
+    assert.equal(verdict, 'BLOCKED', 'Mutated workspace during turn MUST block READY');
+    assert.match(reason, /Review workspace or input changed during the turn/i);
+    assert.match(reason, /the reviewer answered READY/i);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});
+
+test('handleReview with pre-aborted signal stops before turn and rejects promptly', async () => {
+  const repo = path.join(tempDir, 'pre-abort-review');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    handleReview('review', {}, repo, controller.signal),
+    err => {
+      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+});
+
+test('handleReview with expired budget stops during collection without starting model turn', async () => {
+  const repo = path.join(tempDir, 'expired-budget-review');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+
+  let now = 0;
+  const budget = createExecutionBudget({ totalBudgetMs: 10, teardownAllowanceMs: 10, clock: () => now });
+  now = 15; // Primary execution expired
+
+  let executeCalled = false;
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async () => {
+      executeCalled = true;
+      throw new Error('Must not execute');
+    },
+  };
+
+  try {
+    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await assert.rejects(
+      handleReview('review', {}, repo, null, null, { budget }),
+      err => {
+        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+        assert.equal(err.code, 'TIMEOUT');
+        return true;
+      }
+    );
+    assert.equal(executeCalled, false, 'No model turn should be started');
+  } finally {
+    budget.dispose();
+    adapterRegistry.agy = original;
+  }
 });

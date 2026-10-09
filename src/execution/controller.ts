@@ -44,7 +44,7 @@ import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availabilit
 import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { stripAnsi } from './cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
-import type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace } from '../contracts/execution.js';
+import type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace, ExecutionBudget, BackendReadContext } from '../contracts/execution.js';
 import { createPhaseTracker } from './runtime/timing.js';
 import {
   prepareTask,
@@ -88,6 +88,10 @@ export interface TaskOptions {
   clock?: MonotonicClock;
   /** Optional existing phase tracker to compose spans into a single trace. */
   tracker?: import('./runtime/timing.js').PhaseTracker;
+  /** Optional execution budget contract tracking call deadlines. */
+  budget?: ExecutionBudget;
+  /** Optional context for observation and read operations. */
+  context?: BackendReadContext;
   /** Optional factory override to inject history writer errors or custom writers during tests. */
   createHistoryWriter?: (handle: string, workspace: string, provider: ProviderId, turnId: string) => ReturnType<typeof createHistoryWriter>;
   /** Optional hook to simulate failure immediately during turn registration. */
@@ -223,6 +227,8 @@ async function executeTaskInternal(
     const prepared = await prepareTask(args, cwd, {
       config: configSnapshot,
       abortSignal,
+      budget: options.budget,
+      context: options.context,
     });
     prepHandle.end();
 

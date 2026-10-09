@@ -59,6 +59,8 @@ export interface PrepareTaskOptions {
   abortSignal?: AbortSignal | null;
   /** Complete-call execution budget (`EXEC-001-T07`). */
   budget?: ExecutionBudget;
+  /** Optional read context for observation reads (`EXEC-001-T08`). */
+  context?: BackendReadContext;
 }
 
 /**
@@ -172,9 +174,9 @@ export async function prepareTask(
 
   const configSnapshot = asConfigSnapshot(options.config);
   const abortSignal = options.abortSignal;
-  const readContext: BackendReadContext | undefined = (abortSignal || options.budget)
+  const readContext: BackendReadContext | undefined = options.context ?? ((abortSignal || options.budget)
     ? { abortSignal: abortSignal ?? undefined, budget: options.budget }
-    : undefined;
+    : undefined);
 
   const below = args.output_price_below;
   const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };

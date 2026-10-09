@@ -6,7 +6,7 @@ import { assertReviewWorkspace } from '../../workspace/git.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
-import type { TimingObserver, MonotonicClock } from '../../contracts/execution.js';
+import type { TimingObserver, MonotonicClock, BackendReadContext, ExecutionBudget } from '../../contracts/execution.js';
 
 export function getCanonicalReviewToolDefinition() {
   return {
@@ -31,19 +31,35 @@ export async function handleReview(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent'> & { onTiming?: TimingObserver; tracker?: PhaseTracker; clock?: MonotonicClock } = {}
+  options: Pick<TaskOptions, 'askConsent'> & {
+    onTiming?: TimingObserver;
+    tracker?: PhaseTracker;
+    clock?: MonotonicClock;
+    budget?: ExecutionBudget;
+    context?: BackendReadContext;
+  } = {}
 ) {
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const gitHandle = tracker.startPhase('git_collection');
   const effectiveScope = args.scope || args.target;
+
+  const reviewReadContext: BackendReadContext | undefined = (options.context || options.budget || abortSignal)
+    ? {
+        ...options.context,
+        abortSignal: options.context?.abortSignal ?? abortSignal ?? undefined,
+        budget: options.context?.budget ?? options.budget,
+        timeoutMs: options.context?.timeoutMs ?? (typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined),
+      }
+    : undefined;
+
   let scopeInfo: Awaited<ReturnType<typeof collectReviewInput>>['info'];
   let context: Awaited<ReturnType<typeof collectReviewInput>>['context'];
   try {
-    const input = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker);
+    const input = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker, reviewReadContext);
     scopeInfo = input.info;
     context = input.context;
-    await assertReviewWorkspace(scopeInfo, workspaceCwd, abortSignal);
+    await assertReviewWorkspace(scopeInfo, workspaceCwd, abortSignal, reviewReadContext);
   } catch (err) {
     gitHandle.end();
     if (options.onTiming) {
@@ -101,11 +117,13 @@ export async function handleReview(
       reviewContext: context,
       onTiming: options.onTiming,
       clock: options.clock,
+      budget: options.budget ?? reviewReadContext?.budget,
+      context: reviewReadContext,
       verifyReviewSnapshot: async () => {
         const verifyHandle = tracker.startPhase('git_collection');
         try {
-          const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker);
-          await assertReviewWorkspace(after.info, workspaceCwd, abortSignal);
+          const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker, reviewReadContext);
+          await assertReviewWorkspace(after.info, workspaceCwd, abortSignal, reviewReadContext);
           return after.context.expectedSnapshot !== snapshot || !after.context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
         } finally {
           verifyHandle.end();
