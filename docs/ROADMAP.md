@@ -659,10 +659,11 @@ applicable docs checks. Depends on T10; caller-visible migration follows T07.
 
 ### EXEC-001-T12 - compare results and bind independent acceptance
 
-- [ ] **T12a - repeat the baseline.** Run T01b with the same parameters and
+- [x] **T12a - repeat the baseline.** Run T01b with the same parameters and
   repetitions as T01c. Done: HANDOFF compares phase/total timings, reads and
   launches for each scenario, including concurrent/error paths; inconclusive
   results are labelled so. Check: P plus baseline execution; retain raw logs.
+  Evidence: [T12a baseline repetition](HANDOFF.md#exec-001-t12a-repeat-the-baseline).
 - [ ] **T12b - validate the local candidate package.** Follow the full package
   gate once on the final source, build before bundle-dependent tests and retain
   the actual tarball digest/manifest. Done: source, bundle and exact-package

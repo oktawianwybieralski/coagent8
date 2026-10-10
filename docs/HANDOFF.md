@@ -1546,6 +1546,72 @@ Scope: Expose honest wall-clock duration from root call entry (including prepara
 
 Next card: EXEC-001-T12a (repeat the baseline).
 
+## EXEC-001-T12a: repeat the baseline
+
+Captured 2026-10-10 on branch `perf/exec-001`.
+Scope: Repeat baseline measurement execution across 5 repetitions of the T01b baseline
+test suite (`node tests/run.cjs tests/execution/baseline.test.js tests/environment.test.js`)
+under identical environment and parameters as T01c, comparing scenario observations,
+phase accounting, and total execution timings against the T01c baseline.
+
+### Source & Environment Identity:
+- Platform: Windows 11 (`win32 x64`, OS release 10.0.26200)
+- Node: `v26.10.0`
+- Base Commit: `058677ca852881a7aa644ca153c5e0c54284d710` (058677c)
+- Tree SHA: `a6abd78d6ec9f19f09454907a40f4bb0ede6c28e`
+- Dirty Diff: None (clean working tree prior to documentation updates)
+
+### Execution Measurements (5 consecutive runs, 9/9 tests passed on each run):
+- Sample 1: Wall: 5090.1 ms | Test Runner: 4619.9 ms
+- Sample 2: Wall: 5169.1 ms | Test Runner: 4847.3 ms
+- Sample 3: Wall: 5473.7 ms | Test Runner: 4968.8 ms
+- Sample 4: Wall: 6770.7 ms | Test Runner: 6146.8 ms
+- Sample 5: Wall: 8317.5 ms | Test Runner: 7824.0 ms
+
+### Summary Statistics:
+- Test Runner Duration: Median 4968.8 ms | Range [4619.9 ms .. 7824.0 ms] (T01c baseline: Median 4516.4 ms | Range [3957.5 ms .. 6061.2 ms])
+- Wall Clock Duration: Median 5473.7 ms | Range [5090.1 ms .. 8317.5 ms] (T01c baseline: Median 4926.0 ms | Range [4301.0 ms .. 6401.0 ms])
+- Overhead comparison: +10.0% runner median (+11.1% wall median), reflecting honest monotonic timing, phase accounting, trace accumulation, and capacity checks wired across T02-T11.
+
+### Comparison of Scenario Observations (T01c vs T12a):
+| Scenario | T01c Probes | T12a Probes | T01c Catalog | T12a Catalog | T01c Launches | T12a Launches | T01c Duration | T12a Duration (Median / Range) | Assessment |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Plain Cold | 1 | 1 | 1 | 1 | 1 | 1 | NOT_MEASURED | Median: 261 ms [219 .. 392 ms] | Identical counters; initial probe and catalog hit |
+| Plain Warm | 0 | 0 | 0 | 0 | 1 | 1 | NOT_MEASURED | Median: 179 ms [163 .. 814 ms] | Identical counters; cached probe reused without reprobing |
+| Explicit Model/Effort | 1 | 1 | 0 | 0 | 1 | 1 | NOT_MEASURED | Median: 210 ms [152 .. 315 ms] | Identical counters; model and effort passed cleanly |
+| Priced Auto | 1 | 1 | 0 | 0 | 1 | 1 | NOT_MEASURED | Median: 205 ms [192 .. 360 ms] | Identical counters; selected `gpt-5.6-luna` under 5 USD ceiling |
+| Continuation | 0 | 0 | 0 | 0 | 1 | 1 | NOT_MEASURED | Median: 201 ms [177 .. 233 ms] | Identical counters; turn advanced, native session ID propagated |
+| Review | 1 | 1 | 0 | 0 | 1 | 1 | NOT_MEASURED | Median: 1810 ms [1525 .. 2864 ms] | Identical counters; diff inspected, envelope verdict `READY` |
+| Concurrent (4 tasks) | 1 | 1 | 1 | 1 | 4 | 4 | NOT_MEASURED | Median: 792 ms [423 .. 1001 ms] | Identical counters; probe coalesced, 4 tasks run behind barrier |
+
+### Phase Accounting Breakdown (T12a vs T01c):
+In T01c, all phase duration counters were `NOT_MEASURED`. With T02-T11 instrumentation in place, phases are observed and verified:
+| Phase | Plain Cold | Plain Warm | Priced Auto | Continuation | Review |
+| --- | --- | --- | --- | --- | --- |
+| `preparationDurationMs` | Median: 50 ms [21 .. 57 ms] | Median: 1 ms [1 .. 2 ms] | Median: 4 ms [4 .. 10 ms] | Median: 3 ms [2 .. 5 ms] | Median: 2 ms [2 .. 2 ms] |
+| `consentDurationMs` | Median: 32 ms [22 .. 39 ms] | Median: 1 ms [1 .. 2 ms] | Median: 2 ms [1 .. 2 ms] | Median: 2 ms [1 .. 2 ms] | Median: 1 ms [1 .. 2 ms] |
+| `acquisitionDurationMs` | Median: 23 ms [22 .. 59 ms] | Median: 26 ms [20 .. 33 ms] | Median: 22 ms [19 .. 52 ms] | Median: 23 ms [19 .. 33 ms] | Median: 21 ms [18 .. 32 ms] |
+| `finalizationDurationMs` | Median: 80 ms [69 .. 129 ms] | Median: 76 ms [73 .. 273 ms] | Median: 100 ms [84 .. 136 ms] | Median: 90 ms [68 .. 101 ms] | Median: 929 ms [789 .. 1515 ms] |
+| `gitCollectionDurationMs` | NOT_MEASURED (N/A) | NOT_MEASURED (N/A) | NOT_MEASURED (N/A) | NOT_MEASURED (N/A) | Median: 1644 ms [1362 .. 2537 ms] |
+
+### Inconclusive / Unmeasured Scope Disclosures:
+- **Concurrent per-task phase breakdown**: Individual tasks in the concurrent barrier scenario run concurrently; total barrier duration is measured (Median: 792 ms), but per-task phase breakdown is not emitted at top-level observation in `baseline.test.js`.
+- **Error paths**: In the baseline suite (`tests/execution/baseline.test.js`), all 7 test cases exercise successful paths. Error path phases and early-exit timings (e.g., cancelled consent prompts, preparation errors, budget aborts) are tested in dedicated suites (`tests/execution/controller-timing.test.js`, `tests/mcp/server.test.js`, `tests/execution/outer-timing.test.js`), but are not part of `baseline.test.js`. Therefore, error path timings in the baseline suite itself are labelled `INCONCLUSIVE / NOT_IN_BASELINE_SUITE`.
+- **`nativeProcessLaunchOverhead`**: `NOT_MEASURED` (synthetic fixture execution does not spawn native OS CLI processes).
+- **`clientTransportLatency`**: `NOT_MEASURED` (synthetic test harness executes in-process controller calls directly rather than traversing JSON-RPC over stdio pipes).
+
+### Verification & Artifacts:
+- Raw benchmark execution outputs and observations preserved in scratch artifact: `scratch/baseline-results.json`.
+- PASS: 5/5 repetitions exit code 0, 9/9 tests pass per run.
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (106 source files analyzed, 563 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped baseline test suite: `node tests/run.cjs tests/execution/baseline.test.js tests/environment.test.js` (9/9 pass, exit code 0).
+- PASS: `npm run lint:docs` (0 errors, 0 warnings, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+
+Next card: EXEC-001-T12b (validate the local candidate package).
+
 
 ## Compact handoff contract
 
