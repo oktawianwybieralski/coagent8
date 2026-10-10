@@ -117,6 +117,7 @@ Entries link the commits of the beta.2 pull request, which was squash-merged int
 - [`2115b39`](https://github.com/oktawianwybieralski/coagent8/commit/2115b397b39cdd5d6d6874ab826a35e770a5a447) **review:** Say when another review cannot change the verdict (AX-007a)
 - [`900c530`](https://github.com/oktawianwybieralski/coagent8/commit/900c530b2dab626c79b7f1595ee4b3ec75960f2f) **mcp:** Label the continuation handle in the result footer (AX-007b)
 - [`9ddc3d1`](https://github.com/oktawianwybieralski/coagent8/commit/9ddc3d1db94af71a2ae5bccaeef273866efe12c3) **review:** Answer an unchanged repeat review without a model turn (AX-007c)
+- [`2cc0b59`](https://github.com/oktawianwybieralski/coagent8/commit/2cc0b591ebbeaaa439460665977bd1573acc65b3) **skills:** Manage skill packages per client from VS Code and the CLI (SKILLS-002)
 
 ### Changed
 - [`1d2de9b`](https://github.com/oktawianwybieralski/coagent8/commit/1d2de9b7c9e20ed2c7f06c9aeda3a323f399fda9) **src:** Group backend files per CLI and split shared modules
@@ -219,6 +220,8 @@ Entries link the commits of the beta.2 pull request, which was squash-merged int
 - [`f8c2733`](https://github.com/oktawianwybieralski/coagent8/commit/f8c27330d5c4f87b1fb7e75974196ceccdb52ade) **vscode:** End the uninstall with Restart Extensions instead of quitting VS Code
 - [`2c1ff4f`](https://github.com/oktawianwybieralski/coagent8/commit/2c1ff4fb3dfd41086354f4e0a907c4002a26b0b7) **setup:** Compare CLI sources by their real path
 - [`79cc5f6`](https://github.com/oktawianwybieralski/coagent8/commit/79cc5f62d244f0d1104103e4b394dc0726ac6e29) **vscode:** Offer vendor extensions over standalone CLIs and remove standalone installs completely
+- [`78b1bd5`](https://github.com/oktawianwybieralski/coagent8/commit/78b1bd533919f2d8802051bd7ad0d476d72d616b) **setup:** Offer installation when a selected vendor extension copy is missing
+- [`f10166e`](https://github.com/oktawianwybieralski/coagent8/commit/f10166eac1642711e2f83b8a191ca67ace4151c0) **vscode:** End the uninstall with Reload Window to apply extension removals
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
