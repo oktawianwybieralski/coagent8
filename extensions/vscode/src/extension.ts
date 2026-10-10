@@ -451,6 +451,12 @@ export function activate(context: vscode.ExtensionContext): void {
       'Install VS Code Extension', 'Install Standalone CLI');
     if (choice === 'Install VS Code Extension') return installVendorExtension(client, () => discoverable(client));
     if (choice !== 'Install Standalone CLI') return false;
+    // Choosing a standalone installation replaces an unavailable extension preference.
+    // Cancellation and choosing the vendor extension retain that preference.
+    if (readBackendExecutable(SETUP_PROVIDERS[client], configurationFile()) === VSCODE_EXTENSION_EXECUTABLE) {
+      await setBackendExecutable(SETUP_PROVIDERS[client], undefined, configurationFile());
+      clearCliResolverCache();
+    }
     // The CLI is absent here, so a later check that finds it identifies this installation.
     await updateInstallList(location(), 'pendingClis', [client]);
     offerTerminal(installCommand(client), `Install ${LABELS[client]}`, context);

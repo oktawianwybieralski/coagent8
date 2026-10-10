@@ -82,7 +82,8 @@ export function setupConfigFile(home: string, env: NodeJS.ProcessEnv): string {
  * @param home - Local user's home/profile boundary.
  * @param env - PATH, explicit CLI overrides and the configuration file; explicit choices fail closed.
  * @param nodePath - Node executable for JavaScript launchers, supplied by the VSIX.
- * @returns A shell-free command, or null when no supported executable is installed.
+ * @returns A shell-free command, or null when no supported executable is installed,
+ * including a missing copy selected with `vscode-extension`. Other explicit choices fail closed.
  */
 export function resolveSetupClient(client: SetupClient, home = os.homedir(), env = process.env, nodePath = process.execPath): CliCommand | null {
   const id = SETUP_PROVIDERS[client];
@@ -91,6 +92,7 @@ export function resolveSetupClient(client: SetupClient, home = os.homedir(), env
   try { return resolveCliCommand(backendCommand(id, configured, env, home), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
   catch (error) {
     if (override) throw new Error('Configured client executable cannot be resolved.');
+    if (configured === VSCODE_EXTENSION_EXECUTABLE && errorCodeOf(error) === 'CLI_NOT_FOUND') return null;
     if (configured) throw new Error(`backends.${id}.executable (${configured === VSCODE_EXTENSION_EXECUTABLE ? configured : 'configured path'}) cannot be resolved; change or remove it in config.json.`);
     if (errorCodeOf(error) !== 'CLI_NOT_FOUND') throw new Error('Configured client executable cannot be resolved.');
   }

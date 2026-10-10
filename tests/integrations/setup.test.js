@@ -197,6 +197,19 @@ test('the first registration records the CLI in config.json, keeps a later user 
   const [blocked] = await setupClients({ ...options, env, clients: ['claude'], statusOnly: true });
   assert.equal(blocked.action, 'blocked');
 });
+test('a missing selected extension copy is installable without falling back or changing configuration', async t => {
+  const options = profile(t);
+  const config = path.join(options.home, 'config.json');
+  const content = JSON.stringify({ backends: Object.fromEntries(['codex', 'claude', 'agy'].map(client => [client, { executable: 'vscode-extension' }])) });
+  fs.writeFileSync(config, content);
+  const env = { ...options.env, coagent8_CONFIG: config, coagent8_EXTENSION_PATHS: '{}', CODEX_PATH: undefined, CLAUDE_PATH: undefined, AGY_PATH: undefined };
+  for (const client of ['codex', 'claude', 'agy']) assert.equal(resolveSetupClient(client, options.home, env), null);
+  const results = await setupClients({ ...options, env, statusOnly: true });
+  assert.ok(results.every(result => result.action === 'missing' && !result.installed), JSON.stringify(results));
+  assert.equal(fs.readFileSync(config, 'utf8'), content, 'status preserves the selected source');
+  assert.throws(() => resolveSetupClient('claude', options.home, { ...env, CLAUDE_PATH: path.join(options.home, 'absent') }), /cannot be resolved/, 'environment overrides still fail closed');
+});
+
 test('status with registrations reads host files only: no runtime start, no host discovery', async t => {
   const options = profile(t);
   assert.ok((await setupClients(options)).every(result => result.action === 'installed'));

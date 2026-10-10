@@ -444,6 +444,26 @@ test('vendor extension installation is explicit; cancellation/failure and overri
   assert.equal(overridden.terminals.length, 1);
   assert.match(overridden.terminals[0].options.name, /Antigravity/);
 });
+test('missing extension preferences allow installation and change only on a standalone choice', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-missing-extension-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const client of ['claude', 'agy']) {
+    const config = path.join(root, client + '.json');
+    const content = JSON.stringify({ backends: { [client]: { executable: 'vscode-extension' } } });
+    fs.writeFileSync(config, content);
+    const cancelled = await runSetupPicker({ configPath: config, installed: [], selected: [client] });
+    assert.equal(cancelled.notifications.length, 1, 'the missing CLI offers installation');
+    assert.equal(fs.readFileSync(config, 'utf8'), content, 'dismissal keeps the preference');
+    const extension = await runSetupPicker({ configPath: config, installed: [], selected: [client], action: 'Install VS Code Extension' });
+    assert.equal(extension.requests[0][0], 'workbench.extensions.installExtension');
+    assert.equal(fs.readFileSync(config, 'utf8'), content, 'extension installation keeps the preference');
+    const standalone = await runSetupPicker({ configPath: config, installed: [], selected: [client], action: 'Install Standalone CLI' });
+    assert.equal(standalone.terminals.length, 1);
+    assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).backends[client].executable, undefined, 'standalone choice restores discovery');
+    assert.deepEqual(standalone.errors, []);
+  }
+});
+
 test('an installed Google Antigravity extension is awaited instead of installing agy again', async () => {
   const ready = await runSetupPicker({ installed: [], selected: ['agy'], vendorExtensions: ['google.google-antigravity'], discoverable: ['agy'], action: 'Open Sign-in Command' });
   assert.deepEqual(ready.requests, [], 'no extension or standalone installation is offered');
