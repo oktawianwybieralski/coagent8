@@ -136,7 +136,7 @@ export interface FileLockOptions {
   context?: BackendReadContext;
 }
 
-function isAbortSignal(val: unknown): val is AbortSignal {
+export function isAbortSignal(val: unknown): val is AbortSignal {
   return (
     val !== null &&
     typeof val === 'object' &&

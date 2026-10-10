@@ -4,7 +4,9 @@ import { PROVIDERS, ToolError, type ProviderId } from './contracts/index.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './storage/read.js';
-import { withFileLock } from './storage/lock.js';
+import { withFileLock, isAbortSignal, type FileLockOptions } from './storage/lock.js';
+import type { BackendReadContext } from './contracts/execution.js';
+import { redactDiagnostic } from './security/redaction.js';
 import { isValidModelIdentifier } from './contracts/models.js';
 import type { GovernanceSettings } from './contracts/governance.js';
 import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
@@ -529,20 +531,48 @@ export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
   return merged;
 }
 
+const REMEMBER_ABORTED_MESSAGE = 'Request cancelled before recording remembered approval.';
+
 /**
  * Adds a model the user approved with "remember" to `governance.neverAsk` of the file; the
  * VS Code list `coagent8.approval.neverAskModels` is added to it, never replaced by it.
+ * @param model - Model identifier to remember.
+ * @param options - Optional file lock options, read context, or cancellation signal.
  * @returns Whether the list changed.
+ * @throws `ToolError` on invalid model identifier, cancellation, or expired budget.
  * @throws When the configuration cannot be locked, read, validated or written.
  */
-export async function rememberApprovedModel(model: string): Promise<boolean> {
+export async function rememberApprovedModel(
+  model: string,
+  options?: FileLockOptions | BackendReadContext | AbortSignal
+): Promise<boolean> {
+  if (!isValidModelIdentifier(model)) {
+    throw new ToolError('INPUT_LIMIT', `Invalid model identifier: '${redactDiagnostic(model, 64)}'`);
+  }
   ensureConfigDir();
   return withFileLock(getConfigFile(), async () => {
-    const current = loadFileConfig();
+    if (isAbortSignal(options)) {
+      if (options.aborted) {
+        throw new ToolError('ABORTED', REMEMBER_ABORTED_MESSAGE);
+      }
+    } else if (options) {
+      const nestedContext = 'context' in options ? options.context : undefined;
+      const callerSignal = options.abortSignal ?? nestedContext?.abortSignal;
+      const budget = options.budget ?? nestedContext?.budget;
+
+      if (callerSignal?.aborted || budget?.isCallerAborted()) {
+        throw new ToolError('ABORTED', REMEMBER_ABORTED_MESSAGE);
+      }
+      if (budget && (budget.isExecutionExpired() || budget.isTimedOut())) {
+        throw new ToolError('TIMEOUT', 'Execution budget expired before recording remembered approval.');
+      }
+    }
+    const file = getConfigFile();
+    const current = loadFileConfig(file);
     if (current.governance.neverAsk.includes(model)) return false;
-    writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }));
+    writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }), file);
     return true;
-  });
+  }, options);
 }
 
 /**

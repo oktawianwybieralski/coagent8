@@ -548,3 +548,182 @@ test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true suc
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails, recording redacted warning (Primary Task Supremacy)', async () => {
+  const { loadConfig } = require('../../src/config.ts');
+  const original = { ...adapterRegistry };
+  const originalRenameSync = fs.renameSync;
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '2.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+          { id: 'gpt-unpriced', efforts: ['low'] },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+    });
+
+    const prepared = await prepareTask({ model: 'gpt-unpriced' }, tempDir);
+
+    // Simulate disk/permissions failure with sensitive path and credential in error
+    const userHome = os.homedir();
+    const sensitiveErrorMsg = `EACCES: permission denied, open '${path.join(userHome, '.coagent8', 'config.json')}' with token=sk-ant-secret12345678901234567890`;
+    fs.renameSync = function (from, to) {
+      if (typeof to === 'string' && to.includes('config.json')) {
+        throw new Error(sensitiveErrorMsg);
+      }
+      return originalRenameSync.apply(this, arguments);
+    };
+
+    const res = await prepared.confirmConsent({
+      askConsent: async () => ({ approved: true, remember: true }),
+    });
+
+    // Primary Task Supremacy: approval preserved and valid turn ready
+    assert.ok(res, 'Consent confirmation must resolve successfully despite secondary storage error');
+    assert.equal(res.warnings.length, 1);
+    assert.match(res.warnings[0], /The approval of 'gpt-unpriced' was not remembered:/);
+    assert.ok(!res.warnings[0].includes('sk-ant-secret12345678901234567890'), 'Tokens/credentials must be redacted');
+    assert.ok(!res.warnings[0].includes(userHome), 'User home paths must be redacted');
+    assert.ok(res.warnings[0].length <= 350, 'Warning must respect bounded diagnostic length');
+
+    // Next-call policy consistency: disk state does not contain the model
+    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'Model must NOT be persisted in neverAsk');
+  } finally {
+    fs.renameSync = originalRenameSync;
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABORTED and leaves neverAsk untouched', async () => {
+  const { loadConfig } = require('../../src/config.ts');
+  const { ToolError } = require('../../src/contracts/error.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '2.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+          { id: 'gpt-unpriced', efforts: ['low'] },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+    });
+
+    const ac = new AbortController();
+    const prepared = await prepareTask({ model: 'gpt-unpriced' }, tempDir, { abortSignal: ac.signal });
+
+    await assert.rejects(
+      prepared.confirmConsent({
+        abortSignal: ac.signal,
+        askConsent: async () => {
+          // Abort during consent wait before storage
+          ac.abort();
+          return { approved: true, remember: true };
+        },
+      }),
+      err => {
+        assert.ok(err instanceof ToolError);
+        assert.equal(err.code, 'ABORTED');
+        return true;
+      }
+    );
+
+    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'neverAsk must remain untouched when cancelled before storage');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with TIMEOUT and leaves neverAsk untouched', async () => {
+  const { loadConfig } = require('../../src/config.ts');
+  const { ToolError } = require('../../src/contracts/error.ts');
+  const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '2.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+          { id: 'gpt-unpriced', efforts: ['low'] },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+    });
+
+    let simulatedTime = 0;
+    const budget = createExecutionBudget({
+      totalBudgetMs: 50,
+      teardownAllowanceMs: 0,
+      clock: () => simulatedTime,
+    });
+
+    const prepared = await prepareTask({ model: 'gpt-unpriced' }, tempDir, { budget });
+
+    await assert.rejects(
+      prepared.confirmConsent({
+        budget,
+        askConsent: async () => {
+          // Advance clock to trigger monotonic deadline expiry before storage
+          simulatedTime = 100;
+          return { approved: true, remember: true };
+        },
+      }),
+      err => {
+        assert.ok(err instanceof ToolError);
+        assert.equal(err.code, 'TIMEOUT');
+        return true;
+      }
+    );
+
+    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'neverAsk must remain untouched when timed out before storage');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});

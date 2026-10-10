@@ -237,3 +237,103 @@ test('a malformed configuration hides no tool, is reported by doctor and refuses
     process.env.coagent8_CONFIG = saved;
   }
 });
+
+test('EXEC-001-T10c: rememberApprovedModel rejects invalid model identifiers before writing', async () => {
+  const { rememberApprovedModel } = require('../src/config.ts');
+  const { ToolError } = require('../src/contracts/error.ts');
+
+  await assert.rejects(
+    () => rememberApprovedModel('--flag-injection'),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'INPUT_LIMIT');
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    () => rememberApprovedModel('model with spaces'),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'INPUT_LIMIT');
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    () => rememberApprovedModel(''),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'INPUT_LIMIT');
+      return true;
+    }
+  );
+});
+
+test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout options', async () => {
+  const { rememberApprovedModel, loadConfig, saveConfig } = require('../src/config.ts');
+  const { ToolError } = require('../src/contracts/error.ts');
+  const { createExecutionBudget } = require('../src/execution/runtime/budget.ts');
+
+  saveConfig({
+    governance: {
+      priceMultiplier: 2,
+      askAbovePrice: 20,
+      alwaysAsk: [],
+      neverAsk: ['initial-model'],
+    },
+  });
+
+  // Pre-aborted signal
+  const ac = new AbortController();
+  ac.abort();
+
+  await assert.rejects(
+    () => rememberApprovedModel('aborted-model', { abortSignal: ac.signal }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+  assert.ok(!loadConfig().governance.neverAsk.includes('aborted-model'));
+
+  // Direct AbortSignal parameter
+  await assert.rejects(
+    () => rememberApprovedModel('aborted-model-direct', ac.signal),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+  assert.ok(!loadConfig().governance.neverAsk.includes('aborted-model-direct'));
+
+  // Expired budget
+  let simulatedTime = 0;
+  const expiredBudget = createExecutionBudget({
+    totalBudgetMs: 10,
+    teardownAllowanceMs: 0,
+    clock: () => simulatedTime,
+  });
+  simulatedTime = 20;
+
+  await assert.rejects(
+    () => rememberApprovedModel('timed-out-model', { budget: expiredBudget }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    }
+  );
+  assert.ok(!loadConfig().governance.neverAsk.includes('timed-out-model'));
+
+  // Duplicate model returns false without changing list
+  const duplicateResult = await rememberApprovedModel('initial-model');
+  assert.equal(duplicateResult, false);
+
+  // Valid model persists and returns true
+  const successResult = await rememberApprovedModel('valid-model');
+  assert.equal(successResult, true);
+  assert.ok(loadConfig().governance.neverAsk.includes('valid-model'));
+});

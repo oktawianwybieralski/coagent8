@@ -900,3 +900,131 @@ test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block tu
   const res = await prepared.confirmConsent();
   assert.deepEqual(res.warnings, []);
 });
+
+test('EXEC-001-T10c: executeTask preserves valid approval when remember storage fails, redacting diagnostics (Primary Task Supremacy)', async () => {
+  setupMockConfigAndAdapters();
+  let executedModel = null;
+  adapterRegistry.codex.execute = async (_prompt, options) => {
+    executedModel = options.model;
+    return {
+      status: 'completed',
+      isError: false,
+      output: 'primary task output',
+      nativeSessionId: randomUUID(),
+      model: options.model,
+      truncated: false,
+      continuationAvailable: true,
+    };
+  };
+
+  const userHome = os.homedir();
+  const sensitiveErrorMsg = `EACCES: permission denied, rename '${path.join(userHome, '.coagent8', 'config.json')}' with key token=sk-ant-secret12345678901234567890`;
+  const originalRenameSync = fs.renameSync;
+
+  try {
+    fs.renameSync = function (from, to) {
+      if (typeof to === 'string' && to.includes('config.json')) {
+        throw new Error(sensitiveErrorMsg);
+      }
+      return originalRenameSync.apply(this, arguments);
+    };
+
+    const res = await executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
+      askConsent: async () => ({ approved: true, remember: true }),
+    });
+
+    // Primary task executed cleanly
+    assert.equal(res.isError, false);
+    assert.equal(res.result.status, 'completed');
+    assert.equal(executedModel, 'gpt-unknown');
+    assert.equal(res.result.output, 'primary task output');
+
+    // Warning is preserved and redacted
+    const rememberWarning = res.warnings.find(w => w.includes("The approval of 'gpt-unknown' was not remembered:"));
+    assert.ok(rememberWarning, 'Response warnings must contain consent remember warning');
+    assert.ok(!rememberWarning.includes('sk-ant-secret12345678901234567890'), 'Credentials must be redacted');
+    assert.ok(!rememberWarning.includes(userHome), 'User home path must be redacted');
+
+    // Next-call policy consistency: disk state does not contain the model
+    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Model must NOT be in neverAsk');
+
+    // Restore renameSync for the next turn verification
+    fs.renameSync = originalRenameSync;
+
+    // Subsequent independent call without askConsent requires consent again and rejects with POLICY_DENIED
+    await assert.rejects(
+      executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir),
+      err => {
+        assert.ok(err instanceof ToolError);
+        assert.equal(err.code, 'POLICY_DENIED');
+        return true;
+      }
+    );
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+});
+
+test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTED and leaves neverAsk untouched', async () => {
+  setupMockConfigAndAdapters();
+  let executed = false;
+  adapterRegistry.codex.execute = async () => {
+    executed = true;
+    return { status: 'completed', isError: false, output: 'done', continuationAvailable: false, truncated: false };
+  };
+
+  const ac = new AbortController();
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, ac.signal, null, {
+      askConsent: async () => {
+        // Abort caller controller during consent callback before storage
+        ac.abort();
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    }
+  );
+
+  assert.equal(executed, false, 'Adapter execution must not run when cancelled');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'neverAsk must remain untouched');
+});
+
+test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIMEOUT and leaves neverAsk untouched', async () => {
+  setupMockConfigAndAdapters();
+  let executed = false;
+  adapterRegistry.codex.execute = async () => {
+    executed = true;
+    return { status: 'completed', isError: false, output: 'done', continuationAvailable: false, truncated: false };
+  };
+
+  let simulatedTime = 0;
+  const budget = createExecutionBudget({
+    totalBudgetMs: 50,
+    teardownAllowanceMs: 0,
+    clock: () => simulatedTime,
+  });
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
+      budget,
+      askConsent: async () => {
+        // Advance monotonic clock past execution deadline before storage
+        simulatedTime = 100;
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    }
+  );
+
+  assert.equal(executed, false, 'Adapter execution must not run when timed out');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'neverAsk must remain untouched');
+});

@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T10b (revalidate just before acquisition).
+The current completed task is EXEC-001-T10c (preserve remembered-approval outcomes).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T10c (preserve remembered-approval outcomes).
+Next pending card: EXEC-001-T11a (activate the budget for consult/review).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1350,6 +1350,35 @@ Scope: re-verify identity, governance policy, and price evidence directly before
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_9b5c70ab23c88d4e93805bf0`, Rounds 3 & 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T10c: preserve remembered-approval outcomes
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: preserve valid user approvals across configuration storage failures (Secondary Task Fault Isolation & Primary Task Supremacy), ensure Next-call policy consistency without false in-memory caching, redact credentials and user home paths from persistence warnings, and protect `governance.neverAsk` from cancellation before or during storage.
+
+### Implemented mechanisms:
+1. **Secondary Task Fault Isolation & Primary Task Supremacy**:
+   - `rememberApprovedModel` failures (disk unwritable, permissions `EACCES`, disk full `ENOSPC`, file lock timeouts) in `src/execution/preparation.ts:confirmConsent` are caught and recorded as non-fatal warnings in `consentWarnings`.
+   - The primary turn completes successfully with valid approved status, returning the redacted failure warning in `TaskExecutionResult.warnings`.
+2. **Next-call policy consistency**:
+   - When persistence fails, `governance.neverAsk` remains untouched on disk.
+   - Subsequent calls reload fresh disk configuration via `loadConfigSnapshot()`, correctly requiring user consent again without being masked by any in-memory state.
+3. **Diagnostic redaction & bounding**:
+   - Storage failure warnings use `redactDiagnostic(..., 256)`, ensuring no tokens, keys, bearer credentials, or local user home directories leak into client-visible warnings.
+   - Input model identifiers in `rememberApprovedModel` are validated against `isValidModelIdentifier` and bounded with `redactDiagnostic(model, 64)`.
+4. **Cancellation before storage protection**:
+   - Caller abort signals and monotonic budget timeouts are checked before and during `rememberApprovedModel` (supporting `options?: FileLockOptions | BackendReadContext | AbortSignal`).
+   - Abort signal or budget expiry halts execution with typed `ToolError('ABORTED')` or `ToolError('TIMEOUT')`, rethrowing immediately and never writing to `neverAsk`.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 538 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 46 tests (46 pass, 0 fail, exit code 0): `node tests/run.cjs tests/execution/controller-consent.test.js tests/execution/preparation.test.js tests/config.test.js`.
+- PASS: Full test suite: 602 tests (599 pass, 0 fail, 3 skipped, duration 144.4 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_5480c82e5d511346ce503eef`, Turns 2, 3 & 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
 
 ## Compact handoff contract
 

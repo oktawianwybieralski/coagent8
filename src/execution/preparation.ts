@@ -443,10 +443,18 @@ export async function prepareTask(
     if (userRememberRequested) {
       // The approval stands even when it cannot be stored; the next turn asks again.
       try {
-        await rememberApprovedModel(model);
+        await rememberApprovedModel(model, {
+          abortSignal: effectiveSignal ?? undefined,
+          budget: effectiveBudget,
+          context: readContext,
+        });
       } catch (err) {
+        assertNotCancelledOrExpired('recording remembered approval');
+        if (err instanceof ToolError && (err.code === 'ABORTED' || err.code === 'TIMEOUT')) {
+          throw err;
+        }
         consentWarnings.push(
-          `The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`
+          `The approval of '${model}' was not remembered: ${redactDiagnostic(err instanceof Error ? err.message : String(err), 256)}`
         );
       }
     }

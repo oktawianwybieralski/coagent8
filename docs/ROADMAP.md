@@ -581,12 +581,13 @@ regressions. Depends on T08.
   Done: changed prices/config during consent cannot bypass policy or replace
   the selected model. Check: R, CONFIG/POLICY/SELECT.
   Evidence: [EXEC-001-T10b implementation](HANDOFF.md#exec-001-t10b-revalidate-just-before-acquisition).
-- [ ] **T10c - preserve remembered-approval outcomes.** Start:
+- [x] **T10c - preserve remembered-approval outcomes.** Start:
   `src/config.ts:rememberApprovedModel` and controller consent warnings. Test
   valid remembered approval, failed persistence and cancellation before storage.
   Done: a storage failure retains an otherwise valid approval with a warning;
   next-call policy remains correct and credentials do not leak. Check: R,
   CONFIG/POLICY/MCP. Form-less approval design remains AX-003.
+  Evidence: [EXEC-001-T10c implementation](HANDOFF.md#exec-001-t10c-preserve-remembered-approval-outcomes).
 
 Acceptance: cancellation, late replies, changed prices/config and invalidated
 approval never start an unauthorized turn. Verification: consent, governance,
