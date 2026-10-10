@@ -162,6 +162,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`a90cd40`](https://github.com/oktawianwybieralski/coagent8/commit/a90cd40ca21d499688e28a2754ce8b5126d6c7c8) **tests:** Bound concurrency barrier and ensure guaranteed task settlement
 - [`ad25d4e`](https://github.com/oktawianwybieralski/coagent8/commit/ad25d4e2810dedc7891a9d57ebbc9b9770318579) **tests:** Bound child readiness and teardown in lock contention test (EXEC-001-T09b)
 - [`6d35ff0`](https://github.com/oktawianwybieralski/coagent8/commit/6d35ff085ea4a3b1ce22dd6e5c1136efbd569292) **diagnostics:** Preserve prefilled issue links in chat clients
+- [`19a9953`](https://github.com/oktawianwybieralski/coagent8/commit/19a9953dcaf3c340832c931855e5b734cd70164c) **quota:** Keep other providers when the cache cannot be read (AUDIT-001-A01-A03)
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
