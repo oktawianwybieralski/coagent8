@@ -19,9 +19,10 @@ Any supported model may fill a role; model size and provider are not fixed.
 Writing and delegated coordination are not available in the current bridge.
 See the [full coagent plan](docs/ROADMAP.md#full-coagent-direction).
 
-The checkout carries `1.0.0-beta.2`, the planned first release for testers.
-`1.0.0-beta.1` remains the npm name placeholder. Local implementation does not
-establish a published or accepted release. The
+`1.0.0-beta.2` is the first release for testers, distributed as a preview: a
+GitHub pre-release with the npm tarball, the VS Code extension and checksums, and
+npm `coagent8@next`. `1.0.0-beta.1` is a deprecated npm name placeholder. A
+checkout of `develop` is a development build, not a release. The
 [roadmap](docs/ROADMAP.md)
 owns the release sequence and remaining work.
 
@@ -91,9 +92,10 @@ npm pack
 npm install --omit=dev <tarball-path>
 ~~~
 
-Both `coagent8` and `coagent8-mcp` start stdio with no arguments. Launch a
-published version with `npx -y coagent8@<published-version>`; registry
-availability is independent of the checkout's version label.
+Both `coagent8` and `coagent8-mcp` start stdio with no arguments. Launch the
+newest preview with `npx -y coagent8@next`, or a fixed version with
+`npx -y coagent8@1.0.0-beta.2`. Plain `coagent8` (npm `latest`) is the
+deprecated placeholder until 1.0.0.
 
 ### Continue
 
@@ -177,8 +179,10 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 
 ### Beta.2 tester guide
 
-1. In a trusted project, run **Extensions: Install from VSIX...** and select the
-   private VSIX supplied by the owner. Use Node.js 24+.
+1. Download `coagent8-mcp-1.0.0-beta.2.vsix` and `SHA256SUMS` from the
+   [GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v1.0.0-beta.2)
+   and check the file's SHA-256 against `SHA256SUMS`. In a trusted project, run
+   **Extensions: Install from VSIX...** and select it. Use Node.js 24+.
 2. The first activation shows one notice: the ready CLIs, or an offer to set them
    up. Run **CoAgent8: Set Up Coding CLIs** at any time to install or sign in a
    CLI and to add CoAgent8 to the CLIs' own chats, all from one list.
@@ -305,7 +309,7 @@ links resolve in the repository.
 | Current contracts, limitations and target design | [Architecture](docs/ARCHITECTURE.md) |
 | Current work, evidence and next action | [Handoff](docs/HANDOFF.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
-| Branches, PRs and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
+| Branches (`develop`, release lines `X.Y.x`), PRs and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
 | Generated release history | [Changelog](CHANGELOG.md) |
 | Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
 | TSDoc and API reference | [Code documentation](docs/ARCHITECTURE.md#code-documentation-and-package-evidence) |

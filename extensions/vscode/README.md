@@ -10,7 +10,7 @@ By [Oktawian Wybieralski](https://oki.dev)
 [![Status: preview](https://img.shields.io/badge/status-preview-F59E0B?style=flat)](#known-limitations)
 ![MCP: stdio](https://img.shields.io/badge/MCP-stdio-6E40C9?style=flat&logo=modelcontextprotocol)
 ![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-5FA04E?style=flat&logo=nodedotjs&logoColor=white)
-[![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-3DA639?style=flat)](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/LICENSE)
+[![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-3DA639?style=flat)](https://github.com/oktawianwybieralski/coagent8/blob/develop/LICENSE)
 
 CoAgent8 connects VS Code's native MCP chat to **OpenAI Codex**, **Claude Code**
 and **Google Antigravity** (`agy`). Ask another agent to examine a design,
@@ -156,7 +156,7 @@ settings. For example, on Windows:
 ```
 
 See the
-[runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md#configuration-and-routing)
+[runtime configuration reference](https://github.com/oktawianwybieralski/coagent8/blob/develop/docs/ARCHITECTURE.md#configuration-and-routing)
 for the configuration file.
 
 Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on macOS), type `CoAgent8` and
@@ -264,7 +264,7 @@ tables.
 External-client setup is unavailable on remote extension hosts. In a multi-root
 window, use `coagent8 setup` from the intended project directory instead.
 Details are in the
-[integration contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md#optional-integrations).
+[integration contract](https://github.com/oktawianwybieralski/coagent8/blob/develop/docs/ARCHITECTURE.md#optional-integrations).
 
 ## Privacy and model approval
 
@@ -278,7 +278,7 @@ Public conversation history is stored locally in the extension's global storage 
 Archival is best-effort. `coagent8_HISTORY=off` disables archive files, while
 session records and execution leases remain required. Retention and storage
 bounds are specified in the
-[architecture](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md#sessions-and-history).
+[architecture](https://github.com/oktawianwybieralski/coagent8/blob/develop/docs/ARCHITECTURE.md#sessions-and-history).
 
 The server requests user approval through MCP elicitation for models with unknown
 or approximate prices, or prices at or above configured thresholds (by default,
@@ -347,9 +347,9 @@ chat registrations change, the notice's **Restart Extensions** reloads the vendo
 chat extensions.
 
 Track current behavior in the
-[architecture and runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ARCHITECTURE.md)
+[architecture and runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/develop/docs/ARCHITECTURE.md)
 and remaining acceptance in the
-[roadmap](https://github.com/oktawianwybieralski/coagent8/blob/release/v1.0.0/docs/ROADMAP.md).
+[roadmap](https://github.com/oktawianwybieralski/coagent8/blob/develop/docs/ROADMAP.md).
 
 ## Updates, support and license
 
