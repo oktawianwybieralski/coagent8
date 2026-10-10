@@ -69,6 +69,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`98be250`](https://github.com/oktawianwybieralski/coagent8/commit/98be25003e270bee45a7699a8b92317e78670d1b) **execution:** Expose accurate timing and phase accounting (EXEC-001-T11c)
 - [`195511e`](https://github.com/oktawianwybieralski/coagent8/commit/195511e10c2a7f5d5f53756123bb874732fed8a0) **review:** Say when another review cannot change the verdict (AX-007a)
 - [`f64ae1e`](https://github.com/oktawianwybieralski/coagent8/commit/f64ae1e2b873561aa3395ebea8b8cce110430836) **mcp:** Label the continuation handle in the result footer (AX-007b)
+- [`d957fb2`](https://github.com/oktawianwybieralski/coagent8/commit/d957fb2dd6fdcef9831a4c30369266ad1c9bdbba) **review:** Answer an unchanged repeat review without a model turn (AX-007c)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
