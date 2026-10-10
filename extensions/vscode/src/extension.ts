@@ -11,7 +11,8 @@ import { readBackendExecutable, setBackendExecutable, validateConfig } from '../
 import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
-import { readSetupState, resetConfigurationFile, updateInstallList, updateSetupState } from './configuration.js';
+import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js';
+import { readInstallRecord, readSetupState, resetConfigurationFile, updateInstallList, updateSetupState, type StateLocation } from './configuration.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 
 /** This extension's identifier, as published. */
@@ -105,19 +106,55 @@ function installCommand(client: SetupClient): string {
       : (windows ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash');
 }
 /**
+ * Folders the official Windows installers create; those left empty are deleted with their
+ * user PATH entries. Inner folders come first.
+ */
+const INSTALLER_FOLDERS: Record<SetupClient, string[]> = {
+  codex: [],
+  claude: ['$env:USERPROFILE\\.local\\bin', '$env:USERPROFILE\\.local\\share'],
+  agy: ['$env:LOCALAPPDATA\\agy\\bin', '$env:LOCALAPPDATA\\agy', '$env:USERPROFILE\\.gemini\\bin'],
+};
+/** What {@link removeCommand} removes for a client, for the uninstall list. */
+function removalSummary(client: SetupClient): string {
+  if (client === 'codex') return 'npm uninstall -g @openai/codex';
+  if (process.platform !== 'win32') return client === 'claude' ? '~/.local/bin/claude and ~/.local/share/claude' : '~/.local/bin/agy';
+  return client === 'claude' ? '~/.local/bin/claude.exe, ~/.local/share/claude, the installer folders left empty and their PATH entries'
+    : '%LOCALAPPDATA%\\agy\\bin (a link to ~/.gemini/bin), agy.exe, the installer folders left empty and their PATH entries';
+}
+/**
  * Removes what an official standalone installer installed: the global npm package that
  * setup installs for Codex, the files Claude Code's uninstall documentation names, and
- * the single binary the Antigravity CLI installer copies (it publishes no uninstall).
- * PATH entries the installers added are left as they are.
+ * the agy binary (its installer publishes no uninstall). On Windows the agy installer
+ * links %LOCALAPPDATA%\agy\bin to ~/.gemini/bin, so the link itself is deleted, never its
+ * target's other contents; ~/.gemini/bin/agy.exe stays while the Google Antigravity
+ * extension, which downloads it there, is installed.
+ * @param keepAgyDownload - The Google Antigravity extension is installed.
  */
-function removeCommand(client: SetupClient): string {
+function removeCommand(client: SetupClient, keepAgyDownload: boolean): string {
   const windows = process.platform === 'win32';
   if (client === 'codex') return 'npm uninstall -g @openai/codex';
   if (client === 'claude') {
-    return windows ? 'Remove-Item -Path "$env:USERPROFILE\\.local\\bin\\claude.exe" -Force; Remove-Item -Path "$env:USERPROFILE\\.local\\share\\claude" -Recurse -Force'
+    return windows ? 'Remove-Item -LiteralPath "$env:USERPROFILE\\.local\\bin\\claude.exe", "$env:USERPROFILE\\.local\\share\\claude" -Recurse -Force -ErrorAction SilentlyContinue'
       : 'rm -f ~/.local/bin/claude && rm -rf ~/.local/share/claude';
   }
-  return windows ? 'Remove-Item -Path "$env:LOCALAPPDATA\\agy\\bin\\agy.exe" -Force' : 'rm -f ~/.local/bin/agy';
+  if (!windows) return 'rm -f ~/.local/bin/agy';
+  return '$agy = "$env:LOCALAPPDATA\\agy\\bin"; if ((Get-Item -LiteralPath $agy -Force -ErrorAction SilentlyContinue).LinkType) { [IO.Directory]::Delete($agy) } '
+    + 'else { Remove-Item -LiteralPath "$agy\\agy.exe" -Force -ErrorAction SilentlyContinue }'
+    + (keepAgyDownload ? '' : '; Remove-Item -LiteralPath "$env:USERPROFILE\\.gemini\\bin\\agy.exe" -Force -ErrorAction SilentlyContinue');
+}
+/**
+ * Deletes the installer folders left empty and removes their entries from the user PATH in
+ * the registry, keeping the value's type and unexpanded variables. Windows only; on other
+ * systems the installers' shell profile lines stay.
+ */
+function folderCleanupCommand(clients: SetupClient[]): string {
+  const folders = clients.flatMap(client => INSTALLER_FOLDERS[client]);
+  if (process.platform !== 'win32' || !folders.length) return '';
+  return '$folders = @(' + folders.map(folder => '"' + folder + '"').join(', ') + '); '
+    + 'foreach ($folder in $folders) { if ((Test-Path -LiteralPath $folder) -and -not (Get-ChildItem -LiteralPath $folder -Force)) { Remove-Item -LiteralPath $folder -Force } }; '
+    + "$key = Get-Item -LiteralPath 'HKCU:\\Environment'; $path = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); "
+    + "$kept = @($path -split ';' | Where-Object { $_ -and ((Test-Path -LiteralPath ([Environment]::ExpandEnvironmentVariables($_))) -or ($folders -notcontains [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\\'))) }) -join ';'; "
+    + "if ($path -and $kept -ne $path) { Set-ItemProperty -LiteralPath 'HKCU:\\Environment' -Name Path -Value $kept -Type $key.GetValueKind('Path') }";
 }
 /**
  * Inserts an explicitly chosen action for review; the user presses Enter to run it.
@@ -164,6 +201,7 @@ async function waitForCli(title: string, found: () => boolean): Promise<boolean>
 /** Registers the independent MCP provider and explicit onboarding/registration/cleanup actions. */
 export function activate(context: vscode.ExtensionContext): void {
   const storage = context.globalStorageUri.fsPath;
+  const location = (): StateLocation => ({ storage, home: os.homedir() });
   const changed = new vscode.EventEmitter<void>();
   context.subscriptions.push(changed);
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
@@ -243,11 +281,11 @@ export function activate(context: vscode.ExtensionContext): void {
     output.appendLine(`[${new Date().toTimeString().slice(0, 8)}] ${trigger} - ${results.map(describeState).join('; ')}`);
     lastStatus = results;
     // A standalone installer setup opened counts once a check finds its CLI, also after a reload.
-    const pending = readSetupState(storage).pendingClis ?? [];
+    const pending = readInstallRecord(location()).pendingClis ?? [];
     const found = results.filter(result => pending.includes(result.client) && result.installed).map(result => result.client);
     if (found.length) {
-      await updateInstallList(storage, 'installedClis', found);
-      await updateInstallList(storage, 'pendingClis', [], found);
+      await updateInstallList(location(), 'installedClis', found);
+      await updateInstallList(location(), 'pendingClis', [], found);
     }
     return results;
   }
@@ -261,7 +299,11 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   function describeSource(client: SetupClient, source: ClientSource, home: string): string {
     const vendor = VENDOR_EXTENSIONS[client];
-    if (source.kind === 'vscode-extension') return client === 'agy' ? `Downloaded by the ${vendor.name} VS Code extension` : `${vendor.name} VS Code extension`;
+    if (source.kind === 'vscode-extension' && client === 'agy') {
+      // The official agy installer places its binary in the same folder the Google extension downloads to.
+      return vscode.extensions.getExtension(vendor.id) ? `Downloaded by the ${vendor.name} VS Code extension` : `Standalone CLI - ${ANTIGRAVITY_DOWNLOAD}`;
+    }
+    if (source.kind === 'vscode-extension') return `${vendor.name} VS Code extension`;
     return `${source.kind === 'npm' ? 'npm package' : 'Standalone CLI'} - ${shownPath(source.executable, home)}`;
   }
   /**
@@ -274,8 +316,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const cli = resolveSetupClient(result.client, opts.home, opts.env, opts.nodePath);
     if (!cli) return {};
     const source = clientSource(result.client, cli, opts.home, opts.env);
-    const state = readSetupState(storage);
-    const byCoAgent8 = source.kind === 'vscode-extension' ? state.installedExtensions?.includes(VENDOR_EXTENSIONS[result.client].id) : state.installedClis?.includes(result.client);
+    const record = readInstallRecord(location());
+    const byCoAgent8 = standaloneOnly(result.client, source) ? record.installedClis?.includes(result.client) : record.installedExtensions?.includes(VENDOR_EXTENSIONS[result.client].id);
     const configured = readBackendExecutable(SETUP_PROVIDERS[result.client], configurationFile()) !== undefined;
     const alternative = alternativeSource(result.client, source, opts.home, opts.env, opts.nodePath);
     return {
@@ -286,6 +328,16 @@ export function activate(context: vscode.ExtensionContext): void {
   function discoverable(client: SetupClient): boolean {
     const opts = options();
     return resolveSetupClient(client, opts.home, opts.env, opts.nodePath) !== null;
+  }
+  /** Whether the CLI in use is a standalone or npm installation rather than the vendor extension's copy. */
+  function standaloneOnly(client: SetupClient, source: ClientSource): boolean {
+    return source.kind !== 'vscode-extension' || (client === 'agy' && !vscode.extensions.getExtension(VENDOR_EXTENSIONS.agy.id));
+  }
+  /** Whether the vendor extension's copy of the CLI is present, whichever installation the runtime uses. */
+  function extensionCopy(client: SetupClient): boolean {
+    const opts = options();
+    if (client === 'agy' && !vscode.extensions.getExtension(VENDOR_EXTENSIONS.agy.id)) return false;
+    return alternativeSource(client, { kind: 'standalone', executable: '' }, opts.home, opts.env, opts.nodePath) !== undefined;
   }
   /**
    * Shows the one closing notice for setup and registration changes.
@@ -395,23 +447,12 @@ export function activate(context: vscode.ExtensionContext): void {
       return waited(client, await waitForCli('Waiting for the Google Antigravity extension to download Antigravity CLI...', () => discoverable(client)), true);
     }
     const choice = await vscode.window.showInformationMessage(
-      `${LABELS[client]} is not installed. Install it with the ${vendor.name} VS Code extension (updates itself and adds its own chat) or as the standalone CLI from the official installer (lighter, also usable in terminals)?`,
+      `${LABELS[client]} is not installed. Recommended: the ${vendor.name} VS Code extension, which updates itself and adds its own chat. The standalone CLI comes from the vendor's official installer, which adds its folder to your PATH; uninstalling CoAgent8 offers to remove it.`,
       'Install VS Code Extension', 'Install Standalone CLI');
-    if (choice === 'Install VS Code Extension') {
-      const preinstalled = vscode.extensions.getExtension(vendor.id) !== undefined;
-      // Machine-scoped: the CLI and its sign-in belong to this machine, and VS Code then
-      // installs without asking whether Settings Sync should copy it to other devices.
-      await vscode.commands.executeCommand('workbench.extensions.installExtension', vendor.id, { donotSync: true });
-      // The command returns once the extension is installed (a cancellation throws); the
-      // extension API can report it later, so it is not consulted here. Only an extension
-      // this action added may later be offered for removal with CoAgent8.
-      if (!preinstalled) await updateInstallList(storage, 'installedExtensions', [vendor.id]);
-      const found = await waitForCli(`Waiting for ${LABELS[client]} from the ${vendor.name} extension...`, () => discoverable(client));
-      return waited(client, found, client === 'agy');
-    }
+    if (choice === 'Install VS Code Extension') return installVendorExtension(client, () => discoverable(client));
     if (choice !== 'Install Standalone CLI') return false;
     // The CLI is absent here, so a later check that finds it identifies this installation.
-    await updateInstallList(storage, 'pendingClis', [client]);
+    await updateInstallList(location(), 'pendingClis', [client]);
     offerTerminal(installCommand(client), `Install ${LABELS[client]}`, context);
     const next = await vscode.window.showInformationMessage(`Press Enter in the terminal to install ${LABELS[client]}. When it finishes, check it here.`, 'Check Now', 'Reload Window');
     if (next === 'Reload Window') { await vscode.commands.executeCommand('workbench.action.reloadWindow'); return false; }
@@ -422,6 +463,47 @@ export function activate(context: vscode.ExtensionContext): void {
     const reload = await vscode.window.showWarningMessage(`${LABELS[client]} was not found with this window's PATH. Reload the window after the installer finishes, then run CoAgent8: Set Up Coding CLIs again.`, 'Reload Window');
     if (reload === 'Reload Window') await vscode.commands.executeCommand('workbench.action.reloadWindow');
     return false;
+  }
+  /**
+   * Installs the vendor extension for a CLI and waits until its copy is found.
+   * @param found - Re-resolves the CLI the caller waits for.
+   */
+  async function installVendorExtension(client: SetupClient, found: () => boolean): Promise<boolean> {
+    const vendor = VENDOR_EXTENSIONS[client];
+    const preinstalled = vscode.extensions.getExtension(vendor.id) !== undefined;
+    // Machine-scoped: the CLI and its sign-in belong to this machine, and VS Code then
+    // installs without asking whether Settings Sync should copy it to other devices.
+    await vscode.commands.executeCommand('workbench.extensions.installExtension', vendor.id, { donotSync: true });
+    // The command returns once the extension is installed (a cancellation throws); the
+    // extension API can report it later, so it is not consulted here. Only an extension
+    // this action added may later be offered for removal with CoAgent8.
+    if (!preinstalled) await updateInstallList(location(), 'installedExtensions', [vendor.id]);
+    return waited(client, await waitForCli(`Waiting for ${LABELS[client]} from the ${vendor.name} extension...`, found), client === 'agy');
+  }
+  /**
+   * Offers the vendor extension in place of a CLI found only as a standalone or npm installation,
+   * once: a declined offer is remembered. Accepting selects the extension's copy in config.json.
+   * @returns Whether the CLI the runtime uses changed.
+   */
+  async function offerVendorExtension(client: SetupClient): Promise<boolean> {
+    const opts = options();
+    const cli = resolveSetupClient(client, opts.home, opts.env, opts.nodePath);
+    if (!cli) return false;
+    const source = clientSource(client, cli, opts.home, opts.env);
+    if (!standaloneOnly(client, source) || extensionCopy(client) || readSetupState(storage).keptStandalone?.includes(client)) return false;
+    const vendor = VENDOR_EXTENSIONS[client];
+    const choice = await vscode.window.showInformationMessage(
+      `${LABELS[client]} is installed only as ${describeSource(client, source, opts.home)}. Use the ${vendor.name} VS Code extension instead? It updates itself and adds its own chat; the standalone CLI stays installed.`,
+      'Install VS Code Extension', 'Keep Standalone CLI');
+    if (choice === 'Keep Standalone CLI') {
+      await updateSetupState(storage, { keptStandalone: [...new Set([...readSetupState(storage).keptStandalone ?? [], client])] });
+      return false;
+    }
+    if (choice !== 'Install VS Code Extension' || !await installVendorExtension(client, () => extensionCopy(client))) return false;
+    // The runtime, VS Code chat and the CLI chats read this file on their next turn.
+    await setBackendExecutable(SETUP_PROVIDERS[client], VSCODE_EXTENSION_EXECUTABLE, configurationFile());
+    clearCliResolverCache();
+    return true;
   }
   /** @returns Whether the user asked to check the CLI after opening its sign-in command. */
   async function offerSignIn(result: SetupStatus): Promise<boolean> {
@@ -497,6 +579,10 @@ export function activate(context: vscode.ExtensionContext): void {
           if (result.action === 'blocked' || !await installCli(client)) continue;
           changed = true;
           result = (await status(`Installed ${LABELS[client]}`, [client])).find(item => item.client === client)!;
+        } else if (await offerVendorExtension(client)) {
+          // A CLI found only as a standalone installation is offered the vendor extension once.
+          changed = true;
+          result = (await status(`Switched ${LABELS[client]} to the VS Code extension`, [client])).find(item => item.client === client)!;
         }
         if (result.installed && result.compatibility === 'supported' && result.authentication !== 'authenticated') changed = await offerSignIn(result) || changed;
         // Registration needs a compatible CLI, not a sign-in; manual entries stay as they are.
@@ -528,20 +614,26 @@ export function activate(context: vscode.ExtensionContext): void {
     await announce(lead, outcome.added, outcome.removed, add.length || remove.length ? outcome : final);
   });
   register('coagent8.uninstall', async () => {
-    const state = readSetupState(storage);
+    const record = readInstallRecord(location());
     // Only what CoAgent8 setup installed and is still present is offered; nothing is preselected.
     const items: (vscode.QuickPickItem & { client: SetupClient; target: 'extension' | 'cli' })[] = [];
+    const gone: { extensions: string[]; clis: string[] } = { extensions: [], clis: [] };
     for (const client of SETUP_CLIENTS) {
       const vendor = VENDOR_EXTENSIONS[client];
-      if (state.installedExtensions?.includes(vendor.id) && vscode.extensions.getExtension(vendor.id)) {
+      if (record.installedExtensions?.includes(vendor.id) && !vscode.extensions.getExtension(vendor.id)) gone.extensions.push(vendor.id);
+      if (record.installedClis?.includes(client) && !discoverable(client)) gone.clis.push(client);
+      if (record.installedExtensions?.includes(vendor.id) && vscode.extensions.getExtension(vendor.id)) {
         items.push({ label: vendor.name, description: `VS Code extension ${vendor.id}`, client, target: 'extension',
           detail: `Installed by CoAgent8 setup for ${LABELS[client]}. Removing it removes its chat and the CLI it provides${client === 'agy' ? `, including ${ANTIGRAVITY_DOWNLOAD}, which the extension downloaded and leaves behind` : ''}; sign-ins and histories stay.` });
       }
-      if (state.installedClis?.includes(client) && discoverable(client)) {
+      if (record.installedClis?.includes(client) && discoverable(client)) {
         items.push({ label: LABELS[client], description: 'standalone CLI', client, target: 'cli',
-          detail: `Installed by CoAgent8 setup with the official installer. Removal runs: ${removeCommand(client)}. Sign-ins and histories stay.` });
+          detail: `Installed by CoAgent8 setup with the official installer. Removal: ${removalSummary(client)}. Sign-ins and histories stay.` });
       }
     }
+    // What was removed in the meantime is no longer recorded.
+    if (gone.extensions.length) await updateInstallList(location(), 'installedExtensions', [], gone.extensions);
+    if (gone.clis.length) await updateInstallList(location(), 'installedClis', [], gone.clis);
     let remove: typeof items = [];
     if (items.length) {
       const picked = await vscode.window.showQuickPick(items, { canPickMany: true, ignoreFocusOut: true, title: 'Uninstall CoAgent8',
@@ -569,7 +661,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const cleaned = await cleanupClients({ home: opts.home, env: opts.env, origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token });
     report(cleaned);
     // Not owned by the extension: the terminal must outlive its deactivation.
-    if (clis.length) offerTerminal(clis.map(item => removeCommand(item.client)).join(process.platform === 'win32' ? '; ' : ' && '), 'Remove coding CLIs');
+    if (clis.length) {
+      const keepAgyDownload = vscode.extensions.getExtension(VENDOR_EXTENSIONS.agy.id) !== undefined && !extensions.some(item => item.client === 'agy');
+      const commands = [...clis.map(item => removeCommand(item.client, keepAgyDownload)), folderCleanupCommand(clis.map(item => item.client))].filter(Boolean);
+      offerTerminal(commands.join(process.platform === 'win32' ? '; ' : ' && '), 'Remove coding CLIs');
+    }
     const leftovers: string[] = [];
     for (const item of extensions) {
       await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', VENDOR_EXTENSIONS[item.client].id);
@@ -579,6 +675,8 @@ export function activate(context: vscode.ExtensionContext): void {
         catch (error) { leftovers.push(`${ANTIGRAVITY_DOWNLOAD} was not deleted (${redactDiagnostic(error instanceof Error ? error.message : 'unknown error')}); delete it after quitting VS Code.`); }
       }
     }
+    // Removed CLIs leave the record once a later check no longer finds them.
+    if (extensions.length) await updateInstallList(location(), 'installedExtensions', [], extensions.map(item => VENDOR_EXTENSIONS[item.client].id));
     await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', EXTENSION_ID);
     const kept = cleaned.results.filter(result => result.action === 'blocked');
     const message = [
