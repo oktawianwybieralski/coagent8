@@ -14,7 +14,9 @@ import { withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 import { backupDirectory, configPath, document, entryOwnership, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, serializeSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
-import { previewSkillRemoval, removeSkills, type SkillStatus } from './skills.js';
+import { assertSkillRoot, type SkillStatus } from './skills.js';
+import { previewManagedSkillRemoval, removeManagedSkills } from './skill-management.js';
+import { recoverSkillTransaction } from './skill-transaction.js';
 
 /** Public cleanup evidence contains neither configuration contents nor private backup paths. */
 export interface CleanupStatus {
@@ -100,7 +102,7 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
     if (!fs.readdirSync(backups).length) fs.rmdirSync(backups);
   }
   const saved = readSelection(stateFile);
-  if (!saved.clients.length && !Object.keys(saved.owned).length && !Object.keys(saved.skills).length) fs.rmSync(stateFile, { force: true });
+  if (!saved.clients.length && !Object.keys(saved.owned).length && !Object.keys(saved.skills).length && !Object.keys(saved.disabledSkills ?? {}).length) fs.rmSync(stateFile, { force: true });
 }
 
 /** Previews cleanup or applies a matching preview under the same lease as setup. */
@@ -110,7 +112,9 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
     throw new Error('Custom client/profile roots are unsupported; cleanup requires the local default profile.');
   }
   const root = path.join(home, '.coagent8'), stateFile = path.join(root, 'setup.json');
+  assertSkillRoot(root, home);
   async function perform(): Promise<CleanupPreview> {
+    if (options.apply !== undefined) recoverSkillTransaction(home);
     const stateBefore = read(stateFile), saved = readSelection(stateFile, stateBefore);
     const selected = [...new Set(options.clients ?? SETUP_CLIENTS)];
     if (!selected.length || !selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown cleanup client.');
@@ -136,11 +140,8 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
     });
     // Skills are owned apart from the entry: a manual registration does not keep packages setup wrote.
     for (const result of results) {
-      const record = saved.skills[result.client];
-      if (!record) continue;
-      result.skills = options.origin && saved.skillOrigin[result.client] !== options.origin
-        ? Object.keys(record).map((name): SkillStatus => ({ name, action: 'preserved', message: 'Installed outside the VS Code extension; preserved.' }))
-        : previewSkillRemoval(result.client, home, record);
+      if (!saved.skills[result.client] && !saved.disabledSkills?.[result.client]) continue;
+      result.skills = previewManagedSkillRemoval(result.client, home, saved, options.origin);
     }
     const token = hash(JSON.stringify({ home, state: stateBefore === null ? null : hash(stateBefore), selected,
       files: selected.map(client => { const item = snapshots.get(client); return item ? [item.file, item.before === null ? null : hash(item.before)] : null; }), results }));
@@ -170,15 +171,8 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
       }
     }
     for (const result of results) {
-      const record = saved.skills[result.client];
-      if (!record || !result.skills || (options.origin && saved.skillOrigin[result.client] !== options.origin)) continue;
-      const removal = removeSkills(result.client, home, record, result.skills);
-      result.skills = removal.statuses;
-      if (Object.keys(removal.owned).length) saved.skills[result.client] = removal.owned;
-      else {
-        delete saved.skills[result.client];
-        delete saved.skillOrigin[result.client];
-      }
+      if (!result.skills) continue;
+      result.skills = removeManagedSkills(result.client, home, saved, result.skills, options.origin);
     }
     // Absent stale ownership is safely recoverable after an interrupted removal.
     if (stateBefore !== null) {

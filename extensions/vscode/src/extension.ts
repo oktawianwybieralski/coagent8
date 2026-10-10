@@ -14,6 +14,7 @@ import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overri
 import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js';
 import { readInstallRecord, readSetupState, resetConfigurationFile, updateInstallList, updateSetupState, type StateLocation } from './configuration.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
+import { manageSkills, skillSelectionForAction } from '../../../src/integrations/skill-management.js';
 
 /** This extension's identifier, as published. */
 const EXTENSION_ID = 'okidev.coagent8-mcp';
@@ -531,6 +532,30 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`); });
   register('coagent8.manageMcpServers', async () => { await vscode.commands.executeCommand('workbench.mcp.listServer'); });
+  register('coagent8.manageSkills', async () => {
+    const client = await vscode.window.showQuickPick(SETUP_CLIENTS.map(client => ({ label: LABELS[client], client })), { title: 'Manage CoAgent8 Skills', placeHolder: 'Choose the client whose skills to manage', ignoreFocusOut: true });
+    if (!client) return;
+    const skillOptions = { client: client.client, home: os.homedir(), env: discoveryEnvironment(storage), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN };
+    const current = await manageSkills(skillOptions);
+    const action = await vscode.window.showQuickPick([
+      { label: 'Install / Update', action: 'install' as const, description: 'Install selected packages or update unchanged owned copies' },
+      { label: 'Uninstall', action: 'uninstall' as const, description: 'Remove selected packages; keep the CLI and MCP connection' },
+      { label: 'Enable', action: 'enable' as const, description: 'Restore selected installed packages to client discovery' },
+      { label: 'Disable', action: 'disable' as const, description: 'Retain selected installed packages outside client discovery' },
+    ], { title: `${LABELS[client.client]} Skills`, placeHolder: 'Choose an action', ignoreFocusOut: true });
+    if (!action) return;
+    const candidates = current.skills.filter(item => action.action === 'install' || action.action === 'uninstall' || current.selection.installed.includes(item.name));
+    const packages = await vscode.window.showQuickPick(candidates.map(item => ({ label: item.name, name: item.name, description: `${item.state}${item.updateAvailable ? ' - update available' : ''}`, detail: `${item.message} User scope: ${redactDiagnostic(item.state === 'disabled' ? current.disabledRoot : current.root)}. Other consumers of this directory are affected.`, picked: true })), { canPickMany: true, title: `${action.label}: ${LABELS[client.client]} Skills`, placeHolder: 'Select packages to change; clear the selection to change nothing', ignoreFocusOut: true });
+    if (!packages?.length) return;
+    const selection = skillSelectionForAction(current.selection, packages.map(item => item.name), action.action);
+    const preview = await manageSkills({ ...skillOptions, selection });
+    const result = await manageSkills({ ...skillOptions, selection, apply: preview.token });
+    report(result);
+    const conflicts = result.skills.filter(item => item.state === 'conflict').length;
+    const message = `${LABELS[client.client]} skill selection applied.${conflicts ? ` ${conflicts} conflicting packages were preserved; see details.` : ''} Start a new chat to refresh its skills. Native client visibility settings and other discovered copies still apply.`;
+    const choice = conflicts ? await vscode.window.showWarningMessage(message, 'Show Details') : await vscode.window.showInformationMessage(message, 'Show Details');
+    if (choice === 'Show Details') showDetails(result);
+  });
   register('coagent8.resetConfiguration', async () => {
     const file = configurationFile();
     const dirty = vscode.workspace.textDocuments.some(document => document.uri.scheme === 'file' && path.resolve(document.uri.fsPath) === path.resolve(file) && document.isDirty);

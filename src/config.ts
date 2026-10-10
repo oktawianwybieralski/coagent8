@@ -10,6 +10,7 @@ import { redactDiagnostic } from './security/redaction.js';
 import { isValidModelIdentifier } from './contracts/models.js';
 import type { GovernanceSettings } from './contracts/governance.js';
 import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
+import { COAGENT_SKILL_NAME, type SkillSelection } from './contracts/skills.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
 export type BackendId = ProviderId | 'smart_quota';
@@ -30,6 +31,8 @@ export interface BackendSettings {
    * PATH, then in the vendor's VS Code extension.
    */
   executable?: string;
+  /** Explicit skill selection; omitted installs the catalog, an empty installed list installs none. */
+  skills?: SkillSelection;
 }
 
 export interface CoAgent8Config {
@@ -211,14 +214,24 @@ export function validateConfig(value: unknown): CoAgent8Config {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error(`Configuration Error: backends.${id} must be an object.`);
       }
-      const { defaultModel, executable } = value as Record<string, unknown>;
+      const { defaultModel, executable, skills } = value as Record<string, unknown>;
       if (defaultModel !== undefined && !isValidModelIdentifier(defaultModel)) {
         throw new Error(`Configuration Error: backends.${id}.defaultModel is not a valid model identifier.`);
       }
       if (executable !== undefined && !isValidExecutable(executable)) {
         throw new Error(`Configuration Error: backends.${id}.executable must be an absolute path, a path starting with ~/, or "vscode-extension".`);
       }
-      backends[id as ProviderId] = { ...(defaultModel === undefined ? {} : { defaultModel: defaultModel as string }), ...(executable === undefined ? {} : { executable: executable as string }) };
+      let selection: SkillSelection | undefined;
+      if (skills !== undefined) {
+        if (!skills || typeof skills !== 'object' || Array.isArray(skills)) throw new Error(`Configuration Error: backends.${id}.skills must be an object.`);
+        const fields = skills as Record<string, unknown>;
+        if (Object.keys(fields).some(key => !['installed', 'disabled'].includes(key))) throw new Error(`Configuration Error: backends.${id}.skills has unknown fields.`);
+        const valid = (list: unknown): list is string[] => Array.isArray(list) && list.length <= 64 && list.every(name => typeof name === 'string' && COAGENT_SKILL_NAME.test(name)) && new Set(list).size === list.length;
+        const installed = fields.installed, disabled = fields.disabled;
+        if (!valid(installed) || !valid(disabled) || disabled.some(name => !installed.includes(name))) throw new Error(`Configuration Error: backends.${id}.skills requires unique installed names and a disabled subset.`);
+        selection = { installed: [...installed].sort(), disabled: [...disabled].sort() };
+      }
+      backends[id as ProviderId] = { ...(defaultModel === undefined ? {} : { defaultModel: defaultModel as string }), ...(executable === undefined ? {} : { executable: executable as string }), ...(selection === undefined ? {} : { skills: selection }) };
     }
   }
 
@@ -610,6 +623,26 @@ export async function recordDefaultModel(id: ProviderId, model: string): Promise
  */
 export function readBackendExecutable(id: ProviderId, file = getConfigFile()): string | undefined {
   return loadFileConfig(file).backends[id]?.executable;
+}
+
+/** Reads the explicit package selection without editor overrides. */
+export function readBackendSkills(id: ProviderId, file = getConfigFile()): SkillSelection | undefined {
+  return loadFileConfig(file).backends[id]?.skills;
+}
+
+/** Persists a desired package selection under the configuration lease, retaining other settings. */
+export async function setBackendSkills(id: ProviderId, skills: SkillSelection, file = getConfigFile(), expectedSnapshot?: string | null): Promise<void> {
+  ensureConfigDir(file);
+  await withFileLock(file, async () => {
+    if (expectedSnapshot !== undefined) {
+      let snapshot: string | null;
+      try { snapshot = readBoundedFileSync(file); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; snapshot = null; }
+      if (snapshot !== expectedSnapshot) throw new Error('Skill configuration changed concurrently; inspect a fresh preview.');
+    }
+    const current = loadFileConfig(file);
+    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], skills } } }), file);
+  });
 }
 
 /**

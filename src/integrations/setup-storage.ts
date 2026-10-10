@@ -13,6 +13,10 @@ import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export interface Registration { command: string; args: string[]; env?: Record<string, string> }
 /** Registrations written on behalf of the VS Code extension, which removes them on uninstall. */
 export const EXTENSION_ORIGIN = 'vscode-extension' as const;
+/** Shared configuration file used by a runtime started with this setup environment. */
+export function setupConfigFile(home: string, env: NodeJS.ProcessEnv): string {
+  return path.resolve(env.coagent8_CONFIG || path.join(env.coagent8_DIR || path.join(home, '.coagent8'), 'config.json'));
+}
 export type RegistrationOrigin = typeof EXTENSION_ORIGIN;
 /**
  * Saved selections and ownership; `origin` is absent for the CLI and for earlier records.
@@ -24,6 +28,10 @@ export interface Selection {
   owned: Partial<Record<SetupClient, string>>;
   origin: Partial<Record<SetupClient, RegistrationOrigin>>;
   skills: Partial<Record<SetupClient, Record<string, string>>>;
+  /** Owned disabled packages stored outside client discovery. */
+  disabledSkills?: Partial<Record<SetupClient, Record<string, string>>>;
+  /** Per-package origin, allowing VSIX and CLI installations to coexist. */
+  skillOwners?: Partial<Record<SetupClient, Record<string, RegistrationOrigin | 'cli'>>>;
   skillOrigin: Partial<Record<SetupClient, RegistrationOrigin>>;
 }
 const CONFIG_LIMIT = 512 * 1024;
@@ -118,27 +126,43 @@ export function readSelection(file: string, snapshot?: string | null): Selection
     if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || !owned[client as SetupClient]) throw new Error('Invalid setup origin record.');
     origin[client as SetupClient] = value;
   }
-  const skills: Selection['skills'] = {};
-  if (data.skills) for (const [client, value] of Object.entries(object(data.skills))) {
+  function skillRecords(records: unknown): Selection['skills'] {
+    const skills: Selection['skills'] = {};
+    if (records !== undefined) for (const [client, value] of Object.entries(object(records))) {
     const record = object(value);
     if (!SETUP_CLIENTS.includes(client as SetupClient) || !Object.entries(record).every(([name, digest]) => /^coagent8-[a-z]+(?:-[a-z]+)*$/.test(name) && typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest))) {
       throw new Error('Invalid setup skill record.');
     }
     skills[client as SetupClient] = { ...record } as Record<string, string>;
+    }
+    return skills;
+  }
+  const skills = skillRecords(data.skills), disabledSkills = skillRecords(data.disabledSkills);
+  const skillOwners: NonNullable<Selection['skillOwners']> = {};
+  if (data.skillOwners !== undefined) for (const [client, record] of Object.entries(object(data.skillOwners))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient)) throw new Error('Invalid skill owner client.');
+    const owners: Record<string, RegistrationOrigin | 'cli'> = {};
+    for (const [name, origin] of Object.entries(object(record))) {
+      if ((origin !== EXTENSION_ORIGIN && origin !== 'cli') || (!skills[client as SetupClient]?.[name] && !disabledSkills[client as SetupClient]?.[name])) throw new Error('Invalid skill package owner.');
+      owners[name] = origin;
+    }
+    if (Object.keys(owners).length) skillOwners[client as SetupClient] = owners;
   }
   const skillOrigin: Selection['skillOrigin'] = {};
   if (data.skillOrigin) for (const [client, value] of Object.entries(object(data.skillOrigin))) {
-    if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || !skills[client as SetupClient]) throw new Error('Invalid setup skill origin record.');
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || (!skills[client as SetupClient] && !disabledSkills[client as SetupClient])) throw new Error('Invalid setup skill origin record.');
     skillOrigin[client as SetupClient] = value;
   }
-  return { clients: [...new Set(data.clients)] as SetupClient[], owned, origin, skills, skillOrigin };
+  return { clients: [...new Set(data.clients)] as SetupClient[], owned, origin, skills, skillOrigin, ...(Object.keys(disabledSkills).length ? { disabledSkills } : {}), ...(Object.keys(skillOwners).length ? { skillOwners } : {}) };
 }
 /** The setup state file's contents; empty skill records are left out, as earlier versions wrote it. */
 export function serializeSelection(saved: Selection): string {
-  const { skills, skillOrigin, ...rest } = saved;
+  const { skills, disabledSkills, skillOrigin, skillOwners, ...rest } = saved;
   const recorded = Object.fromEntries(Object.entries(skills).filter(([, record]) => Object.keys(record ?? {}).length));
-  const origins = Object.fromEntries(Object.entries(skillOrigin).filter(([client]) => Object.hasOwn(recorded, client)));
-  return JSON.stringify({ ...rest, ...(Object.keys(recorded).length ? { skills: recorded } : {}), ...(Object.keys(origins).length ? { skillOrigin: origins } : {}) }, null, 2) + '\n';
+  const disabled = Object.fromEntries(Object.entries(disabledSkills ?? {}).filter(([, record]) => Object.keys(record ?? {}).length));
+  const origins = Object.fromEntries(Object.entries(skillOrigin).filter(([client]) => Object.hasOwn(recorded, client) || Object.hasOwn(disabled, client)));
+  const packageOwners = Object.fromEntries(Object.entries(skillOwners ?? {}).map(([client, owners]) => [client, Object.fromEntries(Object.entries(owners ?? {}).filter(([name]) => saved.skills[client as SetupClient]?.[name] || saved.disabledSkills?.[client as SetupClient]?.[name]))]).filter(([, owners]) => Object.keys(owners).length));
+  return JSON.stringify({ ...rest, ...(Object.keys(recorded).length ? { skills: recorded } : {}), ...(Object.keys(disabled).length ? { disabledSkills: disabled } : {}), ...(Object.keys(origins).length ? { skillOrigin: origins } : {}), ...(Object.keys(packageOwners).length ? { skillOwners: packageOwners } : {}) }, null, 2) + '\n';
 }
 
 /** Codex stops an MCP tool call after 60 s by default; a review can take several minutes. */

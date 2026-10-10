@@ -18,7 +18,7 @@ function affects(...changed) {
  * @param registrations - Registration state per client for Manage CLI Chat Registrations: `owned`,
  * `outdated` (owned for another version), `manual` or `blocked`; others are absent.
  */
-async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, command = 'coagent8.setup', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = [], welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, buttons = [], registrations = {}, extensionApiLags = false, commands = {}, alternatives = {} } = {}) {
+async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected = ['agy'], action, command = 'coagent8.setup', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = [], welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, buttons = [], registrations = {}, extensionApiLags = false, commands = {}, alternatives = {}, skillFlow } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], events = [], reveals = [], pickers = [];
   // Each prompt answers with the first scripted action it offers. A CLI in
   // `discoverable` becomes installed once the extension resolves it after an installation.
@@ -58,6 +58,12 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
       async showQuickPick(items, options) {
         assert.equal(options.ignoreFocusOut, true);
         pickers.push({ title: options.title, placeholder: options.placeHolder, items: Array.from(items, item => ({ client: item.client, label: item.label, description: item.description })) });
+        if (command === 'coagent8.manageSkills') {
+          if (!skillFlow || skillFlow.cancelAt === pickers.length) return undefined;
+          if (items[0]?.client) return items.find(item => item.client === skillFlow.client);
+          if (items[0]?.action) return items.find(item => item.action === skillFlow.action);
+          return items.filter(item => skillFlow.names?.includes(item.name));
+        }
         return selected === null ? undefined : items.filter(item => selected.includes(item.client));
       },
       // Pickers open before their CLI checks and are answered once they are enabled.
@@ -141,8 +147,13 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-extension-'));
   // os.homedir() follows these; the real profile's ~/.coagent8 must never be touched.
   const homeDir = home ?? path.join(extensionRoot, 'home');
-  const savedHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  const savedHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, ...(command === 'coagent8.manageSkills' ? { CODEX_HOME: process.env.CODEX_HOME, coagent8_CONFIG: process.env.coagent8_CONFIG, CODEX_CONFIG_PATH: process.env.CODEX_CONFIG_PATH, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, GEMINI_CLI_HOME: process.env.GEMINI_CLI_HOME } : {}) };
   process.env.HOME = homeDir; process.env.USERPROFILE = homeDir;
+  if (command === 'coagent8.manageSkills') {
+    process.env.CODEX_HOME = path.join(homeDir, '.codex');
+    process.env.coagent8_CONFIG = path.join(homeDir, '.coagent8/config.json');
+    delete process.env.CODEX_CONFIG_PATH; delete process.env.CLAUDE_CONFIG_DIR; delete process.env.GEMINI_CLI_HOME;
+  }
   // What setup installed lives in ~/.coagent8, which survives an uninstall.
   const installsFile = path.join(homeDir, '.coagent8', 'installs.json');
   if (installs) { fs.mkdirSync(path.dirname(installsFile), { recursive: true }); fs.writeFileSync(installsFile, JSON.stringify(installs)); }
@@ -154,6 +165,7 @@ async function runSetupPicker({ installed = ['codex', 'claude', 'agy'], selected
   const readState = () => fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined;
   const initialState = readState();
   fs.mkdirSync(path.join(extensionRoot, 'dist'));
+  fs.cpSync(path.resolve(__dirname, '../../skills'), path.join(extensionRoot, 'skills'), { recursive: true });
   fs.writeFileSync(path.join(extensionRoot, 'dist/index.cjs'), 'fixture runtime');
   const context = {
     subscriptions: [],
@@ -558,6 +570,35 @@ test('a standalone installer setup opened counts as installed once a check finds
   assert.deepEqual(legacy.installs, { installedClis: ['claude'] }, 'a list an earlier version kept in the extension storage moves to ~/.coagent8');
   assert.deepEqual(legacy.state, { welcomed: true });
 });
+test('Manage Skills installs and toggles only selected packages; picker cancellation keeps persisted bytes', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ui-skills-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const file = path.join(home, '.gemini/config/skills/coagent8-review/SKILL.md');
+  const archived = path.join(home, '.coagent8/disabled-skills/agy/coagent8-review/SKILL.md');
+  const options = { home, command: 'coagent8.manageSkills' };
+  const installed = await runSetupPicker({ ...options, skillFlow: { client: 'agy', action: 'install', names: ['coagent8-review'] } });
+  assert.deepEqual(installed.errors, []);
+  assert.equal(fs.existsSync(file), true);
+  assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(file))), ['coagent8-review']);
+  assert.deepEqual(installed.registrations, [], 'skill management never changes MCP registration');
+  const config = fs.readFileSync(path.join(home, '.coagent8/config.json'));
+  const state = fs.readFileSync(path.join(home, '.coagent8/setup.json'));
+  for (const cancelAt of [1, 2, 3]) {
+    const cancelled = await runSetupPicker({ ...options, skillFlow: { client: 'agy', action: 'disable', names: ['coagent8-review'], cancelAt } });
+    assert.deepEqual(cancelled.errors, []);
+    assert.deepEqual(fs.readFileSync(path.join(home, '.coagent8/config.json')), config);
+    assert.deepEqual(fs.readFileSync(path.join(home, '.coagent8/setup.json')), state);
+  }
+  const disabled = await runSetupPicker({ ...options, skillFlow: { client: 'agy', action: 'disable', names: ['coagent8-review'] } });
+  assert.deepEqual(disabled.errors, []);
+  assert.equal(fs.existsSync(file), false); assert.equal(fs.existsSync(archived), true);
+  await runSetupPicker({ ...options, skillFlow: { client: 'agy', action: 'enable', names: ['coagent8-review'] } });
+  assert.equal(fs.existsSync(file), true); assert.equal(fs.existsSync(archived), false);
+  await runSetupPicker({ ...options, skillFlow: { client: 'agy', action: 'uninstall', names: ['coagent8-review'] } });
+  assert.equal(fs.existsSync(file), false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, '.coagent8/config.json'))).backends.agy.skills, { installed: [], disabled: [] });
+});
+
 test('uninstall without dependencies installed by CoAgent8 asks once, removes registrations, then the extension', async () => {
   const declined = await runSetupPicker({ command: 'coagent8.uninstall', vendorExtensions: ['openai.chatgpt'] });
   assert.deepEqual(declined.pickers, [], 'a vendor extension the user installed is not offered');
@@ -760,5 +801,5 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   extensionListener();
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 14);
+  assert.equal(disposed, 15);
 });

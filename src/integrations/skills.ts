@@ -15,9 +15,10 @@ import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { hash } from './setup-storage.js';
 import type { SetupClient } from './setup-clients.js';
+import { COAGENT_SKILL_NAME } from '../contracts/skills.js';
 
 /** Names setup owns; the fixed prefix keeps them apart from other skills in shared directories. */
-export const SKILL_NAME = /^coagent8-[a-z]+(?:-[a-z]+)*$/;
+export const SKILL_NAME = COAGENT_SKILL_NAME;
 const SKILL_FILE = 'SKILL.md';
 const SKILL_LIMIT = 64 * 1024;
 
@@ -28,6 +29,8 @@ export interface SkillStatus {
   name: string;
   action: 'installed' | 'updated' | 'current' | 'remove' | 'removed' | 'absent' | 'preserved' | 'blocked';
   message: string;
+  /** Present for a package stored outside client discovery. */
+  location?: 'disabled';
 }
 /** Digests of the packages setup wrote for one client, by package name. */
 export type SkillRecord = Record<string, string>;
@@ -41,6 +44,35 @@ export function skillRoot(client: SetupClient, home: string): string {
   if (client === 'claude') return path.join(home, '.claude', 'skills');
   if (client === 'codex') return path.join(home, '.agents', 'skills');
   return path.join(home, '.gemini', 'config', 'skills');
+}
+
+/** Storage for installed but disabled packages; no supported client discovers this directory. */
+export function disabledSkillRoot(client: SetupClient, home: string): string {
+  return path.join(home, '.coagent8', 'disabled-skills', client);
+}
+
+/** Refuses redirected ancestors before reading or writing a managed skill root. */
+export function assertSkillRoot(root: string, home: string): void {
+  const relative = path.relative(home, root);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Skill root must stay inside the local profile.');
+  let current = path.resolve(home);
+  for (const part of ['', ...relative.split(path.sep)]) {
+    if (part) current = path.join(current, part);
+    try { if (!fs.lstatSync(current).isDirectory()) throw new Error('Linked skill root or invalid ancestor preserved.'); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  }
+}
+
+/** Removes the client's disabled storage and its parent once they hold no package; never follows links. */
+export function pruneDisabledSkillRoot(client: SetupClient, home: string): void {
+  const root = disabledSkillRoot(client, home);
+  assertSkillRoot(root, home);
+  for (const directory of [root, path.dirname(root)]) {
+    try {
+      if (fs.readdirSync(directory).length) return;
+      fs.rmdirSync(directory);
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  }
 }
 
 /**
@@ -63,12 +95,14 @@ export function readSkillCatalog(source: string): SkillPackage[] {
     return { name: entry.name, content, digest: hash(content) };
   });
   if (!packages.length) throw new Error('Skill catalog is empty.');
+  if (packages.length > 64) throw new Error('Skill catalog exceeds 64 packages.');
   return packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-type Observed = { state: 'absent' } | { state: 'file'; digest: string } | { state: 'foreign' };
+export type SkillObserved = { state: 'absent' } | { state: 'file'; digest: string } | { state: 'foreign' };
+type Observed = SkillObserved;
 /** Reads an installed package without following links: only a real directory holding one regular SKILL.md qualifies. */
-function observe(directory: string): Observed {
+export function observeSkill(directory: string): Observed {
   let stat: fs.Stats;
   try { stat = fs.lstatSync(directory); }
   catch (error) {
@@ -81,6 +115,7 @@ function observe(directory: string): Observed {
   try { return { state: 'file', digest: hash(readBoundedFileSync(file, SKILL_LIMIT)) }; }
   catch { return { state: 'foreign' }; } // A file beyond the limit is not one setup wrote.
 }
+const observe = observeSkill;
 const same = (a: Observed, b: Observed) => a.state === b.state && (a.state !== 'file' || a.digest === (b as { digest: string }).digest);
 
 /** Writes SKILL.md through a temporary sibling, after checking the directory still holds what was observed. */
@@ -116,8 +151,9 @@ function failure(name: string, error: unknown): SkillStatus {
  * @param owned - Digests setup recorded for this client.
  * @returns Outcomes, the new record and whether a file was written. A failed package keeps its previous record.
  */
-export function installSkills(client: SetupClient, home: string, catalog: SkillPackage[], owned: SkillRecord): { statuses: SkillStatus[]; owned: SkillRecord; written: boolean } {
-  const root = skillRoot(client, home), next: SkillRecord = {};
+export function installSkills(client: SetupClient, home: string, catalog: SkillPackage[], owned: SkillRecord, root = skillRoot(client, home)): { statuses: SkillStatus[]; owned: SkillRecord; written: boolean } {
+  assertSkillRoot(root, home);
+  const next: SkillRecord = {};
   let written = false;
   const statuses = catalog.map((item): SkillStatus => {
     const name = item.name;
@@ -167,8 +203,8 @@ export function describeSkills(client: SetupClient, statuses: SkillStatus[]): st
 }
 
 /** Previews removal of recorded packages without changing anything. */
-export function previewSkillRemoval(client: SetupClient, home: string, owned: SkillRecord): SkillStatus[] {
-  const root = skillRoot(client, home);
+export function previewSkillRemoval(client: SetupClient, home: string, owned: SkillRecord, root = skillRoot(client, home)): SkillStatus[] {
+  assertSkillRoot(root, home);
   return Object.entries(owned).map(([name, digest]): SkillStatus => {
     try {
       const seen = observe(path.join(root, name));
@@ -185,8 +221,9 @@ export function previewSkillRemoval(client: SetupClient, home: string, owned: Sk
  * Applies a removal preview.
  * @returns Final outcomes and the remaining record: only a package whose removal failed stays recorded.
  */
-export function removeSkills(client: SetupClient, home: string, owned: SkillRecord, preview: SkillStatus[]): { statuses: SkillStatus[]; owned: SkillRecord } {
-  const root = skillRoot(client, home), remaining: SkillRecord = {};
+export function removeSkills(client: SetupClient, home: string, owned: SkillRecord, preview: SkillStatus[], root = skillRoot(client, home)): { statuses: SkillStatus[]; owned: SkillRecord } {
+  assertSkillRoot(root, home);
+  const remaining: SkillRecord = {};
   const statuses = preview.map((planned): SkillStatus => {
     const digest = owned[planned.name];
     if (planned.action !== 'remove' || digest === undefined) {

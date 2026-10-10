@@ -16,7 +16,7 @@ import { readBoundedFileSync } from '../storage/read.js';
 import { runCommand } from '../execution/process.js';
 import { resolveBundledClaude, resolveBundledCodex, resolveCliCommand, resolveManagedAgy, type CliCommand } from '../execution/cli-resolver.js';
 import { backendCommand, environmentOverride, VSCODE_EXTENSION_EXECUTABLE } from '../backends/executable.js';
-import { readBackendExecutable, recordBackendExecutable } from '../config.js';
+import { readBackendExecutable, recordBackendExecutable, readBackendSkills } from '../config.js';
 import type { ProviderId } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { withFileLock } from '../storage/lock.js';
@@ -25,9 +25,11 @@ import { errorCodeOf } from '../contracts/index.js';
 
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, CODEX_TOOL_TIMEOUT_SEC, type Registration, type RegistrationOrigin } from './setup-storage.js';
+import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, CODEX_TOOL_TIMEOUT_SEC, setupConfigFile, type Registration, type RegistrationOrigin } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
-import { describeSkills, installSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
+import { assertSkillRoot, describeSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
+import { reconcileSkills, selectedSkills } from './skill-management.js';
+import { recoverSkillTransaction } from './skill-transaction.js';
 /** Separates registry, direct-runtime, and native-host evidence. No credentials are returned. */
 export interface SetupStatus extends CliReadiness {
   client: SetupClient;
@@ -72,9 +74,7 @@ export interface SetupOptions {
 /** The runtime backend each setup client runs as. */
 export const SETUP_PROVIDERS: Record<SetupClient, ProviderId> = { codex: 'codex', claude: 'claude', agy: 'agy' };
 /** The configuration file a runtime started with this environment reads. */
-export function setupConfigFile(home: string, env: NodeJS.ProcessEnv): string {
-  return path.resolve(env.coagent8_CONFIG || path.join(env.coagent8_DIR || path.join(home, '.coagent8'), 'config.json'));
-}
+export { setupConfigFile } from './setup-storage.js';
 /**
  * Resolves an installed client the way the runtime does: environment override, then
  * `backends.<id>.executable`, then PATH and the vendor extensions' copies.
@@ -274,6 +274,7 @@ function localProfile(options: Pick<SetupOptions, 'home' | 'cwd' | 'env'>) {
     throw new Error('Custom client/profile roots are unsupported; run setup in the local default profile.');
   }
   const root = path.join(home, '.coagent8');
+  assertSkillRoot(root, home);
   return { home, cwd, env, root, stateFile: path.join(root, 'setup.json') };
 }
 /** The entry setup writes for this bundle, Node executable, configuration file and data directory. */
@@ -341,7 +342,9 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
   const { home, cwd, env, root, stateFile } = localProfile(options);
   if (!options.statusOnly) fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   async function performSetup(): Promise<SetupStatus[]> {
-    const stateBefore = read(stateFile), saved = readSelection(stateFile, stateBefore);
+    if (!options.statusOnly) recoverSkillTransaction(home);
+    let stateBefore = read(stateFile);
+    const saved = readSelection(stateFile, stateBefore);
     const selected = [...new Set(options.clients ?? (options.statusOnly ? SETUP_CLIENTS : saved.clients))];
     if (!selected.length && !options.statusOnly) throw new Error('Select clients with --clients=codex,claude,agy on first setup.');
     if (!selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown setup client.');
@@ -364,7 +367,10 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     if (options.statusOnly) await Promise.all(results.map(check));
     else for (const result of results) {
       await check(result);
-      if (catalog && ['installed', 'updated', 'preserved'].includes(result.action)) syncSkills(result, catalog);
+      if (catalog && ['installed', 'updated', 'preserved'].includes(result.action)) {
+        syncSkills(result, catalog);
+        stateBefore = read(stateFile);
+      }
     }
     if (!options.statusOnly) {
       saved.clients = selected;
@@ -374,16 +380,8 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     /** Installs the catalog for a client whose registration works; skills never change the registration outcome. */
     function syncSkills(result: SetupStatus, packages: SkillPackage[]): void {
       const client = result.client;
-      const outcome = installSkills(client, home, packages, saved.skills[client] ?? {});
-      result.skills = outcome.statuses;
-      if (Object.keys(outcome.owned).length) saved.skills[client] = outcome.owned;
-      else delete saved.skills[client];
-      if (outcome.written) {
-        if (options.origin) saved.skillOrigin[client] = options.origin;
-        else delete saved.skillOrigin[client];
-      }
-      if (!saved.skills[client]) delete saved.skillOrigin[client];
-      result.message += ' ' + describeSkills(client, outcome.statuses);
+      result.skills = reconcileSkills(client, home, packages, saved, selectedSkills(packages, readBackendSkills(client, setupConfigFile(home, env))), options.origin, stateBefore);
+      result.message += ' ' + describeSkills(client, result.skills);
     }
     async function check(result: SetupStatus): Promise<void> {
       const client = result.client;
