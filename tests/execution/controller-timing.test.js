@@ -409,6 +409,7 @@ test('controller bounds slow async observer and does not inflate meta.durationMs
 
   // Observer that takes 600ms (exceeding the 500ms bound) before rejecting
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
+    clock: () => 1000,
     onTiming: async () => {
       await new Promise(r => setTimeout(r, 600));
       throw new Error('Late rejection after timeout');
@@ -477,6 +478,56 @@ test('early controller failure with borrowed tracker closes controller spans wit
   assert.equal(finalTrace.phases.preparation, 0, 'preparation phase must not inflate after early controller failure');
 });
 
+test('EXEC-001-T11c: teardown and verification time are included in reported total duration', async () => {
+  let now = 1000;
+  const clock = () => now;
 
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'agy-fixture',
+    probe: async () => ({
+      installed: true,
+      executionSupported: true,
+      version: '1.0.0',
+      authStatus: 'authenticated',
+      capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
+    }),
+    listModels: async () => ({
+      source: 'agy-fixture',
+      models: [{ id: 'gemini-3.8-flash', displayName: 'Flash', default: true, reasoningEffort: false }],
+    }),
+    execute: async () => {
+      now = 2000; // 1000ms spent in execution
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'teardown timing answer',
+        nativeSessionId: 'agy-native-teardown-timing',
+        model: 'gemini-3.8-flash',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
 
+  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
+  const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
+    clock,
+    releaseSessionTurn: async (handle, token) => {
+      now += 300; // 300ms spent in session cleanup
+      const { releaseSessionTurn: originalRelease } = require('../../src/sessions/session.ts');
+      return originalRelease(handle, token);
+    },
+    verifyReviewSnapshot: async () => {
+      now += 500; // 500ms spent in verification
+      return undefined;
+    },
+  });
+
+  assert.equal(result.isError, false);
+  assert.equal(result.meta.durationMs, 1800, `total duration (${result.meta.durationMs}ms) must include execution (1000ms), verification (500ms), and cleanup (300ms)`);
+  assert.equal(result.meta.totalMs, 1800);
+  assert.ok(result.meta.phases.execution >= 1000);
+  assert.ok(result.meta.phases.finalization >= 800);
+});

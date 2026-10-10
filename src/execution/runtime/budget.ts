@@ -318,6 +318,10 @@ export function createExecutionBudget(options: ExecutionBudgetOptions = {}): Exe
         onParentAbort = undefined;
       }
     },
+
+    elapsedMs(): number {
+      return Math.max(0, Math.round(clock() - startedAtMs));
+    },
   };
 
   return budget;

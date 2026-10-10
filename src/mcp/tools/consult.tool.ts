@@ -7,7 +7,7 @@ import { createExecutionBudget } from '../../execution/runtime/budget.js';
 import { combineSignals } from '../../storage/lock.js';
 import { ToolError } from '../../contracts/error.js';
 import type { BackendReadContext, ExecutionBudget, MonotonicClock, TimingObserver } from '../../contracts/execution.js';
-import type { PhaseTracker } from '../../execution/runtime/timing.js';
+import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
 
 export function getCanonicalConsultToolDefinition() {
   return {
@@ -56,6 +56,9 @@ export async function handleConsult(
     clock: options.clock,
   });
 
+  const isOwnedTracker = !options.tracker;
+  const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
+
   const consultReadContext: BackendReadContext = {
     ...options.context,
     abortSignal: combineSignals(options.context?.abortSignal, abortSignal, budget.executionSignal) ?? undefined,
@@ -64,9 +67,9 @@ export async function handleConsult(
   };
 
   const emitTimingOnEarlyExit = () => {
-    if (options.onTiming && options.tracker) {
+    if (options.onTiming) {
       try {
-        const trace = options.tracker.getTrace();
+        const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
         const ret: unknown = options.onTiming(trace);
         if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
           (ret as Promise<unknown>).catch(() => {});
@@ -134,7 +137,7 @@ export async function handleConsult(
         askConsent: options.askConsent,
         budget,
         context: consultReadContext,
-        tracker: options.tracker,
+        tracker,
         clock: options.clock,
         onTiming: options.onTiming,
       }

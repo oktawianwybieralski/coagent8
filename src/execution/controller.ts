@@ -574,9 +574,12 @@ async function executeTaskInternal(
         }
       }
       finHandle.end();
-      const durationMs = Date.now() - started;
-
       const trace = emitTrace();
+      const totalMs = typeof budget.elapsedMs === 'function'
+        ? Math.max(trace.totalDurationMs, budget.elapsedMs())
+        : trace.totalDurationMs;
+      const durationMs = totalMs;
+
       if (observerPromise) {
         let timer: NodeJS.Timeout | undefined;
         let timedOut = false;
@@ -607,6 +610,7 @@ async function executeTaskInternal(
           turn: session.turnCount || 1,
           toolCount,
           durationMs,
+          totalMs,
           historyAvailable: !writer.disabled && !historyError,
           phases: trace.phases,
         },

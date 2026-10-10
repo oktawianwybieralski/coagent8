@@ -643,13 +643,14 @@ AX-003/006. Depends on T09.
   health reads are bounded, cached model view remains cheap, startup waits for
   no probes and doctor creates no session. Check: R, DOCTOR/CACHE/MCP/E2E.
   Evidence: [EXEC-001-T11b implementation](HANDOFF.md#exec-001-t11b-apply-bounds-to-diagnostics).
-- [ ] **T11c - expose accurate timing.** Start: `ExecutionMeta` in
+- [x] **T11c - expose accurate timing.** Start: `ExecutionMeta` in
   `src/contracts/execution.ts`, `src/mcp/result.ts`, error formatting in
   `src/mcp/server.ts`. Add accepted phase/total fields, preserving or explicitly
   migrating legacy duration semantics. Done: preparation failures and cleanup
   overruns are represented honestly; footer remains useful and bounded. Update
   README/ARCHITECTURE with implemented behavior. Check: R, MCP/POLICY/REVIEW,
   REDACT if affected, lint:docs/docs and fresh package consumer checks.
+  Evidence: [EXEC-001-T11c implementation](HANDOFF.md#exec-001-t11c-expose-accurate-timing).
 
 Acceptance: total accounting includes every phase and cleanup; idle reasoning
 can remain silent without granting extra time. Verification: adapter/controller,

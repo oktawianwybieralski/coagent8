@@ -435,3 +435,110 @@ test('EXEC-001-T11b: server startup runs no probe, and doctor call creates no se
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('EXEC-001-T11c: early failure during tool preparation or Git collection formats non-zero elapsed duration matching elapsed monotonic time', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { saveConfig } = require('../../src/config.ts');
+
+  let now = 1000;
+  const clock = () => now;
+  const server = createServer({ clock });
+  const client = new Client({ name: 'test-timing-client', version: '1' }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const originalCodex = adapterRegistry.codex;
+  try {
+    saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+    adapterRegistry.codex = {
+      ...originalCodex,
+      probe: async () => {
+        // Advance clock during probe / preparation
+        now = 2500;
+        throw new Error('Preparation probe failure');
+      },
+    };
+
+    const res = await client.callTool({
+      name: 'consult',
+      arguments: {
+        proposal: 'testing early timing failure',
+        workspace_path: tempDir,
+      },
+    });
+
+    assert.equal(res.isError, true, 'tool call should fail');
+    const parsed = readResult(res);
+    assert.equal(parsed.durationSec, 1.5, `duration in footer should match elapsed monotonic time (1.5s), got ${parsed.durationSec}`);
+    assert.ok(parsed.durationSec > 0, 'duration in footer must be strictly non-zero');
+  } finally {
+    adapterRegistry.codex = originalCodex;
+    await client.close();
+    await server.close();
+  }
+});
+
+test('EXEC-001-T11c: cancelled or timed-out consent wait reflects actual elapsed time in result footer', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { ElicitRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { saveConfig } = require('../../src/config.ts');
+
+  let now = 1000;
+  const clock = () => now;
+  const server = createServer({ clock });
+  const client = new Client({ name: 'test-consent-client', version: '1' }, { capabilities: { elicitation: {} } });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  client.setRequestHandler(ElicitRequestSchema, async () => {
+    // Simulate user waiting 2.4s then closing / cancelling dialog
+    now = 3400;
+    return { action: 'cancel' };
+  });
+
+  const originalAgy = adapterRegistry.agy;
+  try {
+    saveConfig({
+      defaultBackend: 'agy',
+      routing: { strategy: 'fixed', allowedBackends: ['agy'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: ['expensive-model'], neverAsk: [] },
+    });
+    adapterRegistry.agy = {
+      ...originalAgy,
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        config: { defaultModel: 'gemini-3.8-flash' },
+      }),
+      listModels: async () => ({
+        source: 'agy',
+        models: [{ id: 'expensive-model', displayName: 'Expensive Model', default: false, reasoningEffort: false }],
+      }),
+    };
+
+    const res = await client.callTool({
+      name: 'consult',
+      arguments: {
+        proposal: 'testing consent timeout timing',
+        model: 'expensive-model',
+        workspace_path: tempDir,
+      },
+    });
+
+    assert.equal(res.isError, true, 'cancelled consent should result in error');
+    const parsed = readResult(res);
+    assert.equal(parsed.error.code, 'POLICY_DENIED');
+    assert.equal(parsed.durationSec, 2.4, `duration in footer should reflect elapsed monotonic time (2.4s), got ${parsed.durationSec}`);
+    assert.ok(parsed.durationSec > 0, 'duration in footer must be strictly non-zero');
+  } finally {
+    adapterRegistry.agy = originalAgy;
+    await client.close();
+    await server.close();
+  }
+});

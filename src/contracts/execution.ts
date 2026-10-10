@@ -46,13 +46,24 @@ export type TimingObserver = (trace: ExecutionTrace) => void;
 
 /**
  * Execution metadata collected across the turn lifecycle.
+ *
+ * @remarks
+ * Under the honest timing lifecycle (`EXEC-001-T11c`), {@link durationMs} represents total
+ * wall-clock duration from root call entry (including preparation, consent, acquisition, execution,
+ * and finalization/teardown overruns) to completion or failure, maintaining backward compatibility.
+ * {@link totalMs} is an explicit alias for total wall-clock duration. Discrete phase durations are
+ * detailed in {@link phases}.
  */
 export interface ExecutionMeta {
   turn: number;
   toolCount: number;
+  /** Total elapsed wall-clock call duration in milliseconds from entry to return or error. */
   durationMs: number;
   historyAvailable: boolean;
+  /** Breakdown of wall-clock duration in milliseconds by execution phase. */
   phases?: Record<string, number>;
+  /** Explicit total elapsed wall-clock call duration in milliseconds. */
+  totalMs?: number;
 }
 
 /**
@@ -216,6 +227,8 @@ export interface ExecutionBudget {
   readonly teardownSignal: AbortSignal;
   /** Releases all scheduled timers and event listeners associated with this budget. */
   dispose(): void;
+  /** Elapsed wall-clock time in milliseconds since budget instantiation. */
+  elapsedMs?(): number;
 }
 
 /**

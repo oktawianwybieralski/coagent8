@@ -23,7 +23,7 @@ import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { formatExecutionResult, setResultStyle, withWorkspace } from './result.js';
-import { ToolError, errorCodeOf, type ExecutionBudget, type BackendReadContext } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type ExecutionBudget, type BackendReadContext, type MonotonicClock } from '../contracts/index.js';
 import { createExecutionBudget } from '../execution/runtime/budget.js';
 import { listSessions, isBudgetExpired } from '../sessions/session.js';
 import { combineSignals } from '../storage/lock.js';
@@ -162,7 +162,8 @@ const ROOTS_TIMEOUT_MS = 5000;
 /** Time the user has to answer a top-tier model approval request. */
 const CONSENT_TIMEOUT_MS = 5 * 60 * 1000;
 
-export function createServer(): Server {
+export function createServer(options?: { clock?: MonotonicClock }): Server {
+  const serverClock = options?.clock;
   composeExecutionCancellation();
   const server = new Server(
     {
@@ -372,14 +373,17 @@ export function createServer(): Server {
           // Without workspace_path, cancel stays unscoped: the handle alone identifies the turn.
           return await handleCancelSession(args as { session_handle: string; workspace_path?: string });
       }
-      const workspace = await resolveWorkspace(args.workspace_path as string | undefined);
-      const cwd = workspace.path;
-      let readContext: BackendReadContext | undefined;
       if (executionNames.has(name) && !(name === CANONICAL_TOOL_NAMES.RUN && args.action === 'issue')) {
         budget = createExecutionBudget({
           totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
           parentSignal: extra.signal,
+          clock: serverClock,
         });
+      }
+      const workspace = await resolveWorkspace(args.workspace_path as string | undefined);
+      const cwd = workspace.path;
+      let readContext: BackendReadContext | undefined;
+      if (budget) {
         readContext = {
           abortSignal: budget.executionSignal,
           budget,
@@ -387,7 +391,7 @@ export function createServer(): Server {
         };
       }
       const consent = { askConsent: consentPrompt(extra.signal, budget) };
-      const execOptions = { ...consent, budget, context: readContext };
+      const execOptions = { ...consent, budget, context: readContext, ...(serverClock ? { clock: serverClock } : {}) };
       switch (name) {
         case CANONICAL_TOOL_NAMES.SESSION:
           return await handleSession(args, cwd);
@@ -415,6 +419,11 @@ export function createServer(): Server {
         const code = errorCodeOf(err);
         // A call refused before launch names the model the caller asked for, not "provider default".
         const requestedModel = typeof raw?.model === 'string' && isValidModelIdentifier(raw.model) ? raw.model : undefined;
+        const elapsedMs = budget
+          ? (typeof budget.elapsedMs === 'function'
+              ? budget.elapsedMs()
+              : Math.max(0, Math.round(budget.totalBudgetMs - budget.remainingTotalMs())))
+          : 0;
         return formatExecutionResult(
           provider,
           {
@@ -428,7 +437,7 @@ export function createServer(): Server {
           },
           '',
           sanitizeHandle(typeof raw?.session_handle === 'string' ? raw.session_handle : null),
-          { turn: 0, toolCount: 0, durationMs: 0, historyAvailable: false },
+          { turn: 0, toolCount: 0, durationMs: elapsedMs, totalMs: elapsedMs, historyAvailable: false },
           { requireEnvelope: name === CANONICAL_TOOL_NAMES.REVIEW }
         );
       }

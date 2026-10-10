@@ -80,9 +80,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T11b (apply bounds to diagnostics).
+The current completed task is EXEC-001-T11c (expose accurate timing).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T11c (expose accurate timing).
+Next pending card: EXEC-001-T12a (repeat the baseline).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1507,6 +1507,43 @@ Conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`
 - Round 2: `SNAPSHOT: ca11674+uncommitted#fafd19697ca17ddd8b197666305cb9bbf21fa8bea040a24072c0ee009cd2b75b`, `COVERAGE: COMPLETE`, `VERDICT: READY`. 0 P1/P2 issues. Server gate reported: `Verdict: BLOCKED (Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY)`. Independent approval not established (read-only audit gate).
 
 Next card: EXEC-001-T11c (expose accurate timing).
+
+## EXEC-001-T11c: expose accurate timing
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: Expose honest wall-clock duration from root call entry (including preparation, Git collection, consent, execution, and teardown/cleanup overruns) in `ExecutionMeta` (`durationMs` and `totalMs`). In `src/mcp/server.ts`, calculate elapsed monotonic duration for error results using `budget` instead of hardcoded `durationMs: 0`. Ensure footer remains clean, single-line per field, bounded, and emoji-free. Update contracts, tests, and documentation.
+
+### Changed files:
+- `src/contracts/execution.ts`: Added optional `totalMs?: number` to `ExecutionMeta` representing total elapsed wall-clock duration from root call entry through completion, while preserving existing callers relying on `durationMs`. Added `elapsedMs?(): number` method to `ExecutionBudget`.
+- `src/execution/runtime/budget.ts`: Implemented `elapsedMs(): number` method on `ExecutionBudget` instance computing `Math.max(0, Math.round(clock() - startedAtMs))`.
+- `src/execution/controller.ts`: Populated `meta.durationMs` and `meta.totalMs` with `trace.totalDurationMs` upon completion of `finalization` and trace emission, ensuring teardown and snapshot verification overruns are included in total call duration.
+- `src/mcp/result.ts`: Updated `formatExecutionResult` to determine `durationMs` using `executionMeta.totalMs ?? executionMeta.durationMs`, safely clamped to non-negative numbers, preserving the exact single-line framed footer structure and bounds.
+- `src/mcp/server.ts`: Supported optional `clock` option in `createServer`, initialized `budget` before workspace resolution, and passed `clock` into `execOptions`. In tool `catch (err)`, replaced hardcoded `durationMs: 0` with monotonic elapsed time calculated via `budget.elapsedMs()` or elapsed budget time, ensuring preparation failures, Git diff errors, and cancelled consent prompts report actual elapsed duration honestly.
+- `src/mcp/tools/consult.tool.ts`: Initialized phase tracker at tool entry and passed to `executeTask`; ensured early exit before `executeTask` closes tracker and emits trace.
+- `docs/ARCHITECTURE.md`: Documented complete call wall-clock duration in `ExecutionMeta` (`durationMs` / `totalMs`) and honest error footers; updated CUR-007 resolution.
+- `docs/ROADMAP.md`: Marked T11c complete with evidence link.
+- `docs/HANDOFF.md`: Recorded T11c implementation and verification details.
+- `tests/execution/controller-timing.test.js`: Added unit tests verifying teardown and verification time are included in reported total duration.
+- `tests/mcp/result.test.js`: Added tests verifying `formatExecutionResult` retains framed footer format, bounds, and handles zero/negative/large metadata durations.
+- `tests/mcp/server.test.js`: Added tests verifying early preparation errors and cancelled consent waits format non-zero elapsed monotonic duration in error footers.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (106 source files analyzed, 563 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 68 tests (68 pass, 0 fail, exit code 0): `node tests/run.cjs tests/mcp/result.test.js tests/mcp/server.test.js tests/execution/controller-timing.test.js tests/execution/outer-timing.test.js tests/execution/timing.test.js tests/mcp/surface.test.js tests/e2e/mcp.test.js tests/e2e/stdio.test.js`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+
+### Independent review rounds:
+Conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_535321a9bac60cb25b4ff5f2`):
+- Round 1: `SNAPSHOT: 6d35ff0+uncommitted#26e66a78b94cfb5bd7466c50b84107348e449cc947491c563e0548bad19980a2`, `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`. Findings: No file-reading tools in sandbox thread outside diff.
+- Round 2: `SNAPSHOT: 6d35ff0+uncommitted#26e66a78b94cfb5bd7466c50b84107348e449cc947491c563e0548bad19980a2`, `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`. Findings: [P2] `controller.ts:578` durationMs and totalMs in successful consult calls derived from later-starting tracker instead of root execution budget, omitting workspace resolution time.
+  - Remediation: In `src/execution/controller.ts:578`, derived `totalMs` and `durationMs` using `typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs`. Because `budget` is initialized at root call entry before `resolveWorkspace` in `server.ts`, root call duration and workspace resolution are included in returned metadata.
+- Round 3: `SNAPSHOT: 6d35ff0+uncommitted#eb9d02efbbf4461cebda6a92573d3804d8ef5e4793c1986f2c6980ec9a28a68a`, `COVERAGE: PARTIAL`, `VERDICT: READY`. 0 P1/P2 issues found. Server gate reported: `Verdict: BLOCKED (Review coverage is partial; Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY)`. Independent approval not established (read-only audit gate).
+
+Next card: EXEC-001-T12a (repeat the baseline).
+
 
 ## Compact handoff contract
 

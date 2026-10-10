@@ -245,3 +245,63 @@ test('a Codex client gets raw lines, which it frames itself; other clients get p
     }
   } finally { setResultStyle(undefined); }
 });
+
+test('EXEC-001-T11c: formatExecutionResult retains plaintext frame structure and bounded footer lines across error states and metadata', async () => {
+  const cases = [
+    {
+      meta: { turn: 1, toolCount: 0, durationMs: 0, totalMs: 0, historyAvailable: false },
+      error: { code: 'TIMEOUT', message: 'Execution deadline exceeded (900000 ms).\nDetailed stack trace and multiline error message', retryable: false },
+    },
+    {
+      meta: { turn: 3, toolCount: 5, durationMs: 4567, totalMs: 4567, historyAvailable: true, phases: { preparation: 200, execution: 4000, finalization: 367 } },
+      error: { code: 'ABORTED', message: 'User cancelled turn with newline\nand extra commentary', retryable: false },
+    },
+    {
+      meta: { turn: 0, toolCount: 0, durationMs: 1250, totalMs: 1250, historyAvailable: false },
+      error: { code: 'POLICY_DENIED', message: 'Consent declined.\nAnother line here', retryable: false },
+    },
+  ];
+
+  for (const { meta, error } of cases) {
+    const formatted = formatExecutionResult(
+      'codex',
+      {
+        status: 'failed',
+        isError: true,
+        output: '',
+        model: 'gpt-6.1-sol',
+        truncated: false,
+        continuationAvailable: false,
+        error,
+      },
+      '',
+      'syn_sess_bounded',
+      meta,
+      {
+        warnings: ['Warning with\nline break', 'Another normal warning'],
+      }
+    );
+
+    const parsed = readResult(formatted);
+    assert.equal(parsed.provider, 'codex');
+    assert.equal(parsed.model, 'gpt-6.1-sol');
+    assert.equal(parsed.durationSec, Number((meta.totalMs / 1000).toFixed(1)));
+    assert.equal(parsed.style, 'framed');
+
+    // Verify absence of emojis
+    const text = formatted.content[0].text;
+    const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
+    assert.ok(!emojiRegex.test(text), 'no emoji in formatted result');
+
+    // Extract footer lines from the framed footer
+    const footerMatch = /```plaintext\n([\s\S]+?)\n```$/.exec(text);
+    assert.ok(footerMatch, 'must have framed footer at end of text');
+    const footerLines = footerMatch[1].split('\n');
+
+    // Ensure every footer line is single line and doesn't contain unescaped line breaks
+    for (const line of footerLines) {
+      assert.ok(!line.includes('\r'), 'no carriage returns in footer line');
+      assert.ok(line.length < 2048, `footer line length (${line.length}) within transport bounds`);
+    }
+  }
+});

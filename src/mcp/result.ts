@@ -168,7 +168,10 @@ export function formatExecutionResult(
     parts.push(output ? present(output) : res.status === 'completed' ? 'CLI completed with no public text.' : 'No public response.');
   }
 
-  const durationSec = (executionMeta.durationMs / 1000).toFixed(1);
+  const durationMs = Math.max(0, typeof executionMeta.totalMs === 'number' && Number.isFinite(executionMeta.totalMs)
+    ? executionMeta.totalMs
+    : (executionMeta.durationMs || 0));
+  const durationSec = (durationMs / 1000).toFixed(1);
   const ops = executionMeta.toolCount > 0 ? ` \u{b7} ${executionMeta.toolCount} ${executionMeta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = executionMeta.turn > 1 ? `turn ${executionMeta.turn}, ` : '';
   const history = executionMeta.historyAvailable ? '' : ', no history';

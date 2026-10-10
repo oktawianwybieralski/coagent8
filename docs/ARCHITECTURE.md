@@ -124,11 +124,14 @@ model, duration, operation count and session state; review verdict when applicab
 price evidence when the call set a price limit; warnings and fallback workspace. Full doctor, session list/history, cancel and
 issue return structured data; session close is text-only.
 
-The footer time starts after session acquisition. It excludes workspace/Git
-collection, probes, catalogs, consent and pruning. timeout_ms bounds the backend
-process phase, not the complete call. Progress cannot extend a host deadline.
-A measured agy 1.3.1 headless host cancelled after 180 seconds; this is not a
-universal claim about IDE clients.
+The footer duration (`durationMs` / `totalMs` in `ExecutionMeta`) reflects total elapsed
+wall-clock time from root call entry through completion, including preparation, Git
+collection, consent, execution, and teardown/cleanup overruns. In the event of early
+failure during tool preparation, Git collection, or cancelled consent prompts, error
+footers report actual elapsed monotonic time rather than `0.0s`. `timeout_ms` bounds the
+complete call via `ExecutionBudget`, reserving teardown allowance for cleanup.
+Progress cannot extend a host deadline. A measured agy 1.3.1 headless host cancelled
+after 180 seconds; this is not a universal claim about IDE clients.
 
 Workspace precedence: explicit workspace_path; one client root or the deepest
 root containing the server directory; eligible server directory. Ambiguous roots
@@ -540,10 +543,10 @@ only with a new owner decision; details and evidence remain in Git history.
 | CUR-013 | Other-tree review refused, not implemented | COAGENT-004, SURFACE-001 |
 | AX-001, AX-003 through 006 | Request estimates, config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
 
-CUR-001/003/004/005/006/010/012 have local fixes for review identity/completeness,
+CUR-001/003/004/005/006/007/010/012 have local fixes for review identity/completeness,
 explicit consent, quota-cache failure, commentary truncation, coalesced probes,
-catalog/price governance and capacity reservation. Historical audits predate them;
-neither this list nor a READY string is a release approval.
+call-wide budget/timing accounting, catalog/price governance and capacity reservation.
+Historical audits predate them; neither this list nor a READY string is a release approval.
 
 ## Code documentation and package evidence
 
