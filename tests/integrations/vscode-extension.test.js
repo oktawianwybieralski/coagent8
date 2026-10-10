@@ -567,10 +567,10 @@ test('uninstall without dependencies installed by CoAgent8 asks once, removes re
   const accepted = await runSetupPicker({ command: 'coagent8.uninstall', action: 'Uninstall' });
   assert.deepEqual(accepted.cleanupCalls, [{ clients: undefined, apply: undefined, origin: 'vscode-extension', uninstall: true }, { clients: undefined, apply: 'fixture-preview', origin: 'vscode-extension', uninstall: true }]);
   assert.deepEqual(accepted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
-  assert.match(accepted.notifications.at(-1).message, /^CoAgent8 uninstalled\. Restart extensions to stop it in this window; VS Code deletes its files and stored data the next time it starts\.$/);
-  assert.deepEqual(accepted.notifications.at(-1).actions, ['Restart Extensions'], 'the step the Extensions view offers; quitting VS Code is never asked');
-  const restarted = await runSetupPicker({ command: 'coagent8.uninstall', action: ['Uninstall', 'Restart Extensions'] });
-  assert.deepEqual(restarted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp'], ['workbench.action.restartExtensionHost']]);
+  assert.match(accepted.notifications.at(-1).message, /^CoAgent8 uninstalled\. Reload this window to apply the extension removals; VS Code deletes their files and stored data the next time it starts\.$/);
+  assert.deepEqual(accepted.notifications.at(-1).actions, ['Reload Window'], 'apply removals through a window reload, without quitting VS Code');
+  const restarted = await runSetupPicker({ command: 'coagent8.uninstall', action: ['Uninstall', 'Reload Window'] });
+  assert.deepEqual(restarted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp'], ['workbench.action.reloadWindow']]);
 });
 test('removing dependencies installed by CoAgent8 needs their selection and two confirmations', async () => {
   const options = { command: 'coagent8.uninstall', vendorExtensions: ['openai.chatgpt', 'anthropic.claude-code'], installs: { installedExtensions: ['openai.chatgpt', 'google.google-antigravity'] }, selected: ['codex'] };
@@ -583,6 +583,8 @@ test('removing dependencies installed by CoAgent8 needs their selection and two 
   const twice = await runSetupPicker({ ...options, action: ['Uninstall', 'Remove'] });
   assert.deepEqual(twice.requests, [['workbench.extensions.uninstallExtension', 'openai.chatgpt'], ['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
   assert.match(twice.notifications.at(-1).message, /^CoAgent8 and Codex \(OpenAI\) uninstalled\./);
+  const reloaded = await runSetupPicker({ ...options, action: ['Uninstall', 'Remove', 'Reload Window'] });
+  assert.deepEqual(reloaded.requests, [['workbench.extensions.uninstallExtension', 'openai.chatgpt'], ['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp'], ['workbench.action.reloadWindow']], 'reload follows all selected removals');
   const kept = await runSetupPicker({ ...options, selected: [], action: 'Uninstall' });
   assert.equal(kept.warnings.length, 1, 'no second confirmation when no dependency is selected');
   assert.deepEqual(kept.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
@@ -621,7 +623,7 @@ test('standalone CLIs CoAgent8 installed are removed through reviewed terminal c
   const later = await runSetupPicker({ ...options, discoverable: [], action: 'Uninstall' });
   assert.equal(later.installs, undefined, 'CLIs no longer found leave the record');
   assert.deepEqual(accepted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
-  assert.match(accepted.notifications.at(-1).message, /Press Enter in the "Remove coding CLIs" terminal to remove Claude Code CLI\. Restart extensions/);
+  assert.match(accepted.notifications.at(-1).message, /Press Enter in the "Remove coding CLIs" terminal to remove Claude Code CLI\. Reload this window/);
 });
 
 test('the Windows removal command deletes the installer link, not its target, and only the PATH entries of folders it emptied', { skip: process.platform !== 'win32' && 'PowerShell and junctions are Windows-specific' }, async t => {

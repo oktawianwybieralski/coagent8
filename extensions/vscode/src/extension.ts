@@ -691,12 +691,12 @@ export function activate(context: vscode.ExtensionContext): void {
       kept.length ? `Registrations not removed: ${kept.map(result => `${LABELS[result.client]} - ${result.message}`).join(' ')}` : '',
       cleaned.stateError ?? '',
       clis.length ? `Press Enter in the "Remove coding CLIs" terminal to remove ${clis.map(item => item.label).join(', ')}.` : '',
-      'Restart extensions to stop it in this window; VS Code deletes its files and stored data the next time it starts.',
+      'Reload this window to apply the extension removals; VS Code deletes their files and stored data the next time it starts.',
     ].filter(Boolean).join(' ');
-    // The step the Extensions view offers after an uninstall. VS Code deletes the extension's
-    // files and storage on its next start; nothing CoAgent8 removes waits for that.
-    const next = kept.length || cleaned.stateError || leftovers.length ? await vscode.window.showWarningMessage(message, 'Restart Extensions') : await vscode.window.showInformationMessage(message, 'Restart Extensions');
-    if (next === 'Restart Extensions') await vscode.commands.executeCommand('workbench.action.restartExtensionHost');
+    // A developer host restart retains the running extension registry. The Extensions view
+    // applies a removal delta through an internal service; reload re-scans via a public command.
+    const next = kept.length || cleaned.stateError || leftovers.length ? await vscode.window.showWarningMessage(message, 'Reload Window') : await vscode.window.showInformationMessage(message, 'Reload Window');
+    if (next === 'Reload Window') await vscode.commands.executeCommand('workbench.action.reloadWindow');
   });
   /** Checks the CLIs once per installation; later activations start no process. */
   async function showWelcome(): Promise<void> {
