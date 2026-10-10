@@ -2031,8 +2031,16 @@ standalone. Result: FAIL; the remaining cases were NOT_RUN.
   does not exist in this profile and is not CoAgent8's.
 - Checks after the fix: `tests/integrations/{setup,cleanup,vscode-extension}.test.js`
   60/60 PASS; the two new tests fail on the previous source.
+- Full gate on `a2306e1` (tree `1d11932`, clean, Windows 11, Node v26.10.0):
+  typecheck, dependencies, build, coverage 658 tests (654 pass, 0 fail, 3 POSIX
+  skips, 1 todo; statements 93.26 %, branches 84.83 %), pack, consumer smoke,
+  lint:docs, docs, VSIX: all PASS. Tarball SHA-256
+  `e702eb3cdd463edfd46eccf1cbc92a2c49fc0a26c0a8f56a352b5dc839e425ee`, VSIX
+  `a56fc6d07466bd4ab55cd4cd168b91bd42c08c20f07d74d689330a4f87fa01fe`; they
+  replace the final gate's artifacts above. The two fixes are added to the frozen
+  beta.2 changelog section.
 
-Next: full gate, a new VSIX, and a repeated owner run of every case.
+Next: a repeated owner run of every case with this VSIX.
 
 ## Compact handoff contract
 
