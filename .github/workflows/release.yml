@@ -1,0 +1,134 @@
+name: Release
+
+# Phase C of the release process (Git workflow rule 02, section 5). A release tag
+# pushed by the owner builds the exact artifacts from a clean checkout and creates a
+# DRAFT GitHub Release with them. This workflow never publishes the draft and never
+# publishes to npm: the owner verifies the downloaded artifacts first (phases D and E).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    name: Draft release ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            tooling/documentation/package-lock.json
+            tooling/vscode/package-lock.json
+
+      # The tag must be annotated, match package.json and sit on develop or a release line.
+      - name: Verify release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          git fetch --force origin "+refs/tags/$tag:refs/tags/$tag"
+          if [ "$(git cat-file -t "refs/tags/$tag")" != "tag" ]; then
+            echo "::error::$tag is not an annotated tag"; exit 1
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$tag" ]; then
+            echo "::error::package.json version $version does not match $tag"; exit 1
+          fi
+          on_branch=""
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
+            case "${ref#origin/}" in
+              develop|[0-9]*.[0-9]*.x)
+                if git merge-base --is-ancestor "$GITHUB_SHA" "$ref"; then on_branch="${ref#origin/}"; fi ;;
+            esac
+          done
+          if [ -z "$on_branch" ]; then
+            echo "::error::$tag is not on develop or a release line"; exit 1
+          fi
+          echo "Tag $tag ($GITHUB_SHA) is on $on_branch"
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix tooling/documentation
+          npm ci --prefix tooling/vscode
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Verify dependency boundaries
+        run: npm run check:dependencies
+
+      - name: Validate and generate source API documentation
+        run: |
+          npm run lint:docs
+          npm run docs
+
+      - name: Build bundle
+        run: npm run build
+
+      - name: Run test suite with source coverage
+        run: npm run test:coverage
+
+      # Packs the npm tarball once, installs that exact file and records its SHA-256.
+      - name: Pack and verify the exact npm tarball
+        run: npm run test:consumer
+
+      - name: Package the VS Code extension
+        run: npm run package:vscode
+
+      - name: Collect artifacts and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          cp ".artifacts/consumer/coagent8-$version.tgz" release/
+          cp ".artifacts/consumer/coagent8-$version.tgz.manifest.json" release/
+          cp ".artifacts/coagent8-mcp-$version.vsix" release/
+          (cd release && sha256sum "coagent8-$version.tgz" "coagent8-mcp-$version.vsix" > SHA256SUMS)
+          cat release/SHA256SUMS
+
+      - name: Generate release notes
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --no-install git-cliff --config cliff.release-notes.toml --current --strip all > release/notes.md
+          {
+            echo
+            echo "## Artifacts"
+            echo
+            echo "Verify downloads against \`SHA256SUMS\`:"
+            echo
+            echo '```text'
+            cat release/SHA256SUMS
+            echo '```'
+            echo
+            echo "Built by the Release workflow from \`$GITHUB_SHA\`. The npm package is published separately by the maintainer after verification."
+          } >> release/notes.md
+
+      - name: Create draft GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          prerelease=()
+          case "$tag" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$tag" --draft --verify-tag "${prerelease[@]}" \
+            --title "CoAgent8 $tag" --notes-file release/notes.md \
+            "release/coagent8-$version.tgz" "release/coagent8-mcp-$version.vsix" release/SHA256SUMS
