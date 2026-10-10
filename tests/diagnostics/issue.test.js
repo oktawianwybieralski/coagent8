@@ -6,6 +6,69 @@ const os = require('node:os');
 
 const { generateBugReport, sanitizeText, GITHUB_NEW_ISSUE_BASE } = require('../../src/diagnostics/issue.ts');
 
+test('issue link preserves the owner-reported diagnostic through one URL decode', () => {
+  const errorMessage = 'No file-reading tools or filesystem resources are available, so I could not verify the surrounding syncPage code or authorization call site to confirm rejection precedes every side effect; shell commands were prohibited.';
+  const context = 'Review of card RC26-01-06a3 with backend codex and model gpt-6.1-sol returned BLOCKED with PARTIAL coverage because no file-reading tools or filesystem resources were available to read workspace files outside the diff.';
+  const report = generateBugReport({ errorMessage, context, doctorReport: { backends: {
+    agy: { name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.2' },
+    claude: { name: 'Claude Code CLI', installed: true, version: '2.1.296 (Claude Code)' },
+  } } });
+  const link = report.prompt.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
+  const copiedLink = report.prompt.match(/Copyable issue URL:\n\n```text\n([^\n]+)\n```/)[1];
+  assert.equal(link, report.issueUrl);
+  assert.equal(copiedLink, link);
+  assert.ok(!/[\\()\s]/.test(link), 'URL must not contain Markdown escapes or delimiters');
+  const url = new URL(link);
+  assert.deepEqual([...url.searchParams.keys()], ['title', 'body']);
+  assert.equal(url.searchParams.get('title'), report.title);
+  assert.equal(url.searchParams.get('body'), report.body);
+  assert.ok(!/[!'()*]/.test(url.search));
+  assert.ok(report.body.includes(context));
+  assert.ok(report.body.includes(errorMessage));
+  assert.ok(report.body.includes('Google Gemini (Antigravity agy)'));
+  assert.ok(!/[\r\n]/.test(report.title));
+  assert.ok(!report.title.includes('[truncated]'));
+  assert.ok(Array.from(report.title).length <= 120);
+  assert.ok(!report.prompt.includes('<details>'));
+  assert.ok(report.prompt.endsWith(`Preview Sanitized Report\n\n${report.body}`));
+});
+
+test('issue URL preserves punctuation, Unicode and literal URL-like text without extra parameters', () => {
+  const errorMessage = "Failure (worker's task)! *retry* & body=injected #fragment %23 + / \\ \"quoted\" \u{1f680} \u0142";
+  const context = 'Keep literal %26 and &#x20; and ?title=other&body=other in diagnostics.';
+  const report = generateBugReport({ errorMessage, context });
+  const url = new URL(report.issueUrl);
+  assert.equal(url.hash, '');
+  assert.equal(url.searchParams.get('title'), report.title);
+  assert.equal(url.searchParams.get('body'), report.body);
+  assert.ok(report.body.includes(errorMessage));
+  assert.ok(report.body.includes(context));
+  assert.deepEqual([...url.searchParams.keys()], ['title', 'body']);
+  for (const error of ['Short error', 'x'.repeat(110), 'x'.repeat(111), 'x'.repeat(200), 'x'.repeat(109) + '\u{1f680}'.repeat(4), 'First\rSecond', 'First\u2028Second', 'First\u2029Second', 'First\nSecond', '  First\t  Second  ']) {
+    const generated = generateBugReport({ errorMessage: error });
+    assert.ok(Array.from(generated.title).length <= 120);
+    assert.ok(!/[\r\n\u2028\u2029]/.test(generated.title));
+    assert.equal(new URL(generated.issueUrl).searchParams.get('title'), generated.title);
+  }
+  assert.equal(generateBugReport({ errorMessage: 'x'.repeat(111) }).title, `[Bug]: ${'x'.repeat(110)}...`);
+  assert.equal(generateBugReport({ errorMessage: 'x'.repeat(110) }).title, `[Bug]: ${'x'.repeat(110)}`);
+  assert.equal(generateBugReport({ errorMessage: '  First\t  Second  ' }).title, '[Bug]: First Second');
+  const longContext = 'Repro, expected/actual behavior and timing evidence. '.repeat(50) + 'CONTEXT_END';
+  const longDiagnostic = 'Diagnostic details. '.repeat(100) + 'DIAGNOSTIC_END';
+  const completeReport = generateBugReport({ errorMessage: longDiagnostic, context: longContext });
+  assert.ok(completeReport.body.includes(longContext));
+  assert.ok(completeReport.body.includes(longDiagnostic));
+  assert.ok(!completeReport.body.includes('[truncated]'));
+  assert.equal(new URL(completeReport.issueUrl).searchParams.get('body'), completeReport.body);
+  const boundedInput = '\u{1f680}'.repeat(1500);
+  const sanitizedInput = sanitizeText(boundedInput);
+  assert.ok(Buffer.byteLength(sanitizedInput) <= 4096);
+  assert.ok(sanitizedInput.endsWith('...[truncated]'));
+  const boundedReport = generateBugReport({ errorMessage: boundedInput, context: boundedInput });
+  assert.ok(boundedReport.body.includes(sanitizedInput));
+  assert.equal(new URL(boundedReport.issueUrl).searchParams.get('body'), boundedReport.body);
+});
+
 test('issue reporting generates sanitized GitHub pre-filled issue URL and redacts secrets', async () => {
   const secretText = `Error at ${os.homedir()}/projects/secret: connection failed with API key sk-proj12345678901234567890, AWS key AKIAIOSFODNN7EXAMPLE, Slack xoxb-1234567890-abcdefgh, and api_key="secretPassword123" and https://api.com?token=superSecretToken. Also Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.`;
   const sanitized = sanitizeText(secretText);

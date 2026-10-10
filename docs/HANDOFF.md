@@ -4,6 +4,42 @@ Updated 2026-10-09. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## Beta.2 issue-link correction (2026-10-10)
+
+The owner reported a malformed prefilled GitHub issue opened from agy.
+Local changes in `src/diagnostics/issue.ts` remove the multiline truncation
+marker from titles, encode Markdown delimiters in query values and provide an
+angle-bracket link destination, copyable URL and plain Markdown report preview.
+The issue tool description asks for concise, actionable reproduction steps,
+expected/actual behavior, impact and sanitized telemetry: tool/backend/model,
+CLI versions, errors, timing and scope/check evidence. Unknown facts must be
+marked, never invented. Callers must preserve `issueUrl` verbatim without
+decoding or re-escaping it. The owner approved increasing the MCP tool-definition
+budget to 5,800 bytes on 2026-10-10 for this instruction; the measured total is
+5,746 bytes. `tests/mcp/surface.test.js` records the revised acceptance limit;
+the current budget in `docs/ARCHITECTURE.md` and `src/mcp/schema.ts` is synchronized.
+The report now retains complete sanitized context and diagnostics instead of
+the extra 300/800-code-point cuts. Privacy filtering and the existing 4,096-byte
+bound per input field remain; over-limit input retains its truncation marker.
+
+Fresh PASS on Windows with Node v26.10.0: `npm run typecheck`, both focused issue
+test files (8 tests), `npm run build`, `npm run lint:docs` and `npm run docs`.
+The additional MCP surface and secret-redaction suites pass (20 tests).
+A Markdown-it render check confirms the rendered href and decoded title/body
+match the sanitized report, including CLI parentheses and redacted secrets/home
+paths. Scoped `git diff --check` also passes. The previously reported extra blank
+line in `tests/mcp/result.test.js` belongs to separate work and was not edited.
+Independent read-only CoAgent8 review (`agy`, `gemini-3.8-flash-high`) returned
+`COVERAGE: COMPLETE` and model `VERDICT: READY`, with no P1/P2 findings for this
+fix. Reviewer checks were `NOT_RUN`; the server therefore reports `BLOCKED`
+for its required-check gate. The PASS evidence above was executed locally by
+the implementing agent, not independently by the reviewer; this is not release
+approval.
+Native agy click-through is NOT_RUN: this review has no access to native agy UI
+interaction or its MCP restart. It remains pending under
+[beta.2 issue-link acceptance](ROADMAP.md#beta2-issue-link-acceptance).
+Existing execution/timing changes in this checkout belong to separate work.
+
 ## Analysis follow-up planning
 
 The owner requested correction of the local source-analysis plan and small

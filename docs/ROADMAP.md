@@ -27,6 +27,22 @@ local and preserves the existing checkout.
 | Agent usability | Cached model view with CLI catalogs (Claude included), per-model prices, model-based routing, strict output price limit, result footer | Measured usage and estimates, effective config, consent transport, native first-use acceptance |
 | Integrations | Shared config, optional setup, VSIX, owned registration/uninstall, client skills installed and removed with registrations | Fresh lifecycle and skill discovery acceptance, workflow skills for writes, public execution CLI |
 
+### Beta.2 issue-link acceptance
+
+- [ ] Verify the issue link in the native agy chat after rebuilding and restarting
+  MCP. The owner's 2026-10-10 report showed a multiline truncated title and a
+  description containing URL escapes instead of the report. The local generator
+  now produces a single-line title, encodes Markdown delimiters in URL parameters,
+  wraps the link destination in angle brackets and provides a copyable URL with
+  a plain Markdown preview with complete sanitized context/diagnostics within
+  the existing input bounds. The tool instructs agents to provide concise,
+  actionable reproduction details and sanitized telemetry, mark unknown facts
+  and preserve issueUrl verbatim. The owner approved a 5,800-byte tool-definition
+  budget for this instruction on 2026-10-10. Focused regression and rendering checks
+  establish intact title/body parameters; they do not establish agy UI behavior.
+  Before beta.2, click the generated link and compare GitHub's title and complete
+  description with the sanitized preview, including CLI names with parentheses.
+
 ## Agent usability gaps
 
 The 2026-10-08 trials, in which Codex, Claude and Gemini each asked CoAgent8 for a

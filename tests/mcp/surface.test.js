@@ -305,7 +305,7 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 5500, `model-visible tool definitions: ${visible} B (owner budget raised to 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  assert.ok(visible <= 5800, `model-visible tool definitions: ${visible} B (owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
   for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle', 'timeout_ms']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);

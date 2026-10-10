@@ -43,14 +43,14 @@ const MAX_RAW_INPUT_LENGTH = 4096;
  * Safely slices a string at unicode character boundaries with an ellipsis indicator.
  *
  * @param str - Source string to slice.
- * @param maxLength - Maximum number of unicode code points (default: 80).
+ * @param maxLength - Maximum number of unicode code points before the marker.
  * @returns Sliced string or empty string.
  */
-function safeSlice(str?: string | null, maxLength = 80): string {
+function safeSlice(str: string, maxLength: number): string {
   if (!str || typeof str !== 'string') return '';
   const chars = Array.from(str);
   if (chars.length <= maxLength) return str;
-  return chars.slice(0, maxLength).join('') + '\n\n...[truncated]';
+  return chars.slice(0, maxLength).join('') + '...';
 }
 
 /**
@@ -125,8 +125,8 @@ export function generateBugReport(options: BugReportOptions): BugReportResult {
     const cleanError = sanitizeText(errorMessage || 'Unknown error occurred');
     const cleanContext = sanitizeText(context || 'Execution during MCP tool call');
 
-    const firstLine = cleanError.split(/\r?\n/)[0] || 'Unknown error';
-    const title = `[Bug]: ${safeSlice(firstLine, 80)}`;
+    const firstLine = cleanError.split(/[\r\n\u2028\u2029]/)[0].replace(/\s+/g, ' ').trim() || 'Unknown error';
+    const title = `[Bug]: ${safeSlice(firstLine, 110)}`;
 
     let doctorSummary = 'Not provided';
     if (doctorReport && doctorReport.backends) {
@@ -135,15 +135,12 @@ export function generateBugReport(options: BugReportOptions): BugReportResult {
         .join('\n');
     }
 
-    const safeContext = safeSlice(cleanContext, 300);
-    const safeDiag = safeSlice(cleanError, 800);
-
     const body = `### Description & Context
-${safeContext}
+${cleanContext}
 
 ### Error Diagnostic
 \`\`\`text
-${safeDiag}
+${cleanError}
 \`\`\`
 
 ### Environment Details
@@ -160,8 +157,11 @@ ${doctorSummary}
     // Safely encode URL parameters
     let issueUrl: string;
     try {
-      const encodedTitle = encodeURIComponent(title);
-      const encodedBody = encodeURIComponent(body);
+      // Encode Markdown delimiters too, so client renderers cannot split the URL.
+      const encodeParameter = (value: string) => encodeURIComponent(value)
+        .replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+      const encodedTitle = encodeParameter(title);
+      const encodedBody = encodeParameter(body);
       issueUrl = `${GITHUB_NEW_ISSUE_BASE}?title=${encodedTitle}&body=${encodedBody}`;
     } catch (_) {
       issueUrl = GITHUB_NEW_ISSUE_BASE;
@@ -173,9 +173,10 @@ ${doctorSummary}
       issueUrl,
       prompt:
         `Would you like to report this issue to GitHub to help improve ${BRAND.NAME}?\n\n` +
-        `Click the link below to review and submit the pre-filled issue in your browser (no tokens or extra login needed):\n\n` +
-        `**[Submit Bug Report on GitHub](${issueUrl})**\n\n` +
-        `<details><summary>Preview Sanitized Report</summary>\n\n${body}\n</details>`,
+        `Click the link below to review and submit the pre-filled issue in your browser (GitHub sign-in required to submit):\n\n` +
+        `**[Submit Bug Report on GitHub](<${issueUrl}>)**\n\n` +
+        `Copyable issue URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
+        `Preview Sanitized Report\n\n${body}`,
     };
   } catch (_err) {
     return {

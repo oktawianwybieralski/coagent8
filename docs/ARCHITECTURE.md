@@ -141,8 +141,9 @@ ownership. Resource history is not the paginated session API. Cancel without
 workspace_path remains unscoped; an initial session handle arrives only at return,
 so use host request cancellation during the first call.
 
-The source surface budget is 512 initialization characters and 5,500 model-visible
-tool-definition bytes (server icon excluded); Codex loads definitions with every
+The source surface budget is 512 initialization characters and 5,800 model-visible
+tool-definition bytes (server icon excluded; owner decision 2026-10-10 for actionable
+issue telemetry instructions); Codex loads definitions with every
 request, so each byte is paid per turn there. Hosts control ToolSearch, instruction
 visibility, UI rendering and cached schemas. A skill is not required for a plain call.
 

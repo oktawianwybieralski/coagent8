@@ -19,6 +19,9 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 test('canonical issue tool formats bug report, executes doctor by default, and supports opting out', async () => {
   assert.equal(issueToolDefinition.name, 'issue');
   assert.ok(issueToolDefinition.description.includes('Sanitized bug report'));
+  for (const instruction of ['Be concise and actionable', 'reproduction steps', 'expected/actual behavior', 'impact', 'sanitized telemetry', 'tool/backend/model', 'CLI versions', 'errors', 'timing', 'scope/check evidence', 'Mark unknown facts; never invent them', 'Keep issueUrl verbatim; do not decode or re-escape it']) {
+    assert.ok(issueToolDefinition.description.includes(instruction), instruction);
+  }
 
   // Default with doctor
   const resWithDoc = await handleIssue({
@@ -38,6 +41,17 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   });
   assert.ok(resNoDoc.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(resNoDoc.structuredContent.body.includes('Not provided'));
+  const renderedLink = resNoDoc.content[0].text.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
+  const prefilled = new URL(renderedLink);
+  assert.equal(prefilled.searchParams.get('title'), resNoDoc.structuredContent.title);
+  assert.equal(prefilled.searchParams.get('body'), resNoDoc.structuredContent.body);
+  assert.equal(renderedLink, resNoDoc.structuredContent.issueUrl);
+  const context = 'Reproduction and timing evidence. '.repeat(50) + 'CONTEXT_END';
+  const diagnostic = 'Failure details. '.repeat(100) + 'DIAGNOSTIC_END';
+  const completeReport = await handleIssue({ error_message: diagnostic, context, include_doctor: false });
+  assert.ok(completeReport.structuredContent.body.includes(context));
+  assert.ok(completeReport.structuredContent.body.includes(diagnostic));
+  assert.equal(new URL(completeReport.structuredContent.issueUrl).searchParams.get('body'), completeReport.structuredContent.body);
 
   // Output schema assertion
   assert.ok(issueToolDefinition.outputSchema);

@@ -9,8 +9,8 @@
  * without its effort). Consent for a top-tier model is not a parameter: the server asks
  * the user (AUD-P1-7). A user's price limit is a parameter (`AX-002`): the user's
  * constraint, not consent, and a reason to select a model that descriptions otherwise
- * leave unset (`AX-006`). Model-visible definitions stay within 5,500 bytes (owner
- * decision of 2026-10-08).
+ * leave unset (`AX-006`). Model-visible definitions stay within 5,800 bytes (owner
+ * decision of 2026-10-10 for actionable issue telemetry instructions).
  *
  * @packageDocumentation
  */
