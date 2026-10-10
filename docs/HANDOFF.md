@@ -1748,6 +1748,28 @@ Next card: AX-007a.
 
 Next card: AX-007b.
 
+## AX-007b: label the continuation handle
+
+- `src/mcp/result.ts`: the existing status line shows
+  `session_handle=<handle> (<state>)` instead of the bare handle; no footer line
+  was added.
+- `session_handle` description (shared by consult and review): "Same-topic
+  follow-up: footer handle; else a fresh agent rereads all." README states the
+  same. `SERVER_INSTRUCTIONS` is unchanged: it is at 507 of the 512 characters
+  every client reads, and the parameter description reaches the model at call time.
+- Definition size: 5,766 B before, 5,798 B after (owner budget 5,800 B, unchanged).
+- Legacy parsing: the documented result parser (`tests/helpers/result.cjs`)
+  accepts the labelled and the bare handle; handle input is unchanged.
+
+### Verification evidence:
+- New `tests/mcp/result.test.js` case: labelled footer, one status line, handle
+  appears once, labelled and legacy bare footers both parse. Four literal footer
+  assertions were updated to the labelled form.
+- PASS: MCP, E2E and `tests/mcp/tools` (61/61); `npm run typecheck`;
+  `npm run check:dependencies`; `npm run lint:docs`; `git diff --check`.
+
+Next card: AX-007c.
+
 
 ## Compact handoff contract
 

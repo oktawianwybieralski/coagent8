@@ -46,7 +46,7 @@ test('formatExecutionResult enforces strict No-Emoji standard and a framed foote
   const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
   assert.ok(!emojiRegex.test(text), `Output should not contain any emojis: ${text}`);
 
-  assert.equal(text, '```plaintext\nSystem analysis successful.\n```\n\n```plaintext\nCoAgent8: codex · gpt-6.1-sol · 4.5s · 3 ops · syn_sess_1234567890abcdef (turn 2, ready)\n```', 'answer and footer each in a plaintext frame');
+  assert.equal(text, '```plaintext\nSystem analysis successful.\n```\n\n```plaintext\nCoAgent8: codex · gpt-6.1-sol · 4.5s · 3 ops · session_handle=syn_sess_1234567890abcdef (turn 2, ready)\n```', 'answer and footer each in a plaintext frame');
   assert.deepEqual(Object.keys(formatted), ['isError', 'content'], 'markdown is the only channel');
 });
 
@@ -57,11 +57,27 @@ test('formatExecutionResult omits a zero operation count and the first turn, and
   }, '', 'syn_sess_first', { turn: 1, toolCount: 0, durationMs: 7500, historyAvailable: true }, { warnings: ['slow backend'] });
   assert.ok(formatted.content[0].text.endsWith([
     '```plaintext',
-    'CoAgent8: claude · claude-haiku-4-5-20251001 · 7.5s · syn_sess_first (ready)',
+    'CoAgent8: claude · claude-haiku-4-5-20251001 · 7.5s · session_handle=syn_sess_first (ready)',
     'Notice: Output reached buffer limit.',
     'Warning: slow backend',
     '```',
   ].join('\n')), 'each footer field is its own line');
+});
+
+test('AX-007b: the footer labels the continuation handle and the bare legacy form still parses', async () => {
+  const formatted = await formatExecutionResult('codex', {
+    status: 'completed', isError: false, output: 'answer', truncated: false, continuationAvailable: true,
+  }, '', 'syn_sess_labelled', { turn: 3, toolCount: 0, durationMs: 1000, historyAvailable: true });
+  const footer = formatted.content[0].text.split('\n').find(line => line.startsWith('CoAgent8: '));
+  assert.equal(footer, 'CoAgent8: codex · provider default · 1.0s · session_handle=syn_sess_labelled (turn 3, ready)', 'no new footer line');
+  assert.equal(formatted.content[0].text.match(/syn_sess_labelled/g).length, 1, 'the handle appears once');
+  const labelled = readResult(formatted);
+  assert.equal(labelled.sessionHandle, 'syn_sess_labelled');
+  assert.equal(labelled.turn, 3);
+  assert.equal(labelled.state, 'ready');
+  const legacy = readResult({ isError: false, content: [{ type: 'text', text: '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: codex · provider default · 1.0s · syn_sess_legacy (finished)\n```' }] });
+  assert.equal(legacy.sessionHandle, 'syn_sess_legacy');
+  assert.equal(legacy.state, 'finished');
 });
 
 test('error formatting states the error first without warning emojis', async () => {
@@ -233,7 +249,7 @@ test('a Codex client gets raw lines, which it frames itself; other clients get p
   try {
     setResultStyle('codex-mcp-client');
     const raw = withWorkspace(run(), { path: tempDir, source: 'server_directory' });
-    assert.match(raw.content[0].text, /^REVIEW: 1\nVERDICT: READY\n\nCoAgent8: agy · provider default · 0\.0s · syn_sess_raw \(finished\)\nWarning: multi line warning\nWorkspace: .+ \(server directory\)$/);
+    assert.match(raw.content[0].text, /^REVIEW: 1\nVERDICT: READY\n\nCoAgent8: agy · provider default · 0\.0s · session_handle=syn_sess_raw \(finished\)\nWarning: multi line warning\nWorkspace: .+ \(server directory\)$/);
     assert.ok(!raw.content[0].text.includes('```'), 'no frame inside the frame Codex draws');
     const read = readResult(raw);
     assert.equal(read.style, 'raw');

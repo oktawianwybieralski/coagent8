@@ -175,7 +175,8 @@ export function formatExecutionResult(
   const ops = executionMeta.toolCount > 0 ? ` \u{b7} ${executionMeta.toolCount} ${executionMeta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = executionMeta.turn > 1 ? `turn ${executionMeta.turn}, ` : '';
   const history = executionMeta.historyAvailable ? '' : ', no history';
-  const session = activeHandle ? ` \u{b7} ${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
+  // Labelled with its parameter name, so a caller passes it back as `session_handle` (AX-007b).
+  const session = activeHandle ? ` \u{b7} session_handle=${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
 
   const footerLines: string[] = [
     `CoAgent8: ${provider || 'CLI'} \u{b7} ${res.model || 'provider default'} \u{b7} ${durationSec}s${ops}${session}`,

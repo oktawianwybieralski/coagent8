@@ -231,7 +231,9 @@ Implementation analysis proposes changes within the read-only profile.
 Execution tools return Markdown: answer or typed error, then backend, model,
 duration and session handle where available. `review` adds its verdict, and a
 call with a price limit adds the model's price evidence.
-Continuation uses `session_handle` from a prior footer.
+The footer shows `session_handle=<handle> (<state>)`; pass that handle for a
+follow-up on the same topic. A call without it starts a fresh agent that rereads
+everything.
 
 Archival history is enabled by default and best-effort. `coagent8_HISTORY=off`
 disables archive files, but executions still require session records and leases.

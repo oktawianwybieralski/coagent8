@@ -31,7 +31,7 @@ export const EXECUTION_PARAMETERS = {
     description: 'Omit for the default; doctor lists per-model values. Required where listed, or as a model name suffix.' },
   output_price_below: { type: 'number', minimum: 0,
     description: 'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; auto picks a model.' },
-  session_handle: { type: 'string', minLength: 1, description: 'Handle from result footer, to continue conversation.' },
+  session_handle: { type: 'string', minLength: 1, description: 'Same-topic follow-up: footer handle; else a fresh agent rereads all.' },
   timeout_ms: {
     type: 'integer',
     minimum: 100,
