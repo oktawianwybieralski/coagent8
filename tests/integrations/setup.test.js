@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { setupClients, readRegistrations, resolveSetupClient } = require('../../src/integrations/setup.ts');
+const { setupClients, readRegistrations, resolveSetupClient, clientSource, alternativeSource } = require('../../src/integrations/setup.ts');
 const { parse } = require('jsonc-parser');
 const { parse: toml } = require('smol-toml');
 const { hasManualVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
@@ -306,4 +306,20 @@ test('setup replaces an entry it wrote whose ownership record and runtime copy a
   assert.ok(fs.existsSync(entry.args.at(-1)));
   assert.deepEqual(readRegistrations(options)[1].state, 'owned');
   assert.equal(readRegistrations(options)[1].current, true);
+});
+test('a link to the extension copy of agy, as the official installer makes, is that copy and no second installation', t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-source-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const name = process.platform === 'win32' ? 'agy.exe' : 'agy';
+  const copy = path.join(home, '.gemini', 'bin', name);
+  write(copy, '#!/bin/sh\n');
+  fs.chmodSync(copy, 0o755);
+  // %LOCALAPPDATA%\agy\bin is a junction to ~/.gemini/bin after the Windows installer runs.
+  const linked = path.join(home, 'local', 'agy', 'bin');
+  fs.mkdirSync(path.dirname(linked), { recursive: true });
+  fs.symlinkSync(path.dirname(copy), linked, 'junction');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: linked };
+  const source = clientSource('agy', { command: path.join(linked, name), argsPrefix: [], source: 'native' }, home, env);
+  assert.deepEqual(source, { kind: 'vscode-extension', executable: 'vscode-extension' });
+  assert.equal(alternativeSource('agy', source, home, env), undefined, 'the switch offers no second copy of the same file');
 });

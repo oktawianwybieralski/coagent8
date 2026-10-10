@@ -120,7 +120,10 @@ export function alternativeSource(client: SetupClient, current: ClientSource, ho
 /** Classifies a client that {@link resolveSetupClient} resolved. */
 export function clientSource(client: SetupClient, cli: CliCommand, home = os.homedir(), env = process.env): ClientSource {
   const bundled = client === 'codex' ? resolveBundledCodex(home, env) : client === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
-  const same = (a: string, b: string) => process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+  // A link to the extension's copy, such as the agy installer's junction to ~/.gemini/bin, is that copy.
+  // A path that cannot be resolved, such as a missing file, compares as written.
+  const real = (file: string) => { try { return fs.realpathSync.native(file); } catch { return path.resolve(file); } };
+  const same = (a: string, b: string) => process.platform === 'win32' ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b);
   if (bundled && same(bundled.command, cli.command)) return { kind: 'vscode-extension', executable: VSCODE_EXTENSION_EXECUTABLE };
   return cli.source === 'native' ? { kind: 'standalone', executable: path.resolve(cli.command) } : { kind: 'npm', executable: path.resolve(cli.argsPrefix[0] ?? cli.command) };
 }
