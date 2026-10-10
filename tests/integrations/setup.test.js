@@ -293,3 +293,17 @@ test('the Codex tool timeout is added after the CoAgent8 table header only, keep
   assert.equal(withCodexToolTimeout(edited), edited, 'an existing timeout is kept');
   assert.throws(() => withCodexToolTimeout('[mcp_servers.other]\ncommand = "o"\n'), /no \[mcp_servers\.coagent8\] table/);
 });
+test('setup replaces an entry it wrote whose ownership record and runtime copy are gone', async t => {
+  const options = profile(t);
+  const file = path.join(options.home, '.claude.json');
+  const stale = { command: process.execPath, args: [path.join(options.home, '.coagent8', 'runtime', 'c'.repeat(64), 'index.cjs')] };
+  write(file, JSON.stringify({ mcpServers: { coagent8: stale } }));
+  assert.deepEqual(readRegistrations(options)[1], { client: 'claude', state: 'owned', current: false, message: 'Registered by setup for another CoAgent8 version, configuration file or data directory.' });
+  const [result] = await setupClients({ ...options, clients: ['claude'] });
+  assert.equal(result.action, 'updated', JSON.stringify(result));
+  assert.equal(result.runtimeCallable, true, 'the replacement starts and lists its tools');
+  const entry = parse(fs.readFileSync(file, 'utf8')).mcpServers.coagent8;
+  assert.ok(fs.existsSync(entry.args.at(-1)));
+  assert.deepEqual(readRegistrations(options)[1].state, 'owned');
+  assert.equal(readRegistrations(options)[1].current, true);
+});

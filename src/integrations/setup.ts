@@ -25,7 +25,7 @@ import { errorCodeOf } from '../contracts/index.js';
 
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, type Registration, type RegistrationOrigin } from './setup-storage.js';
+import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, CODEX_TOOL_TIMEOUT_SEC, type Registration, type RegistrationOrigin } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
 import { describeSkills, installSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
 /** Separates registry, direct-runtime, and native-host evidence. No credentials are returned. */
@@ -195,8 +195,7 @@ async function hostCallable(client: SetupClient, cli: CliCommand, env: NodeJS.Pr
   try { return await probeCodex(cli, env, cwd); }
   catch { return false; } // Host versions without the direct-call API remain explicitly unverified.
 }
-/** Codex stops an MCP tool call after 60 s by default; a review can take several minutes. */
-export const CODEX_TOOL_TIMEOUT_SEC = 1800;
+export { CODEX_TOOL_TIMEOUT_SEC } from './setup-storage.js';
 
 /**
  * Adds `tool_timeout_sec` to the CoAgent8 table that `codex mcp add` wrote, which has no option for it.
@@ -286,7 +285,10 @@ function candidateRegistration(bundle: string, root: string, options: Pick<Setup
 /** A CoAgent8 entry in one host configuration, read without starting a process. */
 export interface RegistrationStatus {
   client: SetupClient;
-  /** `owned`: written by setup and unchanged since; `manual`: any other CoAgent8 entry, which setup preserves. */
+  /**
+   * `owned`: written by setup and unchanged since, by its recorded fingerprint or its shape;
+   * `manual`: any other CoAgent8 entry, which setup preserves.
+   */
   state: 'absent' | 'owned' | 'manual' | 'blocked';
   /** The entry is what setup writes now: same runtime bundle, Node executable and configuration file. */
   current: boolean;
@@ -294,7 +296,8 @@ export interface RegistrationStatus {
 }
 /**
  * Reads the CoAgent8 registration of every client from its configuration file.
- * @remarks Starts no CLI, runtime or host; ownership uses the fingerprints setup recorded.
+ * @remarks Starts no CLI, runtime or host; ownership uses the fingerprints setup recorded,
+ * else the shape only setup writes.
  * @throws On a custom profile root or an unreadable setup state.
  */
 export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env'>): RegistrationStatus[] {
@@ -307,7 +310,7 @@ export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 
       const entry = text === null ? undefined : servers(client, document(client, text)).coagent8;
       if (entry === undefined) return { client, state: 'absent', current: false, message: 'No CoAgent8 entry.' };
       const current = isDeepStrictEqual(registration(entry), candidate);
-      if (saved.owned[client] !== hash(JSON.stringify(entry))) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
+      if (!entryOwnership(client, entry, saved, root).owned) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
       return { client, state: 'owned', current, message: current ? 'Registered by setup.' : 'Registered by setup for another CoAgent8 version, configuration file or data directory.' };
     } catch (error) {
       return { client, state: 'blocked', current: false, message: redactDiagnostic(error instanceof Error ? error.message : 'Configuration is unreadable.') };
@@ -404,16 +407,22 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.action = 'preserved';
           // Status reads the host files only; starting the runtime and the host is setup/repair work.
           if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; coagent8 repair verifies the connection.'; return; }
-          result.tools = await probeRuntime(existing, env, cwd);
-          result.runtimeCallable = true;
-          result.hostCallable = await hostCallable(client, cli, env, cwd);
+          const owned = entryOwnership(client, entry, saved, root).owned;
+          // An owned entry whose runtime copy is gone starts nothing, so there is no working
+          // connection to verify or keep; the candidate written above replaces it.
+          const broken = owned && !fs.existsSync(existing.args.at(-1)!);
+          if (!broken) {
+            result.tools = await probeRuntime(existing, env, cwd);
+            result.runtimeCallable = true;
+            result.hostCallable = await hostCallable(client, cli, env, cwd);
+          }
           result.message = 'Existing registration preserved. Start a new chat to refresh cached tools.';
           if (isDeepStrictEqual(existing, candidate)) return;
-          if (hash(JSON.stringify(entry)) !== saved.owned[client]) {
+          if (!owned) {
             result.message = 'Manual or independently changed registration preserved; migration requires native-host acceptance.';
             return;
           }
-          if (HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) {
+          if (!broken && HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) {
             result.message = 'Managed runtime update deferred: the native host did not call the current registration; old connection retained.';
             return;
           }

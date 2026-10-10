@@ -140,3 +140,47 @@ export function serializeSelection(saved: Selection): string {
   const origins = Object.fromEntries(Object.entries(skillOrigin).filter(([client]) => Object.hasOwn(recorded, client)));
   return JSON.stringify({ ...rest, ...(Object.keys(recorded).length ? { skills: recorded } : {}), ...(Object.keys(origins).length ? { skillOrigin: origins } : {}) }, null, 2) + '\n';
 }
+
+/** Codex stops an MCP tool call after 60 s by default; a review can take several minutes. */
+export const CODEX_TOOL_TIMEOUT_SEC = 1800;
+/** Folder of the VS Code extension's global storage (`<publisher>.<name>`), the data directory of its registrations. */
+export const EXTENSION_STORAGE_NAME = 'okidev.coagent8-mcp';
+const SETUP_ENTRY_ENV = ['coagent8_CONFIG', 'coagent8_DIR'];
+
+/**
+ * Recognizes an entry setup wrote by its shape, for when its ownership record is missing,
+ * as after `~/.coagent8/setup.json` was deleted: it starts a runtime copy setup keeps in
+ * `<root>/runtime/<sha256>/index.cjs` and holds only the fields setup writes. Nothing else
+ * writes there; an entry with any other field or variable stays the user's.
+ * @param root - The `~/.coagent8` directory.
+ * @returns Null for any other entry; otherwise the VS Code extension as its origin when its
+ * data directory is the extension's global storage, which VS Code deletes on uninstall.
+ */
+export function setupShapedEntry(client: SetupClient, entry: unknown, root: string): { origin?: RegistrationOrigin } | null {
+  let parsed: Registration;
+  try { parsed = registration(entry); }
+  catch { return null; }
+  const extra: Record<string, unknown> = client === 'codex' ? { tool_timeout_sec: CODEX_TOOL_TIMEOUT_SEC } : {};
+  const fields = object(entry);
+  if (!Object.keys(fields).every(key => ['command', 'args', 'env'].includes(key) || (Object.hasOwn(extra, key) && fields[key] === extra[key]))) return null;
+  if (!Object.keys(parsed.env ?? {}).every(key => SETUP_ENTRY_ENV.includes(key))) return null;
+  const runtime = parsed.args.at(-1);
+  if (runtime === undefined || !path.isAbsolute(runtime)) return null;
+  const relative = path.relative(path.join(root, 'runtime'), runtime).split(path.sep);
+  if (relative.length !== 2 || !/^[a-f0-9]{64}$/.test(relative[0]!) || relative[1] !== 'index.cjs') return null;
+  return extensionStorage(parsed.env?.coagent8_DIR) ? { origin: EXTENSION_ORIGIN } : {};
+}
+/** Whether a data directory is the VS Code extension's global storage, in any profile or VS Code variant. */
+function extensionStorage(directory: string | undefined): boolean {
+  return directory !== undefined && path.basename(directory).toLowerCase() === EXTENSION_STORAGE_NAME
+    && path.basename(path.dirname(directory)).toLowerCase() === 'globalstorage';
+}
+/**
+ * Whether setup owns a client's CoAgent8 entry and on whose behalf it wrote it: the recorded
+ * fingerprint, else the shape only setup writes ({@link setupShapedEntry}).
+ */
+export function entryOwnership(client: SetupClient, entry: unknown, saved: Selection, root: string): { owned: boolean; origin?: RegistrationOrigin } {
+  if (saved.owned[client] === hash(JSON.stringify(entry))) return { owned: true, origin: saved.origin[client] };
+  const shaped = setupShapedEntry(client, entry, root);
+  return shaped ? { owned: true, ...shaped } : { owned: false };
+}

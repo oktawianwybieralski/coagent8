@@ -13,7 +13,7 @@ import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { backupDirectory, configPath, document, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, serializeSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
+import { backupDirectory, configPath, document, entryOwnership, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, serializeSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
 import { previewSkillRemoval, removeSkills, type SkillStatus } from './skills.js';
 
 /** Public cleanup evidence contains neither configuration contents nor private backup paths. */
@@ -121,10 +121,11 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         snapshots.set(client, { file, before });
         const entry = before === null ? undefined : servers(client, document(client, before)).coagent8;
         if (entry === undefined) return { client, action: 'absent', message: 'No CoAgent8 entry; nothing to remove.' };
-        if (!saved.owned[client] || hash(JSON.stringify(entry)) !== saved.owned[client]) {
+        const ownership = entryOwnership(client, entry, saved, root);
+        if (!ownership.owned) {
           return { client, action: 'preserved', message: 'Manual or independently edited entry preserved; no matching ownership.' };
         }
-        if (options.origin && saved.origin[client] !== options.origin) {
+        if (options.origin && ownership.origin !== options.origin) {
           return { client, action: 'preserved', message: 'Entry registered outside the VS Code extension preserved.' };
         }
         snapshots.set(client, { file, before, after: removeEntry(client, before!) });

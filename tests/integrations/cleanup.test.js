@@ -185,3 +185,30 @@ test('the bundled vscode:uninstall hook leaves no CoAgent8 registration, runtime
   assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
   assert.equal(fs.existsSync(path.join(p.home, '.coagent8')), false, 'the emptied CoAgent8 directory is removed');
 });
+test('without its ownership record, an entry setup wrote is recognized by its shape; the uninstall removes the extension ones', async t => {
+  // As found on 2026-10-10: setup.json and the runtime copies were gone, the entries stayed.
+  const p = profile(t);
+  const storage = path.join(p.home, 'AppData', 'Roaming', 'Code', 'User', 'globalStorage', 'okidev.coagent8-mcp');
+  const runtime = name => path.join(p.home, '.coagent8', 'runtime', name.repeat(64), 'index.cjs');
+  const env = { coagent8_CONFIG: path.join(p.home, '.coagent8', 'config.json'), coagent8_DIR: storage };
+  p.write(p.files.codex, `[mcp_servers.other]\ncommand = "keep"\n\n[mcp_servers.coagent8]\ntool_timeout_sec = 1800\ncommand = 'node'\nargs = ['${runtime('a')}']\n\n[mcp_servers.coagent8.env]\ncoagent8_CONFIG = '${env.coagent8_CONFIG}'\ncoagent8_DIR = '${storage}'\n`);
+  p.write(p.files.claude, JSON.stringify({ mcpServers: { coagent8: { command: 'node', args: [runtime('a')], env }, other: { command: 'keep' } } }));
+  const cli = { command: 'node', args: [runtime('b')] };
+  p.write(p.files.agy, JSON.stringify({ mcpServers: { coagent8: cli } }));
+  const uninstall = { ...p, origin: 'vscode-extension', uninstall: true };
+  const preview = await cleanupClients(uninstall);
+  assert.deepEqual(Object.fromEntries(preview.results.map(r => [r.client, r.action])), { codex: 'remove', claude: 'remove', agy: 'preserved' });
+  assert.match(preview.results.find(r => r.client === 'agy').message, /outside the VS Code extension/, 'no extension data directory: a coagent8 CLI registration');
+  const applied = await cleanupClients({ ...uninstall, apply: preview.token });
+  assert.equal(applied.stateError, undefined);
+  assert.equal(toml(fs.readFileSync(p.files.codex, 'utf8')).mcp_servers.coagent8, undefined);
+  assert.equal(toml(fs.readFileSync(p.files.codex, 'utf8')).mcp_servers.other.command, 'keep');
+  assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
+  const cleanup = await cleanupClients({ ...p, clients: ['agy'] });
+  assert.equal(cleanup.results[0].action, 'remove', 'coagent8 cleanup recognizes the CLI registration');
+  // Any field or variable setup does not write keeps an entry the user's.
+  for (const edited of [{ ...cli, cwd: p.home }, { ...cli, env: { EXTRA: '1' } }, { ...cli, args: ['--inspect', path.join(p.home, 'index.cjs')] }]) {
+    p.write(p.files.agy, JSON.stringify({ mcpServers: { coagent8: edited } }));
+    assert.equal((await cleanupClients({ ...p, clients: ['agy'] })).results[0].action, 'preserved', JSON.stringify(edited));
+  }
+});
