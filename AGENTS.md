@@ -24,7 +24,7 @@ operation. Historical plans and RFCs do not override this direction.
 
 0. **[P0: Core Invariants, Code Quality & Engineering Integrity (`00-core-invariants.md`)](./.agents/rules/00-core-invariants.md)**:
    - **Strictly no "hacks"**: Zero shortcuts, no monkey-patching, no silent exception swallowing, root-cause fixes only.
-   - **GitHub & branch protection**: Direct pushes to `main` strictly forbidden, green CI matrix, clean PR squash-and-merge.
+   - **GitHub & branch protection**: Direct pushes to `develop` or a release line strictly forbidden, green CI matrix, clean PR squash-and-merge; integration and publication are owner actions.
    - **Verifiable reality**: Zero hallucinated claims, honest evidence, no weakened tests, synchronized metadata.
    - **Production reliability**: Strict TypeScript strict mode, leak-free process management, defensive schema validation.
    - **Dependency boundaries (P0)**: One owner per capability; dependencies follow the architecture direction. No new runtime/type cycles, reverse dependencies or transport coupling in the engine. Existing violations require explicit migration, not copied patterns; see [core boundary rules](./.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
@@ -44,11 +44,12 @@ operation. Historical plans and RFCs do not override this direction.
    - Automated secret redaction for API keys, tokens, credentials, and user home directory paths, without rewriting ordinary content of public answers.
 
 2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:
-   - **Direct pushes to `main` are strictly forbidden.**
-   - All development takes place on dedicated topic branches (`feat/*`, `fix/*`, `perf/*`, `chore/*`) created from and targeting the active release branch `release/v1.0.0`. Betas and release candidates are annotated tags on that branch (`v1.0.0-beta.2`, `v1.0.0-beta.3`, `v1.0.0-rc.1`); the final `v1.0.0` tag is on `main`. `v1.0.0-beta.1` is the npm name placeholder and the first commit of the history; the first release for testers is `v1.0.0-beta.2`.
+   - **Branch model (PrestaShop style, owner decision 2026-10-10):** `develop` is the default and only integration branch; each maintained version has a release line `X.Y.x` (`1.0.x` from `v1.0.0-rc.1`). There is no `main`. Direct pushes to `develop` or a line are strictly forbidden.
+   - All development takes place on topic branches (`feat/*`, `fix/*`, `perf/*`, `docs/*`, `chore/*`, ...) created from and targeting `develop` (a backport: its line). Betas are annotated tags on `develop` (`v1.0.0-beta.2`, `v1.0.0-beta.3`); `rc.N`, `v1.0.0` and patches are tags on `1.0.x`; fixes land on `develop` first and are backported to the line by squash PRs. Every commit on `develop` and a line is a GitHub squash commit `<PR title> (#N)` shown as Verified; no merge commits. `v1.0.0-beta.1` tags the exact source of the npm name placeholder, outside `develop`'s history; the first release for testers is `v1.0.0-beta.2`, published as a preview (GitHub pre-release, npm `next`).
    - Merge exclusively via **Pull Requests with Squash and Merge** (`gh pr merge --squash --delete-branch`); commits and PR titles follow Conventional Commits; versions follow SemVer; `CHANGELOG.md` is generated from the history, never edited by hand.
+   - **Releases** follow the five phases of [rule 02 section 5](./.agents/rules/02-git-workflow.md#5-release-process): release PR (an agent may prepare it), owner merge and tag, the tag-triggered release workflow builds a draft GitHub Release with verified artifacts, the owner verifies the downloaded artifacts and publishes the release and the npm tarball. Agents never push, merge, tag or publish without the owner's explicit go-ahead.
    - **Changelog before every push**: run `npm run changelog` and, if `CHANGELOG.md` changed, commit it alone as `chore(changelog): regenerate`; before opening a PR or changing its title, run `npm run changelog:check -- --with-commit "<PR title>"`. A failure blocks the push or PR.
-   - `main` receives only finalized, audited release snapshots; must strictly remain 100% green across all 6 CI matrix jobs.
+   - `develop` and every release line must strictly remain 100% green across all 6 CI matrix jobs (three OSes, Node 24 and 26).
    - History recovery is strictly an emergency owner procedure with atomic force-with-lease.
    - **No AI attribution (forbidden)**: never add a `Co-Authored-By` trailer for an AI tool, a "Generated with" line or similar to commits, PRs, changelogs or release notes. The owner is the sole author.
 

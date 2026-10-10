@@ -46,6 +46,15 @@ Preserve the owner's local stack, existing changes, registrations and stored dat
 Audit blockers come before exposing affected capabilities. Work remains local
 unless the user authorizes integration/publication.
 
+Branches and releases ([rule 02](../../rules/02-git-workflow.md)): topic branches
+start from `develop` and return to it by a squash-merged PR; there is no `main`.
+Betas are tags on `develop`, release candidates and patches tags on an `X.Y.x`
+line, which receives fixes only as backport PRs. You may prepare commits, a
+release PR branch, release notes and gate evidence. Pushing or opening a PR needs
+the owner's go-ahead in the session; merging, tagging, GitHub Releases, npm and
+repository settings are the owner's. The one-time migration to this model is
+[REPO-002](../../../docs/ROADMAP.md#repo-002---branch-model-and-release-workflow).
+
 Prose needs content/link review and git diff --check, not runtime tests or paid
 backend calls. Source comments/documentation tooling additionally need lint:docs
 and docs; executable changes need their scope's behavioral checks. Keep source,

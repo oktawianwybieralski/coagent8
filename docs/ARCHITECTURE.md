@@ -540,6 +540,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-08 | doctor defaults to the cached model view; health is a scope and the quota argument is removed. Consent refusals no longer advise another model. |
 | 2026-10-09 | Setup updates its own unchanged Claude and agy registrations once the new runtime starts and lists its tools, as a first registration; only a host setup can check (Codex) must also call it. The previous runtime stays until cleanup. After an update the VSIX offers Set Up CLIs once per runtime when a CLI chat still starts another version. |
 | 2026-10-10 | Every CoAgent8 function has a client skill. Setup installs a client's skills with its registration; cleanup and the VS Code uninstall remove them. Only the VSIX and the npm package install them, and they ship in beta.2 (SKILLS-001). |
+| 2026-10-10 | Git model as PrestaShop: `develop` (default) plus release lines `X.Y.x`, no `main`. Every commit on them is a GitHub-signed squash commit of one PR; fixes are backported by squash PRs, never merged back. A release tag starts a workflow that drafts the GitHub Release with verified artifacts; the owner publishes it and the npm tarball (`next` for previews). Migration: [REPO-002](ROADMAP.md#repo-002---branch-model-and-release-workflow). |
 
 ## Known limitations
 

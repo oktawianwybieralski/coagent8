@@ -1145,7 +1145,7 @@ condition in the inventory when splitting; a narrower card does not waive it.
 | `ANTIGRAVITY-HUB-001` | Accept configured managed CLI and quiet launches. Revisit private hub only with supported versioned API, verified task capabilities and no authority escape through inherited tools. |
 | `ERRORS-001`, `SIMPLIFY-001`, `DOCS-001` | Finish the review of I/O errors and empty catch blocks so every failure is actionable; type auth, quota, context-length and crash failures; remove duplicated timeout constants. Refactor only where a module holds unrelated responsibilities, and document logic that is hard to follow. Do not change behavior merely to rename folders. |
 | `PACKAGE-001`, `TESTS-001`, `VERIFY-SCOPE-001`, `VERIFY-001` | `dist/` stays untracked; the VSIX and plugin payloads are derived from the npm tarball. Tests prove they remove only their own temporary files and keep logs that explain a failure. Accept in CI the change that runs the suite once per matrix job through `test:coverage` instead of a separate full run. Report source tests, bundle checks, exact-artifact checks and native-host evidence separately. |
-| `CHANGELOG-001`, `REPO-001` | Keep generated changelog/pre-push/title checks and license notices. GitHub release-note API, protections and registry state need owner-led verification; no automatic history/npm action. |
+| `CHANGELOG-001`, `REPO-001`, `REPO-002` | Keep generated changelog/pre-push/title checks and license notices. Branch model, rulesets and release workflow follow [REPO-002](#repo-002---branch-model-and-release-workflow); GitHub settings, tags, releases and npm stay owner actions. |
 
 ### WINDOWS-001 - per-call process containment
 
@@ -1603,6 +1603,82 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   overhead is measured and limitations are explicit. A TUI/persistent worker
   remains deferred unless a separate bounded comparison justifies it.
 
+## REPO-002 - branch model and release workflow
+
+Owner decisions 2026-10-10: PrestaShop-style `develop` plus release lines
+`X.Y.x`, no `main`; every commit on a protected branch is a GitHub-signed
+(Verified) squash commit `<PR title> (#N)`; the 293 local commits since beta.1
+reach `develop` as one squash PR whose page keeps them; beta.1 gets a GitHub
+Release; beta.2 is a preview (GitHub pre-release, npm `next`); npm
+`1.0.0-beta.1` is deprecated, not unpublished; CI tests Node 24 and 26. The
+steady-state process is [rule 02](../.agents/rules/02-git-workflow.md); this
+section is the one-time migration.
+
+State verified 2026-10-10 (read-only): the public repo's `main` holds only
+GitHub's initial LICENSE commit `b962086`; PR #1 (`chore/release-v1.0.0-beta.1`
+-> `main`) has six failing checks; there are no tags or releases; the branch
+ruleset requires checks named Node 20.x/22.x, which `ci.yml` (24.x/26.x) never
+reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
+
+### Agent cards (local; no push)
+
+- [x] **REPO-002a - rules and documents.** Rule 02 (branching, PRs, five
+  release phases, npm channels, rulesets), rule 00 section 2, AGENTS.md, the
+  workflow skill, ARCHITECTURE decision log, HANDOFF. Check: P.
+- [x] **REPO-002b - CI triggers and release workflow.** `ci.yml` runs on
+  `develop` and `[0-9]+.[0-9]+.x`; `release.yml` (tag `v*`): verifies an
+  annotated tag matching `package.json` on `develop` or a line, runs the full
+  gate on Ubuntu/Node 24, packs and smoke-tests the exact tarball, packages the
+  VSIX, writes `SHA256SUMS`, generates notes with git-cliff `--current` and
+  creates a draft (pre-)release. It never publishes. Check: both files parse as
+  YAML; the notes template renders `--current --offline` on tag
+  `v1.0.0-beta.1`. The workflow itself first runs on GitHub (REPO-002e).
+- [ ] **REPO-002c - prepare the beta.2 PR branch.** Needs `git fetch origin`.
+  Create commit X: parent `b962086`, tree of `v1.0.0-beta.1` (`ae55f01^{tree}`),
+  message `chore(release): v1.0.0-beta.1`; move the unpublished local tag
+  `v1.0.0-beta.1` to X (owner approval). Replay the work with
+  `git rebase --onto X v1.0.0-beta.1 <candidate>` into `release/v1.0.0-beta.2`
+  (identical base tree, so no conflicts; verify the final tree equals the
+  candidate tree). On that branch: freeze the detailed beta.2 changelog section
+  into the `cliff.toml` footer above beta.1, start generation at
+  `v1.0.0-beta.2` in the changelog scripts, generate the beta.2 release notes
+  into the PR description draft, and add one release commit
+  `chore(release): v1.0.0-beta.2`. Repeat T12b on its head (new SHAs).
+  Check: tree equality, changelog/notes review, full gate.
+- [ ] **REPO-002d - README and VS Code links.** Install instructions use
+  `coagent8@next`; VS Code README and `tooling/vscode/package.cjs` link to
+  `blob/develop`. Lands in REPO-002c's branch before its gate. Check: P plus VSIX.
+
+### Owner steps (GitHub and npm; in this order)
+
+1. **Branches:** create `develop` at `b962086` and make it the default branch.
+2. **Rulesets** (rule 02 section 8): retarget the branch ruleset to
+   `refs/heads/develop`, squash only, required checks
+   `Test on {ubuntu,macos,windows}-latest (Node {24.x, 26.x})`; add the
+   `release lines` ruleset for `refs/heads/*.*.x`; keep both tag rulesets.
+3. **Cleanup:** close PR #1, delete `chore/release-v1.0.0-beta.1`, then delete
+   `main` (after step 2 removed it from the ruleset).
+4. **beta.1:** push tag `v1.0.0-beta.1` (commit X). Create its GitHub Release as
+   pre-release from the beta.1 changelog section, attach
+   `npm pack coagent8@1.0.0-beta.1` (the published tarball) and its SHA-256,
+   and state that it is the name placeholder with known issues.
+5. **beta.2 PR:** push `release/v1.0.0-beta.2`, open the PR into `develop`
+   titled `chore(release): v1.0.0-beta.2` with the prepared notes; the six CI
+   jobs are EXEC-001-T12c's matrix evidence; run T12c's native checks and T12d's
+   independent review on its head.
+6. **Merge and tag:** squash-merge; tag the squash commit `v1.0.0-beta.2`
+   (annotated) and push the tag. `release.yml` creates the draft pre-release.
+   Replace its one-entry notes with the prepared detailed notes.
+7. **Verify downloads** (rule 02 phase D): `gh release download`, check
+   `SHA256SUMS`, install the tarball and the VSIX in clean profiles, repeat the
+   native smoke.
+8. **Publish:** publish the draft pre-release;
+   `npm publish ./coagent8-1.0.0-beta.2.tgz --tag next`;
+   `npm dist-tag rm coagent8 beta`;
+   `npm deprecate coagent8@1.0.0-beta.1 "Name placeholder with known issues; install coagent8@next"`.
+
+After step 8 the default flow of rule 02 applies to every change.
+
 ## Release acceptance
 
 | Stage | Required scope |
@@ -1611,7 +1687,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
 | BETA-001: beta.3 | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e may ship. |
 | RC-001: rc.1 | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
-| 1.0.0 | Accepted audited snapshot through the final release PR to main. |
+| 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
 
 Every release needs a clean candidate, applicable full package gate, six OS/Node
 CI jobs, exact artifact provenance, soak evidence (concurrency/cancel/EOF/crashes,

@@ -1,15 +1,36 @@
 # P0: Git Workflow, Versioning & Release Process (`02-git-workflow.md`)
 
 > **Priority Level: P0 (Critical System Invariant)**
-> Direct pushes and force pushes to `main` or to a release branch are strictly
-> forbidden. This rule is the single source for branching, commits, pull
+> Direct pushes and force pushes to `develop` or to a release line (`X.Y.x`) are
+> strictly forbidden. This rule is the single source for branching, commits, pull
 > requests, versioning, releases and issue handling. Other documents reference it.
 
 The process follows widely used conventions:
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/),
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and a
-trunk-plus-release-branch model with squash-merged pull requests.
+[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
+`develop` plus release-line model of PrestaShop (owner decision 2026-10-10):
+a permanent integration branch, one branch per maintained `X.Y` line, releases as
+tags on those branches, and squash-merged pull requests.
+
+Every commit on `develop` and on a line is a squash commit that GitHub created
+from one pull request: `<PR title> (#N)`, signed by GitHub and therefore shown as
+**Verified**. Nothing reaches these branches any other way. Every change -
+features, fixes, releases, backports - travels as its own pushed branch and PR.
+
+## 0. Who does what
+
+| Action | Agent | Owner |
+| --- | --- | --- |
+| Topic branch, commits, local checks, changelog regeneration | Yes | Yes |
+| Push a topic branch, open or update a PR | Only after the owner's explicit go-ahead in the session | Yes |
+| Independent review ([03-author-reviewer](03-author-reviewer.md)) | Yes (Reviewer role) | Yes |
+| Merge a PR, create a release line, push a tag | Never | Yes |
+| Publish a GitHub Release, publish or deprecate on npm, change repository settings | Never | Yes |
+
+An agent prepares release PRs, release notes and evidence (section 5) and
+stops. It never states or implies that a push, merge, tag or publication
+happened unless it observed it.
 
 ---
 
@@ -17,20 +38,33 @@ trunk-plus-release-branch model with squash-merged pull requests.
 
 | Branch | Purpose | Created from | Merges into | Lifetime |
 | --- | --- | --- | --- | --- |
-| `main` | Accepted final releases only (`vX.Y.Z`) | - | - | Permanent |
-| `release/vX.Y.Z` | Integration branch for one upcoming release; carries all of its prereleases | Latest `main` | `main` (final release PR) | Until `vX.Y.Z` is released |
-| Topic branch | One change | Active release branch | Active release branch | Until merged |
-| `hotfix/vX.Y.Z` | Urgent patch to a released version | Release tag `vX.Y.(Z-1)` on `main` | `main` | Until released |
+| `develop` | Default branch. Integration of the next version; betas are tagged here | - | - | Permanent |
+| `X.Y.x` (for example `1.0.x`) | Release line of version X.Y: release candidates, the final `X.Y.0` and patches `X.Y.Z` | `develop` at feature freeze (the commit that becomes `X.Y.0-rc.1`) | - (receives backports) | Until the line's end of support |
+| Topic branch | One change | `develop` (a backport branch: the line) | Its source branch | Until merged |
 
-* The **active release branch** for the 1.0.0 cycle is `release/v1.0.0`.
-* Release stages are **tags on the release branch**, not branches:
-  `v1.0.0-beta.1` -> `v1.0.0-beta.2` -> `v1.0.0-beta.3` ->
-  `v1.0.0-rc.1` -> `v1.0.0-rc.N` -> `v1.0.0`
-  (the final tag is on `main`). A tag freezes the exact state of a stage forever.
-* `v1.0.0-beta.1` is the source of the npm name placeholder and the first commit
-  of the history. The first release for testers is `v1.0.0-beta.2`.
-* Branch names never equal tag names. Release branches use the `release/` prefix;
-  tags are bare versions with a `v` prefix.
+* There is **no `main` branch** (owner decision 2026-10-10). The repository's
+  front page is `develop`; released states are tags and GitHub Releases.
+* Release stages are **tags**, never branches:
+  `v1.0.0-beta.1` -> `v1.0.0-beta.2` -> `v1.0.0-beta.3` (on `develop`) ->
+  `v1.0.0-rc.1` -> `v1.0.0-rc.N` -> `v1.0.0` -> `v1.0.1` (on `1.0.x`).
+  A tag freezes the exact state of a stage forever.
+* `v1.0.0-beta.1` tags the exact source of the npm name placeholder. It sits on a
+  single commit outside `develop`'s history (REPO-002); its GitHub Release shows
+  what beta.1 was. The first release for testers is `v1.0.0-beta.2`, the first
+  squash commit of the beta.2 work on `develop`.
+* **Feature freeze** creates the line: the owner branches `X.Y.x` from `develop`
+  at the release commit of `X.Y.0-rc.1`. From then on `develop` carries the next
+  version's features and `X.Y.x` takes only release-blocking fixes and, after
+  `X.Y.0`, patch fixes.
+* **Fixes for a line** land on `develop` first. A fix that a maintained line
+  also needs is then **backported**: a branch `backport/<N>-<desc>` from the line
+  with `git cherry-pick -x <develop-sha>`, and a PR into the line titled like the
+  original with the suffix `(backport #N)`, squash-merged. Only a fix that does
+  not apply to `develop` (code already gone there) targets the line directly.
+* **No merge commits.** `develop` and the lines have linear history of squash
+  commits only. A line is never merged into `develop`; the changelog of each
+  branch is generated on that branch (section 6).
+* Branch names never equal tag names: lines are `X.Y.x`, tags are `vX.Y.Z...`.
 
 ### Topic branch names
 
@@ -47,17 +81,19 @@ Format: `<type>/<short-kebab-description>`, optionally with the issue number:
 | `test/` | Tests only |
 | `build/`, `ci/` | Build system, packaging or CI workflow |
 | `chore/` | Maintenance that fits no other type (dependency bumps, tooling) |
+| `release/` | A release PR (section 5): `release/v1.0.0-beta.2` |
+| `backport/` | A cherry-pick of a merged `develop` fix into a line (above) |
 
-Keep a topic branch focused on one concern. Rebase it onto the active release
-branch to pick up changes (`git rebase origin/release/v1.0.0`). The author may
-force-push their own topic branch with `--force-with-lease` before merge; never
-force-push a branch someone else is working on.
+Keep a topic branch focused on one concern. Rebase it onto its target to pick
+up changes (`git rebase origin/develop`). The author may force-push their own
+topic branch with `--force-with-lease` before merge; never force-push a branch
+someone else is working on.
 
 ---
 
 ## 2. Commit Messages (Conventional Commits)
 
-Every commit that lands on a release branch or `main` - in practice, every
+Every commit that lands on `develop` or a line - in practice, every
 squash-merge commit - must follow Conventional Commits 1.0.0:
 
 ```text
@@ -107,7 +143,7 @@ Refs: AUD-P0-1
 ```
 
 ```text
-docs(rules): define release branches, tags and PR process
+docs(rules): define release lines, tags and PR process
 ```
 
 Commits on topic branches disappear in the squash, but their headers must still
@@ -121,8 +157,9 @@ become the final commit, so they must meet this section.
 
 ### Opening
 
-* Target the active release branch (`release/v1.0.0`). Target `main` only for a
-  final release PR or a hotfix.
+* Target `develop`; a backport targets its line (section 1). A release PR
+  targets the branch that will carry the tag (section 5). Push the branch only
+  after the owner's go-ahead (section 0); GitHub needs it to open the PR.
 * **Title**: a valid Conventional Commit header (section 2). It becomes the
   squash-merge subject and the changelog entry. Preview that entry with the
   changelog check (section 6) before opening the PR and whenever the title
@@ -157,13 +194,13 @@ become the final commit, so they must meet this section.
   account that does not exist, record the Reviewer's verdict in the PR instead.
 * Address findings with new commits; do not rewrite history during review unless
   the Reviewer agrees.
-* **Merge method:** Squash and Merge only, then delete the topic branch:
+* **Merge method:** Squash and Merge, then delete the topic branch:
   ```bash
   gh pr merge <number> --squash --delete-branch
   ```
   Before confirming, edit the squash message so that it complies with section 2
   (keep footers such as `Fixes #...` and `BREAKING CHANGE:`; remove any AI
-  attribution).
+  attribution). There is no other merge method: the rulesets allow only squash.
 
 ---
 
@@ -172,88 +209,110 @@ become the final commit, so they must meet this section.
 * Versions follow SemVer 2.0.0. Prerelease identifiers are `beta.N` and `rc.N`;
   SemVer ordering is `1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0-beta.3 < 1.0.0-rc.1 < 1.0.0`.
 * **Beta**: feature-incomplete or not fully hardened; distributed to invited
-  testers. **Release candidate**: scope frozen; only release-blocking fixes.
-  The roadmap's [release acceptance](../../docs/ROADMAP.md#release-acceptance) defines
-  each stage's entry gate.
-* The version is changed only in a release commit (section 5), consistently in
+  testers as a preview. **Release candidate**: scope frozen on the line; only
+  release-blocking fixes. The roadmap's
+  [release acceptance](../../docs/ROADMAP.md#release-acceptance) defines each
+  stage's entry gate.
+* The version is changed only in a release PR (section 5), consistently in
   `package.json`, `package-lock.json`, `plugin.json`, `extensions/vscode/package.json`
   and `CHANGELOG.md`. Runtime constants read it from `package.json`.
 * A build from an untagged commit is a development build and is never distributed,
   even though it carries the last version string.
 * Published versions are immutable. A correction is always a new version number;
-  a tag is never moved or reused.
+  a tag is never moved, deleted or reused (the tag rulesets enforce it).
+
+### npm distribution channels
+
+| npm dist-tag | Holds | Install |
+| --- | --- | --- |
+| `next` | The newest beta or release candidate (preview) | `npm install coagent8@next` |
+| `latest` | The newest final release | `npm install coagent8` |
+
+* A prerelease is never published to `latest`. Until `1.0.0`, `latest` still
+  points at the deprecated `1.0.0-beta.1` name placeholder (npm always keeps a
+  `latest` tag); its deprecation message directs users to `coagent8@next`.
+  The README install instructions use `@next` until 1.0.0.
+* The `beta` dist-tag is retired; the owner removes it when publishing beta.2
+  (`npm dist-tag rm coagent8 beta`).
 
 ---
 
 ## 5. Release Process
 
-### Prerelease (beta or release candidate)
+Every release follows the same five phases. The owner performs every action
+marked (owner); an agent may prepare everything else.
 
-1. **Gate:** the stage's entry gate in the roadmap is satisfied on the release
-   branch, with green CI.
-2. **Release PR** into the release branch, titled
-   `chore(release): v1.0.0-beta.N`, which only:
-   * sets the version (section 4);
-   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag v1.0.0-beta.N`,
+### Phase A - release PR (agent may prepare)
+
+1. **Gate:** the stage's entry gate in the roadmap is satisfied on the target
+   branch with green CI. Betas target `develop`; `rc.N`, `X.Y.0` and patches
+   target `X.Y.x` (for `rc.1`, the owner creates `X.Y.x` from `develop` first).
+2. Branch `release/vX.Y.Z-<pre>` from the target. One commit
+   `chore(release): vX.Y.Z-<pre>` that only:
+   * sets the version (section 4) where it differs;
+   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z-<pre>`,
      which writes the commits since the previous tag under the new version
      heading with the release date (section 6).
-3. After merge, verify CI on the resulting release-branch commit.
-4. **Tag** that exact commit with an annotated tag:
+3. Run the full local gate ([04-quality-gate](04-quality-gate.md#full-release-gate))
+   on that commit and record platform, Node, commit, tree and artifact digests.
+4. Open the PR titled `chore(release): vX.Y.Z-<pre>`; attach the local gate
+   evidence and the release notes preview (`npm run release-notes -- --tag vX.Y.Z-<pre>`).
+   The independent review binds to that commit ([03-author-reviewer](03-author-reviewer.md)).
+
+### Phase B - merge and tag (owner)
+
+5. Squash-merge the release PR after green CI and review. Verify CI on the
+   resulting commit of the target branch.
+6. Tag that exact commit with an annotated tag and push only the tag:
    ```bash
-   git tag -a v1.0.0-beta.N <release-branch-sha> -m "CoAgent8 v1.0.0-beta.N"
-   git push origin v1.0.0-beta.N
+   git fetch origin
+   git tag -a vX.Y.Z-<pre> <verified-sha> -m "CoAgent8 vX.Y.Z-<pre>"
+   git push origin vX.Y.Z-<pre>
    ```
-5. **Build** the artifacts (npm tarball, VSIX) from a clean checkout of the tag;
-   record their SHA-256 digests.
-6. **Publish** a GitHub Release marked as *pre-release*. Generate its notes
-   from the release branch before the release PR merges, with
-   `npm run release-notes -- --tag v1.0.0-beta.N > notes.md` (section 6; set
-   `GITHUB_TOKEN` for linked authors). Add known issues, security notes and
-   artifact digests by hand, then run `gh release create ... --notes-file notes.md`. Optionally publish to npm with
-   `npm publish --tag next`. Never publish a prerelease to the npm `latest` tag;
-   until 1.0.0, `latest` holds the `0.0.1` name placeholder.
-7. Continue work on the same release branch toward the next stage.
 
-### Final release
+### Phase C - build (release workflow)
 
-1. **Release readiness gate** - all of:
-   * the roadmap's RC stage is accepted, with no open P0/P1 issue;
-   * all six CI jobs and the full local gate
-     (`npm run typecheck`, `npm run build`, `npm test`, `npm pack --dry-run`,
-     `npm run test:consumer`) pass on a clean checkout;
-   * soak verification of the exact artifact: concurrent sessions, process
-     cancellation, EOF teardown, lock contention, restart recovery, history
-     pagination and bounded cache/memory behavior;
-   * an independent review by the Reviewer of the complete release diff
-     against the previous `main`, bound to base, candidate, tree and artifact
-     hashes, with `COVERAGE: COMPLETE`, `VERDICT: READY` and no unresolved
-     P1/P2 finding.
+7. The tag push starts `.github/workflows/release.yml`. It checks that the tag is
+   annotated, that `package.json` carries the same version and that the tagged
+   commit is on `develop` or an `X.Y.x` line; runs the full gate on Ubuntu with
+   Node 24; packs and smoke-tests the exact npm tarball, packages the VSIX,
+   writes `SHA256SUMS`, generates the release notes with git-cliff and creates a
+   **draft** GitHub Release (marked pre-release for a `-beta`/`-rc` tag) with
+   these assets. It never publishes to npm and never publishes the draft.
 
-   Any content change after the gate restarts it.
-2. Release commit on the release branch: `chore(release): v1.0.0` (version and
-   changelog, as for prereleases).
-3. Open the final release PR `release/v1.0.0` → `main` titled
-   `chore(release): v1.0.0`. Merge with Squash and Merge.
-4. Verify that the `main` commit's tree equals the approved candidate tree and that
-   CI passes on it.
-5. Tag the verified `main` commit:
-   ```bash
-   git tag -a v1.0.0 <verified-main-sha> -m "CoAgent8 v1.0.0"
-   git push origin v1.0.0
-   ```
-6. Build from the tag, publish the GitHub Release (not pre-release) and npm
-   `latest`, with digests.
-7. Delete the merged release branch. Create the next release branch
-   (`release/v1.1.0`) from `main` when work on it starts.
+### Phase D - verify the published artifacts (owner, agent may assist locally)
 
-### Hotfix (after a final release)
+8. Download the assets from the draft release (`gh release download vX.Y.Z-<pre>`),
+   verify them against `SHA256SUMS` and the CI digests, install the tarball and
+   the VSIX in clean profiles, and run the stage's native acceptance (roadmap).
+   Add known issues, security notes and digests to the draft notes.
 
-1. Branch `hotfix/v1.0.1` from tag `v1.0.0`.
-2. Apply fix commits via PRs into the hotfix branch (or a single PR to `main`
-   for a one-commit fix). Bump the patch version and the changelog.
-3. Merge the hotfix PR into `main`, tag `v1.0.1`, publish as a final release.
-4. Port the fix to the active release branch through a normal PR
-   (`fix(...)`, `Refs: v1.0.1`).
+### Phase E - publish (owner)
+
+9. Publish the draft GitHub Release (keep "pre-release" for betas and RCs).
+10. Publish the verified tarball, not a rebuild:
+    ```bash
+    npm publish ./coagent8-X.Y.Z-<pre>.tgz --tag next      # beta or rc
+    npm publish ./coagent8-X.Y.Z.tgz                        # final: latest
+    ```
+11. Announce the release to testers with the GitHub Release link.
+
+Any content change after Phase A's gate restarts it with a new commit; a pushed
+tag is never moved. A failed release workflow is fixed by a new release number
+when the tag was already pushed.
+
+### Final release and end of support
+
+* The final `X.Y.0` follows the same phases on `X.Y.x`, with the additional
+  readiness gate: the roadmap's RC stage accepted with no open P0/P1 issue; six CI
+  jobs and the full local gate on a clean checkout; soak verification of the
+  exact artifact (concurrent sessions, process cancellation, EOF teardown, lock
+  contention, restart recovery, history pagination, bounded cache/memory); and
+  an independent review of the complete release diff against the previous
+  release tag, bound to base, candidate, tree and artifact hashes, with
+  `COVERAGE: COMPLETE`, `VERDICT: READY` and no unresolved P1/P2 finding.
+* A line is supported until the owner announces its end; its branch then stays
+  read-only (no deletion; the ruleset forbids it).
 
 ---
 
@@ -263,12 +322,19 @@ become the final commit, so they must meet this section.
   Commits history by git-cliff (`cliff.toml`, `npm run changelog`). It follows
   Keep a Changelog 1.1.0 with one section per released version, newest first.
 * Nobody edits it by hand; the Reviewer rejects a manual edit. It is regenerated
-  before every push (below) and, with `--tag`, in each release commit
-  (section 5).
+  before every push (below) and, with `--tag`, in each release PR (section 5).
 * Each entry starts with its commit, linked to GitHub; the `(#N)` suffix of a
   squash subject becomes a link to the PR. On a topic branch the entries are the
   branch commits. After the squash merge they are replaced by the PR title (one
-  entry per PR) at the next regeneration on the release branch.
+  entry per PR) at the next regeneration on the target branch.
+* Each branch generates its own file: on `develop` the versions tagged on
+  `develop` (betas), on a line the versions tagged on that line. Before the
+  first line exists (`1.0.0-rc.1`), the owner decides how `develop` lists the
+  line's releases; until then every release is tagged on `develop`.
+* The detailed entries of 1.0.0-beta.2 come from the 293 local commits that were
+  squash-merged as one PR (REPO-002). They are generated on that PR branch
+  before the merge and kept as a curated section, like 1.0.0-beta.1; generation
+  after it starts at tag `v1.0.0-beta.2`.
 * Groups: Breaking (`!` or `BREAKING CHANGE`), Added (`feat`), Changed (`perf`,
   `refactor`), Removed (`revert`), Fixed (`fix`). `docs`, `chore`, `test`, `ci`,
   `build` and `style` are omitted. A breaking commit is listed under Breaking
@@ -276,8 +342,8 @@ become the final commit, so they must meet this section.
 * A subject that is not a Conventional Commit (for example GitHub's default
   `Revert "..."` title) fails the generation (`require_conventional`) instead of
   silently losing its entry.
-* The 1.0.0-beta.1 release (tag `v1.0.0-beta.1`, the first commit of the
-  history) keeps its curated description as the oldest entry at the end of the
+* The 1.0.0-beta.1 release (tag `v1.0.0-beta.1`, outside `develop`'s history)
+  keeps its curated description as the oldest entry at the end of the
   file (`cliff.toml` footer).
 * GitHub release notes are generated by `npm run release-notes`
   (`cliff.release-notes.toml`) in the layout of the PrestaShop release pages.
@@ -315,8 +381,8 @@ The agent does this itself, without being asked.
    * A breaking change needs `!` in the title or a `BREAKING CHANGE:` footer in
      the squash message. A `!` on a branch commit alone is lost in the squash.
    * Copy the `pending` entry into the PR description (section 3).
-3. **Merge conflict in `CHANGELOG.md`** (for example after rebasing on the
-   release branch): never resolve it by hand. Take either side, run
+3. **Merge conflict in `CHANGELOG.md`** (for example after rebasing on
+   `develop`): never resolve it by hand. Take either side, run
    `npm run changelog` and commit the result as in step 1.
 4. Report the results in the PR **Verification** section as PASS or FAIL.
 
@@ -341,19 +407,26 @@ The agent does this itself, without being asked.
 
 ---
 
-## 8. Branch Protection (GitHub settings)
+## 8. Repository Settings (GitHub rulesets)
 
-Apply to `main` and `release/*`:
+The owner maintains three branch and tag rulesets with no bypass actors except
+the tag-creation rule:
 
-* require a pull request before merging; squash merging only; linear history;
-* require status checks to pass (all six CI matrix jobs) and branches to be up
-  to date before merging;
-* require conversation resolution;
-* block force pushes and deletions;
-* restrict tag creation for `v*` to maintainers (tag protection rule).
+| Ruleset | Targets | Rules |
+| --- | --- | --- |
+| `develop` | `refs/heads/develop` | PR required; squash only; linear history; required checks below, up to date; conversation resolution; signed commits; no deletion; no force push |
+| `release lines` | `refs/heads/*.*.x` | PR required; squash only; linear history; required checks below, up to date; conversation resolution; signed commits; no deletion; no force push |
+| `release tags` | `refs/tags/v*` | No update, deletion or force push (immutable); creation restricted to maintainers |
 
-No protection, required check or review gate may be disabled or bypassed outside
-the recovery procedure below.
+* **Required checks** are the six CI jobs, exactly as `ci.yml` names them:
+  `Test on {ubuntu-latest, macos-latest, windows-latest} (Node {24.x, 26.x})`.
+  When the CI matrix changes, the ruleset changes in the same PR's follow-up;
+  a required check that no job reports blocks every merge.
+* `develop` is the default branch. GitHub signs every squash commit it creates
+  (the "Verified" badge), which satisfies the signed-commit rule; a locally made,
+  unsigned commit can never reach a protected branch.
+* No protection, required check or review gate may be disabled or bypassed
+  outside the recovery procedure below.
 
 ---
 
@@ -367,7 +440,7 @@ the recovery procedure below.
   - An offline backup bundle (`git bundle create coagent8-backup.bundle --all`).
 * The recovery must use explicit atomic force-with-lease:
   ```bash
-  git push --atomic --force-with-lease=refs/heads/main:<old_sha> --force-with-lease=refs/tags/<tag>:<old_tag_obj> origin <new_sha>:refs/heads/main refs/tags/<tag>:refs/tags/<tag>
+  git push --atomic --force-with-lease=refs/heads/<branch>:<old_sha> --force-with-lease=refs/tags/<tag>:<old_tag_obj> origin <new_sha>:refs/heads/<branch> refs/tags/<tag>:refs/tags/<tag>
   ```
-* Immediately verify that discarded commit SHAs are absent from `origin/main` lineage (`git merge-base --is-ancestor <bad_sha> origin/main` returns exit code 1).
+* Immediately verify that discarded commit SHAs are absent from the branch lineage (`git merge-base --is-ancestor <bad_sha> origin/<branch>` returns exit code 1).
 * Restore branch protections and revoke temporary bypass permissions immediately following recovery.

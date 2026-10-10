@@ -99,8 +99,8 @@ were not repeated for these Markdown-only changes.
 
 Preserve the local stack and owner-managed Git integration; no new checkout,
 reset, merge, push or publication is part of this handoff. Inspect status again
-before editing. Development ultimately targets release/v1.0.0 under the
-repository Git rules.
+before editing. Development targets `develop` under the repository Git rules
+(owner decision 2026-10-10; migration in REPO-002).
 
 ## What the trials establish
 
@@ -1906,10 +1906,43 @@ run loads source, consumer smoke installs this exact tarball and compares its
 bundle with a fresh build. The VSIX was packaged, not installed in VS Code.
 Any later source change invalidates these artifacts.
 
-Next: EXEC-001-T12c (CI matrix and native client scenarios: native agy issue-link
-click, SKILLS-001e discovery, VS Code acceptance). It needs the owner's release
-workflow (branch, PR, tags, GitHub releases) and owner-run native clients; then T12d.
+Next: REPO-002c/d prepare the beta.2 PR branch (new SHAs, so T12b repeats on it);
+then EXEC-001-T12c on that PR (CI matrix and native checks: agy issue-link click,
+SKILLS-001e, VS Code acceptance) and T12d.
 
+
+## REPO-002: branch model and release workflow (2026-10-10)
+
+History reconstructed from the local session transcripts of 2026-10-06:
+- The git-cliff session (morning) handed GitHub cleanup to another agent. That
+  session backed up everything to `coagent8-backups/2026-10-06/`, removed the
+  11 MIT-era commits and all rebrand commits (local history starts at tag
+  `v1.0.0-beta.1`, the exact npm source), deleted and recreated the GitHub repo
+  (`main` = GitHub's LICENSE commit `b962086`), added rulesets and opened
+  PR #1, then stopped at the owner's request to keep work local.
+- Not done since: npm placeholder/unpublish (the free 72-hour window ended
+  2026-10-08 22:59 UTC), PR #1 (six failing checks), tags and releases.
+- Found 2026-10-10: the branch ruleset requires checks for Node 20.x/22.x while
+  `ci.yml` reports 24.x/26.x, so no PR can merge until the ruleset changes.
+
+Owner decisions 2026-10-10 and the resulting plan are in
+[REPO-002](ROADMAP.md#repo-002---branch-model-and-release-workflow): PrestaShop
+model (`develop` + `X.Y.x`, no `main`), only Verified squash commits on
+protected branches, the 293 local commits as one squash PR, beta.1 GitHub
+Release, beta.2 preview on npm `next`, beta.1 deprecated, CI on Node 24/26.
+The verified PrestaShop layout (default `develop`, lines `9.2.x`/`8.2.x`,
+tags and releases per version, no `main`) was checked with the GitHub API.
+
+Done locally (REPO-002a/b): rule 02 rewritten (who does what, branching,
+backports, five release phases, npm channels, rulesets), rule 00 section 2,
+AGENTS.md, the workflow skill, the ARCHITECTURE decision log, `ci.yml` triggers
+for `develop` and `[0-9]+.[0-9]+.x`, and `.github/workflows/release.yml`
+(draft release only, never publishes). Checks: both workflows parse as YAML;
+`git-cliff --current --offline` renders the notes on `v1.0.0-beta.1`; the
+online run needs the commits on GitHub; `git diff --check`. The workflow has
+not run on GitHub yet.
+
+Next: REPO-002c/d (agent, local), then the owner steps in REPO-002.
 
 ## Compact handoff contract
 
