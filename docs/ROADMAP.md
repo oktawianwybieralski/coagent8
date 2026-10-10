@@ -52,6 +52,11 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
   `auto` chose a large model for 52.8 s (owner decision: make plain consult cost
   predictable, `AX-002`). A per-call limit now bounds a constrained call; a call
   without one still runs the default.
+- An owner-observed Gemini/agy client (2026-10-09) repeated `review` rounds
+  without `session_handle`, pasted earlier context into `instructions` and asked
+  for READY. Read-only review of code cannot observe typecheck/tests, so the
+  server verdict stays BLOCKED and each round starts a fresh, expensive reviewer.
+  Termination message, labelled continuation and a repeat limit follow (`AX-007`).
 
 ## Execution order
 
@@ -67,6 +72,15 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
    limits, writer ownership and recoverable task state.
 5. Accept CLI execution, supported clients/platforms and benchmarks
    (`CLI-FIRST-001`, `COAGENT-008`), then complete the release gates.
+
+Beta.2 path (owner decision 2026-10-09): beta.2 ships after EXEC-001-T12, not
+after the whole roadmap. Before T12 complete AUDIT-001-A01 through A07, AX-007a
+through AX-007c and WINDOWS-001a. T12b-d is the beta.2 gate; do not run a
+second separate gate. Any change after T12 invalidates the affected acceptance,
+so these cards land first. AUDIT-001-A08 through A20 stay open past beta.2 with
+explicit status in A21. Beta.2 release notes list known limits: plain `auto`
+consult may run an expensive default (AX-002), agy may report not-ready and still
+run (AX-005), and per-call native descendants follow WINDOWS-001a's result.
 
 ## SIMPLIFY-001 - module boundary migration
 
@@ -817,6 +831,48 @@ below retain their own acceptance criteria.
 Native cards do not authorize paid model escalation, live user-config mutation
 or installation changes. Use existing task authority and server-mediated consent.
 
+### AX-007 - bounded review and continuation cost
+
+A weaker client can loop on `review` and drop the session between rounds (see
+[Agent usability gaps](#agent-usability-gaps)). Owner decisions 2026-10-09: keep
+the reviewer's `VERDICT:` in the body (review judgement) and the server
+`Verdict:` in the footer (gate decision); do not change the gate contract, add
+no footer lines and add no implicit auto-continuation. AX-007a through c land
+before EXEC-001-T12.
+
+- [ ] **AX-007a - state when another review cannot help.** Start:
+  `src/review/gate.ts:evaluateStateEnvelopeGate`, `src/review/input.ts` (required
+  checks) and the `review` description in `src/mcp/tools/review.tool.ts`. When the
+  reviewer answered READY, reported no P1/P2 finding and the only blocking cause
+  is required checks reported NOT_RUN by a read-only reviewer, the reason says
+  so: reviewer READY, typecheck/tests not observed by the server, read-only
+  review cannot run them, repeating the review will not change the verdict.
+  Other causes keep their current wording. The tool description states the same
+  limit once. Done: the verdict is still BLOCKED; fixtures cover READY with only
+  NOT_RUN, READY with a finding and BLOCKED with NOT_RUN. Check: R, REVIEW/MCP.
+- [ ] **AX-007b - label the continuation handle.** Start: footer formatting in
+  `src/mcp/result.ts`, `session_handle` in `src/mcp/schema.ts`, consult/review
+  descriptions and `SERVER_INSTRUCTIONS` in `src/mcp/constants.ts`. The existing
+  footer line shows `session_handle=<handle> (<state>)` instead of the bare
+  handle. Descriptions say that a follow-up on the same topic passes
+  `session_handle` and that a call without it starts a fresh agent that rereads
+  everything. Done: no new footer line; definition-size change is measured
+  (SURFACE-001); legacy parsing of the handle still works. Check: R, MCP/E2E.
+- [ ] **AX-007c - refuse an unchanged repeat review.** Start: `snapshotId` and
+  scope collection in `src/review/input.ts`, session/history owners in
+  `src/sessions/`. A review request whose collected snapshot, scope and resolved
+  backend/model equal a completed review in the same workspace within session
+  retention starts no model turn and returns a bounded reference to the previous
+  server verdict and its session. A changed snapshot, scope, backend or model
+  proceeds. Done: the second identical request costs no turn; history being
+  disabled or unreadable yields an explicit outcome, never a silent pass.
+  Per-connection call budgets remain COAGENT-003b. Check: R, REVIEW/SESSION/MCP.
+- [ ] **AX-007d - warn about an abandoned ready session.** After beta.2 and
+  SESSION-001's mode design. When the same connection and workspace start a new
+  session while a recent one is ready, add one `Warning:` naming that handle.
+  Done: the warning appears only in that case and never continues a session
+  implicitly. Check: R, SESSION/MCP.
+
 ## Full coagent direction
 
 All milestones are pending. The table summarizes milestones; a whole row is
@@ -924,6 +980,43 @@ integration. Do not copy opposite-provider routing, host-only budgets or PID-bas
 teardown. Preserve applicable licenses if reusing material. Fetch current client
 documentation through Context7 before implementing adapters.
 
+### FAILOVER-001 - continue a task after quota exhaustion
+
+Use case (owner, 2026-10-09): a subscription backend reaches its 5-hour or
+7-day limit during a task and the work continues on another backend. Today the
+error records a cooldown and `auto` avoids that backend, but a continuation is
+bound to its backend and a new call starts from nothing. Routing still never
+retries a failed turn on another backend; every handoff below is explicit or
+authorized by the user's configuration. Independent review sessions are never
+seeded with an author's history.
+
+- [ ] **FAILOVER-001a - report the way forward.** After beta.2. Start:
+  `RATE_LIMITED` in `src/contracts/error.ts`, cooldown recording in
+  `src/execution/controller.ts` and error formatting in `src/mcp/server.ts`.
+  A rate-limited session turn reports the reset time when native quota evidence
+  provides it (otherwise unknown) and names the explicit continuation choices:
+  wait, or hand off with the session handle and another backend. Done: no turn
+  starts on another backend; fixtures cover known and unknown reset times.
+  Check: R, LIFE/CACHE/MCP.
+- [ ] **FAILOVER-001b - seeded fork contract.** After COAGENT-001a and 004a;
+  checked with P. Specify a new session on another backend created from a
+  bounded seed: the task record when it exists, otherwise the original objective,
+  the latest turns within a byte limit and an interrupted partial answer
+  labelled incomplete. The seed is quoted data, never instructions. The new
+  handle links its source; the source stays intact. Sending history to another
+  provider needs user consent through elicitation or configuration; model,
+  price-limit and expensive-model consent are evaluated again. Done: examples
+  cover consult, a writing task whose workspace already holds the changes, and
+  a refused review seed.
+- [ ] **FAILOVER-001c - configuration-authorized failover.** After 001b and
+  COAGENT-003a. Specify user configuration naming eligible backends and an output
+  price limit for automatic handoff after quota exhaustion. Only the user's
+  configuration can enable it; a calling agent cannot. Amend the routing rule in
+  ARCHITECTURE explicitly. Done: examples cover disabled, enabled, no eligible
+  backend and a price limit that excludes every candidate.
+
+Implementation cards follow accepted 001b/001c, one operation per card.
+
 ## Remaining foundation work
 
 Retain these work IDs; local fixes still need candidate acceptance. For the
@@ -939,7 +1032,7 @@ check) before implementation. Reuse the following concrete split points:
 | Owner | Small assignment sequence and starting point |
 | --- | --- |
 | AUDIT-001 | Reproduce one historical finding on the candidate; use its mapped owner/test below. Record fixed/reproduced/NOT_RUN, then make one regression/fix card only if evidence requires it. |
-| WINDOWS-001 | Read `src/execution/process.ts`; first reproduce POSIX parent death, then specify owned-supervision behavior, then implement it. Native Windows quiet-desktop and cold-updater scenarios are separate acceptance cards. |
+| WINDOWS-001 | Read `src/execution/process.ts`; first reproduce POSIX parent death, then specify owned-supervision behavior, then implement it. Native Windows quiet-desktop and cold-updater scenarios are separate acceptance cards. Per-call Windows containment uses the [WINDOWS-001 cards](#windows-001---per-call-process-containment). |
 | REDACTION-002 | Start with `tests/security/redaction.test.js` and history tests; assign credential-only answer, split-chunk credential and persisted bytes as separate cases. Assert the actual public/disk bytes. |
 | SESSION-001/HISTORY-002 | Specify new/auto/none semantics first, then implement one mode per card using `src/sessions/session.ts`. Early-handle publication is a separate COAGENT-004a-dependent card; native-expiry retry needs its own proof-before-execution fixture. |
 | LOCKS-001/QUOTA-001 | Use LOCK/CACHE/LIFE tests; assign token renewal, cooldown single-write and optional-cache failure separately. Reuse T08/T09 changes instead of adding another cache or lock owner. |
@@ -955,7 +1048,7 @@ condition in the inventory when splitting; a narrower card does not waive it.
 | Owner | Remaining acceptance |
 | --- | --- |
 | `AUDIT-001` | Rerun original process/redaction/history/cooldown/error/config/lease/resource reproductions on the candidate. CUR-001/003/004/005/006/010/012 have local fixes; old reports do not reopen them. Independent scope/check evidence remains required. |
-| `WINDOWS-001` | CUR-011: POSIX parent-death cleanup. Native no-survivor/quiet-desktop evidence, including cold agy updater conditions. Never PID/name/PPID-select teardown; owned handles/groups and protocol interrupt only. |
+| `WINDOWS-001` | CUR-011: POSIX parent-death cleanup. Per-call containment of native descendants before write/command profiles. Native no-survivor/quiet-desktop evidence, including cold agy updater conditions. Never PID/name/PPID-select teardown; owned handles/groups and protocol interrupt only. |
 | `REDACTION-002` | Preserve credential-only answers, broader diagnostic redaction and split-stream secret handling in new task paths. |
 | `EXEC-001`, `CLI-INTERACT-001` | CUR-007: complete [T01-T12](#exec-001---measured-preparation-and-complete-call-lifecycle): reproducible baseline, phase timing, config/preparation reuse, guaranteed finalization, complete-call budget, cancellable observations/Git/storage/consent, transport migration and independent measured acceptance. Preserve activity-aware idle behavior and account for agy host deadlines. |
 | `SESSION-001`, `HISTORY-002` | CUR-008: return a session handle before the turn ends and allow calls without a disk session; this is separate from `coagent8_HISTORY=off`, which only disables archives. Specify how session modes `new`, `auto` and `none` relate to existing calls. Explicit invalid/busy handles fail closed; opt-in `auto` reuses a session of the same workspace/provider used within 15 minutes and starts a fresh one when that session is busy. Only a native expiry proven before execution permits one fresh retry within the original time budget. Preserve retention, pagination and migration of existing histories. |
@@ -967,6 +1060,50 @@ condition in the inventory when splitting; a narrower card does not waive it.
 | `ERRORS-001`, `SIMPLIFY-001`, `DOCS-001` | Finish the review of I/O errors and empty catch blocks so every failure is actionable; type auth, quota, context-length and crash failures; remove duplicated timeout constants. Refactor only where a module holds unrelated responsibilities, and document logic that is hard to follow. Do not change behavior merely to rename folders. |
 | `PACKAGE-001`, `TESTS-001`, `VERIFY-SCOPE-001`, `VERIFY-001` | `dist/` stays untracked; the VSIX and plugin payloads are derived from the npm tarball. Tests prove they remove only their own temporary files and keep logs that explain a failure. Accept in CI the change that runs the suite once per matrix job through `test:coverage` instead of a separate full run. Report source tests, bundle checks, exact-artifact checks and native-host evidence separately. |
 | `CHANGELOG-001`, `REPO-001` | Keep generated changelog/pre-push/title checks and license notices. GitHub release-note API, protections and registry state need owner-led verification; no automatic history/npm action. |
+
+### WINDOWS-001 - per-call process containment
+
+libuv places every non-detached child of the server in one server-wide
+`KILL_ON_JOB_CLOSE` job; c2eb228 (AUD-P2-14) observed no survivor after a server
+crash. Per-call cancellation and expiry stop only the owned root through its
+handle (`src/execution/process.ts`), so native descendants can live until the
+server exits. Codex and Claude end their children after a protocol interrupt;
+agy has no headless interrupt and starts the user's MCP servers every turn.
+Full and writing agents will start builds, watchers and servers, so per-call
+containment precedes enabling any COAGENT-002 write or command profile.
+
+- [ ] **WINDOWS-001a - reproduce per-call survivors.** Before EXEC-001-T12.
+  Start: `terminateProcessTree` in `src/execution/process.ts` and the agy
+  adapter fixtures. With the server alive, cancel a fixture agy turn whose owned
+  fixture tree includes a native descendant; observe only that tree. Done:
+  REPRODUCED or NOT_REPRODUCED with the limits of the experiment. The owner
+  decides whether a reproduction blocks beta.2 or is a documented limit.
+  Check: R, PROCESS/AGY; no live desktop sweep.
+- [ ] **WINDOWS-001b - launcher contract.** After beta.2; checked with P.
+  Specify a launcher helper (**new**, working name `coagent8-job.exe`): the server
+  starts it hidden; it creates a job with `KILL_ON_JOB_CLOSE` and optional memory/
+  process limits, starts the CLI with `CREATE_SUSPENDED`, assigns it, resumes it
+  and returns the root's exit code. Standard streams are inherited directly so
+  protocol interrupts are unchanged. Stopping the helper through its owned handle,
+  or server death, closes the job. `process.ts` stays the single owner; no
+  process is selected by PID. Decide: `CREATE_BREAKAWAY_FROM_JOB` policy (tested
+  with npm, Git and a browser), launch specification as JSON over an extra
+  descriptor instead of a requoted command line, descendants after root exit
+  (default: stopped; exceptions only by explicit task policy), and a missing
+  helper (write/command profiles fail closed; read-only keeps current behavior).
+  Keep the interface platform-neutral so CUR-011 can reuse it.
+- [ ] **WINDOWS-001c - implement the helper.** After 001b. Rust with
+  `windows-sys`: a static binary without a runtime. Done: fixture trees,
+  breakaway requests, root exit and helper stop match the contract; the
+  first-launch overhead is measured. Check: R, PROCESS/LIFE plus helper tests.
+- [ ] **WINDOWS-001d - package and verify the helper.** After 001c. x64 and
+  arm64 builds produced reproducibly in CI, Authenticode-signed, shipped in the
+  npm package and VSIX, with SHA-256 verified before launch and recorded in the
+  artifact provenance. Done: package inspection and consumer smoke find and
+  verify the helper; a tampered helper is refused.
+- [ ] **WINDOWS-001e - native acceptance.** After 001d. One scenario at a time:
+  cancel/expiry per backend leaves no survivor, quiet desktop is preserved and
+  the cold agy updater stays disabled. Fixtures cannot approve a native cell.
 
 ## AUDIT-001 - corrected analysis follow-up
 
@@ -1052,6 +1189,8 @@ A08-A09 (SESSION-001) and A10-A12 (INSTALL-001) are separate conditional
 write-reliability tracks. A13-A15 (EXEC-001 cache) and A16-A18 (HISTORY-002)
 are measured optimizations after correctness work. A19-A20
 (REDACTION-002/diagnostic privacy) are conditional. A21 closes this batch.
+Beta.2 requires A01-A07 only; A08-A20 may remain open past beta.2 with the
+explicit status A21 records (see [Execution order](#execution-order)).
 
 These are subordinate cards of existing foundation owners, not a replacement
 for EXEC-001. Coordinate shared-file changes with EXEC-001-T03/T05 (config/cache),
@@ -1314,7 +1453,9 @@ not dependencies of this plan.
 
 These cards follow the accepted task/profile contracts and preserve the public
 MCP bridge until the CLI replacement is accepted. Use one command or native
-platform scenario per implementation assignment.
+platform scenario per implementation assignment. CLI-first precedes rc.1 (owner
+decision 2026-10-09). Cards 001a-001e do not depend on execution profiles and
+may proceed in the beta.3 window; 001f waits for accepted profiles.
 
 - [ ] **CLI-FIRST-001a - specify syntax and outcomes.** Start: `src/index.ts`,
   `src/mcp/schema.ts`, neutral execution contracts and COAGENT-001. Define
@@ -1344,7 +1485,13 @@ platform scenario per implementation assignment.
   continuation, expiry, EOF and broken-pipe cases settle owned work; neither
   flags nor TTY detection can grant consent. Check: R, LIFE/PROCESS/E2E with
   exact installed-bin fixtures. Add separate code cards for additional commands.
-- [ ] **CLI-FIRST-001g - make MCP invoke the packaged CLI.** Start: MCP dispatch,
+  Target use: review in CI, where the CLI runs required checks in the candidate
+  and records them as observed evidence (COAGENT-004b), so READY for code is
+  reachable without trusting agent-reported checks.
+- [ ] **CLI-FIRST-001g - make MCP invoke the packaged CLI (conditional).** Before
+  code, measure a prototype of the extra per-call process against first-launch
+  and teardown budgets (the 001i method). If rejected, MCP and the CLI share the
+  engine in-process and this card closes as not adopted. Start: MCP dispatch,
   `src/execution/process.ts`, `scripts/build.cjs`, consumer fixtures. Resolve
   the matching packaged sibling directly without shell/PATH lookup; bind
   request/consent/cancel to its owned child. Done: concurrent/resumed turns,
@@ -1366,8 +1513,8 @@ platform scenario per implementation assignment.
 
 | Stage | Required scope |
 | --- | --- |
-| BETA-001: beta.2 | Bridge audit blockers, fresh package/matrix/independent review and native VS Code checks below. First tester release; beta.1 was the name placeholder. No write claim. |
-| BETA-001: beta.3 | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. |
+| BETA-001: beta.2 | Bridge audit blockers (AUDIT-001-A01 to A07), AX-007a-c, WINDOWS-001a, then EXEC-001-T12 as the fresh package/matrix/independent review and native VS Code checks below. Release notes list known limits. First tester release; beta.1 was the name placeholder. No write claim. |
+| BETA-001: beta.3 | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e may ship. |
 | RC-001: rc.1 | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot through the final release PR to main. |
