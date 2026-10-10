@@ -177,6 +177,8 @@ Entries link the commits of the beta.2 pull request, which was squash-merged int
 - [`d8645d0`](https://github.com/oktawianwybieralski/coagent8/commit/d8645d0c5842335df4210d1fa54a4883b7fa813f) **quota:** Keep other providers when the cache cannot be read (AUDIT-001-A01-A03)
 - [`7666cd4`](https://github.com/oktawianwybieralski/coagent8/commit/7666cd4809c7505ad4ea2c183b996759cf92918f) **config:** Serialize saveConfig under the configuration lease (AUDIT-001-A04-A05)
 - [`dfd0c37`](https://github.com/oktawianwybieralski/coagent8/commit/dfd0c37194df84ce10d3e7fc5227391619a263e6) **config:** Write configuration through the shared atomic writer (AUDIT-001-A06-A07)
+- [`71ae03d`](https://github.com/oktawianwybieralski/coagent8/commit/71ae03ddfe83ab195824e216a14655b4a4383e74) **setup:** Recognize own registrations when the ownership record is lost
+- [`f8c2733`](https://github.com/oktawianwybieralski/coagent8/commit/f8c27330d5c4f87b1fb7e75974196ceccdb52ade) **vscode:** End the uninstall with Restart Extensions instead of quitting VS Code
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
