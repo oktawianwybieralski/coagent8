@@ -14,7 +14,7 @@ import { ToolError } from '../../contracts/error.js';
 export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
-    description: 'Independent review of Git changes. Returns findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)".',
+    description: 'Independent review of Git changes. Returns findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only: checks are not run; an unchanged repeat cannot help.',
     inputSchema: {
       type: 'object',
       properties: {

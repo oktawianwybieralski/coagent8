@@ -36,7 +36,7 @@ export const EXECUTION_PARAMETERS = {
     type: 'integer',
     minimum: 100,
     maximum: 1800000,
-    description: 'Total monotonic call budget in ms for full lifecycle (Git, prep, consent, CLI turn, teardown).',
+    description: 'Total monotonic call budget, ms: Git, prep, consent, CLI turn, teardown.',
   },
   ...WORKSPACE_PARAMETER,
 };

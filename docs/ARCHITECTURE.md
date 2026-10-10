@@ -336,6 +336,9 @@ END_REVIEW
 The gate requires complete input/output, exact snapshot, recognized fields and
 terminator, COMPLETE/READY and no literal [P1]/[P2]. Any FAIL blocks. Runtime
 scopes require PASS for both checks; Markdown-only scopes allow honest NOT_RUN.
+When a reviewer READY without P1/P2 is blocked only by required NOT_RUN checks,
+the reason says that a read-only review cannot run them and that repeating it
+will not change the verdict (AX-007a).
 The workspace is collected again after the turn; changes or failure block readiness.
 The gate does not run checks or prove the model's PASS claim, comprehensive scope
 or release artifact hashes. Independent evidence is still required.

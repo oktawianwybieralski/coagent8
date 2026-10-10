@@ -48,8 +48,10 @@ export interface ReviewGateContext {
  * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
  * With context, SNAPSHOT must match and input must be complete and unchanged. Failed
  * checks always block; required checks must report PASS. A reviewer's BLOCKED without a
- * P1/P2 finding quotes its `Blocked:` line. The reason lists every cause. This does not
- * execute tests, verify a reported PASS or bind a release artifact.
+ * P1/P2 finding quotes its `Blocked:` line. The reason lists every cause; when a reviewer
+ * READY is blocked only by required checks reported NOT_RUN, it says instead that a read-only
+ * review cannot run them, so repeating it will not change the verdict (`AX-007a`). This does
+ * not execute tests, verify a reported PASS or bind a release artifact.
  */
 export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false, context?: ReviewGateContext): StateEnvelopeEvaluation {
   const rawLines = output.split(/\r?\n/);
@@ -163,6 +165,11 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
         reasons.push(blockedVal
           ? `Reviewer reported BLOCKED: ${blockedVal.slice(0, MAX_BLOCKED_REASON_CHARS)}`
           : 'Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason');
+      }
+      // A reviewer READY blocked only by required checks it could not run: another review in a
+      // read-only sandbox cannot run them either, so the caller must not repeat it (AX-007a).
+      if (reasons.length === 1 && notRun && verdictVal === 'READY') {
+        return { verdict: 'BLOCKED', reason: `The reviewer answered READY with no [P1/P2] finding, but the server did not observe the required checks (${notRun}); a read-only review cannot run them, so repeating the review will not change this verdict` };
       }
       // The answer still reads READY; the caller must see that the server overrides it.
       if (verdictVal === 'READY' && verdictCount === 1 && !hasBogusVerdict) reasons.push('the reviewer answered READY');

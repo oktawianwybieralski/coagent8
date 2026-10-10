@@ -862,7 +862,7 @@ the reviewer's `VERDICT:` in the body (review judgement) and the server
 no footer lines and add no implicit auto-continuation. AX-007a through c land
 before EXEC-001-T12.
 
-- [ ] **AX-007a - state when another review cannot help.** Start:
+- [x] **AX-007a - state when another review cannot help.** Start:
   `src/review/gate.ts:evaluateStateEnvelopeGate`, `src/review/input.ts` (required
   checks) and the `review` description in `src/mcp/tools/review.tool.ts`. When the
   reviewer answered READY, reported no P1/P2 finding and the only blocking cause

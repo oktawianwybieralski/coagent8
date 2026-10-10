@@ -47,7 +47,23 @@ test('the review answer is shown verbatim in a code block; the server verdict an
   assert.ok(!text.includes('VERDICT: BLOCKED'), 'the reviewer text is not rewritten');
   const { verdict, reason } = readResult(formatted);
   assert.equal(verdict, 'BLOCKED');
-  assert.equal(reason, 'Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY');
+  assert.equal(reason, 'The reviewer answered READY with no [P1/P2] finding, but the server did not observe the required checks (typecheck=NOT_RUN, tests=NOT_RUN); a read-only review cannot run them, so repeating the review will not change this verdict');
+});
+
+test('AX-007a: READY blocked only by unrun required checks says another review cannot help', () => {
+  const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
+  const envelope = (verdict, checks, ...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, ...extra, `CHECKS: ${checks}`, 'END_REVIEW'].join('\n');
+  const onlyNotRun = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=NOT_RUN'), false, true, context);
+  assert.equal(onlyNotRun.verdict, 'BLOCKED', 'the verdict is still BLOCKED');
+  assert.equal(onlyNotRun.reason, 'The reviewer answered READY with no [P1/P2] finding, but the server did not observe the required checks (tests=NOT_RUN); a read-only review cannot run them, so repeating the review will not change this verdict');
+  const withFinding = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN', '[P2] src/review/gate.ts:1'), false, true, context);
+  assert.equal(withFinding.verdict, 'BLOCKED');
+  assert.equal(withFinding.reason, 'Blocker issue [P1/P2] reported; Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY');
+  const reviewerBlocked = evaluateStateEnvelopeGate(envelope('BLOCKED', 'typecheck=NOT_RUN; tests=NOT_RUN', 'Blocked: tests are missing.'), false, true, context);
+  assert.equal(reviewerBlocked.verdict, 'BLOCKED');
+  assert.equal(reviewerBlocked.reason, 'Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); Reviewer reported BLOCKED: tests are missing.');
+  const otherCause = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, { ...context, inputComplete: false });
+  assert.equal(otherCause.reason, 'Review input is incomplete; Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY');
 });
 
 test('the server blocks a READY answer if a P1 issue is reported', () => {

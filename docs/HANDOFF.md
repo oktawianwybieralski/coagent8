@@ -1722,6 +1722,32 @@ Next card: AUDIT-001-A06.
 
 Next card: AX-007a.
 
+## AX-007a: state when another review cannot help
+
+- `src/review/gate.ts`: when the reviewer answered READY, reported no P1/P2 and
+  the only cause is required checks reported NOT_RUN, the reason reads: "The
+  reviewer answered READY with no [P1/P2] finding, but the server did not observe
+  the required checks (...); a read-only review cannot run them, so repeating the
+  review will not change this verdict". The verdict stays BLOCKED; every other
+  combination keeps its existing wording and lists every cause.
+- `review` description adds once: "Read-only: checks are not run; an unchanged
+  repeat cannot help." To stay within the owner's 5,800-byte definition budget,
+  the shared `timeout_ms` description was shortened without losing a term
+  ("Total monotonic call budget, ms: Git, prep, consent, CLI turn, teardown.").
+  Measured model-visible definitions: 5,746 B before, 5,766 B after.
+- ARCHITECTURE review gate contract and the gate TSDoc describe the reason.
+  The `coagent8-review` skill already said the same; it is unchanged.
+
+### Verification evidence:
+- Fixtures in `tests/review/gate.test.js`: READY with only NOT_RUN (new reason),
+  READY with a [P2] finding, reviewer BLOCKED with NOT_RUN, READY with NOT_RUN
+  plus incomplete input (existing wording). The existing footer test expecting
+  the old READY+NOT_RUN wording was updated to the new reason by design.
+- PASS: REVIEW and MCP groups plus `simplify-s2` (73/73); `npm run typecheck`;
+  `npm run check:dependencies`; `npm run lint:docs`; `git diff --check`.
+
+Next card: AX-007b.
+
 
 ## Compact handoff contract
 
