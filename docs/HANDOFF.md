@@ -1612,6 +1612,48 @@ In T01c, all phase duration counters were `NOT_MEASURED`. With T02-T11 instrumen
 
 Next card: EXEC-001-T12b (validate the local candidate package).
 
+T12a ran before AUDIT-001-A01-A07, AX-007a-c and WINDOWS-001a landed. Those
+cards change quota/config storage and the review path, so T12b compares against
+T12a only after repeating the baseline on the final source.
+
+## AUDIT-001-A01-A03: quota cache read failure
+
+Started 2026-10-10 on `perf/exec-001` at `07582ad`.
+
+### A01 reproduction (unchanged source):
+- Fixture: two active provider cooldowns (`codex`, `claude`) seeded in an owned
+  temporary cache; `fs.openSync` mocked to fail only for that fixture path.
+- REPRODUCED. `inspectQuotas(true, probes, { only: ['agy'], onCacheError })`
+  replaced the file with an `agy`-only report; `recordQuotaCooldown('agy')` left
+  `[ 'agy' ]` as the only provider. The locked writers treated the failed read
+  as an empty cache. The missing-file case is separate and still creates a file.
+- Limit: the I/O failure is simulated through the module's own `fs` binding;
+  no native Windows sharing violation was produced.
+
+### A02/A03 implementation:
+- `src/backends/availability.ts`: an internal classified read distinguishes
+  missing, valid, invalid (malformed JSON, no timestamp, over 64 KiB) and
+  unreadable (any other I/O error). `readQuotaCache()` keeps its best-effort
+  `null` contract.
+- `inspectQuotas`, `recordQuotaCooldown` and `resetQuotaCooldown` merge into
+  the classified read inside the lease. Missing or invalid content starts
+  empty (invalid content holds no recoverable state, so the cache heals);
+  an unreadable existing file throws before any write. `inspectQuotas` with
+  `onCacheError` reports the failure and still answers from an unlocked read
+  without writing; controller and doctor keep their existing warnings.
+
+### Verification evidence:
+- Regression `tests/backends/quota-read-failure.test.js` (7 tests): EBUSY/EPERM/
+  EACCES keep the seeded bytes; doctor-style partial inspection warns and keeps
+  bytes; propagation without `onCacheError`; invalid content replaced; missing
+  file created. The five read-failure cases failed on the unchanged source.
+- PASS: `node tests/run.cjs` with the regression, `backends/availability`,
+  `execution/controller-cooldown` and `config` (18/18); DOCTOR and CACHE
+  (46/46); `npm run typecheck`; `npm run check:dependencies`;
+  `npm run lint:docs`; `git diff --check`.
+
+Next card: AUDIT-001-A04.
+
 
 ## Compact handoff contract
 

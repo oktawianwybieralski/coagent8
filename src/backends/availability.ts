@@ -72,9 +72,45 @@ function sanitizeCacheData(raw: unknown): QuotaReport {
   }
   return data;
 }
+/**
+ * Outcome of reading the quota cache file (`AUDIT-001-A02`). Invalid content (malformed JSON,
+ * a missing timestamp or oversized data) holds no recoverable state; an I/O failure may hide
+ * a valid file and therefore must not be treated as empty by a writer.
+ */
+type QuotaCacheRead =
+  | { kind: 'missing' }
+  | { kind: 'valid'; record: QuotaCacheRecord }
+  | { kind: 'invalid' }
+  | { kind: 'unreadable'; error: Error };
+function readQuotaCacheClassified(): QuotaCacheRead {
+  let text: string;
+  try { text = readBoundedFileSync(getQuotaCacheFile()); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { kind: 'missing' };
+    if (code === 'BUFFER_LIMIT') return { kind: 'invalid' };
+    const failure = new Error(`Quota cache could not be read (${code || 'unknown error'}); it was left unchanged.`, { cause: error });
+    return { kind: 'unreadable', error: Object.assign(failure, { code }) };
+  }
+  try {
+    const c = JSON.parse(text);
+    if (!Number.isFinite(c?.timestamp)) return { kind: 'invalid' };
+    return { kind: 'valid', record: { timestamp: c.timestamp, data: sanitizeCacheData(c.data) } };
+  } catch { return { kind: 'invalid' }; }
+}
+/** Best-effort read: null when the cache is missing, invalid or unreadable. */
 export function readQuotaCache(): QuotaCacheRecord | null {
-  const file = getQuotaCacheFile();
-  try { const c=JSON.parse(readBoundedFileSync(file)); if (!Number.isFinite(c.timestamp)) return null; return { timestamp:c.timestamp, data:sanitizeCacheData(c.data) }; } catch { return null; }
+  const read = readQuotaCacheClassified();
+  return read.kind === 'valid' ? read.record : null;
+}
+/**
+ * State a locked writer merges into. Missing or invalid content starts empty; a read failure
+ * of an existing file throws before any write, so other providers' entries survive.
+ */
+function readQuotaCacheForUpdate(): QuotaReport {
+  const read = readQuotaCacheClassified();
+  if (read.kind === 'unreadable') throw read.error;
+  return read.kind === 'valid' ? read.record.data : {};
 }
 async function store(data: QuotaReport): Promise<void> { await atomicWrite(getQuotaCacheFile(), JSON.stringify({timestamp:Date.now(),data})); }
 export async function writeQuotaCache(data: QuotaReport): Promise<void> { await withFileLock(getQuotaCacheFile(), () => store(data)); }
@@ -84,10 +120,11 @@ export async function writeQuotaCache(data: QuotaReport): Promise<void> { await 
  * @param probesOverride - Existing probes; their presence bypasses cache reuse.
  * @param options - Native quota reads default on only without supplied probes. A provider
  * filter preserves other cached entries; measuredNow distinguishes newly measured quota.
- * `onCacheError` makes the cache optional: a lock/write failure is reported to it and the
- * report is built from an unlocked read instead.
+ * `onCacheError` makes the cache optional: a lock/read/write failure is reported to it and
+ * the report is built from an unlocked read instead, without writing. An existing cache that
+ * cannot be read is never replaced by a partial report.
  * @returns The report, including fresh carried-over native measurements and observed cooldowns.
- * @throws On cache write/lock failure when no `onCacheError` is given.
+ * @throws On cache lock/read/write failure when no `onCacheError` is given.
  */
 export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap | null=null, options: InspectQuotasOptions = {}): Promise<QuotaReport> {
   if (options.context?.abortSignal?.aborted) {
@@ -146,7 +183,7 @@ export async function inspectQuotas(forceRefresh=false, probesOverride: ProbeMap
   };
   try {
     return await withFileLock(getQuotaCacheFile(), async()=>{
-      const result = merge(readQuotaCache()?.data || {});
+      const result = merge(readQuotaCacheForUpdate());
       await store(result); return result;
     });
   } catch (error) {
@@ -159,7 +196,7 @@ export async function recordQuotaCooldown(id: string, cooldownMs?: number, reaso
   if (!PROVIDERS.includes(id as typeof PROVIDERS[number])) throw new Error('Invalid cooldown provider.');
   if (cooldownMs !== undefined && (!Number.isFinite(cooldownMs) || Math.abs(cooldownMs)>7*24*3600*1000)) throw new Error('Invalid cooldown duration.');
   await withFileLock(getQuotaCacheFile(), async()=>{
-    const current=readQuotaCache()?.data || {};
+    const current=readQuotaCacheForUpdate();
     const existing = current[id];
     let effectiveMs: number;
     let nextLevel = 0;
@@ -200,8 +237,8 @@ export async function recordQuotaCooldown(id: string, cooldownMs?: number, reaso
 export async function resetQuotaCooldown(id: string): Promise<void> {
   if (!PROVIDERS.includes(id as typeof PROVIDERS[number])) return;
   await withFileLock(getQuotaCacheFile(), async()=>{
-    const current = readQuotaCache()?.data;
-    if (!current || !current[id]) return;
+    const current = readQuotaCacheForUpdate();
+    if (!current[id]) return;
     const entry = current[id];
     if (entry.status === 'rate_limited') {
       const cooldownTime = entry.cooldownUntil ? Date.parse(entry.cooldownUntil) : 0;

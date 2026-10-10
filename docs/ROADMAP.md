@@ -1280,7 +1280,7 @@ a case, cite its exact evidence and skip duplicate implementation.
 
 ### Quota cache: retain other providers on read failure
 
-- [ ] **AUDIT-001-A01 - reproduce quota state loss.**
+- [x] **AUDIT-001-A01 - reproduce quota state loss.**
   Depends: none. Start: `src/backends/availability.ts`,
   `src/storage/read.ts`, `tests/backends/availability.test.js`.
   Change: fixture/regression only; seed two active provider cooldowns, simulate
@@ -1289,8 +1289,9 @@ a case, cite its exact evidence and skip duplicate implementation.
   Done: inspect actual file bytes after the attempt; distinguish observed loss
   from the separate missing-file case. Keep injection scoped to owned fixture I/O.
   Checks: the focused availability test; P for the evidence.
+  Evidence: REPRODUCED, [A01-A03](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure).
 
-- [ ] **AUDIT-001-A02 - preserve read-failure identity.**
+- [x] **AUDIT-001-A02 - preserve read-failure identity.**
   Depends: A01 reproduces loss. Start: `src/backends/availability.ts:readQuotaCache`
   and its callers. Change: define an internal read result that distinguishes
   missing, valid, invalid content and I/O failure; preserve the public
@@ -1299,8 +1300,9 @@ a case, cite its exact evidence and skip duplicate implementation.
   locked writers can obtain the distinction without a second storage owner.
   Checks: R, `tests/backends/availability.test.js`; record A01's still-open failure
   explicitly if it is not yet fixed.
+  Evidence: [A01-A03](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure).
 
-- [ ] **AUDIT-001-A03 - refuse destructive quota merges.**
+- [x] **AUDIT-001-A03 - refuse destructive quota merges.**
   Depends: A02. Start: inspectQuotas and recordQuotaCooldown in
   `src/backends/availability.ts`.
   Change: use the classified read inside the lock; create missing caches, but
@@ -1311,6 +1313,7 @@ a case, cite its exact evidence and skip duplicate implementation.
   cache failures produce warnings without a successful write claim.
   Checks: R, `tests/backends/availability.test.js`,
   `tests/execution/controller-cooldown.test.js`, `tests/config.test.js`.
+  Evidence: [A01-A03](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure).
 
 ### Configuration: serialize every writer
 
