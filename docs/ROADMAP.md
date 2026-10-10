@@ -1750,6 +1750,15 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
   GitHub and TypeDoc agree on anchors. Check: `npm run docs` without warnings,
   workflow YAML parses; first deployment and diagram rendering are NOT_RUN until
   the owner publishes a release.
+- [x] **REPO-002g - provenance and npm publishing from Actions.** Owner
+  decision 2026-10-11: `release.yml` signs build provenance for the tarball and
+  the VSIX (`actions/attest-build-provenance`) and the notes show how to verify
+  it; `npm-publish.yml` (release published, environment `npm` with owner
+  approval, off until the variable `NPM_TRUSTED_PUBLISHING` is `true`) checks
+  the release tarball against `SHA256SUMS` and that provenance, then publishes it
+  with npm trusted publishing and `--provenance` to `next` or `latest`. beta.2 is
+  still published by hand; the owner enables the job after it (owner step 9).
+  Check: both workflows parse as YAML; the first runs on GitHub are NOT_RUN.
 - [ ] **REPO-002f - versioned API site.** With the first `X.Y.x` line, publish
   `develop` and each maintained line under their own path (for example through a
   `gh-pages` branch with one folder per line and a version switcher), because the
@@ -1783,14 +1792,21 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
    (`.local/release/v1.0.0-beta.2/release-notes.md`). After tagging,
    `npm run changelog` must leave CHANGELOG.md unchanged.
 7. **Verify downloads** (rule 02 phase D): `gh release download`, check
-   `SHA256SUMS`, install the tarball and the VSIX in clean profiles, repeat the
-   native smoke.
-8. **Publish:** publish the draft pre-release (this deploys the API site);
+   `SHA256SUMS` and `gh attestation verify` for the tarball and the VSIX,
+   install both in clean profiles, repeat the native smoke.
+8. **Publish:** publish the draft pre-release (this deploys the API site; the
+   npm job stays skipped); publish by hand:
    `npm publish ./coagent8-1.0.0-beta.2.tgz --tag next`;
    `npm dist-tag rm coagent8 beta`;
    `npm deprecate coagent8@1.0.0-beta.1 "Name placeholder with known issues; install coagent8@next"`.
+9. **npm trusted publishing** (rule 02 section 8): on npmjs.com, package
+   `coagent8` > Settings > Trusted publishing: GitHub Actions, repository
+   `oktawianwybieralski/coagent8`, workflow `npm-publish.yml`, environment
+   `npm`; then disallow token publishing. On GitHub create the environment `npm`
+   (required reviewer: the owner; deployment tags `v*`) and the repository
+   variable `NPM_TRUSTED_PUBLISHING` = `true`.
 
-After step 8 the default flow of rule 02 applies to every change.
+After step 9 the default flow of rule 02 applies to every change.
 
 ## Release acceptance
 

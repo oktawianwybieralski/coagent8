@@ -2272,6 +2272,17 @@ independent approval remain pending; local implementation is not publication.
 - The VSIX installed in the owner's profile at 22:16 predates skill management;
   native acceptance must use this VSIX.
 
+REPO-002g (2026-10-11, owner decision): `release.yml` signs build provenance
+and prints the verification commands in the notes; `npm-publish.yml` publishes
+the verified release tarball with npm trusted publishing once the owner enables
+it after beta.2. Rule 02 phases C-E and section 8, ROADMAP owner steps 7-9,
+ARCHITECTURE decision log and the README tester guide follow. Checks: all four
+workflows parse as YAML, `npm run docs` without warnings, `git diff --check`;
+actionlint and the first GitHub runs are NOT_RUN. These commits change no file
+of the VSIX (its README is the extension's), so the VSIX above stays the native
+test candidate; the npm tarball differs only by the root README, and the release
+workflow rebuilds both from the tag.
+
 Next: owner native run of Manage Skills, the uninstall with Reload Window, an
 Extensions-view uninstall followed by reinstall and Uninstall CoAgent8 offering
 the recorded vendor extensions; then T12d independent review with observed

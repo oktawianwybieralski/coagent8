@@ -351,7 +351,10 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 
 1. Download `coagent8-mcp-1.0.0-beta.2.vsix` and `SHA256SUMS` from the
    [GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v1.0.0-beta.2)
-   and check the file's SHA-256 against `SHA256SUMS`. In a trusted project, run
+   and check the file's SHA-256 against `SHA256SUMS`. With the GitHub CLI you
+   can also check that the release workflow built it:
+   `gh attestation verify coagent8-mcp-1.0.0-beta.2.vsix --repo oktawianwybieralski/coagent8`.
+   In a trusted project, run
    **Extensions: Install from VSIX...** and select it. Use Node.js 24+.
 2. The first activation shows one notice: the ready CLIs, or an offer to set them
    up. Run **CoAgent8: Set Up Coding CLIs** at any time to install or sign in a

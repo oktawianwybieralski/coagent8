@@ -30,7 +30,7 @@ features, fixes, releases, backports - travels as its own pushed branch and PR.
 | Push a topic branch, open or update a PR | Only after the owner's explicit go-ahead in the session | Yes |
 | Independent review ([03-author-reviewer](03-author-reviewer.md)) | Yes (Reviewer role) | Yes |
 | Merge a PR, create a release line, push a tag | Never | Yes |
-| Publish a GitHub Release, publish or deprecate on npm, change repository settings | Never | Yes |
+| Publish a GitHub Release, approve the `npm` environment, publish or deprecate on npm, change repository settings | Never | Yes |
 
 An agent prepares release PRs, release notes and evidence (section 5) and
 stops. It never states or implies that a push, merge, tag or publication
@@ -280,16 +280,21 @@ marked (owner); an agent may prepare everything else.
    annotated, that `package.json` carries the same version and that the tagged
    commit is on `develop` or an `X.Y.x` line; runs the full gate on Ubuntu with
    Node 24; packs and smoke-tests the exact npm tarball, packages the VSIX,
-   writes `SHA256SUMS`, generates the release notes with git-cliff and creates a
-   **draft** GitHub Release (marked pre-release for a `-beta`/`-rc` tag) with
-   these assets. It never publishes to npm and never publishes the draft.
+   writes `SHA256SUMS`, signs build provenance for the tarball and the VSIX
+   (GitHub artifact attestations), generates the release notes with git-cliff
+   and creates a **draft** GitHub Release (marked pre-release for a
+   `-beta`/`-rc` tag) with these assets. It never publishes to npm and never
+   publishes the draft.
 
 ### Phase D - verify the published artifacts (owner, agent may assist locally)
 
-8. Download the assets from the draft release (`gh release download vX.Y.Z-<pre>`),
-   verify them against `SHA256SUMS` and the CI digests, install the tarball and
-   the VSIX in clean profiles, and run the stage's native acceptance (roadmap).
-   Add known issues, security notes and digests to the draft notes.
+8. Download the assets from the draft release (`gh release download vX.Y.Z-<pre>`)
+   and verify them: `sha256sum --check --ignore-missing SHA256SUMS` and
+   `gh attestation verify <file> --repo oktawianwybieralski/coagent8` for the
+   tarball and the VSIX. Install both in clean profiles and run the stage's
+   native acceptance (roadmap). Add known issues and security notes to the
+   draft notes. Local gate digests can differ from CI builds (different machine,
+   archive timestamps); `SHA256SUMS` and the attestation are authoritative.
 
 ### Phase E - publish (owner)
 
@@ -299,7 +304,15 @@ marked (owner); an agent may prepare everything else.
    README, Architecture, Roadmap, Handoff, Changelog, Git workflow) and deploys it
    to GitHub Pages. Pages always shows the latest published release; versioned
    documentation per line is planned with the first `X.Y.x` line (REPO-002).
-10. Publish the verified tarball, not a rebuild:
+10. Publish the verified tarball, not a rebuild. With npm trusted publishing
+    enabled (section 8), publishing the release starts
+    `.github/workflows/npm-publish.yml`: after the owner approves the `npm`
+    environment, it downloads the release's tarball, checks it against
+    `SHA256SUMS` and the provenance of `release.yml`, and runs
+    `npm publish --provenance` to `next` (beta, rc) or `latest` (final); the
+    GitHub pre-release flag must agree with the version. A failed job is re-run;
+    npm never accepts the same version twice. Until it is enabled, and for
+    `1.0.0-beta.2`, the owner publishes the downloaded, verified tarball by hand:
     ```bash
     npm publish ./coagent8-X.Y.Z-<pre>.tgz --tag next      # beta or rc
     npm publish ./coagent8-X.Y.Z.tgz                        # final: latest
@@ -437,6 +450,12 @@ the tag-creation rule:
 * **GitHub Pages:** source "GitHub Actions"; the `github-pages` environment allows
   deployments from tags `v*` (a release event runs on the tag) and from
   `develop` (manual runs). Site: https://oktawianwybieralski.github.io/coagent8/.
+* **npm trusted publishing** (after beta.2, REPO-002g): on npmjs.com the
+  package `coagent8` trusts publisher repository `oktawianwybieralski/coagent8`,
+  workflow `npm-publish.yml`, environment `npm`; the GitHub environment `npm`
+  requires the owner's review and allows tags `v*`; the repository variable
+  `NPM_TRUSTED_PUBLISHING` is `true`. The package then disallows token
+  publishing. Without the variable the publish job is skipped.
 * No protection, required check or review gate may be disabled or bypassed
   outside the recovery procedure below.
 
