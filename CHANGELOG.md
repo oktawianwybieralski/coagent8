@@ -66,6 +66,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`2ba3bc9`](https://github.com/oktawianwybieralski/coagent8/commit/2ba3bc98abc6ae1bfa9d4d3dec2d4ee8e571e1f0) **execution:** Activate monotonic budget for consult and review (EXEC-001-T11a)
 - [`1c5fe4f`](https://github.com/oktawianwybieralski/coagent8/commit/1c5fe4f0417747e2085e9b7e91ec374b6b39e12c) **setup:** Install client skills with each registration (SKILLS-001)
 - [`64f7ee1`](https://github.com/oktawianwybieralski/coagent8/commit/64f7ee1e8952da6fa1389951313a56dbed705077) **diagnostics:** Apply bounds and cancellation to doctor (EXEC-001-T11b)
+- [`98be250`](https://github.com/oktawianwybieralski/coagent8/commit/98be25003e270bee45a7699a8b92317e78670d1b) **execution:** Expose accurate timing and phase accounting (EXEC-001-T11c)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
@@ -160,6 +161,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`af9f7d2`](https://github.com/oktawianwybieralski/coagent8/commit/af9f7d2f1b6869f053e6b20b8d6ff59d811edf7d) **boundaries:** Reject SDK and indirect transport dependencies
 - [`a90cd40`](https://github.com/oktawianwybieralski/coagent8/commit/a90cd40ca21d499688e28a2754ce8b5126d6c7c8) **tests:** Bound concurrency barrier and ensure guaranteed task settlement
 - [`ad25d4e`](https://github.com/oktawianwybieralski/coagent8/commit/ad25d4e2810dedc7891a9d57ebbc9b9770318579) **tests:** Bound child readiness and teardown in lock contention test (EXEC-001-T09b)
+- [`6d35ff0`](https://github.com/oktawianwybieralski/coagent8/commit/6d35ff085ea4a3b1ce22dd6e5c1136efbd569292) **diagnostics:** Preserve prefilled issue links in chat clients
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
