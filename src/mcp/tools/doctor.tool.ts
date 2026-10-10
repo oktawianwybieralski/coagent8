@@ -30,9 +30,12 @@ function redactStrings(value: unknown): unknown {
  * diagnosis. Summary text by default; `detail: "full"` returns the report as compact JSON and
  * structured content.
  */
-export async function handleDoctor(args: { backend?: string; detail?: string; scope?: string } = {}) {
+export async function handleDoctor(
+  args: { backend?: string; detail?: string; scope?: string } = {},
+  signal?: AbortSignal
+) {
   const backend = args.backend as ProviderId | undefined;
-  const report = args.scope === 'health' ? await runDoctor({ backend }) : await runModelReport({ backend });
+  const report = args.scope === 'health' ? await runDoctor({ backend, signal }) : await runModelReport({ backend, signal });
   if (args.detail !== 'full') {
     const summary = 'scope' in report ? formatModelSummary(report) : formatDoctorSummary(report);
     return { content: [{ type: 'text', text: redactDiagnostic(summary, DOCTOR_SUMMARY_MAX_BYTES) }] };

@@ -272,3 +272,306 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('EXEC-001-T11b: pre-aborted signal rejects with code === ABORTED and starts no probe', async () => {
+  const { runModelReport } = require('../../src/diagnostics/doctor.ts');
+  const original = { ...adapterRegistry };
+  let probeStarts = 0;
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async () => {
+          probeStarts++;
+          return { id, installed: true, version: '1.0.0', executionSupported: true, authStatus: 'authenticated', capabilities: { readOnlyVerified: true } };
+        },
+      };
+    }
+    const preAborted = new AbortController();
+    preAborted.abort();
+
+    await assert.rejects(
+      runDoctor({ signal: preAborted.signal }),
+      err => err && err.code === 'ABORTED'
+    );
+    assert.equal(probeStarts, 0, 'runDoctor started no probe on pre-aborted signal');
+
+    await assert.rejects(
+      runModelReport({ signal: preAborted.signal }),
+      err => err && err.code === 'ABORTED'
+    );
+    assert.equal(probeStarts, 0, 'runModelReport started no probe on pre-aborted signal');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T11b: abort while read is pending rejects with ABORTED for probe and selectModel/catalog', async () => {
+  const { runModelReport } = require('../../src/diagnostics/doctor.ts');
+  const { ToolError } = require('../../src/contracts/error.ts');
+  const original = { ...adapterRegistry };
+  try {
+    // 2a. Pending probe
+    const ctrl1 = new AbortController();
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async (context) => {
+          return new Promise((resolve, reject) => {
+            const onAbort = () => reject(new ToolError('ABORTED', 'Probe aborted'));
+            if (context?.abortSignal?.aborted) return onAbort();
+            context?.abortSignal?.addEventListener('abort', onAbort);
+          });
+        },
+      };
+    }
+
+    const doctorPromise1 = runDoctor({ signal: ctrl1.signal });
+    await new Promise(r => setTimeout(r, 10));
+    ctrl1.abort();
+
+    await assert.rejects(
+      doctorPromise1,
+      err => err && err.code === 'ABORTED'
+    );
+
+    // 2b. Pending selectModel/catalog read (proves decision 6)
+    const ctrl2 = new AbortController();
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async () => ({ id, installed: id === 'codex', version: '1.0.0', executionSupported: true, authStatus: 'authenticated', capabilities: { readOnlyVerified: true } }),
+        listModels: async () => ({ source: 'fixture', models: [] }),
+        observeModel: async (_m, _p, context) => {
+          return new Promise((resolve, reject) => {
+            const onAbort = () => reject(new ToolError('ABORTED', 'observeModel aborted'));
+            if (context?.abortSignal?.aborted) return onAbort();
+            context?.abortSignal?.addEventListener('abort', onAbort);
+          });
+        },
+      };
+    }
+
+    const doctorPromise2 = runDoctor({ signal: ctrl2.signal, backend: 'codex' });
+    await new Promise(r => setTimeout(r, 10));
+    ctrl2.abort();
+
+    await assert.rejects(
+      doctorPromise2,
+      err => err && err.code === 'ABORTED'
+    );
+
+    const ctrl3 = new AbortController();
+    const modelPromise = runModelReport({ signal: ctrl3.signal, backend: 'codex' });
+    await new Promise(r => setTimeout(r, 10));
+    ctrl3.abort();
+
+    await assert.rejects(
+      modelPromise,
+      err => err && err.code === 'ABORTED'
+    );
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T11b: expired budget rejects with TIMEOUT and does not become a recommendation', async () => {
+  const { runModelReport } = require('../../src/diagnostics/doctor.ts');
+  const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
+  const original = { ...adapterRegistry };
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async () => ({ id, installed: id === 'codex', version: '1.0.0', executionSupported: true, authStatus: 'authenticated', capabilities: { readOnlyVerified: true } }),
+        listModels: async () => ({ source: 'fixture', models: [{ id: 'model-a', efforts: [] }] }),
+      };
+    }
+
+    let fakeNow = 1000;
+    const clock = () => fakeNow;
+    const budget1 = createExecutionBudget({ totalBudgetMs: 5000, clock });
+    fakeNow = 7000;
+    budget1.remainingExecutionMs(); // synchronizes clock
+
+    await assert.rejects(
+      runDoctor({ budget: budget1, clock }),
+      err => err && err.code === 'TIMEOUT'
+    );
+
+    const budget2 = createExecutionBudget({ totalBudgetMs: 5000, clock });
+    fakeNow = 13000;
+    budget2.remainingExecutionMs();
+
+    await assert.rejects(
+      runModelReport({ budget: budget2, clock }),
+      err => err && err.code === 'TIMEOUT'
+    );
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T11b: every read receives the context: probe, catalog, quota, inherited tools, selection and prices', async () => {
+  const original = { ...adapterRegistry };
+  const origFetch = global.fetch;
+  const savedPricesUrl = process.env.coagent8_PRICES_URL;
+
+  let recordedProbeContext;
+  let recordedCatalogContext;
+  let recordedQuotaContext;
+  let recordedInheritedToolsContext;
+  let recordedSelectionContext;
+  let recordedFetchSignal;
+
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async (context) => {
+          if (id === 'codex') recordedProbeContext = context;
+          return {
+            id,
+            installed: id === 'codex',
+            version: '1.0.0',
+            executionSupported: true,
+            authStatus: 'authenticated',
+            capabilities: { readOnlyVerified: true },
+            config: { defaultModel: 'unpriced-test-model' },
+          };
+        },
+        inspectQuota: async (_probe, context) => {
+          if (id === 'codex') recordedQuotaContext = context;
+          return { measured: true, headroomPercent: 80, usedPercent: 20, window: 'weekly', resetsAt: null };
+        },
+        listModels: async (_probe, context) => {
+          if (id === 'codex') recordedCatalogContext = context;
+          return { source: 'fixture', models: [] };
+        },
+        inheritedTools: async (context) => {
+          if (id === 'codex') recordedInheritedToolsContext = context;
+          return { mcpServers: [], plugins: [] };
+        },
+        observeModel: async (_model, _probe, context) => {
+          if (id === 'codex') recordedSelectionContext = context;
+          return 'model-x';
+        },
+      };
+    }
+
+    process.env.coagent8_PRICES_URL = 'http://prices.internal.test/api/v1/models';
+    global.fetch = async (_url, options) => {
+      recordedFetchSignal = options?.signal;
+      return {
+        ok: true,
+        headers: { get: () => null },
+        body: (async function* () {
+          yield Buffer.from(JSON.stringify({ data: [{ id: 'x/model-x', pricing: { completion: '0.000001' } }] }));
+        })(),
+      };
+    };
+
+    const ctrl = new AbortController();
+    const report = await runDoctor({ backend: 'codex', signal: ctrl.signal });
+    assert.ok(report);
+
+    // Verify probe received context with abortSignal
+    assert.ok(recordedProbeContext?.abortSignal, 'probe received context with abortSignal');
+
+    // Verify catalog received context with abortSignal
+    assert.ok(recordedCatalogContext?.abortSignal, 'catalog received context with abortSignal');
+
+    // Verify quota received context with budget
+    assert.ok(recordedQuotaContext?.budget, 'quota received context with budget');
+    assert.equal(typeof recordedQuotaContext?.timeoutMs, 'number');
+
+    // Verify inherited tools received context with budget
+    assert.ok(recordedInheritedToolsContext?.budget, 'inherited tools received context with budget');
+    assert.equal(typeof recordedInheritedToolsContext?.timeoutMs, 'number');
+
+    // Verify selection received context with abortSignal
+    assert.ok(recordedSelectionContext?.abortSignal, 'selection received context with abortSignal');
+
+    // Verify prices fetch received combined signal
+    assert.ok(recordedFetchSignal, 'prices fetch received signal');
+    assert.equal(recordedFetchSignal.aborted, false);
+
+    // Abort controller and verify direct readContext signals reflect the abort
+    ctrl.abort();
+    assert.equal(recordedQuotaContext.abortSignal.aborted, true, 'quota signal aborted');
+    assert.equal(recordedInheritedToolsContext.abortSignal.aborted, true, 'inherited tools signal aborted');
+  } finally {
+    Object.assign(adapterRegistry, original);
+    global.fetch = origFetch;
+    if (savedPricesUrl === undefined) delete process.env.coagent8_PRICES_URL;
+    else process.env.coagent8_PRICES_URL = savedPricesUrl;
+  }
+});
+
+test('EXEC-001-T11b: model view stays cheap: cached probes, catalogs, and prices are not refreshed', async () => {
+  const { runModelReport } = require('../../src/diagnostics/doctor.ts');
+  const { probeBackend, readModelCatalog } = require('../../src/backends/probe-cache.ts');
+  const { readPrices } = require('../../src/models/prices.ts');
+  const original = { ...adapterRegistry };
+  const origFetch = global.fetch;
+  const savedPricesUrl = process.env.coagent8_PRICES_URL;
+
+  let probeCalls = 0;
+  let catalogCalls = 0;
+  let fetchCalls = 0;
+
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async () => {
+          probeCalls++;
+          return { id, installed: id === 'codex', version: '1.0.0', executionSupported: true, authStatus: 'authenticated', capabilities: { readOnlyVerified: true } };
+        },
+        listModels: async () => {
+          catalogCalls++;
+          return { source: 'fixture', models: [{ id: 'model-cheap', efforts: [] }] };
+        },
+      };
+    }
+
+    process.env.coagent8_PRICES_URL = 'http://prices.cheap.test/api/v1/models';
+    global.fetch = async () => {
+      fetchCalls++;
+      return {
+        ok: true,
+        headers: { get: () => null },
+        body: (async function* () {
+          yield Buffer.from(JSON.stringify({ data: [{ id: 'x/model-cheap', pricing: { completion: '0.000001' } }] }));
+        })(),
+      };
+    };
+
+    // Warm probe and catalog cache
+    await probeBackend('codex');
+    await readModelCatalog('codex');
+
+    // Warm prices with young prices
+    await readPrices({ fresh: true, models: ['model-cheap'] });
+
+    // Reset counters
+    probeCalls = 0;
+    catalogCalls = 0;
+    fetchCalls = 0;
+
+    // Call runModelReport
+    const report = await runModelReport({ backend: 'codex' });
+    assert.ok(report);
+    assert.equal(report.scope, 'models');
+
+    // Assert no fresh calls
+    assert.equal(probeCalls, 0, 'no fresh probe during model report');
+    assert.equal(catalogCalls, 0, 'no fresh catalog during model report');
+    assert.equal(fetchCalls, 0, 'no price refresh during model report');
+  } finally {
+    Object.assign(adapterRegistry, original);
+    global.fetch = origFetch;
+    if (savedPricesUrl === undefined) delete process.env.coagent8_PRICES_URL;
+    else process.env.coagent8_PRICES_URL = savedPricesUrl;
+  }
+});

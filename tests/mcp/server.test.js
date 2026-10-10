@@ -344,3 +344,94 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     adapterRegistry.agy = original;
   }
 });
+
+test('EXEC-001-T11b: handleDoctor forwards its signal for both scopes; MCP server forwards extra.signal to doctor and reports timeout as isError text', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { handleDoctor } = require('../../src/mcp/tools/doctor.tool.ts');
+  const { ToolError } = require('../../src/contracts/index.ts');
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+
+  // 1. handleDoctor forwards signal for scope: health
+  const abortedHealth = new AbortController();
+  abortedHealth.abort();
+  await assert.rejects(
+    handleDoctor({ scope: 'health' }, abortedHealth.signal),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+
+  // 2. handleDoctor forwards signal for scope: models
+  const abortedModels = new AbortController();
+  abortedModels.abort();
+  await assert.rejects(
+    handleDoctor({ scope: 'models' }, abortedModels.signal),
+    err => err instanceof ToolError && err.code === 'ABORTED'
+  );
+
+  // 3. MCP server forwards extra.signal to doctor and reports a doctor timeout as isError: true text
+  const server = createServer();
+  const client = new Client({ name: 'doctor-client', version: '1' }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const originalCodex = adapterRegistry.codex;
+  try {
+    adapterRegistry.codex = {
+      ...originalCodex,
+      probe: async () => {
+        throw new ToolError('TIMEOUT', 'Diagnostic deadline exceeded (60000 ms).');
+      },
+    };
+
+    const res = await client.callTool({ name: 'doctor', arguments: { scope: 'health' } });
+    assert.equal(res.isError, true, 'doctor timeout reports isError: true');
+    assert.ok(Array.isArray(res.content));
+    assert.equal(res.content[0].type, 'text');
+    assert.match(res.content[0].text, /Diagnostic deadline exceeded/);
+  } finally {
+    adapterRegistry.codex = originalCodex;
+    await client.close();
+    await server.close();
+  }
+});
+
+test('EXEC-001-T11b: server startup runs no probe, and doctor call creates no session file', async () => {
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { handleDoctor } = require('../../src/mcp/tools/doctor.tool.ts');
+  const { getSessionsDir } = require('../../src/sessions/activity.ts');
+
+  let probeCalls = 0;
+  const original = { ...adapterRegistry };
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async () => {
+          probeCalls++;
+          return { id, installed: false, executionSupported: false };
+        },
+      };
+    }
+
+    // 1. Server startup runs no probe
+    const server = createServer();
+    assert.equal(probeCalls, 0, 'createServer runs no probe during startup');
+    await server.close();
+
+    // 2. Doctor call creates no session file
+    const sessionDir = getSessionsDir();
+    const listSessions = () => fs.existsSync(sessionDir) ? fs.readdirSync(sessionDir) : [];
+    const filesBefore = listSessions();
+
+    await handleDoctor({ scope: 'models' });
+    const filesAfterModels = listSessions();
+    assert.deepEqual(filesAfterModels, filesBefore, 'scope: models creates no session file');
+
+    await handleDoctor({ scope: 'health' });
+    const filesAfterHealth = listSessions();
+    assert.deepEqual(filesAfterHealth, filesBefore, 'scope: health creates no session file');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});

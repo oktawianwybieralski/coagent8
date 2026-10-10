@@ -620,12 +620,13 @@ AX-003/006. Depends on T09.
   prevents execution, and idle activity cannot reset the budget. Check: R,
   LIFE/REVIEW/MCP/E2E/CODEX/CLAUDE/AGY; build before bundle checks.
   Evidence: [EXEC-001-T11a implementation](HANDOFF.md#exec-001-t11a-activate-the-budget-for-consultreview).
-- [ ] **T11b - apply bounds to diagnostics.** Start: `runDoctor`, `runModelReport`
+- [x] **T11b - apply bounds to diagnostics.** Start: `runDoctor`, `runModelReport`
   in `src/diagnostics/doctor.ts`, `src/mcp/tools/doctor.tool.ts` and their server
   dispatch. Thread caller cancellation and an explicitly defined diagnostic
   budget; do not silently add an execution timeout argument to doctor. Done:
   health reads are bounded, cached model view remains cheap, startup waits for
   no probes and doctor creates no session. Check: R, DOCTOR/CACHE/MCP/E2E.
+  Evidence: [EXEC-001-T11b implementation](HANDOFF.md#exec-001-t11b-apply-bounds-to-diagnostics).
 - [ ] **T11c - expose accurate timing.** Start: `ExecutionMeta` in
   `src/contracts/execution.ts`, `src/mcp/result.ts`, error formatting in
   `src/mcp/server.ts`. Add accepted phase/total fields, preserving or explicitly

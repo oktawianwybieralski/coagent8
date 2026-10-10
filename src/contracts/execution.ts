@@ -139,6 +139,12 @@ export interface ExecutionOptions {
 export const DEFAULT_EXECUTION_TIMEOUT_MS = 900_000;
 
 /**
+ * Default total diagnostic timeout in milliseconds (60 seconds).
+ * Bounds one doctor call (health or models), 3 s of it reserved for teardown.
+ */
+export const DEFAULT_DIAGNOSTIC_TIMEOUT_MS = 60_000;
+
+/**
  * Default process termination grace period in milliseconds before SIGKILL (3 seconds).
  */
 export const DEFAULT_TEARDOWN_GRACE_MS = 3_000;

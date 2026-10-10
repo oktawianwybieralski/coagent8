@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T11a (activate the budget for consult/review).
+The current completed task is EXEC-001-T11b (apply bounds to diagnostics).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T11b (apply bounds to diagnostics).
+Next pending card: EXEC-001-T11c (expose accurate timing).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1442,6 +1442,35 @@ Scope: activate monotonic complete-call budget for `consult` and `review` from t
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_2d0a5a0c5aa2b4338b63f2b9`, Rounds 1-6; Round 6 State Envelope evaluated to `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T11b: apply bounds to diagnostics
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: apply bounds and caller cancellation to diagnostics (`runDoctor`, `runModelReport`, `handleDoctor`, and server dispatch), define diagnostic execution budget, preserve doctor's input schema and MCP error message surface, ensure health reads are bounded, model view remains cheap, startup waits for no probes, and doctor creates no session.
+
+### Changed files:
+- `src/contracts/execution.ts`: Added `DEFAULT_DIAGNOSTIC_TIMEOUT_MS = 60_000` (bounds one doctor call, 3 s reserved for teardown). The default diagnostic budget value originates explicitly from the task prompt.
+- `src/diagnostics/doctor.ts`: Added `signal?: AbortSignal` and `budget?: ExecutionBudget` to `DoctorOptions`. `runDoctor` and `runModelReport` create an owned execution budget (`totalBudgetMs: DEFAULT_DIAGNOSTIC_TIMEOUT_MS`, `parentSignal: signal`, `clock: options.clock`) if omitted and dispose it in `finally`. Combined `options.signal` and `budget.executionSignal` into a unified `readContext` passed to `probeBackend`, `readModelCatalog`, `inspectQuotas`, `readPrices`, `inheritedTools`, and `selectModel`. Added pre-flight and post-read expiry/abort checks. Rethrew `ToolError('ABORTED')` and `ToolError('TIMEOUT')` in `selectModel` and `recordDefaultModel` catch blocks while preserving recommendations for other errors. Placed post-read deadline checks before the timing observer block to guarantee single observer invocation.
+- `src/mcp/server.ts`: Dispatched `extra.signal` into `handleDoctor(args, extra.signal)`. Preserved the MCP message-only error surface (`{ isError: true, content: [{ type: 'text', text: ... }] }` without error code) on doctor errors.
+- `src/mcp/tools/doctor.tool.ts`: Added optional `signal?: AbortSignal` parameter to `handleDoctor` and threaded it to `runDoctor({ backend, signal })` and `runModelReport({ backend, signal })`.
+- `tests/diagnostics/doctor.test.js`: Added comprehensive unit tests for pre-aborted signal rejection, pending-read aborts (for probes, catalogs, and selection), expired budget timeout rejection, context propagation to all 6 read primitives, and cheap model view cache validation.
+- `tests/mcp/server.test.js`: Added tests verifying `handleDoctor` signal forwarding across both scopes (`health` and `models`), MCP server `extra.signal` forwarding and timeout error rendering (`isError: true`), probe-free server startup, and zero session files created by doctor calls.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (106 source files analyzed, 563 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 82 tests (82 pass, 0 fail, exit code 0): `node tests/run.cjs tests/diagnostics/doctor.test.js tests/backends/probe-cache.test.js tests/models/prices.test.js tests/backends/availability.test.js tests/mcp/server.test.js tests/mcp/result.test.js tests/mcp/surface.test.js tests/e2e/mcp.test.js tests/e2e/stdio.test.js`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+
+### Independent review rounds:
+Conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_b289c9f8cb63a6211a9fe578`):
+- Round 1: `SNAPSHOT: ca11674+uncommitted#5e13e4043b6ebda759a7f193db5c1cc1d9652cad11b9ed91ee810c9981a78238`, `COVERAGE: COMPLETE`, `VERDICT: BLOCKED`. Findings: [P2] `doctor.ts:350` timing observer run twice on late timeout/abort; [P3] abort error message wording.
+  - Remediation: Moved post-read budget and abort deadline checks before the `options.onTiming` observer block in both `runDoctor` and `runModelReport`. Updated abort error message to "Request cancelled during diagnostic execution."
+- Round 2: `SNAPSHOT: ca11674+uncommitted#fafd19697ca17ddd8b197666305cb9bbf21fa8bea040a24072c0ee009cd2b75b`, `COVERAGE: COMPLETE`, `VERDICT: READY`. 0 P1/P2 issues. Server gate reported: `Verdict: BLOCKED (Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY)`. Independent approval not established (read-only audit gate).
+
+Next card: EXEC-001-T11c (expose accurate timing).
 
 ## Compact handoff contract
 
