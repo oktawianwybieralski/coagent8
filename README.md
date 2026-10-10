@@ -1,5 +1,3 @@
-# CoAgent8 - Cooperating coding agents
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logo-light.svg" />
@@ -7,6 +5,24 @@
     <img src="assets/logo.svg" width="128" height="128" alt="CoAgent8" />
   </picture>
 </p>
+
+# CoAgent8 - Cooperating coding agents
+
+[![CI](https://img.shields.io/github/actions/workflow/status/oktawianwybieralski/coagent8/ci.yml?branch=develop&label=CI&logo=github)](https://github.com/oktawianwybieralski/coagent8/actions/workflows/ci.yml)
+[![CI matrix](https://img.shields.io/badge/CI%20matrix-3%20OS%20%C3%97%20Node%2024%2F26-2088FF?logo=github)](.github/workflows/ci.yml)
+[![Coverage gate](https://img.shields.io/badge/coverage%20gate-%E2%89%A570%25-brightgreen)](package.json)
+[![npm next](https://img.shields.io/npm/v/coagent8/next?label=npm%20next&color=007ec6)](https://www.npmjs.com/package/coagent8?activeTab=versions)
+[![Status](https://img.shields.io/badge/status-preview%20beta-orange)](docs/ROADMAP.md)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D%2024-5FA04E)](package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)](tsconfig.json)
+[![MCP](https://img.shields.io/badge/MCP-stdio-black)](https://modelcontextprotocol.io)
+[![Backends](https://img.shields.io/badge/backends-Codex%20%7C%20Claude%20Code%20%7C%20Antigravity-6f42c1)](#backends-and-read-only-profiles)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](.github/workflows/ci.yml)
+[![API reference](https://img.shields.io/badge/docs-API%20reference-informational)](https://oktawianwybieralski.github.io/coagent8/)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-FE5196)](https://www.conventionalcommits.org)
+[![Forks](https://img.shields.io/github/forks/oktawianwybieralski/coagent8?style=social)](https://github.com/oktawianwybieralski/coagent8/fork)
+[![Stars](https://img.shields.io/github/stars/oktawianwybieralski/coagent8?style=social)](https://github.com/oktawianwybieralski/coagent8/stargazers)
 
 CoAgent8 exposes Codex, Claude Code and Antigravity (backend `agy`, which runs
 Gemini models) through a stdio MCP server. An agent in a compatible host can request a
@@ -30,9 +46,136 @@ Read-only CLI profiles, model consent, bounded buffers, credential redaction and
 owned-process cleanup are implemented. Codex disables and verifies inherited
 MCP servers per thread; agy still inherits external tools, an owner-accepted
 third-party limitation. Review approval checks input completeness and identity.
-See the
-[runtime limitations](docs/ARCHITECTURE.md#known-limitations).
+See the [known limitations](#known-limitations).
 A model's `READY` verdict requires independent verification before release.
+
+**Contents:**
+[Features](#features) |
+[Connect through MCP](#connect-through-mcp) |
+[Skills](#skills) |
+[VS Code commands](#vs-code-commands) |
+[Tester guide](#beta2-tester-guide) |
+[Tools](#tools) |
+[Configuration](#configuration) |
+[Limitations](#known-limitations) |
+[Documentation](#documentation-and-contributing)
+
+## Features
+
+### At a glance
+
+- **One MCP server, three coding CLIs.** Codex, Claude Code and Antigravity
+  behind the same six tools, for any stdio MCP host. No recognized client name,
+  setup command or VSIX is required.
+- **Read-only profiles.** Every backend runs in a read-only profile; for Codex
+  and Claude Code the bridge verifies it and refuses a turn it cannot confirm.
+- **Second opinion and independent review.** Plain `consult` answers, or a
+  `review` of Git changes with a State Envelope and a server-derived verdict.
+- **The user decides on expensive models.** Consent by price, requested from the
+  user through MCP elicitation; the calling agent cannot grant it. A call can
+  also set a strict price limit.
+- **Quiet, bounded processes.** No shell, owned process handles only, protocol
+  interrupts, bounded buffers and one deadline for the whole call.
+- **Sessions you can continue.** Native backend resume through a session handle,
+  with paginated, workspace-scoped history.
+- **Self-diagnosing.** `doctor` reports models, efforts, prices and backend
+  health; `issue` prepares a sanitized bug report.
+- **Skills and editor integration.** Optional setup registers CoAgent8 in the
+  CLIs' own chats and installs one skill per function; the VS Code extension
+  adds an MCP provider, setup, skill management and a complete uninstall.
+
+### Backends and read-only profiles
+
+| Backend | Execution profile |
+| --- | --- |
+| **Codex** | `app-server` with `sandbox_mode="read-only"` and `approval_policy="never"`; the thread's read-only state is verified, every inherited MCP server is disabled and verified per thread, server approval requests are rejected, interrupt via `turn/interrupt` |
+| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt; subscription login or API key |
+| **Antigravity** (`agy`) | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; inherits the user's MCP servers and plugins (accepted limitation), recursion into CoAgent8 refused |
+
+### Routing
+
+- `backend`: `auto` (default), `codex`, `claude`, `agy` or `smart_quota`.
+- A fixed default backend or the `smart_quota` strategy in `config.json`,
+  limited by `allowedBackends`.
+- `auto` with several eligible backends excludes observed rate limits, prefers a
+  CLI other than the caller's own and ranks by cached measured quota headroom.
+- A rate-limited turn records a cooldown once. A failed turn is never silently
+  retried on another provider.
+
+### Models, prices and consent
+
+- The source names no model. A turn uses the call's `model`, then the session's
+  model, then `backends.<id>.defaultModel`, then the CLI's own default or catalog.
+- `reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or
+  `max`, validated per model where a catalog exists (Codex `model/list`,
+  `agy models`; Claude Code resolves its aliases itself).
+- Catalogs are cached in `~/.coagent8/models.json`. Prices
+  come from OpenRouter's public model list (no key, no user data) or from
+  `coagent8_PRICES_URL`; they decide whether to ask, they are not billing.
+- The user is asked before a model listed in `governance.alwaysAsk`, without a
+  known or exact price, priced at or above `governance.askAbovePrice` (default
+  20 USD per million output tokens), or at least `governance.priceMultiplier`
+  (default 2) times the backend default. `governance.neverAsk` exempts a model.
+- `output_price_below` is a strict limit; without `model` the server picks a
+  qualifying model and states its price in the footer, see
+  [choosing a model under a price limit](#choosing-a-model-under-a-price-limit).
+
+### Review gate
+
+- Scopes: uncommitted (default), staged, commit, branch or range, plus optional
+  instructions. Bounded Git context: 4 MiB per Git command, 3 MiB snapshot.
+- The backend answers in a State Envelope (`REVIEW`, `SNAPSHOT`, `COVERAGE`,
+  `VERDICT`, findings with `[P1|P2|P3] file:line`, `CHECKS`, `END_REVIEW`).
+- The server derives `READY` or `BLOCKED (reason)`: an incomplete envelope,
+  partial coverage, truncation, another snapshot, a `[P1]`/`[P2]` finding, or
+  required checks it did not observe block.
+- A review of unchanged code with the same scope, backend and model starts no
+  new turn and returns the earlier verdict.
+
+### Sessions and history
+
+- Workspace- and provider-bound sessions with turn leases; continuation through
+  `session_handle` keeps the session's model and effort.
+- `session` lists sessions, pages archived history (up to 100 events and
+  240 KiB per page) and closes a session, optionally deleting its history.
+- MCP resources `coagent8://sessions` and `coagent8://sessions/{id}/history`,
+  scoped to the connection's workspace.
+- Best-effort archive: 10 MiB per session, 100 MiB in total, seven-day
+  retention. `coagent8_HISTORY=off` disables archive files. Private reasoning
+  and raw tool output are never archived or returned.
+
+### Process safety and bounds
+
+- `shell: false`; prompts go through stdin, at most 4 MiB.
+- Cancellation and deadlines interrupt Codex and Claude Code through their
+  native protocol, then stop only the owned process (Windows: owned root handle;
+  POSIX: owned process group). No PID, parent-PID or name selection.
+- Bounded output (512 KiB per backend stream, 1 MiB public answer); UTF-8 code
+  points stay intact across chunks.
+- `timeout_ms` from 100 ms to 30 minutes (default 15 minutes) covers Git,
+  preparation, consent, the CLI turn and teardown, with progress notifications.
+
+### Results, redaction and errors
+
+- Markdown results: answer or typed error, then backend, model, duration and
+  session handle; `review` adds its verdict, a price limit adds price evidence.
+- ANSI stripping and credential-format redaction in answers and archives;
+  diagnostics additionally redact keywords and home-directory paths.
+- Typed errors: `CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`,
+  `MODEL_UNAVAILABLE`, `RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`,
+  `ABORTED`, `TIMEOUT`, `SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`,
+  `INPUT_LIMIT`, `PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`,
+  `PRICE_LIMIT`.
+
+### Integrations
+
+- Any stdio MCP host, including Codex, Claude Code, agy and
+  [Continue](#continue).
+- Optional `coagent8 setup|repair|status|cleanup|skills` for local registrations
+  and skills, with backups, conflict checks and preview-bound changes.
+- Native VS Code extension (MCP server definition provider, setup, skill
+  management and uninstall) and a Codex plugin, both built from the npm tarball.
+- Offline server icon embedded in `serverInfo`; no network fetch.
 
 ## Connect through MCP
 
@@ -224,7 +367,7 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
    and include OS, Node, host and CLI versions, reproduction steps and expected
    versus actual behavior. Review pasted diagnostics before submitting.
 
-See the [runtime limitations](docs/ARCHITECTURE.md#known-limitations) for known issues.
+See the [known limitations](#known-limitations).
 The [VS Code acceptance checklist](docs/ROADMAP.md#native-vs-code-acceptance) covers reinstall,
 configuration selection, onboarding reset and native MCP lifecycle testing.
 Apply VS Code's native Extensions view restart action when requested after
@@ -234,7 +377,7 @@ The VSIX shares `~/.coagent8/config.json` with the standalone CLI and keeps sess
 and history in its own VS Code storage, which uninstalling removes. Review accepts staged/revision scopes only when their
 files match the current workspace; otherwise use uncommitted changes.
 
-## Current tools
+## Tools
 
 | Tool | Purpose |
 | --- | --- |
@@ -324,6 +467,67 @@ An explicit model over the limit fails with the reason; it is never replaced.
 Use `low` only if listed for that model. The footer names the model that answered;
 its elapsed time excludes preparation. Continue with its `session_handle` when
 needed. No repository access, web price lookup or full diagnostic dump is needed.
+
+## Configuration
+
+The shared file is `~/.coagent8/config.json`, used by every host, the CLI and
+the VS Code extension (**CoAgent8: Open Configuration (config.json)** creates
+it with defaults and validates it). A missing file uses the defaults; an
+unreadable or invalid file refuses execution with `POLICY_DENIED` while
+`doctor` stays available. In VS Code, settings you change in **CoAgent8: Open
+Settings** take precedence over the file.
+
+~~~json
+{
+  "schemaVersion": 1,
+  "defaultBackend": null,
+  "routing": {
+    "strategy": "fixed",
+    "allowedBackends": ["codex", "claude", "agy"]
+  },
+  "backends": {
+    "agy": { "executable": "vscode-extension", "defaultModel": "<model the first doctor recorded>" }
+  },
+  "governance": {
+    "priceMultiplier": 2,
+    "askAbovePrice": 20,
+    "alwaysAsk": [],
+    "neverAsk": []
+  }
+}
+~~~
+
+| Variable | Effect |
+| --- | --- |
+| `coagent8_CONFIG` | Configuration file path |
+| `coagent8_DIR` | Storage root for sessions, history and caches (default `~/.coagent8`) |
+| `coagent8_HISTORY` | `off` disables archive files |
+| `coagent8_PRICES_URL` | Price list URL or local file instead of OpenRouter |
+| `coagent8_QUOTA_CACHE` | Quota cache file |
+| `CODEX_PATH`, `CLAUDE_PATH`, `AGY_PATH` | Backend executables; they override `backends.<id>.executable` |
+| `CODEX_HOME`, `CODEX_CONFIG_PATH`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME` | Backend configuration locations; setup and cleanup support only the defaults |
+
+The [architecture](docs/ARCHITECTURE.md) states every contract, bound and error.
+
+## Known limitations
+
+Open issues tracked in the
+[architecture](docs/ARCHITECTURE.md#known-limitations) and the
+[roadmap](docs/ROADMAP.md), not relaxed security requirements:
+
+- agy inherits the user's MCP servers and plugins; recursion into CoAgent8 is
+  refused (accepted third-party limitation).
+- Cancelling or timing out a call stops the owned CLI process, but a native
+  descendant of agy that lives outside it can keep running until the MCP server
+  exits (WINDOWS-001a, Windows).
+- After an unexpected parent death on POSIX, owned processes are not cleaned up.
+- Every execution keeps a session record on disk, and the first session handle
+  is returned only with the result.
+- Review of a tree other than the workspace is refused, not implemented.
+- Headless clients measured on 2026-10-07 cancel elicitation, so turns that need
+  consent fail there; approval in interactive clients is still being accepted.
+- Native acceptance in each host (setup, skills, uninstall) is still in progress
+  for beta.2; local tests use hermetic CLI fixtures.
 
 ## Documentation and contributing
 
