@@ -62,6 +62,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`a5aea4b`](https://github.com/oktawianwybieralski/coagent8/commit/a5aea4bf9518285496da61b4f8de0cc957021505) **sessions:** Stop session acquisition after expiry (EXEC-001-T09c)
 - [`f7c5599`](https://github.com/oktawianwybieralski/coagent8/commit/f7c55991ef6dbe9c1d44eb00c1fc1906bcea5039) **consent:** Cancel pending approval and bind to deadline (EXEC-001-T10a)
 - [`06e1824`](https://github.com/oktawianwybieralski/coagent8/commit/06e1824172dddd5b1c32152904d0f3aaa1699e46) **consent:** Revalidate policy and price evidence before acquisition (EXEC-001-T10b)
+- [`152b93d`](https://github.com/oktawianwybieralski/coagent8/commit/152b93d0aead7614026eefceb94e132dc184a452) **consent:** Preserve valid approvals across persistence failures (EXEC-001-T10c)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
