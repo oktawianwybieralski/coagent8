@@ -86,11 +86,15 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
    the shared task/profile contract (`COAGENT-001/002`). Complete the measured
    execution work below (`EXEC-001-T01` through `T12`) before expanding the
    affected lifecycle owners for writing or delegation.
-3. Deliver one host-led write/check/review/fix path, role configuration and
+3. Complete independent skill management (`SKILLS-002`) after EXEC: one shared
+   CLI/VS Code implementation of install/update/uninstall/enable/disable,
+   durable per-client choices and recoverable package writes. Owner-approved
+   full scope on 2026-10-10, with high reasoning effort for implementation.
+4. Deliver one host-led write/check/review/fix path, role configuration and
    skill installation (`COAGENT-003/004/005/007`).
-4. Add delegated coordination and parallel work (`COAGENT-006`), with root
+5. Add delegated coordination and parallel work (`COAGENT-006`), with root
    limits, writer ownership and recoverable task state.
-5. Accept CLI execution, supported clients/platforms and benchmarks
+6. Accept CLI execution, supported clients/platforms and benchmarks
    (`CLI-FIRST-001`, `COAGENT-008`), then complete the release gates.
 
 Beta.2 path (owner decision 2026-10-09): beta.2 ships after EXEC-001-T12, not
@@ -98,7 +102,9 @@ after the whole roadmap. Before T12 complete AUDIT-001-A01 through A07, AX-007a
 through AX-007c and WINDOWS-001a. T12b-d is the beta.2 gate; do not run a
 second separate gate. SKILLS-001a-d also land before T12 (owner decision
 2026-10-10), and T12's native checks include SKILLS-001e. Any change after T12
-invalidates the affected acceptance, so these cards land first. AUDIT-001-A08 through A20 stay open past beta.2 with
+invalidates the affected acceptance. The owner added the full SKILLS-002 package
+after EXEC on 2026-10-10; renew affected package/native/review evidence before
+beta.2, under the same T12 release gate. AUDIT-001-A08 through A20 stay open past beta.2 with
 explicit status in A21. Beta.2 release notes list known limits: plain `auto`
 consult may run an expensive default (AX-002), agy may report not-ready and still
 run (AX-005), and a cancelled or expired agy turn can leave native child processes
@@ -696,6 +702,86 @@ Acceptance: HANDOFF makes the achieved behavior, measured differences and
 remaining native/remote limits reproducible. Follow-up coagent work reuses
 these owners; early handles, ephemeral modes and delegation stay in their
 existing SESSION-001/COAGENT milestones. Depends on T11.
+
+## SKILLS-002: independent skill management
+
+Owner decision 2026-10-10: implement the full package after EXEC with high
+reasoning effort. Extend SKILLS-001's catalog and setup ownership rather than
+adding a separate installer. Multi-file packages remain COAGENT-005. Local
+implementation is complete; independent and native acceptance remain pending.
+
+VS Code entry: **CoAgent8: Manage Skills**. Choose the client, an action
+(Install / Update, Uninstall, Enable or Disable), then one or more packages.
+Show enabled/disabled/absent/conflicting state and available updates. Select-all
+covers the complete set; cancellation or an empty selection changes nothing.
+The CLI exposes the same owner through `coagent8 skills
+status|install|uninstall|enable|disable`, with per-client/package selection and
+preview-bound apply. Applying a change leaves CLI installation and MCP entries
+intact, and starts no backend.
+
+Persist `backends.<client>.skills = { installed, disabled }` in user configuration,
+separate from actual ownership/digests in setup state. An absent preference keeps
+the existing default of installing the catalog; an explicit empty selection
+means no skills. Setup, repair and update must honor it. Explicit selections do
+not silently gain newly added catalog packages; management must show new packages
+as available. An update/removal conflict reports actual state separately from
+desired state, preserving edited or foreign packages and allowing retry. Disabled
+packages are retained in `~/.coagent8/disabled-skills/<client>/<name>/SKILL.md`,
+outside client discovery; enable restores them to the existing client root.
+Install/update retains an existing disabled choice. Native visibility settings
+are never cleared. Per-package origins distinguish CLI and extension ownership
+even when they coexist for one client. Reuse the setup lease, digest checks and
+bounded journal; failed writes roll back, interrupted writes recover, and user
+edits stop recovery without being overwritten. Desired intent remains durable
+if applying files fails; repair can retry it.
+
+Client documentation reviewed 2026-10-10:
+
+- [Codex](https://learn.chatgpt.com/docs/build-skills) supports disabling a local
+  skill through `[[skills.config]]` with `enabled = false`, followed by a Codex
+  restart; its user skill root is shared `~/.agents/skills`.
+- [Claude Code](https://code.claude.com/docs/en/skills) supports `skillOverrides`
+  with `off`; invocation flags alone have different semantics. These native
+  settings are user choices and must not be cleared by installing a package.
+- [Antigravity](https://antigravity.google/docs/skills) distinguishes global
+  Antigravity 2.0/IDE skills in `~/.gemini/config/skills` from documented CLI
+  skills in `~/.gemini/antigravity-cli/skills`, and supports plugin skill bundles.
+  Existing native loader evidence in SKILLS-001 remains the migration basis;
+  do not add a second copy or change paths solely from documentation.
+- [VS Code](https://code.visualstudio.com/docs/agent-customization/agent-skills)
+  can also discover skills from directories shared with coding clients. Describe
+  the directory/scope being managed; do not promise a private per-client copy.
+
+Scope is physical management of CoAgent8's catalog, including portable
+enable/disable through discovery directories. It does not manage third-party
+skills or edit client-native activation settings. Shared-directory changes can
+affect other consumers; native overrides and other discovered copies remain
+effective. Start a new conversation after changes; already loaded content is
+not erased. Native refresh/discovery behavior requires client acceptance.
+
+- [x] **SKILLS-002a - specify the selection contract.** Start:
+  `src/config.ts`, `src/integrations/setup-storage.ts`, `skills.ts`, `setup.ts`,
+  `cleanup.ts`. Define per-client desired packages, migration defaults, unknown
+  names, disabled native skills, failed/partial apply, ownership origin and
+  coexistence of VSIX/npm installs. Reuse the existing setup lease and skill
+  owner; do not call registration cleanup to remove skills. Check: P.
+- [x] **SKILLS-002b - shared operation, CLI and VS Code picker.** Depends: 002a.
+  Start: `skills.ts`, `setup.ts`, `extensions/vscode/src/extension.ts`,
+  `extensions/vscode/package.json`, `scripts/build-vscode.cjs`, and skills/extension tests.
+  Add status/apply, update/enable/disable and recovery, retain unchanged recorded
+  copies for uninstall, honor preferences during setup/repair, and expose one
+  management command. Ownership and desired state remain separate.
+  Acceptance: remove only agy skills while MCP remains; later repair keeps them
+  absent; reinstall one or all; cancellation/no-op; edited/foreign/link conflicts;
+  rollback/crash recovery/retry, catalog changes, mixed origins and unchanged
+  Codex/Claude selections. Check: R, SETUP,
+  VS Code/package scope from rule 04.
+  Evidence: [implementation and final local checks](HANDOFF.md#skills-002-complete-independent-skill-management).
+- [ ] **SKILLS-002c - native acceptance.** Depends: 002b. Verify discovery and
+  disappearance in new chats for each supported client/version, shared-directory
+  effects, refresh instructions, repair/update persistence and subsequent
+  CoAgent8 uninstall. Bind evidence to the installed VSIX and retain
+  SKILLS-001e's loader-path uncertainty until reproduced.
 
 ## Agent usability acceptance
 
@@ -1743,7 +1829,10 @@ case produces a separate reproduction/fix card before rerunning that case.
   honestly. Verify consent in a client that actually displays the form.
 - Skills: after Set Up Coding CLIs each selected CLI lists the six skills and an
   explicit use reaches CoAgent8 (SKILLS-001e); unchecking a CLI and uninstalling
-  remove only unchanged packages the extension installed.
+  remove only unchanged packages the extension installed. Manage Skills and
+  `coagent8 skills` install/update/uninstall/enable/disable one or all packages
+  while MCP remains; new chats observe changes, repair preserves choices,
+  shared-directory effects and native overrides remain visible (SKILLS-002c).
 - Uninstall: cancellation and both confirmations, only owned dependencies offered,
   standalone removal commands await user action. Full quit/restart and separate
   Extensions-view removal. Remove owned registrations/runtime/tagged backups/

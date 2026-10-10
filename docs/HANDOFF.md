@@ -4,7 +4,7 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-09. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-10. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
@@ -84,11 +84,12 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T11c (expose accurate timing).
-Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T12a (repeat the baseline).
-Owner inspection occurs after each card. Prior independent approval does not
-approve these future changes.
+The current local implementation is SKILLS-002a/b (independent skill management),
+added after EXEC by owner authorization. Current branch:
+`release/v1.0.0-beta.2`; the owner's existing stack remains intact.
+Next acceptance: SKILLS-002c, the post-uninstall Reload Window case and affected
+EXEC-001-T12c/d release evidence. Local tests do not establish native acceptance
+or approve publication; see the final candidate evidence below.
 
 The 2026-10-09 roadmap refinement also separates AX implementation/native
 acceptance, adds coagent contract cards before speculative implementation and
@@ -2083,7 +2084,173 @@ Next: a repeated owner run of every case with this VSIX.
   `261c790ca88592ef426c03a7f2c6eba3cd38792e4fe58c42b8cd3e515eb65ed2`; they
   replace the previous artifacts.
 
-Next: an owner run of every case from a clean profile with this VSIX.
+The owner's next setup run exposed missing Claude and agy copies selected with
+`backends.<id>.executable: "vscode-extension"`. Setup incorrectly classified
+these as blocked configuration paths, suppressing the installation offer. The
+local fix reports the missing selected copy as not installed without falling
+back to another installation. Explicit paths and environment overrides still
+fail closed. Choosing **Install Standalone CLI** replaces the unavailable
+extension preference with automatic discovery; dismissing the offer or choosing
+the vendor extension preserves it. `setup-state.json` stores onboarding state;
+`~/.coagent8/installs.json` stores installed dependencies across uninstalls.
+
+Fresh scoped evidence on Windows, Node v26.10.0: typecheck, build, 68 setup,
+CLI-readiness, VS Code and package tests, consumer smoke, lint:docs, docs and
+VSIX packaging PASS. New tarball SHA-256
+`621f379adf2afb92dcbea42348e2fe46046df61522b2344fa58032bf4922b4cb`;
+VSIX SHA-256
+`18838a2b711fbad1b3e046cb3de49ee6c147871062d25f2a9e261c33d8674a56`.
+These replace the artifacts above. CoAgent8 independent review returned
+BLOCKED/PARTIAL because the reviewer lacked file-reading tools to inspect
+surrounding code; reviewer checks were NOT_RUN. This is not release approval.
+Native owner acceptance on 2026-10-10: the owner reports installing the
+replacement VSIX and all three vendor-extension CLIs, all marked Ready, and
+seeing all installed skills. The installed VSIX digest and resolved CLI paths
+were not independently read from the host. This establishes owner-reported
+recovery of the missing-extension installation case, not the full lifecycle.
+
+Cross-client MCP smoke evidence:
+
+| Caller | Backend/model | Observed result | Evidence boundary |
+| --- | --- | --- | --- |
+| This Codex chat | agy / gemini-3.8-flash-high | `17 * 23 = 391`, footer 10.1 s, ready | Actual `mcp__coagent8__consult` result; handle `syn_sess_d0e6e6c9d37c4d43aca54c4f`. |
+| Claude chat, owner-provided account | codex / gpt-5.6-luna and agy / gpt-oss-120b-medium | Both returned `2 + 312 = 314`; reported 4.6 s / 7.5 s, output prices USD 1.2 / 0.17 per million | Caller reports parallel calls with `output_price_below: 3`, no explicit model or consent prompt, and price/source/date evidence in footers. Raw calls and full footers were not supplied. |
+| agy chat, owner-provided account | codex / gpt-6-luna | `21 + 213 = 234`, footer 4.1 s; handle `syn_sess_c1af9afa70387c71bba99f50` | Caller reports loading the skill/tool descriptions and doctor before consult; quoted output price USD 0.50 per million. Raw doctor/call output was not supplied. |
+
+These demonstrate successful MCP consultations across the three callers and
+reported skill discovery. They do not establish actual billing, timing phase
+boundaries, sandbox isolation, session continuation or review quality. In
+particular, the agy caller's positive sandbox assessment is an opinion without
+a capability test. Only consult skill use was described; explicit use of every
+installed skill remains unverified.
+
+Native uninstall selection/removal: owner-accepted PASS on 2026-10-10. The owner
+reports that the CoAgent8 uninstall command presented the extensions available
+for removal and successfully removed the selected example. The extension's
+identity and post-uninstall filesystem/registration preservation checks were
+not supplied. This accepts the reported selection/removal case; cancellation,
+Extensions-view removal, full restart and reinstall remain separate cases.
+
+Native post-uninstall restart: owner-reported FAIL on the previous VSIX. Claude
+Code's chat and its pending Restart Extensions action remained after using
+CoAgent8's restart button; the native Extensions-view action completed the
+transition. Source inspection of upstream VS Code on 2026-10-10 explains the
+difference: [RestartExtensionHostAction](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/extensions/electron-browser/nativeExtensionService.ts)
+starts hosts without an extension delta, whereas
+[updateRunningExtensions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/extensions/browser/extensionsWorkbenchService.ts)
+computes and passes the pending additions/removals. The
+[native runtime-state button](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/extensions/browser/extensionsActions.ts)
+uses the latter internal service. CLI Ready only establishes executable
+readiness and does not establish completed editor extension removal.
+
+The local uninstall fix offers **Reload Window** and invokes
+`workbench.action.reloadWindow` after all selected uninstall commands complete.
+Registration-only setup continues to offer a host restart. Fresh typecheck,
+36 VS Code integration tests and VSIX packaging PASS. The first test run had
+one stale closing-message assertion; its wording was updated while retaining
+the terminal-removal assertion, and the focused suite then passed. New VSIX
+SHA-256 `0c276677efcb35c6a1c7c7a53f45ab6c41d66e95daa17f4e6cf86e758786662f`
+replaces the VSIX above; npm runtime/tarball is unchanged. Native acceptance of
+the replacement action and independent review of this added fix are NOT_RUN.
+
+Next: repeat the post-uninstall action with the new VSIX, obtain independent
+approval of both fixes and finish the remaining
+native lifecycle/skill acceptance and release gates against the candidate.
+
+## SKILLS-002: complete independent skill management
+
+Owner authorization 2026-10-10: full implementation after EXEC, with high
+reasoning effort. [Accepted plan](ROADMAP.md#skills-002-independent-skill-management)
+extends the existing catalog, setup lease, ownership and config owners. Work
+remains on the owner's existing local candidate stack, without Git integration.
+
+Implemented one VS Code command, **CoAgent8: Manage Skills**, and the shared CLI
+`coagent8 skills status|install|uninstall|enable|disable`. Choose a client and
+one or all catalog packages; inspect actual state, updates and user-directory
+scope. Management changes no MCP entries and starts no backend. Cancellation
+and empty selections change nothing. CLI mutations preview first and require
+the exact returned digest to apply one client at a time.
+
+Desired installed/disabled lists live in `backends.<client>.skills` in shared
+`config.json`; actual digests and per-package CLI/extension origin live in
+`setup.json`. `setup-state.json` remains onboarding state. Setup/repair/update
+honor explicit choices, including opt-out and disabled packages; new catalog
+names are offered without silently joining explicit selections. Catalog
+removal cleans up only unchanged owned copies. Legacy records remain accepted.
+
+Portable disable retains packages in `~/.coagent8/disabled-skills/<client>/`,
+outside client discovery; enable restores them. Native activation overrides,
+other discovered copies and shared-directory effects remain distinct. Existing
+conversation content is not erased. The existing agy root follows SKILLS-001's
+native evidence; differing current documentation is not used to silently move
+packages. No bundled script executes and no third-party skill is managed.
+
+Apply binds config, ownership, selection, catalog and observed files. The setup
+lease serializes changes; the config lease rechecks the previewed bytes. A
+bounded journal records package snapshots before effects and ownership last.
+Failed writes roll back; interrupted writes recover on the next mutating setup,
+repair, cleanup or skill operation. Later user edits stop recovery and preserve
+both files and journal. Desired intent is durable before file effects, so repair
+can retry a failed apply. Linked ownership/skill ancestors are rejected before
+lease writes. Mixed CLI/VSIX package ownership is retained across toggles and
+filtered separately during extension uninstall.
+
+Final local Windows/Node v26.10.0 verification:
+
+- Typecheck, build and dependency boundaries PASS (109 files, 589 edges,
+  zero cycles/boundary violations).
+- Focused setup, skills, VS Code and package scope: 76 PASS, zero failures
+  (`.artifacts/skills-focused-tests.log`).
+- Final full suite: 678 tests, 674 PASS, zero failures, 3 platform skips,
+  1 existing WINDOWS-001a TODO (`.artifacts/skills-final-full-tests.log`). The
+  earlier full run was 675 tests before the last three regressions were added.
+- Source documentation lint and generation PASS. One generation attempt
+  rejected the old proposal anchor; correction passed. Local Markdown review
+  checked 22 documents / 150 links with zero issues; git diff --check PASS.
+- Pack inspection, VSIX packaging and exact-tarball consumer smoke PASS.
+  The consumer's initial supplied-artifact attempt required a missing manifest;
+  a sidecar was generated from the actual tar archive contents/digest, then the
+  exact tarball passed installation, bundle/source comparison, both bin aliases,
+  setup dispatch, fixture MCP turns/history and EOF. The earlier CLI regression
+  caught generic diagnostic redaction removing a preview token; output now
+  redacts paths/messages structurally and preserves that non-credential digest.
+
+Replacement tarball: `.artifacts/package/coagent8-1.0.0-beta.2.tgz`, 136 files,
+SHA-256 `8b23bbe6c9d0ddee7fc736a2aea7cbf940717765cbd0fe3fa209ab302ca06e82`.
+Replacement VSIX: `.artifacts/coagent8-mcp-1.0.0-beta.2.vsix`, 21 files,
+SHA-256 `7e4e63044a9aec22c66afaaeb56ad54d81302981bfb4f588c7dd0bec4cd7bc00`.
+These supersede both artifacts above. Evidence: `.artifacts/skills-final-vsix.log`,
+`.artifacts/package/artifacts.json`, tarball manifest sidecar and
+`.artifacts/skills-final-consumer.log`. No installed-owner profile was modified
+to run fixture checks; no commit, push, merge, tag or publication occurred.
+
+Independent CoAgent8 `review`: agy / gemini-3.8-flash-high,
+`session_handle=syn_sess_c1afaf19691f25173662cf48`. First turn exhausted its
+120 s budget (ABORTED); same-topic continuation used 300 s and completed in
+239.1 s / 19 operations. Reviewer reported COMPLETE, READY and no P1/P2 for
+the source/integration scope, snapshot
+`4437de4+uncommitted#70e9785679d26a4030e2632b00720c142b19d63082581e1a0a516b350285b121`.
+Raw review: `.artifacts/skills-independent-review.txt`.
+Reviewer checks were NOT_RUN. Server verdict is BLOCKED because it did not
+observe required checks; an unchanged repeat cannot fix that gate. Local PASS
+above is author-executed, not independent release approval. Base HEAD was
+`4437de45784034d7ae7ec51f471da10797a3646e`; no committed candidate/tree binding
+exists. Subsequent edits only record this evidence in documentation.
+
+A later author review found that an emptied `~/.coagent8/disabled-skills/<client>/`
+survived enable, uninstall and extension cleanup, so uninstall kept
+`~/.coagent8`. Package removal and rollback now remove empty disabled storage
+without following links; a regression covers two clients. Scoped evidence:
+typecheck, lint:docs, dependency boundaries, git diff --check and 44 skills,
+setup and cleanup tests PASS; the regression fails without the fix. The full
+suite was not repeated. The tarball and VSIX above predate this change and are
+superseded; no replacement artifact was built.
+
+Native management discovery/refresh, repair persistence in each real client,
+shared-directory behavior and the new post-uninstall Reload Window action
+remain NOT_RUN on this replacement candidate. Fixture passes do not accept
+those scenarios. The full release CI matrix and committed artifact-bound
+independent approval remain pending; local implementation is not publication.
 
 ## Compact handoff contract
 

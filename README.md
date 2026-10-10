@@ -130,8 +130,8 @@ for ownership, rollback and host acceptance limits.
 
 ### Skills
 
-Setup and repair also install one skill per CoAgent8 function into each client
-whose registration works, so you can name what to use. Codex lists skills in
+Setup and repair initially install one skill per CoAgent8 function into each
+client whose registration works, then honor your saved selection. Codex lists skills in
 `/skills` and invokes them as `$coagent8-review`; Claude Code and the
 Antigravity CLI offer them as `/coagent8-review` commands.
 
@@ -149,6 +149,32 @@ Antigravity CLI offer them as `/coagent8-review` commands.
 | Claude Code | `~/.claude/skills/` |
 | Codex | `~/.agents/skills/` |
 | Antigravity | `~/.gemini/config/skills/` |
+
+**CoAgent8: Manage Skills** lets you choose the client, Install / Update,
+Uninstall, Enable or Disable, then one or all packages. It keeps the CLI and
+MCP connection. Disable retains packages outside discovery in
+`~/.coagent8/disabled-skills/<client>/`; enable restores them. Updates preserve
+disabled choices. Start a new chat after changes; native visibility settings
+and other discovered copies still apply. Shared-directory changes can affect
+other consumers, including VS Code chat.
+
+The CLI uses the same manager. Mutations first return a preview; repeat the
+same command with `--apply=<token>` using its returned `token` to apply it:
+
+```sh
+coagent8 skills status --clients=agy
+coagent8 skills uninstall --clients=agy
+coagent8 skills install --clients=agy --skills=coagent8-review
+coagent8 skills disable --clients=agy --skills=coagent8-review
+coagent8 skills enable --clients=agy --skills=coagent8-review
+```
+
+Choices persist in `backends.<client>.skills` in CoAgent8's `config.json`, so
+repair does not reinstall removed packages or enable disabled ones. An explicit
+empty selection installs none; an explicit selection does not gain newly added
+catalog packages. Conflicts preserve edited/foreign files and report actual
+state separately. Interrupted file operations recover on the next apply or
+setup/repair/cleanup; later user edits stop recovery instead of being overwritten.
 
 Setup writes only `coagent8-*` directories that are missing or still hold the
 copy it installed; a directory you changed is kept and reported. `cleanup`
@@ -172,7 +198,8 @@ macOS), type `CoAgent8` and select one:
 | `CoAgent8: Reset Configuration (config.json)` | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
 | `CoAgent8: Show MCP Servers` | Opens VS Code's `MCP: List Servers` | None |
 | `CoAgent8: Set Up Coding CLIs` | One list of Codex CLI, Claude Code CLI and Antigravity CLI: each line shows the CLI's state, whether CoAgent8 is in its own chat, and where it is installed from. Checked CLIs have CoAgent8 in their chat; check one to install it (VS Code extension or official standalone installer), sign it in and add CoAgent8, uncheck to remove CoAgent8 from its chat. The title bar checks again or shows details | Installs only what you check, in the vendor's own location; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries; never uninstalls a CLI; ends with one notice offering **Restart Extensions** |
-| `CoAgent8: Uninstall CoAgent8` | Removes CoAgent8's CLI chat registrations and uninstalls it; optionally also the vendor extensions and standalone CLIs CoAgent8 setup installed, after two confirmations. Quit and start VS Code to finish | Removes only what CoAgent8 created; never vendor sign-ins or histories |
+| `CoAgent8: Manage Skills` | Selects a client, action and packages: install/update, uninstall, enable or disable | Preserves the CLI and MCP; persists choices for repair; preserves edited packages |
+| `CoAgent8: Uninstall CoAgent8` | Removes CoAgent8's CLI chat registrations and uninstalls it; optionally also the vendor extensions and standalone CLIs CoAgent8 setup installed, after two confirmations. Ends with **Reload Window** to apply extension removal | Removes only what CoAgent8 created; never vendor sign-ins or histories |
 
 The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 `CoAgent8` starts, stops or restarts it and shows its output.

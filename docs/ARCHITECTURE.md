@@ -451,24 +451,54 @@ standalone installation is offered the vendor extension once. Sources compare by
 real path, so an installer link to the extension copy is that copy. Standalone
 removal deletes installer links, never their targets' other files, then emptied
 installer folders and their user PATH entries, keeping the registry value's type
-and unexpanded variables. It ends with Restart
-Extensions, the Extensions view's own step; VS Code deletes the extension's files
-and storage on its next start, which no removal waits for.
+and unexpanded variables. It ends with Reload Window to re-scan installed
+extensions and apply all selected removals. A developer extension-host restart
+does not apply the Extensions view's internal add/remove delta. VS Code deletes
+the extension's files and storage on its next start, which no removal waits for.
 
-Client skills (`src/integrations/skills.ts`, SKILLS-001) follow the registration.
+Client skills (`src/integrations/skills.ts`, SKILLS-001/002) share setup ownership.
 The catalog is `skills/` of the npm package and the VSIX: one directory per
 CoAgent8 function holding only a SKILL.md, read and validated before setup
 changes a client. After a client's registration is installed, updated or
 preserved, setup writes the packages into that client's user-scope directory
 (`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/config/skills`) when missing
 or still holding the recorded copy, and records their SHA-256 digests and the
-extension origin in `setup.json`. Changed, multi-file, linked or foreign
+per-package origin in `setup.json`. Changed, multi-file, linked or foreign
 `coagent8-*` entries are preserved and unrecorded; other tools' skills in shared
 directories are never read. Cleanup previews recorded packages in the same token,
 removes unchanged ones and re-checks them on apply; the VS Code origin limits
 the uninstall to packages the extension wrote. npm runs no uninstall script, so
 `coagent8 cleanup` precedes `npm uninstall`. Skills grant no capability and no
 package script runs.
+
+Independent management (`skill-management.ts`) serves the CLI `coagent8 skills`
+and VS Code's Manage Skills command without starting a backend or touching MCP
+registrations. Status distinguishes actual enabled/disabled/absent/conflicting
+packages from desired state. `backends.<client>.skills` holds explicit `installed`
+and `disabled` name lists in shared user config, separate from ownership. Omitted
+preferences retain setup's full-catalog default; management initially selects
+only recorded packages. Empty installed lists opt out, and explicit selections
+do not gain new catalog names. Setup/repair/update honor the selection. Catalog
+removals delete only unchanged owned packages; edited copies are preserved.
+
+Disable moves an unchanged package outside discovery into
+`~/.coagent8/disabled-skills/<client>/<name>/SKILL.md`; enable restores it to the
+existing root. Install/update retains disabled state. This portable operation
+does not edit native activation overrides. Other discovered copies and shared
+directory consumers still apply; no change erases existing conversation content.
+New-chat refresh and the agy loader path retain the native acceptance limits.
+
+Apply binds client, desired state, catalog digests, observed bytes, config and
+ownership to a preview digest. The setup lease serializes mutations; the config
+lease rejects changed config snapshots. Desired intent is saved first, so repair
+can retry failed file changes. `skill-transaction.ts` journals bounded package
+snapshots in `~/.coagent8/skill-transaction.json` before file effects and commits
+ownership last. Failures roll files back; setup/repair/cleanup/management recover
+interrupted writes under the same lease. Changed ownership or user-edited files
+stop recovery and retain the journal. Per-package `skillOwners` preserves CLI
+versus extension ownership within one client's active and disabled sets; legacy
+`skillOrigin` records remain accepted. Cleanup includes disabled packages and
+filters each package by origin.
 
 VSIX/plugin payloads derive from the npm tarball. Backend readiness, runtime
 initialize/tools-list, native host calls, UI/skill discovery and install/update/

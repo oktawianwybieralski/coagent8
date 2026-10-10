@@ -170,6 +170,7 @@ select a command:
 | **CoAgent8: Show MCP Servers** | Opens VS Code's **MCP: List Servers**, where CoAgent8 is started, stopped or restarted | None |
 | **CoAgent8: Set Up Coding CLIs** | One list of the three CLIs: state, CoAgent8 in its chat, installation source. Check a CLI to install, sign in and add CoAgent8; uncheck to remove CoAgent8 from its chat | Installs only what you check; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries; never uninstalls a CLI |
 | **CoAgent8: Uninstall CoAgent8** | Removes CoAgent8's CLI chat registrations, then uninstalls the extension; optionally also the vendor extensions and standalone CLIs CoAgent8 installed, after two confirmations | Removes only what CoAgent8 created; vendor sign-ins and histories stay |
+| **CoAgent8: Manage Skills** | Choose a client, Install / Update, Uninstall, Enable or Disable, then one or all CoAgent8 packages | Keeps the CLI and MCP connection; persists choices through repair/update; preserves edited or foreign packages |
 
 The first activation checks the CLIs once and shows one notice: the ready CLIs,
 with **Set Up CLIs** when another CLI is missing or signed out, or a ready one does
@@ -243,9 +244,9 @@ a restart.
 installed vendor extensions or standalone CLIs that are still present, it first
 lists them, none selected. It then asks for confirmation, and a second time before
 removing anything selected. It removes CoAgent8's registrations in the CLI chats at
-once, uninstalls the selected extensions and CoAgent8, and offers **Restart
-Extensions**, the step the Extensions view itself offers after an uninstall; VS Code
-deletes the extension's files and storage the next time it starts, and nothing
+once, uninstalls the selected extensions and CoAgent8, and offers **Reload
+Window** to apply pending extension removal and rebuild chat contributions. VS Code
+deletes the extension's files and storage on a subsequent full start, and nothing
 CoAgent8 removes waits for that. Removing the Google Antigravity extension also deletes the
 `~/.gemini/bin/agy.exe` (`agy` outside Windows) it downloaded, which the extension
 itself leaves behind. For a selected standalone CLI
@@ -353,16 +354,28 @@ This command creates defaults only when the file is missing and preserves
 existing contents, including invalid JSON that needs repair. Existing custom
 files need a `$schema` association if they do not already have one.
 
-Installation/update/uninstall uses the native Extensions view **Restart Extensions**
+Installation/update uses the native Extensions view **Restart Extensions**
 action when VS Code requests it. **Developer: Restart Extension Host** is a different
-operation and does not apply added/removed extensions. CoAgent8 does not force a
-window reload. Changes to CoAgent8 settings and MCP definitions refresh the
+operation and does not apply added/removed extensions. CoAgent8 uninstall offers
+**Reload Window** after removal commands complete to re-scan installed extensions
+and rebuild chat contributions. Changes to CoAgent8 settings and MCP definitions refresh the
 provider; VS Code stops a running server whose definition changed and starts it
 again on the next use. **MCP: List Servers** (or **CoAgent8: Show MCP Servers**)
 also starts, stops and restarts it. Bundled-server identity
 also changes when a replacement VSIX keeps the same version number. After CLI
 chat registrations change, the notice's **Restart Extensions** reloads the vendor
 chat extensions.
+
+Manage Skills shows actual package state and available updates. Disable retains
+an unchanged package outside client discovery in
+`~/.coagent8/disabled-skills/<client>/`; enable restores it. Install/update
+preserves disabled state. Desired installed/disabled lists are stored in
+`backends.<client>.skills` in shared `config.json`; setup and repair honor them.
+Cancellation or an empty selection changes nothing. Start a new chat after
+changes. Native visibility overrides and other discovered copies remain
+effective; shared directory changes can affect VS Code chat too. Interrupted
+file changes recover on the next setup/repair/cleanup/apply; edited files are
+preserved. Client discovery/refresh acceptance remains pending.
 
 Track current behavior in the
 [architecture and runtime contract](https://github.com/oktawianwybieralski/coagent8/blob/develop/docs/ARCHITECTURE.md)
