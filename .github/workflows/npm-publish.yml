@@ -1,0 +1,82 @@
+name: npm publish
+
+# Phase E of the release process (Git workflow rule 02, section 5). Publishing the
+# verified GitHub Release publishes its exact npm tarball, never a rebuild, through
+# npm trusted publishing (OIDC, no token) with provenance. The job runs only after
+# the owner set the repository variable NPM_TRUSTED_PUBLISHING to `true` (rule 02,
+# section 8) and waits for the owner's approval in the `npm` environment.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: read
+
+jobs:
+  publish:
+    name: Publish ${{ github.event.release.tag_name }} to npm
+    if: vars.NPM_TRUSTED_PUBLISHING == 'true' && startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: Check npm version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(npm --version)"
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$version" \
+            || { echo "::error::npm $version cannot use trusted publishing; 11.5.1 or later is required"; exit 1; }
+
+      - name: Download the release tarball and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release \
+            --pattern "coagent8-$version.tgz" --pattern SHA256SUMS
+
+      # The same file the owner verified: its checksum and the provenance of release.yml.
+      - name: Verify checksum and build provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          (cd release && sha256sum --check --ignore-missing --strict SHA256SUMS)
+          grep -q " coagent8-$version.tgz\$" release/SHA256SUMS \
+            || { echo "::error::SHA256SUMS lists no coagent8-$version.tgz"; exit 1; }
+          gh attestation verify "release/coagent8-$version.tgz" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+
+      # A pre-release version (beta, rc) goes to `next`, a final version to `latest`;
+      # the GitHub pre-release flag must agree.
+      - name: Publish to npm
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          case "$version" in
+            *-*) channel=next; expected=true ;;
+            *) channel=latest; expected=false ;;
+          esac
+          if [ "$PRERELEASE" != "$expected" ]; then
+            echo "::error::GitHub pre-release flag $PRERELEASE does not match version $version"; exit 1
+          fi
+          npm publish "release/coagent8-$version.tgz" --tag "$channel" --provenance --access public

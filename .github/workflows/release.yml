@@ -2,14 +2,19 @@ name: Release
 
 # Phase C of the release process (Git workflow rule 02, section 5). A release tag
 # pushed by the owner builds the exact artifacts from a clean checkout and creates a
-# DRAFT GitHub Release with them. This workflow never publishes the draft and never
-# publishes to npm: the owner verifies the downloaded artifacts first (phases D and E).
+# DRAFT GitHub Release with them, plus signed build provenance for each artifact.
+# This workflow never publishes the draft and never publishes to npm: the owner
+# verifies the downloaded artifacts first (phases D and E); npm-publish.yml publishes
+# the verified tarball once the owner publishes the release.
 on:
   push:
     tags: ['v*']
 
+# id-token and attestations sign the build provenance (Sigstore, GitHub attestations).
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   draft:
@@ -99,6 +104,15 @@ jobs:
           (cd release && sha256sum "coagent8-$version.tgz" "coagent8-mcp-$version.vsix" > SHA256SUMS)
           cat release/SHA256SUMS
 
+      # A signed statement that this workflow built these exact files from this commit;
+      # `gh attestation verify <file> --repo <owner>/<repo>` checks a download.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/coagent8-*.tgz
+            release/coagent8-mcp-*.vsix
+
       - name: Generate release notes
         shell: bash
         env:
@@ -110,10 +124,16 @@ jobs:
             echo
             echo "## Artifacts"
             echo
-            echo "Verify downloads against \`SHA256SUMS\`:"
+            echo "Verify downloads against \`SHA256SUMS\` and their build provenance:"
             echo
             echo '```text'
             cat release/SHA256SUMS
+            echo '```'
+            echo
+            echo '```bash'
+            echo "sha256sum --check --ignore-missing SHA256SUMS"
+            echo "gh attestation verify coagent8-mcp-${GITHUB_REF_NAME#v}.vsix --repo $GITHUB_REPOSITORY"
+            echo "gh attestation verify coagent8-${GITHUB_REF_NAME#v}.tgz --repo $GITHUB_REPOSITORY"
             echo '```'
             echo
             echo "Built by the Release workflow from \`$GITHUB_SHA\`. The npm package is published separately by the maintainer after verification."
