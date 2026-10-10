@@ -1,3 +1,7 @@
+---
+title: Handoff
+---
+
 # CoAgent8 handoff
 
 Updated 2026-10-09. Read this for current work, [ROADMAP.md](ROADMAP.md) for
@@ -44,7 +48,7 @@ Existing execution/timing changes in this checkout belong to separate work.
 
 The owner requested correction of the local source-analysis plan and small
 assignments for a less capable implementation model on 2026-10-09. The active
-queue is [AUDIT-001 corrected analysis follow-up](ROADMAP.md#audit-001---corrected-analysis-follow-up):
+queue is [AUDIT-001 corrected analysis follow-up](ROADMAP.md#audit-001-corrected-analysis-follow-up):
 21 pending cards, A01-A21, with reproduction gates, dependencies, starting files,
 acceptance cases and scope-based checks. No implementation card was started by
 this documentation change. On assignment, start with AUDIT-001-A01; existing
@@ -171,7 +175,7 @@ items from an old snapshot report. Revalidate the candidate before claiming acce
 ## SKILLS-001 client skills
 
 Requested by the owner on 2026-10-10 for beta.2, before EXEC-001-T12
-([cards](ROADMAP.md#skills-001---client-skills-installed-with-the-registration)).
+([cards](ROADMAP.md#skills-001-client-skills-installed-with-the-registration)).
 SKILLS-001a-d are implemented locally on `perf/exec-001`. The roadmap cards and
 this section entered commit 2ba3bc9 (EXEC-001-T11a) together with that card's
 documents; the code, skills, README and architecture follow in their own commit.
@@ -607,7 +611,7 @@ import in contracts, and contracts -> constants.ts -> mcp/constants.ts.
 
 Implementation commit: `af9f7d2`. Next action: independent review of this
 follow-up before Git integration, then EXEC-001-T01 baseline under the detailed
-[ROADMAP tasks](ROADMAP.md#exec-001---measured-preparation-and-complete-call-lifecycle).
+[ROADMAP tasks](ROADMAP.md#exec-001-measured-preparation-and-complete-call-lifecycle).
 No new independent approval, remote CI or native-client acceptance is established.
 The subsequent plan edit requires content/local-link review and git diff --check;
 it does not change runtime behavior or require repeating the preceding tests.
@@ -1926,7 +1930,7 @@ History reconstructed from the local session transcripts of 2026-10-06:
   `ci.yml` reports 24.x/26.x, so no PR can merge until the ruleset changes.
 
 Owner decisions 2026-10-10 and the resulting plan are in
-[REPO-002](ROADMAP.md#repo-002---branch-model-and-release-workflow): PrestaShop
+[REPO-002](ROADMAP.md#repo-002-branch-model-and-release-workflow): PrestaShop
 model (`develop` + `X.Y.x`, no `main`), only Verified squash commits on
 protected branches, the 293 local commits as one squash PR, beta.1 GitHub
 Release, beta.2 preview on npm `next`, beta.1 deprecated, CI on Node 24/26.
@@ -1943,6 +1947,44 @@ online run needs the commits on GitHub; `git diff --check`. The workflow has
 not run on GitHub yet.
 
 Next: REPO-002c/d (agent, local), then the owner steps in REPO-002.
+
+## REPO-002c/d/e: beta.2 pull request branch and API site
+
+Owner approval 2026-10-10 to move the unpublished local tag. All local; nothing
+was pushed.
+
+- beta.1 commit X `9795432`: parent GitHub's `b962086`, tree of the former
+  root `ae55f01` (equal tree verified), original message and dates. Local tag
+  `v1.0.0-beta.1` moved to X (former tag object `1380681`, same message and
+  date). `perf/exec-001` is unchanged as the pre-migration reference.
+- `release/v1.0.0-beta.2`: `git rebase --onto X ae55f01` of all commits
+  (linear, no merges); the final tree equals `perf/exec-001`'s tree; 295
+  commits after X at that point, one author (the owner), no AI trailers.
+  Ignored build outputs in `dist/` blocked the replay of the commit that
+  stopped tracking `dist/`; they were moved aside and rebuilt.
+- REPO-002d `9c72194`: README install from npm `next` and the GitHub
+  release with `SHA256SUMS`; VS Code README and VSIX link base use `develop`.
+- Release commit `944e030` `chore(release): v1.0.0-beta.2`: the detailed
+  beta.2 section (150 entries from the branch commits) is frozen in the
+  `cliff.toml` footer above beta.1; changelog scripts start at
+  `v1.0.0-beta.2`; CHANGELOG.md equals the output for an empty range.
+- Release notes drafts (ignored, English): `.local/release/v1.0.0-beta.2/release-notes.md`
+  (status, known limits, upgrade note, generated notes) and
+  `.local/release/v1.0.0-beta.1/release-notes.md`.
+- Full gate on `944e030` (tree `5c7689c`, clean): typecheck, dependencies,
+  build, coverage 656 tests (652 pass, 0 fail, 3 POSIX skips, 1 todo; 93.23 %
+  statements), pack, consumer smoke, lint:docs, docs, VSIX all PASS. Tarball
+  SHA-256 `b04f8d4d...11ab7e`, VSIX `afd585ee...6ffd6d06`. Superseded by the
+  final gate below because README and docs changed afterwards.
+- REPO-002e: `docs.yml` deploys the TypeDoc site to Pages on a published
+  release; TypeDoc adds the project documents with front matter titles and
+  renders mermaid through `tooling/documentation/mermaid.js`. ROADMAP headings
+  changed from `ID - title` to `ID: title` (27) and every `---` anchor link
+  was updated, because TypeDoc collapses repeated hyphens and GitHub does not.
+  `npm run docs`: 0 warnings. Diagram rendering in a browser and the Pages
+  deployment are NOT_RUN.
+
+Next: the owner steps in REPO-002 on GitHub and npm.
 
 ## Compact handoff contract
 

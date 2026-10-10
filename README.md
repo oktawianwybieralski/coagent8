@@ -158,7 +158,7 @@ runs no script on `npm uninstall`, so run `coagent8 cleanup` and
 `coagent8 cleanup --apply=<preview-token>` before `npm uninstall -g coagent8`.
 VS Code chat also reads `~/.claude/skills/` and `~/.agents/skills/`, so with
 both Claude Code and Codex set up it lists each skill twice. Native discovery
-in each client is still being accepted ([SKILLS-001](docs/ROADMAP.md#skills-001---client-skills-installed-with-the-registration)).
+in each client is still being accepted ([SKILLS-001](docs/ROADMAP.md#skills-001-client-skills-installed-with-the-registration)).
 
 ### VS Code commands
 
@@ -312,6 +312,7 @@ links resolve in the repository.
 | Branches (`develop`, release lines `X.Y.x`), PRs and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
 | Generated release history | [Changelog](CHANGELOG.md) |
 | Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
+| Online API reference and documents | [oktawianwybieralski.github.io/coagent8](https://oktawianwybieralski.github.io/coagent8/) (latest release) |
 | TSDoc and API reference | [Code documentation](docs/ARCHITECTURE.md#code-documentation-and-package-evidence) |
 
 These three project documents replace the separate runtime contract, feature

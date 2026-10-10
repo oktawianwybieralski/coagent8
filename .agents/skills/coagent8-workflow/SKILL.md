@@ -53,7 +53,7 @@ line, which receives fixes only as backport PRs. You may prepare commits, a
 release PR branch, release notes and gate evidence. Pushing or opening a PR needs
 the owner's go-ahead in the session; merging, tagging, GitHub Releases, npm and
 repository settings are the owner's. The one-time migration to this model is
-[REPO-002](../../../docs/ROADMAP.md#repo-002---branch-model-and-release-workflow).
+[REPO-002](../../../docs/ROADMAP.md#repo-002-branch-model-and-release-workflow).
 
 Prose needs content/link review and git diff --check, not runtime tests or paid
 backend calls. Source comments/documentation tooling additionally need lint:docs

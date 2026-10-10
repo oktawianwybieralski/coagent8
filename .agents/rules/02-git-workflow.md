@@ -1,3 +1,7 @@
+---
+title: Git workflow
+---
+
 # P0: Git Workflow, Versioning & Release Process (`02-git-workflow.md`)
 
 > **Priority Level: P0 (Critical System Invariant)**
@@ -290,6 +294,11 @@ marked (owner); an agent may prepare everything else.
 ### Phase E - publish (owner)
 
 9. Publish the draft GitHub Release (keep "pre-release" for betas and RCs).
+   Publishing starts `.github/workflows/docs.yml`, which validates the TSDoc
+   comments, generates the TypeDoc site (source API plus the project documents:
+   README, Architecture, Roadmap, Handoff, Changelog, Git workflow) and deploys it
+   to GitHub Pages. Pages always shows the latest published release; versioned
+   documentation per line is planned with the first `X.Y.x` line (REPO-002).
 10. Publish the verified tarball, not a rebuild:
     ```bash
     npm publish ./coagent8-X.Y.Z-<pre>.tgz --tag next      # beta or rc
@@ -425,6 +434,9 @@ the tag-creation rule:
 * `develop` is the default branch. GitHub signs every squash commit it creates
   (the "Verified" badge), which satisfies the signed-commit rule; a locally made,
   unsigned commit can never reach a protected branch.
+* **GitHub Pages:** source "GitHub Actions"; the `github-pages` environment allows
+  deployments from tags `v*` (a release event runs on the tag) and from
+  `develop` (manual runs). Site: https://oktawianwybieralski.github.io/coagent8/.
 * No protection, required check or review gate may be disabled or bypassed
   outside the recovery procedure below.
 

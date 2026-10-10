@@ -1,3 +1,7 @@
+---
+title: Roadmap
+---
+
 # CoAgent8 roadmap
 
 Updated 2026-10-09. This is the single active plan. CoAgent8 is becoming a
@@ -102,7 +106,7 @@ outside its job, such as MCP servers, running until they exit or the server stop
 (WINDOWS-001a REPRODUCED; owner decision 2026-10-10: known limit, fixed by
 WINDOWS-001b-e before write profiles).
 
-## SIMPLIFY-001 - module boundary migration
+## SIMPLIFY-001: module boundary migration
 
 Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
 S1, S2, S3, S4, S5, and S6 implemented and verified. This is
@@ -255,7 +259,7 @@ Do not repeat a passing full gate after every move. New failures or changes
 determine which checks must run again. Add behavioral regressions for uncovered
 risks, not tests that merely mirror the new directory tree.
 
-## EXEC-001 - measured preparation and complete call lifecycle
+## EXEC-001: measured preparation and complete call lifecycle
 
 Plan requested on 2026-10-09 after SIMPLIFY-001. All tasks below are pending.
 This is the detailed work breakdown for existing `EXEC-001`,
@@ -342,7 +346,7 @@ node tests/run.cjs tests/config.test.js tests/config-editor-settings.test.js tes
 git diff --check
 ```
 
-### EXEC-001-T01 - establish a reproducible baseline
+### EXEC-001-T01: establish a reproducible baseline
 
 - [x] **T01a - map calls and waits.** Start: `src/mcp/tools/consult.tool.ts`,
   `src/mcp/tools/review.tool.ts`, `src/execution/controller.ts` and direct
@@ -369,7 +373,7 @@ Acceptance: another agent can reproduce the baseline; no performance claim
 depends on footer timing alone. Verification: inspect existing fixtures and run
 only the selected baseline scenarios. Depends on the S6 follow-up.
 
-### EXEC-001-T02 - measure phases without changing timeout behavior
+### EXEC-001-T02: measure phases without changing timeout behavior
 
 - [x] **T02a - implement the timing primitive.** Start: `src/contracts/execution.ts`
   and `src/execution/runtime/`. Add a **new** timing primitive with an injectable
@@ -394,7 +398,7 @@ Acceptance: deliberate fixture delays appear in the correct phase and total;
 instrumentation does not change routing, retries or timeouts. Verification:
 focused success/failure/timing fixtures and typecheck. Depends on T01.
 
-### EXEC-001-T03 - supply effective configuration with provenance
+### EXEC-001-T03: supply effective configuration with provenance
 
 - [x] **T03a - specify snapshot freshness.** Start: `loadConfig`, `getConfigFile`
   in `src/config.ts`, `src/config-overrides.ts` and `src/paths.ts`. Document the
@@ -425,7 +429,7 @@ custom paths, old registration overrides and editor settings remain effective.
 Verification: config/editor/doctor tests, malformed and concurrently changed
 config fixtures, typecheck and dependency check. Depends on T02.
 
-### EXEC-001-T04 - extract cohesive task preparation
+### EXEC-001-T04: extract cohesive task preparation
 
 - [x] **T04a - extract input/continuation validation.** Start:
   `executeTaskInternal`, `src/sessions/session.ts:getSession` and
@@ -446,7 +450,7 @@ priced and continued calls; invalid/busy handles fail closed. Verification:
 selection/routing/price-limit/continuation regressions, typecheck and dependency
 check. Depends on T03. Treat this as structural extraction, not a speedup claim.
 
-### EXEC-001-T05 - reuse observations within preparation
+### EXEC-001-T05: reuse observations within preparation
 
 - [x] **T05a - reuse catalog evidence.** Start: `src/execution/selection.ts`,
   `src/execution/routing.ts`, `src/backends/probe-cache.ts`. Pass an observation
@@ -472,7 +476,7 @@ selection, price limits and approval outcomes remain identical. Verification:
 probe-cache/selection/governance/price-change concurrency tests and a focused
 cold/warm baseline comparison. Depends on T04.
 
-### EXEC-001-T06 - guarantee finalization after resource acquisition
+### EXEC-001-T06: guarantee finalization after resource acquisition
 
 - [x] **T06a - guard acquisition and registration.** Start:
   `src/execution/controller.ts` around `acquireAndResolveSession`, writer
@@ -500,7 +504,7 @@ outcome; archive failure does not erase a valid answer. Verification: controller
 history/session and process failure-path tests on affected platforms. Depends
 on T05. Report fixture and native teardown evidence separately.
 
-### EXEC-001-T07 - define the complete-call budget contract
+### EXEC-001-T07: define the complete-call budget contract
 
 - [x] **T07a - settle timeout semantics in writing.** Start:
   `src/contracts/execution.ts:ExecutionOptions`, `src/mcp/schema.ts` and timeout
@@ -527,7 +531,7 @@ phase, including consent and cleanup. Owner inspection of this contract is the
 checkpoint before propagation. Verification: focused budget arithmetic/expiry
 tests and documentation review. Depends on T06.
 
-### EXEC-001-T08 - make native observations cancellable
+### EXEC-001-T08: make native observations cancellable
 
 - [x] **T08a - define read ownership and extend the contract.** Start:
   `src/backends/types.ts:CliAdapter`, `src/backends/probe-cache.ts:coalesce` and
@@ -572,7 +576,7 @@ budget, clean owned processes and do not poison concurrent calls. Verification:
 probe-cache, price fetch, native quota and process cancellation tests; Context7
 documentation before changing provider-specific CLI/API behavior. Depends on T07.
 
-### EXEC-001-T09 - bound Git collection and storage waits
+### EXEC-001-T09: bound Git collection and storage waits
 
 - [x] **T09a - bound review Git work.** Start: `src/workspace/git.ts:runGit`,
   `collectGitScope`, `snapshotId` and `src/review/input.ts`. Pass the request
@@ -600,7 +604,7 @@ after expiry or leak a reservation; failed snapshot verification blocks READY.
 Verification: review/workspace, lock/session and controller cancellation
 regressions. Depends on T08.
 
-### EXEC-001-T10 - bind consent and revalidation to the budget
+### EXEC-001-T10: bind consent and revalidation to the budget
 
 - [x] **T10a - cancel a pending approval.** Start: `ConsentPrompt` and the
   consent block in `src/execution/controller.ts`, plus elicitation in
@@ -629,7 +633,7 @@ approval never start an unauthorized turn. Verification: consent, governance,
 price-limit and MCP elicitation fixtures; native consent acceptance remains
 AX-003/006. Depends on T09.
 
-### EXEC-001-T11 - wire the complete call and migrate timing output
+### EXEC-001-T11: wire the complete call and migrate timing output
 
 - [x] **T11a - activate the budget for consult/review.** Start:
   `src/mcp/tools/consult.tool.ts`, `review.tool.ts`, `src/mcp/server.ts`, and
@@ -660,7 +664,7 @@ can remain silent without granting extra time. Verification: adapter/controller,
 MCP/stdio, review and doctor regressions, typecheck, dependency check, build and
 applicable docs checks. Depends on T10; caller-visible migration follows T07.
 
-### EXEC-001-T12 - compare results and bind independent acceptance
+### EXEC-001-T12: compare results and bind independent acceptance
 
 - [x] **T12a - repeat the baseline.** Run T01b with the same parameters and
   repetitions as T01c. Done: HANDOFF compares phase/total timings, reads and
@@ -698,7 +702,7 @@ one labelled card at a time under the same task-card instructions and test
 groups as EXEC-001. A parent requirement is satisfied only after its dependent
 cards pass. Extend existing owners; do not copy selection/policy per client.
 
-### AX-001 - prices before execution
+### AX-001: prices before execution
 
 - [x] Expose a bounded MCP selection view: backend, concrete model, accepted
   efforts, default source, output USD per million tokens, price source/date,
@@ -754,7 +758,7 @@ cards pass. Extend existing owners; do not copy selection/policy per client.
 - [x] Test missing/stale lists, aliases, approximate matches, tiers, truncation
   and invalid price fields. Expose freshness/matching before selection.
 
-### AX-002 - enforce the selection constraint
+### AX-002: enforce the selection constraint
 
 - [x] Define currency, token unit, direction and strict/inclusive boundary:
   below USD 5 per million output tokens excludes 5. Recheck the concrete model
@@ -780,7 +784,7 @@ cards pass. Extend existing owners; do not copy selection/policy per client.
   at the exact boundary, and no model is silently substituted. Check: R,
   CONFIG/SELECT/POLICY/MCP. Do not implement an unchosen policy.
 
-### AX-003 - consent across clients
+### AX-003: consent across clients
 
 - [ ] **AX-003a - classify current elicitation outcomes.** Start:
   `src/mcp/server.ts`, `src/execution/consent.ts`, `src/models/governance.ts`.
@@ -801,10 +805,10 @@ cards pass. Extend existing owners; do not copy selection/policy per client.
   form-less acceptance is assigned under AX-006. Check: P. Explicit-model
   preservation remains mandatory; auto route-skipping needs an accepted preference.
 
-### AX-004 - diagnostics and effective configuration
+### AX-004: diagnostics and effective configuration
 
 The shared configuration/timing/cancellation work is broken down in
-[EXEC-001](#exec-001---measured-preparation-and-complete-call-lifecycle),
+[EXEC-001](#exec-001-measured-preparation-and-complete-call-lifecycle),
 especially T02/T03/T08/T11/T12. The configuration and native acceptance items
 below retain their own acceptance criteria.
 
@@ -823,7 +827,7 @@ below retain their own acceptance criteria.
   for each claimed client. Done: real host evidence supports refresh/restart
   guidance and custom user state is preserved. Record NOT_RUN if host unavailable.
 
-### AX-005 - readiness with evidence
+### AX-005: readiness with evidence
 
 - [ ] **AX-005a - define the readiness decision table.** Start:
   `src/diagnostics/doctor.ts`, `src/backends/types.ts`, `availability.ts`.
@@ -836,7 +840,7 @@ below retain their own acceptance criteria.
   followed by success does not imply universal isolation. Check: R, DOCTOR/CACHE/
   MCP with each decision-table row, preserving agy's inherited-tool limitation.
 
-### AX-006 - first-use contract
+### AX-006: first-use contract
 
 - [ ] **AX-006a - prepare the acceptance script.** Start: `src/mcp/schema.ts`,
   `src/mcp/constants.ts`, `tests/mcp/surface.test.js`. Write identical prompts
@@ -857,7 +861,7 @@ below retain their own acceptance criteria.
 Native cards do not authorize paid model escalation, live user-config mutation
 or installation changes. Use existing task authority and server-mediated consent.
 
-### AX-007 - bounded review and continuation cost
+### AX-007: bounded review and continuation cost
 
 A weaker client can loop on `review` and drop the session between rounds (see
 [Agent usability gaps](#agent-usability-gaps)). Owner decisions 2026-10-09: keep
@@ -902,7 +906,7 @@ before EXEC-001-T12.
   Done: the warning appears only in that case and never continues a session
   implicitly. Check: R, SESSION/MCP.
 
-### SKILLS-001 - client skills installed with the registration
+### SKILLS-001: client skills installed with the registration
 
 Owner decisions 2026-10-10: every CoAgent8 function gets a skill so a user can
 name what to use; setup installs a client's skills with its MCP registration,
@@ -1066,7 +1070,7 @@ integration. Do not copy opposite-provider routing, host-only budgets or PID-bas
 teardown. Preserve applicable licenses if reusing material. Fetch current client
 documentation through Context7 before implementing adapters.
 
-### FAILOVER-001 - continue a task after quota exhaustion
+### FAILOVER-001: continue a task after quota exhaustion
 
 Use case (owner, 2026-10-09): a subscription backend reaches its 5-hour or
 7-day limit during a task and the work continues on another backend. Today the
@@ -1107,7 +1111,7 @@ Implementation cards follow accepted 001b/001c, one operation per card.
 
 Retain these work IDs; local fixes still need candidate acceptance. For the
 reviewed source-analysis findings, use the existing
-[AUDIT-001 follow-up cards](#audit-001---corrected-analysis-follow-up)
+[AUDIT-001 follow-up cards](#audit-001-corrected-analysis-follow-up)
 instead of creating a duplicate assignment.
 
 These rows are acceptance inventories, not permission to rewrite every listed
@@ -1118,7 +1122,7 @@ check) before implementation. Reuse the following concrete split points:
 | Owner | Small assignment sequence and starting point |
 | --- | --- |
 | AUDIT-001 | Reproduce one historical finding on the candidate; use its mapped owner/test below. Record fixed/reproduced/NOT_RUN, then make one regression/fix card only if evidence requires it. |
-| WINDOWS-001 | Read `src/execution/process.ts`; first reproduce POSIX parent death, then specify owned-supervision behavior, then implement it. Native Windows quiet-desktop and cold-updater scenarios are separate acceptance cards. Per-call Windows containment uses the [WINDOWS-001 cards](#windows-001---per-call-process-containment). |
+| WINDOWS-001 | Read `src/execution/process.ts`; first reproduce POSIX parent death, then specify owned-supervision behavior, then implement it. Native Windows quiet-desktop and cold-updater scenarios are separate acceptance cards. Per-call Windows containment uses the [WINDOWS-001 cards](#windows-001-per-call-process-containment). |
 | REDACTION-002 | Start with `tests/security/redaction.test.js` and history tests; assign credential-only answer, split-chunk credential and persisted bytes as separate cases. Assert the actual public/disk bytes. |
 | SESSION-001/HISTORY-002 | Specify new/auto/none semantics first, then implement one mode per card using `src/sessions/session.ts`. Early-handle publication is a separate COAGENT-004a-dependent card; native-expiry retry needs its own proof-before-execution fixture. |
 | LOCKS-001/QUOTA-001 | Use LOCK/CACHE/LIFE tests; assign token renewal, cooldown single-write and optional-cache failure separately. Reuse T08/T09 changes instead of adding another cache or lock owner. |
@@ -1136,7 +1140,7 @@ condition in the inventory when splitting; a narrower card does not waive it.
 | `AUDIT-001` | Rerun original process/redaction/history/cooldown/error/config/lease/resource reproductions on the candidate. CUR-001/003/004/005/006/010/012 have local fixes; old reports do not reopen them. Independent scope/check evidence remains required. |
 | `WINDOWS-001` | CUR-011: POSIX parent-death cleanup. Per-call containment of native descendants before write/command profiles. Native no-survivor/quiet-desktop evidence, including cold agy updater conditions. Never PID/name/PPID-select teardown; owned handles/groups and protocol interrupt only. |
 | `REDACTION-002` | Preserve credential-only answers, broader diagnostic redaction and split-stream secret handling in new task paths. |
-| `EXEC-001`, `CLI-INTERACT-001` | CUR-007: complete [T01-T12](#exec-001---measured-preparation-and-complete-call-lifecycle): reproducible baseline, phase timing, config/preparation reuse, guaranteed finalization, complete-call budget, cancellable observations/Git/storage/consent, transport migration and independent measured acceptance. Preserve activity-aware idle behavior and account for agy host deadlines. |
+| `EXEC-001`, `CLI-INTERACT-001` | CUR-007: complete [T01-T12](#exec-001-measured-preparation-and-complete-call-lifecycle): reproducible baseline, phase timing, config/preparation reuse, guaranteed finalization, complete-call budget, cancellable observations/Git/storage/consent, transport migration and independent measured acceptance. Preserve activity-aware idle behavior and account for agy host deadlines. |
 | `SESSION-001`, `HISTORY-002` | CUR-008: return a session handle before the turn ends and allow calls without a disk session; this is separate from `coagent8_HISTORY=off`, which only disables archives. Specify how session modes `new`, `auto` and `none` relate to existing calls. Explicit invalid/busy handles fail closed; opt-in `auto` reuses a session of the same workspace/provider used within 15 minutes and starts a fresh one when that session is busy. Only a native expiry proven before execution permits one fresh retry within the original time budget. Preserve retention, pagination and migration of existing histories. |
 | `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Keep renewed token leases, single cooldown recording, honest quota and optional caches under concurrency. No retries of policy/sandbox/cancel/partial-execution errors. |
 | `SURFACE-001`, `CONSULT-001`, `CONTEXT-001`, `MCP-001`, `STARTUP-001` | Preserve the six tools, plain consult, client roots/resources and startup that does not wait for backend probes. Remove review instructions duplicated between tool descriptions and prompts; measure the definition-size budgets in native clients. Icon or UI claims need evidence from the host. Failures of a first call by a fresh agent belong to AX-006. |
@@ -1145,9 +1149,9 @@ condition in the inventory when splitting; a narrower card does not waive it.
 | `ANTIGRAVITY-HUB-001` | Accept configured managed CLI and quiet launches. Revisit private hub only with supported versioned API, verified task capabilities and no authority escape through inherited tools. |
 | `ERRORS-001`, `SIMPLIFY-001`, `DOCS-001` | Finish the review of I/O errors and empty catch blocks so every failure is actionable; type auth, quota, context-length and crash failures; remove duplicated timeout constants. Refactor only where a module holds unrelated responsibilities, and document logic that is hard to follow. Do not change behavior merely to rename folders. |
 | `PACKAGE-001`, `TESTS-001`, `VERIFY-SCOPE-001`, `VERIFY-001` | `dist/` stays untracked; the VSIX and plugin payloads are derived from the npm tarball. Tests prove they remove only their own temporary files and keep logs that explain a failure. Accept in CI the change that runs the suite once per matrix job through `test:coverage` instead of a separate full run. Report source tests, bundle checks, exact-artifact checks and native-host evidence separately. |
-| `CHANGELOG-001`, `REPO-001`, `REPO-002` | Keep generated changelog/pre-push/title checks and license notices. Branch model, rulesets and release workflow follow [REPO-002](#repo-002---branch-model-and-release-workflow); GitHub settings, tags, releases and npm stay owner actions. |
+| `CHANGELOG-001`, `REPO-001`, `REPO-002` | Keep generated changelog/pre-push/title checks and license notices. Branch model, rulesets and release workflow follow [REPO-002](#repo-002-branch-model-and-release-workflow); GitHub settings, tags, releases and npm stay owner actions. |
 
-### WINDOWS-001 - per-call process containment
+### WINDOWS-001: per-call process containment
 
 libuv places every non-detached child of the server in one server-wide
 `KILL_ON_JOB_CLOSE` job; c2eb228 (AUD-P2-14) observed no survivor after a server
@@ -1192,7 +1196,7 @@ containment precedes enabling any COAGENT-002 write or command profile.
   cancel/expiry per backend leaves no survivor, quiet desktop is preserved and
   the cold agy updater stays disabled. Fixtures cannot approve a native cell.
 
-## AUDIT-001 - corrected analysis follow-up
+## AUDIT-001: corrected analysis follow-up
 
 Planned 2026-10-09 after checking the local source-analysis report against the
 code at `b1dbd99`. This section is the executable task list; local analysis
@@ -1543,7 +1547,7 @@ not dependencies of this plan.
 | AUD-P2-9/11, AUD-P2-10, AUD-P2-15 | MCP-001, INSTALL-001, VERIFY-SCOPE-001, respectively |
 | AUD-P2-3/4/5/6/8, P3 | SIMPLIFY-001 |
 
-### CLI-FIRST-001 - public CLI and MCP adapter
+### CLI-FIRST-001: public CLI and MCP adapter
 
 These cards follow the accepted task/profile contracts and preserve the public
 MCP bridge until the CLI replacement is accepted. Use one command or native
@@ -1603,7 +1607,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   overhead is measured and limitations are explicit. A TUI/persistent worker
   remains deferred unless a separate bounded comparison justifies it.
 
-## REPO-002 - branch model and release workflow
+## REPO-002: branch model and release workflow
 
 Owner decisions 2026-10-10: PrestaShop-style `develop` plus release lines
 `X.Y.x`, no `main`; every commit on a protected branch is a GitHub-signed
@@ -1633,7 +1637,7 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
   creates a draft (pre-)release. It never publishes. Check: both files parse as
   YAML; the notes template renders `--current --offline` on tag
   `v1.0.0-beta.1`. The workflow itself first runs on GitHub (REPO-002e).
-- [ ] **REPO-002c - prepare the beta.2 PR branch.** Needs `git fetch origin`.
+- [x] **REPO-002c - prepare the beta.2 PR branch.** Needs `git fetch origin`.
   Create commit X: parent `b962086`, tree of `v1.0.0-beta.1` (`ae55f01^{tree}`),
   message `chore(release): v1.0.0-beta.1`; move the unpublished local tag
   `v1.0.0-beta.1` to X (owner approval). Replay the work with
@@ -1645,13 +1649,29 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
   into the PR description draft, and add one release commit
   `chore(release): v1.0.0-beta.2`. Repeat T12b on its head (new SHAs).
   Check: tree equality, changelog/notes review, full gate.
-- [ ] **REPO-002d - README and VS Code links.** Install instructions use
+- [x] **REPO-002d - README and VS Code links.** Install instructions use
   `coagent8@next`; VS Code README and `tooling/vscode/package.cjs` link to
   `blob/develop`. Lands in REPO-002c's branch before its gate. Check: P plus VSIX.
+  Evidence: [REPO-002c/d](HANDOFF.md#repo-002cde-beta2-pull-request-branch-and-api-site).
+- [x] **REPO-002e - API site on GitHub Pages.** `docs.yml` (release published or
+  manual run): lint:docs, TypeDoc, deploy with the official Pages actions.
+  TypeDoc includes README (home), the three project documents, CHANGELOG and
+  rule 02 as documents (front matter titles), highlights and renders mermaid
+  (`mermaid.js`, pinned CDN version). Roadmap headings use `ID: title` so
+  GitHub and TypeDoc agree on anchors. Check: `npm run docs` without warnings,
+  workflow YAML parses; first deployment and diagram rendering are NOT_RUN until
+  the owner publishes a release.
+- [ ] **REPO-002f - versioned API site.** With the first `X.Y.x` line, publish
+  `develop` and each maintained line under their own path (for example through a
+  `gh-pages` branch with one folder per line and a version switcher), because the
+  official Pages deployment replaces the whole site. Not needed while every
+  release is tagged on `develop`.
 
 ### Owner steps (GitHub and npm; in this order)
 
 1. **Branches:** create `develop` at `b962086` and make it the default branch.
+   **Pages:** Settings > Pages > Source "GitHub Actions"; in the `github-pages`
+   environment allow deployment tags `v*` and the branch `develop`.
 2. **Rulesets** (rule 02 section 8): retarget the branch ruleset to
    `refs/heads/develop`, squash only, required checks
    `Test on {ubuntu,macos,windows}-latest (Node {24.x, 26.x})`; add the
@@ -1659,20 +1679,24 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
 3. **Cleanup:** close PR #1, delete `chore/release-v1.0.0-beta.1`, then delete
    `main` (after step 2 removed it from the ruleset).
 4. **beta.1:** push tag `v1.0.0-beta.1` (commit X). Create its GitHub Release as
-   pre-release from the beta.1 changelog section, attach
+   pre-release from `.local/release/v1.0.0-beta.1/release-notes.md`, attach
    `npm pack coagent8@1.0.0-beta.1` (the published tarball) and its SHA-256,
    and state that it is the name placeholder with known issues.
-5. **beta.2 PR:** push `release/v1.0.0-beta.2`, open the PR into `develop`
+5. **beta.2 PR:** push `release/v1.0.0-beta.2` (its CHANGELOG.md is final; the
+   pre-push regeneration cannot run before tag `v1.0.0-beta.2` exists and is
+   skipped for this branch only), open the PR into `develop`
    titled `chore(release): v1.0.0-beta.2` with the prepared notes; the six CI
    jobs are EXEC-001-T12c's matrix evidence; run T12c's native checks and T12d's
    independent review on its head.
 6. **Merge and tag:** squash-merge; tag the squash commit `v1.0.0-beta.2`
    (annotated) and push the tag. `release.yml` creates the draft pre-release.
-   Replace its one-entry notes with the prepared detailed notes.
+   Replace its one-entry notes with the prepared detailed notes
+   (`.local/release/v1.0.0-beta.2/release-notes.md`). After tagging,
+   `npm run changelog` must leave CHANGELOG.md unchanged.
 7. **Verify downloads** (rule 02 phase D): `gh release download`, check
    `SHA256SUMS`, install the tarball and the VSIX in clean profiles, repeat the
    native smoke.
-8. **Publish:** publish the draft pre-release;
+8. **Publish:** publish the draft pre-release (this deploys the API site);
    `npm publish ./coagent8-1.0.0-beta.2.tgz --tag next`;
    `npm dist-tag rm coagent8 beta`;
    `npm deprecate coagent8@1.0.0-beta.1 "Name placeholder with known issues; install coagent8@next"`.

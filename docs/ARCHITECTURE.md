@@ -1,3 +1,7 @@
+---
+title: Architecture
+---
+
 # CoAgent8 architecture
 
 Updated 2026-10-09; SIMPLIFY-001 ownership and enforcement reflect the local
@@ -60,7 +64,7 @@ for tasks; introduce a scheduler only for actual dependency/concurrency work.
 ### Dependency boundaries
 
 The table below describes the realized ownership and dependency direction
-completed in [SIMPLIFY-001](ROADMAP.md#simplify-001---module-boundary-migration).
+completed in [SIMPLIFY-001](ROADMAP.md#simplify-001-module-boundary-migration).
 It implements the
 [P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries)
 and is enforced by automated verification (`scripts/check-dependencies.cjs`, `npm run check:dependencies`).
@@ -540,7 +544,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-08 | doctor defaults to the cached model view; health is a scope and the quota argument is removed. Consent refusals no longer advise another model. |
 | 2026-10-09 | Setup updates its own unchanged Claude and agy registrations once the new runtime starts and lists its tools, as a first registration; only a host setup can check (Codex) must also call it. The previous runtime stays until cleanup. After an update the VSIX offers Set Up CLIs once per runtime when a CLI chat still starts another version. |
 | 2026-10-10 | Every CoAgent8 function has a client skill. Setup installs a client's skills with its registration; cleanup and the VS Code uninstall remove them. Only the VSIX and the npm package install them, and they ship in beta.2 (SKILLS-001). |
-| 2026-10-10 | Git model as PrestaShop: `develop` (default) plus release lines `X.Y.x`, no `main`. Every commit on them is a GitHub-signed squash commit of one PR; fixes are backported by squash PRs, never merged back. A release tag starts a workflow that drafts the GitHub Release with verified artifacts; the owner publishes it and the npm tarball (`next` for previews). Migration: [REPO-002](ROADMAP.md#repo-002---branch-model-and-release-workflow). |
+| 2026-10-10 | Git model as PrestaShop: `develop` (default) plus release lines `X.Y.x`, no `main`. Every commit on them is a GitHub-signed squash commit of one PR; fixes are backported by squash PRs, never merged back. A release tag starts a workflow that drafts the GitHub Release with verified artifacts; the owner publishes it and the npm tarball (`next` for previews). Migration: [REPO-002](ROADMAP.md#repo-002-branch-model-and-release-workflow). |
 
 ## Known limitations
 
@@ -568,6 +572,13 @@ Exported contract types must appear in the reference; do not suppress warnings.
 
 npm run lint:docs validates source comments; npm run docs generates
 .artifacts/api-docs using the isolated tooling/documentation dependencies.
+The site's home page is README.md; docs/ARCHITECTURE.md, docs/ROADMAP.md,
+docs/HANDOFF.md, CHANGELOG.md and the Git workflow rule are project documents
+named by their front matter title, and tooling/documentation/mermaid.js renders
+their mermaid blocks (mermaid 11.4.1 from jsDelivr; the source stays readable
+without it). Heading anchors must agree between GitHub and TypeDoc: headings use
+`ID: title`, not `ID - title`. Publishing a GitHub Release deploys the site to
+GitHub Pages (docs.yml).
 Install those dependencies with npm ci --prefix tooling/documentation.
 The tooling pins a compatible TypeScript separately from the project compiler;
 do not bypass peer checks. Generated output is not a stable public JS API.
