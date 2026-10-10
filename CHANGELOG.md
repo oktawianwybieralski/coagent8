@@ -65,6 +65,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`152b93d`](https://github.com/oktawianwybieralski/coagent8/commit/152b93d0aead7614026eefceb94e132dc184a452) **consent:** Preserve valid approvals across persistence failures (EXEC-001-T10c)
 - [`2ba3bc9`](https://github.com/oktawianwybieralski/coagent8/commit/2ba3bc98abc6ae1bfa9d4d3dec2d4ee8e571e1f0) **execution:** Activate monotonic budget for consult and review (EXEC-001-T11a)
 - [`1c5fe4f`](https://github.com/oktawianwybieralski/coagent8/commit/1c5fe4f0417747e2085e9b7e91ec374b6b39e12c) **setup:** Install client skills with each registration (SKILLS-001)
+- [`64f7ee1`](https://github.com/oktawianwybieralski/coagent8/commit/64f7ee1e8952da6fa1389951313a56dbed705077) **diagnostics:** Apply bounds and cancellation to doctor (EXEC-001-T11b)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
