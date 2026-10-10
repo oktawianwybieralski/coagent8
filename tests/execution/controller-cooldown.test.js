@@ -32,11 +32,11 @@ async function rateLimitedTurn(message) {
   try {
     fs.rmSync(quotaCache, { force: true });
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
-    const started = Date.now();
     const res = await executeTask('User prompt', 'Public question', { backend: 'agy' }, tempDir);
     assert.equal(readResult(res).error.code, 'RATE_LIMITED');
     const entry = JSON.parse(fs.readFileSync(quotaCache, 'utf8')).data.agy;
-    return { entry, cooldownMs: Date.parse(entry.cooldownUntil) - started };
+    // Measured from the recorded cooldown start, so a slow turn does not lengthen the observed duration.
+    return { entry, cooldownMs: Date.parse(entry.cooldownUntil) - Date.parse(entry.lastCooldownAt) };
   } finally {
     adapterRegistry.agy = original;
   }

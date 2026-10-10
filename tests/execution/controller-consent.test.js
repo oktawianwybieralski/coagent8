@@ -173,8 +173,9 @@ test('confirmConsent: pending callback that never resolves rejects immediately u
 
 test('confirmConsent: pending callback that never resolves rejects immediately upon budget timeout', async () => {
   await setupMockConfigAndAdapters();
+  const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
+  // The budget starts at the consent wait under test, so a slow preparation cannot spend it.
   const budget = createExecutionBudget({ totalBudgetMs: 50, teardownAllowanceMs: 10 });
-  const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir, { budget });
 
   const consentPromise = prepared.confirmConsent({
     budget,
