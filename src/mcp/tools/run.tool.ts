@@ -8,6 +8,9 @@ import { handleIssue } from './issue.tool.js';
 import { handleLegacyAlias } from './legacy.js';
 import { ToolError } from '../../contracts/index.js';
 
+import type { BackendReadContext, ExecutionBudget, MonotonicClock, TimingObserver } from '../../contracts/execution.js';
+import type { PhaseTracker } from '../../execution/runtime/timing.js';
+
 export const runToolDefinition = {
   name: CANONICAL_TOOL_NAMES.RUN,
   description:
@@ -86,7 +89,13 @@ export async function handleRun(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent'> = {}
+  options: Pick<TaskOptions, 'askConsent'> & {
+    onTiming?: TimingObserver;
+    tracker?: PhaseTracker;
+    clock?: MonotonicClock;
+    budget?: ExecutionBudget;
+    context?: BackendReadContext;
+  } = {}
 ) {
   const action = args?.action;
   switch (action) {

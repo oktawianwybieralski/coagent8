@@ -23,7 +23,8 @@ import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
 import { formatExecutionResult, setResultStyle, withWorkspace } from './result.js';
-import { ToolError, errorCodeOf, type ExecutionBudget } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type ExecutionBudget, type BackendReadContext } from '../contracts/index.js';
+import { createExecutionBudget } from '../execution/runtime/budget.js';
 import { listSessions, isBudgetExpired } from '../sessions/session.js';
 import { combineSignals } from '../storage/lock.js';
 import { canonicalPath } from '../workspace/identity.js';
@@ -354,6 +355,7 @@ export function createServer(): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const name = request.params.name;
     const progress = createProgressReporter(server, request.params._meta?.progressToken);
+    let budget: ExecutionBudget | undefined;
     try {
       const definition = getAllCallableToolDefinitions().find(tool => tool.name === name);
       if (!definition) throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
@@ -372,21 +374,36 @@ export function createServer(): Server {
       }
       const workspace = await resolveWorkspace(args.workspace_path as string | undefined);
       const cwd = workspace.path;
-      const consent = { askConsent: consentPrompt(extra.signal) };
+      let readContext: BackendReadContext | undefined;
+      if (executionNames.has(name) && !(name === CANONICAL_TOOL_NAMES.RUN && args.action === 'issue')) {
+        budget = createExecutionBudget({
+          totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
+          parentSignal: extra.signal,
+        });
+        readContext = {
+          abortSignal: budget.executionSignal,
+          budget,
+          timeoutMs: budget.remainingExecutionMs(),
+        };
+      }
+      const consent = { askConsent: consentPrompt(extra.signal, budget) };
+      const execOptions = { ...consent, budget, context: readContext };
       switch (name) {
         case CANONICAL_TOOL_NAMES.SESSION:
           return await handleSession(args, cwd);
         case CANONICAL_TOOL_NAMES.RUN:
           // The issue action returns a bug report, not an execution result.
-          return args.action === 'issue' ? await handleRun(args, cwd, extra.signal, progress) : withWorkspace(await handleRun(args, cwd, extra.signal, progress, consent), workspace);
+          return args.action === 'issue'
+            ? await handleRun(args, cwd, extra.signal, progress)
+            : withWorkspace(await handleRun(args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.REVIEW:
-          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress, consent), workspace);
+          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.CONSULT:
-          return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, consent), workspace);
+          return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.ANALYZE:
         case CANONICAL_TOOL_NAMES.DEBUG:
         case CANONICAL_TOOL_NAMES.IMPLEMENT:
-          return withWorkspace(await handleLegacyAlias(name, args, cwd, extra.signal, progress, consent), workspace);
+          return withWorkspace(await handleLegacyAlias(name, args, cwd, extra.signal, progress, execOptions), workspace);
         default:
           throw new ToolError('INPUT_LIMIT', `Unknown tool: ${name}`);
       }
@@ -417,6 +434,7 @@ export function createServer(): Server {
       }
       return { isError: true, content: [{ type: 'text', text: `${BRAND.NAME}: ${message}` }] };
     } finally {
+      budget?.dispose();
       progress.close();
     }
   });

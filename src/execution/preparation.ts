@@ -34,6 +34,10 @@ export interface ExecutionRequest {
   session_handle?: string;
   model?: string;
   reasoning_effort?: string;
+  /**
+   * Total monotonic call budget in milliseconds for the complete task lifecycle
+   * (Git collection, task preparation, consent negotiation, CLI execution, and graceful teardown).
+   */
   timeout_ms?: number;
   /** User's price limit in USD per million output tokens; strict (`AX-002`). */
   output_price_below?: number;
@@ -188,8 +192,48 @@ export async function prepareTask(
 
   const configSnapshot = asConfigSnapshot(options.config);
   const abortSignal = options.abortSignal;
-  const readContext: BackendReadContext | undefined = options.context ?? ((abortSignal || options.budget)
-    ? { abortSignal: abortSignal ?? undefined, budget: options.budget }
+  const effectiveBudget = options.budget ?? options.context?.budget;
+  const callerSignal = abortSignal;
+  const effectiveSignal = combineSignals(callerSignal, options.context?.abortSignal, effectiveBudget?.executionSignal);
+
+  const assertNotCancelledOrExpired = (step: string) => {
+    if (effectiveSignal?.aborted) {
+      if (isBudgetExpired(effectiveBudget)) {
+        throw new ToolError('TIMEOUT', `Execution budget expired during ${step}.`);
+      }
+      throw new ToolError('ABORTED', `Request cancelled during ${step}.`);
+    }
+    if (isBudgetExpired(effectiveBudget)) {
+      throw new ToolError('TIMEOUT', `Execution budget expired during ${step}.`);
+    }
+  };
+
+  const withTimeoutClassification = async <T>(promise: Promise<T>, step: string, budget = effectiveBudget): Promise<T> => {
+    try {
+      return await promise;
+    } catch (err) {
+      if (isBudgetExpired(budget)) {
+        throw new ToolError('TIMEOUT', `Execution budget expired during ${step}.`);
+      }
+      throw err;
+    }
+  };
+
+  assertNotCancelledOrExpired('task preparation');
+
+  const readContext: BackendReadContext | undefined = options.context
+    ? {
+        ...options.context,
+        abortSignal: effectiveSignal ?? options.context.abortSignal,
+        budget: effectiveBudget ?? options.context.budget,
+        timeoutMs: effectiveBudget ? effectiveBudget.remainingExecutionMs() : options.context.timeoutMs,
+      }
+    : ((abortSignal || effectiveBudget)
+    ? {
+        abortSignal: effectiveSignal ?? undefined,
+        budget: effectiveBudget,
+        timeoutMs: effectiveBudget ? effectiveBudget.remainingExecutionMs() : undefined,
+      }
     : undefined);
 
   const below = args.output_price_below;
@@ -199,32 +243,35 @@ export async function prepareTask(
 
   const choosingSelections = new Map<ProviderId, ModelSelection>();
 
-  const backend = previousSession
-    ? await resolveBackend(previousSession.backend, { config: configSnapshot, context: readContext })
-    : args.model !== undefined
-    ? await resolveBackendForModel(args.backend, args.model, { config: configSnapshot, context: readContext })
-    : await resolveBackend(args.backend, {
-        config: configSnapshot,
-        context: readContext,
-        ...(choosing
-          ? {
-              eligible: async (id, probe) => {
-                try {
-                  const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot, context: readContext });
-                  choosingSelections.set(id, sel);
-                  return undefined;
-                } catch (err) {
-                  if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) {
-                    return err;
+  const backend = await withTimeoutClassification(
+    previousSession
+      ? resolveBackend(previousSession.backend, { config: configSnapshot, context: readContext })
+      : args.model !== undefined
+      ? resolveBackendForModel(args.backend, args.model, { config: configSnapshot, context: readContext })
+      : resolveBackend(args.backend, {
+          config: configSnapshot,
+          context: readContext,
+          ...(choosing
+            ? {
+                eligible: async (id, probe) => {
+                  try {
+                    const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot, context: readContext });
+                    choosingSelections.set(id, sel);
+                    return undefined;
+                  } catch (err) {
+                    if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) {
+                      return err;
+                    }
+                    throw err;
                   }
-                  throw err;
-                }
-              },
-            }
-          : {}),
-      });
+                },
+              }
+            : {}),
+        }),
+    'backend resolution'
+  );
 
-  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled before acquiring the session.');
+  assertNotCancelledOrExpired('backend resolution');
 
   // The model comes from the call, the session, the configuration or the CLI, never from the
   // bridge; a name the CLI resolves itself becomes the model it reports, so consent (asked on
@@ -233,16 +280,19 @@ export async function prepareTask(
   if (choosing && choosingSelections.has(backend.id)) {
     selection = choosingSelections.get(backend.id)!;
   } else {
-    selection = await selectModel(backend.id, backend.probe, { model: args.model, session: previousSession?.model }, {
-      config: configSnapshot,
-      catalog: backend.catalog,
-      context: readContext,
-      ...(choosing ? { constraint: choosing } : {}),
-    });
+    selection = await withTimeoutClassification(
+      selectModel(backend.id, backend.probe, { model: args.model, session: previousSession?.model }, {
+        config: configSnapshot,
+        catalog: backend.catalog,
+        context: readContext,
+        ...(choosing ? { constraint: choosing } : {}),
+      }),
+      'model selection'
+    );
   }
   const model = selection.model;
 
-  if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while selecting the model.');
+  assertNotCancelledOrExpired('model selection');
 
   // A continuation keeps its session's selection: the effort follows the model it was chosen for.
   const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previousSession?.model ? previousSession?.reasoningEffort : undefined);
@@ -250,10 +300,13 @@ export async function prepareTask(
   // An explicit model or effort is checked against the CLI's own catalog before the user is
   // asked for consent and before a model call.
   if (args.model !== undefined || args.reasoning_effort !== undefined) {
-    const catalog = await readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog, context: readContext });
+    const catalog = await withTimeoutClassification(
+      readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog, context: readContext }),
+      'reading model catalog'
+    );
     const rejected = checkModelSelection(backend.id, catalog, model, args.reasoning_effort);
     if (rejected) throw new ToolError(rejected.code, rejected.message);
-    if (abortSignal?.aborted) throw new ToolError('ABORTED', 'Request cancelled while reading the model catalog.');
+    assertNotCancelledOrExpired('reading model catalog');
   }
 
   // Observe and retain the backend's default model as the relative-price governance reference (`EXEC-001-T05b`).
@@ -263,11 +316,14 @@ export async function prepareTask(
     defaultModel = model;
   } else {
     try {
-      const def = await selectModel(backend.id, backend.probe, {}, {
-        config: configSnapshot,
-        catalog: backend.catalog,
-        context: readContext,
-      });
+      const def = await withTimeoutClassification(
+        selectModel(backend.id, backend.probe, {}, {
+          config: configSnapshot,
+          catalog: backend.catalog,
+          context: readContext,
+        }),
+        'default model selection'
+      );
       defaultModel = def.model;
     } catch (err) {
       if (errorCodeOf(err) === 'MODEL_UNAVAILABLE') {
@@ -281,7 +337,10 @@ export async function prepareTask(
   // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
   const assertPriceLimit = async (): Promise<string> => {
     // A limit needs a current price list: a week-old one is read again first.
-    const prices = await readPrices({ current: true, models: [model] });
+    const prices = await withTimeoutClassification(
+      readPrices({ current: true, models: [model], context: readContext }),
+      'price limit verification'
+    );
     const evidence = priceEvidence(prices, model);
     const rejected = checkPriceLimit(model, evidence, below!);
     if (rejected) {
@@ -297,7 +356,10 @@ export async function prepareTask(
     return `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(below!.toFixed(4))} USD`;
   };
 
-  if (below !== undefined) await assertPriceLimit();
+  if (below !== undefined) {
+    await assertPriceLimit();
+    assertNotCancelledOrExpired('price limit verification');
+  }
 
   const confirmConsent = async (consentOptions: ConfirmConsentOptions = {}): Promise<ConfirmConsentResult> => {
     const effectiveBudget = consentOptions.budget ?? options.budget ?? options.context?.budget ?? consentOptions.context?.budget;
@@ -318,10 +380,14 @@ export async function prepareTask(
 
     assertNotCancelledOrExpired('consent confirmation');
 
-    const initialPrices = await readPrices({
-      models: defaultModel ? [model, defaultModel] : [model],
-      context: readContext,
-    });
+    const initialPrices = await withTimeoutClassification(
+      readPrices({
+        models: defaultModel ? [model, defaultModel] : [model],
+        context: readContext,
+      }),
+      'consent confirmation',
+      effectiveBudget
+    );
     const initialPrice = initialPrices ? findPrice(initialPrices, model) : undefined;
     const initialDefaultPrice = (defaultModel && initialPrices) ? findPrice(initialPrices, defaultModel) : undefined;
 
@@ -426,17 +492,21 @@ export async function prepareTask(
     // Rechecks changed identity/policy/price evidence and fails closed with retry guidance.
     assertNotCancelledOrExpired('consent revalidation');
 
-    const revalidation = await revalidateConsent(backend.id, backend.probe, model, configSnapshot, {
-      currentConfig: consentOptions.config,
-      defaultModel,
-      initialPrice,
-      initialDefaultPrice,
-      initialDecision: decision,
-      outputPriceBelow: below,
-      choosing: Boolean(choosing),
-      continuing: Boolean(previousSession),
-      context: readContext,
-    });
+    const revalidation = await withTimeoutClassification(
+      revalidateConsent(backend.id, backend.probe, model, configSnapshot, {
+        currentConfig: consentOptions.config,
+        defaultModel,
+        initialPrice,
+        initialDefaultPrice,
+        initialDecision: decision,
+        outputPriceBelow: below,
+        choosing: Boolean(choosing),
+        continuing: Boolean(previousSession),
+        context: readContext,
+      }),
+      'consent revalidation',
+      effectiveBudget
+    );
 
     assertNotCancelledOrExpired('recording remembered approval');
 

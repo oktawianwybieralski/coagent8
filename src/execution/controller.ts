@@ -26,8 +26,9 @@
  *   via evaluateStateEnvelopeGate, returning structured review evaluation in TaskExecutionResult.
  *   The review handler supplies completeness, snapshot identity and check requirements;
  *   this does not independently prove a model's PASS claim or release artifact hashes.
- * - **Timing Scope**: Preparation and consent precede session acquisition and the duration
- *   timer. The adapter receives its process timeout, not a remaining end-to-end budget.
+ * - **Timing Scope**: Single monotonic execution budget wraps the complete task lifecycle
+ *   (Git collection, preparation, consent, session acquisition, CLI execution, and teardown).
+ *   The adapter receives the monotonic remaining time, not a static process timeout.
  *
  * @packageDocumentation
  */
@@ -43,6 +44,7 @@ import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
+import { createExecutionBudget } from './runtime/budget.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { stripAnsi } from './cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
@@ -173,6 +175,20 @@ async function executeTaskInternal(
   onProgress?: ((info: { message?: string }) => void) | null,
   options: TaskOptions = {}
 ): Promise<TaskExecutionResult> {
+  const isOwnedBudget = !options.budget && !options.context?.budget;
+  const budget = options.budget ?? options.context?.budget ?? createExecutionBudget({
+    totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
+    parentSignal: abortSignal ?? undefined,
+    clock: options.clock,
+  });
+
+  const executionContext: BackendReadContext = {
+    ...options.context,
+    abortSignal: combineSignals(options.context?.abortSignal, abortSignal, budget.executionSignal) ?? undefined,
+    budget,
+    timeoutMs: budget.remainingExecutionMs(),
+  };
+
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const controllerSpans: Array<{ end: () => void }> = [];
@@ -224,13 +240,20 @@ async function executeTaskInternal(
   };
 
   try {
+    if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
+      throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
+    }
+    if (budget.isCallerAborted()) {
+      throw new ToolError('ABORTED', 'Request cancelled before task preparation.');
+    }
+
     const prepHandle = startControllerPhase('preparation');
     const configSnapshot = loadConfigSnapshot();
     const prepared = await prepareTask(args, cwd, {
       config: configSnapshot,
       abortSignal,
-      budget: options.budget,
-      context: options.context,
+      budget,
+      context: executionContext,
     });
     prepHandle.end();
 
@@ -238,8 +261,8 @@ async function executeTaskInternal(
     const { priceNote, warnings: consentWarnings } = await prepared.confirmConsent({
       askConsent: options.askConsent,
       abortSignal,
-      budget: options.budget ?? options.context?.budget,
-      context: options.context,
+      budget,
+      context: executionContext,
     });
     consentHandle.end();
 
@@ -252,9 +275,10 @@ async function executeTaskInternal(
     }
 
     const sessionContext: BackendReadContext = {
-      ...options.context,
-      abortSignal: combineSignals(options.context?.abortSignal, abortSignal) ?? undefined,
-      budget: options.budget ?? options.context?.budget,
+      ...executionContext,
+      abortSignal: combineSignals(executionContext.abortSignal, abortSignal, budget.executionSignal) ?? undefined,
+      budget,
+      timeoutMs: budget.remainingExecutionMs(),
     };
 
     const assertSessionContextNotExpired = (timing: 'before' | 'immediately after') => {
@@ -287,6 +311,8 @@ async function executeTaskInternal(
     let turnReleased = false;
     let heartbeat: NodeJS.Timeout | undefined;
     let flushTimer: NodeJS.Timeout | undefined;
+    let onBudgetAbort: (() => void) | undefined;
+    let budgetAbortListenerAdded = false;
 
     try {
       assertSessionContextNotExpired('immediately after');
@@ -377,8 +403,28 @@ async function executeTaskInternal(
           }
         }, 5000);
         flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
+
+        const remainingExecutionMs = budget.remainingExecutionMs();
+        if (remainingExecutionMs <= 0 || budget.isExecutionExpired() || budget.isTimedOut()) {
+          throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
+        }
+        if (budget.isCallerAborted()) {
+          throw new ToolError('ABORTED', 'Request cancelled before CLI execution.');
+        }
+
+        onBudgetAbort = () => {
+          cancelController.abort(budget.abortReason() ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`));
+        };
+        budgetAbortListenerAdded = false;
+        if (budget.executionSignal.aborted) {
+          cancelController.abort(budget.abortReason() ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`));
+        } else {
+          budget.executionSignal.addEventListener('abort', onBudgetAbort, { once: true });
+          budgetAbortListenerAdded = true;
+        }
+
         const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
-          timeoutMs: args.timeout_ms, abortSignal: cancelController.signal, onEvent: receive };
+          timeoutMs: remainingExecutionMs, abortSignal: cancelController.signal, onEvent: receive };
         const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
         // Validate terminal results defensively, including adapters supplied at runtime.
         const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
@@ -393,6 +439,10 @@ async function executeTaskInternal(
         result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
       } finally {
         execHandle.end();
+        if (budgetAbortListenerAdded && onBudgetAbort) {
+          budget.executionSignal.removeEventListener('abort', onBudgetAbort);
+          budgetAbortListenerAdded = false;
+        }
         if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; }
         if (flushTimer) { clearInterval(flushTimer); flushTimer = undefined; }
         if (callerAbortListenerAdded && abortSignal) {
@@ -591,5 +641,8 @@ async function executeTaskInternal(
   } finally {
     closeControllerSpans();
     emitTrace();
+    if (isOwnedBudget) {
+      budget.dispose();
+    }
   }
 }

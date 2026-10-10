@@ -81,6 +81,9 @@ export function legacyAliasToolDefinitions() {
   }));
 }
 
+import type { BackendReadContext, ExecutionBudget, MonotonicClock, TimingObserver } from '../../contracts/execution.js';
+import type { PhaseTracker } from '../../execution/runtime/timing.js';
+
 /**
  * Runs a deprecated tool or `run` action as `consult` with its task type.
  * @param via - The entry point, which words the validation error and the deprecation notice.
@@ -92,7 +95,13 @@ export async function handleLegacyAlias(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent'> = {},
+  options: Pick<TaskOptions, 'askConsent'> & {
+    onTiming?: TimingObserver;
+    tracker?: PhaseTracker;
+    clock?: MonotonicClock;
+    budget?: ExecutionBudget;
+    context?: BackendReadContext;
+  } = {},
   via: 'tool' | 'run' = 'tool'
 ) {
   const alias = LEGACY_ALIASES[name];
@@ -109,6 +118,17 @@ export async function handleLegacyAlias(
     task_type: alias.taskType,
     specific_questions: alias.contextAsQuestions ? args.context : args.specific_questions,
   };
-  return handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mapped, workspaceCwd, abortSignal, onProgress, { warnings: [warning], askConsent: options.askConsent });
+  return handleConsult(
+    CANONICAL_TOOL_NAMES.CONSULT,
+    mapped,
+    workspaceCwd,
+    abortSignal,
+    onProgress,
+    {
+      ...options,
+      warnings: [warning],
+      askConsent: options.askConsent,
+    }
+  );
 }
 

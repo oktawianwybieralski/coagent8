@@ -255,3 +255,108 @@ test('handleReview with expired budget stops during collection without starting 
     adapterRegistry.agy = original;
   }
 });
+
+test('handleReview passes remaining monotonic execution time to adapter after Git collection', async () => {
+  const repo = path.join(tempDir, 'repo-review-timeout');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+
+  let now = 1000;
+  const clock = () => now;
+  let receivedTimeoutMs = null;
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => {
+      now += 250;
+      return { installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } };
+    },
+    execute: async (prompt, options) => {
+      receivedTimeoutMs = options.timeoutMs;
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+      return {
+        status: 'completed',
+        isError: false,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: checked a.ts\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`,
+        nativeSessionId: '11111111-2222-3333-4444-555555555555',
+        model: 'fixture-model',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
+
+  try {
+    saveConfig({
+      defaultBackend: 'agy',
+      routing: { strategy: 'fixed', allowedBackends: ['agy'] },
+      governance: { neverAsk: ['fixture-model'] },
+    });
+    const result = await handleReview('review', {}, repo, null, null, { budget, clock });
+    assert.ok(receivedTimeoutMs !== null, 'Adapter execute should have been called');
+    assert.ok(receivedTimeoutMs <= 7750, `Expected remaining timeoutMs <= 7750, got ${receivedTimeoutMs}`);
+    assert.ok(receivedTimeoutMs > 0, `Expected positive timeoutMs, got ${receivedTimeoutMs}`);
+    assert.equal(readResult(result).verdict, 'READY');
+  } finally {
+    budget.dispose();
+    adapterRegistry.agy = original;
+  }
+});
+
+test('handleReview verifyReviewSnapshot succeeds during teardown allowance when turn finished near deadline', async () => {
+  const repo = path.join(tempDir, 'repo-review-teardown-snapshot');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+  fs.writeFileSync(path.join(repo, 'untracked.ts'), 'export const u = 42;\n');
+
+  let now = 1000;
+  const clock = () => now;
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async prompt => {
+      now = 9500;
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
+      return {
+        status: 'completed',
+        isError: false,
+        output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nReviewed: checked a.ts\nCHECKS: typecheck=PASS; tests=PASS\nEND_REVIEW`,
+        nativeSessionId: '11111111-2222-3333-4444-555555555555',
+        model: 'fixture-model',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
+
+  try {
+    saveConfig({
+      defaultBackend: 'agy',
+      routing: { strategy: 'fixed', allowedBackends: ['agy'] },
+      governance: { neverAsk: ['fixture-model'] },
+    });
+    const context = {
+      abortSignal: budget.executionSignal,
+      budget,
+      timeoutMs: budget.remainingExecutionMs(),
+    };
+    const result = await handleReview('review', {}, repo, null, null, { budget, clock, context });
+    assert.equal(readResult(result).verdict, 'READY');
+  } finally {
+    budget.dispose();
+    adapterRegistry.agy = original;
+  }
+});

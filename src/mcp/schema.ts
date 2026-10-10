@@ -19,7 +19,7 @@
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 export const WORKSPACE_PARAMETER = {
-  workspace_path: { type: 'string', description: 'Repository path; omit for the client workspace (a fallback is named in the footer).' },
+  workspace_path: { type: 'string', description: 'Repository path; omit for client workspace (fallback in footer).' },
 };
 
 export const EXECUTION_PARAMETERS = {
@@ -31,8 +31,13 @@ export const EXECUTION_PARAMETERS = {
     description: 'Omit for the default; doctor lists per-model values. Required where listed, or as a model name suffix.' },
   output_price_below: { type: 'number', minimum: 0,
     description: 'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; auto picks a model.' },
-  session_handle: { type: 'string', minLength: 1, description: 'Handle from a result footer, to continue that conversation.' },
-  timeout_ms: { type: 'integer', minimum: 100, maximum: 1800000 },
+  session_handle: { type: 'string', minLength: 1, description: 'Handle from result footer, to continue conversation.' },
+  timeout_ms: {
+    type: 'integer',
+    minimum: 100,
+    maximum: 1800000,
+    description: 'Total monotonic call budget in ms for full lifecycle (Git, prep, consent, CLI turn, teardown).',
+  },
   ...WORKSPACE_PARAMETER,
 };
 

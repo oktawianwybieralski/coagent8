@@ -16,6 +16,8 @@ const {
   prepareTask,
   confirmTaskConsent,
 } = require('../../src/execution/preparation.ts');
+const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
+const { ToolError } = require('../../src/contracts/error.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
@@ -724,6 +726,48 @@ test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with T
 
     assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'neverAsk must remain untouched when timed out before storage');
   } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('prepareTask reclassifies probe abortion from budget expiration as TIMEOUT', async () => {
+  const original = { ...adapterRegistry };
+  let simulatedTime = 0;
+  const budget = createExecutionBudget({
+    totalBudgetMs: 50,
+    teardownAllowanceMs: 0,
+    clock: () => simulatedTime,
+  });
+
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'Codex CLI',
+    probe: async (_config, options) => {
+      simulatedTime = 60;
+      if (options?.context?.abortSignal?.aborted) {
+        throw new ToolError('ABORTED', 'Probe cancelled');
+      }
+      return { installed: true, executionSupported: true, config: { defaultModel: 'gpt-4o' } };
+    },
+    execute: async () => { throw new Error('Must not execute'); },
+  };
+
+  try {
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+    });
+
+    await assert.rejects(
+      prepareTask({ backend: 'codex' }, tempDir, { budget }),
+      err => {
+        assert.ok(err instanceof ToolError);
+        assert.equal(err.code, 'TIMEOUT');
+        return true;
+      }
+    );
+  } finally {
+    budget.dispose();
     Object.assign(adapterRegistry, original);
   }
 });

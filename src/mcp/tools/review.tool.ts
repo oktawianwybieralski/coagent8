@@ -7,11 +7,14 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
 import type { TimingObserver, MonotonicClock, BackendReadContext, ExecutionBudget } from '../../contracts/execution.js';
+import { createExecutionBudget } from '../../execution/runtime/budget.js';
+import { combineSignals } from '../../storage/lock.js';
+import { ToolError } from '../../contracts/error.js';
 
 export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
-    description: 'Independent review of Git changes by another coding agent. Returns findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)".',
+    description: 'Independent review of Git changes. Returns findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -41,17 +44,47 @@ export async function handleReview(
 ) {
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
+  const isOwnedBudget = !options.budget && !options.context?.budget;
+  const budget = options.budget ?? options.context?.budget ?? createExecutionBudget({
+    totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
+    parentSignal: abortSignal ?? undefined,
+    clock: options.clock,
+  });
+
+  const reviewReadContext: BackendReadContext = {
+    ...options.context,
+    abortSignal: combineSignals(options.context?.abortSignal, abortSignal, budget.executionSignal) ?? undefined,
+    budget,
+    timeoutMs: budget.remainingExecutionMs(),
+  };
+
+  const emitTimingOnEarlyExit = () => {
+    if (options.onTiming) {
+      try {
+        const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
+        const ret: unknown = options.onTiming(trace);
+        if (ret && typeof (ret as Promise<unknown>).catch === 'function') {
+          (ret as Promise<unknown>).catch(() => {});
+        }
+      } catch {
+        // Isolate observer failure
+      }
+    }
+  };
+
+  if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
+    if (isOwnedBudget) budget.dispose();
+    emitTimingOnEarlyExit();
+    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
+  }
+  if (budget.isCallerAborted()) {
+    if (isOwnedBudget) budget.dispose();
+    emitTimingOnEarlyExit();
+    throw new ToolError('ABORTED', 'Request cancelled before review Git work.');
+  }
+
   const gitHandle = tracker.startPhase('git_collection');
   const effectiveScope = args.scope || args.target;
-
-  const reviewReadContext: BackendReadContext | undefined = (options.context || options.budget || abortSignal)
-    ? {
-        ...options.context,
-        abortSignal: options.context?.abortSignal ?? abortSignal ?? undefined,
-        budget: options.context?.budget ?? options.budget,
-        timeoutMs: options.context?.timeoutMs ?? (typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined),
-      }
-    : undefined;
 
   let scopeInfo: Awaited<ReturnType<typeof collectReviewInput>>['info'];
   let context: Awaited<ReturnType<typeof collectReviewInput>>['context'];
@@ -62,6 +95,9 @@ export async function handleReview(
     await assertReviewWorkspace(scopeInfo, workspaceCwd, abortSignal, reviewReadContext);
   } catch (err) {
     gitHandle.end();
+    if (isOwnedBudget) {
+      budget.dispose();
+    }
     if (options.onTiming) {
       try {
         const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
@@ -76,6 +112,17 @@ export async function handleReview(
     throw err;
   } finally {
     gitHandle.end();
+  }
+
+  if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
+    if (isOwnedBudget) budget.dispose();
+    emitTimingOnEarlyExit();
+    throw new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`);
+  }
+  if (budget.isCallerAborted()) {
+    if (isOwnedBudget) budget.dispose();
+    emitTimingOnEarlyExit();
+    throw new ToolError('ABORTED', 'Request cancelled after review Git work.');
   }
   const instructions = args.instructions || 'Review correctness, security, edge cases and architecture.';
   const snapshot = context.expectedSnapshot;
@@ -103,34 +150,49 @@ export async function handleReview(
     'DIFF:',
     scopeInfo.diff || '[No changes in this scope]',
   ].join('\n');
-  const outcome = await executeTask(
-    prompt,
-    'Review ' + scopeInfo.label + '\n' + instructions,
-    { ...args, backend: args.backend },
-    workspaceCwd,
-    abortSignal,
-    onProgress,
-    {
-      tracker,
-      requireEnvelope: true,
-      askConsent: options.askConsent,
-      reviewContext: context,
-      onTiming: options.onTiming,
-      clock: options.clock,
-      budget: options.budget ?? reviewReadContext?.budget,
-      context: reviewReadContext,
-      verifyReviewSnapshot: async () => {
-        const verifyHandle = tracker.startPhase('git_collection');
-        try {
-          const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker, reviewReadContext);
-          await assertReviewWorkspace(after.info, workspaceCwd, abortSignal, reviewReadContext);
-          return after.context.expectedSnapshot !== snapshot || !after.context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
-        } finally {
-          verifyHandle.end();
+
+  const teardownReadContext: BackendReadContext = {
+    ...options.context,
+    abortSignal: combineSignals(abortSignal, budget.teardownSignal) ?? undefined,
+    budget,
+    timeoutMs: budget.remainingTeardownMs(),
+    phase: 'teardown',
+  };
+
+  try {
+    const outcome = await executeTask(
+      prompt,
+      'Review ' + scopeInfo.label + '\n' + instructions,
+      { ...args, backend: args.backend },
+      workspaceCwd,
+      abortSignal,
+      onProgress,
+      {
+        tracker,
+        requireEnvelope: true,
+        askConsent: options.askConsent,
+        reviewContext: context,
+        onTiming: options.onTiming,
+        clock: options.clock,
+        budget: budget,
+        context: reviewReadContext,
+        verifyReviewSnapshot: async () => {
+          const verifyHandle = tracker.startPhase('git_collection');
+          try {
+            const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker, teardownReadContext);
+            await assertReviewWorkspace(after.info, workspaceCwd, abortSignal, teardownReadContext);
+            return after.context.expectedSnapshot !== snapshot || !after.context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
+          } finally {
+            verifyHandle.end();
+          }
         }
       }
+    );
+    return formatExecutionResult(outcome);
+  } finally {
+    if (isOwnedBudget) {
+      budget.dispose();
     }
-  );
-  return formatExecutionResult(outcome);
+  }
 }
 

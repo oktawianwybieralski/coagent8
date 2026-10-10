@@ -122,8 +122,11 @@ export interface ExecutionOptions {
   /** Existing thread or session ID for resuming multi-turn conversation. */
   threadId?: string | null;
   /**
-   * Backend process-phase budget in milliseconds; defaults to {@link DEFAULT_EXECUTION_TIMEOUT_MS} (900,000 ms).
-   * @remarks Under the complete-call budget contract (`EXEC-001-T07`), this will be migrated to the full call lifecycle in T11.
+   * Backend process-phase budget in milliseconds.
+   * @remarks
+   * Under the complete-call budget contract (`EXEC-001-T07`, `EXEC-001-T11a`), this receives the remaining
+   * monotonic execution time (`budget.remainingExecutionMs()`) from the complete-call budget after Git collection,
+   * preparation, and consent phases. Defaults to remaining execution time under {@link DEFAULT_EXECUTION_TIMEOUT_MS} (900,000 ms minus teardown allowance and early phases) when no caller budget is specified.
    */
   timeoutMs?: number;
   nativeSessionId?: string | null;
@@ -224,5 +227,7 @@ export interface BackendReadContext {
   timeoutMs?: number;
   /** Optional complete-call execution budget handle if available. */
   budget?: ExecutionBudget;
+  /** Optional execution budget phase indicating whether execution or teardown allowance applies. */
+  phase?: 'execution' | 'teardown';
 }
 

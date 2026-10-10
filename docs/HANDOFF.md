@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T10c (preserve remembered-approval outcomes).
+The current completed task is EXEC-001-T11a (activate the budget for consult/review).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T11a (activate the budget for consult/review).
+Next pending card: EXEC-001-T11b (apply bounds to diagnostics).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -131,6 +131,37 @@ evidence criteria.
 Open runtime limitations and the CUR items with local fixes are listed in
 [ARCHITECTURE.md](ARCHITECTURE.md#known-limitations); do not reimplement fixed
 items from an old snapshot report. Revalidate the candidate before claiming acceptance.
+
+## SKILLS-001 client skills
+
+Requested by the owner on 2026-10-10 for beta.2, before EXEC-001-T12
+([cards](ROADMAP.md#skills-001---client-skills-installed-with-the-registration)).
+SKILLS-001a-d are implemented locally, uncommitted, on `perf/exec-001`, next to
+another agent's uncommitted EXEC-001 changes; the two sets touch no common file.
+During this work the uncommitted SKILLS files were once deleted outside Git (no
+stash, branch switch or reflog entry) and were recreated from the session; before
+committing, check that `skills/`, `src/integrations/skills.ts` and
+`tests/integrations/skills.test.js` are present.
+
+Changed: `skills/` (six packages), `src/integrations/skills.ts`, `setup.ts`,
+`setup-storage.ts`, `cleanup.ts`, `setup-cli.ts`,
+`extensions/vscode/src/extension.ts` and `uninstall.ts`,
+`scripts/build-vscode.cjs`, both `package.json` file lists,
+`tests/integrations/skills.test.js` and `tests/consumer/smoke.cjs`.
+
+Evidence, Windows, 2026-10-10: `npm run typecheck` PASS;
+`npm run check:dependencies` PASS; `npm run lint:docs` PASS; `npm run docs` PASS;
+`node tests/run.cjs tests/integrations/skills.test.js` 7/7 PASS;
+`node tests/run.cjs tests/integrations/setup.test.js tests/integrations/cleanup.test.js tests/integrations/vscode-extension.test.js tests/integrations/cli-readiness.test.js tests/package.test.js`
+70/70 PASS; `npm pack --dry-run` lists the six SKILL.md files. NOT_RUN: the
+consumer smoke, VSIX packaging, the six-job matrix, independent review and
+native discovery in each client (SKILLS-001e). The loader evidence in the card
+comes from the installed CLI versions and their documentation; no client listed
+or invoked a CoAgent8 skill yet.
+
+Next: SKILLS-001e as part of T12's native checks. Resolve the agy directory there
+(`~/.gemini/config/skills` per the bundled 1.3.2 guide, against the web docs'
+`~/.gemini/antigravity-cli/skills`).
 
 ## SIMPLIFY-001 S0 baseline
 
@@ -1379,6 +1410,39 @@ Scope: preserve valid user approvals across configuration storage failures (Seco
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_5480c82e5d511346ce503eef`, Turns 2, 3 & 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T11a: activate the budget for consult/review
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: activate monotonic complete-call budget for `consult` and `review` from tool call start, pass remaining monotonic execution time to adapters, ensure early phase expiry halts before model turn with `ToolError('TIMEOUT')`, prevent idle activity from resetting deadline, support teardown allowance during post-turn verification, and update `timeout_ms` documentation and source contracts.
+
+### Implemented mechanisms:
+1. **One Root Context Before Early Phases**:
+   - Monotonic `ExecutionBudget` and `BackendReadContext` initialized at the entry of `consult` and `review` handlers (and in `server.ts` `callTool`) before Git collection (`collectReviewInput`), task preparation (`prepareTask`), pricing, and consent.
+   - Disposed deterministically in `finally` blocks when owned.
+2. **Passing Remaining Time to CLI Adapters**:
+   - Early phases (Git diff, untracked scans, probe, model selection, catalog reads, price limit checks, consent) consume from the monotonic deadline.
+   - CLI adapters (`codex`, `claude`, `agy`) receive `timeoutMs: budget.remainingExecutionMs()`, not the static caller `timeout_ms`.
+3. **Monotonic Expiry & Idle Immunity**:
+   - Deadline is strictly monotonic; progress events, streaming output, and I/O heartbeats never reset or extend the deadline.
+   - Expiry during Git work, preparation, probe, or consent halts execution immediately with typed `ToolError('TIMEOUT')` before starting any model turn.
+   - Aborted signals during backend probes/catalogs/prices resulting from budget expiration are accurately reclassified as `ToolError('TIMEOUT')`.
+4. **Teardown Allowance & Teardown Read Context**:
+   - `budget.ts` scales default teardown allowance down for small budgets (`min(DEFAULT_TEARDOWN_GRACE_MS, max(1, floor(totalBudgetMs * 0.2)))`) so small caller budgets never expire prematurely.
+   - Post-turn review snapshot verification (`verifyReviewSnapshot`) uses a dedicated `teardownReadContext` (`phase: 'teardown'`) with `budget.teardownSignal` and `remainingTeardownMs()`, ensuring turns ending near the execution deadline can verify snapshots without false BLOCKED verdicts.
+   - Untracked file collection and git failure reporting in `src/workspace/git.ts` observe phase-aware budget deadlines.
+5. **Contract & Schema Documentation**:
+   - Updated `timeout_ms` documentation in MCP tools/schema and `ExecutionOptions.timeoutMs` in `src/contracts/execution.ts` clarifying total monotonic budget semantics while preserving model-visible tool definitions budget (under 5,500 bytes).
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (106 source files analyzed, 561 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 68 tests (68 pass, 0 fail, exit code 0): `node tests/run.cjs tests/mcp/tools/consult.test.js tests/mcp/tools/review.test.js tests/execution/controller-timeout.test.js tests/mcp/surface.test.js tests/execution/preparation.test.js tests/execution/budget.test.js`.
+- PASS: Full test suite: 621 tests (618 pass, 0 fail, 3 skipped, duration 161.4 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_2d0a5a0c5aa2b4338b63f2b9`, Rounds 1-6; Round 6 State Envelope evaluated to `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
 
 ## Compact handoff contract
 

@@ -116,6 +116,21 @@ test('createExecutionBudget handles custom budget and teardown allowances', () =
   }
 });
 
+test('createExecutionBudget scales default teardown allowance down for small budgets', () => {
+  const clock = createFakeClock(1000);
+  const budget100 = createExecutionBudget({ totalBudgetMs: 100, clock: clock.now });
+  const budget1000 = createExecutionBudget({ totalBudgetMs: 1000, clock: clock.now });
+  try {
+    assert.equal(budget100.teardownAllowanceMs, 20);
+    assert.equal(budget100.remainingExecutionMs(), 80);
+    assert.equal(budget1000.teardownAllowanceMs, 200);
+    assert.equal(budget1000.remainingExecutionMs(), 800);
+  } finally {
+    budget100.dispose();
+    budget1000.dispose();
+  }
+});
+
 test('monotonic clock progression updates remaining time accurately', () => {
   const clock = createFakeClock(1000);
   const budget = createExecutionBudget({

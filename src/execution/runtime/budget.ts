@@ -75,7 +75,7 @@ export function createExecutionBudget(options: ExecutionBudgetOptions = {}): Exe
 
   const rawTeardown = options.teardownAllowanceMs != null
     ? sanitizeBudgetDuration(options.teardownAllowanceMs, DEFAULT_TEARDOWN_GRACE_MS)
-    : DEFAULT_TEARDOWN_GRACE_MS;
+    : Math.min(DEFAULT_TEARDOWN_GRACE_MS, Math.max(1, Math.floor(totalBudgetMs * 0.2)));
 
   // Cleanup allowance is finite and cannot exceed total budget
   const teardownAllowanceMs = Math.min(rawTeardown, totalBudgetMs);

@@ -25,7 +25,7 @@ local and preserves the existing checkout.
 | Review | Completeness, snapshot/check gate, post-turn recheck, other-tree mismatch rejection | Other-tree review; independently observed checks and release hashes |
 | Storage/routing | Leases, best-effort bounded archives, cached catalogs/prices, optional quota-cache writes | Ephemeral calls, early handles, end-to-end deadlines |
 | Agent usability | Cached model view with CLI catalogs (Claude included), per-model prices, model-based routing, strict output price limit, result footer | Measured usage and estimates, effective config, consent transport, native first-use acceptance |
-| Integrations | Shared config, optional setup, VSIX, owned registration/uninstall | Fresh lifecycle acceptance, client skills, public execution CLI |
+| Integrations | Shared config, optional setup, VSIX, owned registration/uninstall, client skills installed and removed with registrations | Fresh lifecycle and skill discovery acceptance, workflow skills for writes, public execution CLI |
 
 ## Agent usability gaps
 
@@ -76,8 +76,9 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 Beta.2 path (owner decision 2026-10-09): beta.2 ships after EXEC-001-T12, not
 after the whole roadmap. Before T12 complete AUDIT-001-A01 through A07, AX-007a
 through AX-007c and WINDOWS-001a. T12b-d is the beta.2 gate; do not run a
-second separate gate. Any change after T12 invalidates the affected acceptance,
-so these cards land first. AUDIT-001-A08 through A20 stay open past beta.2 with
+second separate gate. SKILLS-001a-d also land before T12 (owner decision
+2026-10-10), and T12's native checks include SKILLS-001e. Any change after T12
+invalidates the affected acceptance, so these cards land first. AUDIT-001-A08 through A20 stay open past beta.2 with
 explicit status in A21. Beta.2 release notes list known limits: plain `auto`
 consult may run an expensive default (AX-002), agy may report not-ready and still
 run (AX-005), and per-call native descendants follow WINDOWS-001a's result.
@@ -311,6 +312,7 @@ the linked gate. Do not run the complete suite for every small card.
 | CLAUDE | `backends/claude/adapter.test.js`, `backends/claude/collector.test.js`, `backends/claude/usage.test.js` |
 | AGY | `backends/agy/adapter.test.js` |
 | REDACT | `security/redaction.test.js` |
+| SETUP | `integrations/setup.test.js`, `integrations/cleanup.test.js`, `integrations/skills.test.js`, `integrations/vscode-extension.test.js`, `package.test.js` |
 
 Example for a CONFIG/POLICY card:
 
@@ -610,13 +612,14 @@ AX-003/006. Depends on T09.
 
 ### EXEC-001-T11 - wire the complete call and migrate timing output
 
-- [ ] **T11a - activate the budget for consult/review.** Start:
+- [x] **T11a - activate the budget for consult/review.** Start:
   `src/mcp/tools/consult.tool.ts`, `review.tool.ts`, `src/mcp/server.ts`, and
   `src/execution/controller.ts`. Create one context before preparation/Git and
   pass remaining time to every adapter. Update `timeout_ms` documentation and
   source contracts in this same card. Done: expiry in any earlier phase
   prevents execution, and idle activity cannot reset the budget. Check: R,
   LIFE/REVIEW/MCP/E2E/CODEX/CLAUDE/AGY; build before bundle checks.
+  Evidence: [EXEC-001-T11a implementation](HANDOFF.md#exec-001-t11a-activate-the-budget-for-consultreview).
 - [ ] **T11b - apply bounds to diagnostics.** Start: `runDoctor`, `runModelReport`
   in `src/diagnostics/doctor.ts`, `src/mcp/tools/doctor.tool.ts` and their server
   dispatch. Thread caller cancellation and an explicitly defined diagnostic
@@ -873,6 +876,63 @@ before EXEC-001-T12.
   Done: the warning appears only in that case and never continues a session
   implicitly. Check: R, SESSION/MCP.
 
+### SKILLS-001 - client skills installed with the registration
+
+Owner decisions 2026-10-10: every CoAgent8 function gets a skill so a user can
+name what to use; setup installs a client's skills with its MCP registration,
+and cleanup and the VS Code uninstall remove them. Supported installations are
+the VS Code extension and the npm package only; no Codex plugin, marketplace or
+manual-copy installer. SKILLS-001a-e land before EXEC-001-T12, which accepts
+them. Skills that delegate writing through CoAgent8 profiles remain COAGENT-005.
+The [claudex-loop reference](https://github.com/chaseai-yt/claudex-loop/tree/8cf5e2c1771c5151d90c12642391d0ba8fa71b0e)
+informed the loop's stages and round limits; no upstream text or code is copied.
+
+Loader evidence, 2026-10-10, local default profile, user scope:
+
+| Client | Version | Directory | Explicit use | Source |
+| --- | --- | --- | --- | --- |
+| Claude Code | 2.1.295 | `~/.claude/skills/<name>/SKILL.md`, watched live | `/coagent8-review` | [skills docs](https://code.claude.com/docs/en/skills) |
+| Codex | 0.160.0 | `~/.agents/skills/<name>/SKILL.md`, detected automatically; shared with other tools (the owner's profile holds third-party skills there) | `$coagent8-review` or `/skills`; no per-skill slash command | [build skills](https://learn.chatgpt.com/docs/build-skills) |
+| agy | 1.3.2 | `~/.gemini/config/skills/<name>/SKILL.md`: the bundled `agy-customizations` guide names `~/.gemini/config/` the global root, the root of setup's `mcp_config.json` | `/coagent8-review` in the TUI | bundled guide; [Antigravity docs](https://antigravity.google/docs/skills) instead list `~/.gemini/antigravity-cli/skills/` for the CLI |
+
+VS Code chat reads `~/.claude/skills/` and `~/.agents/skills/` too and lists a
+duplicate when both clients are set up ([VS Code docs](https://code.visualstudio.com/docs/agent-customization/agent-skills)).
+npm 7 and later run no uninstall lifecycle script, so `npm uninstall -g coagent8`
+cannot remove anything; the user runs `coagent8 cleanup` first. Setup stays an
+explicit command: no postinstall writes into a user profile.
+
+- [x] **SKILLS-001a - skill catalog.** Six single-file packages under `skills/`:
+  consult, review, doctor, session (with cancel), issue and loop. Frontmatter
+  `name` equals the directory and `description` says when to use it; no
+  scripts and no client-specific argument placeholders; read-only and consent
+  statements match current profiles. Done 2026-10-10; native use is 001e.
+  Check: P.
+- [x] **SKILLS-001b - install with setup.** `src/integrations/skills.ts`,
+  `setup.ts`, `setup-storage.ts`. After a client's registration is installed,
+  updated or preserved, setup writes missing packages, updates the unchanged copy
+  it recorded and removes recorded packages the catalog dropped. A changed,
+  multi-file, linked or foreign `coagent8-*` entry is preserved and unrecorded.
+  An invalid catalog stops setup before any client change. `setup.json` records
+  digests per client and the extension origin, omitted while empty. Done
+  2026-10-10 locally. Check: R, SETUP.
+- [x] **SKILLS-001c - remove with cleanup and uninstall.** `cleanup.ts`,
+  `setup-cli.ts`, `extensions/vscode/src/uninstall.ts`. The preview lists each
+  recorded package in the same token; apply removes unchanged packages and
+  re-checks after the preview; the VS Code origin keeps CLI-installed packages.
+  Kept or failed packages set the CLI exit code; failed ones fail the hook.
+  Done 2026-10-10 locally. Check: R, SETUP.
+- [x] **SKILLS-001d - ship the catalog.** npm `files`, VSIX staging and VSIX
+  `files` carry `skills/`; the CLI reads it beside `dist/`, the extension from
+  its install directory. The consumer smoke requires all six files in the
+  tarball. Done 2026-10-10 locally (`npm pack --dry-run`); the exact VSIX
+  check runs in T12. Check: R, SETUP; package gate in T12.
+- [ ] **SKILLS-001e - native discovery acceptance.** One isolated profile per
+  client after setup: the skill is listed, explicit use loads it and its tool
+  call reaches CoAgent8; record version and PASS/FAIL/NOT_RUN. Resolve the agy
+  directory from this evidence; a failure there is a fix card, not a second
+  copy. Also record VS Code chat's duplicate listing. Native unavailability is
+  NOT_RUN. Part of T12's native checks.
+
 ## Full coagent direction
 
 All milestones are pending. The table summarizes milestones; a whole row is
@@ -890,7 +950,7 @@ and cannot be supplied by the implementation author.
 | `COAGENT-002` Profiles | Verify read-only, workspace-write and bounded commands per backend/version/OS. One writer per canonical workspace; baseline dirty files, prevent path escapes/conflicts, preserve partial work. Parallel writers need authorized separate workspaces or verified disjoint ownership. No automatic worktree/reset/cleanup. Native containment/failure tests precede claims. |
 | `COAGENT-003` Routing/limits | Role/task defaults independent of provider/model/effort; explicit choices and opt-in cost/latency/quality/quota preferences. Atomic root reservations for calls/concurrency/time/depth shared by children/retries. No silent explicit-model fallback, fabricated monetary cap or self-approved escalation. Reconcile request identity before replaying writers; test contention/lost replies. |
 | `COAGENT-004` Lifecycle/evidence | Minimal durable state/leases independent of transcript archival or a daemon. Early handles, progress, inspect/cancel, recovery; disconnect cancels by default. Detached execution requires verified supervision. Preserve original requirements, bounded context/omissions. Capture checks in the actual candidate with commands/exits/logs; separate observed from reported evidence. Test interruption, stale evidence and root-incomplete results. |
-| `COAGENT-005` Skills | Composable coordination/planning/work/verification/review/recovery SKILL.md packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Detect real client/loader, scope and remote path access. Verify discovery/use per advertised client; unsupported clients retain MCP. |
+| `COAGENT-005` Skills | Builds on SKILLS-001's single-file packages and ownership record. Composable coordination/planning/work/verification/review/recovery SKILL.md packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Detect real client/loader, scope and remote path access. Verify discovery/use per advertised client; unsupported clients retain MCP. |
 | `COAGENT-006` Delegation | After host-led execution, add a task-scoped gateway with verified root/parent identity, capabilities and shared limits. Keep nested refusal until accepted. Bound fan-out/depth, reject cycles/replay, propagate cancellation and recover partial launches. Account for or disable unobservable native subagents where limits require it. Test forged delegation/restarts/launch races. |
 | `COAGENT-007` Migration | Update schemas/profiles/security rules/README/skills together before writes. Preserve compatible config, sessions, registrations and legacy read-only calls. Commit/push/merge/deploy/publication need task/user authority; skills cannot grant it. Reuse owners, not a parallel orchestration stack. |
 | `COAGENT-008` Acceptance | Compare direct/host-led/delegated runs on identical starting trees: feature, bug, refactor, docs, investigation, failed-test repair, ambiguous plan, interruption. Cover strong/small, small/strong, peers and one worker. Measure correctness, regressions, time, calls, overhead, repairs and available usage, including failures. Native evidence, exact-package six-job CI and independent boundary review before RC. |
@@ -943,15 +1003,15 @@ never substitutes for acceptance of an unresolved contract.
   `src/review/input.ts`, `gate.ts` and Git snapshot logic. Specify candidate-bound
   command/exit/log evidence and HANDOFF-001 fields. Done: reported PASS differs
   from observed PASS, omissions are explicit and stale evidence blocks acceptance.
-- [ ] **COAGENT-005a - skill ownership manifest.** Read `.agents/skills/coagent8-workflow/`,
-  `src/integrations/setup-storage.ts`, `cleanup.ts`. Specify catalog/manifest,
-  digests, conflicts, traversal rejection and rollback for one skill. Done:
-  examples cover custom user files and scripts that must never execute.
-- [ ] **COAGENT-005b - one client loader contract.** After 005a, select one
-  supported client and verify its current loader docs through Context7. Specify
-  scope, remote-path access, discovery and install/update/uninstall acceptance.
-  Done: each lifecycle operation becomes a separate implementation card; other
-  clients require their own loader evidence, not copied claims.
+- [ ] **COAGENT-005a - multi-file skill ownership.** Read `src/integrations/skills.ts`
+  (SKILLS-001's single-file record), `setup-storage.ts`, `cleanup.ts`. Specify
+  manifests and digests for packages with references, conflicts, traversal
+  rejection and rollback. Done: examples cover custom user files and scripts
+  that must never execute.
+- [ ] **COAGENT-005b - remote and workspace loader scope.** After 005a, extend
+  SKILLS-001's user-scope loader evidence per client to workspace and remote
+  paths. Done: each lifecycle operation becomes a separate implementation card;
+  other clients require their own loader evidence, not copied claims.
 - [ ] **COAGENT-006a - delegation failure protocol.** After accepted 001-005/007
   host-led execution, read `src/execution/nested-turn.ts` and root reservations.
   Specify capability-bound parent/root requests, fan-out/depth, replay/cycle
@@ -1513,7 +1573,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
 
 | Stage | Required scope |
 | --- | --- |
-| BETA-001: beta.2 | Bridge audit blockers (AUDIT-001-A01 to A07), AX-007a-c, WINDOWS-001a, then EXEC-001-T12 as the fresh package/matrix/independent review and native VS Code checks below. Release notes list known limits. First tester release; beta.1 was the name placeholder. No write claim. |
+| BETA-001: beta.2 | Bridge audit blockers (AUDIT-001-A01 to A07), AX-007a-c, WINDOWS-001a, SKILLS-001a-d, then EXEC-001-T12 as the fresh package/matrix/independent review and native VS Code checks below. Release notes list known limits. First tester release; beta.1 was the name placeholder. No write claim. |
 | BETA-001: beta.3 | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e may ship. |
 | RC-001: rc.1 | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
@@ -1544,6 +1604,9 @@ case produces a separate reproduction/fix card before rerunning that case.
   manual registrations and unrelated servers.
 - Execution: quiet consult/review while typing elsewhere; report TIMEOUT/BLOCKED
   honestly. Verify consent in a client that actually displays the form.
+- Skills: after Set Up Coding CLIs each selected CLI lists the six skills and an
+  explicit use reaches CoAgent8 (SKILLS-001e); unchecking a CLI and uninstalling
+  remove only unchanged packages the extension installed.
 - Uninstall: cancellation and both confirmations, only owned dependencies offered,
   standalone removal commands await user action. Full quit/restart and separate
   Extensions-view removal. Remove owned registrations/runtime/tagged backups/

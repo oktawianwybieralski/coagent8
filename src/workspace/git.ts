@@ -83,7 +83,9 @@ export function boundGitTimeout(context: BackendReadContext | undefined, default
     bounded = Math.min(bounded, context.timeoutMs);
   }
   if (context?.budget) {
-    const remaining = context.budget.remainingExecutionMs();
+    const remaining = context.phase === 'teardown'
+      ? context.budget.remainingTeardownMs()
+      : context.budget.remainingExecutionMs();
     bounded = Math.min(bounded, remaining);
   }
   return Math.max(0, bounded);
@@ -108,13 +110,17 @@ export function assertNotExpired(
   phase = 'Git operation',
   isPreLaunch = false
 ): void {
+  const isExpired = context?.phase === 'teardown'
+    ? Boolean(context.budget?.isTotalExpired() || (context.budget && context.budget.remainingTeardownMs() <= 0))
+    : Boolean(context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut() || (context?.budget && context.budget.remainingExecutionMs() <= 0));
+
   if (effectiveSignal?.aborted) {
-    if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+    if (isExpired) {
       throw new ToolError('TIMEOUT', `Execution budget expired ${isPreLaunch ? 'before' : 'during'} ${phase.toLowerCase()}.`);
     }
     throw new ToolError('ABORTED', `${phase} cancelled${isPreLaunch ? ' before launch' : ''}.`);
   }
-  if (context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut()) {
+  if (isExpired) {
     throw new ToolError('TIMEOUT', `Execution budget expired ${isPreLaunch ? 'before' : 'during'} ${phase.toLowerCase()}.`);
   }
 }
@@ -128,7 +134,10 @@ export async function runGit(
   explicitContext?: BackendReadContext
 ): Promise<string> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
-  const effectiveSignal = combineSignals(abortSignal, context?.budget?.executionSignal ?? context?.abortSignal);
+  const contextSignal = context?.phase === 'teardown'
+    ? (context.abortSignal ?? context.budget?.teardownSignal)
+    : (context?.budget?.executionSignal ?? context?.abortSignal);
+  const effectiveSignal = combineSignals(abortSignal, contextSignal);
   const effectiveTimeout = boundGitTimeout(context, timeoutMs);
 
   // Pre-flight validation
@@ -145,7 +154,10 @@ export async function runGit(
   });
 
   if (result.status !== 'completed') {
-    if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
+    const isBudgetExceeded = context?.phase === 'teardown'
+      ? Boolean(context.budget?.isTotalExpired() || (context.budget && context.budget.remainingTeardownMs() <= 0))
+      : Boolean(context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut() || (context?.budget && context.budget.remainingExecutionMs() <= 0));
+    if (isBudgetExceeded) {
       throw new ToolError('TIMEOUT', 'Execution budget expired during Git operation.');
     }
     if (result.status === 'cancelled' || result.error?.code === 'ABORTED' || effectiveSignal?.aborted) {
@@ -242,7 +254,10 @@ export async function collectGitScope(
     if (untracked.length) {
       diff += '\n\n--- UNTRACKED FILE SNAPSHOT (workspace scope) ---\n';
       const root = await fs.realpath(workspaceCwd);
-      const effectiveSignal = combineSignals(abortSignal, context?.budget?.executionSignal ?? context?.abortSignal);
+      const contextSignal = context?.phase === 'teardown'
+        ? (context.abortSignal ?? context.budget?.teardownSignal)
+        : (context?.budget?.executionSignal ?? context?.abortSignal);
+      const effectiveSignal = combineSignals(abortSignal, contextSignal);
       for (const filename of untracked) {
         assertNotExpired(effectiveSignal, context, 'Untracked file collection');
         if (isExcludedPath(filename)) continue;

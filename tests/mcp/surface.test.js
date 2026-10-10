@@ -307,9 +307,10 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
   assert.ok(visible <= 5500, `model-visible tool definitions: ${visible} B (owner budget raised to 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
-  for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle']) {
+  for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle', 'timeout_ms']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
   }
+  assert.match(consultProperties.timeout_ms.description, /monotonic/i, 'timeout_ms defines monotonic call budget');
   // No model names in descriptions (owner decision of 2026-10-07): doctor lists them, and a
   // wrong name fails before any model call with the accepted ones.
   assert.match(consultProperties.model.description, /Omit unless the user names a model or price limit\. doctor lists models, efforts and prices/, 'model points to the place that lists them and permits selection for a limit');
