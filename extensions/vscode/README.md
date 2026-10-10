@@ -197,11 +197,17 @@ CoAgent8 writes. An entry for another CoAgent8 version or configuration file, or
 one whose runtime copy is gone, is marked and updated while it stays checked. The title bar checks again and shows the details in the
 `CoAgent8 Setup` output.
 
-Existing CLIs are reused: Codex and Claude Code from their vendor extensions
-(including custom extension roots), and Antigravity CLI from the copy the Google
-Antigravity extension downloads to `~/.gemini/bin`. When a CLI is installed both
-ways, the standalone one on PATH is used, and its line names the other
-installation with a button to switch to it. The choice is stored as
+Existing CLIs are reused, wherever they are: the configured executable, any CLI on
+PATH, Codex and Claude Code from their vendor extensions (including custom
+extension roots), and Antigravity CLI from the copy the Google Antigravity extension
+downloads to `~/.gemini/bin`. The official Antigravity CLI installer uses the same
+folder, so without that extension the copy there is shown as a standalone CLI. A
+link to the same file, such as the installer's `%LOCALAPPDATA%\agy\bin` junction,
+is not a second installation. When a CLI is installed both ways, the standalone one
+on PATH is used, and its line names the other installation with a button to switch
+to it. A CLI found only as a standalone installation is offered the vendor extension
+once when you keep it checked; **Install VS Code Extension** installs it and switches
+to its copy, **Keep Standalone CLI** is remembered. The choice is stored as
 `backends.<id>.executable` in the configuration file (**CoAgent8: Open
 Configuration (config.json)**): an absolute path, a path starting with `~/`, or
 `vscode-extension` for the vendor extension's newest copy, which keeps working
@@ -209,13 +215,14 @@ after the extension updates. The first time CoAgent8 is added to a CLI's chat,
 setup records the CLI it found there; change the value at any time, or remove it
 for automatic discovery. VS Code chat, the CLI chats and the `coagent8` CLI with the
 same file all follow it on their next turn. For a missing CLI you choose
-**Install VS Code Extension** or **Install Standalone CLI** (the vendor's official
-installer). Every CLI stays in its vendor's own location; CoAgent8 does not
+**Install VS Code Extension**, the recommended way, or **Install Standalone CLI**
+(the vendor's official installer, which adds its folder to your PATH). Every CLI stays in its vendor's own location; CoAgent8 does not
 download or store CLI binaries. A vendor extension is installed for this machine
 only, so VS Code does not ask whether Settings Sync should copy it to your other
-devices. A vendor extension or a standalone CLI installed this way is recorded, so
-that uninstalling CoAgent8 can offer to remove it; what you installed yourself is
-never offered. A standalone CLI counts once a check finds it, also after a window
+devices. A vendor extension or a standalone CLI installed this way is recorded in
+`~/.coagent8/installs.json`, so that uninstalling CoAgent8 can offer to remove it,
+also after CoAgent8 was uninstalled from the Extensions view and installed again;
+what you installed yourself is never offered. A standalone CLI counts once a check finds it, also after a window
 reload. After an extension install the command waits until the CLI is found;
 standalone installer commands are inserted in a terminal without execution, so
 press Enter, then choose **Check Now**, or **Reload Window** if the installer
@@ -247,16 +254,24 @@ press Enter: `npm uninstall -g @openai/codex` for Codex CLI; for Claude Code CLI
 the commands of its
 [uninstall documentation](https://code.claude.com/docs/en/setup#uninstall-claude-code)
 (`~/.local/bin/claude[.exe]` and `~/.local/share/claude`); for Antigravity CLI,
-which publishes no uninstall, deletion of the single binary its installer copies
-(`%LOCALAPPDATA%\agy\bin\agy.exe` on Windows, `~/.local/bin/agy` elsewhere). PATH
-entries the installers added stay. Vendor sign-ins and histories (`~/.codex`,
-`~/.claude`, `~/.gemini`) stay.
+which publishes no uninstall, deletion of its binary: on Windows the
+`%LOCALAPPDATA%\agy\bin` link itself, never the other contents of its target, and
+`~/.gemini/bin/agy.exe` unless the Google Antigravity extension is installed;
+`~/.local/bin/agy` elsewhere. On Windows the installer folders left empty are
+deleted with their user PATH entries; the PATH keeps its other entries, their order,
+type and unexpanded variables. Elsewhere the installers' shell profile lines stay.
+Vendor sign-ins and histories (`~/.codex`, `~/.claude`, `~/.gemini`) stay. A
+removed vendor extension leaves `installs.json`; a removed CLI leaves it once a
+later check no longer finds it.
 
 Uninstalling from the Extensions view also works: on VS Code's next full start
 the `vscode:uninstall` hook removes the registrations CoAgent8 wrote, when they are
-unchanged (recognized by their shape when their record is lost), the runtime copies nothing references, the private backups written for
-the extension and an emptied `~/.coagent8`. Registrations and backups made by the
-`coagent8` CLI and manual or edited entries are preserved. To remove registrations
+unchanged (recognized by their shape when their record is lost), the runtime
+copies nothing references, the private backups written for the extension and an
+emptied `~/.coagent8`. It cannot ask, so it removes no CLI or vendor extension:
+`installs.json` stays, and **CoAgent8: Uninstall CoAgent8** offers them after
+CoAgent8 is installed again. Registrations and backups made by the `coagent8` CLI
+and manual or edited entries are preserved. To remove registrations
 without uninstalling, uncheck them in **CoAgent8: Set Up Coding CLIs**,
 or run `coagent8 cleanup` for a preview and `coagent8 cleanup --apply=<preview-token>`
 to apply it; both keep private backups and runtime files. Histories, credentials

@@ -444,7 +444,14 @@ The VSIX provider supplies current extension paths to the shared executable
 resolver. One Set Up Coding CLIs list handles installation, login and registration;
 unchanged acceptance does nothing. Uninstall removes only owned entries/data,
 offers only recorded installed dependencies, preserves shared config/sign-ins/
-histories and requires native lifecycle acceptance. It ends with Restart
+histories and requires native lifecycle acceptance. The record of installed
+dependencies is `~/.coagent8/installs.json`, outside the extension storage VS Code
+deletes, so an Extensions-view uninstall cannot orphan them. A CLI found only as a
+standalone installation is offered the vendor extension once. Sources compare by
+real path, so an installer link to the extension copy is that copy. Standalone
+removal deletes installer links, never their targets' other files, then emptied
+installer folders and their user PATH entries, keeping the registry value's type
+and unexpanded variables. It ends with Restart
 Extensions, the Extensions view's own step; VS Code deletes the extension's files
 and storage on its next start, which no removal waits for.
 

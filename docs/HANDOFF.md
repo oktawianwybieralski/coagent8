@@ -2042,6 +2042,40 @@ standalone. Result: FAIL; the remaining cases were NOT_RUN.
 
 Next: a repeated owner run of every case with this VSIX.
 
+### Second run with VSIX `a56fc6d0...fa01fe` (2026-10-10, 21:17-21:22)
+
+- Registrations: PASS. The `vscode:uninstall` hook removed the three stale
+  entries (`removed`), Set Up Coding CLIs registered all three with 6 skills each
+  (Codex host-callable), and **Uninstall CoAgent8** removed the three entries and
+  18 skills. A stale Claude entry reappeared 14 s after the hook removed it, most
+  likely written back by a running Claude Code session; it was absent at the end.
+- Standalone CLIs: FAIL. Standalone Claude Code, Codex and Antigravity CLI stayed,
+  none was offered for removal. An earlier CoAgent8 build had installed them, but
+  the record lived in the extension's global storage, which VS Code deletes on
+  every uninstall. The official installers also leave more than the binary:
+  `claude install` adds `~/.local/bin` to the user PATH; the agy installer makes
+  `%LOCALAPPDATA%\agy\bin` a junction to `~/.gemini/bin` and adds both to PATH;
+  the OpenAI Codex installer links `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` ->
+  `~/.codex/bin` -> `~/.codex/packages/standalone/...`. Set Up Coding CLIs showed
+  the agy behind that junction as a second installation, labelled as the Google
+  extension's download although that extension was not installed, and never asked
+  whether to use a vendor extension instead.
+- On the owner's instruction the standalone CLIs were removed by hand: junctions
+  first, then the files, the emptied folders and five user PATH entries (backup
+  of the previous value kept in the session scratchpad); `backends.codex.executable`
+  was dropped from `~/.coagent8/config.json`. That write left the user PATH as
+  `REG_SZ` with expanded paths. The VS Code Claude Code extension, sign-ins,
+  configurations and the running `~/.codex/packages/app-server-daemon` stayed.
+- Fixes: the install record moves to `~/.coagent8/installs.json` (earlier lists
+  migrate from the extension storage); a CLI found only as a standalone
+  installation is offered the vendor extension once; **Install Standalone CLI**
+  says the installer changes PATH; sources compare by real path, and agy in
+  `~/.gemini/bin` without the Google extension is labelled standalone; the
+  Windows removal command deletes the agy junction itself, the files, emptied
+  installer folders and their user PATH entries through the registry, keeping
+  the value's type and unexpanded variables. A Windows test runs that command
+  against a junction fixture and a registry key of its own.
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;
