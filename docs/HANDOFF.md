@@ -2075,6 +2075,15 @@ Next: a repeated owner run of every case with this VSIX.
   installer folders and their user PATH entries through the registry, keeping
   the value's type and unexpanded variables. A Windows test runs that command
   against a junction fixture and a registry key of its own.
+- Full gate on `3d23dc1` (tree `7f10b19`, clean, Windows 11, Node v26.10.0):
+  typecheck, dependencies, build, coverage 663 tests (659 pass, 0 fail, 3 POSIX
+  skips, 1 todo; statements 93.3 %, branches 84.78 %), pack, consumer smoke,
+  lint:docs, docs, VSIX: all PASS. Tarball SHA-256
+  `1bc485be6fe94d727deb1c902161b154a0062fb4daceb80fea75ab742c60d865`, VSIX
+  `261c790ca88592ef426c03a7f2c6eba3cd38792e4fe58c42b8cd3e515eb65ed2`; they
+  replace the previous artifacts.
+
+Next: an owner run of every case from a clean profile with this VSIX.
 
 ## Compact handoff contract
 
