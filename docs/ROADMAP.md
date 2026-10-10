@@ -97,7 +97,10 @@ second separate gate. SKILLS-001a-d also land before T12 (owner decision
 invalidates the affected acceptance, so these cards land first. AUDIT-001-A08 through A20 stay open past beta.2 with
 explicit status in A21. Beta.2 release notes list known limits: plain `auto`
 consult may run an expensive default (AX-002), agy may report not-ready and still
-run (AX-005), and per-call native descendants follow WINDOWS-001a's result.
+run (AX-005), and a cancelled or expired agy turn can leave native child processes
+outside its job, such as MCP servers, running until they exit or the server stops
+(WINDOWS-001a REPRODUCED; owner decision 2026-10-10: known limit, fixed by
+WINDOWS-001b-e before write profiles).
 
 ## SIMPLIFY-001 - module boundary migration
 
@@ -1161,7 +1164,7 @@ containment precedes enabling any COAGENT-002 write or command profile.
   REPRODUCED or NOT_REPRODUCED with the limits of the experiment. The owner
   decides whether a reproduction blocks beta.2 or is a documented limit.
   Check: R, PROCESS/AGY; no live desktop sweep.
-  Evidence: REPRODUCED for a descendant outside the root job, NOT_REPRODUCED inside it; [WINDOWS-001a](HANDOFF.md#windows-001a-per-call-descendant-survivors). Owner decision on beta.2 pending.
+  Evidence: REPRODUCED for a descendant outside the root job, NOT_REPRODUCED inside it; [WINDOWS-001a](HANDOFF.md#windows-001a-per-call-descendant-survivors). Owner decision 2026-10-10: known limit of beta.2, not a blocker.
 - [ ] **WINDOWS-001b - launcher contract.** After beta.2; checked with P.
   Specify a launcher helper (**new**, working name `coagent8-job.exe`): the server
   starts it hidden; it creates a job with `KILL_ON_JOB_CLOSE` and optional memory/

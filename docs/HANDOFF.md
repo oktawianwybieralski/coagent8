@@ -1833,9 +1833,10 @@ Interpretation and limits:
 - The outside-job scenario is a `todo` on Windows that records the expected
   contract (no survivor) until WINDOWS-001b-e implements per-call containment.
 
-Owner decision needed: block beta.2 on this reproduction, or list it as a known
-limit (read-only profiles: a cancelled or expired agy turn can leave its native
-child processes, such as MCP servers, running until they exit or the server stops).
+Owner decision 2026-10-10: a known limit of beta.2, not a blocker. Release notes
+state it: in read-only profiles a cancelled or expired agy turn can leave its
+native child processes, such as MCP servers, running until they exit or the
+CoAgent8 server stops. WINDOWS-001b-e fix it before any write profile.
 
 ### Verification evidence:
 - 3 consecutive runs, each: in-job scenario PASS, outside-job scenario TODO with
@@ -1843,7 +1844,7 @@ child processes, such as MCP servers, running until they exit or the server stop
 - PASS: PROCESS and AGY groups; `npm run typecheck`; `npm run check:dependencies`;
   `git diff --check`.
 
-Next card: EXEC-001-T12b, after the owner's decision above.
+Next card: EXEC-001-T12a repetition on the final source, then T12b.
 
 
 ## Compact handoff contract
