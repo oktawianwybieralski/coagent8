@@ -1846,6 +1846,28 @@ CoAgent8 server stops. WINDOWS-001b-e fix it before any write profile.
 
 Next card: EXEC-001-T12a repetition on the final source, then T12b.
 
+## EXEC-001-T12a repetition on the final source
+
+Captured 2026-10-10 at `240ac3c` (tree `eff2aed`), clean worktree, Windows 11
+(10.0.26200), Node v26.10.0. Same command and 5 repetitions as T01c/T12a:
+`node tests/run.cjs tests/execution/baseline.test.js tests/environment.test.js`.
+
+- 5/5 runs exit 0 with 9/9 tests. Runner median 3,572 ms [3,504 .. 5,828];
+  wall median 3,894 ms [3,851 .. 6,786]. Lower than T12a (4,969 ms runner
+  median) on the same machine; the spread overlaps and no speedup is claimed.
+- Counters identical to T12a for every scenario: plain cold 1/1/1
+  (probes/catalog reads/launches), plain warm 0/0/1, explicit model/effort 1/0/1,
+  priced auto 1/0/1, continuation 0/0/1, review 1/0/1, concurrent 1/1/4.
+- Phase medians (ms): plain cold preparation 15, consent 23, acquisition 24,
+  finalization 69; review preparation 2, acquisition 21, finalization 568,
+  Git collection 1,025. The review scenario now includes the AX-007c session
+  lookup before consent; its single review per run never matches a previous one.
+- Limits unchanged from T12a: no native launches, no client transport, error
+  paths outside the baseline suite. Raw aggregates were kept in the session
+  scratchpad only.
+
+Next card: EXEC-001-T12b.
+
 
 ## Compact handoff contract
 
