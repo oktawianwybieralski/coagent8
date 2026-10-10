@@ -4,7 +4,7 @@ import { PROVIDERS, ToolError, type ProviderId } from './contracts/index.js';
 import { getDataDir } from './paths.js';
 import crypto from 'node:crypto';
 import { readBoundedFileSync } from './storage/read.js';
-import { withFileLock, isAbortSignal, type FileLockOptions } from './storage/lock.js';
+import { atomicWrite, withFileLock, isAbortSignal, type FileLockOptions } from './storage/lock.js';
 import type { BackendReadContext } from './contracts/execution.js';
 import { redactDiagnostic } from './security/redaction.js';
 import { isValidModelIdentifier } from './contracts/models.js';
@@ -506,13 +506,13 @@ export function loadConfigForDiagnostics(): { config: CoAgent8Config; error?: st
   return { config: snapshot.config, ...(snapshot.error ? { error: snapshot.error } : {}) };
 }
 
-function writeConfig(config: CoAgent8Config, configFile = getConfigFile()): void {
-  ensureConfigDir(configFile);
-  const tmpPath = `${configFile}.tmp.${crypto.randomUUID()}`;
-  try {
-    fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    fs.renameSync(tmpPath, configFile);
-  } finally { fs.rmSync(tmpPath, { force: true }); }
+/**
+ * Replaces the configuration file through the shared atomic writer (`AUDIT-001-A07`), which
+ * retries a transient Windows sharing failure and keeps the previous bytes on failure.
+ * Callers hold the configuration lease.
+ */
+async function writeConfig(config: CoAgent8Config, configFile = getConfigFile()): Promise<void> {
+  await atomicWrite(configFile, JSON.stringify(config, null, 2));
 }
 
 /**
@@ -537,7 +537,7 @@ export async function saveConfig(updates: Partial<CoAgent8Config>): Promise<CoAg
       backends: { ...current.backends, ...(updates.backends || {}) },
       governance: { ...current.governance, ...(updates.governance || {}) },
     });
-    writeConfig(merged, file);
+    await writeConfig(merged, file);
     return merged;
   });
 }
@@ -581,7 +581,7 @@ export async function rememberApprovedModel(
     const file = getConfigFile();
     const current = loadFileConfig(file);
     if (current.governance.neverAsk.includes(model)) return false;
-    writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }), file);
+    await writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }), file);
     return true;
   }, options);
 }
@@ -599,7 +599,7 @@ export async function recordDefaultModel(id: ProviderId, model: string): Promise
   return withFileLock(getConfigFile(), async () => {
     if (loadConfig().backends[id]?.defaultModel) return false;
     const current = loadFileConfig();
-    writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }));
+    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }));
     return true;
   });
 }
@@ -624,7 +624,7 @@ export async function recordBackendExecutable(id: ProviderId, executable: string
   return withFileLock(file, async () => {
     const current = loadFileConfig(file);
     if (current.backends[id]?.executable) return false;
-    writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], executable } } }), file);
+    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], executable } } }), file);
     return true;
   });
 }
@@ -639,7 +639,7 @@ export async function setBackendExecutable(id: ProviderId, executable: string | 
   await withFileLock(file, async () => {
     const current = loadFileConfig(file);
     const { executable: _previous, ...rest } = current.backends[id] ?? {};
-    writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: executable === undefined ? rest : { ...rest, executable } } }), file);
+    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: executable === undefined ? rest : { ...rest, executable } } }), file);
   });
 }
 

@@ -554,7 +554,8 @@ test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true suc
 test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails, recording redacted warning (Primary Task Supremacy)', async () => {
   const { loadConfig } = require('../../src/config.ts');
   const original = { ...adapterRegistry };
-  const originalRenameSync = fs.renameSync;
+  // Configuration writes replace the file through the asynchronous atomic writer (AUDIT-001-A07).
+  const originalRename = fs.promises.rename;
   try {
     adapterRegistry.codex = {
       id: 'codex',
@@ -586,11 +587,11 @@ test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails,
     // Simulate disk/permissions failure with sensitive path and credential in error
     const userHome = os.homedir();
     const sensitiveErrorMsg = `EACCES: permission denied, open '${path.join(userHome, '.coagent8', 'config.json')}' with token=sk-ant-secret12345678901234567890`;
-    fs.renameSync = function (from, to) {
+    fs.promises.rename = async function (from, to) {
       if (typeof to === 'string' && to.includes('config.json')) {
         throw new Error(sensitiveErrorMsg);
       }
-      return originalRenameSync.apply(this, arguments);
+      return originalRename.apply(this, arguments);
     };
 
     const res = await prepared.confirmConsent({
@@ -608,7 +609,7 @@ test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails,
     // Next-call policy consistency: disk state does not contain the model
     assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'Model must NOT be persisted in neverAsk');
   } finally {
-    fs.renameSync = originalRenameSync;
+    fs.promises.rename = originalRename;
     Object.assign(adapterRegistry, original);
   }
 });

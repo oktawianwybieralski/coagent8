@@ -919,14 +919,15 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
 
   const userHome = os.homedir();
   const sensitiveErrorMsg = `EACCES: permission denied, rename '${path.join(userHome, '.coagent8', 'config.json')}' with key token=sk-ant-secret12345678901234567890`;
-  const originalRenameSync = fs.renameSync;
+  // Configuration writes replace the file through the asynchronous atomic writer (AUDIT-001-A07).
+  const originalRename = fs.promises.rename;
 
   try {
-    fs.renameSync = function (from, to) {
+    fs.promises.rename = async function (from, to) {
       if (typeof to === 'string' && to.includes('config.json')) {
         throw new Error(sensitiveErrorMsg);
       }
-      return originalRenameSync.apply(this, arguments);
+      return originalRename.apply(this, arguments);
     };
 
     const res = await executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
@@ -948,8 +949,8 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
     // Next-call policy consistency: disk state does not contain the model
     assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Model must NOT be in neverAsk');
 
-    // Restore renameSync for the next turn verification
-    fs.renameSync = originalRenameSync;
+    // Restore rename for the next turn verification
+    fs.promises.rename = originalRename;
 
     // Subsequent independent call without askConsent requires consent again and rejects with POLICY_DENIED
     await assert.rejects(
@@ -961,7 +962,7 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
       }
     );
   } finally {
-    fs.renameSync = originalRenameSync;
+    fs.promises.rename = originalRename;
   }
 });
 

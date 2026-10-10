@@ -1690,6 +1690,38 @@ Next card: AUDIT-001-A04.
 
 Next card: AUDIT-001-A06.
 
+## AUDIT-001-A06-A07: atomic configuration writes
+
+### A06 reproduction (after A05, unchanged writer):
+- Fixture `tests/config-write-failure.test.js` fails renames onto the fixture
+  configuration only, through both `fs.renameSync` and `fs.promises.rename`.
+- REPRODUCED: three transient `EPERM` failures made `saveConfig` reject on the
+  first attempt; `writeConfig` had no retry. A permanent `EBUSY` and a
+  non-transient `EXDEV` were surfaced with the previous bytes intact and no
+  temporary or lease file left.
+- Limit: simulated error handling only. A native Windows sharing fixture needs
+  a process that opens the file without delete sharing (Node always grants it);
+  starting PowerShell for that risks a visible console, so native sharing is
+  NOT_RUN. No claim is made that every open handle blocks rename.
+
+### A07 implementation:
+- `writeConfig` awaits the shared `atomicWrite` (temporary file, rename with
+  the existing bounded EPERM/EBUSY/EACCES retry, temporary-file cleanup). All
+  five writers await it inside the configuration lease; validation and
+  file/editor precedence are unchanged. No second retry loop was added; the
+  existing retry has no execution deadline, which stays with EXEC-001-T09.
+- Two T10c consent tests injected storage failure through `fs.renameSync`;
+  the injection moved to `fs.promises.rename` with unchanged assertions.
+
+### Verification evidence:
+- PASS: regression (3 tests: transient retried after 3 failures with new bytes;
+  permanent and non-transient surfaced with old bytes, 1 attempt for EXDEV).
+- PASS: full suite `node tests/run.cjs` (647 tests: 644 pass, 0 fail, 3 POSIX-only
+  skips); `npm run typecheck`; `npm run check:dependencies`;
+  `npm run lint:docs`; `git diff --check`.
+
+Next card: AX-007a.
+
 
 ## Compact handoff contract
 

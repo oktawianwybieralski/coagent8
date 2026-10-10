@@ -1343,7 +1343,7 @@ a case, cite its exact evidence and skip duplicate implementation.
 
 ### Write reliability: separate each caller's contract
 
-- [ ] **AUDIT-001-A06 - reproduce transient configuration write failure.**
+- [x] **AUDIT-001-A06 - reproduce transient configuration write failure.**
   Depends: A05 or documented skip. Start: `src/config.ts:writeConfig`,
   `src/storage/lock.ts:atomicWrite`, `tests/storage/lock.test.js`,
   `tests/config.test.js`.
@@ -1353,8 +1353,9 @@ a case, cite its exact evidence and skip duplicate implementation.
   Done: record errors, attempts, old/new destination bytes and temporary-file
   cleanup. Do not claim every open read handle blocks rename.
   Checks: focused reproduction; existing atomic-write coverage; P.
+  Evidence: REPRODUCED (simulated; native sharing NOT_RUN), [A06-A07](HANDOFF.md#audit-001-a06-a07-atomic-configuration-writes).
 
-- [ ] **AUDIT-001-A07 - reuse atomicWrite for configuration.**
+- [x] **AUDIT-001-A07 - reuse atomicWrite for configuration.**
   Depends: A06 establishes a failure addressed by existing atomicWrite.
   Start: `src/config.ts:writeConfig` and every writer calling it.
   Change: await the existing atomic writer within the configuration lease;
@@ -1363,6 +1364,7 @@ a case, cite its exact evidence and skip duplicate implementation.
   preserved on failed replacement, and no caller reports success before writing.
   Checks: R, CONFIG, LOCK, POLICY, DOCTOR and affected caller tests.
   Share retry/deadline behavior with EXEC-001-T09; add no parallel retry loop.
+  Evidence: [A06-A07](HANDOFF.md#audit-001-a06-a07-atomic-configuration-writes).
 
 - [ ] **AUDIT-001-A08 - check initial session publication separately.**
   Depends: none. Start: `src/sessions/session.ts:saveSessionFile`, createSession,
