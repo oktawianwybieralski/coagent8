@@ -2252,6 +2252,31 @@ remain NOT_RUN on this replacement candidate. Fixture passes do not accept
 those scenarios. The full release CI matrix and committed artifact-bound
 independent approval remain pending; local implementation is not publication.
 
+## Beta.2 candidate `861f350` (2026-10-10)
+
+- Local branches: every `feat/*`, `fix/*`, `docs/*`, `build/*` and other local
+  branch has its content in `release/v1.0.0-beta.2` by patch identity; the one
+  commit each lacks is the former root `ae55f01`, whose tree equals `9795432`.
+  The exception was `docs/readme` with `de47a4d` (README feature reference and
+  badges, 2026-10-07). `861f350` brings its badges, contents, features,
+  configuration and known limitations to the beta.2 README, checked against the
+  current source and linking only existing documents.
+- Full gate on `861f350` (tree `787720a`, clean, Windows 11, Node v26.10.0):
+  typecheck, dependencies, build, coverage 679 tests (675 pass, 0 fail, 3 POSIX
+  skips, 1 todo; statements 93.27 %, branches 84.85 %), pack, consumer smoke,
+  lint:docs, docs (README on the API site, 0 warnings), VSIX: all PASS. Tarball
+  SHA-256 `7e9b3b2b668b8cd347246570b303956e83fc948bf3c3214b53759ce0cc1e9b51`,
+  VSIX `6f1cc358f9dcb965c6fab17664e5de02a82a096d1295c87e4d96293b449b95ff`; they
+  supersede every artifact above and contain skill management, the emptied
+  disabled-storage cleanup and Reload Window.
+- The VSIX installed in the owner's profile at 22:16 predates skill management;
+  native acceptance must use this VSIX.
+
+Next: owner native run of Manage Skills, the uninstall with Reload Window, an
+Extensions-view uninstall followed by reinstall and Uninstall CoAgent8 offering
+the recorded vendor extensions; then T12d independent review with observed
+checks and the REPO-002 owner steps.
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;
