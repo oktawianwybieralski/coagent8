@@ -136,12 +136,11 @@ items from an old snapshot report. Revalidate the candidate before claiming acce
 
 Requested by the owner on 2026-10-10 for beta.2, before EXEC-001-T12
 ([cards](ROADMAP.md#skills-001---client-skills-installed-with-the-registration)).
-SKILLS-001a-d are implemented locally, uncommitted, on `perf/exec-001`, next to
-another agent's uncommitted EXEC-001 changes; the two sets touch no common file.
+SKILLS-001a-d are implemented locally on `perf/exec-001`. The roadmap cards and
+this section entered commit 2ba3bc9 (EXEC-001-T11a) together with that card's
+documents; the code, skills, README and architecture follow in their own commit.
 During this work the uncommitted SKILLS files were once deleted outside Git (no
-stash, branch switch or reflog entry) and were recreated from the session; before
-committing, check that `skills/`, `src/integrations/skills.ts` and
-`tests/integrations/skills.test.js` are present.
+stash, branch switch or reflog entry) and were recreated from the session.
 
 Changed: `skills/` (six packages), `src/integrations/skills.ts`, `setup.ts`,
 `setup-storage.ts`, `cleanup.ts`, `setup-cli.ts`,

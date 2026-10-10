@@ -14,8 +14,18 @@ export interface Registration { command: string; args: string[]; env?: Record<st
 /** Registrations written on behalf of the VS Code extension, which removes them on uninstall. */
 export const EXTENSION_ORIGIN = 'vscode-extension' as const;
 export type RegistrationOrigin = typeof EXTENSION_ORIGIN;
-/** Saved selections and ownership; `origin` is absent for the CLI and for earlier records. */
-export interface Selection { clients: SetupClient[]; owned: Partial<Record<SetupClient, string>>; origin: Partial<Record<SetupClient, RegistrationOrigin>> }
+/**
+ * Saved selections and ownership; `origin` is absent for the CLI and for earlier records.
+ * `skills` holds the digests of the skill packages setup wrote per client, and `skillOrigin`
+ * marks those the VS Code extension wrote; both are omitted from the file while empty.
+ */
+export interface Selection {
+  clients: SetupClient[];
+  owned: Partial<Record<SetupClient, string>>;
+  origin: Partial<Record<SetupClient, RegistrationOrigin>>;
+  skills: Partial<Record<SetupClient, Record<string, string>>>;
+  skillOrigin: Partial<Record<SetupClient, RegistrationOrigin>>;
+}
 const CONFIG_LIMIT = 512 * 1024;
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 export function read(file: string): string | null {
@@ -94,7 +104,7 @@ export function writeChecked(file: string, before: string | null, after: string)
 }
 export function readSelection(file: string, snapshot?: string | null): Selection {
   const content = snapshot === undefined ? read(file) : snapshot;
-  if (content === null) return { clients: [], owned: {}, origin: {} };
+  if (content === null) return { clients: [], owned: {}, origin: {}, skills: {}, skillOrigin: {} };
   const data = json(content);
   if (!Array.isArray(data.clients) || !data.clients.every(client => SETUP_CLIENTS.includes(client as SetupClient))) throw new Error('Invalid saved setup selections.');
   const owned: Selection['owned'] = {};
@@ -108,5 +118,25 @@ export function readSelection(file: string, snapshot?: string | null): Selection
     if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || !owned[client as SetupClient]) throw new Error('Invalid setup origin record.');
     origin[client as SetupClient] = value;
   }
-  return { clients: [...new Set(data.clients)] as SetupClient[], owned, origin };
+  const skills: Selection['skills'] = {};
+  if (data.skills) for (const [client, value] of Object.entries(object(data.skills))) {
+    const record = object(value);
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || !Object.entries(record).every(([name, digest]) => /^coagent8-[a-z]+(?:-[a-z]+)*$/.test(name) && typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest))) {
+      throw new Error('Invalid setup skill record.');
+    }
+    skills[client as SetupClient] = { ...record } as Record<string, string>;
+  }
+  const skillOrigin: Selection['skillOrigin'] = {};
+  if (data.skillOrigin) for (const [client, value] of Object.entries(object(data.skillOrigin))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || !skills[client as SetupClient]) throw new Error('Invalid setup skill origin record.');
+    skillOrigin[client as SetupClient] = value;
+  }
+  return { clients: [...new Set(data.clients)] as SetupClient[], owned, origin, skills, skillOrigin };
+}
+/** The setup state file's contents; empty skill records are left out, as earlier versions wrote it. */
+export function serializeSelection(saved: Selection): string {
+  const { skills, skillOrigin, ...rest } = saved;
+  const recorded = Object.fromEntries(Object.entries(skills).filter(([, record]) => Object.keys(record ?? {}).length));
+  const origins = Object.fromEntries(Object.entries(skillOrigin).filter(([client]) => Object.hasOwn(recorded, client)));
+  return JSON.stringify({ ...rest, ...(Object.keys(recorded).length ? { skills: recorded } : {}), ...(Object.keys(origins).length ? { skillOrigin: origins } : {}) }, null, 2) + '\n';
 }

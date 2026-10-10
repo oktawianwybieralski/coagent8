@@ -119,12 +119,44 @@ remains open. Hosts control tool visibility, approval, refresh and icons.
 `status` checks all three CLIs and reports readiness separately from registration.
 The VS Code provider works independently. Its CLI onboarding offers installation
 and sign-in actions, while external MCP registration requires a separate choice.
-`cleanup` previews unchanged owned registrations; `cleanup --apply=<preview-token>`
-removes only those entries with private backups. Manual/edited entries, runtime
+`cleanup` previews unchanged owned registrations and skills; `cleanup --apply=<preview-token>`
+removes only those entries, with private backups, and those skills. Manual/edited entries, runtime
 files, credentials, histories and vendor extensions are retained.
 See the
 [integration contract](docs/ARCHITECTURE.md#optional-integrations)
 for ownership, rollback and host acceptance limits.
+
+### Skills
+
+Setup and repair also install one skill per CoAgent8 function into each client
+whose registration works, so you can name what to use. Codex lists skills in
+`/skills` and invokes them as `$coagent8-review`; Claude Code and the
+Antigravity CLI offer them as `/coagent8-review` commands.
+
+| Skill | Use it to |
+| --- | --- |
+| `coagent8-consult` | Ask another agent for a second opinion on a question, design, plan or bug |
+| `coagent8-review` | Have another agent review Git changes and read the verdict |
+| `coagent8-doctor` | See models, efforts and prices, apply a price limit, check backend health |
+| `coagent8-session` | List, read, continue, cancel or close sessions |
+| `coagent8-issue` | Prepare a sanitized CoAgent8 bug report |
+| `coagent8-loop` | Plan, get the plan reviewed, implement, run checks and get an independent review |
+
+| Client | Skill directory |
+| --- | --- |
+| Claude Code | `~/.claude/skills/` |
+| Codex | `~/.agents/skills/` |
+| Antigravity | `~/.gemini/config/skills/` |
+
+Setup writes only `coagent8-*` directories that are missing or still hold the
+copy it installed; a directory you changed is kept and reported. `cleanup`
+previews and removes the unchanged skills together with the registrations.
+Uninstalling the VS Code extension removes what the extension installed. npm
+runs no script on `npm uninstall`, so run `coagent8 cleanup` and
+`coagent8 cleanup --apply=<preview-token>` before `npm uninstall -g coagent8`.
+VS Code chat also reads `~/.claude/skills/` and `~/.agents/skills/`, so with
+both Claude Code and Codex set up it lists each skill twice. Native discovery
+in each client is still being accepted ([SKILLS-001](docs/ROADMAP.md#skills-001---client-skills-installed-with-the-registration)).
 
 ### VS Code commands
 

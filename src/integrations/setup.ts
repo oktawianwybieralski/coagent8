@@ -25,8 +25,9 @@ import { errorCodeOf } from '../contracts/index.js';
 
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, backupDirectory, type Registration, type RegistrationOrigin } from './setup-storage.js';
+import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, type Registration, type RegistrationOrigin } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
+import { describeSkills, installSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
 /** Separates registry, direct-runtime, and native-host evidence. No credentials are returned. */
 export interface SetupStatus extends CliReadiness {
   client: SetupClient;
@@ -38,6 +39,8 @@ export interface SetupStatus extends CliReadiness {
   /** Native-host registration outcome; `missing` means the CLI itself is absent. */
   action: 'preserved' | 'installed' | 'updated' | 'blocked' | 'missing' | 'not-registered';
   message: string;
+  /** Skill packages synchronized after a working registration; absent without a catalog or registration. */
+  skills?: SkillStatus[];
 }
 export interface SetupOptions {
   /** Explicit selections authorize setup; omitted selections reuse the saved list. */
@@ -60,6 +63,11 @@ export interface SetupOptions {
    * uses `~/.coagent8`.
    */
   dataDirectory?: string;
+  /**
+   * Packaged skill catalog (`skills/` of the npm package or the VSIX). A client whose
+   * registration works gets its packages; omitted, setup leaves skills unchanged.
+   */
+  skillsSource?: string;
 }
 /** The runtime backend each setup client runs as. */
 export const SETUP_PROVIDERS: Record<SetupClient, ProviderId> = { codex: 'codex', claude: 'claude', agy: 'agy' };
@@ -330,7 +338,10 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     if (!selected.length && !options.statusOnly) throw new Error('Select clients with --clients=codex,claude,agy on first setup.');
     if (!selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown setup client.');
     let candidate: Registration | null = null;
+    let catalog: SkillPackage[] | null = null;
     if (!options.statusOnly) {
+      // An invalid catalog is a package defect; it stops setup before any client changes.
+      if (options.skillsSource) catalog = readSkillCatalog(options.skillsSource);
       const bundle = readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024);
       candidate = candidateRegistration(bundle, root, options, env, cwd);
       const runtime = candidate.args.at(-1)!;
@@ -343,12 +354,29 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       { client, version: null, compatibility: 'unknown', authentication: 'unknown', ready: false, diagnostic: '', installed: false, registered: false, runtimeCallable: false, hostCallable: false, tools: [], action: 'blocked', message: '' }));
     // Status checks only read, so clients run in parallel; setup writes stay serial under the lease.
     if (options.statusOnly) await Promise.all(results.map(check));
-    else for (const result of results) await check(result);
+    else for (const result of results) {
+      await check(result);
+      if (catalog && ['installed', 'updated', 'preserved'].includes(result.action)) syncSkills(result, catalog);
+    }
     if (!options.statusOnly) {
       saved.clients = selected;
-      writeChecked(stateFile, stateBefore, JSON.stringify(saved, null, 2) + '\n');
+      writeChecked(stateFile, stateBefore, serializeSelection(saved));
     }
     return results;
+    /** Installs the catalog for a client whose registration works; skills never change the registration outcome. */
+    function syncSkills(result: SetupStatus, packages: SkillPackage[]): void {
+      const client = result.client;
+      const outcome = installSkills(client, home, packages, saved.skills[client] ?? {});
+      result.skills = outcome.statuses;
+      if (Object.keys(outcome.owned).length) saved.skills[client] = outcome.owned;
+      else delete saved.skills[client];
+      if (outcome.written) {
+        if (options.origin) saved.skillOrigin[client] = options.origin;
+        else delete saved.skillOrigin[client];
+      }
+      if (!saved.skills[client]) delete saved.skillOrigin[client];
+      result.message += ' ' + describeSkills(client, outcome.statuses);
+    }
     async function check(result: SetupStatus): Promise<void> {
       const client = result.client;
       try {

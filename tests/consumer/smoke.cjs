@@ -24,7 +24,7 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE'])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
   for(const name of ['logo-light.svg','logo-light.png','logo32-light.png','logo64-light.png','logo256-light.png'])assert.ok(pack.files.some(f=>f.path===`assets/${name}`),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');

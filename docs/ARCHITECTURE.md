@@ -424,6 +424,21 @@ offers only recorded installed dependencies, preserves shared config/sign-ins/
 histories and requires native lifecycle acceptance. Full VS Code quit/restart is
 distinct from restarting extensions. Existing registrations may need migration.
 
+Client skills (`src/integrations/skills.ts`, SKILLS-001) follow the registration.
+The catalog is `skills/` of the npm package and the VSIX: one directory per
+CoAgent8 function holding only a SKILL.md, read and validated before setup
+changes a client. After a client's registration is installed, updated or
+preserved, setup writes the packages into that client's user-scope directory
+(`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/config/skills`) when missing
+or still holding the recorded copy, and records their SHA-256 digests and the
+extension origin in `setup.json`. Changed, multi-file, linked or foreign
+`coagent8-*` entries are preserved and unrecorded; other tools' skills in shared
+directories are never read. Cleanup previews recorded packages in the same token,
+removes unchanged ones and re-checks them on apply; the VS Code origin limits
+the uninstall to packages the extension wrote. npm runs no uninstall script, so
+`coagent8 cleanup` precedes `npm uninstall`. Skills grant no capability and no
+package script runs.
+
 VSIX/plugin payloads derive from the npm tarball. Backend readiness, runtime
 initialize/tools-list, native host calls, UI/skill discovery and install/update/
 uninstall are separate acceptance claims. Preliminary owner evidence does not
@@ -475,7 +490,8 @@ bounded capabilities. Keep current nested refusal until gateway acceptance.
 Cycles, replay, cancellation races and native unobservable fan-out require explicit
 handling. Any model can coordinate; no fixed provider pairing is built into policy.
 
-Skills are versioned portable packages with owned manifests, conflict detection,
+Workflow skills extend the [current single-file packages](#optional-integrations)
+into versioned portable packages with owned manifests, conflict detection,
 atomic update/rollback and scoped client installation. No bundled script execution.
 Detect real client loaders and remote/local path boundaries; verify actual discovery
 and use. Plain MCP remains usable without a skill or repository knowledge.
@@ -509,6 +525,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-08 | Model lists come from the CLIs (Claude through stream-json initialize); prices are kept only for offered models and refreshed daily; a named model routes by catalog, never by a price entry's provider. |
 | 2026-10-08 | doctor defaults to the cached model view; health is a scope and the quota argument is removed. Consent refusals no longer advise another model. |
 | 2026-10-09 | Setup updates its own unchanged Claude and agy registrations once the new runtime starts and lists its tools, as a first registration; only a host setup can check (Codex) must also call it. The previous runtime stays until cleanup. After an update the VSIX offers Set Up CLIs once per runtime when a CLI chat still starts another version. |
+| 2026-10-10 | Every CoAgent8 function has a client skill. Setup installs a client's skills with its registration; cleanup and the VS Code uninstall remove them. Only the VSIX and the npm package install them, and they ship in beta.2 (SKILLS-001). |
 
 ## Known limitations
 

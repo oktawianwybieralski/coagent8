@@ -21,7 +21,7 @@
   "main": "./dist/extension.cjs",
   "scripts": { "vscode:uninstall": "node ./dist/uninstall.cjs" },
   "icon": "assets/logo.png",
-  "files": ["dist/**", "assets/**", "schemas/**", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": ["dist/**", "assets/**", "schemas/**", "skills/**", "README.md", "CHANGELOG.md", "LICENSE"],
   "activationEvents": ["onMcpServerDefinitionProvider:coagent8", "onStartupFinished"],
   "capabilities": {
     "untrustedWorkspaces": { "supported": false, "description": "CoAgent8 runs local coding CLIs and requires a trusted workspace." },

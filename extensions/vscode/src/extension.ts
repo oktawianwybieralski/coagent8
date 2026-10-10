@@ -223,7 +223,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (folders.length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
     clearCliResolverCache();
-    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment(storage), origin: EXTENSION_ORIGIN, dataDirectory: storage };
+    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), skillsSource: context.asAbsolutePath('skills'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment(storage), origin: EXTENSION_ORIGIN, dataDirectory: storage };
   }
   let lastStatus: SetupStatus[] = [];
   /** One readable state per CLI; the full evidence is written only through Show Details. */

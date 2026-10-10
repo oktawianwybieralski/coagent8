@@ -1,5 +1,6 @@
 /**
- * Explicit preview/apply cleanup of unchanged, fingerprint-owned registrations.
+ * Explicit preview/apply cleanup of unchanged, fingerprint-owned registrations and the
+ * unchanged skill packages setup installed with them.
  * @remarks Runtime files, credentials, histories, extensions and VS Code databases
  * are retained. Cleanup works even when the backend CLI has been uninstalled.
  * @packageDocumentation
@@ -12,13 +13,16 @@ import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { backupDirectory, configPath, document, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
+import { backupDirectory, configPath, document, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, serializeSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
+import { previewSkillRemoval, removeSkills, type SkillStatus } from './skills.js';
 
 /** Public cleanup evidence contains neither configuration contents nor private backup paths. */
 export interface CleanupStatus {
   client: SetupClient;
   action: 'remove' | 'removed' | 'absent' | 'preserved' | 'blocked';
   message: string;
+  /** Recorded skill packages of this client; absent when setup installed none. */
+  skills?: SkillStatus[];
 }
 export interface CleanupOptions {
   clients?: SetupClient[];
@@ -96,7 +100,7 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
     if (!fs.readdirSync(backups).length) fs.rmdirSync(backups);
   }
   const saved = readSelection(stateFile);
-  if (!saved.clients.length && !Object.keys(saved.owned).length) fs.rmSync(stateFile, { force: true });
+  if (!saved.clients.length && !Object.keys(saved.owned).length && !Object.keys(saved.skills).length) fs.rmSync(stateFile, { force: true });
 }
 
 /** Previews cleanup or applies a matching preview under the same lease as setup. */
@@ -129,6 +133,14 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         return { client, action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Cleanup failed.') };
       }
     });
+    // Skills are owned apart from the entry: a manual registration does not keep packages setup wrote.
+    for (const result of results) {
+      const record = saved.skills[result.client];
+      if (!record) continue;
+      result.skills = options.origin && saved.skillOrigin[result.client] !== options.origin
+        ? Object.keys(record).map((name): SkillStatus => ({ name, action: 'preserved', message: 'Installed outside the VS Code extension; preserved.' }))
+        : previewSkillRemoval(result.client, home, record);
+    }
     const token = hash(JSON.stringify({ home, state: stateBefore === null ? null : hash(stateBefore), selected,
       files: selected.map(client => { const item = snapshots.get(client); return item ? [item.file, item.before === null ? null : hash(item.before)] : null; }), results }));
     if (options.apply === undefined) return { token, results };
@@ -156,9 +168,20 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
         result.message = redactDiagnostic(error instanceof Error ? error.message : 'Cleanup failed; backup retained.');
       }
     }
+    for (const result of results) {
+      const record = saved.skills[result.client];
+      if (!record || !result.skills || (options.origin && saved.skillOrigin[result.client] !== options.origin)) continue;
+      const removal = removeSkills(result.client, home, record, result.skills);
+      result.skills = removal.statuses;
+      if (Object.keys(removal.owned).length) saved.skills[result.client] = removal.owned;
+      else {
+        delete saved.skills[result.client];
+        delete saved.skillOrigin[result.client];
+      }
+    }
     // Absent stale ownership is safely recoverable after an interrupted removal.
     if (stateBefore !== null) {
-      try { writeChecked(stateFile, stateBefore, JSON.stringify(saved, null, 2) + '\n'); }
+      try { writeChecked(stateFile, stateBefore, serializeSelection(saved)); }
       catch { return { token, results, stateError: 'Registration results above are final, but setup state changed or could not be saved. Keep backups and retry a fresh preview.' }; }
     }
     if (options.uninstall) {
