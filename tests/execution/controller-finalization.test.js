@@ -51,9 +51,9 @@ const originalRegistry = {
   claude: adapterRegistry.claude,
 };
 
-test.before(() => {
+test.before(async () => {
   composeExecutionCancellation();
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 });
 
 test.after(() => {

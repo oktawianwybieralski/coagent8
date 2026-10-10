@@ -137,7 +137,7 @@ const codexModels = [
 test('baseline: plain cold execution performs initial probe and launches adapter once', async () => {
   const { adapter, counters } = createInstrumentedFixture('codex', codexModels);
   adapterRegistry.codex = adapter;
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   const before = snapshotCounters(counters);
   const start = Date.now();
@@ -163,7 +163,7 @@ test('baseline: plain cold execution performs initial probe and launches adapter
 test('baseline: plain warm execution reuses probe cache and avoids redundant probes', async () => {
   const { adapter, counters } = createInstrumentedFixture('codex', codexModels);
   adapterRegistry.codex = adapter;
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   // First run (warmup)
   await executeTask('warmup', 'warmup', { backend: 'codex' }, tempDir);
@@ -193,7 +193,7 @@ test('baseline: plain warm execution reuses probe cache and avoids redundant pro
 test('baseline: explicit model and effort passes validated selection to adapter', async () => {
   const { adapter, counters } = createInstrumentedFixture('codex', codexModels);
   adapterRegistry.codex = adapter;
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   const before = snapshotCounters(counters);
   const start = Date.now();
@@ -225,7 +225,7 @@ test('baseline: explicit model and effort passes validated selection to adapter'
 test('baseline: priced auto resolves highest qualifying model below ceiling', async () => {
   const { adapter, counters } = createInstrumentedFixture('codex', codexModels);
   adapterRegistry.codex = adapter;
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   const before = snapshotCounters(counters);
   const start = Date.now();
@@ -257,7 +257,7 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
 test('baseline: continuation reuses session lease and propagates native session identity', async () => {
   const { adapter, counters } = createInstrumentedFixture('codex', codexModels);
   adapterRegistry.codex = adapter;
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   // Turn 1
   const turn1 = await executeTask('turn 1', 'turn 1', { backend: 'codex' }, tempDir);
@@ -338,7 +338,7 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
   });
 
   adapterRegistry.codex = adapter;
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   const before = snapshotCounters(counters);
   const start = Date.now();
@@ -407,7 +407,7 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
     },
   });
   adapterRegistry.agy = adapter;
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const before = snapshotCounters(counters);
   const start = Date.now();

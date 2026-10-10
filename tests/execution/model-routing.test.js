@@ -46,7 +46,7 @@ test.after(() => {
 });
 
 test('auto runs a named model on the backend that lists it, in the exact listed form', async () => {
-  config();
+  await config();
   const agy = await run({ model: 'gemini-3.8-flash-high' });
   assert.deepEqual([agy.provider, agy.model], ['agy', 'gemini-3.8-flash-high']);
   const codex = await run({ model: 'GPT-6-1-SOL' });
@@ -56,26 +56,26 @@ test('auto runs a named model on the backend that lists it, in the exact listed 
 });
 
 test('a configured default backend is kept when it lists the model and does not block one it lacks', async () => {
-  config({ defaultBackend: 'codex' });
+  await config({ defaultBackend: 'codex' });
   assert.equal((await run({ model: 'gemini-3.8-flash-high' })).provider, 'agy');
   assert.equal((await run({})).provider, 'codex', 'without a model the default backend runs');
-  config({ defaultBackend: 'agy' });
+  await config({ defaultBackend: 'agy' });
   assert.equal((await run({ model: 'claude-sonnet-4-6' })).provider, 'agy', 'both list it; the configured default wins');
-  config({ defaultBackend: 'claude' });
+  await config({ defaultBackend: 'claude' });
   assert.equal((await run({ model: 'claude-sonnet-4-6' })).provider, 'claude');
 });
 
 test('an unlisted name goes to a CLI that runs unlisted models; otherwise each backend says it does not offer it', async () => {
-  config();
+  await config();
   const unlisted = await run({ model: 'claude-opus-4-1' });
   assert.deepEqual([unlisted.provider, unlisted.model], ['claude', 'claude-opus-4-1']);
-  config({ routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] } });
+  await config({ routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] } });
   await assert.rejects(executeTask('x', 'x', { model: 'gpt-7-nova' }, tempDir),
     { code: 'MODEL_UNAVAILABLE', message: /^codex: does not list 'gpt-7-nova'; doctor lists its models\. agy: does not list 'gpt-7-nova'/ });
 });
 
 test('an explicit backend is never replaced; its catalog reports a model it does not offer', async () => {
-  config();
+  await config();
   runs.length = 0;
   await assert.rejects(executeTask('x', 'x', { backend: 'codex', model: 'gemini-3.8-flash-high' }, tempDir), { code: 'MODEL_UNAVAILABLE', message: /not offered by codex/ });
   assert.deepEqual(runs, []);

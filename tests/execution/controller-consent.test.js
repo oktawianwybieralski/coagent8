@@ -45,8 +45,8 @@ test.after(() => {
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-function setupMockConfigAndAdapters() {
-  saveConfig({
+async function setupMockConfigAndAdapters() {
+  await saveConfig({
     defaultBackend: 'codex',
     routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] },
     governance: {
@@ -87,7 +87,7 @@ function setupMockConfigAndAdapters() {
 }
 
 test('confirmConsent: delayed reply after budget deadline throws TIMEOUT and does not remember approval', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let fakeNow = 1000;
   const clock = () => fakeNow;
   const budget = createExecutionBudget({ totalBudgetMs: 5000, teardownAllowanceMs: 1000, clock });
@@ -117,7 +117,7 @@ test('confirmConsent: delayed reply after budget deadline throws TIMEOUT and doe
 });
 
 test('confirmConsent: caller abort signal during consent wait throws ABORTED and does not remember approval', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const ac = new AbortController();
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
@@ -142,7 +142,7 @@ test('confirmConsent: caller abort signal during consent wait throws ABORTED and
 });
 
 test('confirmConsent: pending callback that never resolves rejects immediately upon caller abort', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const ac = new AbortController();
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
@@ -172,7 +172,7 @@ test('confirmConsent: pending callback that never resolves rejects immediately u
 });
 
 test('confirmConsent: pending callback that never resolves rejects immediately upon budget timeout', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const budget = createExecutionBudget({ totalBudgetMs: 50, teardownAllowanceMs: 10 });
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir, { budget });
 
@@ -192,7 +192,7 @@ test('confirmConsent: pending callback that never resolves rejects immediately u
 });
 
 test('confirmConsent: conflicting response with approved: true and unanswered: true rejects with POLICY_DENIED', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
   await assert.rejects(
@@ -211,7 +211,7 @@ test('confirmConsent: conflicting response with approved: true and unanswered: t
 });
 
 test('confirmConsent: cancelled form (unanswered) throws POLICY_DENIED with unanswered message', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
   await assert.rejects(
@@ -231,7 +231,7 @@ test('confirmConsent: cancelled form (unanswered) throws POLICY_DENIED with unan
 });
 
 test('confirmConsent: user decline throws POLICY_DENIED with user did not approve message', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
   await assert.rejects(
@@ -251,7 +251,7 @@ test('confirmConsent: user decline throws POLICY_DENIED with user did not approv
 });
 
 test('confirmConsent: response identity mismatch (wrong model or backend) throws POLICY_DENIED', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
   // Mismatched model
@@ -285,7 +285,7 @@ test('confirmConsent: response identity mismatch (wrong model or backend) throws
 });
 
 test('executeTask: delayed consent reply past budget deadline blocks turn execution', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executionRan = false;
   adapterRegistry.codex.execute = async () => {
     executionRan = true;
@@ -315,7 +315,7 @@ test('executeTask: delayed consent reply past budget deadline blocks turn execut
 });
 
 test('executeTask: abort signal during consent blocks turn execution and leaves config untouched', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executionRan = false;
   adapterRegistry.codex.execute = async () => {
     executionRan = true;
@@ -343,7 +343,7 @@ test('executeTask: abort signal during consent blocks turn execution and leaves 
 });
 
 test('MCP server: binds elicitInput timeout to execution budget and cancels cleanly', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executedModel = null;
   adapterRegistry.codex.execute = async (_prompt, options) => {
     executedModel = options.model;
@@ -443,7 +443,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
 
 test('EXEC-001-T10b: price increase during consent wait invalidates approval, blocks turn execution and does not remember approval', async () => {
   const { recordPrices } = require('../../src/models/store.ts');
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
 
   await recordPrices({
     fetchedAt: Date.now(),
@@ -492,7 +492,7 @@ test('EXEC-001-T10b: price increase during consent wait invalidates approval, bl
 
 test('EXEC-001-T10b: price change exceeding output_price_below during consent wait blocks turn with PRICE_LIMIT and does not remember approval', async () => {
   const { recordPrices } = require('../../src/models/store.ts');
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
 
   await recordPrices({
     fetchedAt: Date.now(),
@@ -538,7 +538,7 @@ test('EXEC-001-T10b: price change exceeding output_price_below during consent wa
 });
 
 test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates approval, blocks turn and does not remember approval', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executionRan = false;
   adapterRegistry.codex.execute = async () => {
     executionRan = true;
@@ -550,7 +550,7 @@ test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates a
       askConsent: async () => {
         // Add gpt-unknown to alwaysAsk while user is deciding
         const current = loadConfig();
-        saveConfig({
+        await saveConfig({
           ...current,
           governance: {
             ...current.governance,
@@ -575,8 +575,8 @@ test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates a
 });
 
 test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invalidates approval and blocks turn', async () => {
-  setupMockConfigAndAdapters();
-  saveConfig({
+  await setupMockConfigAndAdapters();
+  await saveConfig({
     ...loadConfig(),
     governance: {
       ...loadConfig().governance,
@@ -594,7 +594,7 @@ test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invali
     executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
       askConsent: async () => {
         const current = loadConfig();
-        saveConfig({
+        await saveConfig({
           ...current,
           governance: {
             ...current.governance,
@@ -619,8 +619,8 @@ test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invali
 });
 
 test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait invalidates approval and blocks turn', async () => {
-  setupMockConfigAndAdapters();
-  saveConfig({
+  await setupMockConfigAndAdapters();
+  await saveConfig({
     ...loadConfig(),
     governance: {
       ...loadConfig().governance,
@@ -638,7 +638,7 @@ test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait inva
     executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
       askConsent: async () => {
         const current = loadConfig();
-        saveConfig({
+        await saveConfig({
           ...current,
           governance: {
             ...current.governance,
@@ -663,7 +663,7 @@ test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait inva
 });
 
 test('EXEC-001-T10b: valid consent under unchanged conditions succeeds, executes turn and remembers approval', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executedModel = null;
   adapterRegistry.codex.execute = async (_prompt, options) => {
     executedModel = options.model;
@@ -689,7 +689,7 @@ test('EXEC-001-T10b: valid consent under unchanged conditions succeeds, executes
 });
 
 test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidate concurrent turn', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executedModel = null;
   adapterRegistry.codex.execute = async (_prompt, options) => {
     executedModel = options.model;
@@ -708,7 +708,7 @@ test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidat
     askConsent: async () => {
       // A concurrent turn remembers a different model 'gpt-other'
       const current = loadConfig();
-      saveConfig({
+      await saveConfig({
         ...current,
         governance: {
           ...current.governance,
@@ -726,10 +726,10 @@ test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidat
 });
 
 test('EXEC-001-T10b: turn for model on neverAsk executes without POLICY_DENIED even if price list refreshes', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   // Put gpt-expensive on neverAsk and remove from alwaysAsk
   const current = loadConfig();
-  saveConfig({
+  await saveConfig({
     ...current,
     governance: {
       ...current.governance,
@@ -764,7 +764,7 @@ test('EXEC-001-T10b: turn for model on neverAsk executes without POLICY_DENIED e
 });
 
 test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing sessions from fresh turns', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
 
   // Fresh turn guidance
   await assert.rejects(
@@ -872,9 +872,9 @@ test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing session
 });
 
 test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block turn for model on neverAsk', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   const current = loadConfig();
-  saveConfig({
+  await saveConfig({
     ...current,
     governance: {
       ...current.governance,
@@ -888,7 +888,7 @@ test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block tu
   const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
 
   // During execution / revalidation, askAbovePrice and priceMultiplier are made much stricter
-  saveConfig({
+  await saveConfig({
     ...loadConfig(),
     governance: {
       ...loadConfig().governance,
@@ -902,7 +902,7 @@ test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block tu
 });
 
 test('EXEC-001-T10c: executeTask preserves valid approval when remember storage fails, redacting diagnostics (Primary Task Supremacy)', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executedModel = null;
   adapterRegistry.codex.execute = async (_prompt, options) => {
     executedModel = options.model;
@@ -966,7 +966,7 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
 });
 
 test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTED and leaves neverAsk untouched', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executed = false;
   adapterRegistry.codex.execute = async () => {
     executed = true;
@@ -995,7 +995,7 @@ test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTE
 });
 
 test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIMEOUT and leaves neverAsk untouched', async () => {
-  setupMockConfigAndAdapters();
+  await setupMockConfigAndAdapters();
   let executed = false;
   adapterRegistry.codex.execute = async () => {
     executed = true;

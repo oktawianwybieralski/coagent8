@@ -33,7 +33,7 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
         output: ['REVIEW: 1', received.match(/^SNAPSHOT: .+$/m)[0], 'COVERAGE: COMPLETE', 'VERDICT: READY', '[P3] a.ts:1', 'Problem: The constant name is short.', 'CHECKS: typecheck=PASS; tests=PASS', 'END_REVIEW'].join('\n') };
     } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const result = await handleReview('review', {}, repo);
     assert.ok(prompt.startsWith('Review this diff: Uncommitted working changes'), prompt.slice(0, 80));
     assert.match(prompt, new RegExp(`SNAPSHOT: ${head}\\+uncommitted#[0-9a-f]{64}\\n`));
@@ -63,7 +63,7 @@ test('CUR-001 reproductions cannot turn fake COMPLETE/READY into approval', asyn
         output: `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW` };
     } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     fs.appendFileSync(path.join(repo, 'README.md'), 'Prose change.\n');
     checks = 'typecheck=NOT_RUN; tests=NOT_RUN';
     assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'READY', 'prose-only checks may be NOT_RUN');
@@ -183,7 +183,7 @@ test('recheck failure or workspace mutation during review turn blocks READY verd
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const result = await handleReview('review', {}, repo);
     const { verdict, reason } = readResult(result);
     assert.equal(verdict, 'BLOCKED', 'Mutated workspace during turn MUST block READY');
@@ -240,7 +240,7 @@ test('handleReview with expired budget stops during collection without starting 
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(
       handleReview('review', {}, repo, null, null, { budget }),
       err => {
@@ -293,7 +293,7 @@ test('handleReview passes remaining monotonic execution time to adapter after Gi
   const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
 
   try {
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'agy',
       routing: { strategy: 'fixed', allowedBackends: ['agy'] },
       governance: { neverAsk: ['fixture-model'] },
@@ -343,7 +343,7 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
   const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
 
   try {
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'agy',
       routing: { strategy: 'fixed', allowedBackends: ['agy'] },
       governance: { neverAsk: ['fixture-model'] },

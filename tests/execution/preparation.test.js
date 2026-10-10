@@ -129,7 +129,7 @@ test('prepareTask: prepares auto execution with single configuration snapshot', 
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
     });
@@ -192,7 +192,7 @@ test('prepareTask & confirmConsent: handles consent verification and price limit
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
@@ -265,7 +265,7 @@ test('EXEC-001-T05a: catalog observation obtained during routing is reused in mo
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
@@ -302,7 +302,7 @@ test('EXEC-001-T05b: defaultModel is reused in consent and handles missing backe
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       backends: { codex: { defaultModel: undefined } },
@@ -348,7 +348,7 @@ test('EXEC-001-T05c: price change while consent is pending triggers re-validatio
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: ['gpt-6.1-sol'], neverAsk: [] },
@@ -405,7 +405,7 @@ test('EXEC-001-T10b: confirmConsent price increase without price limit throws PO
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: ['gpt-6.1-sol'], neverAsk: [] },
@@ -474,7 +474,7 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: [], neverAsk: [] },
@@ -486,7 +486,7 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
       prepared.confirmConsent({
         askConsent: async () => {
           // Config changed: threshold lowered to 5 USD
-          saveConfig({
+          await saveConfig({
             defaultBackend: 'codex',
             routing: { strategy: 'fixed', allowedBackends: ['codex'] },
             governance: { priceMultiplier: 2, askAbovePrice: 5, alwaysAsk: [], neverAsk: [] },
@@ -532,7 +532,7 @@ test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true suc
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
@@ -575,7 +575,7 @@ test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails,
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
@@ -637,7 +637,7 @@ test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABO
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
@@ -693,7 +693,7 @@ test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with T
       execute: async () => { throw new Error('Must not execute'); },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
@@ -753,7 +753,7 @@ test('prepareTask reclassifies probe abortion from budget expiration as TIMEOUT'
   };
 
   try {
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
     });

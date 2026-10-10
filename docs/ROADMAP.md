@@ -1317,7 +1317,7 @@ a case, cite its exact evidence and skip duplicate implementation.
 
 ### Configuration: serialize every writer
 
-- [ ] **AUDIT-001-A04 - prove the unlocked configuration writer.**
+- [x] **AUDIT-001-A04 - prove the unlocked configuration writer.**
   Depends: none; schedule after A03 or its documented non-reproduction.
   Start: `src/config.ts:saveConfig`, setDefaultBackend, rememberApprovedModel,
   recordDefaultModel; `tests/config.test.js`, `tests/storage/lock.test.js`.
@@ -1327,8 +1327,9 @@ a case, cite its exact evidence and skip duplicate implementation.
   Done: demonstrate lease bypass/lost fields using final parsed configuration;
   include a control with two lease-respecting writers.
   Checks: focused config regression and P; helper processes clean up owned handles.
+  Evidence: REPRODUCED, [A04-A05](HANDOFF.md#audit-001-a04-a05-serialize-configuration-writers).
 
-- [ ] **AUDIT-001-A05 - serialize saveConfig and migrate its callers.**
+- [x] **AUDIT-001-A05 - serialize saveConfig and migrate its callers.**
   Depends: A04 reproduces the defect. Start: `src/config.ts`; search all source,
   extension and test callers of saveConfig/setDefaultBackend before editing.
   Change: put the entire read-modify-write under the existing file lease.
@@ -1338,6 +1339,7 @@ a case, cite its exact evidence and skip duplicate implementation.
   error assertion remains; malformed config still fails closed.
   Checks: R, CONFIG, POLICY, DOCTOR and every affected caller test found by search.
   Do not mark the card complete with only a typecheck.
+  Evidence: [A04-A05](HANDOFF.md#audit-001-a04-a05-serialize-configuration-writers).
 
 ### Write reliability: separate each caller's contract
 

@@ -31,7 +31,7 @@ async function rateLimitedTurn(message) {
   };
   try {
     fs.rmSync(quotaCache, { force: true });
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const started = Date.now();
     const res = await executeTask('User prompt', 'Public question', { backend: 'agy' }, tempDir);
     assert.equal(readResult(res).error.code, 'RATE_LIMITED');
@@ -67,7 +67,7 @@ test('CUR-004: an unwritable quota cache does not block an auto call; the answer
       execute: async () => ({ status: 'completed', isError: false, output: `answer from ${id}`, model: 'fixture-model', truncated: false, continuationAvailable: false }),
     };
   }
-  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] } });
+  await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] } });
   process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
   const result = readResult(await executeTask('User prompt', 'Public question', { backend: 'auto' }, tempDir));
   assert.equal(result.error, null);

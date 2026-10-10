@@ -37,7 +37,7 @@ test('S2 neutral controller: executeTask returns neutral object without MCP mark
       }),
     };
 
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
     const outcome = await executeTask('Neutral prompt', 'Public question', { backend: 'agy' }, tempDir);
 

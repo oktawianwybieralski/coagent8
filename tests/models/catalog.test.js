@@ -81,7 +81,7 @@ test('the controller refuses an unoffered model before any model call, and the d
     listModels: async () => { listed++; return { source: 'fixture', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] }; },
     execute: async () => { executed++; return { status: 'completed', isError: false, output: 'ok', model: 'gemini-3.8-flash-high', truncated: false, continuationAvailable: false }; } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(executeTask('x', 'x', { model: 'gemini-3.8-flash' }, directory), error => error.code === 'INPUT_LIMIT' && /needs reasoning_effort \(high, low\)/.test(error.message));
     await assert.rejects(executeTask('x', 'x', { model: 'luna' }, directory), error => error.code === 'MODEL_UNAVAILABLE');
     assert.equal(executed, 0, 'no backend ran');

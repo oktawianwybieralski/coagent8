@@ -22,7 +22,7 @@ test('a server started inside a CoAgent8 turn refuses to start another turn befo
   adapterRegistry.agy={id:'agy',name:'fixture',probe:async()=>{calls++;return {installed:true,version:'fixture',config:{defaultModel:'fixture-model'}};},execute:async()=>{calls++;return {status:'completed',isError:false,output:'x',truncated:false,continuationAvailable:false};}};
   process.env.COAGENT8_NESTED_TURN='1';
   try {
-    saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
+    await saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
     await assert.rejects(executeTask('x','x',{backend:'agy'},tempDir),{code:'POLICY_DENIED',message:/inside a CoAgent8 turn/});
     assert.equal(calls,0,'no probe and no turn');
   } finally {
@@ -42,7 +42,7 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
     return {status:'completed',isError:false,output:'Final **answer**\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef',nativeSessionId:'11111111-aaaa-bbbb-cccc-123456789012',model:'fixture-model',truncated:false,continuationAvailable:true};
   }};
   try {
-    saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
+    await saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
     const first=await executeTask('PROMPT_WITH_PRIVATE_SNAPSHOT','User first turn',{backend:'agy'},tempDir);
     assert.equal(first.isError,false); assert.match(readResult(first).text,/ · 1 op · /); assert.ok(first.result.output.includes('const answer = 42;'));
     const handle=readResult(first).sessionHandle;
@@ -75,7 +75,7 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
     return result;
   }};
   try {
-    saveConfig({defaultBackend:'codex',routing:{strategy:'fixed',allowedBackends:['codex']}});
+    await saveConfig({defaultBackend:'codex',routing:{strategy:'fixed',allowedBackends:['codex']}});
     const cancelled=new AbortController();cancelled.abort();await assert.rejects(executeTask('x','x',{},tempDir,cancelled.signal),{code:'ABORTED'});assert.equal(calls,0);
     await assert.rejects(executeTask('x','x',{},tempDir),{code:'POLICY_DENIED'});assert.equal(calls,0);
     const approve={askConsent:async()=>({approved:true})};
@@ -86,5 +86,5 @@ test('pipeline enforces effective defaults and terminal errors; rate limits pres
     mode='invalid';const invalid=await executeTask('x','invalid',{session_handle:handle},tempDir,null,null,approve);assert.equal(readResult(invalid).error.code,'SESSION_INVALID');assert.equal(readResult(invalid).continuationAvailable, false);assert.equal(getSession(handle),null);
     const history=await sessionHistory(handle,tempDir);assert.ok(!JSON.stringify(history).includes('MUST_NOT_PERSIST'));assert.equal(history.events.at(-1).status,'failed');
     for(mode of ['missing','contradiction']) {const r=await executeTask('x','x',{},tempDir,null,null,approve);assert.equal(r.isError,true);assert.equal(readResult(r).error.code,'PROTOCOL_ERROR');assert.equal(getSession(readResult(r).sessionHandle).activePid,null);}
-  }finally{adapterRegistry.codex=original;saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});}
+  }finally{adapterRegistry.codex=original;await saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});}
 });

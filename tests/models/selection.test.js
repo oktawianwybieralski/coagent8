@@ -68,7 +68,7 @@ test('a catalog read from the CLI is kept in models.json for later processes, ke
 });
 
 test('the model comes from the call, the session, config.json, the CLI configuration, its catalog or what it reports; never from the bridge', async () => {
-  resetConfig();
+  await resetConfig();
   const probe = { installed: true, version: 'fixture' };
   adapterRegistry.codex = stub('codex', { listModels: async () => CODEX_CATALOG });
   adapterRegistry.agy = stub('agy', { listModels: async () => AGY_CATALOG });
@@ -81,15 +81,15 @@ test('the model comes from the call, the session, config.json, the CLI configura
   assert.deepEqual(await selectModel('claude', probe), { model: 'claude-observed-default', source: 'observed' });
   assert.deepEqual(await selectModel('claude', probe, { model: 'sonnet' }), { model: 'claude-observed-sonnet', source: 'request' }, 'an alias becomes the model the CLI reports');
   await assert.rejects(selectModel('claude', probe, { model: 'unreported' }), { code: 'MODEL_UNAVAILABLE' }, 'an unresolved name is refused, not governed by its spelling');
-  saveConfig({ backends: { agy: { defaultModel: 'gemini-3.1-pro-low' } } });
+  await saveConfig({ backends: { agy: { defaultModel: 'gemini-3.1-pro-low' } } });
   assert.deepEqual(await selectModel('agy', probe), { model: 'gemini-3.1-pro-low', source: 'config' });
   adapterRegistry.agy = stub('agy');
-  saveConfig({ backends: { agy: {} } });
+  await saveConfig({ backends: { agy: {} } });
   await assert.rejects(selectModel('agy', probe), { code: 'MODEL_UNAVAILABLE' }, 'no source, no model');
 });
 
 test('the first doctor records a default the CLI does not state itself in config.json and says so', async () => {
-  resetConfig();
+  await resetConfig();
   fs.rmSync(storeFile, { force: true });
   adapterRegistry.codex = stub('codex', { listModels: async () => CODEX_CATALOG });
   adapterRegistry.agy = stub('agy', { listModels: async () => AGY_CATALOG });
@@ -108,7 +108,7 @@ test('the first doctor records a default the CLI does not state itself in config
 });
 
 test('a Claude turn runs the model Claude Code reports for its name, so consent covers what actually runs', async () => {
-  resetConfig();
+  await resetConfig();
   const capture = path.join(tempDir, 'claude-capture.json');
   process.env.CLAUDE_FIXTURE_CAPTURE = capture;
   // As ANTHROPIC_DEFAULT_SONNET_MODEL does: the alias runs a top-tier model.

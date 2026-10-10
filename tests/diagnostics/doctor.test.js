@@ -76,7 +76,7 @@ test('doctor: runDoctor excludes exhausted/rate-limited providers from ready_bac
       };
     }
 
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
 
     // Mark codex as rate limited
     await recordQuotaCooldown('codex', 60000, 'Usage limit reached');
@@ -115,7 +115,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
         }),
       };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
 
     const report = await runDoctor();
     const summary = formatDoctorSummary(report);
@@ -180,7 +180,7 @@ test('doctor names the MCP servers and plugins agy turns inherit, without changi
           config: { defaultModel: `${id}-model` }, capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }),
       };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
     const report = await runDoctor({ quota: false });
     assert.deepEqual(report.inheritedTools, { agy: { mcpServers: ['context7', 'coagent8'], plugins: ['team-kit'] } });
     const note = report.recommendations.find(text => text.startsWith('agy: turns run'));
@@ -247,7 +247,7 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
         probe: async () => ({ id, installed: id !== 'agy', version: `${id} 2.0.0`, executionSupported: true, authStatus: 'authenticated', capabilities: { readOnlyVerified: true } }),
       };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] }, backends: { codex: {}, claude: {}, agy: {} } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] }, backends: { codex: {}, claude: {}, agy: {} } });
     const summary = (await handleDoctor({})).content[0].text;
     assert.deepEqual(summary.split('\n'), [
       summary.split('\n')[0],

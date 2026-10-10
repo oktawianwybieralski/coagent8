@@ -1654,6 +1654,42 @@ Started 2026-10-10 on `perf/exec-001` at `07582ad`.
 
 Next card: AUDIT-001-A04.
 
+## AUDIT-001-A04-A05: serialize configuration writers
+
+### A04 reproduction (unchanged source):
+- Caller search: `saveConfig`/`setDefaultBackend` have no source or extension
+  caller; the bundle omits them. Only tests (27 files) call them. The defect was
+  therefore not reachable from the shipped runtime, but the exported writer
+  bypassed the lease every other configuration writer uses.
+- Fixture `tests/config-writer-lease.test.js`: an owned helper process holds the
+  configuration lease, reports `read`, waits for an explicit `write` message,
+  then writes its read state plus `neverAsk: ['helper-model']`. The parent starts
+  `saveConfig({ defaultBackend: 'claude' })` synchronously before sending `write`.
+- REPRODUCED 5/5: the final parsed configuration lost `defaultBackend`; the
+  control (`setBackendExecutable`, lease-respecting) kept both fields 5/5.
+  A first draft that deferred the call to a microtask raced in both directions
+  and was replaced by the message-ordered version.
+
+### A05 implementation:
+- `saveConfig` and `setDefaultBackend` are asynchronous; the whole
+  read-modify-write runs under the configuration file lease and writes the same
+  file it read. `writeConfig` is unchanged until A07; editor settings are not
+  written, so file/editor precedence is unchanged.
+- All 27 caller test files await the calls. Two synchronous `assert.throws`
+  became `assert.rejects` with the same error predicates (invalid backend,
+  uncreatable directory); no matcher changed.
+
+### Verification evidence:
+- PASS: `tests/config-writer-lease.test.js` (3 tests: lease wait, control,
+  malformed config fails closed with bytes and no lease left) 5/5 runs; CONFIG
+  group with the regression (17/17).
+- PASS: full suite `node tests/run.cjs` (643 tests: 640 pass, 0 fail, 3 POSIX-only
+  skips; 2 min 25 s, Windows, Node v26.10.0) before the fail-closed case was
+  added; `npm run typecheck`; `npm run check:dependencies`; `npm run lint:docs`;
+  `git diff --check`.
+
+Next card: AUDIT-001-A06.
+
 
 ## Compact handoff contract
 

@@ -87,7 +87,7 @@ test('writes keep VS Code settings out of the file; a remembered approval stays 
     assert.equal(await rememberApprovedModel('approved-model'), true);
     assert.equal(await recordDefaultModel('agy', 'detected-gemini'), false, 'a VS Code default model is not recorded over');
     assert.equal(await recordDefaultModel('claude', 'detected-claude'), true);
-    setDefaultBackend('codex');
+    await setDefaultBackend('codex');
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.deepEqual(stored.governance.neverAsk, ['file-never', 'approved-model']);
     assert.deepEqual(stored.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'detected-claude' } });

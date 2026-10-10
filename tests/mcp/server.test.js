@@ -132,7 +132,7 @@ test('the connected client name sets the caller CLI that auto routing avoids', a
       adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
         probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }), execute: async () => { throw new Error('Not executed'); } };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
@@ -162,7 +162,7 @@ test('execution results report a workspace taken from client roots; roots are re
   let rootsRequests = 0;
   client.setRequestHandler(ListRootsRequestSchema, async () => { rootsRequests++; return { roots: [{ uri: pathToFileURL(root).href, name: 'project' }] }; });
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
@@ -199,7 +199,7 @@ test('execution errors carry the code raised at their source; an unknown failure
   const server = createServer();
   const client = new Client({ name: 'errors-client', version: '1' });
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
@@ -266,7 +266,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   };
   const opened = [];
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] } });
     const callWith = (client, args) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...args } });
     const call = (client, model) => callWith(client, model ? { model } : {});
 
@@ -452,7 +452,7 @@ test('EXEC-001-T11c: early failure during tool preparation or Git collection for
 
   const originalCodex = adapterRegistry.codex;
   try {
-    saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+    await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
     adapterRegistry.codex = {
       ...originalCodex,
       probe: async () => {
@@ -504,7 +504,7 @@ test('EXEC-001-T11c: cancelled or timed-out consent wait reflects actual elapsed
 
   const originalAgy = adapterRegistry.agy;
   try {
-    saveConfig({
+    await saveConfig({
       defaultBackend: 'agy',
       routing: { strategy: 'fixed', allowedBackends: ['agy'] },
       governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: ['expensive-model'], neverAsk: [] },

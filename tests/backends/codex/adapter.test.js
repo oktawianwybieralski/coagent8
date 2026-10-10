@@ -19,7 +19,7 @@ const options = {cwd:directory,model:'gpt-6.1-sol'};
 test.after(() => fs.rmSync(directory,{recursive:true,force:true}));
 
 test('production Codex adapter passes the shared pipeline, preserves Markdown and resumes two turns with durable public history',async () => {
-  saveConfig({defaultBackend:'codex',routing:{strategy:'fixed',allowedBackends:['codex']}});
+  await saveConfig({defaultBackend:'codex',routing:{strategy:'fixed',allowedBackends:['codex']}});
   const first = await executeTask('PRIVATE_REPOSITORY_SNAPSHOT','Public question 😀',{backend:'codex',model:options.model},directory);
   assert.equal(first.isError,false); assert.equal(readResult(first).status,'completed');
   assert.ok(readResult(first).answer.includes('const answer = 42;'));

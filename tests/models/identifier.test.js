@@ -32,7 +32,7 @@ test('the controller rejects an option-like model before any backend runs (AUD-P
   adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(executeTask('prompt', 'question', { backend: 'agy', model: '--yolo' }, tempDir), { code: 'INPUT_LIMIT' });
     assert.equal(executed, false);
   } finally {

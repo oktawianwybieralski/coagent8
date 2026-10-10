@@ -57,7 +57,7 @@ test('handleConsult with expired budget stops before execution and throws TIMEOU
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(
       handleConsult('consult', { proposal: 'Design question' }, tempDir, null, null, { budget, clock: () => now }),
       err => {
@@ -87,7 +87,7 @@ test('handleConsult with pre-aborted signal stops before turn and throws ABORTED
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
   await assert.rejects(
     handleConsult('consult', { proposal: 'Design question' }, tempDir, controller.signal),
     err => {
@@ -125,7 +125,7 @@ test('handleConsult passes remaining monotonic time to adapter', async () => {
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   // Call handleConsult with totalBudgetMs = 5000, teardown = 1000
   // Execution budget is 5000 - 1000 = 4000 ms.
@@ -171,7 +171,7 @@ test('MCP server callTool creates root budget and formats TIMEOUT on expired bud
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const server = createServer();
   const callHandler = server._requestHandlers.get('tools/call');

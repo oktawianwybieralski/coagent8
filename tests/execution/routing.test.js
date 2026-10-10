@@ -21,13 +21,13 @@ test('auto and smart_quota ignore an installed but unsupported provider; explici
   const original={...adapterRegistry};
   try {
     for(const id of ['codex','claude','agy'])adapterRegistry[id]={id,name:id,probe:async()=>({installed:id!=='codex',executionSupported:id==='claude'}),execute:async()=>{throw new Error('Routing test must not generate');}};
-    saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','agy']}});
+    await saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','agy']}});
     assert.equal((await resolveBackend('auto')).id,'claude');assert.equal(loadConfig().defaultBackend,null);
     assert.equal((await resolveBackend('smart_quota')).id,'claude');
     await assert.rejects(resolveBackend('agy'),{code:'CLI_UNSUPPORTED'});
-    saveConfig({defaultBackend:'agy'});await assert.rejects(resolveBackend(),{code:'CLI_UNSUPPORTED'});
-    saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['codex']}});await assert.rejects(resolveBackend(),{code:'CLI_NOT_FOUND'});
-    saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','agy']}});
+    await saveConfig({defaultBackend:'agy'});await assert.rejects(resolveBackend(),{code:'CLI_UNSUPPORTED'});
+    await saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['codex']}});await assert.rejects(resolveBackend(),{code:'CLI_NOT_FOUND'});
+    await saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','agy']}});
     adapterRegistry.agy.probe=async()=>({installed:true,executionSupported:true});
     const chosen=await resolveBackend();assert.equal(chosen.id,'agy','without a default, auto chooses like smart_quota in provider order');assert.equal(chosen.isSmartQuota,true);
   }finally{Object.assign(adapterRegistry,original);}
@@ -45,7 +45,7 @@ test('routing: resolveBackend auto mode is strictly read-only and does not mutat
       };
     }
 
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const resolved = await resolveBackend('auto');
     assert.equal(resolved.id, 'agy');
     assert.equal(loadConfig().defaultBackend, null); // Strictly read-only; no silent mutation!
@@ -69,14 +69,14 @@ test('routing: auto prefers another CLI than the calling client and measured hea
       adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
         probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
     }
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
     setCallerProvider('agy');
     assert.equal((await resolveBackend()).id, 'claude', 'agy as client gets Claude');
     setCallerProvider('claude');
     assert.equal((await resolveBackend('auto')).id, 'agy', 'Claude Code as client gets agy');
-    saveConfig({ defaultBackend: 'claude' });
+    await saveConfig({ defaultBackend: 'claude' });
     assert.equal((await resolveBackend()).id, 'claude', 'a configured default wins over the caller preference');
-    saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude'] } });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude'] } });
     assert.equal((await resolveBackend()).id, 'claude', 'the caller CLI remains the last resort');
 
     const config = { routing: { allowedBackends: ['codex', 'claude', 'agy'] } };
@@ -109,7 +109,7 @@ test('CUR-004: auto routing continues with a bounded warning when the quota cach
   fs.writeFileSync(blocker, 'not a directory');
   t.after(() => { process.env.coagent8_QUOTA_CACHE = cacheFile; Object.assign(adapterRegistry, original); });
   fixtureAdapters();
-  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
+  await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
   process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
   const chosen = await resolveBackend('auto');
   assert.equal(chosen.id, 'agy', 'the provider order decides without cached data');
@@ -124,7 +124,7 @@ test('CUR-004: a stale or undated measurement ranks like an unmeasured one; a fr
   const original = { ...adapterRegistry };
   t.after(() => Object.assign(adapterRegistry, original));
   fixtureAdapters();
-  saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
+  await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
   const quota = (headroomPercent, measuredAt) => ({ installed: true, status: 'operational', window: '5h', usedPercent: 100 - headroomPercent,
     headroomPercent, measured: true, resetsAt: null, cooldownUntil: null, ...(measuredAt === undefined ? {} : { measuredAt }) });
   const stale = new Date(Date.now() - QUOTA_MEASUREMENT_MAX_AGE_MS - 60000).toISOString();

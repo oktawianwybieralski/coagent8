@@ -27,7 +27,7 @@ test('routing reuses one probe per backend until its executable, configuration o
     probe: async () => { probes++; return { installed: true, executionSupported: true, command: executable, configPath: config }; } };
   const savedKey = process.env.GEMINI_API_KEY;
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     for (let i = 0; i < 5; i++) assert.equal((await resolveBackend()).id, 'agy');
     assert.equal(probes, 1, 'five requests, one probe');
 

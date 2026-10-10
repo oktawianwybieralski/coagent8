@@ -65,7 +65,7 @@ test('controller records all 5 execution phases on normal run', async () => {
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
     onTiming: (trace) => { observedTrace = trace; },
@@ -114,7 +114,7 @@ test('controller records deliberate consent phase delay', async () => {
     }),
   };
 
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   let consentTime = 0;
   const result = await executeTask('expensive prompt', 'expensive input', { backend: 'codex', model: 'gpt-6-expensive' }, tempDir, null, null, {
@@ -150,7 +150,7 @@ test('controller onTiming observer captures early failure before session creatio
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   let observedTrace;
   await assert.rejects(
@@ -208,7 +208,7 @@ test('controller isolates throwing onTiming observer on successful execution', a
     }),
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
     onTiming: () => {
@@ -240,7 +240,7 @@ test('controller isolates throwing onTiming observer during early failure and pr
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   await assert.rejects(
     async () => {
@@ -289,7 +289,7 @@ test('controller isolates unstringifiable thrown values from onTiming observer',
     }),
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   // On success with unstringifiable throw
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
@@ -348,7 +348,7 @@ test('controller isolates rejected asynchronous onTiming observers without unhan
     }),
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   // Async observer rejecting on success
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
@@ -405,7 +405,7 @@ test('controller bounds slow async observer and does not inflate meta.durationMs
     }),
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   // Observer that takes 600ms (exceeding the 500ms bound) before rejecting
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
@@ -510,7 +510,7 @@ test('EXEC-001-T11c: teardown and verification time are included in reported tot
     },
   };
 
-  saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
     clock,

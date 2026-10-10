@@ -41,7 +41,7 @@ test('full archive never blocks CLI launch, returns successful answer with histo
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const historyDir = getHistoryDir();
     fs.mkdirSync(historyDir, { recursive: true });
 
@@ -98,7 +98,7 @@ test('per-session limit: 120 KiB streamed answer returns successfully (AUD-P0-3)
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const res = await executeTask('Generate 120 KiB', 'Public question', { backend: 'agy' }, tempDir);
 
     assert.equal(res.isError, false, '120 KiB response must return successfully');
@@ -133,7 +133,7 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
     const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, tempDir);
 
@@ -183,7 +183,7 @@ test('lease failure returns fail-closed SESSION_INVALID error (AUD-P0-3 lease in
   };
 
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
     const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, tempDir);
 
@@ -218,7 +218,7 @@ test('history disabled (coagent8_HISTORY=off) creates no history files', async (
 
   try {
     process.env.coagent8_DIR = isolatedDir;
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
     const res = await executeTask('Prompt', 'Public question', { backend: 'agy' }, isolatedDir);
 
@@ -257,7 +257,7 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
     },
   };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const res = await executeTask('User prompt', 'Public question', { backend: 'agy' }, tempDir);
     assert.equal(res.isError, false);
     assert.equal(readResult(res).answer, 'Answer kept');
@@ -275,7 +275,7 @@ test('a top-tier model without a way to ask the user is refused in one line; use
   adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Tell the user; switch to another model only if the user asks.";
     await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking' }, tempDir),
       { name: 'ToolError', code: 'POLICY_DENIED', message });
@@ -298,7 +298,7 @@ test("consent is asked from the user for the backend's effective default model a
       return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'claude-opus-4-6-thinking', truncated: false, continuationAvailable: true };
     } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir), { code: 'POLICY_DENIED' });
     const declined = async request => { asked.push(request); return { approved: false }; };
     await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: declined }),

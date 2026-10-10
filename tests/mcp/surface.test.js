@@ -337,7 +337,7 @@ test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to 
   adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async p => { prompt = p; return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'm', truncated: false, continuationAvailable: true }; } };
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const call = createServer()._requestHandlers.get('tools/call');
     const expected = { analyze: ['task', 'ARCHITECTURAL', 'SQ'], debug: ['error_message', 'ROOT CAUSE', 'CTX'], implement: ['specification', 'CODE IMPLEMENTATION', 'CTX'] };
     for (const [name, [input, header, questions]] of Object.entries(expected)) {

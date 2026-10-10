@@ -56,7 +56,7 @@ test('early phase budget expiry during prepareTask blocks execution and throws T
     },
   };
 
-  saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   const budget = createExecutionBudget({ totalBudgetMs: 500, teardownAllowanceMs: 100, clock });
 
@@ -93,7 +93,7 @@ test('early phase budget expiry during consent blocks execution and throws TIMEO
     },
   };
 
-  saveConfig({
+  await saveConfig({
     defaultBackend: 'codex',
     routing: { strategy: 'fixed', allowedBackends: ['codex'] },
     governance: {
@@ -157,7 +157,7 @@ test('adapter receives remainingExecutionMs for every backend (codex, claude, ag
       },
     };
 
-    saveConfig({
+    await saveConfig({
       defaultBackend: backendId,
       routing: { strategy: 'fixed', allowedBackends: [backendId] },
       governance: { neverAsk: [`model-${backendId}`] },
@@ -222,7 +222,7 @@ test('idle activity and streaming events cannot reset or extend the budget deadl
     },
   };
 
-  saveConfig({
+  await saveConfig({
     defaultBackend: 'codex',
     routing: { strategy: 'fixed', allowedBackends: ['codex'] },
     governance: { neverAsk: ['gpt-5'] },

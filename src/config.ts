@@ -515,20 +515,31 @@ function writeConfig(config: CoAgent8Config, configFile = getConfigFile()): void
   } finally { fs.rmSync(tmpPath, { force: true }); }
 }
 
-export function saveConfig(updates: Partial<CoAgent8Config>): CoAgent8Config {
-  const current = loadFileConfig();
-  const merged = validateConfig({
-    ...current,
-    ...updates,
-    routing: {
-      ...current.routing,
-      ...(updates.routing || {}),
-    },
-    backends: { ...current.backends, ...(updates.backends || {}) },
-    governance: { ...current.governance, ...(updates.governance || {}) },
+/**
+ * Merges updates into the configuration file under its lease (`AUDIT-001-A05`), so a
+ * concurrent writer's fields are read before this write and survive it.
+ * @param updates - Top-level values; `routing`, `backends` and `governance` merge one level deep.
+ * @returns The validated configuration that was written.
+ * @throws When the configuration cannot be locked, read, validated or written.
+ */
+export async function saveConfig(updates: Partial<CoAgent8Config>): Promise<CoAgent8Config> {
+  const file = getConfigFile();
+  ensureConfigDir(file);
+  return withFileLock(file, async () => {
+    const current = loadFileConfig(file);
+    const merged = validateConfig({
+      ...current,
+      ...updates,
+      routing: {
+        ...current.routing,
+        ...(updates.routing || {}),
+      },
+      backends: { ...current.backends, ...(updates.backends || {}) },
+      governance: { ...current.governance, ...(updates.governance || {}) },
+    });
+    writeConfig(merged, file);
+    return merged;
   });
-  writeConfig(merged);
-  return merged;
 }
 
 const REMEMBER_ABORTED_MESSAGE = 'Request cancelled before recording remembered approval.';
@@ -632,7 +643,11 @@ export async function setBackendExecutable(id: ProviderId, executable: string | 
   });
 }
 
-export function setDefaultBackend(backend: unknown): CoAgent8Config {
+/**
+ * Sets `defaultBackend` in the configuration file under its lease.
+ * @throws `ToolError` (`INPUT_LIMIT`) for an unknown backend; otherwise as {@link saveConfig}.
+ */
+export async function setDefaultBackend(backend: unknown): Promise<CoAgent8Config> {
   if (typeof backend !== 'string' || !VALID_BACKENDS.includes(backend.toLowerCase() as BackendId)) {
     throw new ToolError(
       'INPUT_LIMIT',

@@ -169,7 +169,7 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
   };
   process.env.coagent8_FIXTURE_MODE = 'secret-hang';
   try {
-    saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const response = await executeTask('partial answer', 'public request', { backend: 'agy' }, tempDir, controller.signal);
     assert.equal(readResult(response).status, 'cancelled', JSON.stringify(response));
     assert.ok(readResult(response).answer.includes('REDACTED'));

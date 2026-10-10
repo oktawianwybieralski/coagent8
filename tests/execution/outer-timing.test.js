@@ -209,7 +209,7 @@ test('handleReview instruments git_collection alongside execution controller pha
   };
 
   try {
-    saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+    await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
     let recordedTrace = null;
     await handleReview('review', { backend: 'codex' }, repo, null, null, {

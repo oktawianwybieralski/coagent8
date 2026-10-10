@@ -25,7 +25,7 @@ const { isRateLimitError } = require('../src/backends/rate-limit.ts');
 test('editor schema association survives backend-default and remembered-consent updates', async () => {
   const { recordDefaultModel, rememberApprovedModel } = require('../src/config.ts');
   const schema = 'file:///fixture-extension/schemas/config.schema.json';
-  saveConfig({ $schema: schema });
+  await saveConfig({ $schema: schema });
   await recordDefaultModel('codex', 'fixture-config-model');
   await rememberApprovedModel('fixture-config-model');
   assert.equal(JSON.parse(fs.readFileSync(testConfigFile, 'utf8')).$schema, schema);
@@ -39,14 +39,14 @@ test.after(() => {
   } catch (_) {}
 });
 
-test('config module validates schema and persists user settings cleanly', () => {
+test('config module validates schema and persists user settings cleanly', async () => {
   const initial = loadConfig();
   assert.ok(initial);
   assert.equal(initial.schemaVersion, 1);
   assert.equal(initial.defaultBackend, null);
 
   // Set default backend
-  const updated = setDefaultBackend('claude');
+  const updated = await setDefaultBackend('claude');
   assert.equal(updated.defaultBackend, 'claude');
 
   // Verify persistence
@@ -54,11 +54,11 @@ test('config module validates schema and persists user settings cleanly', () => 
   assert.equal(reloaded.defaultBackend, 'claude');
 
   // Set back to smart_quota
-  setDefaultBackend('smart_quota');
+  await setDefaultBackend('smart_quota');
   assert.equal(loadConfig().defaultBackend, 'smart_quota');
 
   // Invalid backend rejects
-  assert.throws(() => setDefaultBackend('invalid_agent_xyz'), /Validation Error/);
+  await assert.rejects(setDefaultBackend('invalid_agent_xyz'), /Validation Error/);
 
   // Schema validation tests
   assert.throws(() => validateConfig({ defaultBackend: 42 }), /Invalid defaultBackend/);
@@ -206,13 +206,13 @@ test('quota module operates without fabricated numbers and respects exhaustion &
 });
 
 
-test('a configuration directory that cannot be created is reported, not ignored (AUD-P2-7)', () => {
+test('a configuration directory that cannot be created is reported, not ignored (AUD-P2-7)', async () => {
   const blocker = path.join(testTempDir, 'not-a-directory');
   fs.writeFileSync(blocker, '');
   const saved = process.env.coagent8_CONFIG;
   process.env.coagent8_CONFIG = path.join(blocker, 'config.json');
   try {
-    assert.throws(() => saveConfig({ defaultBackend: 'codex' }), err => ['ENOTDIR', 'EEXIST', 'ENOENT'].includes(err.code));
+    await assert.rejects(saveConfig({ defaultBackend: 'codex' }), err => ['ENOTDIR', 'EEXIST', 'ENOENT'].includes(err.code));
   } finally {
     process.env.coagent8_CONFIG = saved;
   }
@@ -275,7 +275,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
   const { ToolError } = require('../src/contracts/error.ts');
   const { createExecutionBudget } = require('../src/execution/runtime/budget.ts');
 
-  saveConfig({
+  await saveConfig({
     governance: {
       priceMultiplier: 2,
       askAbovePrice: 20,

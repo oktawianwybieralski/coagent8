@@ -48,21 +48,21 @@ test.after(() => {
 });
 
 test('an explicit model must have a verified price below the limit; it is never replaced', async () => {
-  config();
+  await config();
   runs.length = 0;
   await assert.rejects(run({ backend: 'codex', model: 'gpt-6-sol', output_price_below: 5 }),
     { code: 'PRICE_LIMIT', message: /^'gpt-6-sol' costs 10 USD per million output tokens \(coagent8_PRICES_URL list of \d{4}-\d{2}-\d{2}\), not below 5 USD per million output tokens\. It was not replaced by another model/ });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-6-sol-preview', output_price_below: 100 }), { code: 'PRICE_LIMIT', message: /only approximately/ });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-7-nova', output_price_below: 100 }), { code: 'PRICE_LIMIT', message: /has no price for 'gpt-7-nova'/ });
   // neverAsk exempts a model from approval, not from the user's limit.
-  config({ governance: { neverAsk: ['gpt-6-sol', 'gpt-7-nova'] } });
+  await config({ governance: { neverAsk: ['gpt-6-sol', 'gpt-7-nova'] } });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-6-sol', output_price_below: 5 }), { code: 'PRICE_LIMIT' });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-7-nova', output_price_below: 5 }), { code: 'PRICE_LIMIT' });
   assert.deepEqual(runs, [], 'no turn ran');
 });
 
 test('the boundary is strict, and the footer states the price evidence', async () => {
-  config();
+  await config();
   runs.length = 0;
   await assert.rejects(run({ backend: 'codex', model: 'gpt-6-luna', output_price_below: 0.5 }), { code: 'PRICE_LIMIT', message: /not below 0\.5 USD/ });
   const result = readResult(await run({ backend: 'codex', model: 'gpt-6-luna', output_price_below: 0.51 }));
@@ -73,14 +73,14 @@ test('the boundary is strict, and the footer states the price evidence', async (
 });
 
 test('without a model, auto takes the highest-priced qualifying model of the backend and keeps a qualifying default', async () => {
-  config();
+  await config();
   runs.length = 0;
   const cheaper = readResult(await run({ backend: 'codex', output_price_below: 5 }));
   assert.equal(cheaper.model, 'gpt-5.6-luna', '1.2 is the highest price below 5; the default costs 10');
   assert.equal(readResult(await run({ backend: 'codex', output_price_below: 1 })).model, 'gpt-6-luna');
   assert.equal(readResult(await run({ backend: 'codex', output_price_below: 20 })).model, 'gpt-6-sol', 'the default meets the limit');
   // A config change between discovery and execution is read again: the new default qualifies.
-  config({ backends: { codex: { defaultModel: 'gpt-6-luna' }, agy: {} } });
+  await config({ backends: { codex: { defaultModel: 'gpt-6-luna' }, agy: {} } });
   assert.equal(readResult(await run({ backend: 'codex', output_price_below: 5 })).model, 'gpt-6-luna');
 });
 
@@ -89,7 +89,7 @@ test('auto routing chooses only among backends with a qualifying model and says 
   adapterRegistry.codex = fixture('codex', [codexModels[0]]);
   await readModelCatalog('codex', { fresh: true });
   try {
-    config();
+    await config();
     runs.length = 0;
     const result = readResult(await run({ output_price_below: 5 }));
     assert.deepEqual([result.provider, result.model], ['agy', 'gemini-3.8-flash-high'], 'codex offers only its 10 USD default');
@@ -103,7 +103,7 @@ test('auto routing chooses only among backends with a qualifying model and says 
 });
 
 test('a continuation is checked for the model it runs, the session\'s or a newly named one', async () => {
-  config();
+  await config();
   const first = readResult(await run({ backend: 'codex', model: 'gpt-6-luna', output_price_below: 1 }));
   await assert.rejects(run({ session_handle: first.sessionHandle, model: 'gpt-6-sol', output_price_below: 1 }), { code: 'PRICE_LIMIT', message: /'gpt-6-sol' costs 10/ });
   const resumed = readResult(await run({ session_handle: first.sessionHandle, output_price_below: 1 }));
@@ -112,7 +112,7 @@ test('a continuation is checked for the model it runs, the session\'s or a newly
 });
 
 test('the price is checked again after the user approves, right before the turn', async () => {
-  config({ governance: { alwaysAsk: ['gpt-6-luna'] } });
+  await config({ governance: { alwaysAsk: ['gpt-6-luna'] } });
   runs.length = 0;
   const stored = readStoredPrices();
   try {
