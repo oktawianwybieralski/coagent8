@@ -1536,11 +1536,13 @@ Scope: Expose honest wall-clock duration from root call entry (including prepara
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 
 ### Independent review rounds:
-Conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_535321a9bac60cb25b4ff5f2`):
-- Round 1: `SNAPSHOT: 6d35ff0+uncommitted#26e66a78b94cfb5bd7466c50b84107348e449cc947491c563e0548bad19980a2`, `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`. Findings: No file-reading tools in sandbox thread outside diff.
-- Round 2: `SNAPSHOT: 6d35ff0+uncommitted#26e66a78b94cfb5bd7466c50b84107348e449cc947491c563e0548bad19980a2`, `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`. Findings: [P2] `controller.ts:578` durationMs and totalMs in successful consult calls derived from later-starting tracker instead of root execution budget, omitting workspace resolution time.
-  - Remediation: In `src/execution/controller.ts:578`, derived `totalMs` and `durationMs` using `typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs`. Because `budget` is initialized at root call entry before `resolveWorkspace` in `server.ts`, root call duration and workspace resolution are included in returned metadata.
-- Round 3: `SNAPSHOT: 6d35ff0+uncommitted#eb9d02efbbf4461cebda6a92573d3804d8ef5e4793c1986f2c6980ec9a28a68a`, `COVERAGE: PARTIAL`, `VERDICT: READY`. 0 P1/P2 issues found. Server gate reported: `Verdict: BLOCKED (Review coverage is partial; Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY)`. Independent approval not established (read-only audit gate).
+- Codex (`gpt-6.1-sol`, session `syn_sess_535321a9bac60cb25b4ff5f2`):
+  - Round 1: `SNAPSHOT: 6d35ff0+uncommitted#26e66a78b94cfb5bd7466c50b84107348e449cc947491c563e0548bad19980a2`, `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`. Findings: No file-reading tools in sandbox thread outside diff.
+  - Round 2: `SNAPSHOT: 6d35ff0+uncommitted#26e66a78b94cfb5bd7466c50b84107348e449cc947491c563e0548bad19980a2`, `COVERAGE: PARTIAL`, `VERDICT: BLOCKED`. Findings: [P2] `controller.ts:578` durationMs and totalMs in successful consult calls derived from later-starting tracker instead of root execution budget, omitting workspace resolution time.
+    - Remediation: In `src/execution/controller.ts:578`, derived `totalMs` and `durationMs` using `typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs`. Because `budget` is initialized at root call entry before `resolveWorkspace` in `server.ts`, root call duration and workspace resolution are included in returned metadata.
+  - Round 3: `SNAPSHOT: 6d35ff0+uncommitted#eb9d02efbbf4461cebda6a92573d3804d8ef5e4793c1986f2c6980ec9a28a68a`, `COVERAGE: PARTIAL`, `VERDICT: READY`. 0 P1/P2 issues found.
+- Claude (`claude-opus-5-5`, session `syn_sess_0c6914d75e79f56fb1e46ce6`, scope `6d35ff0..HEAD`):
+  - Round 1: `SNAPSHOT: 6d35ff0..HEAD#5486a2ea0c251420fdfc3c0c65ced80c1887cfdda18a9135f157e6b840eb04fb`, `COVERAGE: COMPLETE`, `VERDICT: READY`. Full codebase inspection via Read/Glob tools. 0 P1/P2 issues ([P3] advisory on constant clock in one test). Server gate reported: `Verdict: BLOCKED (Required checks were not run (typecheck=NOT_RUN, tests=NOT_RUN); the reviewer answered READY)`. Independent approval not established (read-only audit gate).
 
 Next card: EXEC-001-T12a (repeat the baseline).
 
