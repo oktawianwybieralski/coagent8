@@ -503,8 +503,10 @@ test('uninstall without dependencies installed by CoAgent8 asks once, removes re
   const accepted = await runSetupPicker({ command: 'coagent8.uninstall', action: 'Uninstall' });
   assert.deepEqual(accepted.cleanupCalls, [{ clients: undefined, apply: undefined, origin: 'vscode-extension', uninstall: true }, { clients: undefined, apply: 'fixture-preview', origin: 'vscode-extension', uninstall: true }]);
   assert.deepEqual(accepted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
-  assert.match(accepted.notifications.at(-1).message, /^CoAgent8 uninstalled\. Quit VS Code and start it again to finish\.$/);
-  assert.deepEqual(accepted.notifications.at(-1).actions, ['Quit VS Code']);
+  assert.match(accepted.notifications.at(-1).message, /^CoAgent8 uninstalled\. Restart extensions to stop it in this window; VS Code deletes its files and stored data the next time it starts\.$/);
+  assert.deepEqual(accepted.notifications.at(-1).actions, ['Restart Extensions'], 'the step the Extensions view offers; quitting VS Code is never asked');
+  const restarted = await runSetupPicker({ command: 'coagent8.uninstall', action: ['Uninstall', 'Restart Extensions'] });
+  assert.deepEqual(restarted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp'], ['workbench.action.restartExtensionHost']]);
 });
 test('removing dependencies installed by CoAgent8 needs their selection and two confirmations', async () => {
   const options = { command: 'coagent8.uninstall', vendorExtensions: ['openai.chatgpt', 'anthropic.claude-code'], storedState: { welcomed: true, installedExtensions: ['openai.chatgpt', 'google.google-antigravity'] }, selected: ['codex'] };
@@ -556,7 +558,7 @@ test('standalone CLIs CoAgent8 installed are removed through reviewed terminal c
     ? String.raw`Remove-Item -Path "$env:USERPROFILE\.local\bin\claude.exe" -Force; Remove-Item -Path "$env:USERPROFILE\.local\share\claude" -Recurse -Force`
     : 'rm -f ~/.local/bin/claude && rm -rf ~/.local/share/claude');
   assert.deepEqual(accepted.requests, [['workbench.extensions.uninstallExtension', 'okidev.coagent8-mcp']]);
-  assert.match(accepted.notifications.at(-1).message, /Press Enter in the "Remove coding CLIs" terminal to remove Claude Code CLI\. Quit VS Code/);
+  assert.match(accepted.notifications.at(-1).message, /Press Enter in the "Remove coding CLIs" terminal to remove Claude Code CLI\. Restart extensions/);
 });
 
 test('VS Code provider uses bundled server, updates configuration/build identity, and disposes registrations', t => {

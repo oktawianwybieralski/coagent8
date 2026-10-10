@@ -587,10 +587,12 @@ export function activate(context: vscode.ExtensionContext): void {
       kept.length ? `Registrations not removed: ${kept.map(result => `${LABELS[result.client]} - ${result.message}`).join(' ')}` : '',
       cleaned.stateError ?? '',
       clis.length ? `Press Enter in the "Remove coding CLIs" terminal to remove ${clis.map(item => item.label).join(', ')}.` : '',
-      'Quit VS Code and start it again to finish.',
+      'Restart extensions to stop it in this window; VS Code deletes its files and stored data the next time it starts.',
     ].filter(Boolean).join(' ');
-    const next = kept.length || cleaned.stateError || leftovers.length ? await vscode.window.showWarningMessage(message, 'Quit VS Code') : await vscode.window.showInformationMessage(message, 'Quit VS Code');
-    if (next === 'Quit VS Code') await vscode.commands.executeCommand('workbench.action.quit');
+    // The step the Extensions view offers after an uninstall. VS Code deletes the extension's
+    // files and storage on its next start; nothing CoAgent8 removes waits for that.
+    const next = kept.length || cleaned.stateError || leftovers.length ? await vscode.window.showWarningMessage(message, 'Restart Extensions') : await vscode.window.showInformationMessage(message, 'Restart Extensions');
+    if (next === 'Restart Extensions') await vscode.commands.executeCommand('workbench.action.restartExtensionHost');
   });
   /** Checks the CLIs once per installation; later activations start no process. */
   async function showWelcome(): Promise<void> {
