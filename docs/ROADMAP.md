@@ -1154,13 +1154,14 @@ agy has no headless interrupt and starts the user's MCP servers every turn.
 Full and writing agents will start builds, watchers and servers, so per-call
 containment precedes enabling any COAGENT-002 write or command profile.
 
-- [ ] **WINDOWS-001a - reproduce per-call survivors.** Before EXEC-001-T12.
+- [x] **WINDOWS-001a - reproduce per-call survivors.** Before EXEC-001-T12.
   Start: `terminateProcessTree` in `src/execution/process.ts` and the agy
   adapter fixtures. With the server alive, cancel a fixture agy turn whose owned
   fixture tree includes a native descendant; observe only that tree. Done:
   REPRODUCED or NOT_REPRODUCED with the limits of the experiment. The owner
   decides whether a reproduction blocks beta.2 or is a documented limit.
   Check: R, PROCESS/AGY; no live desktop sweep.
+  Evidence: REPRODUCED for a descendant outside the root job, NOT_REPRODUCED inside it; [WINDOWS-001a](HANDOFF.md#windows-001a-per-call-descendant-survivors). Owner decision on beta.2 pending.
 - [ ] **WINDOWS-001b - launcher contract.** After beta.2; checked with P.
   Specify a launcher helper (**new**, working name `coagent8-job.exe`): the server
   starts it hidden; it creates a job with `KILL_ON_JOB_CLOSE` and optional memory/

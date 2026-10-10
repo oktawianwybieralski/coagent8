@@ -147,6 +147,25 @@ function run() {
 
   if (mode === 'no-terminal') return;
   if (mode === 'hang') { setInterval(() => {}, 1000); return; }
+  // WINDOWS-001a: a turn that started a native descendant (like an MCP server or a build) and
+  // then hangs. The descendant increments a heartbeat file, never selected by PID by the test,
+  // and exits on its own when `<marker>.stop` appears or after 20 s. This Node root puts a
+  // normal child in its own libuv kill-on-close job; `coagent8_FIXTURE_DESCENDANT=outside-job`
+  // starts it detached (no console, no job), as a child of a native, non-libuv CLI would be.
+  if (mode === 'native-descendant') {
+    const marker = process.env.coagent8_FIXTURE_MARKER;
+    const descendant = `const fs=require('node:fs');const m=process.argv[1];let n=0;const end=Date.now()+20000;
+      const timer=setInterval(()=>{if(fs.existsSync(m+'.stop')||Date.now()>end){clearInterval(timer);fs.writeFileSync(m+'.exited','1');return;}fs.writeFileSync(m,String(++n));},50);`;
+    require('node:child_process').spawn(process.execPath, ['-e', descendant, marker], { stdio: 'ignore', windowsHide: true, detached: process.env.coagent8_FIXTURE_DESCENDANT === 'outside-job' })
+      .unref();
+    const started = setInterval(() => {
+      if (!fs.existsSync(marker)) return;
+      clearInterval(started);
+      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 3, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'descendant running' } });
+      setInterval(() => {}, 1000);
+    }, 20);
+    return;
+  }
   // agy-like shutdown: SIGTERM starts a 1 s cleanup that records its completion.
   if (mode === 'sigterm-cleanup') {
     process.on('SIGTERM', () => setTimeout(() => { require('node:fs').writeFileSync(process.env.coagent8_FIXTURE_MARKER, 'clean'); process.exit(0); }, 1000));

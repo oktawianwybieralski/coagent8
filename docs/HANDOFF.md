@@ -1805,6 +1805,46 @@ Next card: AX-007c.
 
 Next card: WINDOWS-001a.
 
+## WINDOWS-001a: per-call descendant survivors
+
+Experiment `tests/execution/descendant-survivor.test.js` with the fixture agy mode
+`native-descendant`: the server process stays alive, the fixture turn starts a
+hidden Node descendant (`windowsHide`, ignored stdio) that increments a heartbeat
+file, then hangs; the test cancels the turn and observes only that heartbeat for
+500 ms. Nothing is selected or signalled by PID; the descendant exits on its own
+on a stop flag or after 20 s.
+
+| Descendant | Windows 11, Node v26.10.0 (3 runs) |
+| --- | --- |
+| In the root's libuv kill-on-close job (normal child of a Node root) | NOT_REPRODUCED 3/3: ended with the root |
+| Outside any job (`detached`, no console): model of a native, non-libuv root's child | REPRODUCED 3/3: kept running after the cancelled turn returned |
+
+Interpretation and limits:
+- `terminateProcessTree` on Windows calls `proc.kill()` on the owned root only.
+  A descendant dies with it only when some job closes with the root. A Node
+  root has its own libuv job; native agy is not a Node process, so its children
+  (user MCP servers started every turn, commands) are represented by the
+  outside-job row. That row survives per-call cancellation while the server runs.
+- The fixture does not prove native agy's actual job or child layout, whether
+  agy ends its own children on stdin close, or survivors after server exit
+  (c2eb228 observed none after a crash). No live desktop sweep was made.
+- POSIX: the in-group scenario runs and is expected to pass through the process
+  group signal; the outside-job scenario is Windows-only. POSIX was not run here.
+- The outside-job scenario is a `todo` on Windows that records the expected
+  contract (no survivor) until WINDOWS-001b-e implements per-call containment.
+
+Owner decision needed: block beta.2 on this reproduction, or list it as a known
+limit (read-only profiles: a cancelled or expired agy turn can leave its native
+child processes, such as MCP servers, running until they exit or the server stops).
+
+### Verification evidence:
+- 3 consecutive runs, each: in-job scenario PASS, outside-job scenario TODO with
+  `survivedCancel=true`; exit 0. Logs kept in the session scratchpad only.
+- PASS: PROCESS and AGY groups; `npm run typecheck`; `npm run check:dependencies`;
+  `git diff --check`.
+
+Next card: EXEC-001-T12b, after the owner's decision above.
+
 
 ## Compact handoff contract
 
