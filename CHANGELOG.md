@@ -11,163 +11,172 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 ## [Unreleased]
 
+
+
+
+## [1.0.0-beta.2] - 2026-10-10 ([`v1.0.0-beta.2`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.2))
+
+Entries link the commits of the beta.2 pull request, which was squash-merged into
+`develop` as one commit (REPO-002). The pull request page keeps them.
+
 ### Breaking
-- [`ca8cf88`](https://github.com/oktawianwybieralski/coagent8/commit/ca8cf88ad560307cbb511a9e9f3b66a19da8c103) **execution:** Layered owned-process termination with protocol interrupts
-- [`c0c030f`](https://github.com/oktawianwybieralski/coagent8/commit/c0c030fdf70d593e5c6fd555912ad3dc8d25561e) Require Node.js 24 and test on Node 24 and 26
-- [`5ba52da`](https://github.com/oktawianwybieralski/coagent8/commit/5ba52da1caf4be61e9ed568f53b4f5b7ffc12f1e) **mcp:** Remove the compact tool profile
-- [`e1f83e2`](https://github.com/oktawianwybieralski/coagent8/commit/e1f83e29fae3bc5be3b88190b8a5a4d315783aeb) **errors:** Typed ToolError codes; unknown failures are PROCESS_ERROR
-- [`891875b`](https://github.com/oktawianwybieralski/coagent8/commit/891875b0fccec132efb5d9f42f4fa1dd175a9471) Stop tracking dist/ and check the packed bundle against a fresh build
-- [`070ad58`](https://github.com/oktawianwybieralski/coagent8/commit/070ad58fd4ceca472eebc7211b84246176e32386) **sessions:** Scope MCP resources and session list to the workspace
-- [`3480af4`](https://github.com/oktawianwybieralski/coagent8/commit/3480af430a606a8e704d8daf918283ee0f7fa78c) **policy:** Ask the user for top-tier models through MCP elicitation
-- [`5a14941`](https://github.com/oktawianwybieralski/coagent8/commit/5a1494104a12df86b03180ef333edbb791498ae4) **result:** Return execution results as markdown only
-- [`1d3c8dc`](https://github.com/oktawianwybieralski/coagent8/commit/1d3c8dc31e8b677c83db44df8480f747356a4414) **models:** Take models and defaults from the CLIs and config.json, never from the source
-- [`ce882ba`](https://github.com/oktawianwybieralski/coagent8/commit/ce882baeb85c9c534325fee275b668a2eb55d328) **consent:** Ask the user by a model's approximate price, not by its name
-- [`d937bc9`](https://github.com/oktawianwybieralski/coagent8/commit/d937bc934fa143d704a73f3d28de8e2bb6dfa5f6) **vscode:** One setup list, CLI executable choice and complete uninstall
-- [`1353fb9`](https://github.com/oktawianwybieralski/coagent8/commit/1353fb94764dc1dd0324714a672dc60da4adedea) **vscode:** Share ~/.coagent8/config.json with the CLI and keep it on uninstall
-- [`c144e4f`](https://github.com/oktawianwybieralski/coagent8/commit/c144e4f89e3062e3b31a05bf9774119fdf188db6) **doctor:** Default to a cached model view and move health to a scope
+- [`d015035`](https://github.com/oktawianwybieralski/coagent8/commit/d0150354e9f2d8b88e59a122fe66cb769f93cce1) **execution:** Layered owned-process termination with protocol interrupts
+- [`0edcdfa`](https://github.com/oktawianwybieralski/coagent8/commit/0edcdfaa79e7aab594bcf36b252137e77fba0cdc) Require Node.js 24 and test on Node 24 and 26
+- [`77bef3e`](https://github.com/oktawianwybieralski/coagent8/commit/77bef3e1ea4bd86e6af8269ccf54003025e7733d) **mcp:** Remove the compact tool profile
+- [`7d317f1`](https://github.com/oktawianwybieralski/coagent8/commit/7d317f1b7dc9045483a90ee48f958544870c7635) **errors:** Typed ToolError codes; unknown failures are PROCESS_ERROR
+- [`a5c2cc7`](https://github.com/oktawianwybieralski/coagent8/commit/a5c2cc78dea11ede8016728d5dd3d006df3ac070) Stop tracking dist/ and check the packed bundle against a fresh build
+- [`834dd87`](https://github.com/oktawianwybieralski/coagent8/commit/834dd87381261ebc53173bd89cf2fa4d63412e51) **sessions:** Scope MCP resources and session list to the workspace
+- [`7c0de4f`](https://github.com/oktawianwybieralski/coagent8/commit/7c0de4f6a5e450a40eb0c07ae4d0edc6a6ab26ee) **policy:** Ask the user for top-tier models through MCP elicitation
+- [`0a86007`](https://github.com/oktawianwybieralski/coagent8/commit/0a8600767efd85d64a2785a223dcc8077e362aea) **result:** Return execution results as markdown only
+- [`3556c4c`](https://github.com/oktawianwybieralski/coagent8/commit/3556c4cd2c55a6dd1ef173dc81d964fe6c186adf) **models:** Take models and defaults from the CLIs and config.json, never from the source
+- [`cd7d78f`](https://github.com/oktawianwybieralski/coagent8/commit/cd7d78f1e80fd0c2a7f8d7721e9664f515bfc5b9) **consent:** Ask the user by a model's approximate price, not by its name
+- [`b79f744`](https://github.com/oktawianwybieralski/coagent8/commit/b79f7449f70ae5fd2c76d7b337347d79a62b4c04) **vscode:** One setup list, CLI executable choice and complete uninstall
+- [`b2e483c`](https://github.com/oktawianwybieralski/coagent8/commit/b2e483cd37bdb617da0f43f3863773ea320bcd9a) **vscode:** Share ~/.coagent8/config.json with the CLI and keep it on uninstall
+- [`0fe63f1`](https://github.com/oktawianwybieralski/coagent8/commit/0fe63f152caf3fda9dca7f5f6560b0b17f7a7a27) **doctor:** Default to a cached model view and move health to a scope
+
 
 ### Added
-- [`2b17165`](https://github.com/oktawianwybieralski/coagent8/commit/2b171652b995f025c36a14ec710227cf64e3f733) **routing:** Choose another CLI than the client when auto is ambiguous
-- [`81b5e2b`](https://github.com/oktawianwybieralski/coagent8/commit/81b5e2b417ae2b8b65e01c9071e3bb97796e2266) **doctor:** Summary by default, full detail, backend filter and quota switch
-- [`16aca5c`](https://github.com/oktawianwybieralski/coagent8/commit/16aca5c5c6875efba64fd1a4305127007248e5d7) **mcp:** Resolve the workspace from client roots and report it
-- [`49387f8`](https://github.com/oktawianwybieralski/coagent8/commit/49387f8c322b624da4d965fe009acc98d9468d0d) **tools:** Say how to call CoAgent8 right on the first attempt
-- [`e414ea8`](https://github.com/oktawianwybieralski/coagent8/commit/e414ea81d00b04b90618e74b3e28ac8f4b304c08) **branding:** Support dark themes and record MCP observations
-- [`b64413b`](https://github.com/oktawianwybieralski/coagent8/commit/b64413b772b4e1817dcd788c62f36ac04d5dd3cd) **setup:** Separate CLI readiness, host registration and cleanup
-- [`6f81071`](https://github.com/oktawianwybieralski/coagent8/commit/6f81071ff97a7218249987868a2dc3c841e230c0) **execution:** Resolve agy from the Antigravity extension's copy
-- [`35cf320`](https://github.com/oktawianwybieralski/coagent8/commit/35cf3205e75e4e953c79fbba62e4ec107c3cffb6) **vscode:** Offer vendor extensions and await CLIs during onboarding
-- [`512eb48`](https://github.com/oktawianwybieralski/coagent8/commit/512eb4895841dc32f12b51b9f87a461f64e7a027) **vscode:** Open configuration and persist welcome dismissal
-- [`4c6f08a`](https://github.com/oktawianwybieralski/coagent8/commit/4c6f08ab213a9e5655b3baea741f64ae92d4f620) **vscode:** Reset onboarding state through editor storage
-- [`75c4aee`](https://github.com/oktawianwybieralski/coagent8/commit/75c4aee58f414f4930e5bd0522aa5d2ec6fe8e0f) **vscode:** Expose backend, model and approval settings
-- [`fc61d08`](https://github.com/oktawianwybieralski/coagent8/commit/fc61d086ab10fdfc987575a84d298d4550088a1f) **vscode:** Remove extension registrations on uninstall
-- [`31a1a1b`](https://github.com/oktawianwybieralski/coagent8/commit/31a1a1b7fa8bff8c55764c2834cd783a6a4fc94c) **selection:** List model prices in doctor and enforce output price limits
-- [`bd4ebad`](https://github.com/oktawianwybieralski/coagent8/commit/bd4ebad158515a07f87a804a59df6fa930825819) **claude:** Read Claude Code's model catalog from stream-json initialize
-- [`42968d1`](https://github.com/oktawianwybieralski/coagent8/commit/42968d13e0309224ea7758b9a6e127765fa1de98) **routing:** Route a named model to a backend that lists it
-- [`d253e79`](https://github.com/oktawianwybieralski/coagent8/commit/d253e79f33563de9d4b8166d213e450bfaf839ca) **codex:** Read account rate limits from app-server
-- [`bbe411a`](https://github.com/oktawianwybieralski/coagent8/commit/bbe411aff0e29cbbdc787261df2ef5c42ee74b36) **prices:** Keep per-model prices for offered models and refresh daily
-- [`6896bdd`](https://github.com/oktawianwybieralski/coagent8/commit/6896bdd9497a098c83777084f7e91c93bcc17150) **mcp:** Frame every answer in a markdown code block
-- [`e8c8177`](https://github.com/oktawianwybieralski/coagent8/commit/e8c817718a2be6ab6c4f18c9b4f4bc48681c1fd1) **mcp:** Present results raw for Codex and in plaintext frames elsewhere
-- [`dc8353b`](https://github.com/oktawianwybieralski/coagent8/commit/dc8353bc9d9229a08b9eccc38354073dfdfdcf9d) **execution:** Implement phase timing and instrumentation (EXEC-001-T02)
-- [`d6fb71e`](https://github.com/oktawianwybieralski/coagent8/commit/d6fb71ef2b7ba7a515865eacd483a4db97586223) **config:** Supply effective configuration with provenance (EXEC-001-T03)
-- [`76b9560`](https://github.com/oktawianwybieralski/coagent8/commit/76b95608f5f84276ce3f9781faeb2a8fbd58a3a2) **execution:** Reuse observations within preparation (EXEC-001-T05)
-- [`5f267fe`](https://github.com/oktawianwybieralski/coagent8/commit/5f267fecb47bc8d05bd4bd9b76738325885822cb) **execution:** Guarantee finalization after resource acquisition (EXEC-001-T06)
-- [`82f002f`](https://github.com/oktawianwybieralski/coagent8/commit/82f002f773b5d4372760a05596e3cb7ae5c74ac7) **execution:** Define complete-call budget contract (EXEC-001-T07)
-- [`e12ba41`](https://github.com/oktawianwybieralski/coagent8/commit/e12ba41d1215aad3b52f9a076ad26303530d1a64) **backends:** Define shared read and deadline context (EXEC-001-T08a)
-- [`eda6a90`](https://github.com/oktawianwybieralski/coagent8/commit/eda6a90a81bd7183a50595070456c47ac8176161) **backends:** Implement shared-read waiter ownership (EXEC-001-T08b)
-- [`92e1f87`](https://github.com/oktawianwybieralski/coagent8/commit/92e1f876d77801e448eae77fbea9924652f766b6) **codex:** Bound probe, catalog, and quota reads (EXEC-001-T08c)
-- [`dfc69df`](https://github.com/oktawianwybieralski/coagent8/commit/dfc69dfff5d2852fb30a021c24d1343ae86bfe78) **claude:** Bound probe, catalog, and quota reads (EXEC-001-T08d)
-- [`297716c`](https://github.com/oktawianwybieralski/coagent8/commit/297716c279178a16ee6637cba08cfc336ae2a200) **agy:** Bound probe, catalog, quota, and tool reads (EXEC-001-T08e)
-- [`6823a87`](https://github.com/oktawianwybieralski/coagent8/commit/6823a874bb143f77ef9ae0eadfd27dee2f2004f3) **prices:** Bound price fetches and close shared-read races (EXEC-001-T08f)
-- [`27f4881`](https://github.com/oktawianwybieralski/coagent8/commit/27f4881abccea58dd07f52c6c78b18509428a2cc) **review:** Bound review Git work and process lifecycle (EXEC-001-T09a)
-- [`5ce4a5f`](https://github.com/oktawianwybieralski/coagent8/commit/5ce4a5f195407c3429de184f1c87133792821ed8) **storage:** Cancel lock waiters safely and preserve queue progress (EXEC-001-T09b)
-- [`a5aea4b`](https://github.com/oktawianwybieralski/coagent8/commit/a5aea4bf9518285496da61b4f8de0cc957021505) **sessions:** Stop session acquisition after expiry (EXEC-001-T09c)
-- [`f7c5599`](https://github.com/oktawianwybieralski/coagent8/commit/f7c55991ef6dbe9c1d44eb00c1fc1906bcea5039) **consent:** Cancel pending approval and bind to deadline (EXEC-001-T10a)
-- [`06e1824`](https://github.com/oktawianwybieralski/coagent8/commit/06e1824172dddd5b1c32152904d0f3aaa1699e46) **consent:** Revalidate policy and price evidence before acquisition (EXEC-001-T10b)
-- [`152b93d`](https://github.com/oktawianwybieralski/coagent8/commit/152b93d0aead7614026eefceb94e132dc184a452) **consent:** Preserve valid approvals across persistence failures (EXEC-001-T10c)
-- [`2ba3bc9`](https://github.com/oktawianwybieralski/coagent8/commit/2ba3bc98abc6ae1bfa9d4d3dec2d4ee8e571e1f0) **execution:** Activate monotonic budget for consult and review (EXEC-001-T11a)
-- [`1c5fe4f`](https://github.com/oktawianwybieralski/coagent8/commit/1c5fe4f0417747e2085e9b7e91ec374b6b39e12c) **setup:** Install client skills with each registration (SKILLS-001)
-- [`64f7ee1`](https://github.com/oktawianwybieralski/coagent8/commit/64f7ee1e8952da6fa1389951313a56dbed705077) **diagnostics:** Apply bounds and cancellation to doctor (EXEC-001-T11b)
-- [`98be250`](https://github.com/oktawianwybieralski/coagent8/commit/98be25003e270bee45a7699a8b92317e78670d1b) **execution:** Expose accurate timing and phase accounting (EXEC-001-T11c)
-- [`195511e`](https://github.com/oktawianwybieralski/coagent8/commit/195511e10c2a7f5d5f53756123bb874732fed8a0) **review:** Say when another review cannot change the verdict (AX-007a)
-- [`f64ae1e`](https://github.com/oktawianwybieralski/coagent8/commit/f64ae1e2b873561aa3395ebea8b8cce110430836) **mcp:** Label the continuation handle in the result footer (AX-007b)
-- [`d957fb2`](https://github.com/oktawianwybieralski/coagent8/commit/d957fb2dd6fdcef9831a4c30369266ad1c9bdbba) **review:** Answer an unchanged repeat review without a model turn (AX-007c)
+- [`94acde8`](https://github.com/oktawianwybieralski/coagent8/commit/94acde80943b951739409af15cdf376e81594782) **routing:** Choose another CLI than the client when auto is ambiguous
+- [`c4da22c`](https://github.com/oktawianwybieralski/coagent8/commit/c4da22c63bdaf924ef64189a2164faeba81e1381) **doctor:** Summary by default, full detail, backend filter and quota switch
+- [`7ac17f8`](https://github.com/oktawianwybieralski/coagent8/commit/7ac17f8407feb37572316e63d08dc55d099dfefc) **mcp:** Resolve the workspace from client roots and report it
+- [`4b9307b`](https://github.com/oktawianwybieralski/coagent8/commit/4b9307bce0603fc932d3cb3de241bb5e51845ea1) **tools:** Say how to call CoAgent8 right on the first attempt
+- [`047d232`](https://github.com/oktawianwybieralski/coagent8/commit/047d2325dbb625224e2734e23ccd896d1c711fa9) **branding:** Support dark themes and record MCP observations
+- [`d2d29c7`](https://github.com/oktawianwybieralski/coagent8/commit/d2d29c7ecfbcb81e0f90486413db62493fb8db11) **setup:** Separate CLI readiness, host registration and cleanup
+- [`42abbc8`](https://github.com/oktawianwybieralski/coagent8/commit/42abbc8321860c28c90a08cd2afd371ff55fc515) **execution:** Resolve agy from the Antigravity extension's copy
+- [`366ad0a`](https://github.com/oktawianwybieralski/coagent8/commit/366ad0aab4fceb1e7f62fe174556046cab7434f8) **vscode:** Offer vendor extensions and await CLIs during onboarding
+- [`74408da`](https://github.com/oktawianwybieralski/coagent8/commit/74408dabcd61b8f71ac8ebd5c5be3b33c0aa3bf0) **vscode:** Open configuration and persist welcome dismissal
+- [`ac43699`](https://github.com/oktawianwybieralski/coagent8/commit/ac436994a5f3708233b41bb5f200ae4844a87ba7) **vscode:** Reset onboarding state through editor storage
+- [`4bee717`](https://github.com/oktawianwybieralski/coagent8/commit/4bee71772769530c8b855e3553e1b6530cb05766) **vscode:** Expose backend, model and approval settings
+- [`694fbf2`](https://github.com/oktawianwybieralski/coagent8/commit/694fbf282f3e98fbeb75a8ea07fb653c7acd9b2a) **vscode:** Remove extension registrations on uninstall
+- [`42f249d`](https://github.com/oktawianwybieralski/coagent8/commit/42f249d0fdf9630b2daf7c22066f19850a10343f) **selection:** List model prices in doctor and enforce output price limits
+- [`663e404`](https://github.com/oktawianwybieralski/coagent8/commit/663e404aee3fdc5a5f9c879461b5991937ff0c81) **claude:** Read Claude Code's model catalog from stream-json initialize
+- [`acd7213`](https://github.com/oktawianwybieralski/coagent8/commit/acd721307090d0cf7e404b476d77e0c6b89ee080) **routing:** Route a named model to a backend that lists it
+- [`dbc75c0`](https://github.com/oktawianwybieralski/coagent8/commit/dbc75c03b10d943d2fe3b924b455751df0ded5ed) **codex:** Read account rate limits from app-server
+- [`38e45c0`](https://github.com/oktawianwybieralski/coagent8/commit/38e45c00c224424189114f5041f2fd2d060f87aa) **prices:** Keep per-model prices for offered models and refresh daily
+- [`3f4ebaf`](https://github.com/oktawianwybieralski/coagent8/commit/3f4ebaf5db76cc1c2ea9400340b0efcd92929c54) **mcp:** Frame every answer in a markdown code block
+- [`bf34e1f`](https://github.com/oktawianwybieralski/coagent8/commit/bf34e1fb1fcc8d2a71e8ab5642a3bee0de4afdfe) **mcp:** Present results raw for Codex and in plaintext frames elsewhere
+- [`6c74973`](https://github.com/oktawianwybieralski/coagent8/commit/6c74973a8237004d1371396d046978d42a033d4d) **execution:** Implement phase timing and instrumentation (EXEC-001-T02)
+- [`865e4b0`](https://github.com/oktawianwybieralski/coagent8/commit/865e4b0dbe5ad007e674ccfe553316f0aa54c455) **config:** Supply effective configuration with provenance (EXEC-001-T03)
+- [`64d717d`](https://github.com/oktawianwybieralski/coagent8/commit/64d717d963b02d485a3b1d2ebe9f1b429bd20363) **execution:** Reuse observations within preparation (EXEC-001-T05)
+- [`9d7aed1`](https://github.com/oktawianwybieralski/coagent8/commit/9d7aed1bee270233649e22ad8e9d41e12b11bba0) **execution:** Guarantee finalization after resource acquisition (EXEC-001-T06)
+- [`1b1a246`](https://github.com/oktawianwybieralski/coagent8/commit/1b1a246497a0af138c4fe3f79805c11ca7150277) **execution:** Define complete-call budget contract (EXEC-001-T07)
+- [`44b0002`](https://github.com/oktawianwybieralski/coagent8/commit/44b0002ddba390f27dd7b0603080acf941031334) **backends:** Define shared read and deadline context (EXEC-001-T08a)
+- [`dba2ab6`](https://github.com/oktawianwybieralski/coagent8/commit/dba2ab6dbfec800b417235102153944e9a327bad) **backends:** Implement shared-read waiter ownership (EXEC-001-T08b)
+- [`d9125f3`](https://github.com/oktawianwybieralski/coagent8/commit/d9125f33778ec5d39b852cc4ddf15c9720440681) **codex:** Bound probe, catalog, and quota reads (EXEC-001-T08c)
+- [`ff18c49`](https://github.com/oktawianwybieralski/coagent8/commit/ff18c49064b6b66ec69cc36594c38a5e04aa9974) **claude:** Bound probe, catalog, and quota reads (EXEC-001-T08d)
+- [`86249ae`](https://github.com/oktawianwybieralski/coagent8/commit/86249ae4c2aebb6021bf2338bb477207ed11f114) **agy:** Bound probe, catalog, quota, and tool reads (EXEC-001-T08e)
+- [`f496263`](https://github.com/oktawianwybieralski/coagent8/commit/f4962637edf17a9fe741308a603811c5f4b408d3) **prices:** Bound price fetches and close shared-read races (EXEC-001-T08f)
+- [`d429590`](https://github.com/oktawianwybieralski/coagent8/commit/d429590677f9e18bf97585b6b528d04010c49944) **review:** Bound review Git work and process lifecycle (EXEC-001-T09a)
+- [`c8f5e50`](https://github.com/oktawianwybieralski/coagent8/commit/c8f5e505f017de9a305b6ba359fef4c93e3815a4) **storage:** Cancel lock waiters safely and preserve queue progress (EXEC-001-T09b)
+- [`ec6819d`](https://github.com/oktawianwybieralski/coagent8/commit/ec6819d1297bba2d33a671cd73a48fd28bc19783) **sessions:** Stop session acquisition after expiry (EXEC-001-T09c)
+- [`ef35b14`](https://github.com/oktawianwybieralski/coagent8/commit/ef35b149e920ed7868533e55daab26b3b319c98a) **consent:** Cancel pending approval and bind to deadline (EXEC-001-T10a)
+- [`7a4fbd5`](https://github.com/oktawianwybieralski/coagent8/commit/7a4fbd5a1e94cf5c9da97a0bdf058a520573a885) **consent:** Revalidate policy and price evidence before acquisition (EXEC-001-T10b)
+- [`4dcd660`](https://github.com/oktawianwybieralski/coagent8/commit/4dcd6601b9433a16cc5ac41988a87a4f62d7b965) **consent:** Preserve valid approvals across persistence failures (EXEC-001-T10c)
+- [`38d12ad`](https://github.com/oktawianwybieralski/coagent8/commit/38d12ad960434da2af82588f382721b811bd3197) **execution:** Activate monotonic budget for consult and review (EXEC-001-T11a)
+- [`9200c18`](https://github.com/oktawianwybieralski/coagent8/commit/9200c1860c79b16307c1be650cbeb5388cce36ed) **setup:** Install client skills with each registration (SKILLS-001)
+- [`963803d`](https://github.com/oktawianwybieralski/coagent8/commit/963803d49f1e6da86a6a033d1cdddbc51765345b) **diagnostics:** Apply bounds and cancellation to doctor (EXEC-001-T11b)
+- [`527f765`](https://github.com/oktawianwybieralski/coagent8/commit/527f765e2484f4a5856cab6e858d3c7bd06b0208) **execution:** Expose accurate timing and phase accounting (EXEC-001-T11c)
+- [`2115b39`](https://github.com/oktawianwybieralski/coagent8/commit/2115b397b39cdd5d6d6874ab826a35e770a5a447) **review:** Say when another review cannot change the verdict (AX-007a)
+- [`900c530`](https://github.com/oktawianwybieralski/coagent8/commit/900c530b2dab626c79b7f1595ee4b3ec75960f2f) **mcp:** Label the continuation handle in the result footer (AX-007b)
+- [`9ddc3d1`](https://github.com/oktawianwybieralski/coagent8/commit/9ddc3d1db94af71a2ae5bccaeef273866efe12c3) **review:** Answer an unchanged repeat review without a model turn (AX-007c)
 
 ### Changed
-- [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
-- [`4f0027c`](https://github.com/oktawianwybieralski/coagent8/commit/4f0027c6238ae87e435c999ec4db1c38999faeac) **src:** Place type definitions next to the modules that own them
-- [`137a3f3`](https://github.com/oktawianwybieralski/coagent8/commit/137a3f3df7fbae9403872539db1f30b936e886b5) **src:** Import symbols from the modules that define them
-- [`2ebb6ba`](https://github.com/oktawianwybieralski/coagent8/commit/2ebb6bae8674830e05eff98f75593dc04d68fc97) **src:** Delete dead code found by the audit
-- [`7ad4eac`](https://github.com/oktawianwybieralski/coagent8/commit/7ad4eacc9034784a92c630dfad83e7dd370b160d) **src:** Drop StreamReducer line framing and test-only collector API
-- [`b99782d`](https://github.com/oktawianwybieralski/coagent8/commit/b99782df904945062dd2760cfdb4a1f0afc8eb42) **src:** Stop exporting declarations used only in their own module
-- [`5ab841f`](https://github.com/oktawianwybieralski/coagent8/commit/5ab841f212287daafe9406917c1cd61f41b760ee) **build:** Bundle the MCP server with tsdown and ship license notices separately
-- [`918baea`](https://github.com/oktawianwybieralski/coagent8/commit/918baea495fc4cbc39ad6e28b8447e0f9927eb2e) **mcp:** One-sentence server instructions and compact tool definitions
-- [`e40950b`](https://github.com/oktawianwybieralski/coagent8/commit/e40950bc904de79beba97fd737e1a8db909a6303) **result:** Compact structured content, one-line footer and actionable consent errors
-- [`f4a075e`](https://github.com/oktawianwybieralski/coagent8/commit/f4a075e8d6d10fad77daa4e3b5bce657d400f030) **prompts:** Shorter review and consult prompts with a server-filled snapshot
-- [`2dc46e4`](https://github.com/oktawianwybieralski/coagent8/commit/2dc46e48c3a961936b0ea49bc4f9ae1652db7360) **result:** Shorter footer with each line as its own quoted paragraph
-- [`ec7844f`](https://github.com/oktawianwybieralski/coagent8/commit/ec7844fac5e8eac5f086bc80104e276deb8ebe17) **backends:** Reuse probes across requests and read agy quota only in doctor
-- [`8d2c56b`](https://github.com/oktawianwybieralski/coagent8/commit/8d2c56b9ad530f703895c9c4351a27884f650ee8) **gemini:** Keep only the runCommand deadline
-- [`68be8a2`](https://github.com/oktawianwybieralski/coagent8/commit/68be8a242c8289379a1fd550664be47c8134bbbf) **startup:** Inject background maintenance instead of environment test hooks
-- [`c1ed6e7`](https://github.com/oktawianwybieralski/coagent8/commit/c1ed6e7f9cf7b37946448e90a01a779e0835fd62) **tools:** Map the deprecated tools and run actions through one alias table
-- [`cb8c30b`](https://github.com/oktawianwybieralski/coagent8/commit/cb8c30bdab0021175b313bba8631f39df6f64489) **backends:** One structured-error extractor parameterized per backend
-- [`651df5f`](https://github.com/oktawianwybieralski/coagent8/commit/651df5f9e6fdd965eb455b72b889f23d8a177eac) **progress:** Redact each progress message once, where it leaves for the client
-- [`09e4943`](https://github.com/oktawianwybieralski/coagent8/commit/09e4943d7e8e3efb4e95aafb7b7ebf819ab4e7be) **probes:** Share concurrent probe, catalog and model reads
-- [`b4f05f3`](https://github.com/oktawianwybieralski/coagent8/commit/b4f05f331bb57b023df728eba99e12d6a6728b88) **modules:** Extract contracts, storage, workspace and runtime
-- [`7b65910`](https://github.com/oktawianwybieralski/coagent8/commit/7b65910acd71305ae52863801fca6548e0428239) **mcp:** Separate execution from MCP presentation (S2)
-- [`a27209a`](https://github.com/oktawianwybieralski/coagent8/commit/a27209a40f77b914a919e1b4d077d14b8ec97520) **models:** Separate model policy from provider discovery (S3)
-- [`0db784d`](https://github.com/oktawianwybieralski/coagent8/commit/0db784d707b3e8f1a58e1a3b29ebdd6c5c7b67ad) **sessions:** Split history by responsibility and extract credential boundaries (S4)
-- [`4e4f471`](https://github.com/oktawianwybieralski/coagent8/commit/4e4f47115d0add848345bda62ed56399ee76e157) **layout:** Finish consumers, mirror test layout, and retire internal shims (S5)
-- [`4933834`](https://github.com/oktawianwybieralski/coagent8/commit/4933834825348d1af81d443f453c4cab849a7ee7) **boundaries:** Enforce automated dependency boundaries and cycle detection (S6)
-- [`8fb6325`](https://github.com/oktawianwybieralski/coagent8/commit/8fb6325a6e14983dcde6459f04886c98a8a4a2e1) **execution:** Establish reproducible baseline and call map (EXEC-001-T01)
-- [`83214ff`](https://github.com/oktawianwybieralski/coagent8/commit/83214ff89aca16a5b0f2eff682514401fa46272f) **execution:** Extract cohesive task preparation (EXEC-001-T04)
+- [`1d2de9b`](https://github.com/oktawianwybieralski/coagent8/commit/1d2de9b7c9e20ed2c7f06c9aeda3a323f399fda9) **src:** Group backend files per CLI and split shared modules
+- [`7451918`](https://github.com/oktawianwybieralski/coagent8/commit/74519184bc296c26955d99f5f7ab5e126b0a4df9) **src:** Place type definitions next to the modules that own them
+- [`647c89b`](https://github.com/oktawianwybieralski/coagent8/commit/647c89bf0ec34dab07c924b859da419b069faf86) **src:** Import symbols from the modules that define them
+- [`348d316`](https://github.com/oktawianwybieralski/coagent8/commit/348d316a819bedf52beebe6c2e79c1723d644db3) **src:** Delete dead code found by the audit
+- [`4564685`](https://github.com/oktawianwybieralski/coagent8/commit/45646856dc69c1d7187ce415f88799ae65074911) **src:** Drop StreamReducer line framing and test-only collector API
+- [`ac80f9b`](https://github.com/oktawianwybieralski/coagent8/commit/ac80f9bb689312c9fa9aab6abb420dd3b1f613cd) **src:** Stop exporting declarations used only in their own module
+- [`dc255cb`](https://github.com/oktawianwybieralski/coagent8/commit/dc255cbec378ee8f37ed30b71914e2bcee026973) **build:** Bundle the MCP server with tsdown and ship license notices separately
+- [`12622bb`](https://github.com/oktawianwybieralski/coagent8/commit/12622bb029953cc53fcddf891f1a14dcf8179722) **mcp:** One-sentence server instructions and compact tool definitions
+- [`fc60fde`](https://github.com/oktawianwybieralski/coagent8/commit/fc60fdebab9405ec88c6fd0eafb2b9a8945643c8) **result:** Compact structured content, one-line footer and actionable consent errors
+- [`665e5dd`](https://github.com/oktawianwybieralski/coagent8/commit/665e5ddd0d44e71938bbe2b00d59dbfe01b96177) **prompts:** Shorter review and consult prompts with a server-filled snapshot
+- [`4691536`](https://github.com/oktawianwybieralski/coagent8/commit/4691536b3e2e586ba8d52989a1807f002b3fd747) **result:** Shorter footer with each line as its own quoted paragraph
+- [`2dbedc7`](https://github.com/oktawianwybieralski/coagent8/commit/2dbedc7660101c7cae65d531748d13a43c9b8a59) **backends:** Reuse probes across requests and read agy quota only in doctor
+- [`86ee98f`](https://github.com/oktawianwybieralski/coagent8/commit/86ee98fdfb5b54d02e92adefa0b92c7432b4f6b5) **gemini:** Keep only the runCommand deadline
+- [`50992f1`](https://github.com/oktawianwybieralski/coagent8/commit/50992f114a9935f2c1eb4414b6ffcc08f9e55f30) **startup:** Inject background maintenance instead of environment test hooks
+- [`702d52e`](https://github.com/oktawianwybieralski/coagent8/commit/702d52ee253f2c4463b7f85d9464da1653f4a78b) **tools:** Map the deprecated tools and run actions through one alias table
+- [`5eaf407`](https://github.com/oktawianwybieralski/coagent8/commit/5eaf4070397e15ec0caeed7d9804f73baaaea101) **backends:** One structured-error extractor parameterized per backend
+- [`20dc0b4`](https://github.com/oktawianwybieralski/coagent8/commit/20dc0b49896dc8bcfb6e090497090d8b61126114) **progress:** Redact each progress message once, where it leaves for the client
+- [`2255f1a`](https://github.com/oktawianwybieralski/coagent8/commit/2255f1af5fd470ae4ca9f33767f931681cb8cb50) **probes:** Share concurrent probe, catalog and model reads
+- [`3c2344f`](https://github.com/oktawianwybieralski/coagent8/commit/3c2344f3b868bb6e2d118a63f88699b48ab97760) **modules:** Extract contracts, storage, workspace and runtime
+- [`cc6e53d`](https://github.com/oktawianwybieralski/coagent8/commit/cc6e53dcf09fb2c67e0fe3c35ef2ed001dd18a18) **mcp:** Separate execution from MCP presentation (S2)
+- [`5660c5d`](https://github.com/oktawianwybieralski/coagent8/commit/5660c5dd150d13fb312b9a670b03baf6db5d69c9) **models:** Separate model policy from provider discovery (S3)
+- [`fc39a44`](https://github.com/oktawianwybieralski/coagent8/commit/fc39a444b97f1040b098dcc9f0fdad100ab38188) **sessions:** Split history by responsibility and extract credential boundaries (S4)
+- [`5f8c210`](https://github.com/oktawianwybieralski/coagent8/commit/5f8c2105e092f2c657db2922eb79175facf6e379) **layout:** Finish consumers, mirror test layout, and retire internal shims (S5)
+- [`9f6ce57`](https://github.com/oktawianwybieralski/coagent8/commit/9f6ce57fff1f482e062a4646dc7c211158ffaa1f) **boundaries:** Enforce automated dependency boundaries and cycle detection (S6)
+- [`403557a`](https://github.com/oktawianwybieralski/coagent8/commit/403557af25f51818c5d6bd8dd1e194faf84670df) **execution:** Establish reproducible baseline and call map (EXEC-001-T01)
+- [`217f443`](https://github.com/oktawianwybieralski/coagent8/commit/217f443ee0721003ad34780cd894233e8ebd95c6) **execution:** Extract cohesive task preparation (EXEC-001-T04)
 
 ### Fixed
-- [`0c11032`](https://github.com/oktawianwybieralski/coagent8/commit/0c1103211b9efab5872b3b2ae6bd79ca02de7014) **execution:** Enforce process identity and safe teardown on Windows
-- [`2b6a4d0`](https://github.com/oktawianwybieralski/coagent8/commit/2b6a4d0e978246cfbdc5d61c1fdacbbcca17637b) **execution:** Optimize process polling and align consumer package verification
-- [`cd62aaf`](https://github.com/oktawianwybieralski/coagent8/commit/cd62aaf91a8ee7f60232738e99f35a99d3358886) **gemini:** Give agy a 2 s SIGTERM grace on POSIX
-- [`8555d0c`](https://github.com/oktawianwybieralski/coagent8/commit/8555d0c3dd4014aa08534b47f35dd340d0591884) **redaction:** Split credential format from diagnostic redaction
-- [`991b7e4`](https://github.com/oktawianwybieralski/coagent8/commit/991b7e4f20b5919cf8440d0532907d27089ff1fe) **build:** Order license notices independently of the build locale
-- [`ba7edd9`](https://github.com/oktawianwybieralski/coagent8/commit/ba7edd9853fca71d4835ec4f0bb960dbc27e6b45) **history:** Append-only streaming deltas with credential tail buffering
-- [`46984f0`](https://github.com/oktawianwybieralski/coagent8/commit/46984f0a3f106fb73ffba3b32dd6d9c201017eb6) **controller:** Isolate CLI execution from archive and session bookkeeping
-- [`b205085`](https://github.com/oktawianwybieralski/coagent8/commit/b205085f967bee49ed90dc2e57698c8c61114e27) **history:** Address Opus review findings on tail buffering, capacity locking, and cooldowns
-- [`bd1e63c`](https://github.com/oktawianwybieralski/coagent8/commit/bd1e63c0db81bf38984b7599807474fc795a9f8a) **history:** Address lock ordering, AWS key tail buffering, and capacity accounting
-- [`5f4488b`](https://github.com/oktawianwybieralski/coagent8/commit/5f4488b28714780a303867f42123ad0e29b813f0) **history:** Restore JWT and Slack prefix checks and decouple append from capacity lock
-- [`0cddde5`](https://github.com/oktawianwybieralski/coagent8/commit/0cddde59d02fc71912d9ce707a25c1a5b207e225) **history:** Safely catch rollback lock errors to guarantee original io error propagation
-- [`46fa155`](https://github.com/oktawianwybieralski/coagent8/commit/46fa15551dbe961e9d93e8953523469101d58e4e) **backends:** Report the model each backend resolved
-- [`c1cf900`](https://github.com/oktawianwybieralski/coagent8/commit/c1cf9007b1e46f6224d9c394f232b89e51455460) **gemini:** Keep the answer when the sandbox denies an action
-- [`1f5ea07`](https://github.com/oktawianwybieralski/coagent8/commit/1f5ea07908d87f9501b3efa4549a9bf1c359e14b) **setup:** Raise the Codex tool timeout for CoAgent8 to 30 minutes
-- [`abcff7d`](https://github.com/oktawianwybieralski/coagent8/commit/abcff7d142b2f4bee2d1e1678030e50c12a900fa) **routing:** Record one cooldown per rate-limited turn with the parsed reset
-- [`bc04df9`](https://github.com/oktawianwybieralski/coagent8/commit/bc04df9159dd2dbcb19f6dad09e2fa1f7f19c45b) **codex:** Read the default model from config.toml with a TOML parser
-- [`9cdb710`](https://github.com/oktawianwybieralski/coagent8/commit/9cdb710bb1a3b05229cb88089194077dca4a2935) **backends:** Reject option-like model identifiers before they reach a CLI
-- [`d23ad1b`](https://github.com/oktawianwybieralski/coagent8/commit/d23ad1bb91a720d5ee1fce18d6d180315c2e1f6d) **gemini:** Ignore unknown agy event types with a warning
-- [`35f015c`](https://github.com/oktawianwybieralski/coagent8/commit/35f015cb8bb65eec8c2ec8722296ac7798fdaa6e) **locks:** Publish leases atomically, renew them and reclaim stale ones by age
-- [`cb0f723`](https://github.com/oktawianwybieralski/coagent8/commit/cb0f72326f71fbebe246876d0da680841249d485) **backends:** Classify CLI errors by anchored phrases and parse ms and decimal resets
-- [`d88c07d`](https://github.com/oktawianwybieralski/coagent8/commit/d88c07dbe62c265c6ce1477617bcd7b33c159698) **gemini:** Treat a usage window without remaining_fraction as unmeasured
-- [`96ebcfd`](https://github.com/oktawianwybieralski/coagent8/commit/96ebcfd99f0b687bacffa59722223d6d370e0ff4) **errors:** Remove dead catches and report the failures that were ignored
-- [`8b43688`](https://github.com/oktawianwybieralski/coagent8/commit/8b436883d4655deadf25159acbb6008a849efe33) **config:** Report an unusable configuration in doctor and refuse execution
-- [`07db345`](https://github.com/oktawianwybieralski/coagent8/commit/07db345b3b504c2936da0143bd53dc02834cb373) **history:** Replace empty catches with explicit absence and cache handling
-- [`967a0e5`](https://github.com/oktawianwybieralski/coagent8/commit/967a0e53859fb25192432cd15f63b5f2a7bb63a2) **mcp:** Stop declaring resource list notifications that are never sent
-- [`ee51b52`](https://github.com/oktawianwybieralski/coagent8/commit/ee51b5248ff10fcb14dd7ee32aec5589d489a8e1) **process:** Report POSIX group signal failures and skip the grace for an exited group
-- [`cc95c1e`](https://github.com/oktawianwybieralski/coagent8/commit/cc95c1e9e9ced39d320e1e7b4f0e41f4f9834f2d) **result:** Keep answer lines that quote npm notices or update banners
-- [`21e6bab`](https://github.com/oktawianwybieralski/coagent8/commit/21e6bab365f0e7255cc34fcf42d5980417e6deae) **session:** Report cancelled only when a running turn was stopped or released
-- [`26ac5fd`](https://github.com/oktawianwybieralski/coagent8/commit/26ac5fd9fadd79f880bbf7215b9bb2e607637a07) **session:** Show workspace paths under the home directory as ~ in session lists
-- [`e5a89f0`](https://github.com/oktawianwybieralski/coagent8/commit/e5a89f00a95d09633d965e9efdc4ace456574ca9) **errors:** Type rejected models and drop the invented answer of a failed run
-- [`8d12ee6`](https://github.com/oktawianwybieralski/coagent8/commit/8d12ee6ec2f1262519469952ac1049f8cefbf6bb) **models:** Check model and effort against the catalog the CLI reports
-- [`50f2146`](https://github.com/oktawianwybieralski/coagent8/commit/50f214636295065102c886b982335163f779c1c7) **codex:** Return the final answer without the turn's commentary
-- [`bf73c79`](https://github.com/oktawianwybieralski/coagent8/commit/bf73c79aa0b7ed0566e4dbaef37c2e45d11069fb) **consult:** Pass a plain question on as asked
-- [`2437d98`](https://github.com/oktawianwybieralski/coagent8/commit/2437d98886a4e7e7d08dba163ff867153cda4823) **result:** Name the requested model in the footer of a refused call
-- [`d811099`](https://github.com/oktawianwybieralski/coagent8/commit/d811099477da70e79f431238a46b6740a4c65e85) **consent:** Accept only an explicit approve: true as the user's consent
-- [`690b3d0`](https://github.com/oktawianwybieralski/coagent8/commit/690b3d022364eba3c063bd91db89f5d5803bf06f) **session:** Keep the session's reasoning effort on a continuation
-- [`dcf9a90`](https://github.com/oktawianwybieralski/coagent8/commit/dcf9a90f3605419f0465cc7e9005c30dee4b481b) **gemini:** Disable agy's auto-updater, whose console window takes the focus
-- [`0c89f70`](https://github.com/oktawianwybieralski/coagent8/commit/0c89f7063f8351012be36e821eb158ecfed62b6c) **consent:** Report a cancelled approval request as unanswered, not declined
-- [`84bd6cf`](https://github.com/oktawianwybieralski/coagent8/commit/84bd6cf9ca13de348ae9536ac01ef4c86f7e8afc) **vscode:** Clarify CLI names and embed private preview logo
-- [`7028da8`](https://github.com/oktawianwybieralski/coagent8/commit/7028da85fe3a05d1473fe9518e8bef153963458c) **vscode:** Use the new okidev publisher
-- [`505cc77`](https://github.com/oktawianwybieralski/coagent8/commit/505cc7724ef4a37d1d755834c0866829bc8bd9c2) **vscode:** Replace broken Details logo with compact links
-- [`075e264`](https://github.com/oktawianwybieralski/coagent8/commit/075e264efb6567e36135c92641dee65f3334558e) **vscode:** Discover bundled Codex and offer CLI installation
-- [`a500347`](https://github.com/oktawianwybieralski/coagent8/commit/a500347b010173c838973430abb9fd0dd8acbfd0) **setup:** Preserve CLI evidence and verify owned cleanup
-- [`1fe2386`](https://github.com/oktawianwybieralski/coagent8/commit/1fe2386fd4fdbb6eaccdd712a252f6eb2671a383) **setup:** Read CLI help from stderr as well as stdout
-- [`2b32af7`](https://github.com/oktawianwybieralski/coagent8/commit/2b32af7702dd60d516b864adb463d2df2201c685) **vscode:** Keep the CLI picker open while setup checks run
-- [`5dc8b03`](https://github.com/oktawianwybieralski/coagent8/commit/5dc8b039b21612fa140402b1339a89752e98237d) **setup:** Detect Antigravity CLI sign-in with its silent check
-- [`7402f5e`](https://github.com/oktawianwybieralski/coagent8/commit/7402f5ea2bdc5d5e4a990e69e4e73633ef387bb2) **setup:** Report unregistered CLIs clearly and log one line per check
-- [`f8d2cb4`](https://github.com/oktawianwybieralski/coagent8/commit/f8d2cb4b22bf651ad0ec503cb692f6c96d68015d) **adapters:** Disable and verify inherited Codex MCP servers per thread
-- [`2b7e612`](https://github.com/oktawianwybieralski/coagent8/commit/2b7e612ede0374c4954c59bb55b283043e8e310b) **adapters:** Refuse recursive turns and name agy's inherited tools
-- [`3c98992`](https://github.com/oktawianwybieralski/coagent8/commit/3c989927695f6f6d5496a7ce773d3becca5bb489) **review:** Bind verdicts to complete current workspace input
-- [`07ba077`](https://github.com/oktawianwybieralski/coagent8/commit/07ba07709dd6d7d804dc0a0fd2ddac330d67ad55) **vscode:** Bind configuration and refresh MCP definitions
-- [`143536e`](https://github.com/oktawianwybieralski/coagent8/commit/143536e79d61850e55a6407be71c83e97dd567ab) **vscode:** Keep extension data in storage removed on uninstall
-- [`c2e3da9`](https://github.com/oktawianwybieralski/coagent8/commit/c2e3da9180316de5bef08ddd37b905868be3dbf7) **routing:** Keep auto selection working without a writable quota cache
-- [`056d1c4`](https://github.com/oktawianwybieralski/coagent8/commit/056d1c4f1f32f25a06a5ef810c10aaa576f789b5) **codex:** Keep a complete final answer untruncated after dropped commentary
-- [`fdbdf99`](https://github.com/oktawianwybieralski/coagent8/commit/fdbdf9977c72f615d03171bc5d377d958a5ad5f5) **history:** Reserve snapshot bytes before writing them
-- [`2e24b66`](https://github.com/oktawianwybieralski/coagent8/commit/2e24b66a902501e1dee47bad409904d9cbd77954) **history:** Cut fragments at UTF-8 character boundaries
-- [`e198a8b`](https://github.com/oktawianwybieralski/coagent8/commit/e198a8b73498085f1e3c1bcf8fed9a65898e6834) **prices:** Let shutdown wait for a background price read
-- [`3c36bf0`](https://github.com/oktawianwybieralski/coagent8/commit/3c36bf08eb5986142a9c8e1d8ff51121241375db) **backends:** Stop reporting a complete answer as truncated
-- [`7bd8ca0`](https://github.com/oktawianwybieralski/coagent8/commit/7bd8ca0a19a25b575870a0d9874acb932a36d9a2) **review:** Show the reviewer answer verbatim and report every block cause
-- [`ed4a1db`](https://github.com/oktawianwybieralski/coagent8/commit/ed4a1dbfba3077bed76c28f2e4d8939dc5f56a0c) **agy:** Report a turn ended by a sandbox denial as a failure
-- [`0a932ac`](https://github.com/oktawianwybieralski/coagent8/commit/0a932acec72d8959b9e7a6600af251ff05752499) **setup:** Update owned Claude and agy registrations to the new runtime
-- [`af9f7d2`](https://github.com/oktawianwybieralski/coagent8/commit/af9f7d2f1b6869f053e6b20b8d6ff59d811edf7d) **boundaries:** Reject SDK and indirect transport dependencies
-- [`a90cd40`](https://github.com/oktawianwybieralski/coagent8/commit/a90cd40ca21d499688e28a2754ce8b5126d6c7c8) **tests:** Bound concurrency barrier and ensure guaranteed task settlement
-- [`ad25d4e`](https://github.com/oktawianwybieralski/coagent8/commit/ad25d4e2810dedc7891a9d57ebbc9b9770318579) **tests:** Bound child readiness and teardown in lock contention test (EXEC-001-T09b)
-- [`6d35ff0`](https://github.com/oktawianwybieralski/coagent8/commit/6d35ff085ea4a3b1ce22dd6e5c1136efbd569292) **diagnostics:** Preserve prefilled issue links in chat clients
-- [`19a9953`](https://github.com/oktawianwybieralski/coagent8/commit/19a9953dcaf3c340832c931855e5b734cd70164c) **quota:** Keep other providers when the cache cannot be read (AUDIT-001-A01-A03)
-- [`4936ae7`](https://github.com/oktawianwybieralski/coagent8/commit/4936ae711c8477ab6205fcf7a352bada5824f878) **config:** Serialize saveConfig under the configuration lease (AUDIT-001-A04-A05)
-- [`57ca63d`](https://github.com/oktawianwybieralski/coagent8/commit/57ca63d01f50ee3b0a5cbda930b47a1abe860f9f) **config:** Write configuration through the shared atomic writer (AUDIT-001-A06-A07)
+- [`ddc3a4e`](https://github.com/oktawianwybieralski/coagent8/commit/ddc3a4e0e97774b007bc97837da44b74568ca513) **execution:** Enforce process identity and safe teardown on Windows
+- [`e186711`](https://github.com/oktawianwybieralski/coagent8/commit/e1867116ff6a012c6a473b743d1c991beaf9e501) **execution:** Optimize process polling and align consumer package verification
+- [`3153f64`](https://github.com/oktawianwybieralski/coagent8/commit/3153f64cf99c3f9f6837c72857b1f390e63ac46d) **gemini:** Give agy a 2 s SIGTERM grace on POSIX
+- [`033d359`](https://github.com/oktawianwybieralski/coagent8/commit/033d3597ca71b21d6305d3f34882d98b4a0a4bd2) **redaction:** Split credential format from diagnostic redaction
+- [`a2bff80`](https://github.com/oktawianwybieralski/coagent8/commit/a2bff80f361125da2bf9e419c70d9b403a964d71) **build:** Order license notices independently of the build locale
+- [`9123f62`](https://github.com/oktawianwybieralski/coagent8/commit/9123f6268278ed76ba8e3585c699223052413f39) **history:** Append-only streaming deltas with credential tail buffering
+- [`249f91a`](https://github.com/oktawianwybieralski/coagent8/commit/249f91ac8aa68306ff95edd4d7ad74580779a43a) **controller:** Isolate CLI execution from archive and session bookkeeping
+- [`485adaa`](https://github.com/oktawianwybieralski/coagent8/commit/485adaa0ceb5fa2231f4dec1b47ec00286827b5c) **history:** Address Opus review findings on tail buffering, capacity locking, and cooldowns
+- [`5854021`](https://github.com/oktawianwybieralski/coagent8/commit/5854021763cbdcd19c7ba2fc163b1e0a367efd17) **history:** Address lock ordering, AWS key tail buffering, and capacity accounting
+- [`24caab5`](https://github.com/oktawianwybieralski/coagent8/commit/24caab5f273651033198e0966922516491698369) **history:** Restore JWT and Slack prefix checks and decouple append from capacity lock
+- [`4c45d1e`](https://github.com/oktawianwybieralski/coagent8/commit/4c45d1ee09d13ea67b282b63cdb77657108a35bc) **history:** Safely catch rollback lock errors to guarantee original io error propagation
+- [`6a65538`](https://github.com/oktawianwybieralski/coagent8/commit/6a6553872c480f46b7b3e5a81f5c26873f92e23b) **backends:** Report the model each backend resolved
+- [`62d0f3a`](https://github.com/oktawianwybieralski/coagent8/commit/62d0f3a12bcf536147e0f7dad1d290a8a9a1e516) **gemini:** Keep the answer when the sandbox denies an action
+- [`0df32e4`](https://github.com/oktawianwybieralski/coagent8/commit/0df32e4f1e0c1ad2eb1547ea251670af86023fe0) **setup:** Raise the Codex tool timeout for CoAgent8 to 30 minutes
+- [`6837fec`](https://github.com/oktawianwybieralski/coagent8/commit/6837fec203979184e9ac103120d834f344ab6134) **routing:** Record one cooldown per rate-limited turn with the parsed reset
+- [`b7c37f0`](https://github.com/oktawianwybieralski/coagent8/commit/b7c37f075db4a95f413745e15875f063c9fbc64d) **codex:** Read the default model from config.toml with a TOML parser
+- [`66df69d`](https://github.com/oktawianwybieralski/coagent8/commit/66df69dfd097b004f0c0cade87cd2a924aaf3ddf) **backends:** Reject option-like model identifiers before they reach a CLI
+- [`6b419af`](https://github.com/oktawianwybieralski/coagent8/commit/6b419af8737a57e53f3032cc3605ae94b3d5f4cf) **gemini:** Ignore unknown agy event types with a warning
+- [`4afc7f2`](https://github.com/oktawianwybieralski/coagent8/commit/4afc7f277923fd246aecb220d7dd28ddd56f2f28) **locks:** Publish leases atomically, renew them and reclaim stale ones by age
+- [`5da124e`](https://github.com/oktawianwybieralski/coagent8/commit/5da124e55a051e50444fdd8f31d7606491249817) **backends:** Classify CLI errors by anchored phrases and parse ms and decimal resets
+- [`a9ccc36`](https://github.com/oktawianwybieralski/coagent8/commit/a9ccc36084e9dd488e07553472f3b790248af2ce) **gemini:** Treat a usage window without remaining_fraction as unmeasured
+- [`cd2e6c5`](https://github.com/oktawianwybieralski/coagent8/commit/cd2e6c510547aeef58960eb2d437f4d614a69132) **errors:** Remove dead catches and report the failures that were ignored
+- [`344ed39`](https://github.com/oktawianwybieralski/coagent8/commit/344ed39956a16431af26199d6e22be63f619ce3b) **config:** Report an unusable configuration in doctor and refuse execution
+- [`3efaa52`](https://github.com/oktawianwybieralski/coagent8/commit/3efaa521abfe28a4d21ee2db60f0d6b3378c1ef5) **history:** Replace empty catches with explicit absence and cache handling
+- [`ae86532`](https://github.com/oktawianwybieralski/coagent8/commit/ae865328dd38b5f58e39f926a6e3fb4e6049aad6) **mcp:** Stop declaring resource list notifications that are never sent
+- [`92206d9`](https://github.com/oktawianwybieralski/coagent8/commit/92206d95e691b5ac6a96276d6c34f51fe9397e8c) **process:** Report POSIX group signal failures and skip the grace for an exited group
+- [`d851b14`](https://github.com/oktawianwybieralski/coagent8/commit/d851b143e4a455dcf4c5689468d00c910f0463c1) **result:** Keep answer lines that quote npm notices or update banners
+- [`7f36f5b`](https://github.com/oktawianwybieralski/coagent8/commit/7f36f5b46aa47229e4d2bc44f5edea49303de598) **session:** Report cancelled only when a running turn was stopped or released
+- [`3024372`](https://github.com/oktawianwybieralski/coagent8/commit/302437230094794d6789777d1abf445650805a49) **session:** Show workspace paths under the home directory as ~ in session lists
+- [`6eef2f4`](https://github.com/oktawianwybieralski/coagent8/commit/6eef2f46b5079f952680ba3fa9634ec46218a7e7) **errors:** Type rejected models and drop the invented answer of a failed run
+- [`20fc305`](https://github.com/oktawianwybieralski/coagent8/commit/20fc30536b0fbbbe319cae22388f8a9c9c19af13) **models:** Check model and effort against the catalog the CLI reports
+- [`d96dae7`](https://github.com/oktawianwybieralski/coagent8/commit/d96dae7194eda8b8addece68466059449ce3f828) **codex:** Return the final answer without the turn's commentary
+- [`a87ede3`](https://github.com/oktawianwybieralski/coagent8/commit/a87ede3c2f6b1fefc5313bef718599398e075eb1) **consult:** Pass a plain question on as asked
+- [`34bad59`](https://github.com/oktawianwybieralski/coagent8/commit/34bad599829bfaa806461e8e62440d1e1e2a9cda) **result:** Name the requested model in the footer of a refused call
+- [`2308f03`](https://github.com/oktawianwybieralski/coagent8/commit/2308f03cd9dfcdef9398530dc0db4c57e7a6b82c) **consent:** Accept only an explicit approve: true as the user's consent
+- [`031715b`](https://github.com/oktawianwybieralski/coagent8/commit/031715b3937fb102087166c961fc6304c52ea35a) **session:** Keep the session's reasoning effort on a continuation
+- [`f83b73f`](https://github.com/oktawianwybieralski/coagent8/commit/f83b73f6c914cbd274f0a6ef254b534c7cd10a31) **gemini:** Disable agy's auto-updater, whose console window takes the focus
+- [`1bf9ae0`](https://github.com/oktawianwybieralski/coagent8/commit/1bf9ae09260877c35c9b240c124fb73dbf26fbff) **consent:** Report a cancelled approval request as unanswered, not declined
+- [`52c1da0`](https://github.com/oktawianwybieralski/coagent8/commit/52c1da09488ec858c04861887a19db39c28b171a) **vscode:** Clarify CLI names and embed private preview logo
+- [`8393cc3`](https://github.com/oktawianwybieralski/coagent8/commit/8393cc326c8fda9b71139c70dff90e91310be84f) **vscode:** Use the new okidev publisher
+- [`6b6ec27`](https://github.com/oktawianwybieralski/coagent8/commit/6b6ec270b5375f847bbd63c2268afdea93d6d79a) **vscode:** Replace broken Details logo with compact links
+- [`6569fe2`](https://github.com/oktawianwybieralski/coagent8/commit/6569fe2f086d8bf2bbbcd3a04dc364e34d352f78) **vscode:** Discover bundled Codex and offer CLI installation
+- [`1665b59`](https://github.com/oktawianwybieralski/coagent8/commit/1665b59ef924b7d07db06033647884ef60ee3a7b) **setup:** Preserve CLI evidence and verify owned cleanup
+- [`caf580e`](https://github.com/oktawianwybieralski/coagent8/commit/caf580e8036625cbbe5424ca8a445f4203a5d907) **setup:** Read CLI help from stderr as well as stdout
+- [`94f90f8`](https://github.com/oktawianwybieralski/coagent8/commit/94f90f874ac88d5bc770ce0eab4a89132c095670) **vscode:** Keep the CLI picker open while setup checks run
+- [`1547c92`](https://github.com/oktawianwybieralski/coagent8/commit/1547c921e7981e30c773fedae67644e216d6963a) **setup:** Detect Antigravity CLI sign-in with its silent check
+- [`91459c5`](https://github.com/oktawianwybieralski/coagent8/commit/91459c53d630172fccb9ccccf99cc2cfb78eb258) **setup:** Report unregistered CLIs clearly and log one line per check
+- [`edee627`](https://github.com/oktawianwybieralski/coagent8/commit/edee6272cd03a50f8efffc07185e4b013dc0f336) **adapters:** Disable and verify inherited Codex MCP servers per thread
+- [`bbbfc51`](https://github.com/oktawianwybieralski/coagent8/commit/bbbfc51bb5405bed37aadd943bf9fb9b64f5362a) **adapters:** Refuse recursive turns and name agy's inherited tools
+- [`f2b86e5`](https://github.com/oktawianwybieralski/coagent8/commit/f2b86e5fe2ba3ebf3418ba65d420e801f6dd03a7) **review:** Bind verdicts to complete current workspace input
+- [`813d5f3`](https://github.com/oktawianwybieralski/coagent8/commit/813d5f3b65d6b46a8e2ee65c2976f874185121db) **vscode:** Bind configuration and refresh MCP definitions
+- [`1ab472f`](https://github.com/oktawianwybieralski/coagent8/commit/1ab472f3aa16aa253a8bd2a831eaf93cda7d7050) **vscode:** Keep extension data in storage removed on uninstall
+- [`7a3213d`](https://github.com/oktawianwybieralski/coagent8/commit/7a3213ddbc6734f0a6e8e04b643ce2d47f379e0b) **routing:** Keep auto selection working without a writable quota cache
+- [`1bc530d`](https://github.com/oktawianwybieralski/coagent8/commit/1bc530d9e5a815ee95d64096da09b62e7525772e) **codex:** Keep a complete final answer untruncated after dropped commentary
+- [`16b4e48`](https://github.com/oktawianwybieralski/coagent8/commit/16b4e48f1e98cbd33238670a6ddbdf8f411c99f5) **history:** Reserve snapshot bytes before writing them
+- [`27e3914`](https://github.com/oktawianwybieralski/coagent8/commit/27e391416875e3d055e6b1260d68262832a33f7b) **history:** Cut fragments at UTF-8 character boundaries
+- [`8d8f4f2`](https://github.com/oktawianwybieralski/coagent8/commit/8d8f4f25adb5709b1a8711ee586e4c37fe277039) **prices:** Let shutdown wait for a background price read
+- [`e1b0db1`](https://github.com/oktawianwybieralski/coagent8/commit/e1b0db146ed34cf13d1e774ec74c204cbd680ab5) **backends:** Stop reporting a complete answer as truncated
+- [`436f1e3`](https://github.com/oktawianwybieralski/coagent8/commit/436f1e3943c2206e5491337350e1bacc973d7a43) **review:** Show the reviewer answer verbatim and report every block cause
+- [`a109cc2`](https://github.com/oktawianwybieralski/coagent8/commit/a109cc2dea507176bb763498474727f86c6a69a7) **agy:** Report a turn ended by a sandbox denial as a failure
+- [`132cb3d`](https://github.com/oktawianwybieralski/coagent8/commit/132cb3d64e4ed462303869106a230fed8be931b1) **setup:** Update owned Claude and agy registrations to the new runtime
+- [`c5e040f`](https://github.com/oktawianwybieralski/coagent8/commit/c5e040f53b061e6b363d52a4d637e71bdf293902) **boundaries:** Reject SDK and indirect transport dependencies
+- [`dc87cdd`](https://github.com/oktawianwybieralski/coagent8/commit/dc87cdd7e08573398264bce3b03e6e66e6678990) **tests:** Bound concurrency barrier and ensure guaranteed task settlement
+- [`657be85`](https://github.com/oktawianwybieralski/coagent8/commit/657be8540200e467d6cde6e2f1f6a483ad2f7ed9) **tests:** Bound child readiness and teardown in lock contention test (EXEC-001-T09b)
+- [`32acb59`](https://github.com/oktawianwybieralski/coagent8/commit/32acb59288455f3b1f83ff6fdcf9a2852de79709) **diagnostics:** Preserve prefilled issue links in chat clients
+- [`d8645d0`](https://github.com/oktawianwybieralski/coagent8/commit/d8645d0c5842335df4210d1fa54a4883b7fa813f) **quota:** Keep other providers when the cache cannot be read (AUDIT-001-A01-A03)
+- [`7666cd4`](https://github.com/oktawianwybieralski/coagent8/commit/7666cd4809c7505ad4ea2c183b996759cf92918f) **config:** Serialize saveConfig under the configuration lease (AUDIT-001-A04-A05)
+- [`dfd0c37`](https://github.com/oktawianwybieralski/coagent8/commit/dfd0c37194df84ce10d3e7fc5227391619a263e6) **config:** Write configuration through the shared atomic writer (AUDIT-001-A06-A07)
 
 ## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
 
