@@ -1995,6 +1995,45 @@ was pushed.
 
 Next: the owner steps in REPO-002 on GitHub and npm.
 
+## EXEC-001-T12c: native VS Code acceptance, first run (2026-10-10)
+
+Owner run of VSIX `612ac585...873a87` on Windows 11, VS Code 1.141.0, default
+profile; Codex CLI 0.160.0, Claude Code CLI 2.1.295, Antigravity CLI 1.3.3, all
+standalone. Result: FAIL; the remaining cases were NOT_RUN.
+
+- Uninstall, from the Extensions view and through **CoAgent8: Uninstall
+  CoAgent8**: FAIL. The CoAgent8 entries in all three CLIs stayed. The
+  `vscode:uninstall` hook ran four times (shared-process log, 20:29-20:39) and
+  reported each entry as `preserved` ("no matching ownership"). Set Up Coding
+  CLIs showed them as "manual entry, kept" from the first activation.
+  - Cause: the entries were written by earlier VSIX builds (data directory in the
+    extension's global storage), but `~/.coagent8/setup.json` with their
+    fingerprints and the runtime copies they start were gone before this run.
+    Ownership depended on that record alone, so CoAgent8 treated its own
+    entries as manual: it never removed or updated them, they started a missing
+    runtime (the CoAgent8 server in this repository's Claude Code session failed
+    with "Connection closed"), and no client received skills.
+  - Fix: `entryOwnership` (`src/integrations/setup-storage.ts`) also
+    recognizes an entry by the shape only setup writes: it starts
+    `~/.coagent8/runtime/<sha256>/index.cjs` and holds no other field or variable;
+    a data directory `globalStorage/okidev.coagent8-mcp` marks the extension's.
+    Status, setup and cleanup share it. Setup replaces an owned entry whose
+    runtime copy is gone without probing the dead connection first.
+- The uninstall command ended with **Quit VS Code**: rejected by the owner. It
+  now offers **Restart Extensions** (`workbench.action.restartExtensionHost`),
+  the step VS Code's Extensions view offers after an uninstall
+  (`runtimeState.action`). A suggested `requiresReload` manifest field does not
+  exist: VS Code 1.141.0 contains no such string.
+- Switching between the standalone agy and the copy the Google Antigravity
+  extension downloaded: PASS (owner).
+- `~/.coagent8` holds `config.json`, written by that switch; it is the shared
+  configuration and stays after an uninstall by design. A `~/.cagent` directory
+  does not exist in this profile and is not CoAgent8's.
+- Checks after the fix: `tests/integrations/{setup,cleanup,vscode-extension}.test.js`
+  60/60 PASS; the two new tests fail on the previous source.
+
+Next: full gate, a new VSIX, and a repeated owner run of every case.
+
 ## Compact handoff contract
 
 For subsequent tasks supply: objective/role/profile, allowed scope and acceptance;

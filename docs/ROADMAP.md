@@ -683,6 +683,9 @@ applicable docs checks. Depends on T10; caller-visible migration follows T07.
   Do one client/platform scenario at a time; record CLI/host versions and
   quiet-desktop/no-survivor evidence. Done: every required cell has observed
   evidence or an explicit NOT_RUN blocker. Do not infer native PASS from fixtures.
+  First owner run 2026-10-10: FAIL (uninstall left entries whose ownership
+  record was lost; closing notice asked to quit VS Code); fixed, rerun pending.
+  Evidence: [T12c first run](HANDOFF.md#exec-001-t12c-native-vs-code-acceptance-first-run-2026-10-10).
 - [ ] **T12d - bind independent review.** Review the actual committed scope
   through `review`, recording base/candidate/tree, reviewer session/reference,
   commands/exits/logs and artifact digest when accepting a release. Done: no

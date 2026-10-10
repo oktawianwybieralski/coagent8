@@ -191,8 +191,10 @@ nothing. Check a CLI to make it work completely: a missing CLI is installed, a
 signed-out one is offered its sign-in command, and CoAgent8 is added to its chat,
 which needs no sign-in. Uncheck a CLI to remove the entry CoAgent8 wrote; the CLI
 itself stays installed. A manual entry counts as checked and is never changed. An
-entry for another CoAgent8 version or configuration file is marked and updated
-while it stays checked. The title bar checks again and shows the details in the
+entry CoAgent8 wrote stays its own when its record in `~/.coagent8/setup.json` is
+lost: it starts a runtime copy in `~/.coagent8/runtime` and holds only the fields
+CoAgent8 writes. An entry for another CoAgent8 version or configuration file, or
+one whose runtime copy is gone, is marked and updated while it stays checked. The title bar checks again and shows the details in the
 `CoAgent8 Setup` output.
 
 Existing CLIs are reused: Codex and Claude Code from their vendor extensions
@@ -234,11 +236,12 @@ a restart.
 installed vendor extensions or standalone CLIs that are still present, it first
 lists them, none selected. It then asks for confirmation, and a second time before
 removing anything selected. It removes CoAgent8's registrations in the CLI chats at
-once, uninstalls the selected extensions and CoAgent8, and offers **Quit VS
-Code**. Removing the Google Antigravity extension also deletes the
+once, uninstalls the selected extensions and CoAgent8, and offers **Restart
+Extensions**, the step the Extensions view itself offers after an uninstall; VS Code
+deletes the extension's files and storage the next time it starts, and nothing
+CoAgent8 removes waits for that. Removing the Google Antigravity extension also deletes the
 `~/.gemini/bin/agy.exe` (`agy` outside Windows) it downloaded, which the extension
-itself leaves behind: VS Code deletes uninstalled extensions and their storage only on its next
-full start (**Restart Extensions** is not enough). For a selected standalone CLI
+itself leaves behind. For a selected standalone CLI
 the removal commands are inserted in a **Remove coding CLIs** terminal, where you
 press Enter: `npm uninstall -g @openai/codex` for Codex CLI; for Claude Code CLI
 the commands of its
@@ -251,7 +254,7 @@ entries the installers added stay. Vendor sign-ins and histories (`~/.codex`,
 
 Uninstalling from the Extensions view also works: on VS Code's next full start
 the `vscode:uninstall` hook removes the registrations CoAgent8 wrote, when they are
-unchanged, the runtime copies nothing references, the private backups written for
+unchanged (recognized by their shape when their record is lost), the runtime copies nothing references, the private backups written for
 the extension and an emptied `~/.coagent8`. Registrations and backups made by the
 `coagent8` CLI and manual or edited entries are preserved. To remove registrations
 without uninstalling, uncheck them in **CoAgent8: Set Up Coding CLIs**,

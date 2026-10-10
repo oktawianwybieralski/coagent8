@@ -433,14 +433,20 @@ Setup/repair/status/cleanup live in the separate setup bundle. No-argument binar
 start stdio; public task execution CLI remains planned. Setup owns selected-host
 registrations, immutable runtime copies, fingerprints, private backups, leases and
 preview-bound cleanup. Preserve manual/edited entries and unrelated settings.
+Without a recorded fingerprint, as after `setup.json` was lost, an entry is setup's
+when it starts a runtime copy in `~/.coagent8/runtime/<sha256>/index.cjs` and holds
+only the fields setup writes; a data directory in VS Code global storage
+`okidev.coagent8-mcp` marks the extension's. An owned entry whose runtime copy is
+gone is replaced without the checks that protect a working connection.
 Status reads registration files without running every registered host's doctor.
 
 The VSIX provider supplies current extension paths to the shared executable
 resolver. One Set Up Coding CLIs list handles installation, login and registration;
 unchanged acceptance does nothing. Uninstall removes only owned entries/data,
 offers only recorded installed dependencies, preserves shared config/sign-ins/
-histories and requires native lifecycle acceptance. Full VS Code quit/restart is
-distinct from restarting extensions. Existing registrations may need migration.
+histories and requires native lifecycle acceptance. It ends with Restart
+Extensions, the Extensions view's own step; VS Code deletes the extension's files
+and storage on its next start, which no removal waits for.
 
 Client skills (`src/integrations/skills.ts`, SKILLS-001) follow the registration.
 The catalog is `skills/` of the npm package and the VSIX: one directory per
