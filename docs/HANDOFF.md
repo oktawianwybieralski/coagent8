@@ -1868,6 +1868,48 @@ Captured 2026-10-10 at `240ac3c` (tree `eff2aed`), clean worktree, Windows 11
 
 Next card: EXEC-001-T12b.
 
+## EXEC-001-T12b: local candidate package validation
+
+Candidate `751d922` (tree `6e53be3`), branch `perf/exec-001`, 2026-10-10,
+Windows 11 10.0.26200, Node v26.10.0, npm 11.19.1. Working tree clean except an
+untracked `coverage/` left by a manual c8 rerun (removed after the identity
+capture; not part of the package). Not a fresh clone. Nothing was published.
+
+### First run (`82e28ba`): FAIL
+Full coverage run: 650 pass, 2 fail, 3 skipped, 1 todo. Both failures were
+wall-clock assumptions that held in isolation (3/3 plain and under c8):
+`controller-cooldown` measured the 15 s tier from the start of the whole turn
+(a 2.5 s turn under load gave 17.5 s), and `controller-consent` spent its
+50 ms consent budget in preparation. `751d922` measures the cooldown from its
+recorded start and starts the consent budget at the consent wait; tolerances
+and assertions are unchanged. The whole gate was then repeated.
+
+### Second run (`751d922`): PASS
+| Step | Result |
+| --- | --- |
+| `npm run typecheck` | PASS |
+| `npm run check:dependencies` | PASS (0 violations, 0 cycles) |
+| `npm run build` | PASS, before every bundle-dependent step |
+| `npm run test:coverage` (full inventory) | PASS: 656 tests, 652 pass, 0 fail, 3 POSIX-only skips, 1 todo (WINDOWS-001a outside-job, REPRODUCED); statements/lines 93.23 %, branches 84.75 %, functions 95.44 % |
+| `npm pack --dry-run --json` | PASS: `coagent8-1.0.0-beta.2.tgz`, 133 files |
+| `npm run test:consumer` (new tarball) | PASS: install --omit=dev, bundled SDK, bin aliases, setup dispatch, MCP fixture turns; real CLIs NOT VERIFIED by design |
+| `npm run lint:docs`, `npm run docs` | PASS, 0 warnings |
+| `npm run package:vscode` | PASS: `coagent8-mcp-1.0.0-beta.2.vsix`, 21 files |
+
+Artifacts (local, `.artifacts/`, not published):
+- npm tarball SHA-256 `10896f67dacedf60d9a3544408e7ae1a764b1f36c8ccb3ca0dbd71d0ca3c55c3`
+  (manifest beside it).
+- VSIX SHA-256 `72798f469f6d19e363c2646a24fd0e7c681743377b1099f0389f12bab07384c5`.
+
+Source, bundle and exact-package results are separate rows above: the coverage
+run loads source, consumer smoke installs this exact tarball and compares its
+bundle with a fresh build. The VSIX was packaged, not installed in VS Code.
+Any later source change invalidates these artifacts.
+
+Next: EXEC-001-T12c (CI matrix and native client scenarios: native agy issue-link
+click, SKILLS-001e discovery, VS Code acceptance). It needs the owner's release
+workflow (branch, PR, tags, GitHub releases) and owner-run native clients; then T12d.
+
 
 ## Compact handoff contract
 

@@ -667,12 +667,13 @@ applicable docs checks. Depends on T10; caller-visible migration follows T07.
   launches for each scenario, including concurrent/error paths; inconclusive
   results are labelled so. Check: P plus baseline execution; retain raw logs.
   Evidence: [T12a baseline repetition](HANDOFF.md#exec-001-t12a-repeat-the-baseline).
-- [ ] **T12b - validate the local candidate package.** Follow the full package
+- [x] **T12b - validate the local candidate package.** Follow the full package
   gate once on the final source, build before bundle-dependent tests and retain
   the actual tarball digest/manifest. Done: source, bundle and exact-package
   results are recorded separately. Check: typecheck, dependency check, build,
   full suite or equivalent full coverage run, pack inspection, consumer smoke
   and applicable docs/VSIX gates. Do not publish as part of validation.
+  Evidence: [T12b](HANDOFF.md#exec-001-t12b-local-candidate-package-validation).
 - [ ] **T12c - collect native/remote acceptance.** Use the candidate from T12b
   for the required six OS/Node jobs and applicable native client scenarios.
   Do one client/platform scenario at a time; record CLI/host versions and
