@@ -1983,6 +1983,15 @@ was pushed.
   was updated, because TypeDoc collapses repeated hyphens and GitHub does not.
   `npm run docs`: 0 warnings. Diagram rendering in a browser and the Pages
   deployment are NOT_RUN.
+- Final gate on `7adccdc` (tree `d84f40d`, clean working tree, Windows 11,
+  Node v26.10.0, npm 11.19.1): typecheck, dependencies, build, coverage 656
+  tests (652 pass, 0 fail, 3 POSIX skips, 1 todo; statements 93.23 %, branches
+  84.74 %), pack (133 files), consumer smoke of the new tarball, lint:docs,
+  docs (0 warnings), VSIX: all PASS. Tarball SHA-256
+  `56c8956e62c50839609925762465abd087b9c41b928236d9eeb5e92ea322d5d9`, VSIX
+  `612ac5855b1898c73b1123b6bfbff826ac137be61c68eeed3592fbbf95873a87` (local
+  `.artifacts/`, not published). The release workflow rebuilds them on GitHub
+  from the tag; compare them with this record.
 
 Next: the owner steps in REPO-002 on GitHub and npm.
 
