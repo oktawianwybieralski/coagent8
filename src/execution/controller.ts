@@ -39,6 +39,7 @@ import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
+import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
@@ -245,6 +246,10 @@ async function executeTaskInternal(
     const backend = prepared.backend;
     const model = prepared.model;
     const reasoningEffort = prepared.reasoningEffort;
+
+    if (!isValidModelIdentifier(model)) {
+      throw new ToolError('INPUT_LIMIT', 'Invalid model identifier.');
+    }
 
     const sessionContext: BackendReadContext = {
       ...options.context,

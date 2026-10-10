@@ -379,3 +379,172 @@ test('EXEC-001-T05c: price change while consent is pending triggers re-validatio
     Object.assign(adapterRegistry, original);
   }
 });
+
+test('EXEC-001-T10b: confirmConsent price increase without price limit throws POLICY_DENIED and leaves neverAsk untouched', async () => {
+  const { recordPrices } = require('../../src/models/store.ts');
+  const { loadConfig } = require('../../src/config.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '1.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: ['gpt-6.1-sol'], neverAsk: [] },
+    });
+
+    await recordPrices({
+      fetchedAt: Date.now(),
+      source: 'openrouter',
+      models: {
+        'gpt-6.1-sol': { output: 10, input: 2, cachedInput: 1, matched: 'openai/gpt-6.1-sol', exact: true },
+      },
+    });
+
+    const prepared = await prepareTask({ model: 'gpt-6.1-sol' }, tempDir);
+
+    await assert.rejects(
+      prepared.confirmConsent({
+        askConsent: async () => {
+          // Price increased to 30 USD while waiting
+          await recordPrices({
+            fetchedAt: Date.now(),
+            source: 'openrouter',
+            models: {
+              'gpt-6.1-sol': { output: 30, input: 5, cachedInput: 2.5, matched: 'openai/gpt-6.1-sol', exact: true },
+            },
+          });
+          return { approved: true, remember: true };
+        },
+      }),
+      err => {
+        assert.equal(err.code, 'POLICY_DENIED');
+        assert.match(err.message, /The approval for model 'gpt-6.1-sol' was invalidated because conditions changed while awaiting consent/i);
+        assert.match(err.message, /Its output price increased from 10 USD to 30 USD per million tokens/i);
+        assert.match(err.message, /Retry the request to approve under current conditions/i);
+        return true;
+      }
+    );
+
+    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-6.1-sol'), 'neverAsk must remain untouched when consent invalidated');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T10b: confirmConsent governance config change invalidates approval and leaves neverAsk untouched', async () => {
+  const { loadConfig } = require('../../src/config.ts');
+  try { fs.unlinkSync(path.join(tempDir, 'models.json')); } catch {}
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '1.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+          { id: 'gpt-non-default', efforts: ['low'] },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: [], neverAsk: [] },
+    });
+
+    const prepared = await prepareTask({ model: 'gpt-non-default' }, tempDir);
+
+    await assert.rejects(
+      prepared.confirmConsent({
+        askConsent: async () => {
+          // Config changed: threshold lowered to 5 USD
+          saveConfig({
+            defaultBackend: 'codex',
+            routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+            governance: { priceMultiplier: 2, askAbovePrice: 5, alwaysAsk: [], neverAsk: [] },
+          });
+          return { approved: true, remember: true };
+        },
+      }),
+      err => {
+        assert.equal(err.code, 'POLICY_DENIED');
+        assert.match(err.message, /governance.askAbovePrice (was lowered|changed) from 50 USD to 5 USD/i);
+        assert.match(err.message, /Retry the request to approve under current conditions/i);
+        return true;
+      }
+    );
+
+    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-non-default'), 'neverAsk must remain untouched when consent invalidated');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});
+
+test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true succeeds and updates neverAsk', async () => {
+  const { loadConfig } = require('../../src/config.ts');
+  try { fs.unlinkSync(path.join(tempDir, 'models.json')); } catch {}
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.codex = {
+      id: 'codex',
+      name: 'fixture',
+      probe: async () => ({
+        installed: true,
+        executionSupported: true,
+        version: '2.0.0',
+        config: { defaultModel: 'gpt-6.1-sol' },
+      }),
+      listModels: async () => ({
+        source: 'codex-catalog',
+        models: [
+          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
+          { id: 'gpt-unpriced', efforts: ['low'] },
+        ],
+      }),
+      execute: async () => { throw new Error('Must not execute'); },
+    };
+
+    saveConfig({
+      defaultBackend: 'codex',
+      routing: { strategy: 'fixed', allowedBackends: ['codex'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+    });
+
+    const prepared = await prepareTask({ model: 'gpt-unpriced' }, tempDir);
+
+    const res = await prepared.confirmConsent({
+      askConsent: async () => ({ approved: true, remember: true }),
+    });
+
+    assert.deepEqual(res.warnings, []);
+    assert.ok(loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'Valid approval remembered in neverAsk');
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
+});

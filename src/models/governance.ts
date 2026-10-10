@@ -31,7 +31,7 @@ export interface ConsentDecision {
   reason: string;
 }
 
-const usd = (value: number) => `${Number(value.toFixed(2))} USD`;
+export const usd = (value: number): string => `${Number(value.toFixed(2))} USD`;
 
 /**
  * Decides whether the user must approve a model before it runs.
@@ -63,7 +63,7 @@ export function decideConsent(model: string, defaultModel: string | undefined, p
  * one is the user's decision (`AX-003`; a calling agent switched models after an unanswered
  * request in the 2026-10-08 trials).
  */
-const NO_SUBSTITUTE = 'Tell the user; switch to another model only if the user asks.';
+export const NO_SUBSTITUTE = 'Tell the user; switch to another model only if the user asks.';
 
 /** One-line refusal when the user's approval cannot be requested. */
 export function consentRequiredMessage(model: string, reason: string): string {
@@ -82,5 +82,57 @@ export function consentDeclinedMessage(model: string): string {
  */
 export function consentUnansweredMessage(model: string, reason: string): string {
   return `The client closed the approval request for model '${model}' without an answer, possibly without showing it to the user. ${reason} ${NO_SUBSTITUTE}`;
+}
+
+/**
+ * One-line refusal with fail-closed retry guidance when approval was invalidated by changed conditions (`EXEC-001-T10b`).
+ * @param model - Target model identifier.
+ * @param reason - Explanation of the invalidated condition (price increase, governance policy change).
+ */
+export function consentInvalidatedMessage(model: string, reason: string): string {
+  return `The approval for model '${model}' was invalidated because conditions changed while awaiting consent: ${reason} Retry the request to approve under current conditions. ${NO_SUBSTITUTE}`;
+}
+
+/**
+ * Compares two governance settings to detect whether policy rules changed (`EXEC-001-T10b`).
+ *
+ * @param previous - Initial governance settings snapshot.
+ * @param current - Current governance settings snapshot.
+ * @param model - Optional target model identifier to check specific list membership changes.
+ * @returns A description of the change, or undefined if identical.
+ */
+export function describeGovernanceChange(
+  previous: GovernanceSettings,
+  current: GovernanceSettings,
+  model?: string
+): string | undefined {
+  if (model) {
+    if (!previous.alwaysAsk.includes(model) && current.alwaysAsk.includes(model)) {
+      return `'${model}' was added to the governance.alwaysAsk list.`;
+    }
+    if (previous.neverAsk.includes(model) && !current.neverAsk.includes(model)) {
+      return `'${model}' was removed from the governance.neverAsk list.`;
+    }
+    // If model is explicitly on neverAsk or alwaysAsk, price thresholds do not apply to it
+    if (current.neverAsk.includes(model) || current.alwaysAsk.includes(model)) {
+      return undefined;
+    }
+  }
+
+  // Threshold changes that make policy stricter
+  if (
+    current.askAbovePrice !== null &&
+    (previous.askAbovePrice === null || current.askAbovePrice < previous.askAbovePrice)
+  ) {
+    const prevStr = previous.askAbovePrice === null ? 'none' : `${previous.askAbovePrice} USD`;
+    const currStr = `${current.askAbovePrice} USD`;
+    return `governance.askAbovePrice was lowered from ${prevStr} to ${currStr}.`;
+  }
+
+  if (current.priceMultiplier < previous.priceMultiplier) {
+    return `governance.priceMultiplier was lowered from ${previous.priceMultiplier} to ${current.priceMultiplier}.`;
+  }
+
+  return undefined;
 }
 

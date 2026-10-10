@@ -440,3 +440,463 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
     await server.close();
   }
 });
+
+test('EXEC-001-T10b: price increase during consent wait invalidates approval, blocks turn execution and does not remember approval', async () => {
+  const { recordPrices } = require('../../src/models/store.ts');
+  setupMockConfigAndAdapters();
+
+  await recordPrices({
+    fetchedAt: Date.now(),
+    source: 'openrouter',
+    models: {
+      'gpt-expensive': { output: 10, input: 2, cachedInput: 1, matched: 'openai/gpt-expensive', exact: true },
+      'gpt-6.1-sol': { output: 5, input: 1, cachedInput: 0.5, matched: 'openai/gpt-6.1-sol', exact: true },
+    },
+  });
+
+  let executionRan = false;
+  adapterRegistry.codex.execute = async () => {
+    executionRan = true;
+    return { status: 'completed', isError: false, output: 'should not run' };
+  };
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
+      askConsent: async () => {
+        // Price of gpt-expensive increases to 35 USD while user is deciding
+        await recordPrices({
+          fetchedAt: Date.now(),
+          source: 'openrouter',
+          models: {
+            'gpt-expensive': { output: 35, input: 5, cachedInput: 2.5, matched: 'openai/gpt-expensive', exact: true },
+            'gpt-6.1-sol': { output: 5, input: 1, cachedInput: 0.5, matched: 'openai/gpt-6.1-sol', exact: true },
+          },
+        });
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'POLICY_DENIED');
+      assert.match(err.message, /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(err.message, /Its output price increased from 10 USD to 35 USD per million tokens/i);
+      assert.match(err.message, /Retry the request to approve under current conditions/i);
+      assert.match(err.message, /Tell the user; switch to another model only if the user asks/i);
+      return true;
+    }
+  );
+
+  assert.equal(executionRan, false, 'Turn must never execute when price increased during consent wait');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Invalidated approval must never be remembered in neverAsk');
+});
+
+test('EXEC-001-T10b: price change exceeding output_price_below during consent wait blocks turn with PRICE_LIMIT and does not remember approval', async () => {
+  const { recordPrices } = require('../../src/models/store.ts');
+  setupMockConfigAndAdapters();
+
+  await recordPrices({
+    fetchedAt: Date.now(),
+    source: 'openrouter',
+    models: {
+      'gpt-expensive': { output: 10, input: 2, cachedInput: 1, matched: 'openai/gpt-expensive', exact: true },
+      'gpt-6.1-sol': { output: 5, input: 1, cachedInput: 0.5, matched: 'openai/gpt-6.1-sol', exact: true },
+    },
+  });
+
+  let executionRan = false;
+  adapterRegistry.codex.execute = async () => {
+    executionRan = true;
+    return { status: 'completed', isError: false, output: 'should not run' };
+  };
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-expensive', output_price_below: 20 }, tempDir, null, null, {
+      askConsent: async () => {
+        // Price increases above the 20 USD limit to 25 USD
+        await recordPrices({
+          fetchedAt: Date.now(),
+          source: 'openrouter',
+          models: {
+            'gpt-expensive': { output: 25, input: 5, cachedInput: 2.5, matched: 'openai/gpt-expensive', exact: true },
+            'gpt-6.1-sol': { output: 5, input: 1, cachedInput: 0.5, matched: 'openai/gpt-6.1-sol', exact: true },
+          },
+        });
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'PRICE_LIMIT');
+      assert.match(err.message, /not below 20 USD/i);
+      assert.match(err.message, /It was not replaced by another model; name one below the limit/i);
+      return true;
+    }
+  );
+
+  assert.equal(executionRan, false, 'Turn must never execute when price exceeded output_price_below limit');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Invalidated price limit must never remember approval');
+});
+
+test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates approval, blocks turn and does not remember approval', async () => {
+  setupMockConfigAndAdapters();
+  let executionRan = false;
+  adapterRegistry.codex.execute = async () => {
+    executionRan = true;
+    return { status: 'completed', isError: false, output: 'should not run' };
+  };
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
+      askConsent: async () => {
+        // Add gpt-unknown to alwaysAsk while user is deciding
+        const current = loadConfig();
+        saveConfig({
+          ...current,
+          governance: {
+            ...current.governance,
+            alwaysAsk: [...current.governance.alwaysAsk, 'gpt-unknown'],
+          },
+        });
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'POLICY_DENIED');
+      assert.match(err.message, /The approval for model 'gpt-unknown' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(err.message, /'gpt-unknown' was added to the governance.alwaysAsk list/i);
+      assert.match(err.message, /Retry the request to approve under current conditions/i);
+      return true;
+    }
+  );
+
+  assert.equal(executionRan, false, 'Turn must never execute when model added to alwaysAsk during wait');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Approval invalidated by alwaysAsk must not be remembered in neverAsk');
+});
+
+test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invalidates approval and blocks turn', async () => {
+  setupMockConfigAndAdapters();
+  saveConfig({
+    ...loadConfig(),
+    governance: {
+      ...loadConfig().governance,
+      alwaysAsk: [],
+      askAbovePrice: 20,
+    },
+  });
+  let executionRan = false;
+  adapterRegistry.codex.execute = async () => {
+    executionRan = true;
+    return { status: 'completed', isError: false, output: 'should not run' };
+  };
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
+      askConsent: async () => {
+        const current = loadConfig();
+        saveConfig({
+          ...current,
+          governance: {
+            ...current.governance,
+            askAbovePrice: 10, // lowered threshold from 20 to 10
+          },
+        });
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'POLICY_DENIED');
+      assert.match(err.message, /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(err.message, /governance.askAbovePrice (was lowered|changed) from 20 USD to 10 USD/i);
+      assert.match(err.message, /Retry the request to approve under current conditions/i);
+      return true;
+    }
+  );
+
+  assert.equal(executionRan, false, 'Turn must never execute when askAbovePrice changed during consent');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'));
+});
+
+test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait invalidates approval and blocks turn', async () => {
+  setupMockConfigAndAdapters();
+  saveConfig({
+    ...loadConfig(),
+    governance: {
+      ...loadConfig().governance,
+      alwaysAsk: [],
+      priceMultiplier: 2,
+    },
+  });
+  let executionRan = false;
+  adapterRegistry.codex.execute = async () => {
+    executionRan = true;
+    return { status: 'completed', isError: false, output: 'should not run' };
+  };
+
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
+      askConsent: async () => {
+        const current = loadConfig();
+        saveConfig({
+          ...current,
+          governance: {
+            ...current.governance,
+            priceMultiplier: 1.5, // lowered multiplier from 2 to 1.5
+          },
+        });
+        return { approved: true, remember: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'POLICY_DENIED');
+      assert.match(err.message, /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(err.message, /governance.priceMultiplier (was lowered|changed) from 2 to 1.5/i);
+      assert.match(err.message, /Retry the request to approve under current conditions/i);
+      return true;
+    }
+  );
+
+  assert.equal(executionRan, false, 'Turn must never execute when priceMultiplier changed during consent');
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'));
+});
+
+test('EXEC-001-T10b: valid consent under unchanged conditions succeeds, executes turn and remembers approval', async () => {
+  setupMockConfigAndAdapters();
+  let executedModel = null;
+  adapterRegistry.codex.execute = async (_prompt, options) => {
+    executedModel = options.model;
+    return {
+      status: 'completed',
+      isError: false,
+      output: 'successful execution',
+      nativeSessionId: randomUUID(),
+      model: options.model,
+      truncated: false,
+      continuationAvailable: true,
+    };
+  };
+
+  const res = await executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
+    askConsent: async () => ({ approved: true, remember: true }),
+  });
+
+  assert.equal(res.isError, false);
+  assert.equal(res.result.status, 'completed');
+  assert.equal(executedModel, 'gpt-unknown');
+  assert.ok(loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Valid approval was remembered in neverAsk');
+});
+
+test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidate concurrent turn', async () => {
+  setupMockConfigAndAdapters();
+  let executedModel = null;
+  adapterRegistry.codex.execute = async (_prompt, options) => {
+    executedModel = options.model;
+    return {
+      status: 'completed',
+      isError: false,
+      output: 'successful execution',
+      nativeSessionId: randomUUID(),
+      model: options.model,
+      truncated: false,
+      continuationAvailable: true,
+    };
+  };
+
+  const res = await executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
+    askConsent: async () => {
+      // A concurrent turn remembers a different model 'gpt-other'
+      const current = loadConfig();
+      saveConfig({
+        ...current,
+        governance: {
+          ...current.governance,
+          neverAsk: [...current.governance.neverAsk, 'gpt-other'],
+        },
+      });
+      return { approved: true, remember: false };
+    },
+  });
+
+  assert.equal(res.isError, false);
+  assert.equal(executedModel, 'gpt-unknown');
+  assert.ok(loadConfig().governance.neverAsk.includes('gpt-other'));
+  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'));
+});
+
+test('EXEC-001-T10b: turn for model on neverAsk executes without POLICY_DENIED even if price list refreshes', async () => {
+  setupMockConfigAndAdapters();
+  // Put gpt-expensive on neverAsk and remove from alwaysAsk
+  const current = loadConfig();
+  saveConfig({
+    ...current,
+    governance: {
+      ...current.governance,
+      alwaysAsk: [],
+      neverAsk: ['gpt-expensive'],
+    },
+  });
+
+  let executedModel = null;
+  adapterRegistry.codex.execute = async (_prompt, options) => {
+    executedModel = options.model;
+    return {
+      status: 'completed',
+      isError: false,
+      output: 'neverAsk success',
+      nativeSessionId: randomUUID(),
+      model: options.model,
+      truncated: false,
+      continuationAvailable: true,
+    };
+  };
+
+  // Turn does not require asking, and routine price refresh must not block turn
+  const res = await executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
+    askConsent: async () => {
+      throw new Error('askConsent must not be called for model on neverAsk');
+    },
+  });
+
+  assert.equal(res.isError, false);
+  assert.equal(executedModel, 'gpt-expensive');
+});
+
+test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing sessions from fresh turns', async () => {
+  setupMockConfigAndAdapters();
+
+  // Fresh turn guidance
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-expensive', output_price_below: 10 }, tempDir),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'PRICE_LIMIT');
+      assert.match(err.message, /or omit model/);
+      assert.ok(!err.message.includes('or start a new session'));
+      return true;
+    }
+  );
+
+  // Continuing session guidance during preparation
+  const sessionHandle = 'syn_sess_cont_1';
+  const sessionFile = path.join(tempDir, 'sessions', `${sessionHandle}.json`);
+  fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+  fs.writeFileSync(sessionFile, JSON.stringify({
+    schemaVersion: 2,
+    sessionHandle,
+    backend: 'codex',
+    threadId: 'thread_cont',
+    workspace: tempDir,
+    model: 'gpt-expensive',
+    reasoningEffort: 'low',
+    activePid: null,
+    activeTurnAt: null,
+    createdAt: new Date().toISOString(),
+    lastUsedAt: new Date().toISOString(),
+  }));
+
+  await assert.rejects(
+    prepareTask({ session_handle: sessionHandle, output_price_below: 10 }, tempDir),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'PRICE_LIMIT');
+      assert.match(err.message, /or start a new session/);
+      return true;
+    }
+  );
+
+  // Continuing session guidance during consent revalidation
+  const { recordPrices } = require('../../src/models/store.ts');
+  await recordPrices({
+    fetchedAt: Date.now(),
+    source: 'openrouter',
+    models: {
+      'gpt-expensive': { output: 25, input: 5, cachedInput: 2.5, matched: 'openai/gpt-expensive', exact: true },
+    },
+  });
+  const prepared = await prepareTask({ session_handle: sessionHandle, output_price_below: 30 }, tempDir);
+  await assert.rejects(
+    prepared.confirmConsent({
+      askConsent: async () => {
+        // Price exceeds 30 during consent wait
+        await recordPrices({
+          fetchedAt: Date.now(),
+          source: 'openrouter',
+          models: {
+            'gpt-expensive': { output: 35, input: 5, cachedInput: 2.5, matched: 'openai/gpt-expensive', exact: true },
+          },
+        });
+        return { approved: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'PRICE_LIMIT');
+      assert.match(err.message, /or start a new session/);
+      return true;
+    }
+  );
+
+  // Fresh turn guidance during consent revalidation (when price exceeds limit during wait)
+  await recordPrices({
+    fetchedAt: Date.now(),
+    source: 'openrouter',
+    models: {
+      'gpt-expensive': { output: 25, input: 5, cachedInput: 2.5, matched: 'openai/gpt-expensive', exact: true },
+    },
+  });
+  const freshPrepared = await prepareTask({ model: 'gpt-expensive', output_price_below: 30 }, tempDir);
+  await assert.rejects(
+    freshPrepared.confirmConsent({
+      askConsent: async () => {
+        // Price exceeds 30 during consent wait
+        await recordPrices({
+          fetchedAt: Date.now(),
+          source: 'openrouter',
+          models: {
+            'gpt-expensive': { output: 35, input: 5, cachedInput: 2.5, matched: 'openai/gpt-expensive', exact: true },
+          },
+        });
+        return { approved: true };
+      },
+    }),
+    err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'PRICE_LIMIT');
+      assert.match(err.message, /or omit model/);
+      assert.ok(!err.message.includes('or start a new session'));
+      return true;
+    }
+  );
+});
+
+test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block turn for model on neverAsk', async () => {
+  setupMockConfigAndAdapters();
+  const current = loadConfig();
+  saveConfig({
+    ...current,
+    governance: {
+      ...current.governance,
+      askAbovePrice: 50,
+      priceMultiplier: 4,
+      alwaysAsk: [],
+      neverAsk: ['gpt-expensive'],
+    },
+  });
+
+  const prepared = await prepareTask({ model: 'gpt-expensive' }, tempDir);
+
+  // During execution / revalidation, askAbovePrice and priceMultiplier are made much stricter
+  saveConfig({
+    ...loadConfig(),
+    governance: {
+      ...loadConfig().governance,
+      askAbovePrice: 5, // lowered from 50 to 5
+      priceMultiplier: 1.2, // lowered from 4 to 1.2
+    },
+  });
+
+  const res = await prepared.confirmConsent();
+  assert.deepEqual(res.warnings, []);
+});

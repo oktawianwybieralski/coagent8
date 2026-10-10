@@ -21,9 +21,9 @@ import { resolveBackend, resolveBackendForModel, type ResolvedBackend } from './
 import { selectModel, type ModelSelection, type PriceConstraint } from './selection.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../models/catalog.js';
-import { checkPriceLimit, priceEvidence, readPrices } from '../models/prices.js';
-import { consentFor } from './consent.js';
-import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage } from '../models/governance.js';
+import { checkPriceLimit, findPrice, priceEvidence, readPrices } from '../models/prices.js';
+import { revalidateConsent } from './consent.js';
+import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage, decideConsent } from '../models/governance.js';
 import { redactDiagnostic } from '../security/redaction.js';
 
 /**
@@ -76,6 +76,7 @@ export interface PrepareTaskOptions {
  * Options for executing consent confirmation against a prepared task.
  */
 export interface ConfirmConsentOptions {
+  config?: ConfigSnapshot | CoAgent8Config;
   askConsent?: ConsentPrompt;
   abortSignal?: AbortSignal | null;
   /** Complete-call execution budget (`EXEC-001-T07`). */
@@ -317,13 +318,24 @@ export async function prepareTask(
 
     assertNotCancelledOrExpired('consent confirmation');
 
-    const decision = await consentFor(backend.id, backend.probe, model, {
-      config: configSnapshot,
-      defaultModel,
+    const initialPrices = await readPrices({
+      models: defaultModel ? [model, defaultModel] : [model],
+      context: readContext,
     });
+    const initialPrice = initialPrices ? findPrice(initialPrices, model) : undefined;
+    const initialDefaultPrice = (defaultModel && initialPrices) ? findPrice(initialPrices, defaultModel) : undefined;
+
+    const decision = decideConsent(
+      model,
+      defaultModel ?? undefined,
+      initialPrices,
+      configSnapshot.config.governance
+    );
     const consentWarnings: string[] = [];
 
     assertNotCancelledOrExpired('consent confirmation');
+
+    let userRememberRequested = false;
 
     if (decision.ask) {
       if (!consentOptions.askConsent) {
@@ -407,26 +419,39 @@ export async function prepareTask(
         );
       }
 
-      // 4. Double check not cancelled or expired before writing configuration
-      assertNotCancelledOrExpired('recording remembered approval');
+      userRememberRequested = Boolean(decision.offerRemember && answer.remember);
+    }
 
-      if (decision.offerRemember && answer.remember) {
-        // The approval stands even when it cannot be stored; the next turn asks again.
-        try {
-          await rememberApprovedModel(model);
-        } catch (err) {
-          consentWarnings.push(
-            `The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`
-          );
-        }
+    // Revalidate just before acquisition (EXEC-001-T10b):
+    // Rechecks changed identity/policy/price evidence and fails closed with retry guidance.
+    assertNotCancelledOrExpired('consent revalidation');
+
+    const revalidation = await revalidateConsent(backend.id, backend.probe, model, configSnapshot, {
+      currentConfig: consentOptions.config,
+      defaultModel,
+      initialPrice,
+      initialDefaultPrice,
+      initialDecision: decision,
+      outputPriceBelow: below,
+      choosing: Boolean(choosing),
+      continuing: Boolean(previousSession),
+      context: readContext,
+    });
+
+    assertNotCancelledOrExpired('recording remembered approval');
+
+    if (userRememberRequested) {
+      // The approval stands even when it cannot be stored; the next turn asks again.
+      try {
+        await rememberApprovedModel(model);
+      } catch (err) {
+        consentWarnings.push(
+          `The approval of '${model}' was not remembered: ${redactDiagnostic((err as Error).message, 256)}`
+        );
       }
     }
 
-    // Rechecked right before the turn: the list or the limit's evidence may have changed while the user decided.
-    const priceNote = below === undefined ? undefined : await assertPriceLimit();
-    assertNotCancelledOrExpired('price limit verification');
-
-    return { priceNote, warnings: consentWarnings };
+    return { priceNote: revalidation.priceNote, warnings: consentWarnings };
   };
 
   return {

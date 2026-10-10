@@ -44,9 +44,9 @@ write/check/fix workflows, independent roles/models and installable client skill
 Current read-only profiles remain enforced until verified replacements land.
 AX-001/002 (per-model prices and the price limit) were implemented on
 feat/ax-price-selection, branched from docs/coagent-direction at 3a9a4bb.
-The current completed task is EXEC-001-T10a (cancel a pending approval).
+The current completed task is EXEC-001-T10b (revalidate just before acquisition).
 Current branch: `perf/exec-001`.
-Next pending card: EXEC-001-T10b (revalidate just before acquisition).
+Next pending card: EXEC-001-T10c (preserve remembered-approval outcomes).
 Owner inspection occurs after each card. Prior independent approval does not
 approve these future changes.
 
@@ -1321,6 +1321,35 @@ Scope: cancel pending approval and bind consent confirmation to the monotonic ex
 - PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
 - PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
 - Independent review audits conducted via MCP `coagent8` `review` (backend `codex`, model `gpt-6.1-sol`, session `syn_sess_145162966167c55e46993eeb`, Turn 3: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
+
+## EXEC-001-T10b: revalidate just before acquisition
+
+Implemented 2026-10-10 on branch `perf/exec-001`.
+Scope: re-verify identity, governance policy, and price evidence directly before session acquisition (`revalidateConsent` in `src/execution/consent.ts` and `src/execution/preparation.ts`), fail closed with retry guidance upon condition shift, protect `neverAsk` from invalid approvals, and preserve Primary Task Supremacy.
+
+### Implemented mechanisms:
+1. **Pre-acquisition revalidation gate (`revalidateConsent`)**:
+   - Executes immediately before transitioning to session acquisition after user consent confirmation in `src/execution/preparation.ts:confirmConsent`.
+   - Inspects disk configuration modification (`isConfigModified`) to avoid redundant reloads while detecting file modifications via `mtimeMs` and `size`.
+   - Re-reads prices with `current: true` when consent was asked or when `output_price_below` is constrained, guaranteeing fresh pricing evidence.
+2. **Condition shift detection and fail-closed retry guidance**:
+   - `describeGovernanceChange` in `src/models/governance.ts` tracks whether the target model was added to `alwaysAsk`, removed from `neverAsk`, or if thresholds (`askAbovePrice`, `priceMultiplier`) were lowered/strictened, skipping threshold checks for models whose policy is already governed by explicit lists.
+   - Price increases during consent wait reject with `ToolError('POLICY_DENIED')` and format user-facing retry guidance (`consentInvalidatedMessage`) without substituting the model (`NO_SUBSTITUTE`).
+   - Price limit exceedance rejects with typed `ToolError('PRICE_LIMIT')`, distinguishing continuing sessions (`or start a new session`) from fresh turns (`or omit model`) via `Boolean(previousSession)`.
+3. **Never-ask protection**:
+   - `rememberApprovedModel` is guarded behind successful revalidation, guaranteeing that invalidated approvals never update `governance.neverAsk`.
+4. **Pre-acquisition model identifier validation**:
+   - `isValidModelIdentifier` asserts model safety in `src/execution/controller.ts` before session acquisition.
+
+### Verification evidence:
+- PASS: `npm run typecheck` (0 errors across root and extensions/vscode, exit code 0).
+- PASS: `npm run check:dependencies` (105 source files analyzed, 536 dependency edges, 0 violations, 0 cycles, exit code 0).
+- PASS: Scoped test suite: 37 tests (37 pass, 0 fail, exit code 0): `node tests/run.cjs tests/execution/controller-consent.test.js tests/execution/preparation.test.js tests/config-snapshot.test.js`.
+- PASS: Full test suite: 594 tests (591 pass, 0 fail, 3 skipped, duration 142.5 s, exit code 0): `node tests/run.cjs`.
+- PASS: `npm run lint:docs` (0 warnings, 0 errors, exit code 0).
+- PASS: `npm run docs` (TypeDoc build clean, 0 warnings, exit code 0).
+- PASS: `git diff --check` (clean whitespace and diff markers, exit code 0).
+- Independent review audits conducted via MCP `coagent8` `review` (backend `claude`, model `claude-opus-5-5`, session `syn_sess_9b5c70ab23c88d4e93805bf0`, Rounds 3 & 4: `COVERAGE: COMPLETE`, `VERDICT: READY`, 0 P1/P2 issues).
 
 ## Compact handoff contract
 

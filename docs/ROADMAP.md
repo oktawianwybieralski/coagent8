@@ -573,13 +573,14 @@ regressions. Depends on T08.
   T07 deadline. Done: missing/false/late responses and cancelled forms cannot
   start a turn or remember approval. Check: R, POLICY/MCP with a delayed reply.
   Evidence: [EXEC-001-T10a implementation](HANDOFF.md#exec-001-t10a-cancel-a-pending-approval).
-- [ ] **T10b - revalidate just before acquisition.** Start:
+- [x] **T10b - revalidate just before acquisition.** Start:
   `src/execution/consent.ts`, `src/models/governance.ts`, the controller's price
   checks and the T03 snapshot. Recheck changed identity/policy/price evidence.
   Use fail-closed retry guidance for invalidated approval unless a bounded
   renewal flow was explicitly accepted; do not invent that flow here.
   Done: changed prices/config during consent cannot bypass policy or replace
   the selected model. Check: R, CONFIG/POLICY/SELECT.
+  Evidence: [EXEC-001-T10b implementation](HANDOFF.md#exec-001-t10b-revalidate-just-before-acquisition).
 - [ ] **T10c - preserve remembered-approval outcomes.** Start:
   `src/config.ts:rememberApprovedModel` and controller consent warnings. Test
   valid remembered approval, failed persistence and cancellation before storage.
