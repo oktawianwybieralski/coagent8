@@ -67,6 +67,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`1c5fe4f`](https://github.com/oktawianwybieralski/coagent8/commit/1c5fe4f0417747e2085e9b7e91ec374b6b39e12c) **setup:** Install client skills with each registration (SKILLS-001)
 - [`64f7ee1`](https://github.com/oktawianwybieralski/coagent8/commit/64f7ee1e8952da6fa1389951313a56dbed705077) **diagnostics:** Apply bounds and cancellation to doctor (EXEC-001-T11b)
 - [`98be250`](https://github.com/oktawianwybieralski/coagent8/commit/98be25003e270bee45a7699a8b92317e78670d1b) **execution:** Expose accurate timing and phase accounting (EXEC-001-T11c)
+- [`195511e`](https://github.com/oktawianwybieralski/coagent8/commit/195511e10c2a7f5d5f53756123bb874732fed8a0) **review:** Say when another review cannot change the verdict (AX-007a)
 
 ### Changed
 - [`6ccfd91`](https://github.com/oktawianwybieralski/coagent8/commit/6ccfd91df94882934d0048788fea97e7fcf58e5d) **src:** Group backend files per CLI and split shared modules
