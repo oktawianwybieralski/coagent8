@@ -233,7 +233,8 @@ duration and session handle where available. `review` adds its verdict, and a
 call with a price limit adds the model's price evidence.
 The footer shows `session_handle=<handle> (<state>)`; pass that handle for a
 follow-up on the same topic. A call without it starts a fresh agent that rereads
-everything.
+everything. A review of unchanged code with the same scope, backend and model
+starts no new turn; the earlier verdict is returned.
 
 Archival history is enabled by default and best-effort. `coagent8_HISTORY=off`
 disables archive files, but executions still require session records and leases.

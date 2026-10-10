@@ -172,6 +172,7 @@ export async function handleReview(
         requireEnvelope: true,
         askConsent: options.askConsent,
         reviewContext: context,
+        reviewIdentity: { snapshot, scope: scopeInfo.label },
         onTiming: options.onTiming,
         clock: options.clock,
         budget: budget,

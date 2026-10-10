@@ -28,6 +28,30 @@ export interface SessionRecord {
   createdAt: string;
   /** ISO timestamp when the session was last accessed or updated. */
   lastUsedAt: string;
+  /** Identity and server verdict of this session's last completed review turn (`AX-007c`). */
+  lastReview?: CompletedReview;
+}
+
+/**
+ * Identity of a review request: an equal identity in the same workspace reviews the same
+ * collected input with the same reviewer (`AX-007c`).
+ */
+export interface ReviewIdentity {
+  /** Server-collected snapshot identity and digest of the review input. */
+  snapshot: string;
+  /** Collected scope label. */
+  scope: string;
+  /** Resolved model; null when the provider default runs. */
+  model: string | null;
+}
+
+/** A completed review turn: its identity and the server verdict it received. */
+export interface CompletedReview extends ReviewIdentity {
+  verdict: 'READY' | 'BLOCKED';
+  /** Bounded server reason of a BLOCKED verdict. */
+  reason?: string;
+  /** ISO timestamp of completion. */
+  completedAt: string;
 }
 
 /**

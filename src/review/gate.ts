@@ -25,6 +25,11 @@
 export interface StateEnvelopeEvaluation {
   verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
   reason?: string;
+  /**
+   * The reviewer returned a complete, untruncated envelope with valid checks for the expected
+   * snapshot: a judgement that repeating the same request would not change (`AX-007c`).
+   */
+  judged?: boolean;
 }
 
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
@@ -138,6 +143,7 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     const missingChecks = context?.requiredChecks.some(check => checkValues?.[check] !== 'PASS');
     const wrongSnapshot = context && snapshotVal !== context.expectedSnapshot;
     const incompleteInput = context && !context.inputComplete;
+    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !wrongSnapshot);
     const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || missingChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
       || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY';
 
@@ -169,13 +175,13 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       // A reviewer READY blocked only by required checks it could not run: another review in a
       // read-only sandbox cannot run them either, so the caller must not repeat it (AX-007a).
       if (reasons.length === 1 && notRun && verdictVal === 'READY') {
-        return { verdict: 'BLOCKED', reason: `The reviewer answered READY with no [P1/P2] finding, but the server did not observe the required checks (${notRun}); a read-only review cannot run them, so repeating the review will not change this verdict` };
+        return { verdict: 'BLOCKED', judged, reason: `The reviewer answered READY with no [P1/P2] finding, but the server did not observe the required checks (${notRun}); a read-only review cannot run them, so repeating the review will not change this verdict` };
       }
       // The answer still reads READY; the caller must see that the server overrides it.
       if (verdictVal === 'READY' && verdictCount === 1 && !hasBogusVerdict) reasons.push('the reviewer answered READY');
-      return { verdict: 'BLOCKED', reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied' };
+      return { verdict: 'BLOCKED', judged, reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied' };
     }
-    return { verdict: 'READY' };
+    return { verdict: 'READY', judged };
   }
 
   return { verdict: 'NOT_APPLICABLE' };

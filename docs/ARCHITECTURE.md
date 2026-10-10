@@ -339,6 +339,13 @@ scopes require PASS for both checks; Markdown-only scopes allow honest NOT_RUN.
 When a reviewer READY without P1/P2 is blocked only by required NOT_RUN checks,
 the reason says that a read-only review cannot run them and that repeating it
 will not change the verdict (AX-007a).
+A judged review (complete, untruncated envelope for the collected snapshot)
+stores its snapshot, scope, model and server verdict in its session record. A
+later request in the same workspace with the same snapshot, scope, resolved
+backend and model, while that session is live (2 h retention), starts no model
+turn, asks no consent and answers with a bounded reference to that session and
+its verdict. The record exists with history off; an unreadable sessions
+directory adds a warning and the review runs (AX-007c).
 The workspace is collected again after the turn; changes or failure block readiness.
 The gate does not run checks or prove the model's PASS claim, comprehensive scope
 or release artifact hashes. Independent evidence is still required.

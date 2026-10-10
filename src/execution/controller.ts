@@ -35,7 +35,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { loadConfigSnapshot } from '../config.js';
-import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, type CancelOutcome } from '../sessions/session.js';
+import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
@@ -86,6 +86,11 @@ export interface TaskOptions {
   reviewContext?: ReviewGateContext;
   /** Rechecks the workspace after the turn; a change or failed read blocks readiness. */
   verifyReviewSnapshot?: () => Promise<string | undefined>;
+  /**
+   * Collected review snapshot and scope. With the resolved backend and model they identify the
+   * request: an equal completed review in this workspace answers without a model turn (`AX-007c`).
+   */
+  reviewIdentity?: { snapshot: string; scope: string };
   /** Optional observer callback receiving the timing trace, including on early errors. */
   onTiming?: TimingObserver;
   /** Optional custom monotonic clock for timing. */
@@ -256,6 +261,39 @@ async function executeTaskInternal(
       context: executionContext,
     });
     prepHandle.end();
+
+    // An unchanged repeat review costs no turn: the earlier server verdict for the same input
+    // and reviewer stands (AX-007c). A failed lookup is reported and the review runs.
+    const repeatWarnings: string[] = [];
+    const reviewIdentity = options.reviewIdentity ? { ...options.reviewIdentity, model: prepared.model || null } : undefined;
+    if (reviewIdentity) {
+      let previous: ReturnType<typeof findCompletedReview> = null;
+      try {
+        previous = findCompletedReview(cwd, prepared.backend.id, reviewIdentity);
+      } catch (error) {
+        repeatWarnings.push(`Repeat-review check unavailable, so this review ran: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`);
+      }
+      if (previous) {
+        const trace = emitTrace();
+        const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
+        return {
+          isError: false,
+          provider: prepared.backend.id,
+          result: {
+            status: 'completed',
+            isError: false,
+            output: `No model turn: this request matches a completed review (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again.`,
+            ...(prepared.model ? { model: prepared.model } : {}),
+            truncated: false,
+            continuationAvailable: false,
+          },
+          sessionHandle: null,
+          meta: { turn: 0, toolCount: 0, durationMs: totalMs, totalMs, historyAvailable: false, phases: trace.phases },
+          warnings: [...(options.warnings || []), ...(prepared.backend.warnings || [])],
+          review: { verdict: previous.review.verdict, ...(previous.review.reason ? { reason: previous.review.reason } : {}) },
+        };
+      }
+    }
 
     const consentHandle = startControllerPhase('consent');
     const { priceNote, warnings: consentWarnings } = await prepared.confirmConsent({
@@ -452,7 +490,7 @@ async function executeTaskInternal(
       }
 
       const finHandle = startControllerPhase('finalization');
-      const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...consentWarnings, ...adapterWarnings];
+      const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...repeatWarnings, ...consentWarnings, ...adapterWarnings];
       const rawExecutionError = result.error;
 
       // Post-execution bookkeeping: session metadata (AUD-P1-3)
@@ -571,6 +609,19 @@ async function executeTaskInternal(
             true,
             reviewContext
           );
+        }
+      }
+      // Only a completed turn whose input stayed unchanged identifies a review to refuse repeating.
+      if (reviewIdentity && review?.judged && review.verdict !== 'NOT_APPLICABLE' && !snapshotError && !result.isError && !result.error && result.status === 'completed') {
+        try {
+          await doUpdateSession(handle, { lastReview: {
+            ...reviewIdentity,
+            verdict: review.verdict,
+            ...(review.reason ? { reason: review.reason.slice(0, MAX_REVIEW_REASON_CHARS) } : {}),
+            completedAt: new Date().toISOString(),
+          } }, token);
+        } catch (error) {
+          warnings.push(`Review outcome not recorded, so an unchanged repeat will run again: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`);
         }
       }
       finHandle.end();

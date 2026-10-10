@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions } from './types.js';
+import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions, type CompletedReview, type ReviewIdentity } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock, combineSignals, type FileLockOptions } from '../storage/lock.js';
 import { PROVIDERS, ToolError, type BackendReadContext, type ExecutionBudget } from '../contracts/index.js';
@@ -16,6 +16,18 @@ import { getSessionsDir, isProcessAlive, getSessionFilePath } from './activity.j
 export { getSessionsDir, isProcessAlive, getSessionFilePath };
 
 const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
+/** Longest stored review reason; the reference to it stays bounded. */
+export const MAX_REVIEW_REASON_CHARS = 600;
+const boundedString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
+/** A stored review outcome, or undefined when absent or malformed; a malformed one never invalidates the session. */
+function parseCompletedReview(raw: unknown): CompletedReview | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as CompletedReview;
+  if (!boundedString(r.snapshot, 512) || !boundedString(r.scope, 512) || (r.model !== null && !boundedString(r.model, 256))) return undefined;
+  if ((r.verdict !== 'READY' && r.verdict !== 'BLOCKED') || !Number.isFinite(Date.parse(r.completedAt))) return undefined;
+  if (r.reason !== undefined && !boundedString(r.reason, MAX_REVIEW_REASON_CHARS)) return undefined;
+  return { snapshot: r.snapshot, scope: r.scope, model: r.model, verdict: r.verdict, ...(r.reason ? { reason: r.reason } : {}), completedAt: r.completedAt };
+}
 const ownedTurns = new Map<string, string>();
 function saveSessionFile(file: string, record: SessionRecord): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -37,7 +49,9 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
   if (s.turnCount != null && (!Number.isSafeInteger(s.turnCount) || s.turnCount < 0)) return null;
   for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode]) if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
-  return { ...s, schemaVersion: 2, state: s.state || (s.activePid ? 'running' : 'idle'), activePid: s.activePid ?? null, activeTurnAt: s.activeTurnAt ?? null, threadId: s.threadId ?? null, turnToken: s.turnToken ?? null, turnCount: s.turnCount ?? 0 };
+  const { lastReview: rawReview, ...rest } = s;
+  const lastReview = parseCompletedReview(rawReview);
+  return { ...rest, schemaVersion: 2, state: s.state || (s.activePid ? 'running' : 'idle'), activePid: s.activePid ?? null, activeTurnAt: s.activeTurnAt ?? null, threadId: s.threadId ?? null, turnToken: s.turnToken ?? null, turnCount: s.turnCount ?? 0, ...(lastReview ? { lastReview } : {}) };
 }
 function readRecord(file: string, handle: string): SessionRecord | null {
   try { return parseSession(JSON.parse(readBoundedFileSync(file)), handle); } catch { return null; }
@@ -231,7 +245,7 @@ export async function updateSession(handle: string, updates: Partial<SessionReco
   const locked = await withSessionLock(handle, async file => {
     const s = readRecord(file, handle); if (!s) return null;
     if (active(s) && (!token || token !== s.turnToken)) throw new Error('Turn ownership mismatch.');
-    const allowed = ['threadId', 'model', 'reasoningEffort', 'cliVersion', 'safetyProfile', 'lastErrorCode', 'state'] as const;
+    const allowed = ['threadId', 'model', 'reasoningEffort', 'cliVersion', 'safetyProfile', 'lastErrorCode', 'state', 'lastReview'] as const;
     for (const key of Object.keys(updates)) if (!allowed.includes(key as typeof allowed[number])) throw new Error(`Immutable session field: ${key}`);
     const updated = parseSession({ ...s, ...updates, lastUsedAt: new Date().toISOString() }, handle);
     if (!updated) throw new Error('Invalid session update.');
@@ -433,6 +447,22 @@ export function listSessions(workspace: string): SessionRecord[] {
     if (s) results.push(s);
   }
   return results;
+}
+
+/**
+ * Finds the most recent completed review with this identity among the live sessions of one
+ * workspace and backend (`AX-007c`).
+ * @returns The session handle and stored outcome, or null when none matches.
+ * @throws When the sessions directory cannot be read; an unreadable record counts as absent.
+ */
+export function findCompletedReview(workspace: string, backend: string, identity: ReviewIdentity): { sessionHandle: string; review: CompletedReview } | null {
+  let found: { sessionHandle: string; review: CompletedReview } | null = null;
+  for (const s of listSessions(workspace)) {
+    const r = s.lastReview;
+    if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model) continue;
+    if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) found = { sessionHandle: s.sessionHandle, review: r };
+  }
+  return found;
 }
 
 async function sweepExpiredSessions(dir: string): Promise<void> {

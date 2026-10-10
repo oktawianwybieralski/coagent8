@@ -1770,6 +1770,41 @@ Next card: AX-007b.
 
 Next card: AX-007c.
 
+## AX-007c: refuse an unchanged repeat review
+
+- Identity: collected snapshot (`identity#digest`), scope label, resolved backend
+  and resolved model, in the same workspace. Instructions and effort are not part
+  of it, as the card specifies.
+- Storage decision: the outcome lives in the session record (`lastReview`), not
+  in the history archive. Session records exist with `coagent8_HISTORY=off` and
+  already define retention (2 h after last use; closed or invalidated sessions do
+  not count). `sessions/` owns the record and `findCompletedReview`; the
+  controller orchestrates, so `review/` and `sessions/` stay independent.
+- Only a judged turn is recorded: the gate's new `judged` flag requires a
+  complete, untruncated envelope with valid checks for the expected snapshot,
+  and the workspace recheck must pass. A missing or malformed answer can be
+  retried. Stored reasons are bounded to 600 characters; a malformed stored
+  outcome is dropped without invalidating the session.
+- The check runs after preparation resolves backend and model, before consent,
+  session acquisition and the turn. A match returns "No model turn: ...", the
+  earlier server verdict and reason, the earlier session handle in the body and
+  no continuation handle in the footer. An unreadable sessions directory adds
+  "Repeat-review check unavailable, so this review ran: ..." and the review runs;
+  a failed record write adds a warning that a repeat will run again.
+- README, ARCHITECTURE and the `coagent8-review` skill describe the behavior.
+  The review tool description is unchanged (definition budget at 5,798 of 5,800 B).
+
+### Verification evidence:
+- Regression `tests/mcp/tools/review-repeat.test.js` (5 tests): identical repeat
+  costs no turn and reports the earlier verdict; changed snapshot, scope, model
+  and backend proceed; an unjudged answer may be repeated; unreadable sessions
+  directory warns and runs; history off still refuses the repeat.
+- PASS: full suite `node tests/run.cjs` (654 tests: 651 pass, 0 fail, 3 POSIX-only
+  skips); `npm run typecheck`; `npm run check:dependencies`; `npm run lint:docs`;
+  `npm run docs` (0 warnings); `git diff --check`.
+
+Next card: WINDOWS-001a.
+
 
 ## Compact handoff contract
 

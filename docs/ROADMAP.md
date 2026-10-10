@@ -882,7 +882,7 @@ before EXEC-001-T12.
   everything. Done: no new footer line; definition-size change is measured
   (SURFACE-001); legacy parsing of the handle still works. Check: R, MCP/E2E.
   Evidence: [AX-007b](HANDOFF.md#ax-007b-label-the-continuation-handle).
-- [ ] **AX-007c - refuse an unchanged repeat review.** Start: `snapshotId` and
+- [x] **AX-007c - refuse an unchanged repeat review.** Start: `snapshotId` and
   scope collection in `src/review/input.ts`, session/history owners in
   `src/sessions/`. A review request whose collected snapshot, scope and resolved
   backend/model equal a completed review in the same workspace within session
@@ -891,6 +891,7 @@ before EXEC-001-T12.
   proceeds. Done: the second identical request costs no turn; history being
   disabled or unreadable yields an explicit outcome, never a silent pass.
   Per-connection call budgets remain COAGENT-003b. Check: R, REVIEW/SESSION/MCP.
+  Evidence: [AX-007c](HANDOFF.md#ax-007c-refuse-an-unchanged-repeat-review).
 - [ ] **AX-007d - warn about an abandoned ready session.** After beta.2 and
   SESSION-001's mode design. When the same connection and workspace start a new
   session while a recent one is ready, add one `Warning:` naming that handle.
