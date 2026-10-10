@@ -1,0 +1,68 @@
+name: API documentation
+
+# Publishes the TypeDoc source API reference to GitHub Pages (Git workflow rule 02,
+# phase E). Pages shows the API of the latest published GitHub Release, beta and rc
+# included, so testers read the documentation of what they install. A manual run
+# rebuilds it from the chosen ref.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer release waits instead of cancelling a deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build API reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            tooling/documentation/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix tooling/documentation
+
+      # Warnings are errors (typedoc.json); a broken comment fails the deployment.
+      - name: Validate TSDoc comments and generate the reference
+        run: |
+          npm run lint:docs
+          npm run docs
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .artifacts/api-docs
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
