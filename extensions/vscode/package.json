@@ -34,7 +34,8 @@
       { "command": "coagent8.resetConfiguration", "title": "Reset Configuration (config.json)", "category": "CoAgent8" },
       { "command": "coagent8.manageMcpServers", "title": "Show MCP Servers", "category": "CoAgent8" },
       { "command": "coagent8.manageClis", "title": "Manage Coding CLIs", "category": "CoAgent8" },
-      { "command": "coagent8.manageSkills", "title": "Manage Skills", "category": "CoAgent8" }
+      { "command": "coagent8.manageSkills", "title": "Manage Skills", "category": "CoAgent8" },
+      { "command": "coagent8.manageModelApprovals", "title": "Manage Model Approvals", "category": "CoAgent8" }
     ],
     "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
     "jsonValidation": [{ "fileMatch": ["**/.coagent8/config.json"], "url": "./schemas/config.schema.json" }],
@@ -95,52 +96,6 @@
           "scope": "machine",
           "order": 12,
           "markdownDescription": "Model for Antigravity when a request names none. Empty uses `backends.agy.defaultModel` from config.json, then the CLI default."
-        },
-        "coagent8.approval.askAbovePrice": {
-          "type": "number",
-          "minimum": 0,
-          "default": 20,
-          "scope": "machine",
-          "order": 20,
-          "markdownDescription": "Ask for your approval before a model whose output price is at least this many USD per million tokens. Overrides `governance.askAbovePrice` in config.json only when set here; to disable this threshold, set it to `null` in config.json."
-        },
-        "coagent8.approval.priceMultiplier": {
-          "type": "number",
-          "exclusiveMinimum": 1,
-          "default": 2,
-          "scope": "machine",
-          "order": 21,
-          "markdownDescription": "Ask for your approval before a model that costs at least this many times the backend's default model. Overrides `governance.priceMultiplier` in config.json only when set here."
-        },
-        "coagent8.approval.denyModels": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
-          "uniqueItems": true,
-          "maxItems": 256,
-          "default": [],
-          "scope": "machine",
-          "order": 22,
-          "markdownDescription": "Models that never run, whatever they cost; a request naming one is refused with this reason. Wins over **Ask Models** and **Allow Models**, and also covers a model's effort variants. Added to `governance.models.deny` in config.json."
-        },
-        "coagent8.approval.askModels": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
-          "uniqueItems": true,
-          "maxItems": 256,
-          "default": [],
-          "scope": "machine",
-          "order": 23,
-          "markdownDescription": "Models that need your approval before every run, whatever they cost; the approval request states the price. Wins over **Allow Models**. Added to `governance.models.ask` in config.json."
-        },
-        "coagent8.approval.allowModels": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$" },
-          "uniqueItems": true,
-          "maxItems": 256,
-          "default": [],
-          "scope": "machine",
-          "order": 24,
-          "markdownDescription": "Models you approve in advance: they run without asking, whatever they cost, unless listed in **Deny Models** or **Ask Models**. Added to `governance.models.allow` in config.json, where an approval with \"remember\" is also saved."
         },
         "coagent8.configPath": {
           "type": "string",

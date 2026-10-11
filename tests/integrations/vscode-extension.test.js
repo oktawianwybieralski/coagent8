@@ -31,8 +31,9 @@ const SEPARATOR = -1;
  * @param extraInstallations - Installations besides the one in use, per client; one with
  * `requires` appears once that vendor extension is installed.
  */
-async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [] } = {}) {
+async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [] } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
+  const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
   const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
   const cleanupCalls = [];
@@ -148,6 +149,13 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
         terminals.push(terminal); return terminal;
       },
       createOutputChannel() { return { dispose, appendLine(line) { reports.push(line); }, show(preserveFocus) { reveals.push(preserveFocus); } }; },
+      // Each input box takes the next scripted answer; undefined or the end of the list cancels it.
+      async showInputBox(options) {
+        const value = inputs.shift();
+        inputBoxes.push({ title: options.title, value: options.value, valid: value === undefined ? undefined : options.validateInput(value) === null });
+        return value;
+      },
+      setStatusBarMessage(message) { statusMessages.push(message); return { dispose }; },
       async showErrorMessage(message) { errors.push(message); },
     },
   };
@@ -159,6 +167,9 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
         contents: "export async function cleanupClients(options) { globalThis.setupFixture.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; }", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({ contents: fs.readFileSync(path.resolve(__dirname, '../fixtures/vscode-extension/setup.js'), 'utf8'), loader: 'js' }));
+      // The extension's own subprocess runs the bundled runtime's `models --json`.
+      build.onResolve({ filter: /execution[\\/]process\.js$/ }, args => args.importer.endsWith('extension.ts') ? { path: 'model-runtime', namespace: 'fixture' } : undefined);
+      build.onLoad({ filter: /^model-runtime$/, namespace: 'fixture' }, () => ({ contents: 'export function runCommand(command, args, options) { return globalThis.setupFixture.runModels(command, args, options); }', loader: 'js' }));
     } }],
   });
   const module = { exports: {} };
@@ -181,6 +192,10 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     recordClients(clients) { registrationsWritten.push(Array.from(clients)); },
     recordCleanup(call) { cleanupCalls.push({ clients: call.clients && Array.from(call.clients), apply: call.apply, ...(call.uninstall ? { origin: call.origin, uninstall: true } : {}), ...(call.actor ? { actor: call.actor } : {}) }); },
     recordEvent(name) { events.push(name); },
+    async runModels(command, args, options) {
+      modelRuns.push({ args: Array.from(args).slice(1), config: options.env.coagent8_CONFIG });
+      return { status: 'completed', exitCode: 0, stdout: JSON.stringify(fixtureModelReport(options.env.coagent8_CONFIG)), stderr: '' };
+    },
   };
   vm.runInNewContext(output.outputFiles[0].text, {
     module, exports: module.exports, process, Buffer, setupFixture: fixture, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate,
@@ -249,11 +264,30 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     let config = configText;
     try { if (configText !== undefined) config = JSON.parse(configText); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
     const menus = pickers;
-    return { installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
+    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
   } finally {
     for (const [key, value] of Object.entries(savedHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     fs.rmSync(extensionRoot, { recursive: true, force: true });
   }
+}
+/**
+ * The model view `coagent8 models --json` returns for a configuration file: two Codex models
+ * and one agy model, tagged by the file's lists, else by a 20 USD price rule.
+ */
+function fixtureModelReport(configFile) {
+  const governance = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')).governance ?? {} : {};
+  const models = { allow: [], ask: [], deny: [], ...governance.models };
+  const row = (backend, model, output, extra = {}) => {
+    const rule = ['deny', 'ask', 'allow'].find(name => models[name].includes(model));
+    const required = rule ? rule === 'ask' : output === null || output >= (governance.askAbovePrice === undefined ? 20 : governance.askAbovePrice ?? Infinity);
+    const basis = rule ?? (output === null ? 'unpriced' : required ? 'above-limit' : 'priced');
+    return { backend, model, efforts: [], price: { outputUsdPerMTok: output, match: output === null ? 'unknown' : 'exact' }, approval: { required, denied: rule === 'deny', basis, reason: 'fixture', rememberable: false }, ...extra };
+  };
+  return {
+    scope: 'models', prices: null, recommendations: [],
+    backends: { codex: { installed: true, allowed: true }, claude: { installed: false, allowed: true }, agy: { installed: true, allowed: true } },
+    selection: [row('codex', 'gpt-6-luna', 0.5, { defaultSource: 'catalog' }), row('codex', 'gpt-6-astra', 50), row('codex', 'gpt-7-nova', null), row('agy', 'gemini-3.8-flash', 3.75)],
+  };
 }
 /** The actions of a menu's lines, information lines and separators left out. */
 const actionsOf = menu => menu.items.filter(item => item.action).map(item => item.action);
@@ -703,6 +737,74 @@ test('Manage Skills from a CLI menu manages that CLI without asking for it again
   assert.deepEqual(installed.menus.map(menu => menu.title.replace(/:.*/, '')), ['Manage Coding CLIs', 'Antigravity CLI', 'Antigravity CLI Skills', 'Install / Update', 'Antigravity CLI'], 'the CLI menu reopens after the change');
 });
 
+test('Manage Model Approvals lists price rules and backends, then models by price, and writes one rule per model to config.json', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const command = 'coagent8.manageModelApprovals';
+  const allowed = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(pass-filled) Allow' }] });
+  assert.deepEqual(allowed.errors, []);
+  const [list, models, rule, again] = allowed.menus;
+  assert.deepEqual([list.title, list.step, list.placeholder], ['Manage Model Approvals', '1/3', 'Rules apply to every client that runs CoAgent8']);
+  assert.deepEqual(list.items.map(item => item.separator ? `-- ${item.label}` : [item.label, item.description]), [
+    '-- Price rules',
+    ['$(symbol-number) Ask Above Price', '20 USD per million output tokens'],
+    ['$(symbol-number) Ask Above Default Price', '2× the backend\'s default model'],
+    '-- Models',
+    ['$(server) Codex CLI', '3 models · 2 ask'],
+    ['$(server) Antigravity CLI', '1 model'],
+  ], 'price rules first, then each backend that lists models with its counts');
+  assert.deepEqual([models.title, models.step, models.buttons.includes('Back')], ['Codex CLI Models', '2/3', true]);
+  assert.deepEqual(models.items.map(item => [item.label, item.description]), [
+    ['$(question) gpt-7-nova', 'price unknown · asks: price unknown'],
+    ['$(question) gpt-6-astra', '50 USD · asks: above price'],
+    ['$(circle-large-outline) gpt-6-luna', '0.5 USD · default · runs without asking'],
+  ], 'an unknown price first, then the most expensive');
+  assert.deepEqual([rule.title, rule.step], ['gpt-6-astra', '3/3']);
+  assert.deepEqual(rule.items.map(item => item.label), ['$(pass-filled) Allow', '$(question) Ask Every Time', '$(circle-slash) Deny', '$(law) Price Rules']);
+  assert.equal(rule.items[3].description, 'current · Asks only when the price rules say so', 'the rule in force is marked');
+  assert.deepEqual(allowed.config.governance.models, { allow: ['gpt-6-astra'], ask: [], deny: [] });
+  assert.equal(again.title, 'Codex CLI Models', 'the list of models reopens, read again');
+  assert.equal(again.items.find(item => item.label.endsWith('gpt-6-astra')).description, '50 USD · allow');
+  assert.deepEqual(allowed.statusMessages, ['CoAgent8: gpt-6-astra · allow']);
+  assert.ok(allowed.modelRuns.every(run => JSON.stringify(run.args) === '["models","--json"]' && run.config === path.join(home, '.coagent8/config.json')), 'the bundled runtime reads the file the server uses');
+
+  // A new rule replaces the earlier one; Price Rules removes the model from every list.
+  const denied = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(circle-slash) Deny' }] });
+  assert.deepEqual(denied.config.governance.models, { allow: [], ask: [], deny: ['gpt-6-astra'] });
+  assert.equal(denied.menus[2].items[0].description, 'current · Runs without asking');
+  assert.equal(denied.menus[3].items.find(item => item.label.endsWith('gpt-6-astra')).label, '$(circle-slash) gpt-6-astra');
+  const priced = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(law) Price Rules' }] });
+  assert.deepEqual(priced.config.governance.models, { allow: [], ask: [], deny: [] });
+
+  // Choosing the rule in force, Back or Escape writes nothing.
+  const before = fs.readFileSync(path.join(home, '.coagent8/config.json'));
+  for (const steps of [[], [{ label: /Codex CLI$/ }, { button: 'Back' }], [{ label: /Codex CLI$/ }, { label: /gpt-6-luna$/ }, { label: '$(law) Price Rules' }], [{ label: /Codex CLI$/ }, { label: /gpt-6-luna$/ }, { button: 'Back' }]]) {
+    const unchanged = await runExtension({ home, command, steps });
+    assert.deepEqual(unchanged.errors, []);
+    assert.deepEqual(fs.readFileSync(path.join(home, '.coagent8/config.json')), before);
+  }
+  const back = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { button: 'Back' }] });
+  assert.deepEqual(back.menus.map(menu => menu.title), ['Manage Model Approvals', 'Codex CLI Models', 'Manage Model Approvals'], 'Back returns one step');
+});
+test('Manage Model Approvals edits the price rules: an empty price turns that rule off, invalid values are refused', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-price-rules-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const command = 'coagent8.manageModelApprovals';
+  const off = await runExtension({ home, command, steps: [{ label: /Ask Above Price$/ }], inputs: [''] });
+  assert.deepEqual(off.errors, []);
+  assert.deepEqual(off.inputBoxes, [{ title: 'Ask Above Price', value: '20', valid: true }]);
+  assert.equal(off.config.governance.askAbovePrice, null);
+  assert.equal(off.menus[1].items.find(item => item.label.endsWith('Ask Above Price')).description, 'off', 'the list reopens with the new value');
+  assert.equal(off.menus[1].items.find(item => item.label.endsWith('Codex CLI')).description, '3 models · 1 ask', 'only the unknown price still asks');
+  const multiplier = await runExtension({ home, command, steps: [{ label: /Ask Above Default Price$/ }], inputs: ['3.5'] });
+  assert.equal(multiplier.config.governance.priceMultiplier, 3.5);
+  const invalid = await runExtension({ home, command, steps: [{ label: /Ask Above Default Price$/ }, { label: /Ask Above Price$/ }], inputs: ['1', '-2'] });
+  assert.deepEqual(invalid.inputBoxes.map(box => box.valid), [false, false], 'a multiplier of 1 or a negative price is refused');
+  assert.deepEqual([invalid.config.governance.priceMultiplier, invalid.config.governance.askAbovePrice], [3.5, null], 'and changes nothing');
+  const cancelled = await runExtension({ home, command, steps: [{ label: /Ask Above Price$/ }], inputs: [] });
+  assert.equal(cancelled.config.governance.askAbovePrice, null, 'a cancelled input changes nothing');
+});
+
 test('Uninstall VS Code Extension shows the extension in the Extensions view, where VS Code removes and restarts it', async () => {
   const codex = path.join(path.resolve('vendor', 'openai.chatgpt'), 'bin', 'codex.exe');
   const notOffered = await runExtension({ commands: { codex }, vendorExtensions: ['openai.chatgpt'], steps: [{ client: 'codex' }] });
@@ -913,15 +1015,15 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   assert.equal(require('../../extensions/vscode/package.json').contributes.configuration.properties['coagent8.configPath'].scope, 'machine');
   assert.equal(definition.env.coagent8_EDITOR_SETTINGS, '{}', 'contributed defaults leave config.json in effect');
   Object.assign(inspected, {
-    'approval.allowModels': { defaultValue: [], globalValue: ['user-model'], workspaceValue: ['workspace-model'] },
+    'routing.allowedBackends': { defaultValue: ['codex', 'claude', 'agy'], globalValue: ['codex'], workspaceValue: ['agy'] },
     defaultBackend: { defaultValue: 'auto', workspaceValue: 'agy', workspaceFolderValue: 'agy' },
     'claude.defaultModel': { globalValue: 'opus' },
   });
   const before = changes;
-  configurationListener(affects('coagent8.approval.allowModels'));
-  assert.equal(changes, before + 1, 'a backend, model or approval setting refreshes the server definition');
+  configurationListener(affects('coagent8.routing.allowedBackends'));
+  assert.equal(changes, before + 1, 'a backend, model or routing setting refreshes the server definition');
   assert.deepEqual(JSON.parse(entry().env.coagent8_EDITOR_SETTINGS),
-    { 'approval.allowModels': ['user-model'], 'claude.defaultModel': 'opus' }, 'only user values; a workspace cannot change backend or approval');
+    { 'routing.allowedBackends': ['codex'], 'claude.defaultModel': 'opus' }, 'only user values; a workspace cannot change backends or models');
   const firstCopy = entry().args[0];
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'changed bundle, same package version');
   extensionListener();
@@ -938,5 +1040,5 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'another bundle');
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 15);
+  assert.equal(disposed, 16);
 });

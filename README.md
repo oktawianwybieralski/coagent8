@@ -436,8 +436,9 @@ form without showing it (measured 2026-10-07), and so does the Antigravity chat
 (measured 2026-10-07 and 2026-10-11). CoAgent8 never accepts an approval relayed
 by the calling agent, because it cannot verify that the user gave it, so in such
 a client the turn fails closed with `POLICY_DENIED`. To use the model there, allow
-it yourself in `governance.models.allow` (VS Code:
-`coagent8.approval.allowModels`), or call it from a client that shows MCP forms.
+it yourself with the VS Code command CoAgent8: Manage Model Approvals or in
+`governance.models.allow` of `config.json`, or call it from a client that shows
+MCP forms.
 
 Before calling a model doctor tags `ask`, tell the user its price and that a form
 will follow; never call one tagged `deny`. If an explicit model needs approval,

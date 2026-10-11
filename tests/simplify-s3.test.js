@@ -136,14 +136,14 @@ test('S3 models: prices and governance decisions', () => {
 
   const decisionDenied = decideConsent('model-denied', 'model-x', priceList, settings);
   assert.deepEqual([decisionDenied.deny, decisionDenied.ask, decisionDenied.basis], [true, false, 'deny']);
-  assert.match(modelDeniedMessage('model-denied'), /^Model 'model-denied' did not run: the user denied it in governance\.models\.deny \(VS Code: coagent8\.approval\.denyModels\)\. Only the user can remove it from that list\. Tell the user; switch to another model only if the user asks\.$/);
+  assert.match(modelDeniedMessage('model-denied'), /^Model 'model-denied' did not run: the user denied it in governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Only the user can remove it from that list\. Tell the user; switch to another model only if the user asks\.$/);
 
   assert.match(consentRequiredMessage('m', 'reason'), /needs the user's approval/);
   assert.match(consentDeclinedMessage('m'), /did not approve/);
   assert.match(consentUnansweredMessage('m', 'reason'), /without an answer/);
   // No form reached the user: name the user's own ways out and forbid the agent from taking them.
   for (const message of [consentRequiredMessage('m', 'reason'), consentUnansweredMessage('m', 'reason')]) {
-    assert.match(message, /client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: coagent8\.approval\.allowModels\); never change that setting yourself\./);
+    assert.match(message, /client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: CoAgent8: Manage Model Approvals\); never change that setting yourself\./);
   }
   assert.doesNotMatch(consentDeclinedMessage('m'), /models\.allow/, 'a refusal by the user is not an invitation to allow the model');
 });

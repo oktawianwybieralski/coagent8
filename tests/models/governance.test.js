@@ -70,7 +70,7 @@ test('an unknown or approximately priced model asks with remember; without price
 test('the user model rules decide before price, deny over ask over allow, and state the price (owner decision of 2026-10-11)', () => {
   const denied = asks('gpt-6-astra', 'gpt-6.1-sol', prices, { models: { deny: ['gpt-6-astra'], ask: ['gpt-6-astra'], allow: ['gpt-6-astra'] } });
   assert.deepEqual([denied.deny, denied.ask, denied.basis], [true, false, 'deny'], 'deny wins over ask and allow');
-  assert.match(denied.reason, /^'gpt-6-astra' is on the user's deny list, governance\.models\.deny \(VS Code: coagent8\.approval\.denyModels\)\. Its output costs 50 USD per million tokens\.$/);
+  assert.match(denied.reason, /^'gpt-6-astra' is on the user's deny list, governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Its output costs 50 USD per million tokens\.$/);
   const cheap = asks('gpt-6-luna', 'gpt-6.1-sol', prices, { models: { ask: ['gpt-6-luna'] } });
   assert.deepEqual([cheap.ask, cheap.deny, cheap.basis, cheap.offerRemember], [true, false, 'ask', false], 'ask asks whatever the model costs');
   assert.match(cheap.reason, /models\.ask .*Its output costs 0\.5 USD per million tokens\./, 'the approval request states the price');

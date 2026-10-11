@@ -564,7 +564,7 @@ test('EXEC-001-T10b: adding model to models.ask during consent wait invalidates 
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /The approval for model 'gpt-unknown' was invalidated because conditions changed while awaiting consent/i);
-      assert.match(err.message, /'gpt-unknown' was added to governance\.models\.ask \(VS Code: coagent8\.approval\.askModels\)/i);
+      assert.match(err.message, /'gpt-unknown' was added to governance\.models\.ask \(VS Code: CoAgent8: Manage Model Approvals\)/i);
       assert.match(err.message, /Retry the request to approve under current conditions/i);
       return true;
     }
@@ -1036,7 +1036,7 @@ test('a model the user denies is refused with the reason before any approval req
   const listModels = adapterRegistry.codex.listModels;
   adapterRegistry.codex.listModels = async () => { catalogReads++; return listModels(); };
   adapterRegistry.codex.execute = async () => { executed = true; throw new Error('must not run'); };
-  const denied = "Model 'gpt-expensive' did not run: the user denied it in governance.models.deny (VS Code: coagent8.approval.denyModels). Only the user can remove it from that list. Tell the user; switch to another model only if the user asks.";
+  const denied = "Model 'gpt-expensive' did not run: the user denied it in governance.models.deny (VS Code: CoAgent8: Manage Model Approvals). Only the user can remove it from that list. Tell the user; switch to another model only if the user asks.";
   const before = catalogReads;
   await assert.rejects(
     executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, { askConsent: async () => { asked = true; return { approved: true }; } }),
@@ -1081,7 +1081,7 @@ test('MCP: a denied model sends no approval form and returns the reason to the c
   try {
     const refused = readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, model: 'gpt-expensive' } })).error;
     assert.equal(refused.code, 'POLICY_DENIED');
-    assert.match(refused.message, /^Model 'gpt-expensive' did not run: the user denied it in governance\.models\.deny \(VS Code: coagent8\.approval\.denyModels\)\. Only the user can remove it from that list\./);
+    assert.match(refused.message, /^Model 'gpt-expensive' did not run: the user denied it in governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Only the user can remove it from that list\./);
     assert.equal(forms.length, 0, 'a denied model is never offered for approval');
   } finally {
     await client.close();

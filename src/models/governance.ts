@@ -43,9 +43,9 @@ export const usd = (value: number): string => `${Number(value.toFixed(2))} USD`;
 
 /** Where the user edits each rule list: `config.json` and the VS Code setting. */
 export const MODEL_RULE_SETTINGS: Record<keyof ModelRules, string> = {
-  allow: 'governance.models.allow (VS Code: coagent8.approval.allowModels)',
-  ask: 'governance.models.ask (VS Code: coagent8.approval.askModels)',
-  deny: 'governance.models.deny (VS Code: coagent8.approval.denyModels)',
+  allow: 'governance.models.allow (VS Code: CoAgent8: Manage Model Approvals)',
+  ask: 'governance.models.ask (VS Code: CoAgent8: Manage Model Approvals)',
+  deny: 'governance.models.deny (VS Code: CoAgent8: Manage Model Approvals)',
 };
 
 /**

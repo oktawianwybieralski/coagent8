@@ -76,19 +76,15 @@ test('EXEC-001-T03: loadConfigSnapshot provides effective settings, disk provena
     // 3. VS Code editor settings override
     process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({
       defaultBackend: 'codex',
-      'approval.askModels': ['model-b'],
     });
 
     const editorSnapshot = loadConfigSnapshot(testConfigFile);
     assert.equal(editorSnapshot.config.defaultBackend, 'codex');
     assert.equal(editorSnapshot.provenance.sources.defaultBackend, 'editor');
-    // List merge: file had model-a, editor added model-b -> merged
-    assert.equal(editorSnapshot.provenance.sources['governance.models.ask'], 'merged');
-    assert.deepEqual(editorSnapshot.config.governance.models.ask, ['model-a', 'model-b']);
-    assert.deepEqual(editorSnapshot.provenance.editorOverridesApplied, [
-      'defaultBackend',
-      'approval.askModels',
-    ]);
+    // Approval rules have no VS Code setting: the file's lists stay as they are.
+    assert.equal(editorSnapshot.provenance.sources['governance.models.ask'], 'file');
+    assert.deepEqual(editorSnapshot.config.governance.models.ask, ['model-a']);
+    assert.deepEqual(editorSnapshot.provenance.editorOverridesApplied, ['defaultBackend']);
     assert.notEqual(editorSnapshot.changeIdentity, fileSnapshot.changeIdentity);
   } finally {
     if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv;

@@ -111,8 +111,8 @@ conversation. The chat host controls tool visibility, progress and approvals.
 ## Settings and commands
 
 Run **CoAgent8: Open Settings** or search for `CoAgent8` in VS Code's Settings.
-Every setting is user-only (machine-scoped): a workspace cannot change backends,
-models or approval rules.
+Every setting is user-only (machine-scoped): a workspace cannot change backends
+or models.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -120,18 +120,14 @@ models or approval rules.
 | `coagent8.routing.allowedBackends` | all three | Backends CoAgent8 may run (`agy` is Antigravity CLI) |
 | `coagent8.routing.strategy` | `fixed` | `fixed` uses the default backend; `smart_quota` prefers a backend with quota left |
 | `coagent8.codex.defaultModel`, `coagent8.claude.defaultModel`, `coagent8.agy.defaultModel` | empty | Model when a request names none; empty uses config.json, then the CLI default |
-| `coagent8.approval.askAbovePrice` | `20` | Ask for approval before a model costing at least this many USD per million output tokens (`null` in config.json disables it) |
-| `coagent8.approval.priceMultiplier` | `2` | Ask for approval before a model costing at least this many times the backend's default model |
-| `coagent8.approval.denyModels` | `[]` | Models that never run; a request naming one is refused with the reason |
-| `coagent8.approval.askModels` | `[]` | Models that need approval before every run, whatever they cost |
-| `coagent8.approval.allowModels` | `[]` | Models approved in advance: they run without asking, unless also in Deny or Ask Models |
 | `coagent8.configPath` | empty | Configuration file; empty uses `~/.coagent8/config.json`, shared with the CLI |
 | `coagent8.nodePath` | `node` | Node.js 24+ executable used to start the bundled MCP server |
 
 A setting you change in VS Code takes precedence over the same option in the
-configuration file; a setting left at its default keeps the file value. The two
-model lists are added to the file's lists, and an approval with "remember" is
-saved in the file. A changed setting changes the server definition: VS Code stops
+configuration file; a setting left at its default keeps the file value. Approval
+rules are not settings: **CoAgent8: Manage Model Approvals** writes them to the
+file, which every client reads, and an approval with "remember" is saved there
+too. A changed setting changes the server definition: VS Code stops
 a running CoAgent8 server and starts it again on the next use, so no manual
 restart is needed.
 
@@ -171,6 +167,7 @@ select a command:
 | **CoAgent8: Show MCP Servers** | Opens VS Code's **MCP: List Servers**, where CoAgent8 is started, stopped or restarted | None |
 | **CoAgent8: Manage Coding CLIs** | Lists the three CLIs with their state and chat entry; choose one for its actions: sign in, add CoAgent8 to its chat, install, switch installation, choose an executable, manage skills, remove | Changes only what you choose; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries and what CoAgent8 installed |
 | **CoAgent8: Manage Skills** | Three steps with Back: a CLI (with its package counts), an action that has packages to change, then the packages |  Keeps the CLI and MCP connection; persists choices through repair/update; preserves edited or foreign packages |
+| **CoAgent8: Manage Model Approvals** | The price rules and each backend's models with their price and approval tag; choose a model to allow, ask every time, deny or leave it to the price rules | Writes `governance` in `config.json`, which every client's CoAgent8 server reads |
 
 The first activation checks the CLIs once and shows one notice: the ready CLIs,
 with **Manage CLIs** when another CLI is missing or signed out, or a ready one does
@@ -383,6 +380,17 @@ also starts, stops and restarts it. Bundled-server identity
 also changes when a replacement VSIX keeps the same version number. After CLI
 chat registrations change, the notice's **Restart Extensions** reloads the vendor
 chat extensions.
+
+Manage Model Approvals reads the same model list as the doctor tool, from cached
+catalogs and prices, through the bundled runtime. The first step shows the price
+rules (ask above a price, ask above a multiple of the backend's default) and each
+backend with its model counts; the second lists that backend's models, the most
+expensive first, with their price and what decides them; the third sets one
+model's rule: **Allow** (runs without asking), **Ask Every Time**, **Deny** (never
+runs) or **Price Rules**. A rule naming a model also covers its effort variants.
+The rules are written to `config.json`, so they apply in every client, also where
+the client cannot show CoAgent8's approval form (Antigravity, Codex). **Back**
+returns one step; Escape or choosing the rule in force changes nothing.
 
 Manage Skills shows actual package state and available updates: per CLI in the
 first step and in the placeholder of the second. Only actions with packages to

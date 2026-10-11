@@ -8,8 +8,8 @@ import { atomicWrite, withFileLock, isAbortSignal, type FileLockOptions } from '
 import type { BackendReadContext } from './contracts/execution.js';
 import { redactDiagnostic } from './security/redaction.js';
 import { isValidModelIdentifier } from './contracts/models.js';
-import { MODEL_RULES, type GovernanceSettings } from './contracts/governance.js';
-import { applyEditorSetting, readEditorSettings, EDITOR_SETTINGS, type EditorSettingKey } from './config-overrides.js';
+import { MODEL_RULES, type GovernanceSettings, type ModelRules } from './contracts/governance.js';
+import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
 import { COAGENT_SKILL_NAME, type SkillSelection } from './contracts/skills.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
@@ -64,9 +64,9 @@ export function getConfigFileOrigin(): 'custom-env' | 'default-path' {
 }
 
 /**
- * Origin of a configuration value: default, file on disk, VS Code editor setting, or merged lists.
+ * Origin of a configuration value: default, file on disk, or VS Code editor setting.
  */
-export type SettingSource = 'default' | 'file' | 'editor' | 'merged';
+export type SettingSource = 'default' | 'file' | 'editor';
 
 /**
  * Provenance tracking the file resolution, disk presence, and per-setting origin.
@@ -361,12 +361,6 @@ function collectSources(
     else if (key === 'codex.defaultModel') sources['backends.codex.defaultModel'] = 'editor';
     else if (key === 'claude.defaultModel') sources['backends.claude.defaultModel'] = 'editor';
     else if (key === 'agy.defaultModel') sources['backends.agy.defaultModel'] = 'editor';
-    else if (key === 'approval.priceMultiplier') sources['governance.priceMultiplier'] = 'editor';
-    else if (key === 'approval.askAbovePrice') sources['governance.askAbovePrice'] = 'editor';
-    else if (EDITOR_SETTINGS[key].list && EDITOR_SETTINGS[key].field[1] === 'models') {
-      const list = `governance.models.${EDITOR_SETTINGS[key].field[2]}`;
-      sources[list] = sources[list] === 'file' ? 'merged' : 'editor';
-    }
   }
 
   return sources;
@@ -567,8 +561,7 @@ export async function saveConfig(updates: Partial<CoAgent8Config>): Promise<CoAg
 const REMEMBER_ABORTED_MESSAGE = 'Request cancelled before recording remembered approval.';
 
 /**
- * Adds a model the user approved with "remember" to `governance.models.allow` of the file;
- * the VS Code list `coagent8.approval.allowModels` is added to it, never replaced by it.
+ * Adds a model the user approved with "remember" to `governance.models.allow` of the file.
  * @remarks A model the user also denies or always asks for stays so: `deny` and `ask` win.
  * @param model - Model identifier to remember.
  * @param options - Optional file lock options, read context, or cancellation signal.
@@ -684,6 +677,46 @@ export async function setBackendExecutable(id: ProviderId, executable: string | 
     const current = loadFileConfig(file);
     const { executable: _previous, ...rest } = current.backends[id] ?? {};
     await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: executable === undefined ? rest : { ...rest, executable } } }), file);
+  });
+}
+
+/** Reads the governance settings of one configuration file, without VS Code settings. */
+export function readGovernance(file = getConfigFile()): GovernanceSettings {
+  return loadFileConfig(file).governance;
+}
+
+/**
+ * Sets the user's rule for one model under the configuration lease: it is removed from the
+ * other lists, so exactly one rule, or none, applies to it.
+ * @param rule - `allow`, `ask` or `deny`; null leaves the model to the price rules.
+ * @param file - The configuration file; the VS Code extension passes the one it gives the runtime.
+ * @throws `ToolError` (`INPUT_LIMIT`) on an invalid model identifier; otherwise when the
+ * configuration cannot be locked, read, validated or written.
+ */
+export async function setModelRule(model: string, rule: keyof ModelRules | null, file = getConfigFile()): Promise<void> {
+  if (!isValidModelIdentifier(model)) throw new ToolError('INPUT_LIMIT', `Invalid model identifier: '${redactDiagnostic(model, 64)}'`);
+  ensureConfigDir(file);
+  await withFileLock(file, async () => {
+    const current = loadFileConfig(file);
+    const models = Object.fromEntries(MODEL_RULES.map(name => {
+      const others = current.governance.models[name].filter(listed => listed !== model);
+      return [name, name === rule ? [...others, model] : others];
+    })) as unknown as ModelRules;
+    await writeConfig(validateConfig({ ...current, governance: { ...current.governance, models } }), file);
+  });
+}
+
+/**
+ * Sets the price rules under the configuration lease; an omitted field keeps its value.
+ * @param rules - `askAbovePrice` in USD per million output tokens, null disabling it;
+ * `priceMultiplier` above 1.
+ * @throws When a value is invalid or the configuration cannot be locked, read or written.
+ */
+export async function setPriceRules(rules: { askAbovePrice?: number | null; priceMultiplier?: number }, file = getConfigFile()): Promise<void> {
+  ensureConfigDir(file);
+  await withFileLock(file, async () => {
+    const current = loadFileConfig(file);
+    await writeConfig(validateConfig({ ...current, governance: { ...current.governance, ...rules } }), file);
   });
 }
 

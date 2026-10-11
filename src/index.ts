@@ -3,6 +3,7 @@
 import { redactDiagnostic } from './security/redaction.js';
 import path from 'node:path';
 import { serveStdio } from './mcp/stdio-server.js';
+import { runModelsCli } from './diagnostics/models-cli.js';
 
 async function run(): Promise<void> {
   const args = process.argv.slice(2);
@@ -11,6 +12,10 @@ async function run(): Promise<void> {
     // host arguments continue to start MCP instead of disabling the server.
     const setup: typeof import('./integrations/setup-cli.js') = require(path.join(__dirname, 'setup.cjs'));
     await setup.runSetupCli(args);
+    return;
+  }
+  if (args[0] === 'models') {
+    process.exitCode = await runModelsCli(args.slice(1));
     return;
   }
   await serveStdio();

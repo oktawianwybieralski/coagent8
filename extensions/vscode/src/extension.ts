@@ -7,7 +7,11 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { setBackendExecutable, validateConfig } from '../../../src/config.js';
+import { readGovernance, setBackendExecutable, setModelRule, setPriceRules, validateConfig } from '../../../src/config.js';
+import { runCommand } from '../../../src/execution/process.js';
+import type { ModelReport } from '../../../src/diagnostics/doctor.js';
+import type { ModelCandidate } from '../../../src/models/selection.js';
+import type { ConsentBasis, ProviderId } from '../../../src/contracts/index.js';
 import { hasManualVscodeRegistration, syncVscodeRegistration, type VscodeRegistration, type VscodeServer } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
@@ -19,6 +23,26 @@ import { manageSkills, skillSelectionForAction, type ManagedSkill } from '../../
 /** This extension's identifier, as published. */
 const EXTENSION_ID = 'okidev.coagent8-mcp';
 const LABELS: Record<SetupClient, string> = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravity CLI' };
+/** Longest the model view may take: a first read probes each CLI and reads the price list. */
+const MODEL_REPORT_TIMEOUT_MS = 90_000;
+type ApprovalRule = 'allow' | 'ask' | 'deny';
+type PriceRule = 'askAbovePrice' | 'priceMultiplier';
+/** The rules the user can give one model, in the order Manage Model Approvals offers them. */
+const RULE_ITEMS: (vscode.QuickPickItem & { rule: ApprovalRule | null })[] = [
+  { label: '$(pass-filled) Allow', rule: 'allow', description: 'Runs without asking' },
+  { label: '$(question) Ask Every Time', rule: 'ask', description: 'The approval form asks before each call' },
+  { label: '$(circle-slash) Deny', rule: 'deny', description: 'Never runs' },
+  { label: '$(law) Price Rules', rule: null, description: 'Asks only when the price rules say so' },
+];
+const RULE_TEXT: Record<ApprovalRule, string> = { allow: 'allow', ask: 'ask every time', deny: 'deny' };
+/** Why the price rules ask for a model, as its line says. */
+const PRICE_REASONS: Partial<Record<ConsentBasis, string>> = {
+  'above-limit': 'above price', relative: 'above default price', unpriced: 'price unknown', approximate: 'approximate price', 'no-price-list': 'no price list',
+};
+const PRICE_RULES: Record<PriceRule, { title: string; prompt: string; invalid: string }> = {
+  askAbovePrice: { title: 'Ask Above Price', prompt: 'USD per million output tokens at or above which a model asks; leave empty to turn this rule off', invalid: 'Enter a price of 0 or more, or leave it empty.' },
+  priceMultiplier: { title: 'Ask Above Default Price', prompt: 'How many times the price of the backend\'s default model a model may cost before it asks', invalid: 'Enter a number greater than 1.' },
+};
 /** Extensions whose bundled CLI paths the runtime receives through `coagent8_EXTENSION_PATHS`. */
 const EXTENSIONS = { codex: 'openai.chatgpt', claude: 'anthropic.claude-code' };
 /** Vendor extensions offered as an installation method; Antigravity's downloads agy to `~/.gemini/bin`. */
@@ -426,10 +450,12 @@ export function activate(context: vscode.ExtensionContext): void {
    * Opens a single-choice picker at once and fills it when its bounded checks finish.
    * @param load - Runs the checks and returns the items; the title-bar Check Again button runs it again.
    * @param back - Adds the title-bar Back button.
+   * @param shown - The placeholder while checking, the evidence Show Details writes (default: the last CLI status) and the step of a multi-step flow.
    * @returns The accepted item, `back`, or undefined when the picker was dismissed.
    */
-  async function pick<T extends vscode.QuickPickItem>(title: string, load: (trigger: string) => Promise<{ items: T[]; placeholder: string; title?: string }>, back = false): Promise<T | 'back' | undefined> {
+  async function pick<T extends vscode.QuickPickItem>(title: string, load: (trigger: string) => Promise<{ items: T[]; placeholder: string; title?: string }>, back = false, shown: { busy?: string; details?: () => unknown; step?: [number, number] } = {}): Promise<T | 'back' | undefined> {
     const picker = vscode.window.createQuickPick<T>();
+    [picker.step, picker.totalSteps] = shown.step ?? [undefined, undefined];
     const again: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('refresh'), tooltip: 'Check Again' };
     const details: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('output'), tooltip: 'Show Details' };
     picker.title = title;
@@ -447,7 +473,7 @@ export function activate(context: vscode.ExtensionContext): void {
       picker.onDidHide(() => { hidden = true; resolve(); });
     });
     function checking(): void {
-      picker.placeholder = 'Checking installed CLIs...';
+      picker.placeholder = shown.busy ?? 'Checking installed CLIs...';
       picker.busy = true;
       picker.enabled = false;
     }
@@ -464,7 +490,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const failed = (error: unknown) => { picker.hide(); void vscode.window.showErrorMessage(`CoAgent8 setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Check failed.')}`); };
     picker.onDidTriggerButton(button => {
       if (button === vscode.QuickInputButtons.Back) { result = 'back'; picker.hide(); }
-      else if (button === details) showDetails();
+      else if (button === details) showDetails(shown.details?.());
       else void fill(`${title} (Check Again)`).catch(failed);
     });
     // The picker appears busy before the checks start.
@@ -633,6 +659,115 @@ export function activate(context: vscode.ExtensionContext): void {
       const chosen = await choose({ title: 'Manage Skills', placeholder: 'Choose a CLI', items, step: [1, 3] });
       if (!chosen || chosen === 'back') return;
       if (await manageSkillsOf(chosen[0].client, true) !== 'back') return;
+    }
+  });
+  /**
+   * Reads the model view through the bundled runtime (`coagent8 models --json`), so it uses
+   * the server's own caches and configuration file.
+   */
+  async function readModelReport(): Promise<ModelReport> {
+    const opts = options();
+    const result = await runCommand(opts.nodePath, [opts.runtimeSource, 'models', '--json'], { cwd: opts.cwd, env: opts.env, timeoutMs: MODEL_REPORT_TIMEOUT_MS });
+    if (result.status !== 'completed' || result.exitCode !== 0) {
+      throw new Error(`Reading the models failed: ${result.error?.message || result.stderr.trim() || `exit code ${result.exitCode}`}`);
+    }
+    return JSON.parse(result.stdout) as ModelReport;
+  }
+  const backendLabel = (id: ProviderId) => LABELS[SETUP_CLIENTS.find(client => SETUP_PROVIDERS[client] === id)!];
+  /** A model's output price as the menu shows it: `~` approximate, or unknown. */
+  function priceText(row: ModelCandidate): string {
+    const { outputUsdPerMTok: output, match } = row.price;
+    return output === null ? 'price unknown' : `${match === 'approximate' ? '~' : ''}${Number(output.toFixed(4))} USD`;
+  }
+  /** The user's rule for a model, if one of the lists names it. */
+  function ruleOf(row: ModelCandidate): ApprovalRule | null {
+    return row.approval.denied ? 'deny' : row.approval.basis === 'ask' || row.approval.basis === 'allow' ? row.approval.basis : null;
+  }
+  /** A model's icon and what decides it: the user's rule, or the price rules. */
+  function approvalOf(row: ModelCandidate): { icon: string; text: string } {
+    const rule = ruleOf(row);
+    if (rule) return { icon: RULE_ITEMS.find(item => item.rule === rule)!.label.split(' ')[0]!, text: RULE_TEXT[rule] };
+    return row.approval.required
+      ? { icon: '$(question)', text: `asks: ${PRICE_REASONS[row.approval.basis] ?? row.approval.basis}` }
+      : { icon: '$(circle-large-outline)', text: 'runs without asking' };
+  }
+  /** One backend's models in one line, such as `8 models · 2 ask · 1 deny`. */
+  function modelSummary(rows: ModelCandidate[]): string {
+    const asks = rows.filter(row => row.approval.required).length, denied = rows.filter(row => row.approval.denied).length;
+    const allowed = rows.filter(row => ruleOf(row) === 'allow').length;
+    return [`${rows.length} model${rows.length === 1 ? '' : 's'}`, asks ? `${asks} ask` : '', denied ? `${denied} deny` : '', allowed ? `${allowed} allow` : ''].filter(Boolean).join(' · ');
+  }
+  /** The value a price rule's input means: a number, null for an empty `askAbovePrice`, else undefined (invalid). */
+  function parsePriceRule(field: PriceRule, text: string): number | null | undefined {
+    const trimmed = text.trim();
+    if (field === 'askAbovePrice' && trimmed === '') return null;
+    const value = Number(trimmed);
+    if (trimmed === '' || !Number.isFinite(value)) return undefined;
+    return field === 'askAbovePrice' ? (value >= 0 ? value : undefined) : (value > 1 ? value : undefined);
+  }
+  async function editPriceRule(field: PriceRule): Promise<void> {
+    const current = readGovernance(configurationFile())[field];
+    const text = await vscode.window.showInputBox({
+      title: PRICE_RULES[field].title,
+      prompt: PRICE_RULES[field].prompt,
+      value: current === null ? '' : String(current),
+      ignoreFocusOut: true,
+      validateInput: input => parsePriceRule(field, input) === undefined ? PRICE_RULES[field].invalid : null,
+    });
+    if (text === undefined) return;
+    const value = parsePriceRule(field, text);
+    if (value === undefined) return;
+    await setPriceRules(field === 'askAbovePrice' ? { askAbovePrice: value } : { priceMultiplier: value! }, configurationFile());
+  }
+  /**
+   * Lists one backend's models, most expensive first, and sets the rule of the chosen one;
+   * the list is read again after each change.
+   * @returns `back` when the user went back to the first step.
+   */
+  async function manageModelsOf(id: ProviderId): Promise<'back' | void> {
+    let report: ModelReport | undefined;
+    for (;;) {
+      const chosen = await pick<vscode.QuickPickItem & { row?: ModelCandidate }>(`${backendLabel(id)} Models`, async () => {
+        report = await readModelReport();
+        const rows = report.selection.filter(row => row.backend === id)
+          .sort((a, b) => (b.price.outputUsdPerMTok ?? Infinity) - (a.price.outputUsdPerMTok ?? Infinity));
+        return { placeholder: 'Choose a model to set its rule', items: rows.map(row => {
+          const { icon, text } = approvalOf(row);
+          return { label: `${icon} ${row.model}`, description: [priceText(row), row.defaultSource ? 'default' : '', text].filter(Boolean).join(' · '), row };
+        }) };
+      }, true, { busy: 'Reading models and prices...', details: () => report, step: [2, 3] });
+      if (chosen === 'back') return 'back';
+      if (!chosen?.row) return;
+      const { row } = chosen, current = ruleOf(row);
+      const rule = await choose({ title: row.model, step: [3, 3], back: true,
+        placeholder: `${priceText(row)} per million output tokens · applies to every client that runs CoAgent8`,
+        items: RULE_ITEMS.map(item => ({ ...item, description: item.rule === current ? `current · ${item.description}` : item.description })) });
+      if (rule === 'back') continue;
+      if (!rule?.length) return;
+      if (rule[0].rule === current) continue;
+      await setModelRule(row.model, rule[0].rule, configurationFile());
+      vscode.window.setStatusBarMessage(`CoAgent8: ${row.model} · ${rule[0].rule ? RULE_TEXT[rule[0].rule] : 'price rules'}`, 5000);
+    }
+  }
+  register('coagent8.manageModelApprovals', async () => {
+    let report: ModelReport | undefined;
+    for (;;) {
+      const chosen = await pick<vscode.QuickPickItem & { backend?: ProviderId; price?: PriceRule }>('Manage Model Approvals', async () => {
+        report = await readModelReport();
+        const governance = readGovernance(configurationFile());
+        const backends = (Object.keys(report.backends) as ProviderId[]).filter(id => report!.selection.some(row => row.backend === id));
+        return { placeholder: 'Rules apply to every client that runs CoAgent8', items: [
+          separator('Price rules'),
+          { label: '$(symbol-number) Ask Above Price', price: 'askAbovePrice' as const,
+            description: governance.askAbovePrice === null ? 'off' : `${governance.askAbovePrice} USD per million output tokens` },
+          { label: '$(symbol-number) Ask Above Default Price', price: 'priceMultiplier' as const, description: `${governance.priceMultiplier}× the backend's default model` },
+          separator('Models'),
+          ...backends.map(id => ({ label: `$(server) ${backendLabel(id)}`, backend: id, description: modelSummary(report!.selection.filter(row => row.backend === id)) })),
+        ] };
+      }, false, { busy: 'Reading models and prices...', details: () => report, step: [1, 3] });
+      if (!chosen || chosen === 'back') return;
+      if (chosen.price) { await editPriceRule(chosen.price); continue; }
+      if (chosen.backend && await manageModelsOf(chosen.backend) !== 'back') return;
     }
   });
   register('coagent8.resetConfiguration', async () => {

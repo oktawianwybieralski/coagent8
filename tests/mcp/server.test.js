@@ -290,7 +290,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const unanswered = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(unanswered.code, 'POLICY_DENIED');
     assert.match(unanswered.message, /^The client closed the approval request for model 'claude-opus-4-6-thinking' without an answer, possibly without showing it to the user\. Its price is known only approximately/);
-    assert.match(unanswered.message, /Tell the user; switch to another model only if the user asks\. The user can approve it in a client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: coagent8\.approval\.allowModels\); never change that setting yourself\.$/);
+    assert.match(unanswered.message, /Tell the user; switch to another model only if the user asks\. The user can approve it in a client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: CoAgent8: Manage Model Approvals\); never change that setting yourself\.$/);
     // Only an explicit `approve: true` is consent (CUR-003): an accepted form without the
     // field, with an empty or a non-boolean value, or unchecked, declines.
     const notConsent = [{ action: 'accept' }, { action: 'accept', content: {} }, { action: 'accept', content: { approve: 'true' } },

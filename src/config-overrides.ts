@@ -4,11 +4,11 @@
  * @remarks
  * ## Precedence Rules
  * - Settings passed in `coagent8_EDITOR_SETTINGS` take precedence over file-level configuration.
- * - Scalar settings (`defaultBackend`, `routing.strategy`, backend defaults, approval thresholds)
- *   replace the corresponding values from `config.json`.
- * - Model list settings (`approval.allowModels`, `approval.askModels`, `approval.denyModels`)
- *   are appended to the file lists so that remembered approvals in `config.json` remain active.
- * - Provenance tracking distinguishes scalar replacements (`editor`) from list merges (`merged`).
+ * - Each setting (`defaultBackend`, `routing.strategy`, `routing.allowedBackends`, backend
+ *   defaults) replaces the corresponding value from `config.json`.
+ * - Approval rules are not editor settings: they live only in `config.json`, which every
+ *   client's server reads, and the command CoAgent8: Manage Model Approvals edits them
+ *   (owner decision of 2026-10-11).
  *
  * @packageDocumentation
  */
@@ -17,23 +17,16 @@
 export const EDITOR_SETTINGS_ENV = 'coagent8_EDITOR_SETTINGS';
 
 /**
- * VS Code user settings (`coagent8.<key>`) and the configuration field each one sets.
- * A scalar setting replaces the file value; a list setting is added to the file list, so
- * an approval remembered in the configuration file stays effective.
+ * VS Code user settings (`coagent8.<key>`) and the configuration field each one replaces.
  */
 export const EDITOR_SETTINGS = {
-  defaultBackend: { field: ['defaultBackend'], list: false },
-  'routing.strategy': { field: ['routing', 'strategy'], list: false },
-  'routing.allowedBackends': { field: ['routing', 'allowedBackends'], list: false },
-  'codex.defaultModel': { field: ['backends', 'codex', 'defaultModel'], list: false },
-  'claude.defaultModel': { field: ['backends', 'claude', 'defaultModel'], list: false },
-  'agy.defaultModel': { field: ['backends', 'agy', 'defaultModel'], list: false },
-  'approval.priceMultiplier': { field: ['governance', 'priceMultiplier'], list: false },
-  'approval.askAbovePrice': { field: ['governance', 'askAbovePrice'], list: false },
-  'approval.allowModels': { field: ['governance', 'models', 'allow'], list: true },
-  'approval.askModels': { field: ['governance', 'models', 'ask'], list: true },
-  'approval.denyModels': { field: ['governance', 'models', 'deny'], list: true },
-} as const satisfies Record<string, { field: readonly string[]; list: boolean }>;
+  defaultBackend: { field: ['defaultBackend'] },
+  'routing.strategy': { field: ['routing', 'strategy'] },
+  'routing.allowedBackends': { field: ['routing', 'allowedBackends'] },
+  'codex.defaultModel': { field: ['backends', 'codex', 'defaultModel'] },
+  'claude.defaultModel': { field: ['backends', 'claude', 'defaultModel'] },
+  'agy.defaultModel': { field: ['backends', 'agy', 'defaultModel'] },
+} as const satisfies Record<string, { field: readonly string[] }>;
 
 export type EditorSettingKey = keyof typeof EDITOR_SETTINGS;
 
@@ -47,7 +40,7 @@ function settingValue(key: EditorSettingKey, value: unknown): unknown {
  * @param target - Unvalidated configuration; the caller validates the result.
  */
 export function applyEditorSetting(target: Record<string, unknown>, key: EditorSettingKey, value: unknown): void {
-  const { field, list } = EDITOR_SETTINGS[key];
+  const { field } = EDITOR_SETTINGS[key];
   // A cleared model field in the Settings editor is stored as an empty string: no model chosen.
   if (key.endsWith('.defaultModel') && value === '') return;
   let node = target;
@@ -56,9 +49,7 @@ export function applyEditorSetting(target: Record<string, unknown>, key: EditorS
     if (!nested || typeof nested !== 'object' || Array.isArray(nested)) node[segment] = {};
     node = node[segment] as Record<string, unknown>;
   }
-  const leaf = field[field.length - 1]!;
-  const current = node[leaf];
-  node[leaf] = list && Array.isArray(current) && Array.isArray(value) ? [...current, ...value] : settingValue(key, value);
+  node[field[field.length - 1]!] = settingValue(key, value);
 }
 
 /**

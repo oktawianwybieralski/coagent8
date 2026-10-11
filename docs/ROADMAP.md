@@ -999,8 +999,13 @@ cards pass. Extend existing owners; do not copy selection/policy per client.
 - [x] Expose a bounded MCP selection view: backend, concrete model, accepted
   efforts, default source, output USD per million tokens, price source/date,
   exact/approximate/unknown match and approval requirement/reason. Keep concise
-  text and structured data consistent; reuse it for the planned CLI models command.
+  text and structured data consistent; reuse it for the CLI models command.
   Doctor selection rows and summary (3,900 bytes), from listModelCandidates.
+- [x] `coagent8 models [--backend] [--json]` prints the same view; the VS Code
+  command Manage Model Approvals reads its JSON and writes the user's rules to
+  config.json (owner decision 2026-10-11). Native check in the owner's VS Code
+  is pending: open the command, set allow/ask/deny and price rules, confirm the
+  file and a call from Antigravity follow them.
 - [ ] **AX-001a - define usage evidence.** Start: `src/contracts/execution.ts`,
   `src/contracts/conversation.ts`, `src/models/prices.ts`. Specify measured input,
   cached input, output and reasoning tokens, source/availability and price-tier

@@ -38,33 +38,26 @@ test('without VS Code settings the file is the configuration', () => {
   }
 });
 
-test('explicit scalar settings replace file values and model lists are added to the file lists', () => {
+test('explicit settings replace file values; approval rules come only from the file', () => {
   const config = withSettings({
     defaultBackend: 'auto',
     'routing.strategy': 'smart_quota',
     'routing.allowedBackends': ['agy'],
     'claude.defaultModel': 'opus',
-    'approval.priceMultiplier': 4,
-    'approval.askAbovePrice': null,
-    'approval.askModels': ['editor-always'],
-    'approval.allowModels': ['editor-never', 'file-never'],
-    'approval.denyModels': ['editor-deny'],
   }, loadConfig);
   assert.equal(config.defaultBackend, null, 'auto is automatic selection');
   assert.deepEqual(config.routing, { strategy: 'smart_quota', allowedBackends: ['agy'] });
   assert.deepEqual(config.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'opus' } });
-  assert.equal(config.governance.priceMultiplier, 4);
-  assert.equal(config.governance.askAbovePrice, null);
-  assert.deepEqual(config.governance.models, { allow: ['file-never', 'editor-never'], ask: ['file-always', 'editor-always'], deny: ['file-deny', 'editor-deny'] });
+  // Every client's server reads the file, so approval rules have no VS Code setting (2026-10-11).
+  assert.deepEqual(config.governance, { priceMultiplier: 3, askAbovePrice: 30, models: { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] } });
+  assert.ok(!Object.keys(EDITOR_SETTINGS).some(key => key.startsWith('approval.')), 'no approval setting is passed from VS Code');
 });
 
 test('an invalid or unknown setting refuses execution and names the VS Code setting', () => {
   const cases = [
-    [{ 'approval.priceMultiplier': 1 }, /coagent8\.approval\.priceMultiplier: governance\.priceMultiplier must be a number greater than 1/],
     [{ 'routing.allowedBackends': ['other'] }, /coagent8\.routing\.allowedBackends: Invalid entry/],
     [{ 'codex.defaultModel': '-bad model' }, /coagent8\.codex\.defaultModel/],
-    [{ 'approval.allowModels': 'gpt' }, /coagent8\.approval\.allowModels: governance\.models\.allow must be a list/],
-    [{ 'approval.denyModels': ['-bad'] }, /coagent8\.approval\.denyModels/],
+    [{ 'approval.allowModels': ['gpt-6-astra'] }, /unknown setting 'approval\.allowModels'/],
     [{ 'governance.models.allow': ['x'] }, /unknown setting 'governance\.models\.allow'/],
     ['[]', /must be a JSON object/],
     ['{', /not valid JSON/],
@@ -73,15 +66,10 @@ test('an invalid or unknown setting refuses execution and names the VS Code sett
     assert.throws(() => withSettings(settings, loadConfig), error => error.code === 'POLICY_DENIED' && message.test(error.message), String(message));
     assert.match(withSettings(settings, loadConfigForDiagnostics).error, message, 'doctor reports the setting');
   }
-  const combined = Array.from({ length: 200 }, (_, index) => `editor-${index}`);
-  fs.writeFileSync(file, JSON.stringify({ governance: { models: { allow: Array.from({ length: 100 }, (_, index) => `file-${index}`) } } }));
-  process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'approval.allowModels': combined });
-  try { assert.throws(() => loadConfig(), /coagent8\.approval\.allowModels: governance\.models\.allow must be a list of at most 256/); }
-  finally { delete process.env[EDITOR_SETTINGS_ENV]; }
 });
 
 test('writes keep VS Code settings out of the file; a remembered approval stays effective', async () => {
-  const settings = { defaultBackend: 'codex', 'approval.allowModels': ['editor-never'], 'agy.defaultModel': 'editor-gemini' };
+  const settings = { defaultBackend: 'codex', 'agy.defaultModel': 'editor-gemini' };
   fs.writeFileSync(file, fileBytes);
   process.env[EDITOR_SETTINGS_ENV] = JSON.stringify(settings);
   try {
@@ -93,7 +81,7 @@ test('writes keep VS Code settings out of the file; a remembered approval stays 
     assert.deepEqual(stored.governance.models.allow, ['file-never', 'approved-model']);
     assert.deepEqual(stored.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'detected-claude' } });
     assert.deepEqual(stored.governance.models.ask, ['file-always']);
-    assert.deepEqual(loadConfig().governance.models.allow, ['file-never', 'approved-model', 'editor-never']);
+    assert.deepEqual(loadConfig().governance.models.allow, ['file-never', 'approved-model']);
   } finally { delete process.env[EDITOR_SETTINGS_ENV]; }
 });
 
@@ -125,4 +113,22 @@ test('a misspelt governance.models list refuses execution', () => {
   // A misspelt list would leave a model unrestricted.
   fs.writeFileSync(file, JSON.stringify({ governance: { models: { denny: ['gpt-6-astra'] } } }));
   assert.throws(() => loadConfig(), error => error.code === 'POLICY_DENIED' && /governance\.models has unknown lists \(denny\); supported: allow, ask, deny/.test(error.message));
+});
+
+test('setModelRule keeps exactly one rule per model and setPriceRules keeps the other settings', async () => {
+  const { setModelRule, setPriceRules, readGovernance } = require('../src/config.ts');
+  fs.writeFileSync(file, fileBytes);
+  await setModelRule('file-always', 'deny', file);
+  assert.deepEqual(readGovernance(file).models, { allow: ['file-never'], ask: [], deny: ['file-deny', 'file-always'] }, 'the model leaves its earlier list');
+  await setModelRule('new-model', 'allow', file);
+  await setModelRule('file-never', null, file);
+  assert.deepEqual(readGovernance(file).models, { allow: ['new-model'], ask: [], deny: ['file-deny', 'file-always'] }, 'null leaves the model to the price rules');
+  await assert.rejects(setModelRule('-bad model', 'allow', file), { code: 'INPUT_LIMIT' });
+  await setPriceRules({ askAbovePrice: null }, file);
+  await setPriceRules({ priceMultiplier: 4 }, file);
+  const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual([stored.governance.askAbovePrice, stored.governance.priceMultiplier], [null, 4]);
+  assert.equal(stored.defaultBackend, 'claude', 'other settings stay');
+  await assert.rejects(setPriceRules({ priceMultiplier: 1 }, file), /priceMultiplier must be a number greater than 1/);
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).governance.priceMultiplier, 4, 'an invalid value writes nothing');
 });

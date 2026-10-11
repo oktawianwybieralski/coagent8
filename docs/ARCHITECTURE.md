@@ -163,9 +163,10 @@ keeps its data in VS Code global storage and preserves config on uninstall.
 Old/manual registrations can still set a different coagent8_CONFIG; source
 defaults do not establish what an already running process reads.
 
-Explicit VS Code user settings arrive through coagent8_EDITOR_SETTINGS. Scalars
-override the file; the allow/ask/deny model lists add to file values. Workspace/default
-editor settings are not passed. Recorded defaults and remembered approvals write
+Explicit VS Code user settings arrive through coagent8_EDITOR_SETTINGS and
+override the file. Approval rules (governance) have no VS Code setting: every
+client's server reads them from the file, and the VS Code command Manage Model
+Approvals edits them there. Workspace/default editor settings are not passed. Recorded defaults and remembered approvals write
 only to the file. Other hosts/CLI read the file, not VS Code settings. Unknown
 file properties are ignored and dropped on write; malformed/unreadable/invalid
 existing config blocks execution with POLICY_DENIED. Discovery remains available.
@@ -634,7 +635,8 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-11 | Set Up Coding CLIs becomes Manage Coding CLIs, a list of CLIs with one menu per CLI built like Manage Skills; Uninstall CoAgent8 is removed in favour of per-CLI removal and the uninstall hook; vendor extensions stay machine-scoped, because the install command can avoid VS Code's sync question only by excluding them from Sync; only what CoAgent8 installed is offered for removal (CLIMGMT-001). |
 | 2026-10-11 | Release artifacts carry signed build provenance (GitHub artifact attestations) next to `SHA256SUMS`. After beta.2, which is published by hand, npm publishing moves to a workflow started by the published release: npm trusted publishing (OIDC, no token) with provenance, gated by the owner's approval of the `npm` environment, publishing the verified release tarball (REPO-002g). |
 | 2026-10-11 | One numeric version without pre-release suffixes for npm, the VSIX and the Git tag (`vX.Y.Z`), because VS Code accepts only numeric extension versions and offers Restart Extensions only when the number changes. Every version below 1.0.0 is a preview (VS Code and GitHub pre-release, npm `next`); each preview raises the minor. 0.5.0 is skipped: the npm name placeholder 1.0.0-beta.1 held it and is withdrawn, with no tag, GitHub Release or changelog entry. The candidate prepared as beta.2 becomes 0.6.0 and the final release is 1.0.0 (REPO-003). |
-| 2026-10-11 | The user's model rules follow the allow/ask/deny convention (governance.models, VS Code approval.allowModels/askModels/denyModels): deny refuses a model with the reason, ask asks every turn and states the price, allow is standing approval; deny wins over ask, ask over allow. They replace alwaysAsk/neverAsk without aliases: nothing was published with them. Approval stays the server's MCP form only: an answer the calling agent relays from chat is not consent. The model-visible tool-definition budget rises to 5,900 bytes so the model parameter tells the caller to ask the user before a model doctor tags ask. |
+| 2026-10-11 | The user's model rules follow the allow/ask/deny convention (governance.models): deny refuses a model with the reason, ask asks every turn and states the price, allow is standing approval; deny wins over ask, ask over allow. They replace alwaysAsk/neverAsk without aliases: nothing was published with them. Approval stays the server's MCP form only: an answer the calling agent relays from chat is not consent. The model-visible tool-definition budget rises to 5,900 bytes so the model parameter tells the caller to ask the user before a model doctor tags ask. |
+| 2026-10-11 | Approval rules live only in config.json, which every client's server reads; their VS Code settings are removed. The VS Code command Manage Model Approvals lists price rules and each backend's models with prices and tags from `coagent8 models --json` (the doctor model view) and writes one rule per model. Clients without MCP form elicitation (Antigravity, Codex 0.160.1, headless) fail closed; the user allows a model there instead. |
 
 ## Known limitations
 

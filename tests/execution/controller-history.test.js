@@ -276,7 +276,7 @@ test('a top-tier model without a way to ask the user is refused in one line; use
     execute: async () => { executed = true; throw new Error('must not run'); } };
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
-    const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Tell the user; switch to another model only if the user asks. The user can approve it in a client that shows MCP forms, or allow it in governance.models.allow (VS Code: coagent8.approval.allowModels); never change that setting yourself.";
+    const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Tell the user; switch to another model only if the user asks. The user can approve it in a client that shows MCP forms, or allow it in governance.models.allow (VS Code: CoAgent8: Manage Model Approvals); never change that setting yourself.";
     await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking' }, tempDir),
       { name: 'ToolError', code: 'POLICY_DENIED', message });
     // The audit reproduction: an agent-set flag used to start the governed model.
