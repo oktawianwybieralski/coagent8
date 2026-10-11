@@ -202,3 +202,4 @@ page keeps them.
 - [`f89f5b1`](https://github.com/oktawianwybieralski/coagent8/commit/f89f5b1500c4cffa6382f4327e2312c22bc25a23) **vscode:** Finish CLI extension removals in multi-root windows
 - [`9af3c9d`](https://github.com/oktawianwybieralski/coagent8/commit/9af3c9d26d241b2c509f736a27bea3323d7afd15) **vscode:** Record a first profile entry as pending before writing it
 - [`19387b3`](https://github.com/oktawianwybieralski/coagent8/commit/19387b3b4ac315e2b743155ef3321738f4fef229) **vscode:** Keep cleaning other profiles when one cannot be read on uninstall
+- [`9014aa1`](https://github.com/oktawianwybieralski/coagent8/commit/9014aa1187e99382e15aa74fbdf5006c43c64bec) **redaction:** Redact the canonical path of the home directory
