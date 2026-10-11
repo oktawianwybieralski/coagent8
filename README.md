@@ -35,9 +35,10 @@ Any supported model may fill a role; model size and provider are not fixed.
 Writing and delegated coordination are not available in the current bridge.
 See the [full coagent plan](docs/ROADMAP.md#full-coagent-direction).
 
-`1.0.0-beta.2` is the first release for testers, distributed as a preview: a
-GitHub pre-release with the npm tarball, the VS Code extension and checksums, and
-npm `coagent8@next`. `1.0.0-beta.1` is a deprecated npm name placeholder. A
+`0.6.0` (prepared as 1.0.0-beta.2) is the first release for testers. Every
+version below 1.0.0 is a preview: a GitHub pre-release with the npm tarball, the
+VS Code extension (a VS Code pre-release) and checksums, and npm `coagent8@next`.
+npm, the extension and the Git tag carry the same version number. A
 checkout of `develop` is a development build, not a release. The
 [roadmap](docs/ROADMAP.md)
 owns the release sequence and remaining work.
@@ -54,7 +55,7 @@ A model's `READY` verdict requires independent verification before release.
 [Connect through MCP](#connect-through-mcp) |
 [Skills](#skills) |
 [VS Code commands](#vs-code-commands) |
-[Tester guide](#beta2-tester-guide) |
+[Tester guide](#tester-guide) |
 [Tools](#tools) |
 [Configuration](#configuration) |
 [Limitations](#known-limitations) |
@@ -237,8 +238,8 @@ npm install --omit=dev <tarball-path>
 
 Both `coagent8` and `coagent8-mcp` start stdio with no arguments. Launch the
 newest preview with `npx -y coagent8@next`, or a fixed version with
-`npx -y coagent8@1.0.0-beta.2`. Plain `coagent8` (npm `latest`) is the
-deprecated placeholder until 1.0.0.
+`npx -y coagent8@0.6.0`. Plain `coagent8` (npm `latest`) is not a
+supported channel before 1.0.0.
 
 ### Continue
 
@@ -347,13 +348,13 @@ macOS), type `CoAgent8` and select one:
 The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 `CoAgent8` starts, stops or restarts it and shows its output.
 
-### Beta.2 tester guide
+### Tester guide
 
-1. Download `coagent8-mcp-1.0.0-beta.2.vsix` and `SHA256SUMS` from the
-   [GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v1.0.0-beta.2)
+1. Download `coagent8-mcp-0.6.0.vsix` and `SHA256SUMS` from the
+   [GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.6.0)
    and check the file's SHA-256 against `SHA256SUMS`. With the GitHub CLI you
    can also check that the release workflow built it:
-   `gh attestation verify coagent8-mcp-1.0.0-beta.2.vsix --repo oktawianwybieralski/coagent8`.
+   `gh attestation verify coagent8-mcp-0.6.0.vsix --repo oktawianwybieralski/coagent8`.
    In a trusted project, run
    **Extensions: Install from VSIX...** and select it. Use Node.js 24+.
 2. The first activation shows one notice: the ready CLIs, or an offer to set them
@@ -530,7 +531,7 @@ Open issues tracked in the
 - Headless clients measured on 2026-10-07 cancel elicitation, so turns that need
   consent fail there; approval in interactive clients is still being accepted.
 - Native acceptance in each host (setup, skills, uninstall) is still in progress
-  for beta.2; local tests use hermetic CLI fixtures.
+  for 0.6.0; local tests use hermetic CLI fixtures.
 
 ## Documentation and contributing
 

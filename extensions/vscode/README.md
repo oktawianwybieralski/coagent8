@@ -405,9 +405,12 @@ and remaining acceptance in the
 
 ## Updates, support and license
 
-Development VSIX files use a numeric VS Code version and its pre-release marker;
-the bundled server retains its full npm prerelease version. Restart the MCP
-server after replacing a development VSIX. The **Changelog** tab contains the
+The extension and its bundled server carry the same version as the npm package.
+Every version below 1.0.0 is a preview and is marked as a VS Code pre-release;
+each preview raises the version, so VS Code offers **Restart Extensions** after
+an update. A development VSIX built from an untagged commit repeats the last
+version: after replacing it, run **Developer: Restart Extension Host** and restart
+the MCP server. The **Changelog** tab contains the
 generated CoAgent8 project history, including changes shared with the server.
 
 The extension's identifier is `okidev.coagent8-mcp`. **Oktawian Wybieralski** is

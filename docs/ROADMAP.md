@@ -16,11 +16,12 @@ started; [AGENTS.md](../AGENTS.md) owns contributor rules.
 
 ## Current snapshot status
 
-The checkout carries `1.0.0-beta.2`, an unaccepted development candidate.
-Beta.2 remains BLOCKED pending candidate validation, native acceptance and
-independent review. Local implementation and historical tests are not release
-approval. The owner handles Git integration and publication; agent work stays
-local and preserves the existing checkout.
+The checkout carries `0.6.0` (the beta.2 stage, numbered by
+[REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)), an unaccepted
+development candidate. Beta.2 remains BLOCKED pending candidate validation,
+native acceptance and independent review. Local implementation and historical
+tests are not release approval. The owner handles Git integration and
+publication; agent work stays local and preserves the existing checkout.
 
 | Area | Present locally | Remaining |
 | --- | --- | --- |
@@ -1862,6 +1863,12 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
 
 ### Owner steps (GitHub and npm; in this order)
 
+Version numbers follow [REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags):
+beta.2 is published as `0.6.0` (tag `v0.6.0`). Owner decision 2026-10-11: beta.1
+has no tag, GitHub Release or changelog entry, and npm `1.0.0-beta.1` is
+unpublished instead of deprecated (step 8); this replaces the beta.1 parts of the
+2026-10-10 decisions above.
+
 1. **Branches:** create `develop` at `b962086` and make it the default branch.
    **Pages:** Settings > Pages > Source "GitHub Actions"; in the `github-pages`
    environment allow deployment tags `v*` and the branch `develop`.
@@ -1871,29 +1878,32 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
    `release lines` ruleset for `refs/heads/*.*.x`; keep both tag rulesets.
 3. **Cleanup:** close PR #1, delete `chore/release-v1.0.0-beta.1`, then delete
    `main` (after step 2 removed it from the ruleset).
-4. **beta.1:** push tag `v1.0.0-beta.1` (commit X). Create its GitHub Release as
-   pre-release from `.local/release/v1.0.0-beta.1/release-notes.md`, attach
-   `npm pack coagent8@1.0.0-beta.1` (the published tarball) and its SHA-256,
-   and state that it is the name placeholder with known issues.
-5. **beta.2 PR:** push `release/v1.0.0-beta.2` (its CHANGELOG.md is final; the
-   pre-push regeneration cannot run before tag `v1.0.0-beta.2` exists and is
-   skipped for this branch only), open the PR into `develop`
-   titled `chore(release): v1.0.0-beta.2` with the prepared notes; the six CI
+4. **beta.1:** nothing on GitHub. The local tag `v1.0.0-beta.1` (commit X) is
+   not pushed; deleting it locally is the owner's choice.
+5. **beta.2 PR (0.6.0):** rename the local branch `release/v1.0.0-beta.2` to
+   `release/v0.6.0` (REPO-003; agents do not rename it), push it (its
+   CHANGELOG.md is final; the pre-push regeneration cannot run before tag
+   `v0.6.0` exists and is skipped for this branch only), open the PR into
+   `develop` titled `chore(release): v0.6.0` with the prepared notes; the six CI
    jobs are EXEC-001-T12c's matrix evidence; run T12c's native checks and T12d's
    independent review on its head.
-6. **Merge and tag:** squash-merge; tag the squash commit `v1.0.0-beta.2`
+6. **Merge and tag:** squash-merge; tag the squash commit `v0.6.0`
    (annotated) and push the tag. `release.yml` creates the draft pre-release.
    Replace its one-entry notes with the prepared detailed notes
-   (`.local/release/v1.0.0-beta.2/release-notes.md`). After tagging,
+   (`.local/release/v0.6.0/release-notes.md`). After tagging,
    `npm run changelog` must leave CHANGELOG.md unchanged.
 7. **Verify downloads** (rule 02 phase D): `gh release download`, check
    `SHA256SUMS` and `gh attestation verify` for the tarball and the VSIX,
    install both in clean profiles, repeat the native smoke.
 8. **Publish:** publish the draft pre-release (this deploys the API site; the
    npm job stays skipped); publish by hand:
-   `npm publish ./coagent8-1.0.0-beta.2.tgz --tag next`;
-   `npm dist-tag rm coagent8 beta`;
-   `npm deprecate coagent8@1.0.0-beta.1 "Name placeholder with known issues; install coagent8@next"`.
+   `npm publish ./coagent8-0.6.0.tgz --tag next`;
+   `npm dist-tag rm coagent8 beta`; then `npm unpublish coagent8@1.0.0-beta.1`.
+   Unpublish only after 0.6.0 is on npm: removing the only version deletes the
+   whole package and blocks new versions for 24 hours. npm allows it for a
+   version older than 72 hours only without dependents, with under 300 downloads
+   in the last week and a single owner; the number is never reusable. Then check
+   `npm dist-tag ls coagent8` (npm keeps a `latest` tag).
 9. **npm trusted publishing** (rule 02 section 8): on npmjs.com, package
    `coagent8` > Settings > Trusted publishing: GitHub Actions, repository
    `oktawianwybieralski/coagent8`, workflow `npm-publish.yml`, environment
@@ -1911,21 +1921,25 @@ update only when that number changes (`getRuntimeState` in VS Code 1.141.0 compa
 `e.version !== i.version`). `scripts/build-vscode.cjs` strips `-beta.N`, so every
 beta, rc and the final release would be VSIX `1.0.0`: a new VSIX is not offered a
 restart and the Marketplace refuses a repeated version. Each preview raises the
-minor; npm, VSIX and the Git tag carry the same number, so no mapping is needed:
+minor; npm, VSIX and the Git tag carry the same number, so no mapping is needed.
+Owner decision 2026-10-11: start at 0.5, which leaves room for rc.2 after three
+betas. Every version below 1.0.0 is a preview (VS Code pre-release, GitHub
+pre-release, npm `next`):
 
-| Preview | Version (start at 0.6) | Version (start at 0.5, room for rc.2 after three betas) |
+| Preview | Version | Tag |
 | --- | --- | --- |
-| beta.1 | 0.6.0 | 0.5.0 |
-| beta.2 | 0.7.0 | 0.6.0 |
-| beta.3 or rc.1 | 0.8.0 | 0.7.0 |
-| rc.1 or rc.2 | 0.9.0 | 0.8.0 / 0.9.0 |
-| release | 1.0.0 | 1.0.0 |
+| beta.1 (npm name placeholder) | 0.5.0, skipped | none; npm `1.0.0-beta.1` is withdrawn |
+| beta.2 | 0.6.0 | `v0.6.0` |
+| beta.3 or rc.1 | 0.7.0 | `v0.7.0` |
+| rc.1 or rc.2 | 0.8.0 / 0.9.0 | `v0.8.0` / `v0.9.0` |
+| release | 1.0.0 | `v1.0.0` |
 
-What happens to the published npm placeholder is the owner's decision outside this
-card; npm never reuses a published version number, so the new numbers do not
-collide with it. Choosing the starting minor (0.5 or 0.6) is an open owner decision.
+The withdrawal of the npm placeholder is REPO-002 owner step 8; npm never reuses
+a published version number, so the new numbers do not collide with it. The local
+branch `release/v1.0.0-beta.2` keeps its name until the owner renames it to
+`release/v0.6.0` (REPO-002 owner step 5).
 
-- [ ] **REPO-003a - versions and release rules.** Start: `package.json`,
+- [x] **REPO-003a - versions and release rules.** Start: `package.json`,
   `extensions/vscode/package.json`, `scripts/build-vscode.cjs`,
   `scripts/package-artifacts.cjs`, `.github/workflows/`, `.agents/rules/02-git-workflow.md`,
   README tester guide, `CHANGELOG.md` generation (`cliff.toml`), `docs/ROADMAP.md`
@@ -1935,14 +1949,19 @@ collide with it. Choosing the starting minor (0.5 or 0.6) is an open owner decis
   keep historical evidence as history. Check: build, package and VSIX inspection,
   `npm run changelog:check`, workflow lint where available. Tags, branch names on
   GitHub and anything on npm stay owner actions.
+  Evidence: [REPO-003a](HANDOFF.md#repo-003a-one-numeric-version).
 
 ## Release acceptance
 
+Stage names stay; each stage ships as the next minor below 1.0.0
+([REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)): beta.2 is
+`0.6.0`, the following previews `0.7.0`, `0.8.0` and `0.9.0`.
+
 | Stage | Required scope |
 | --- | --- |
-| BETA-001: beta.2 | Bridge audit blockers (AUDIT-001-A01 to A07), AX-007a-c, WINDOWS-001a, SKILLS-001a-d, then EXEC-001-T12 as the fresh package/matrix/independent review and native VS Code checks below. Release notes list known limits. First tester release; beta.1 was the name placeholder. No write claim. |
-| BETA-001: beta.3 | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e may ship. |
-| RC-001: rc.1 | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
+| BETA-001: beta.2 (0.6.0) | Bridge audit blockers (AUDIT-001-A01 to A07), AX-007a-c, WINDOWS-001a, SKILLS-001a-d, then EXEC-001-T12 as the fresh package/matrix/independent review and native VS Code checks below. Release notes list known limits. First tester release; beta.1 was the name placeholder. No write claim. |
+| BETA-001: beta.3 (0.7.0) | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e may ship. |
+| RC-001: rc.1 (next preview, first on `1.0.x`) | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
 

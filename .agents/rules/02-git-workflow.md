@@ -43,23 +43,25 @@ happened unless it observed it.
 | Branch | Purpose | Created from | Merges into | Lifetime |
 | --- | --- | --- | --- | --- |
 | `develop` | Default branch. Integration of the next version; betas are tagged here | - | - | Permanent |
-| `X.Y.x` (for example `1.0.x`) | Release line of version X.Y: release candidates, the final `X.Y.0` and patches `X.Y.Z` | `develop` at feature freeze (the commit that becomes `X.Y.0-rc.1`) | - (receives backports) | Until the line's end of support |
+| `X.Y.x` (for example `1.0.x`) | Release line of version X.Y: its release candidates (for 1.0 the previews after feature freeze, such as `0.8.0` and `0.9.0`), the final `X.Y.0` and patches `X.Y.Z` | `develop` at feature freeze (the release commit of the first release candidate) | - (receives backports) | Until the line's end of support |
 | Topic branch | One change | `develop` (a backport branch: the line) | Its source branch | Until merged |
 
 * There is **no `main` branch** (owner decision 2026-10-10). The repository's
   front page is `develop`; released states are tags and GitHub Releases.
-* Release stages are **tags**, never branches:
-  `v1.0.0-beta.1` -> `v1.0.0-beta.2` -> `v1.0.0-beta.3` (on `develop`) ->
-  `v1.0.0-rc.1` -> `v1.0.0-rc.N` -> `v1.0.0` -> `v1.0.1` (on `1.0.x`).
-  A tag freezes the exact state of a stage forever.
-* `v1.0.0-beta.1` tags the exact source of the npm name placeholder. It sits on a
-  single commit outside `develop`'s history (REPO-002); its GitHub Release shows
-  what beta.1 was. The first release for testers is `v1.0.0-beta.2`, the first
-  squash commit of the beta.2 work on `develop`.
+* Release stages are **tags**, never branches, named `vX.Y.Z` after the version
+  (section 4): betas `v0.6.0` -> `v0.7.0` (on `develop`) -> release candidates
+  `v0.8.0` -> `v0.9.0` -> `v1.0.0` -> `v1.0.1` (on `1.0.x`). How many betas and
+  release candidates there are follows the roadmap's release acceptance; each
+  preview takes the next minor. A tag freezes the exact state of a stage forever.
+* The first release is `v0.6.0` (prepared as 1.0.0-beta.2), the first squash
+  commit of that work on `develop`. The npm name placeholder `1.0.0-beta.1` holds
+  the place of `0.5.0`: the owner withdraws it from npm, and it has no tag, GitHub
+  Release or changelog entry (owner decision 2026-10-11, REPO-003).
 * **Feature freeze** creates the line: the owner branches `X.Y.x` from `develop`
-  at the release commit of `X.Y.0-rc.1`. From then on `develop` carries the next
-  version's features and `X.Y.x` takes only release-blocking fixes and, after
-  `X.Y.0`, patch fixes.
+  at the release commit of its first release candidate (for 1.0: the first
+  preview tagged on `1.0.x`). From then on `develop` carries the next version's
+  features and `X.Y.x` takes only release-blocking fixes and, after `X.Y.0`,
+  patch fixes.
 * **Fixes for a line** land on `develop` first. A fix that a maintained line
   also needs is then **backported**: a branch `backport/<N>-<desc>` from the line
   with `git cherry-pick -x <develop-sha>`, and a PR into the line titled like the
@@ -85,7 +87,7 @@ Format: `<type>/<short-kebab-description>`, optionally with the issue number:
 | `test/` | Tests only |
 | `build/`, `ci/` | Build system, packaging or CI workflow |
 | `chore/` | Maintenance that fits no other type (dependency bumps, tooling) |
-| `release/` | A release PR (section 5): `release/v1.0.0-beta.2` |
+| `release/` | A release PR (section 5): `release/v0.7.0` |
 | `backport/` | A cherry-pick of a merged `develop` fix into a line (above) |
 
 Keep a topic branch focused on one concern. Rebase it onto its target to pick
@@ -210,8 +212,20 @@ become the final commit, so they must meet this section.
 
 ## 4. Versioning
 
-* Versions follow SemVer 2.0.0. Prerelease identifiers are `beta.N` and `rc.N`;
-  SemVer ordering is `1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0-beta.3 < 1.0.0-rc.1 < 1.0.0`.
+* Versions follow SemVer 2.0.0 **without pre-release identifiers** (owner
+  decision 2026-10-11, REPO-003). The npm package, the VS Code extension and the
+  Git tag carry the same numeric `X.Y.Z`, with no mapping between them. VS Code
+  accepts only a numeric extension version and offers Restart Extensions after an
+  update only when that number changes; the Marketplace refuses a repeated
+  version. `scripts/build-vscode.cjs` refuses any other version.
+* **A preview is every version below 1.0.0.** Each preview, beta or release
+  candidate, raises the minor: `0.5.0` is skipped (the withdrawn npm name
+  placeholder `1.0.0-beta.1` held it), then `0.6.0` (the first release,
+  prepared as 1.0.0-beta.2), `0.7.0`, `0.8.0`, `0.9.0`; further previews would
+  continue with `0.10.0`. The final release is `1.0.0`. A preview is a VS Code
+  pre-release, a GitHub pre-release and npm `next`; `isPreview` in
+  `scripts/build-vscode.cjs` and the release workflows apply this rule. How a version after 1.0.0 is
+  previewed is an owner decision before the first such preview.
 * **Beta**: feature-incomplete or not fully hardened; distributed to invited
   testers as a preview. **Release candidate**: scope frozen on the line; only
   release-blocking fixes. The roadmap's
@@ -229,14 +243,13 @@ become the final commit, so they must meet this section.
 
 | npm dist-tag | Holds | Install |
 | --- | --- | --- |
-| `next` | The newest beta or release candidate (preview) | `npm install coagent8@next` |
+| `next` | The newest preview (a version below 1.0.0) | `npm install coagent8@next` |
 | `latest` | The newest final release | `npm install coagent8` |
 
-* A prerelease is never published to `latest`. Until `1.0.0`, `latest` still
-  points at the deprecated `1.0.0-beta.1` name placeholder (npm always keeps a
-  `latest` tag); its deprecation message directs users to `coagent8@next`.
-  The README install instructions use `@next` until 1.0.0.
-* The `beta` dist-tag is retired; the owner removes it when publishing beta.2
+* A preview is never published to `latest`. npm always keeps a `latest` tag, so
+  while only previews exist it can point at one; the README install instructions
+  use `@next` until 1.0.0.
+* The `beta` dist-tag is retired; the owner removes it when publishing 0.6.0
   (`npm dist-tag rm coagent8 beta`).
 
 ---
@@ -249,18 +262,19 @@ marked (owner); an agent may prepare everything else.
 ### Phase A - release PR (agent may prepare)
 
 1. **Gate:** the stage's entry gate in the roadmap is satisfied on the target
-   branch with green CI. Betas target `develop`; `rc.N`, `X.Y.0` and patches
-   target `X.Y.x` (for `rc.1`, the owner creates `X.Y.x` from `develop` first).
-2. Branch `release/vX.Y.Z-<pre>` from the target. One commit
-   `chore(release): vX.Y.Z-<pre>` that only:
+   branch with green CI. Betas target `develop`; release candidates, `X.Y.0`
+   and patches target `X.Y.x` (for the first release candidate, the owner
+   creates `X.Y.x` from `develop` first).
+2. Branch `release/vX.Y.Z` from the target. One commit
+   `chore(release): vX.Y.Z` that only:
    * sets the version (section 4) where it differs;
-   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z-<pre>`,
+   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`,
      which writes the commits since the previous tag under the new version
      heading with the release date (section 6).
 3. Run the full local gate ([04-quality-gate](04-quality-gate.md#full-release-gate))
    on that commit and record platform, Node, commit, tree and artifact digests.
-4. Open the PR titled `chore(release): vX.Y.Z-<pre>`; attach the local gate
-   evidence and the release notes preview (`npm run release-notes -- --tag vX.Y.Z-<pre>`).
+4. Open the PR titled `chore(release): vX.Y.Z`; attach the local gate
+   evidence and the release notes preview (`npm run release-notes -- --tag vX.Y.Z`).
    The independent review binds to that commit ([03-author-reviewer](03-author-reviewer.md)).
 
 ### Phase B - merge and tag (owner)
@@ -270,25 +284,25 @@ marked (owner); an agent may prepare everything else.
 6. Tag that exact commit with an annotated tag and push only the tag:
    ```bash
    git fetch origin
-   git tag -a vX.Y.Z-<pre> <verified-sha> -m "CoAgent8 vX.Y.Z-<pre>"
-   git push origin vX.Y.Z-<pre>
+   git tag -a vX.Y.Z <verified-sha> -m "CoAgent8 vX.Y.Z"
+   git push origin vX.Y.Z
    ```
 
 ### Phase C - build (release workflow)
 
 7. The tag push starts `.github/workflows/release.yml`. It checks that the tag is
-   annotated, that `package.json` carries the same version and that the tagged
-   commit is on `develop` or an `X.Y.x` line; runs the full gate on Ubuntu with
-   Node 24; packs and smoke-tests the exact npm tarball, packages the VSIX,
-   writes `SHA256SUMS`, signs build provenance for the tarball and the VSIX
+   a numeric `vX.Y.Z` and annotated, that `package.json` carries the same version
+   and that the tagged commit is on `develop` or an `X.Y.x` line; runs the full
+   gate on Ubuntu with Node 24; packs and smoke-tests the exact npm tarball,
+   packages the VSIX, writes `SHA256SUMS`, signs build provenance for the tarball and the VSIX
    (GitHub artifact attestations), generates the release notes with git-cliff
-   and creates a **draft** GitHub Release (marked pre-release for a
-   `-beta`/`-rc` tag) with these assets. It never publishes to npm and never
+   and creates a **draft** GitHub Release (marked pre-release for a version
+   below 1.0.0) with these assets. It never publishes to npm and never
    publishes the draft.
 
 ### Phase D - verify the published artifacts (owner, agent may assist locally)
 
-8. Download the assets from the draft release (`gh release download vX.Y.Z-<pre>`)
+8. Download the assets from the draft release (`gh release download vX.Y.Z`)
    and verify them: `sha256sum --check --ignore-missing SHA256SUMS` and
    `gh attestation verify <file> --repo oktawianwybieralski/coagent8` for the
    tarball and the VSIX. Install both in clean profiles and run the stage's
@@ -298,7 +312,7 @@ marked (owner); an agent may prepare everything else.
 
 ### Phase E - publish (owner)
 
-9. Publish the draft GitHub Release (keep "pre-release" for betas and RCs).
+9. Publish the draft GitHub Release (keep "pre-release" for previews).
    Publishing starts `.github/workflows/docs.yml`, which validates the TSDoc
    comments, generates the TypeDoc site (source API plus the project documents:
    README, Architecture, Roadmap, Handoff, Changelog, Git workflow) and deploys it
@@ -309,13 +323,14 @@ marked (owner); an agent may prepare everything else.
     `.github/workflows/npm-publish.yml`: after the owner approves the `npm`
     environment, it downloads the release's tarball, checks it against
     `SHA256SUMS` and the provenance of `release.yml`, and runs
-    `npm publish --provenance` to `next` (beta, rc) or `latest` (final); the
-    GitHub pre-release flag must agree with the version. A failed job is re-run;
-    npm never accepts the same version twice. Until it is enabled, and for
-    `1.0.0-beta.2`, the owner publishes the downloaded, verified tarball by hand:
+    `npm publish --provenance` to `next` (a version below 1.0.0) or `latest`
+    (1.0.0 and later); the GitHub pre-release flag must agree with the version.
+    A failed job is re-run; npm never accepts the same version twice. Until it
+    is enabled, and for `0.6.0`, the owner publishes the downloaded, verified
+    tarball by hand:
     ```bash
-    npm publish ./coagent8-X.Y.Z-<pre>.tgz --tag next      # beta or rc
-    npm publish ./coagent8-X.Y.Z.tgz                        # final: latest
+    npm publish ./coagent8-0.N.0.tgz --tag next    # preview
+    npm publish ./coagent8-X.Y.Z.tgz               # 1.0.0 and later: latest
     ```
 11. Announce the release to testers with the GitHub Release link.
 
@@ -351,12 +366,14 @@ when the tag was already pushed.
   entry per PR) at the next regeneration on the target branch.
 * Each branch generates its own file: on `develop` the versions tagged on
   `develop` (betas), on a line the versions tagged on that line. Before the
-  first line exists (`1.0.0-rc.1`), the owner decides how `develop` lists the
-  line's releases; until then every release is tagged on `develop`.
-* The detailed entries of 1.0.0-beta.2 come from the 293 local commits that were
-  squash-merged as one PR (REPO-002). They are generated on that PR branch
-  before the merge and kept as a curated section, like 1.0.0-beta.1; generation
-  after it starts at tag `v1.0.0-beta.2`.
+  first line exists (the first release candidate), the owner decides how
+  `develop` lists the line's releases; until then every release is tagged on
+  `develop`.
+* The detailed entries of 0.6.0 (prepared as 1.0.0-beta.2) come from the 293
+  local commits that were squash-merged as one PR (REPO-002). They are generated
+  on that PR branch before the merge and kept as a curated section, the oldest
+  entry at the end of the file (`cliff.toml` footer); generation after it starts
+  at tag `v0.6.0`.
 * Groups: Breaking (`!` or `BREAKING CHANGE`), Added (`feat`), Changed (`perf`,
   `refactor`), Removed (`revert`), Fixed (`fix`). `docs`, `chore`, `test`, `ci`,
   `build` and `style` are omitted. A breaking commit is listed under Breaking
@@ -364,9 +381,6 @@ when the tag was already pushed.
 * A subject that is not a Conventional Commit (for example GitHub's default
   `Revert "..."` title) fails the generation (`require_conventional`) instead of
   silently losing its entry.
-* The 1.0.0-beta.1 release (tag `v1.0.0-beta.1`, outside `develop`'s history)
-  keeps its curated description as the oldest entry at the end of the
-  file (`cliff.toml` footer).
 * GitHub release notes are generated by `npm run release-notes`
   (`cliff.release-notes.toml`) in the layout of the PrestaShop release pages.
   - Entries are grouped by area (commit scope; "General" without one), then by
@@ -384,7 +398,7 @@ The agent does this itself, without being asked.
 
 1. **Before every `git push`** (any branch), after the last change is
    committed:
-   * Run `npm run changelog`. It fails when any commit since `v1.0.0-beta.1` is
+   * Run `npm run changelog`. It fails when any commit since `v0.6.0` is
      not a Conventional Commit. A failure blocks the push: reword the offending
      commit; never push past it.
    * If `CHANGELOG.md` changed, commit it alone as `chore(changelog): regenerate`.
@@ -420,7 +434,7 @@ The agent does this itself, without being asked.
   * severity for bugs: `P0` (safety, data loss, tool unusable), `P1`
     (incorrect result or contract violation), `P2` (robustness or degraded
     behavior), `P3` (cosmetic);
-  * `found-in:v1.0.0-beta.2` (the version where the bug was observed);
+  * `found-in:v0.6.0` (the version where the bug was observed);
   * status: `needs-repro`, `confirmed`, `wontfix`, `duplicate`.
 * P0 and P1 issues block the next stage tag. Every closed bug references the PR
   that fixed it (`Fixes #...` in the PR).
@@ -450,7 +464,7 @@ the tag-creation rule:
 * **GitHub Pages:** source "GitHub Actions"; the `github-pages` environment allows
   deployments from tags `v*` (a release event runs on the tag) and from
   `develop` (manual runs). Site: https://oktawianwybieralski.github.io/coagent8/.
-* **npm trusted publishing** (after beta.2, REPO-002g): on npmjs.com the
+* **npm trusted publishing** (after 0.6.0, REPO-002g): on npmjs.com the
   package `coagent8` trusts publisher repository `oktawianwybieralski/coagent8`,
   workflow `npm-publish.yml`, environment `npm`; the GitHub environment `npm`
   requires the owner's review and allows tags `v*`; the repository variable

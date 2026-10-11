@@ -8,6 +8,60 @@ Updated 2026-10-11. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## REPO-003a one numeric version
+
+Owner decision 2026-10-11: previews start at 0.5, so the beta.2 candidate is
+`0.6.0`. Card: [REPO-003](ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags).
+Done locally on `release/v1.0.0-beta.2` (no branch rename, tag, push or npm
+action):
+
+- `package.json`, `package-lock.json`, `plugin.json` and
+  `extensions/vscode/package.json` carry `0.6.0`; the changelog scripts start at
+  `v0.6.0`. `cliff.toml` renames the curated beta.2 section to `0.6.0` (tag
+  `v0.6.0`); `CHANGELOG.md` was regenerated with the same config
+  (`git-cliff --config cliff.toml --output CHANGELOG.md HEAD..HEAD`). The
+  previous file came from a CRLF working copy of `cliff.toml`, whose blank lines
+  escaped the `\n{3,}` postprocessor; generated from the LF file Git stores, three
+  surplus blank lines disappear.
+- Owner decision 2026-10-11 (same session): beta.1 gets no tag, GitHub Release
+  or changelog entry and npm `1.0.0-beta.1` is unpublished, so 0.5.0 is skipped.
+  The curated 1.0.0-beta.1 section is removed from the `cliff.toml` footer and
+  `CHANGELOG.md`; rule 02, AGENTS.md, README, ARCHITECTURE and REPO-002 owner
+  steps 4 and 8 (unpublish after 0.6.0 is on npm) follow. The local tag
+  `v1.0.0-beta.1` is untouched.
+- `scripts/build-vscode.cjs`: `extensionVersion` refuses a version that differs
+  from the server or is not numeric `major.minor.patch`, instead of stripping a
+  suffix; `isPreview` (every version below 1.0.0) drives the VSIX pre-release
+  flag in `tooling/vscode/package.cjs`. `release.yml` refuses a tag other than
+  numeric `vX.Y.Z` and marks a version `0.*` as GitHub pre-release;
+  `npm-publish.yml` sends `0.*` to `next`. Provenance steps are unchanged.
+- Rule 02 (tags `vX.Y.Z`, previews, line `1.0.x` from the first release
+  candidate, the five phases), AGENTS.md, README (tester guide, `npx` example),
+  the extension README, ARCHITECTURE decision log, ROADMAP (status, REPO-002 owner
+  steps 5, 6 and 8, release acceptance stage numbers). Dated evidence below stays
+  as written. An ignored local copy of the prepared notes,
+  `.local/release/v0.6.0/release-notes.md`, carries the new number; the beta.2
+  copy is unchanged.
+
+Local evidence on Windows 11, Node v26.10.0: PASS `npm run typecheck`,
+`npm run build`, `node tests/run.cjs tests/package.test.js` (7 pass, two new
+tests: version check, preview rule, manifest agreement), `npm run package:vscode`
+(tarball `coagent8-0.6.0.tgz` SHA-256
+`e90e972637218371d5a3a0073897ce1cb3a5d3c184433e6d9c0bf7d1c32318b0`; VSIX
+`coagent8-mcp-0.6.0.vsix` SHA-256
+`0bb40ace577c31a13ed0f13230cbcab77e7c9a66fc78fdbcff33796b3bf0520d`, whose
+`extension/package.json` is `0.6.0` and `extension.vsixmanifest` has
+`Version="0.6.0"` and `Microsoft.VisualStudio.Code.PreRelease` `true`), both
+workflows parse as YAML (`yaml` 2 from `tooling/`), the tag and channel `case`
+logic accepts `v0.6.0`/`v1.0.0` and refuses `v1.0.0-beta.2`/`v0.6`,
+`npm run changelog:check -- --with-commit "<title>"` exits 0, `git diff --check`.
+Full `npm test` from `C:\Users\...`: 682 tests, 678 pass, 0 fail, 3 skipped, 1
+todo (the known WINDOWS-001a reproduction); it ran before the beta.1 removal,
+which changed only `cliff.toml`, `CHANGELOG.md` and prose, after which the
+package test file, changelog check and `git diff --check` were repeated.
+NOT_RUN: actionlint (not installed), the workflows on GitHub, independent review,
+native VS Code update from one numbered VSIX to the next.
+
 ## CLIMGMT-001 manage coding CLIs
 
 Owner request 2026-10-11, implemented on the beta.2 candidate checkout
