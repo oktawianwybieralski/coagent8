@@ -248,13 +248,15 @@ become the final commit, so they must meet this section.
 | npm dist-tag | Holds | Install |
 | --- | --- | --- |
 | `next` | The newest preview (a version below 1.0.0) | `npm install coagent8@next` |
-| `latest` | The newest final release | `npm install coagent8` |
+| `latest` | The newest final release; before 1.0.0 the newest preview | `npm install coagent8` |
 
-* A preview is never published to `latest`. npm always keeps a `latest` tag, so
-  while only previews exist it can point at one; the README install instructions
-  use `@next` until 1.0.0.
-* The `beta` dist-tag is retired; the owner removes it when publishing 0.6.0
-  (`npm dist-tag rm coagent8 beta`).
+* A preview is published to `next`. npm always keeps a `latest` tag and its
+  package page shows the version and README `latest` points at, so while only
+  previews exist `latest` follows the newest preview (owner decision
+  2026-10-12, after the npm page kept showing the withdrawn 1.0.0-beta.1). From
+  1.0.0 on, `latest` holds only final releases and a preview stays on `next`.
+  The README install instructions use `@next` until 1.0.0.
+* The `beta` dist-tag is retired (removed with 0.6.0).
 
 ---
 
@@ -400,12 +402,16 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     Releases but never as "Latest" on the repository page.
 22. Publish the verified tarball, never a rebuild. With npm trusted publishing
     enabled (section 8), approving the `npm` environment of `npm-publish.yml`
-    does it; otherwise by hand:
+    publishes it to `next` or `latest`; below 1.0.0 the owner then runs only the
+    `dist-tag add` line below. Otherwise by hand:
     ```bash
     npm publish ./coagent8-X.Y.Z.tgz --tag next    # below 1.0.0
+    npm dist-tag add coagent8@X.Y.Z latest         # below 1.0.0, while only previews exist (section 4)
     npm publish ./coagent8-X.Y.Z.tgz               # 1.0.0 and later: latest
+    npm dist-tag ls coagent8                       # check the tags
     ```
-    npm never accepts the same version twice.
+    npm never accepts the same version twice. The package page then shows this
+    version and its README.
 23. Publish the same verified VSIX on the VS Code Marketplace under `okidev`:
     ```bash
     npx @vscode/vsce publish --pre-release --packagePath ./coagent8-mcp-X.Y.Z.vsix   # below 1.0.0
