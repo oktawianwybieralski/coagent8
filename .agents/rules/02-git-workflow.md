@@ -371,9 +371,10 @@ when the tag was already pushed.
   `develop`.
 * The detailed entries of 0.6.0 (prepared as 1.0.0-beta.2) come from the 293
   local commits that were squash-merged as one PR (REPO-002). They are generated
-  on that PR branch before the merge and kept as a curated section, the oldest
-  entry at the end of the file (`cliff.toml` footer); generation after it starts
-  at tag `v0.6.0`.
+  on that PR branch after its last change and before the merge, never written by
+  hand, and kept as a fixed section, the oldest entry at the end of the file
+  (`cliff.toml` footer, which names the command); generation after it starts at
+  tag `v0.6.0`.
 * Groups: Breaking (`!` or `BREAKING CHANGE`), Added (`feat`), Changed (`perf`,
   `refactor`), Removed (`revert`), Fixed (`fix`). `docs`, `chore`, `test`, `ci`,
   `build` and `style` are omitted. A breaking commit is listed under Breaking
