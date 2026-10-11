@@ -244,9 +244,10 @@ export function activate(context: vscode.ExtensionContext): void {
    * Keeps CoAgent8 in the profile `mcp.json`, where VS Code lists installed MCP servers. When
    * that fails, the definition provider below still offers the server.
    */
-  function syncProfile(restore = false): void {
+  function syncProfile(restore = false, adopt = false): void {
     try {
-      profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(), installation: path.dirname(context.extensionPath), folders: folders(), restore });
+      profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(),
+        installation: path.dirname(context.extensionPath), version, adopt, folders: folders(), restore });
       noteWorkspaceDuplicate();
     }
     catch (error) { profileRegistration = undefined; showLifecycleError(error); }
@@ -284,7 +285,8 @@ export function activate(context: vscode.ExtensionContext): void {
   catch (error) { showLifecycleError(error); }
   function registrationChanged(): void {
     const declined = profileRegistration === 'declined';
-    syncProfile();
+    // Another window may have written the file: its complete entry is kept, not rewritten in turn.
+    syncProfile(false, true);
     try {
       const registered = hasManualVscodeRegistration(storage, folders());
       if (registered || manualRegistration || declined !== (profileRegistration === 'declined')) {

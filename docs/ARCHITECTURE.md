@@ -468,7 +468,11 @@ the entry outlives an extension update until the new version activates and
 rewrites it. Activation, `coagent8` setting changes, vendor extension changes and
 `mcp.json` changes resynchronize command, copy and environment (current
 extension paths for the shared executable resolver, data directory, config file,
-user-level editor settings). Ownership is the digest in
+user-level editor settings). The windows of a profile share the entry: an
+`mcp.json` change keeps a complete entry another window recorded instead of
+writing this window's back, and an entry recorded by a newer extension version is
+never replaced by an older one, nor its runtime copy deleted, so windows running
+different builds or environments never rewrite it in turn. Ownership is the digest in
 `~/.coagent8/vscode-mcp.json`; only when no record exists does that copy's path
 shape identify the entry. A rewrite records the new digest as pending before it
 writes the entry, so an interrupted write leaves either entry the extension's

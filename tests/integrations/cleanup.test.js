@@ -194,7 +194,7 @@ test('the vscode:uninstall hook removes the profile entries of its own installat
   const installed = product => {
     const storagePath = path.join(home, 'AppData', 'Roaming', product, 'User', 'globalStorage', 'okidev.coagent8-mcp');
     const installation = path.join(home, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
-    assert.equal(syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation }), 'registered');
+    assert.equal(syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation, version: '0.6.0' }), 'registered');
     return path.join(home, 'AppData', 'Roaming', product, 'User', 'mcp.json');
   };
   const stable = installed('Code'), insiders = installed('Code - Insiders');

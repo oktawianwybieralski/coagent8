@@ -22,7 +22,7 @@ function profile(t, { product = 'Code', home: sharedHome } = {}) {
   const home = sharedHome ?? path.join(root, 'home');
   const file = profileMcpFile(storagePath);
   const server = { command: 'node', env: { coagent8_DIR: storagePath, coagent8_EDITOR_SETTINGS: '{}' } };
-  const sync = (overrides = {}) => syncVscodeRegistration({ storagePath, bundle, server, home, installation, ...overrides });
+  const sync = (overrides = {}) => syncVscodeRegistration({ storagePath, bundle, server, home, installation, version: '0.6.0', ...overrides });
   const entries = () => parse(fs.readFileSync(file, 'utf8')).servers;
   const remove = () => removeVscodeRegistrations(home, installation);
   return { root, storagePath, bundle, home, installation, file, server, sync, entries, remove };
@@ -170,6 +170,94 @@ test('a workspace that registers CoAgent8 gets no second profile entry; an exist
   assert.equal(p.sync({ folders: [workspace] }), 'current');
   assert.equal(fs.readFileSync(p.file, 'utf8'), text);
   assert.equal(p.sync({ folders: [] }), 'current', 'and windows without one keep it');
+});
+
+test('windows running different builds never rewrite the shared entry in turn', t => {
+  const p = profile(t);
+  const older = path.join(p.root, 'older/dist/index.cjs');
+  fs.mkdirSync(path.dirname(older), { recursive: true });
+  fs.writeFileSync(older, 'bundle v0');
+  assert.equal(p.sync({ bundle: older, version: '0.5.0' }), 'registered');
+  // The updated window activates and writes its build.
+  assert.equal(p.sync({ version: '0.6.0' }), 'registered');
+  const text = fs.readFileSync(p.file, 'utf8');
+  const runtime = p.entries()[VSCODE_SERVER_NAME].args[0];
+  // The window not yet reloaded reacts to that write, and later to a settings change.
+  assert.equal(p.sync({ bundle: older, version: '0.5.0', adopt: true }), 'current');
+  assert.equal(p.sync({ bundle: older, version: '0.5.0' }), 'current', 'an older build never replaces a newer one');
+  assert.equal(fs.readFileSync(p.file, 'utf8'), text);
+  assert.ok(fs.existsSync(runtime), 'nor deletes its runtime copy');
+  assert.equal(p.sync({ version: '0.6.0', adopt: true }), 'current');
+});
+
+test('an older window keeps a newer build\'s entry while that build\'s rewrite is interrupted', t => {
+  const record = home => path.join(home, '.coagent8/vscode-mcp.json');
+  const older = p => {
+    const bundle = path.join(p.root, 'older/dist/index.cjs');
+    fs.mkdirSync(path.dirname(bundle), { recursive: true });
+    fs.writeFileSync(bundle, 'bundle v0');
+    return { bundle, version: '0.5.0' };
+  };
+  const rename = fs.renameSync;
+  // Interrupted before mcp.json is written: the entry on disk is the newer build's earlier one.
+  // Interrupted after it: the entry on disk is the one the record names as pending.
+  for (const [moment, failing] of [['before', p => p.file], ['after', p => record(p.home)]]) {
+    const p = profile(t);
+    assert.equal(p.sync(), 'registered');
+    let writes = 0;
+    t.mock.method(fs, 'renameSync', (from, to) => {
+      if (to === failing(p) && (moment === 'before' || ++writes === 2)) throw new Error('interrupted');
+      return rename(from, to);
+    });
+    assert.throws(() => p.sync({ server: { ...p.server, command: 'C:/tools/node.exe' } }), /interrupted/);
+    t.mock.restoreAll();
+    const text = fs.readFileSync(p.file, 'utf8');
+    const runtime = p.entries()[VSCODE_SERVER_NAME].args[0];
+    assert.equal(p.sync(older(p)), 'current', moment);
+    assert.equal(fs.readFileSync(p.file, 'utf8'), text, moment);
+    assert.ok(fs.existsSync(runtime), moment);
+  }
+});
+
+test('consecutive interrupted rewrites keep the version of the build that wrote the entry on disk', t => {
+  const p = profile(t);
+  const older = path.join(p.root, 'older/dist/index.cjs');
+  fs.mkdirSync(path.dirname(older), { recursive: true });
+  fs.writeFileSync(older, 'bundle v0');
+  assert.equal(p.sync({ bundle: older, version: '0.5.0' }), 'registered');
+  const record = path.join(p.home, '.coagent8/vscode-mcp.json');
+  const rename = fs.renameSync;
+  // The update writes mcp.json, then its final record write is interrupted.
+  let writes = 0;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === record && ++writes === 2) throw new Error('interrupted');
+    return rename(from, to);
+  });
+  assert.throws(() => p.sync(), /interrupted/);
+  t.mock.restoreAll();
+  // A settings change of the updated window is interrupted before mcp.json.
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === p.file) throw new Error('interrupted');
+    return rename(from, to);
+  });
+  assert.throws(() => p.sync({ server: { ...p.server, command: 'C:/tools/node.exe' } }), /interrupted/);
+  t.mock.restoreAll();
+  const text = fs.readFileSync(p.file, 'utf8');
+  const runtime = p.entries()[VSCODE_SERVER_NAME].args[0];
+  assert.equal(p.sync({ bundle: older, version: '0.5.0' }), 'current', 'the older window keeps the updated entry');
+  assert.equal(fs.readFileSync(p.file, 'utf8'), text);
+  assert.ok(fs.existsSync(runtime));
+});
+
+test('a write by another window of the same build is adopted, not rewritten in turn', t => {
+  const p = profile(t);
+  const other = { ...p.server, env: { ...p.server.env, coagent8_EXTENSION_PATHS: '{"codex":"C:/other"}' } };
+  assert.equal(p.sync(), 'registered');
+  assert.equal(p.sync({ server: other }), 'registered', 'the other window writes its environment');
+  const text = fs.readFileSync(p.file, 'utf8');
+  assert.equal(p.sync({ adopt: true }), 'current', 'this window reacts to that file change without writing back');
+  assert.equal(fs.readFileSync(p.file, 'utf8'), text);
+  assert.equal(p.sync(), 'registered', 'its own trigger, such as a settings change, still writes');
 });
 
 test('an entry the user removed in VS Code stays removed until restored', t => {

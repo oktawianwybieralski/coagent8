@@ -39,7 +39,7 @@ export type VscodeRegistration = 'registered' | 'current' | 'manual' | 'declined
  * Ownership per profile `mcp.json`: the digest of the entry written, or the user's removal;
  * `pending` is the digest of an entry being written, until the write completes.
  */
-type RegistrationRecord = Record<string, ({ entry: string } | { declined: true }) & { pending?: string; installation: string }>;
+type RegistrationRecord = Record<string, ({ entry: string; version?: string } | { declined: true }) & { pending?: string; pendingVersion?: string; installation: string }>;
 
 const FORMATTING = { insertSpaces: true, tabSize: 2 };
 const RUNTIME_SHAPE = new RegExp(`[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE_NAME.replace('.', '\\.')}[\\\\/]runtime[\\\\/][a-f0-9]{64}[\\\\/]index\\.cjs$`, 'i');
@@ -66,6 +66,24 @@ function writeRecord(home: string, before: string | null, record: RegistrationRe
   const text = JSON.stringify(record, null, 2) + '\n';
   writeChecked(file, before, text);
   return text;
+}
+/** Whether extension version `a` is newer than `b` (numeric `X.Y.Z`, no pre-release suffix). */
+function newerVersion(a: string | undefined, b: string): boolean {
+  if (a === undefined) return false;
+  const [x, y] = [a, b].map(value => value.split('.').map(Number));
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  }
+  return false;
+}
+/**
+ * The window that recorded the entry with `digest`: the written entry, or the pending one of an
+ * interrupted rewrite, each with the extension version that wrote it.
+ */
+function recordedWriter(recorded: RegistrationRecord[string], digest: string): { version?: string } | undefined {
+  if ('entry' in recorded && recorded.entry === digest) return { version: recorded.version };
+  if (recorded.pending === digest) return { version: recorded.pendingVersion };
+  return undefined;
 }
 /** Whether two installation folders are the same; Windows paths ignore case. */
 function sameInstallation(a: string | undefined, b: string): boolean {
@@ -180,9 +198,16 @@ export interface VscodeSyncOptions {
   storagePath: string; bundle: string; server: VscodeServer; home: string;
   /** The extensions folder of this VS Code installation; its uninstall removes only its entries. */
   installation: string;
+  /** The running extension's version; an older one never replaces a newer one's entry. */
+  version: string;
+  /**
+   * Another window may have written the profile file (its watcher fired): a complete entry it
+   * recorded is kept, so windows whose environments differ never rewrite it in turn.
+   */
+  adopt?: boolean;
   folders?: string[]; restore?: boolean;
 }
-function syncOnce({ storagePath, bundle, server, home, installation, folders = [], restore = false }: VscodeSyncOptions): VscodeRegistration {
+function syncOnce({ storagePath, bundle, server, home, installation, version, adopt = false, folders = [], restore = false }: VscodeSyncOptions): VscodeRegistration {
   const file = profileMcpFile(storagePath);
   const { text: recordText, record } = readRecord(home);
   const text = read(file);
@@ -206,11 +231,16 @@ function syncOnce({ storagePath, bundle, server, home, installation, folders = [
   }
   // This window's workspace provides CoAgent8; nothing is recorded, so other windows add the entry.
   if (!restore && current === undefined && hasWorkspaceVscodeRegistration(folders)) return 'manual';
+  // Every window of the profile shares the entry. One a window recorded, written or pending, is
+  // kept when this window only reacts to that write, or when a newer extension version wrote
+  // it: this window neither replaces it nor deletes the runtime copy it starts.
+  const writer = ours && recorded !== undefined ? recordedWriter(recorded, hash(JSON.stringify(current))) : undefined;
+  if (writer && (adopt || newerVersion(writer.version, version))) return 'current';
   const runtime = runtimeCopy(storagePath, bundle);
   const desired = { type: 'stdio', command: server.command, args: [runtime], env: server.env };
   if (ours && JSON.stringify(current) === JSON.stringify(desired)) {
-    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined || !sameInstallation(recorded.installation, installation)) {
-      writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), installation } });
+    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined || recorded.version !== version || !sameInstallation(recorded.installation, installation)) {
+      writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), version, installation } });
     }
     pruneRuntimes(storagePath, runtime);
     return 'current';
@@ -222,10 +252,10 @@ function syncOnce({ storagePath, bundle, server, home, installation, folders = [
   // old or new, is still ours, while an edit or removal racing it stays the user's. Without a
   // record the new entry's shape identifies it. The entry on disk, when ours, is the one recorded
   // as written, whichever digest identified it.
-  const written = ours ? { entry: hash(JSON.stringify(current)) } : recorded;
-  const marked = written === undefined ? recordText : writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest, installation } });
+  const written = ours ? { entry: hash(JSON.stringify(current)), ...(writer?.version ? { version: writer.version } : {}) } : recorded;
+  const marked = written === undefined ? recordText : writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest, pendingVersion: version, installation } });
   writeChecked(file, text, after);
-  writeRecord(home, marked, { ...record, [file]: { entry: digest, installation } });
+  writeRecord(home, marked, { ...record, [file]: { entry: digest, version, installation } });
   pruneRuntimes(storagePath, runtime);
   return 'registered';
 }
