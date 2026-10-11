@@ -2150,7 +2150,7 @@ cancel of a running Codex and agy turn, no home paths in answers.
 ### After 0.6.0 (fix-only preview, then the documentation cleanup)
 
 Each card is its own PR into `develop`; the batch ships as the next fix-only
-preview (version: owner decision, see below).
+preview, `0.6.1` (see below).
 
 - [ ] **FEEDBACK-060c - models view right after a CLI appears.** `doctor` scope
   `models` reported `agy: not installed` while `health` seconds later found agy
@@ -2201,9 +2201,9 @@ each checked against the 0.6.0 behavior; prose-only checks per rule 04.
 - [ ] **DOCS-002e - rules and skills.** Remove references to retired branches,
   versions and procedures; keep AGENTS.md as the index.
 
-Versioning of the fix-only preview (owner decision pending): rule 02 raises the
-minor for every preview, which makes it `0.7.0` and moves beta.3 to `0.8.0`;
-alternatively a patch `0.6.1` keeps the planned stage numbers.
+Versioning (owner decision 2026-10-11, rule 02 section 4): a fix-only release
+of a preview raises the patch, so this batch ships as `0.6.1`; the planned stage
+numbers (`0.7.0` beta.3, `0.8.0`/`0.9.0` release candidates) stay.
 
 ## Release acceptance
 

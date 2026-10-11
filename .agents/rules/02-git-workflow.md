@@ -222,7 +222,9 @@ become the final commit, so they must meet this section.
   candidate, raises the minor: `0.5.0` is skipped (the withdrawn npm name
   placeholder `1.0.0-beta.1` held it), then `0.6.0` (the first release,
   prepared as 1.0.0-beta.2), `0.7.0`, `0.8.0`, `0.9.0`; further previews would
-  continue with `0.10.0`. The final release is `1.0.0`. A preview is a VS Code
+  continue with `0.10.0`. A release of a preview that only fixes it raises the
+  patch instead (owner decision 2026-10-11): `0.6.1`, `0.6.2`; it ships as a
+  preview like its minor. The final release is `1.0.0`. A preview is a VS Code
   pre-release, a GitHub pre-release and npm `next`; `isPreview` in
   `scripts/build-vscode.cjs` and the release workflows apply this rule. How a version after 1.0.0 is
   previewed is an owner decision before the first such preview.
