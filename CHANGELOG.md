@@ -203,3 +203,4 @@ page keeps them.
 - [`9af3c9d`](https://github.com/oktawianwybieralski/coagent8/commit/9af3c9d26d241b2c509f736a27bea3323d7afd15) **vscode:** Record a first profile entry as pending before writing it
 - [`19387b3`](https://github.com/oktawianwybieralski/coagent8/commit/19387b3b4ac315e2b743155ef3321738f4fef229) **vscode:** Keep cleaning other profiles when one cannot be read on uninstall
 - [`9014aa1`](https://github.com/oktawianwybieralski/coagent8/commit/9014aa1187e99382e15aa74fbdf5006c43c64bec) **redaction:** Redact the canonical path of the home directory
+- [`d8b4237`](https://github.com/oktawianwybieralski/coagent8/commit/d8b4237edd23a800854de39fa9279931a80016a1) **vscode:** Recognize the installation by its canonical path on uninstall
