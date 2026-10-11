@@ -2071,6 +2071,12 @@ unpublished instead of deprecated (step 8); this replaces the beta.1 parts of th
    version older than 72 hours only without dependents, with under 300 downloads
    in the last week and a single owner; the number is never reusable. Then check
    `npm dist-tag ls coagent8` (npm keeps a `latest` tag).
+   - **Step 8a - VS Code Marketplace:** publish the VSIX downloaded from the
+     release, verified in step 7, as a pre-release under the publisher
+     `okidev`: `npx @vscode/vsce publish --pre-release --packagePath
+     coagent8-mcp-0.6.0.vsix` with the publisher's token. The Marketplace never
+     accepts a version twice, so only the verified file goes up. Open VSX is not
+     part of this release.
 9. **npm trusted publishing** (rule 02 section 8): on npmjs.com, package
    `coagent8` > Settings > Trusted publishing: GitHub Actions, repository
    `oktawianwybieralski/coagent8`, workflow `npm-publish.yml`, environment

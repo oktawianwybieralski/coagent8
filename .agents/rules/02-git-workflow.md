@@ -30,7 +30,7 @@ features, fixes, releases, backports - travels as its own pushed branch and PR.
 | Push a topic branch, open or update a PR | Only after the owner's explicit go-ahead in the session | Yes |
 | Independent review ([03-author-reviewer](03-author-reviewer.md)) | Yes (Reviewer role) | Yes |
 | Merge a PR, create a release line, push a tag | Never | Yes |
-| Publish a GitHub Release, approve the `npm` environment, publish or deprecate on npm, change repository settings | Never | Yes |
+| Publish a GitHub Release, approve the `npm` environment, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
 
 An agent prepares release PRs, release notes and evidence (section 5) and
 stops. It never states or implies that a push, merge, tag or publication
@@ -333,6 +333,12 @@ marked (owner); an agent may prepare everything else.
     ```bash
     npm publish ./coagent8-0.N.0.tgz --tag next    # preview
     npm publish ./coagent8-X.Y.Z.tgz               # 1.0.0 and later: latest
+    ```
+    Publish the verified VSIX from the release to the VS Code Marketplace under
+    the publisher `okidev`, as a pre-release for a preview:
+    ```bash
+    npx @vscode/vsce publish --pre-release --packagePath ./coagent8-mcp-0.N.0.vsix   # preview
+    npx @vscode/vsce publish --packagePath ./coagent8-mcp-X.Y.Z.vsix                 # 1.0.0 and later
     ```
 11. Announce the release to testers with the GitHub Release link.
 
