@@ -188,6 +188,8 @@ function parseFileLockOptions(
   abortSignal?: AbortSignal;
   budget?: ExecutionBudget;
   context?: BackendReadContext;
+  /** The budget's remaining execution time, not the caller's timeout, bounds the wait. */
+  budgetBound?: boolean;
 } {
   if (options === undefined || options === null) {
     return { timeoutMs: 5000 };
@@ -206,13 +208,15 @@ function parseFileLockOptions(
       ? combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined
       : raw.abortSignal ?? context?.abortSignal;
     let timeoutMs = raw.timeoutMs ?? context?.timeoutMs ?? 5000;
+    let budgetBound = false;
     if (budget) {
       const remaining = budget.remainingExecutionMs();
-      if (Number.isFinite(remaining)) {
-        timeoutMs = Math.min(timeoutMs, Math.max(0, remaining));
+      if (Number.isFinite(remaining) && remaining <= timeoutMs) {
+        timeoutMs = Math.max(0, remaining);
+        budgetBound = true;
       }
     }
-    return { timeoutMs, abortSignal: callerSignal, budget, context };
+    return { timeoutMs, abortSignal: callerSignal, budget, context, budgetBound };
   }
   return { timeoutMs: 5000 };
 }
@@ -283,7 +287,13 @@ export async function withFileLock<T>(
   fn: () => Promise<T>,
   timeoutMsOrOptions: number | AbortSignal | FileLockOptions | BackendReadContext = 5000
 ): Promise<T> {
-  const { timeoutMs: effectiveTimeoutMs, abortSignal: callerSignal, budget, context } = parseFileLockOptions(timeoutMsOrOptions);
+  const { timeoutMs: effectiveTimeoutMs, abortSignal: callerSignal, budget, context, budgetBound } = parseFileLockOptions(timeoutMsOrOptions);
+  // A wait the budget bounds ends at the budget's deadline. The wait is timed by the wall clock and
+  // the budget by a monotonic one, so the budget can still report a fraction of a millisecond left:
+  // the expiry is reported as the budget's, not as a lock timeout.
+  const waitExpired = () => budgetBound
+    ? new ToolError('TIMEOUT', 'Execution budget expired while waiting for storage lock.')
+    : new LockTimeoutError();
   const effectiveSignal = combineSignals(callerSignal, budget?.executionSignal);
 
   // Pre-flight check: if already cancelled or budget expired, reject immediately without entering queue or touching disk
@@ -322,7 +332,7 @@ export async function withFileLock<T>(
     const queueTimeout = Math.max(1, effectiveTimeoutMs - (Date.now() - started));
     let timerHandle: NodeJS.Timeout | null = null;
     const timer = new Promise<never>((_, reject) => {
-      timerHandle = setTimeout(() => reject(new LockTimeoutError()), queueTimeout);
+      timerHandle = setTimeout(() => reject(waitExpired()), queueTimeout);
     });
 
     let abortListener: (() => void) | null = null;
@@ -369,7 +379,7 @@ export async function withFileLock<T>(
 
       const elapsed = Date.now() - started;
       if (elapsed >= effectiveTimeoutMs) {
-        throw new LockTimeoutError();
+        throw waitExpired();
       }
       // Jittered exponential backoff: 5ms -> 10ms -> 25ms -> 50ms, mitigating NTFS lock contention
       const baseDelay = 5;
