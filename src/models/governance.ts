@@ -55,7 +55,19 @@ export const MODEL_RULE_SETTINGS: Record<keyof ModelRules, string> = {
  * effort separately runs ({@link namesModelRun}).
  */
 export function findModelRule(model: string, rules: ModelRules, run?: EffortRun): keyof ModelRules | undefined {
-  return MODEL_RULES.find(rule => rules[rule].some(listed => namesModelRun(listed, model, run)));
+  return findModelRuleEntry(model, rules, run)?.rule;
+}
+
+/**
+ * Returns the rule that decides `model` as {@link findModelRule} does, with the entry that
+ * names it: the id, or the effort variant the turn runs, which is the entry to change.
+ */
+export function findModelRuleEntry(model: string, rules: ModelRules, run?: EffortRun): { rule: keyof ModelRules; entry: string } | undefined {
+  for (const rule of MODEL_RULES) {
+    const entry = rules[rule].find(listed => namesModelRun(listed, model, run));
+    if (entry !== undefined) return { rule, entry };
+  }
+  return undefined;
 }
 
 /** Names a model in a message, with the effort a turn passes beside it. */

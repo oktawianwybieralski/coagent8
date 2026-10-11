@@ -12,7 +12,7 @@ import type { ProviderId } from '../contracts/provider.js';
 import { namesModelRun, type CatalogModel, type ModelCatalog } from '../contracts/models.js';
 import { findCatalogEntry } from './catalog.js';
 import { checkPriceLimit, priceEvidence, type PriceEvidence, type PriceList } from './prices.js';
-import { decideConsent, type ConsentBasis, type GovernanceSettings } from './governance.js';
+import { decideConsent, findModelRuleEntry, type ConsentBasis, type GovernanceSettings } from './governance.js';
 
 /**
  * Where a selected model came from: the call, its session, `config.json`, the CLI's own
@@ -106,8 +106,12 @@ export interface ModelCandidate {
   /** Where the backend's default came from; set on the default model's row only. */
   defaultSource?: ModelSource;
   price: PriceEvidence;
-  /** Whether governance asks the user before a turn of this model or never runs it, and why. */
-  approval: { required: boolean; denied: boolean; basis: ConsentBasis; reason: string; rememberable: boolean };
+  /**
+   * Whether governance asks the user before a turn of this model or never runs it, and why;
+   * `ruleEntry` is the user's `governance.models` entry that decides it, which may name the
+   * effort variant a default model runs as rather than `model`.
+   */
+  approval: { required: boolean; denied: boolean; basis: ConsentBasis; reason: string; rememberable: boolean; ruleEntry?: string };
 }
 
 /**
@@ -126,12 +130,14 @@ export function listModelCandidates(id: ProviderId, catalog: ModelCatalog | unde
   const now = Date.now();
   const defaultEntry = fallback && catalog ? findCatalogEntry(catalog, fallback.model)?.entry : undefined;
   const row = (model: string, efforts: string[], effortRequired: boolean, isDefault: boolean): ModelCandidate => {
-    const consent = decideConsent(isDefault && fallback ? fallback.model : model, fallback?.model, prices, settings);
+    const governed = isDefault && fallback ? fallback.model : model;
+    const consent = decideConsent(governed, fallback?.model, prices, settings);
+    const ruleEntry = findModelRuleEntry(governed, settings.models)?.entry;
     return {
       backend: id, model, efforts, ...(effortRequired ? { effortRequired } : {}),
       ...(isDefault && fallback ? { defaultSource: fallback.source } : {}),
       price: priceEvidence(prices, model, now),
-      approval: { required: consent.ask, denied: consent.deny, basis: consent.basis, reason: consent.reason, rememberable: consent.offerRemember },
+      approval: { required: consent.ask, denied: consent.deny, basis: consent.basis, reason: consent.reason, rememberable: consent.offerRemember, ...(ruleEntry ? { ruleEntry } : {}) },
     };
   };
   const rows = (catalog?.models ?? []).map(entry => row(entry.id, entry.efforts, entry.effortRequired === true, entry === defaultEntry));

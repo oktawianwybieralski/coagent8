@@ -647,3 +647,15 @@ test('EXEC-001-T08f: readPrices with refresh: true coalesces with inflight read 
     assert.ok(r2?.models['coalesce-refresh-model']);
   });
 });
+
+test('a model row names the rule entry that decides it, such as the variant its default runs as', () => {
+  const agy = { source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
+  const fallback = { model: 'gemini-3.8-flash-low', source: 'catalog' };
+  const rules = models => ({ ...settings, models: { allow: [], ask: [], deny: [], ...models } });
+  const [variant] = listModelCandidates('agy', agy, fallback, list, rules({ allow: ['gemini-3.8-flash-low'] }));
+  assert.deepEqual([variant.model, variant.approval.basis, variant.approval.ruleEntry], ['gemini-3.8-flash', 'allow', 'gemini-3.8-flash-low']);
+  const [id] = listModelCandidates('agy', agy, fallback, list, rules({ deny: ['gemini-3.8-flash'], allow: ['gemini-3.8-flash-low'] }));
+  assert.deepEqual([id.approval.basis, id.approval.ruleEntry], ['deny', 'gemini-3.8-flash'], 'deny wins, and its entry is the one to change');
+  const [none] = listModelCandidates('agy', agy, fallback, list, rules({}));
+  assert.equal(none.approval.ruleEntry, undefined);
+});

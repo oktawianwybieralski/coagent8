@@ -278,16 +278,20 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
 function fixtureModelReport(configFile) {
   const governance = fs.existsSync(configFile) ? JSON.parse(fs.readFileSync(configFile, 'utf8')).governance ?? {} : {};
   const models = { allow: [], ask: [], deny: [], ...governance.models };
-  const row = (backend, model, output, extra = {}) => {
-    const rule = ['deny', 'ask', 'allow'].find(name => models[name].includes(model));
+  // `runs`: the name a default model runs as (agy's `<id>-<effort>`), which its rules see.
+  const row = (backend, model, output, { runs, ...extra } = {}) => {
+    const names = [runs ?? model, model];
+    const rule = ['deny', 'ask', 'allow'].find(name => models[name].some(listed => names.includes(listed)));
+    const ruleEntry = rule && models[rule].find(listed => names.includes(listed));
     const required = rule ? rule === 'ask' : output === null || output >= (governance.askAbovePrice === undefined ? 20 : governance.askAbovePrice ?? Infinity);
     const basis = rule ?? (output === null ? 'unpriced' : required ? 'above-limit' : 'priced');
-    return { backend, model, efforts: [], price: { outputUsdPerMTok: output, match: output === null ? 'unknown' : 'exact' }, approval: { required, denied: rule === 'deny', basis, reason: 'fixture', rememberable: false }, ...extra };
+    return { backend, model, efforts: [], price: { outputUsdPerMTok: output, match: output === null ? 'unknown' : 'exact' },
+      approval: { required, denied: rule === 'deny', basis, reason: 'fixture', rememberable: false, ...(ruleEntry ? { ruleEntry } : {}) }, ...extra };
   };
   return {
     scope: 'models', prices: null, recommendations: [],
     backends: { codex: { installed: true, allowed: true }, claude: { installed: false, allowed: true }, agy: { installed: true, allowed: true } },
-    selection: [row('codex', 'gpt-6-luna', 0.5, { defaultSource: 'catalog' }), row('codex', 'gpt-6-astra', 50), row('codex', 'gpt-7-nova', null), row('agy', 'gemini-3.8-flash', 3.75)],
+    selection: [row('codex', 'gpt-6-luna', 0.5, { defaultSource: 'catalog' }), row('codex', 'gpt-6-astra', 50), row('codex', 'gpt-7-nova', null), row('agy', 'gemini-3.8-flash', 3.75, { defaultSource: 'catalog', runs: 'gemini-3.8-flash-low' })],
   };
 }
 /** The actions of a menu's lines, information lines and separators left out. */
@@ -786,6 +790,14 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
   }
   const back = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { button: 'Back' }] });
   assert.deepEqual(back.menus.map(menu => menu.title), ['Manage Model Approvals', 'Codex CLI Models', 'Manage Model Approvals'], 'Back returns one step');
+
+  // A rule on the variant a default model runs as is the one the menu changes.
+  fs.writeFileSync(path.join(home, '.coagent8/config.json'), JSON.stringify({ governance: { models: { allow: ['gemini-3.8-flash-low'], ask: [], deny: [] } } }));
+  const variant = await runExtension({ home, command, steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-3.8-flash$/ }, { label: '$(law) Price Rules' }] });
+  assert.deepEqual(variant.errors, []);
+  assert.equal(variant.menus[2].items[0].description, 'current · Runs without asking', 'the rule on the variant is shown as the rule in force');
+  assert.deepEqual(variant.config.governance.models, { allow: [], ask: [], deny: [] }, 'Price Rules removes the rule that decided it');
+  assert.deepEqual(variant.statusMessages, ['CoAgent8: gemini-3.8-flash-low · price rules']);
 });
 test('Manage Model Approvals edits the price rules: an empty price turns that rule off, invalid values are refused', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-price-rules-'));

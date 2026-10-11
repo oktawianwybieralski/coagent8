@@ -760,8 +760,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (rule === 'back') continue;
       if (!rule?.length) return;
       if (rule[0].rule === current) continue;
-      await setModelRule(row.model, rule[0].rule, configurationFile());
-      vscode.window.setStatusBarMessage(`CoAgent8: ${row.model} · ${rule[0].rule ? RULE_TEXT[rule[0].rule] : 'price rules'}`, 5000);
+      // The entry that decides the model, such as the variant a default runs as, is the one changed.
+      const target = row.approval.ruleEntry ?? row.model;
+      await setModelRule(target, rule[0].rule, configurationFile());
+      vscode.window.setStatusBarMessage(`CoAgent8: ${target} · ${rule[0].rule ? RULE_TEXT[rule[0].rule] : 'price rules'}`, 5000);
     }
   }
   register('coagent8.manageModelApprovals', async () => {
