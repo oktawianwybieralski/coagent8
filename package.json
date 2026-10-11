@@ -1,7 +1,7 @@
 {
   "name": "coagent8",
   "displayName": "CoAgent8 - MCP bridge to coding CLIs",
-  "version": "1.0.0-beta.2",
+  "version": "0.6.0",
   "description": "Expose local coding CLIs through MCP with public conversation history and read-only execution profiles.",
   "main": "dist/index.cjs",
   "bin": {
@@ -65,9 +65,9 @@
     "prepack": "npm run build",
     "test:coverage": "c8 --all --include=src/**/*.ts --check-coverage --statements=70 --lines=70 --branches=70 --functions=75 --reporter=text --reporter=json-summary --reports-dir=.artifacts/coverage node tests/run.cjs",
     "test:consumer": "node tests/consumer/smoke.cjs",
-    "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md v1.0.0-beta.2..HEAD",
-    "changelog:check": "git-cliff --config cliff.toml --unreleased --strip all v1.0.0-beta.2..HEAD",
-    "release-notes": "git-cliff --config cliff.release-notes.toml --unreleased v1.0.0-beta.2..HEAD"
+    "changelog": "git-cliff --config cliff.toml --output CHANGELOG.md v0.6.0..HEAD",
+    "changelog:check": "git-cliff --config cliff.toml --unreleased --strip all v0.6.0..HEAD",
+    "release-notes": "git-cliff --config cliff.release-notes.toml --unreleased v0.6.0..HEAD"
   },
   "keywords": [
     "cli",

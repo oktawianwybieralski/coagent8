@@ -96,3 +96,25 @@ test('PACKAGE-001: the plugin check rejects a package whose manifests reference 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the VSIX keeps the shared numeric version and every version below 1.0.0 is a preview', () => {
+  const { extensionVersion, isPreview } = require('../scripts/build-vscode.cjs');
+  assert.equal(extensionVersion('0.6.0', '0.6.0'), '0.6.0');
+  assert.throws(() => extensionVersion('0.6.0', '0.7.0'), /must match/);
+  assert.throws(() => extensionVersion('1.0.0-beta.2', '1.0.0-beta.2'), /numeric major\.minor\.patch version, not 1\.0\.0-beta\.2/, 'a pre-release suffix is refused, not stripped');
+  assert.equal(isPreview('0.6.0'), true);
+  assert.equal(isPreview('0.10.3'), true);
+  assert.equal(isPreview('1.0.0'), false);
+  assert.equal(isPreview('10.0.0'), false);
+});
+
+test('npm, plugin and VS Code manifests share one numeric version', () => {
+  const root = path.resolve(__dirname, '..');
+  const read = name => JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
+  const { version } = read('package.json');
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  const lock = read('package-lock.json');
+  for (const [name, actual] of [['package-lock.json', lock.version], ['package-lock.json packages[""]', lock.packages[''].version], ['plugin.json', read('plugin.json').version], ['extensions/vscode/package.json', read('extensions/vscode/package.json').version]]) {
+    assert.equal(actual, version, `${name} carries the package version`);
+  }
+});

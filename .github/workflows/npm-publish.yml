@@ -62,8 +62,8 @@ jobs:
           gh attestation verify "release/coagent8-$version.tgz" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
 
-      # A pre-release version (beta, rc) goes to `next`, a final version to `latest`;
-      # the GitHub pre-release flag must agree.
+      # A preview (every version below 1.0.0, rule 02 section 4) goes to `next`, a final
+      # version to `latest`; the GitHub pre-release flag must agree.
       - name: Publish to npm
         shell: bash
         env:
@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           version="${TAG#v}"
           case "$version" in
-            *-*) channel=next; expected=true ;;
+            0.*) channel=next; expected=true ;;
             *) channel=latest; expected=false ;;
           esac
           if [ "$PRERELEASE" != "$expected" ]; then

@@ -36,12 +36,16 @@ jobs:
             tooling/documentation/package-lock.json
             tooling/vscode/package-lock.json
 
-      # The tag must be annotated, match package.json and sit on develop or a release line.
+      # The tag must be vX.Y.Z (one numeric version for npm, the VSIX and the tag; REPO-003),
+      # annotated, match package.json and sit on develop or a release line.
       - name: Verify release tag
         shell: bash
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$tag is not a numeric vX.Y.Z tag"; exit 1
+          fi
           git fetch --force origin "+refs/tags/$tag:refs/tags/$tag"
           if [ "$(git cat-file -t "refs/tags/$tag")" != "tag" ]; then
             echo "::error::$tag is not an annotated tag"; exit 1
@@ -148,7 +152,8 @@ jobs:
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
           prerelease=()
-          case "$tag" in *-*) prerelease=(--prerelease) ;; esac
+          # Every version below 1.0.0 is a preview (rule 02, section 4).
+          case "$version" in 0.*) prerelease=(--prerelease) ;; esac
           gh release create "$tag" --draft --verify-tag "${prerelease[@]}" \
             --title "CoAgent8 $tag" --notes-file release/notes.md \
             "release/coagent8-$version.tgz" "release/coagent8-mcp-$version.vsix" release/SHA256SUMS
