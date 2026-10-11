@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   catch (error) { cleanupError = redactDiagnostic(error instanceof Error ? error.message : 'CoAgent8 registration cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.
   console.log(JSON.stringify({ ...applied, profiles, ...(profileError ? { profileError } : {}), ...(cleanupError ? { cleanupError } : {}) }));
-  if (profileError || !applied || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;
+  if (profileError || profiles.some(profile => profile.action === 'blocked') || !applied || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;
 }
 
 main().catch(error => {

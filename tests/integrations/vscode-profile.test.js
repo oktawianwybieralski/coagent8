@@ -311,6 +311,22 @@ test('an interrupted first registration is recorded before its entry is written,
   assert.equal(await p.sync(), 'registered', 'the next synchronization writes the entry');
   assert.ok(p.entries()[VSCODE_SERVER_NAME]);
 });
+test('a malformed profile mcp.json is reported and kept, and the uninstall still cleans the other profiles', async t => {
+  const p = profile(t);
+  assert.equal(await p.sync(), 'registered');
+  const work = path.join(p.root, 'Code/User/profiles/work/globalStorage/okidev.coagent8-mcp');
+  assert.equal(await p.sync({ storagePath: work }), 'registered');
+  const workFile = profileMcpFile(work);
+  const record = path.join(p.home, '.coagent8/vscode-mcp.json');
+  fs.writeFileSync(p.file, '{ "servers": ');
+  assert.deepEqual(await p.remove(), [
+    { file: p.file, action: 'blocked', message: 'Malformed JSON/JSONC configuration.' },
+    { file: workFile, action: 'removed' },
+  ]);
+  assert.deepEqual(parse(fs.readFileSync(workFile, 'utf8')).servers, {}, 'the healthy profile is cleaned');
+  assert.equal(fs.readFileSync(p.file, 'utf8'), '{ "servers": ', 'the malformed file is not changed');
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(record, 'utf8'))), [p.file], 'its record stays for a later cleanup');
+});
 test('uninstall removes only the entries of its own VS Code installation and keeps the records of others', async t => {
   const stable = profile(t);
   const insiders = profile(t, { product: 'Code - Insiders', home: stable.home });

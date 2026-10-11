@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto';
 import { parse, applyEdits, modify, type ParseError } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { withFileLock } from '../storage/lock.js';
+import { redactDiagnostic } from '../security/redaction.js';
 import { object } from './rpc.js';
 import { EXTENSION_STORAGE_NAME, hash, json, read, writeChecked } from './setup-storage.js';
 
@@ -277,8 +278,11 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
   return 'registered';
 }
 
-/** Outcome of the uninstall cleanup for one profile `mcp.json`. */
-export interface VscodeRemoval { file: string; action: 'removed' | 'preserved' | 'missing' }
+/**
+ * Outcome of the uninstall cleanup for one profile `mcp.json`; `blocked` keeps the file
+ * unchanged and its record, with the reason in `message`.
+ */
+export interface VscodeRemoval { file: string; action: 'removed' | 'preserved' | 'missing' | 'blocked'; message?: string }
 /**
  * Removes every entry this installation recorded that is still exactly as the extension wrote
  * it, then its records. Runs from the `vscode:uninstall` hook, without the VS Code API.
@@ -286,8 +290,9 @@ export interface VscodeRemoval { file: string; action: 'removed' | 'preserved' |
  * @param installation - The extensions folder of the VS Code installation being uninstalled.
  * @param leaseTimeoutMs - How long to wait for the lease a synchronizing window holds; the
  * hook has a time limit of its own.
- * @returns One result per profile of this installation; edited entries are preserved, and
- * other installations' entries and records are left alone.
+ * @returns One result per profile of this installation; edited entries are preserved, a
+ * profile that cannot be read or written is reported without stopping the others, and other
+ * installations' entries and records are left alone.
  * @throws When the lease is not acquired within `leaseTimeoutMs`; no entry is changed then.
  */
 export async function removeVscodeRegistrations(home: string, installation: string, leaseTimeoutMs: number): Promise<VscodeRemoval[]> {
@@ -299,15 +304,22 @@ function removeOwned(home: string, installation: string): VscodeRemoval[] {
   // A record naming no installation was written by an unreleased build before 0.6.0; it is left
   // alone like another installation's (owner decision 2026-10-11: no migration before 0.6.0).
   const others = Object.fromEntries(Object.entries(record).filter(([, recorded]) => !sameInstallation(recorded.installation, installation)));
+  const kept = { ...others };
   for (const [file, recorded] of Object.entries(record)) {
     if (file in others) continue;
-    const text = read(file);
-    const current = profileServers(text)[VSCODE_SERVER_NAME];
-    if (text === null || current === undefined) { results.push({ file, action: 'missing' }); continue; }
-    if (!owned(current, recorded)) { results.push({ file, action: 'preserved' }); continue; }
-    writeChecked(file, text, applyEdits(text, modify(text, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })));
-    results.push({ file, action: 'removed' });
+    try {
+      const text = read(file);
+      const current = profileServers(text)[VSCODE_SERVER_NAME];
+      if (text === null || current === undefined) { results.push({ file, action: 'missing' }); continue; }
+      if (!owned(current, recorded)) { results.push({ file, action: 'preserved' }); continue; }
+      writeChecked(file, text, applyEdits(text, modify(text, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })));
+      results.push({ file, action: 'removed' });
+    } catch (error) {
+      // One malformed or locked profile does not keep the entries of the others; its record stays.
+      kept[file] = recorded;
+      results.push({ file, action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Profile cleanup failed.') });
+    }
   }
-  writeRecord(home, recordText, others);
+  writeRecord(home, recordText, kept);
   return results;
 }

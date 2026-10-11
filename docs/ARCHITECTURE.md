@@ -509,7 +509,8 @@ Extensions-view uninstall cannot orphan them; only recorded dependencies are
 offered for removal. The `vscode:uninstall` hook removes unchanged profile
 `mcp.json` entries of its own installation (each record names the extensions
 folder of the VS Code installation that wrote it; Stable and Insiders share
-`~/.coagent8`) and other owned entries, skills and
+`~/.coagent8`; a profile it cannot read or write keeps its entry and record and
+is reported without stopping the others) and other owned entries, skills and
 data and preserves shared config, sign-ins and histories. VS Code stops the hook
 after five seconds, so it waits at most 1.5 s for the profile lease a window
 holds and as long for the setup lease of a running setup; what a lease still
