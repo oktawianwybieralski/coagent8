@@ -213,6 +213,26 @@ test('while a window holds the profile lease, the vscode:uninstall hook still re
   assert.equal(output.results.find(r => r.client === 'claude').action, 'removed', 'the client registrations are still removed');
   assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
 });
+test('while setup holds its lease, the vscode:uninstall hook reports the registrations it kept within its time limit', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const p = uninstallProfile(t, { withCli: false });
+  const hook = path.join(p.home, 'hook', 'uninstall.cjs');
+  await buildHook(hook);
+  let release, acquired;
+  const held = new Promise(resolve => { release = resolve; });
+  const leased = new Promise(resolve => { acquired = resolve; });
+  const holder = withFileLock(path.join(p.home, '.coagent8', 'setup'), async () => { acquired(); await held; });
+  await leased;
+  const run = runHook(hook, p.home);
+  release();
+  await holder;
+  assert.equal(run.signal, null, 'VS Code does not kill the hook at its five-second limit');
+  assert.equal(run.status, 1, 'the registrations it could not remove are reported');
+  const output = JSON.parse(run.stdout);
+  assert.match(output.cleanupError, /lock/);
+  assert.deepEqual(output.profiles, [], 'the profile cleanup result is still reported');
+  assert.ok(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers.coagent8, 'no registration is removed without the lease');
+});
 test('the vscode:uninstall hook removes the profile entries of its own installation only', async t => {
   const { syncVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8 hook installations '));

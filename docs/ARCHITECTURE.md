@@ -511,8 +511,8 @@ folder of the VS Code installation that wrote it; Stable and Insiders share
 `~/.coagent8`) and other owned entries, skills and
 data and preserves shared config, sign-ins and histories. VS Code stops the hook
 after five seconds, so it waits at most 1.5 s for the profile lease a window
-holds; without it the profile entries stay and the hook reports them, and the
-rest of the cleanup still runs. Native lifecycle acceptance remains. Sources compare by real path, so an installer link to the
+holds and as long for the setup lease of a running setup; what a lease still
+held protects stays, the hook reports it, and the rest of the cleanup runs. Native lifecycle acceptance remains. Sources compare by real path, so an installer link to the
 extension copy is that copy. Standalone removal deletes installer links, never
 their targets' other files, then emptied installer folders and their user PATH
 entries, keeping the registry value's type and unexpanded variables. An extension

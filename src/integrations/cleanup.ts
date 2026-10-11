@@ -43,6 +43,8 @@ export interface CleanupOptions {
    * written for the extension.
    */
   uninstall?: boolean;
+  /** How long apply waits for the setup lease another process holds; the lock's default when omitted. */
+  leaseTimeoutMs?: number;
 }
 export interface CleanupPreview { token: string; results: CleanupStatus[]; stateError?: string }
 
@@ -186,7 +188,7 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
     return { token, results };
   }
   if (options.apply === undefined) return perform();
-  const applied = await withFileLock(path.join(root, 'setup'), perform);
+  const applied = await withFileLock(path.join(root, 'setup'), perform, options.leaseTimeoutMs);
   // The lease lived in the directory until now; remove it only when nothing else remains.
   if (options.uninstall && fs.existsSync(root) && !fs.readdirSync(root).length) fs.rmdirSync(root);
   return applied;

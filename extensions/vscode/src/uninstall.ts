@@ -10,15 +10,16 @@
  */
 import os from 'node:os';
 import path from 'node:path';
-import { cleanupClients } from '../../../src/integrations/cleanup.js';
+import { cleanupClients, type CleanupPreview } from '../../../src/integrations/cleanup.js';
 import { removeVscodeRegistrations, type VscodeRemoval } from '../../../src/integrations/vscode-profile.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { redactDiagnostic } from '../../../src/security/redaction.js';
 
 /**
- * Longest wait for a lease another VS Code window or CoAgent8 process holds. VS Code kills
- * the hook after five seconds; the wait leaves time for Node to start and for the rest of
- * the cleanup, and a window holds the lease for well under a second.
+ * Longest wait for each of the two leases the hook takes: the profile lease a VS Code window
+ * holds for well under a second, and the setup lease a running setup can hold much longer.
+ * VS Code kills the hook after five seconds; both waits leave time for Node to start and for
+ * the cleanup itself. What a lease still held protects stays and is reported.
  */
 const LEASE_TIMEOUT_MS = 1500;
 
@@ -27,11 +28,15 @@ async function main(): Promise<void> {
   // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
   try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), LEASE_TIMEOUT_MS); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
-  const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
-  const applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token });
+  let applied: CleanupPreview | undefined, cleanupError: string | undefined;
+  try {
+    const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
+    applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token, leaseTimeoutMs: LEASE_TIMEOUT_MS });
+  }
+  catch (error) { cleanupError = redactDiagnostic(error instanceof Error ? error.message : 'CoAgent8 registration cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.
-  console.log(JSON.stringify({ ...applied, profiles, ...(profileError ? { profileError } : {}) }));
-  if (profileError || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;
+  console.log(JSON.stringify({ ...applied, profiles, ...(profileError ? { profileError } : {}), ...(cleanupError ? { cleanupError } : {}) }));
+  if (profileError || !applied || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;
 }
 
 main().catch(error => {
