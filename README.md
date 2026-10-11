@@ -10,7 +10,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/oktawianwybieralski/coagent8/ci.yml?branch=develop&label=CI&logo=github)](https://github.com/oktawianwybieralski/coagent8/actions/workflows/ci.yml)
 [![npm next](https://img.shields.io/npm/v/coagent8/next?label=npm%20next&color=007ec6)](https://www.npmjs.com/package/coagent8?activeTab=versions)
-[![Status](https://img.shields.io/badge/status-preview-orange)](docs/ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-preview-orange)](#status)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D%2024-5FA04E)](package.json)
@@ -24,267 +24,292 @@
 
 [API reference](https://oktawianwybieralski.github.io/coagent8/)
 
-CoAgent8 exposes Codex, Claude Code and Antigravity (backend `agy`, which runs
-Gemini models) through a stdio MCP server. An agent in a compatible host can request a
-second opinion or a Git review and receive the backend's public answer. The host
-runs your chat; the backend CLI performs the requested task.
-
-**Planned direction:** complete task delegation with configurable coordinator,
-planner, worker, verifier and reviewer roles, plus client skill installation.
-Any supported model may fill a role; model size and provider are not fixed.
-Writing and delegated coordination are not available in the current bridge.
-See the [full coagent plan](docs/ROADMAP.md#full-coagent-direction).
-
-`0.6.0` (prepared as 1.0.0-beta.2) is the first release for testers. Every
-version below 1.0.0 is a preview: a GitHub pre-release with the npm tarball, the
-VS Code extension (a VS Code pre-release) and checksums, and npm `coagent8@next`.
-npm, the extension and the Git tag carry the same version number. A
-checkout of `develop` is a development build, not a release. The
-[roadmap](docs/ROADMAP.md)
-owns the release sequence and remaining work.
-
-Read-only CLI profiles, model consent, bounded buffers, credential redaction and
-owned-process cleanup are implemented. Codex disables and verifies inherited
-MCP servers per thread; agy still inherits external tools, an owner-accepted
-third-party limitation. Review approval checks input completeness and identity.
-See the [known limitations](#known-limitations).
-A model's `READY` verdict requires independent verification before release.
+CoAgent8 lets the coding agent you work with ask another one. It is an MCP
+server that puts Codex, Claude Code and Antigravity (`agy`, which runs Gemini and
+other models) behind the same six tools: your agent requests a second opinion or
+an independent review of your Git changes, and gets the other agent's answer
+back in the chat. The other agent runs in a read-only profile, on your own
+installed and signed-in CLI.
 
 **Contents:**
+[Status](#status) |
+[Quick start](#quick-start) |
 [Features](#features) |
-[Connect through MCP](#connect-through-mcp) |
-[Skills](#skills) |
-[VS Code commands](#vs-code-commands) |
-[Tester guide](#tester-guide) |
 [Tools](#tools) |
+[Skills](#skills) |
+[VS Code extension](#vs-code-extension) |
 [Configuration](#configuration) |
-[Limitations](#known-limitations) |
-[Documentation](#documentation-and-contributing)
+[Known limitations](#known-limitations) |
+[Reporting problems](#reporting-problems) |
+[Contributing](#building-and-contributing)
+
+## Status
+
+`0.6.0` is the first release for testers. Every version below 1.0.0 is a
+**preview**: a GitHub pre-release, a VS Code pre-release and npm
+`coagent8@next`, all with the same version number.
+
+What works today: consultations and reviews by another agent in a read-only
+profile, model selection by price with your approval for expensive models,
+continuable sessions with history, diagnostics, skills and the VS Code
+extension. Not yet available: letting the other agent write changes, run
+checks or coordinate several agents. These are the next steps in the
+[roadmap](docs/ROADMAP.md#full-coagent-direction).
+
+## Quick start
+
+You need **Node.js 24 or later** and at least one of these CLIs, installed and
+signed in:
+
+| CLI | Notes |
+| --- | --- |
+| [Codex CLI](https://github.com/openai/codex) | Also found inside the OpenAI VS Code extension |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | 2.1.289 or later; subscription login or API key |
+| Antigravity CLI (`agy`) | Also installed by the Google Antigravity VS Code extension (`~/.gemini/bin`) |
+
+### VS Code
+
+Install **CoAgent8** (`okidev.coagent8-mcp`) as a pre-release from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=okidev.coagent8-mcp),
+or download `coagent8-mcp-0.6.0.vsix` from the
+[GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.6.0)
+and run **Extensions: Install from VSIX...**. Then:
+
+1. The first start shows one notice with the CLIs it found, or an offer to set
+   them up. **CoAgent8: Manage Coding CLIs** installs or signs in a CLI at any
+   time.
+2. CoAgent8 appears in **MCP: List Servers**. Enable its tools in your chat.
+3. Ask your agent, for example: *"Use CoAgent8 doctor with scope health"*, *"Ask CoAgent8 for a
+   second opinion on this plan"* or *"Have CoAgent8 review my uncommitted
+   changes"*.
+
+To use CoAgent8 also inside the CLIs' own chats, choose **Add CoAgent8 to All
+CLI Chats** (or **Add CoAgent8 to Its Chat** in one CLI's menu) in
+**CoAgent8: Manage Coding CLIs**.
+
+### Codex, Claude Code and Antigravity CLIs
+
+One command registers CoAgent8 in the chats of the CLIs you choose and installs
+its [skills](#skills):
+
+```bash
+npx -y coagent8@next setup --clients=codex,claude,agy
+```
+
+Setup copies the server to `~/.coagent8/runtime/`, so the registration does
+not depend on the npx cache, and keeps a private backup of every file it
+changes. `status` checks the CLIs. `repair` checks the registrations and updates the
+ones setup wrote and you did not change; an entry you edited is kept.
+`cleanup` shows what it would remove; run it again with the
+`--apply=<token>` it prints to remove the registrations and skills setup added.
+npm runs no script on uninstall, so run `cleanup` before `npm uninstall -g
+coagent8`.
+
+### Any other MCP host
+
+Add a stdio server to the host's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "coagent8": {
+      "command": "npx",
+      "args": ["-y", "coagent8@next"]
+    }
+  }
+}
+```
+
+On Windows, a host that starts commands without a shell may need
+`"command": "cmd"` and `"args": ["/c", "npx", "-y", "coagent8@next"]`. Both
+`coagent8` and `coagent8-mcp` start the server when run without arguments;
+`coagent8@0.6.0` pins a version. Plain `coagent8` (npm `latest`) is not a
+supported channel before 1.0.0.
+
+A host with its own tool deadline can stop a long review early. For Codex, set
+`tool_timeout_sec = 1800` in `[mcp_servers.coagent8]` (setup does this). Continue
+supports stdio MCP in Agent mode through the same definition, following
+[Continue's MCP guide](https://docs.continue.dev/customize/deep-dives/mcp).
 
 ## Features
 
-### At a glance
-
 - **One MCP server, three coding CLIs.** Codex, Claude Code and Antigravity
-  behind the same six tools, for any stdio MCP host. No recognized client name,
-  setup command or VSIX is required.
+  behind the same six tools, for any stdio MCP host.
 - **Read-only profiles.** Every backend runs in a read-only profile; for Codex
-  and Claude Code the bridge verifies it and refuses a turn it cannot confirm.
-- **Second opinion and independent review.** Plain `consult` answers, or a
-  `review` of Git changes with a State Envelope and a server-derived verdict.
-- **The user decides on expensive models.** Consent by price, requested from the
-  user through MCP elicitation; the calling agent cannot grant it. A call can
-  also set a strict price limit.
-- **Quiet, bounded processes.** No shell, owned process handles only, protocol
-  interrupts, bounded buffers and one deadline for the whole call.
-- **Sessions you can continue.** Native backend resume through a session handle,
-  with paginated, workspace-scoped history.
-- **Self-diagnosing.** `doctor` reports models, efforts, prices and backend
-  health; `issue` prepares a sanitized bug report.
-- **Skills and editor integration.** Optional setup registers CoAgent8 in the
-  CLIs' own chats and installs one skill per function; the VS Code extension
-  adds an MCP provider, CLI management, skill management and uninstall cleanup.
+  and Claude Code CoAgent8 verifies it and refuses a turn it cannot confirm.
+- **Second opinion and independent review.** `consult` answers a question;
+  `review` checks Git changes and derives a `READY` or `BLOCKED` verdict itself
+  instead of trusting the model's word.
+- **You decide on expensive models.** A model priced high or unknown runs only
+  after you approve it in a form; the calling agent cannot approve it for you.
+  A call can also set a strict price limit.
+- **Sessions you can continue.** A follow-up with the session handle keeps the
+  other agent's context; history is paged and scoped to the workspace.
+- **Quiet, bounded processes.** No shell, no console windows, only processes
+  CoAgent8 started, bounded buffers and one deadline for the whole call.
+- **Self-diagnosing.** `doctor` lists models, efforts and prices and checks
+  installation, sign-in and quota; `issue` prepares a sanitized bug report.
+- **Skills and editor integration.** One skill per function for each CLI's
+  chat; the VS Code extension manages CLIs, skills and model approvals.
 
 ### Backends and read-only profiles
 
 | Backend | Execution profile |
 | --- | --- |
 | **Codex** | `app-server` with `sandbox_mode="read-only"` and `approval_policy="never"`; the thread's read-only state is verified, every inherited MCP server is disabled and verified per thread, server approval requests are rejected, interrupt via `turn/interrupt` |
-| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt; subscription login or API key |
-| **Antigravity** (`agy`) | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; inherits the user's MCP servers and plugins (accepted limitation), recursion into CoAgent8 refused |
+| **Claude Code** (2.1.289+) | `-p --restricted --tools Read,Glob,Grep --permission-mode dontAsk`, hooks disabled, strict empty MCP configuration; startup tools, MCP and permission mode verified before any content; native session resume and control interrupt |
+| **Antigravity** (`agy`) | Headless `--sandbox --output-format stream-json`, prompt on stdin, explicit model, native `--conversation` resume; inherits your agy MCP servers and plugins (see [known limitations](#known-limitations)), recursion into CoAgent8 refused |
 
 ### Routing
 
 - `backend`: `auto` (default), `codex`, `claude`, `agy` or `smart_quota`.
-- A fixed default backend or the `smart_quota` strategy in `config.json`,
+  A model name alone also chooses its backend.
+- `config.json` can fix a default backend or select the `smart_quota` strategy,
   limited by `allowedBackends`.
-- `auto` with several eligible backends excludes observed rate limits, prefers a
-  CLI other than the caller's own and ranks by cached measured quota headroom.
-- A rate-limited turn records a cooldown once. A failed turn is never silently
-  retried on another provider.
+- `auto` uses the configured default backend when it is eligible. Otherwise it
+  skips backends with an observed rate limit, prefers a CLI other than the one
+  calling, and ranks the rest by measured quota headroom. A measurement
+  older than 15 minutes counts as unmeasured; `doctor` with `scope: "health"`
+  refreshes it.
+- A failed turn is never silently retried on another backend.
 
-### Models, prices and consent
+### Models, prices and approval
 
-- The source names no model. A turn uses the call's `model`, then the session's
-  model, then `backends.<id>.defaultModel`, then the CLI's own default or catalog.
+- A turn uses the call's `model`, then the session's model, then
+  `backends.<id>.defaultModel`, then the CLI's own default. CoAgent8 itself
+  names no model.
 - `reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` or
-  `max`, validated per model where a catalog exists (Codex `model/list`,
-  `agy models`; Claude Code resolves its aliases itself).
-- Catalogs are cached in `~/.coagent8/models.json`. Prices
-  come from OpenRouter's public model list (no key, no user data) or from
-  `coagent8_PRICES_URL`; they decide whether to ask, they are not billing.
-- Your own rules come first, in `governance.models`: `deny` never runs a model
-  (the call fails with the reason), `ask` asks before every turn whatever it
-  costs, `allow` runs it without asking; `deny` wins over `ask`, `ask` over
-  `allow`. Any other model is asked for without a known or exact price, priced
-  at or above `governance.askAbovePrice` (default 20 USD per million output
-  tokens), or at least `governance.priceMultiplier` (default 2) times the backend
-  default.
-- `output_price_below` is a strict limit; without `model` the server picks a
-  qualifying model and states its price in the footer, see
-  [choosing a model under a price limit](#choosing-a-model-under-a-price-limit).
+  `max`, checked against the model's accepted efforts where the CLI lists them.
+- Prices come from OpenRouter's public model list (no key, no user data) or
+  from `coagent8_PRICES_URL`. They decide whether to ask; they are not a bill.
+- Your rules in `governance.models` come first: `deny` never runs a model,
+  `ask` asks before every turn, `allow` runs it without asking (`deny` wins over
+  `ask`, `ask` over `allow`). Any other model asks when its price is unknown or
+  approximate, at or above `governance.askAbovePrice` (default 20 USD per
+  million output tokens), or at least `governance.priceMultiplier` (default 2)
+  times the backend's default.
 
 ### Review gate
 
-- Scopes: uncommitted (default), staged, commit, branch or range, plus optional
-  instructions. Bounded Git context: 4 MiB per Git command, 3 MiB snapshot.
-- The backend answers in a State Envelope (`REVIEW`, `SNAPSHOT`, `COVERAGE`,
-  `VERDICT`, findings with `[P1|P2|P3] file:line`, `CHECKS`, `END_REVIEW`).
-- The server derives `READY` or `BLOCKED (reason)`: an incomplete envelope,
-  partial coverage, truncation, another snapshot, a `[P1]`/`[P2]` finding, or
-  required checks it did not observe block.
+- Scopes: uncommitted (default), staged, a commit, a branch or a range, with
+  optional review instructions. Git context is bounded (4 MiB per Git command,
+  3 MiB snapshot).
+- The reviewing agent answers in a fixed format: snapshot, coverage, verdict,
+  findings as `[P1|P2|P3] file:line`, and the checks it ran.
+- CoAgent8 derives the verdict: an incomplete answer, partial coverage,
+  truncated input, another snapshot, a `[P1]` or `[P2]` finding, or a failed
+  check makes it `BLOCKED (reason)`.
 - A review of unchanged code with the same scope, backend and model starts no
   new turn and returns the earlier verdict.
+- Staged, commit and range scopes are reviewed only when their files match the
+  current workspace; otherwise review the uncommitted changes.
 
 ### Sessions and history
 
-- Workspace- and provider-bound sessions with turn leases; continuation through
+- Sessions belong to one workspace and one backend; a follow-up through
   `session_handle` keeps the session's model and effort.
-- `session` lists sessions, pages archived history (up to 100 events and
-  240 KiB per page) and closes a session, optionally deleting its history.
-- MCP resources `coagent8://sessions` and `coagent8://sessions/{id}/history`,
-  scoped to the connection's workspace.
-- Best-effort archive: 10 MiB per session, 100 MiB in total, seven-day
-  retention. `coagent8_HISTORY=off` disables archive files. Private reasoning
-  and raw tool output are never archived or returned.
+- History pages hold up to 100 events and 240 KiB. MCP resources
+  `coagent8://sessions` and `coagent8://sessions/{id}/history` show the
+  connection's workspace only.
+- A session handle expires after two hours without use. The history archive is
+  best effort: up to 10 MiB per session and 100 MiB in total, old archives
+  removed after seven days.
+  `coagent8_HISTORY=off` turns archive files off. Private reasoning and raw tool
+  output are never archived or returned.
 
-### Process safety and bounds
+### Safety and bounds
 
 - `shell: false`; prompts go through stdin, at most 4 MiB.
-- Cancellation and deadlines interrupt Codex and Claude Code through their
-  native protocol, then stop only the owned process (Windows: owned root handle;
-  POSIX: owned process group). No PID, parent-PID or name selection.
-- Bounded output (512 KiB per backend stream, 1 MiB public answer); UTF-8 code
-  points stay intact across chunks.
+- Cancellation and deadlines interrupt Codex and Claude Code through their own
+  protocol, then stop only the process CoAgent8 started (Windows: its handle;
+  POSIX: its process group). Nothing is selected by process ID or name.
+- Output is bounded: 512 KiB per backend stream, 1 MiB per answer.
 - `timeout_ms` from 100 ms to 30 minutes (default 15 minutes) covers Git,
-  preparation, consent, the CLI turn and teardown, with progress notifications.
+  preparation, approval, the turn and teardown, with progress notifications.
+- Answers and archives are redacted for credential formats; diagnostics also
+  hide keyword values and home-directory paths. Errors carry a typed code such
+  as `CLI_NOT_FOUND`, `AUTH_REQUIRED`, `MODEL_UNAVAILABLE`, `RATE_LIMITED`,
+  `TIMEOUT`, `POLICY_DENIED` or `PRICE_LIMIT`.
 
-### Results, redaction and errors
+## Tools
 
-- Markdown results: answer or typed error, then backend, model, duration and
-  session handle; `review` adds its verdict, a price limit adds price evidence.
-- ANSI stripping and credential-format redaction in answers and archives;
-  diagnostics additionally redact keywords and home-directory paths.
-- Typed errors: `CLI_NOT_FOUND`, `CLI_UNSUPPORTED`, `AUTH_REQUIRED`,
-  `MODEL_UNAVAILABLE`, `RATE_LIMITED`, `SESSION_INVALID`, `SESSION_BUSY`,
-  `ABORTED`, `TIMEOUT`, `SANDBOX_UNAVAILABLE`, `PROTOCOL_ERROR`, `BUFFER_LIMIT`,
-  `INPUT_LIMIT`, `PROCESS_ERROR`, `HISTORY_ERROR`, `POLICY_DENIED`,
-  `PRICE_LIMIT`.
+| Tool | Purpose |
+| --- | --- |
+| `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
+| `review` | An independent review of Git changes with a verdict CoAgent8 derives |
+| `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
+| `session` | List sessions, page a session's history or close a session |
+| `cancel` | Cancel the running turn of a session |
+| `issue` | Prepare a sanitized bug report and a prefilled GitHub issue link |
 
-### Integrations
+A consultation can be as small as:
 
-- Any stdio MCP host, including Codex, Claude Code, agy and
-  [Continue](#continue).
-- Optional `coagent8 setup|repair|status|cleanup|skills` for local registrations
-  and skills, with backups, conflict checks and preview-bound changes.
-- Native VS Code extension (CoAgent8 listed with your installed MCP servers
-  through the profile `mcp.json`, setup, skill management and uninstall), built
-  from the npm tarball. Native plugins for
-  Codex, Claude Code and Antigravity are planned
-  ([PLUGIN-001](docs/ROADMAP.md#plugin-001-native-plugin-in-every-supported-client));
-  until then use the npm package or a manual MCP entry.
-- Offline server icon embedded in `serverInfo`; no network fetch.
-
-## Connect through MCP
-
-Use Node.js 24+ and at least one separately installed and authenticated backend
-CLI. Building a checkout requires Node 24.11+ or Node 26+. Claude Code execution
-requires 2.1.289+; its restricted profile supports subscription login or an API
-key. Codex and agy must support the adapter protocols; their minimum versions are
-not currently enforced by the bridge.
-
-~~~bash
-npm ci
-npm run build
-~~~
-
-`dist/` is ignored by Git. Rebuild after pulling source changes. A running MCP
-process retains the bundle it started with; restart it after rebuilding.
-
-Add a stdio definition to your host's MCP configuration:
-
-~~~json
+```json
 {
-  "mcpServers": {
-    "coagent8": {
-      "command": "node",
-      "args": ["<absolute-path-to-coagent8>/dist/index.cjs"]
-    }
-  }
+  "proposal": "Is this retry loop safe with concurrent writers? <code>",
+  "backend": "codex"
 }
-~~~
+```
 
-Use your host's configuration format. Codex registrations should include
-`tool_timeout_sec = 1800` in `[mcp_servers.coagent8]`; optional `coagent8 setup`
-adds it. Host deadlines can be shorter than the bridge deadline. A measured agy
-1.3.1 headless client stopped calls after 180 seconds even with progress
-notifications; interactive IDE behavior has not been measured.
+`context_files` passes paths for the other agent to read, not file contents.
+Results are Markdown: the answer or a typed error, then the backend, model,
+duration and `session_handle=<handle> (<state>)`. Pass that handle for a
+follow-up on the same topic; a call without it starts a fresh agent that
+rereads everything. `review` adds its verdict.
 
-No setup command, recognized client name or VSIX is required for ordinary MCP
-use. Backends resolve from `backends.<id>.executable` in `config.json` (an
-absolute path, `~/...`, or `vscode-extension` for the vendor extension's newest
-copy), else from PATH, then from executables installed by their VS Code extensions
-(for agy, `~/.gemini/bin`). `CODEX_PATH`, `CLAUDE_PATH` and `AGY_PATH` override all
-of them. The workspace comes from `workspace_path`, client
-roots, or an eligible server working directory. Only the server-directory
-fallback adds a workspace line to the result.
+The deprecated `analyze`, `debug` and `implement` aliases and the `run` gateway
+still work but are not listed. Every client receives the same six tools.
 
-Set `backend` for a predictable provider. Otherwise `auto` uses configuration,
-or selects among eligible providers using cached quota and cooldown evidence,
-preferring another CLI than the calling client's own. It does not retry a failed
-turn on another provider. Quota measurements can be stale; `doctor` with `scope: "health"` can refresh
-them; a measurement older than 15 minutes counts as unmeasured. If the quota
-cache cannot be written, the automatic route continues with a warning.
+### Approving expensive models
 
-To install a locally built package:
+The approval is a form CoAgent8 sends through MCP elicitation; your client must
+show it to you. Clients that cannot show MCP forms cancel it: headless clients,
+Codex 0.160.1 and the Antigravity chat did so when measured. CoAgent8 never
+accepts an approval relayed by the calling agent, so there the turn fails with
+`POLICY_DENIED`. To use such a model anyway, allow it with **CoAgent8: Manage
+Model Approvals** in VS Code or in `governance.models.allow`, or call it from a
+client that shows MCP forms.
 
-~~~bash
-npm pack
-npm install --omit=dev <tarball-path>
-~~~
+### Choosing a model under a price limit
 
-Both `coagent8` and `coagent8-mcp` start stdio with no arguments. Launch the
-newest preview with `npx -y coagent8@next`, or a fixed version with
-`npx -y coagent8@0.6.0`. Plain `coagent8` (npm `latest`) is not a
-supported channel before 1.0.0.
+Pass the user's limit as `output_price_below`, in USD per million output
+tokens. It is strict: `5` means below 5. Without `model`, CoAgent8 chooses the
+backend's default if it qualifies, otherwise the highest-priced qualifying
+model:
 
-### Continue
+```json
+{
+  "proposal": "Calculate 17 * 23. Reply only with the result.",
+  "output_price_below": 5
+}
+```
 
-Continue supports stdio MCP in Agent mode. Merge a server block into its active
-configuration, following
-[Continue's MCP guide](https://docs.continue.dev/customize/deep-dives/mcp):
+Only an exact price from a list younger than seven days qualifies. If no model
+qualifies, the call fails with `PRICE_LIMIT` and each backend's reason instead
+of running another model; an explicit model over the limit is never replaced.
+The footer states the price, its list and date. A model within the limit may
+still need your approval.
 
-~~~yaml
-mcpServers:
-  - name: CoAgent8
-    type: stdio
-    command: node
-    args:
-      - "<absolute-path-to-coagent8>/dist/index.cjs"
-~~~
+To choose yourself, call `doctor`: it lists each backend's models with their
+accepted efforts, output price (`~` approximate, `?` unknown), default and
+approval tag (`ask: <rule>`, `deny` or `allow`). `coagent8 models` prints the
+same list in a terminal. Then name the model and an accepted effort:
 
-This is the documented protocol configuration. Real Continue UI acceptance
-remains open. Hosts control tool visibility, approval, refresh and icons.
+```json
+{
+  "proposal": "Calculate 17 * 23. Reply only with the result.",
+  "model": "<model ID from doctor>",
+  "reasoning_effort": "low",
+  "output_price_below": 5
+}
+```
 
-### Optional setup and editor integrations
+## Skills
 
-`setup` and `repair` explicitly register selected local-default native hosts;
-`status` checks all three CLIs and reports readiness separately from registration.
-The VS Code provider works independently. Its CLI onboarding offers installation
-and sign-in actions, while external MCP registration requires a separate choice.
-`cleanup` previews unchanged owned registrations and skills; `cleanup --apply=<preview-token>`
-removes only those entries, with private backups, and those skills. Manual/edited entries, runtime
-files, credentials, histories and vendor extensions are retained.
-See the
-[integration contract](docs/ARCHITECTURE.md#optional-integrations)
-for ownership, rollback and host acceptance limits.
-
-### Skills
-
-Setup and repair initially install one skill per CoAgent8 function into each
-client whose registration works, then honor your saved selection. Codex lists skills in
-`/skills` and invokes them as `$coagent8-review`; Claude Code and the
-Antigravity CLI offer them as `/coagent8-review` commands.
+Setup and the VS Code extension install one skill per function into each CLI
+where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
+`$coagent8-review`; Claude Code and the Antigravity CLI offer them as
+`/coagent8-review` commands.
 
 | Skill | Use it to |
 | --- | --- |
@@ -301,206 +326,56 @@ Antigravity CLI offer them as `/coagent8-review` commands.
 | Codex | `~/.agents/skills/` |
 | Antigravity | `~/.gemini/config/skills/` |
 
-**CoAgent8: Manage Skills** lets you choose the client, Install / Update,
-Uninstall, Enable or Disable (only actions with packages to change), then one or
-all packages; **Back** returns one step. It keeps the CLI and
-MCP connection. Disable retains packages outside discovery in
-`~/.coagent8/disabled-skills/<client>/`; enable restores them. Updates preserve
-disabled choices. Start a new chat after changes; native visibility settings
-and other discovered copies still apply. Shared-directory changes can affect
-other consumers, including VS Code chat.
-
-The CLI uses the same manager. Mutations first return a preview; repeat the
-same command with `--apply=<token>` using its returned `token` to apply it:
+**CoAgent8: Manage Skills** in VS Code and `coagent8 skills` in a terminal
+install, update, uninstall, enable or disable one or all skills per client.
+Your choices are kept, so repair does not bring back a skill you removed.
+Disabled skills move to `~/.coagent8/disabled-skills/<client>/`. A skill you
+edited is never overwritten. Start a new chat to see changes. VS Code chat also
+reads `~/.claude/skills/` and `~/.agents/skills/`, so with both Claude Code and
+Codex set up it lists each skill twice.
 
 ```sh
 coagent8 skills status --clients=agy
-coagent8 skills uninstall --clients=agy
 coagent8 skills install --clients=agy --skills=coagent8-review
-coagent8 skills disable --clients=agy --skills=coagent8-review
-coagent8 skills enable --clients=agy --skills=coagent8-review
 ```
 
-Choices persist in `backends.<client>.skills` in CoAgent8's `config.json`, so
-repair does not reinstall removed packages or enable disabled ones. An explicit
-empty selection installs none; an explicit selection does not gain newly added
-catalog packages. Conflicts preserve edited/foreign files and report actual
-state separately. Interrupted file operations recover on the next apply or
-setup/repair/cleanup; later user edits stop recovery instead of being overwritten.
+Changes are shown as a preview first; repeat the command for one client with
+`--apply=<token>` to apply them.
 
-Setup writes only `coagent8-*` directories that are missing or still hold the
-copy it installed; a directory you changed is kept and reported. `cleanup`
-previews and removes the unchanged skills together with the registrations.
-Uninstalling the VS Code extension removes what the extension installed. npm
-runs no script on `npm uninstall`, so run `coagent8 cleanup` and
-`coagent8 cleanup --apply=<preview-token>` before `npm uninstall -g coagent8`.
-VS Code chat also reads `~/.claude/skills/` and `~/.agents/skills/`, so with
-both Claude Code and Codex set up it lists each skill twice. Native discovery
-in each client is still being accepted ([SKILLS-001](docs/ROADMAP.md#skills-001-client-skills-installed-with-the-registration)).
+## VS Code extension
 
-### VS Code commands
+Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on macOS), type `CoAgent8` and
+choose a command:
 
-The VSIX adds these commands. Press `F1` (or `Ctrl+Shift+P`, `Cmd+Shift+P` on
-macOS), type `CoAgent8` and select one:
-
-| Command | What it does | Changes |
-| --- | --- | --- |
-| `CoAgent8: Open Settings` | Opens CoAgent8's backend, model and approval settings in VS Code's Settings editor | None |
-| `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
-| `CoAgent8: Reset Configuration (config.json)` | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
-| `CoAgent8: Show MCP Servers` | Opens VS Code's `MCP: List Servers` | None |
-| `CoAgent8: Manage Coding CLIs` | Lists Codex CLI, Claude Code CLI and Antigravity CLI with their state and chat entry, plus actions for all CLI chats at once. A CLI's menu names the installation in use and selects an installation (stored in `config.json`), installs a VS Code extension or official standalone CLI beside another, chooses an executable after a compatibility check, signs in, adds, updates or removes CoAgent8 in its chat, manages its skills, and removes what CoAgent8 installed | Changes only what you choose, in the vendor's own location; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries and what CoAgent8 installed; chat changes end with one notice offering **Restart Extensions** |
-| `CoAgent8: Manage Skills` | Selects a client, action and packages: install/update, uninstall, enable or disable | Preserves the CLI and MCP; persists choices for repair; preserves edited packages |
-
-The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
-`CoAgent8` starts, stops or restarts it and shows its output.
-
-### Tester guide
-
-1. Download `coagent8-mcp-0.6.0.vsix` and `SHA256SUMS` from the
-   [GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.6.0)
-   and check the file's SHA-256 against `SHA256SUMS`. With the GitHub CLI you
-   can also check that the release workflow built it:
-   `gh attestation verify coagent8-mcp-0.6.0.vsix --repo oktawianwybieralski/coagent8`.
-   In a trusted project, run
-   **Extensions: Install from VSIX...** and select it. Use Node.js 24+.
-2. The first activation shows one notice: the ready CLIs, or an offer to set them
-   up. Run **CoAgent8: Manage Coding CLIs** at any time to install or sign in a
-   CLI and to add CoAgent8 to the CLIs' own chats, one CLI menu at a time.
-3. Start CoAgent8 through **MCP: List Servers**, enable its tools in your chat,
-   and request doctor, a consultation, and a review of current workspace changes.
-4. Configure backends, models and approval through **CoAgent8: Open Settings**.
-   A changed setting takes precedence over `config.json` in VS Code; the CLI and
-   other MCP hosts read only the file (**Open Configuration (config.json)**). Set
-   `coagent8.configPath` to choose another file; empty uses the default.
-5. For a problem, ask for the issue tool's sanitized report and doctor output.
-   Open the repository's [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
-   and include OS, Node, host and CLI versions, reproduction steps and expected
-   versus actual behavior. Review pasted diagnostics before submitting.
-
-See the [known limitations](#known-limitations).
-The [VS Code acceptance checklist](docs/ROADMAP.md#native-vs-code-acceptance) covers reinstall,
-configuration selection, onboarding reset and native MCP lifecycle testing.
-Apply VS Code's native Extensions view restart action when requested after
-installation/update. VS Code stops a running CoAgent8 server when its definition
-changes (a new bundle or changed settings) and starts it again on the next use.
-The VSIX shares `~/.coagent8/config.json` with the standalone CLI and keeps sessions
-and history in its own VS Code storage, which uninstalling removes. Review accepts staged/revision scopes only when their
-files match the current workspace; otherwise use uncommitted changes.
-
-## Tools
-
-| Tool | Purpose |
+| Command | What it does |
 | --- | --- |
-| `consult` | Plain second opinion; optional architecture, debugging or implementation analysis |
-| `review` | Git changes reviewed with a State Envelope and a server-derived verdict |
-| `doctor` | By default the cached model view: models, efforts, output prices, defaults and approval per backend; `scope: "health"` for installation, versions, auth evidence and quota/cooldowns; `detail: "full"` for data |
-| `session` | List sessions, page archived history or close a session |
-| `cancel` | Cancel the active turn of a known session |
-| `issue` | Prepare a sanitized report and prefilled issue link |
+| `CoAgent8: Manage Coding CLIs` | Shows each CLI's state and chat entry. Installs a CLI (VS Code extension or official standalone), signs in, chooses the installation CoAgent8 uses, adds, updates or removes CoAgent8 in a CLI's chat, manages its skills, and removes what CoAgent8 installed |
+| `CoAgent8: Manage Model Approvals` | Allows, asks for or denies individual models, and sets the price rules for asking |
+| `CoAgent8: Manage Skills` | Installs, updates, uninstalls, enables or disables skills per client |
+| `CoAgent8: Open Settings` | Opens CoAgent8's backend, model, configuration path and Node.js settings |
+| `CoAgent8: Open Configuration (config.json)` | Opens the configuration file (`~/.coagent8/config.json` unless `coagent8.configPath` or `coagent8_CONFIG` names another), creating it with defaults if missing, with completion and validation (a file in another location needs a `$schema` entry, which new files get) |
+| `CoAgent8: Reset Configuration (config.json)` | Replaces the file with the defaults after a confirmation, keeping the previous one as `config.json.backup` |
+| `CoAgent8: Show MCP Servers` | Opens **MCP: List Servers**, where VS Code starts, stops and restarts CoAgent8 and shows its output |
 
-The deprecated `analyze`, `debug` and `implement` aliases and the legacy `run`
-gateway remain callable but are not advertised. `toolProfile` is ignored. All
-clients receive the same six tools and short initialization instructions.
+The extension changes only what you choose, keeps private backups of the CLIs'
+configuration files, and removes only entries it wrote and that you did not
+change. When VS Code offers **Restart Extensions** after an install, update or
+chat change, use it. VS Code restarts the CoAgent8 server by itself when its
+settings or bundle change. Settings you save in VS Code take precedence over
+`config.json`, except an empty model, which keeps the file's model; the CLIs
+and other hosts read only the file.
 
-~~~json
-{
-  "proposal": "Is this retry loop safe with concurrent writers? <code>",
-  "backend": "codex",
-  "workspace_path": "<absolute-path-to-project>"
-}
-~~~
-
-`context_files` sends paths for the backend to read, not file contents.
-Implementation analysis proposes changes within the read-only profile.
-Execution tools return Markdown: answer or typed error, then backend, model,
-duration and session handle where available. `review` adds its verdict, and a
-call with a price limit adds the model's price evidence.
-The footer shows `session_handle=<handle> (<state>)`; pass that handle for a
-follow-up on the same topic. A call without it starts a fresh agent that rereads
-everything. A review of unchanged code with the same scope, backend and model
-starts no new turn; the earlier verdict is returned.
-
-Archival history is enabled by default and best-effort. `coagent8_HISTORY=off`
-disables archive files, but executions still require session records and leases.
-Per-call history controls and execution without disk sessions are planned.
-A model priced at or above 20 USD per million output tokens, at least twice its
-backend default, or without a known price runs only after the user approves it
-through MCP form elicitation; `governance` in `config.json` tunes this. Prices
-are read from OpenRouter's public model list (no key, no user data).
-
-The approval is a form the CoAgent8 server sends; the MCP client must display it
-to the user. Not every client supports MCP form elicitation yet, which is a gap
-in the client, not in CoAgent8. Headless clients and Codex 0.160.1 cancel the
-form without showing it (measured 2026-10-07), and so does the Antigravity chat
-(measured 2026-10-07 and 2026-10-11). CoAgent8 never accepts an approval relayed
-by the calling agent, because it cannot verify that the user gave it, so in such
-a client the turn fails closed with `POLICY_DENIED`. To use the model there, allow
-it yourself with the VS Code command CoAgent8: Manage Model Approvals or in
-`governance.models.allow` of `config.json`, or call it from a client that shows
-MCP forms.
-
-Before calling a model doctor tags `ask`, tell the user its price and that a form
-will follow; never call one tagged `deny`. If an explicit model needs approval,
-report the unmet requirement; do not silently substitute another model or change
-approval configuration.
-
-### Choosing a model under a price limit
-
-For ordinary questions, call `consult` with just a self-contained `proposal`.
-When the user sets a price limit, pass it as `output_price_below`: USD per million
-output tokens, strict, so `5` means below 5 and excludes a model priced at 5.
-Without `model`, the server chooses: the backend's default if it qualifies, else
-the highest-priced qualifying model it lists. One call is enough:
-
-~~~json
-{
-  "proposal": "Calculate 17 * 23. Reply only with the result.",
-  "output_price_below": 5
-}
-~~~
-
-Only an exact price from a price list younger than seven days qualifies; an
-unknown, approximate or stale price never does. If no model qualifies, the call
-fails with `PRICE_LIMIT` and each backend's reason instead of running another
-model. The footer's `Price` line states the price, its list and date. A model
-within the limit may still need the user's approval; approval and `models.allow`
-do not satisfy a limit. Prices are public list prices per output token, not a
-request estimate or a bill.
-
-To choose yourself, call `doctor`: by default it lists, from cached data, each
-backend's models with accepted efforts, output price (`~` approximate,
-`?` unknown), the default and its approval tag: `ask: <rule>`, `deny` or `allow` (`backend` narrows
-it; `detail: "full"` returns the same rows as data). Claude Code's aliases appear
-with the concrete model they run. A named model needs no `backend`: `auto` runs
-it where it is listed. For an explicit model use its ID or alias and an accepted
-effort, keeping the limit:
-
-~~~json
-{
-  "proposal": "Calculate 17 * 23. Reply only with the result.",
-  "backend": "codex",
-  "model": "<exact model ID from doctor>",
-  "reasoning_effort": "low",
-  "output_price_below": 5
-}
-~~~
-
-An explicit model over the limit fails with the reason; it is never replaced.
-Use `low` only if listed for that model. The footer names the model that answered;
-its elapsed time excludes preparation. Continue with its `session_handle` when
-needed. No repository access, web price lookup or full diagnostic dump is needed.
+Uninstalling the extension removes what it added: its chat entries, skills,
+runtime copies and storage, including its sessions and history. Your shared
+`~/.coagent8/config.json`, credentials and the CLIs stay.
 
 ## Configuration
 
-The shared file is `~/.coagent8/config.json`, used by every host, the CLI and
-the VS Code extension (**CoAgent8: Open Configuration (config.json)** creates
-it with defaults and validates it). A missing file uses the defaults; an
-unreadable or invalid file refuses execution with `POLICY_DENIED` while
-`doctor` stays available. In VS Code, settings you change in **CoAgent8: Open
-Settings** take precedence over the file.
+`~/.coagent8/config.json` is shared by every host, the CLI and the VS Code
+extension. Without the file the defaults apply. An unreadable or invalid file
+stops execution with `POLICY_DENIED` while `doctor` keeps working.
 
-~~~json
+```json
 {
   "schemaVersion": 1,
   "defaultBackend": null,
@@ -517,77 +392,90 @@ Settings** take precedence over the file.
     "models": { "allow": [], "ask": [], "deny": [] }
   }
 }
-~~~
+```
+
+A backend's CLI is `backends.<id>.executable` when it is set (an absolute
+path, `~/...`, or `vscode-extension` for the vendor extension's copy); a
+configured CLI that is missing fails instead of falling back. Without it, the
+CLI is found on PATH, then in the vendor's VS Code extension. The workspace comes from
+`workspace_path`, the client's roots, or the server's working directory.
 
 | Variable | Effect |
 | --- | --- |
 | `coagent8_CONFIG` | Configuration file path |
 | `coagent8_DIR` | Storage root for sessions, history and caches (default `~/.coagent8`) |
-| `coagent8_HISTORY` | `off` disables archive files |
+| `coagent8_HISTORY` | `off` turns archive files off |
 | `coagent8_PRICES_URL` | Price list URL or local file instead of OpenRouter |
 | `coagent8_QUOTA_CACHE` | Quota cache file |
 | `CODEX_PATH`, `CLAUDE_PATH`, `AGY_PATH` | Backend executables; they override `backends.<id>.executable` |
 | `CODEX_HOME`, `CODEX_CONFIG_PATH`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME` | Backend configuration locations; setup and cleanup support only the defaults |
 
-The [architecture](docs/ARCHITECTURE.md) states every contract, bound and error.
+The [architecture](docs/ARCHITECTURE.md) states every contract, bound and
+error.
 
 ## Known limitations
 
-Open issues tracked in the
-[architecture](docs/ARCHITECTURE.md#known-limitations) and the
-[roadmap](docs/ROADMAP.md), not relaxed security requirements:
+- **Antigravity's own tools.** agy gives the other agent your agy MCP servers
+  and plugins, which CoAgent8 cannot turn off; `doctor` lists them. Calls back
+  into CoAgent8 are refused.
+- **Leftover agy processes on Windows.** Cancelling or timing out an agy turn
+  stops agy itself, but a process agy started outside it, such as one of its MCP
+  servers, can keep running until it exits or the CoAgent8 server stops.
+- **Parent crash on macOS and Linux.** If the host dies unexpectedly, the
+  processes CoAgent8 started are not cleaned up.
+- **Approval forms.** Clients that cannot show MCP forms cannot approve an
+  expensive model (see [approving expensive models](#approving-expensive-models)).
+- **Host deadlines.** A host can stop a tool call before CoAgent8's own deadline;
+  a headless agy client stopped calls after 180 seconds.
+- **Sessions on disk.** Every call keeps a session record, even with archives
+  turned off, and the session handle arrives with the result.
+- **Reviews of another tree.** A staged, commit or range review whose files do
+  not match the current workspace is refused rather than reviewed.
 
-- agy inherits the user's MCP servers and plugins; recursion into CoAgent8 is
-  refused (accepted third-party limitation).
-- Cancelling or timing out a call stops the owned CLI process, but a native
-  descendant of agy that lives outside it can keep running until the MCP server
-  exits (WINDOWS-001a, Windows).
-- After an unexpected parent death on POSIX, owned processes are not cleaned up.
-- Every execution keeps a session record on disk, and the first session handle
-  is returned only with the result.
-- Review of a tree other than the workspace is refused, not implemented.
-- Headless clients measured on 2026-10-07 cancel elicitation, so turns that need
-  consent fail there; approval in interactive clients is still being accepted.
-- Native acceptance in each host (setup, skills, uninstall) is still in progress
-  for 0.6.0; local tests use hermetic CLI fixtures.
+## Reporting problems
 
-## Documentation and contributing
+Ask your agent to run the `issue` tool: it prepares a sanitized report with
+your OS, Node and CLI versions and a link that opens a new GitHub issue with it.
+Add the steps and what you expected, and check the text for private data
+before you submit it. You can also use the
+[bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
+directly.
 
-The npm package does not ship `docs/` or the contributor rules; these relative
-links resolve in the repository.
+## Building and contributing
+
+Building from source needs Node.js 24.11+ or 26+:
+
+```bash
+npm ci
+npm run build
+```
+
+The server is then `node <checkout>/dist/index.cjs`; `npm pack` produces the
+installable package. A checkout of `develop` is a development build, not a
+release. Restart a running MCP server after rebuilding.
 
 | Need | Document |
 | --- | --- |
 | Priorities and acceptance | [Roadmap](docs/ROADMAP.md) |
-| Current contracts, limitations and target design | [Architecture](docs/ARCHITECTURE.md) |
-| Current work, evidence and next action | [Handoff](docs/HANDOFF.md) |
+| Contracts, limitations and design | [Architecture](docs/ARCHITECTURE.md) |
+| Current work and evidence | [Handoff](docs/HANDOFF.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
-| Branches (`develop`, release lines `X.Y.x`), PRs and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
-| Generated release history | [Changelog](CHANGELOG.md) |
+| Branches, pull requests and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
 | Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
-| Online API reference and documents | [oktawianwybieralski.github.io/coagent8](https://oktawianwybieralski.github.io/coagent8/) (latest release) |
-| TSDoc and API reference | [Code documentation](docs/ARCHITECTURE.md#code-documentation-and-package-evidence) |
+| Release history | [Changelog](CHANGELOG.md) |
+| API reference | [oktawianwybieralski.github.io/coagent8](https://oktawianwybieralski.github.io/coagent8/) |
 
-These three project documents replace the separate runtime contract, feature
-plans and historical reports. Optional `docs/.local/` investigations are ignored
-and are not required reading. Historical versions remain in Git.
-
-Markdown edits require content/link review and `git diff --check`. TSDoc edits
-also require documentation lint and generation. Runtime changes need focused
-behavioral checks; releases need a fresh build, exact-package consumer checks,
-coverage, all six OS/Node CI jobs and independent review. The suite uses hermetic
-CLI fixtures. Most tests load `src/`; setup tests use `dist/`, and consumer smoke
-checks the installed tarball. A green suite alone does not prove bundle freshness
-or live backend compatibility.
+The npm package does not include `docs/` or the contributor rules; these links
+work in the repository.
 
 ## License
 
 Copyright (c) 2026 Oktawian Wybieralski (oki.dev).
 
-Licensed under [GNU General Public License, version 3 only](LICENSE)
+Licensed under the [GNU General Public License, version 3 only](LICENSE)
 (`GPL-3.0-only`). Distributed derivative works must comply with GPLv3 and its
 source-distribution requirements. See LICENSE for the full terms and warranty
 disclaimer. Copies previously distributed under MIT retain those terms.
 
-Created by [Oktawian Wybieralski](https://oki.dev).
-[GitHub repository](https://github.com/oktawianwybieralski/coagent8).
+Created by [Oktawian Wybieralski](https://oki.dev) ·
+[GitHub repository](https://github.com/oktawianwybieralski/coagent8)
