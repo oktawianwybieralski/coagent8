@@ -99,10 +99,25 @@ function recordedWriter(recorded: RegistrationRecord[string], digest: string): {
   if (recorded.pending === digest) return { version: recorded.pendingVersion };
   return undefined;
 }
+/**
+ * The canonical path of an installation folder. The extension records the folder as VS Code
+ * names it, while the uninstall hook derives it from its own location, which Node resolves
+ * through symlinks (macOS `/var` is `/private/var`); only canonical paths compare. A folder
+ * whose canonical path cannot be read (gone, inaccessible, a link loop) is compared as given:
+ * one unreadable record must not stop the cleanup of the others.
+ */
+function canonicalFolder(value: string): string {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
 /** Whether two installation folders are the same; Windows paths ignore case. */
 function sameInstallation(a: string | undefined, b: string): boolean {
   if (a === undefined) return false;
-  const normal = (value: string) => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
+  const normal = (value: string) => process.platform === 'win32' ? canonicalFolder(value).toLowerCase() : canonicalFolder(value);
   return normal(a) === normal(b);
 }
 /** Whether an entry has the shape only this extension writes: its bundle copy in global storage. */

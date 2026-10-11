@@ -256,6 +256,47 @@ test('the vscode:uninstall hook removes the profile entries of its own installat
   assert.ok(parse(fs.readFileSync(insiders, 'utf8')).servers.CoAgent8, 'Insiders keeps its entry');
   assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(home, '.coagent8', 'vscode-mcp.json'), 'utf8'))), [insiders]);
 });
+test('the uninstall recognizes its installation recorded through a link under its canonical path', async t => {
+  const { syncVscodeRegistration, removeVscodeRegistrations } = require('../../src/integrations/vscode-profile.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-linked-installation-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bundle = path.join(home, 'bundle.cjs');
+  fs.writeFileSync(bundle, 'bundle');
+  const canonical = path.join(home, 'extensions');
+  fs.mkdirSync(canonical);
+  // VS Code names the folder through a link (macOS /var); the hook's own location is canonical.
+  const linked = path.join(home, 'linked-extensions');
+  fs.symlinkSync(canonical, linked, process.platform === 'win32' ? 'junction' : 'dir');
+  const storagePath = path.join(home, 'AppData', 'Roaming', 'Code', 'User', 'globalStorage', 'okidev.coagent8-mcp');
+  assert.equal(await syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation: linked, version: '0.6.0' }), 'registered');
+  const file = path.join(home, 'AppData', 'Roaming', 'Code', 'User', 'mcp.json');
+  assert.deepEqual(await removeVscodeRegistrations(home, fs.realpathSync.native(canonical), 5000), [{ file, action: 'removed' }]);
+  assert.deepEqual(parse(fs.readFileSync(file, 'utf8')).servers, {});
+});
+test('an installation folder that cannot be resolved does not stop the uninstall of another', async t => {
+  const { syncVscodeRegistration, removeVscodeRegistrations } = require('../../src/integrations/vscode-profile.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-unreadable-installation-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bundle = path.join(home, 'bundle.cjs');
+  fs.writeFileSync(bundle, 'bundle');
+  const register = async (product, installation) => {
+    fs.mkdirSync(installation, { recursive: true });
+    const storagePath = path.join(home, 'AppData', 'Roaming', product, 'User', 'globalStorage', 'okidev.coagent8-mcp');
+    assert.equal(await syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation, version: '0.6.0' }), 'registered');
+    return path.join(home, 'AppData', 'Roaming', product, 'User', 'mcp.json');
+  };
+  const own = path.join(home, 'own-extensions'), unreadable = path.join(home, 'unreadable-extensions');
+  const stable = await register('Code', own), insiders = await register('Code - Insiders', unreadable);
+  const realpath = fs.realpathSync.native;
+  fs.realpathSync.native = target => {
+    if (path.resolve(target) === unreadable) throw Object.assign(new Error(`EACCES: permission denied, realpath '${target}'`), { code: 'EACCES' });
+    return realpath(target);
+  };
+  try {
+    assert.deepEqual(await removeVscodeRegistrations(home, own, 5000), [{ file: stable, action: 'removed' }]);
+  } finally { fs.realpathSync.native = realpath; }
+  assert.ok(parse(fs.readFileSync(insiders, 'utf8')).servers.CoAgent8, 'the other installation keeps its entry');
+});
 test('without its ownership record, an entry setup wrote is recognized by its shape; the uninstall removes the extension ones', async t => {
   // As found on 2026-10-10: setup.json and the runtime copies were gone, the entries stayed.
   const p = profile(t);
