@@ -25,7 +25,7 @@ const OFFERED = ['claude-fable-5-1', 'claude-sonnet-5-5', 'gpt-5.6-luna', 'gpt-6
   'claude-haiku-4-5-20251001', 'gemini-3.1-pro-low', 'claude-opus-5-5[1m]'];
 const prices = { fetchedAt: Date.now(), source: 'openrouter', models: matchPrices(parsePriceList(recorded), OFFERED) };
 const brief = price => price && { output: price.output, matched: price.matched, exact: price.exact };
-const settings = (changes = {}) => ({ priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [], ...changes });
+const settings = (changes = {}) => ({ priceMultiplier: 2, askAbovePrice: 20, ...changes, models: { allow: [], ask: [], deny: [], ...changes.models } });
 const asks = (model, defaultModel, list = prices, changes = {}) => decideConsent(model, defaultModel, list, settings(changes));
 
 test('consent by relative price (owner decision of 2026-10-07): fable asks, luna does not, astra asks', () => {
@@ -48,8 +48,8 @@ test('an expensive model asks above the absolute limit, its backend default incl
   assert.equal(asks('claude-fable-5-1', 'claude-opus-5-5').ask, true);
   assert.equal(asks('claude-sonnet-5-5', 'claude-opus-5-5').ask, false);
   assert.equal(asks('claude-opus-5-5', 'claude-opus-5-5', prices, { askAbovePrice: null }).ask, false, 'without the limit the default never asks');
-  assert.equal(asks('claude-opus-5-5', 'claude-opus-5-5', prices, { neverAsk: ['claude-opus-5-5'] }).ask, false, 'neverAsk exempts a model');
-  assert.equal(asks('gpt-6.1-sol', 'gpt-6.1-sol', prices, { alwaysAsk: ['gpt-6.1-sol'], neverAsk: ['gpt-6.1-sol'] }).ask, true, 'alwaysAsk wins');
+  assert.equal(asks('claude-opus-5-5', 'claude-opus-5-5', prices, { models: { allow: ['claude-opus-5-5'] } }).ask, false, 'models.allow exempts a model');
+  assert.equal(asks('gpt-6.1-sol', 'gpt-6.1-sol', prices, { models: { ask: ['gpt-6.1-sol'], allow: ['gpt-6.1-sol'] } }).ask, true, 'ask wins over allow');
   assert.equal(asks('gpt-6-astra', 'gpt-6.1-sol', prices, { priceMultiplier: 6, askAbovePrice: null }).ask, false, 'a higher multiplier relaxes the relative rule');
 });
 
@@ -63,10 +63,27 @@ test('an unknown or approximately priced model asks with remember; without price
     const none = decideConsent(model, model, undefined, settings());
     assert.deepEqual([none.ask, none.offerRemember], [true, true], model);
   }
-  assert.equal(decideConsent('gpt-5.6-luna', 'gpt-5.6-luna', undefined, settings({ neverAsk: ['gpt-5.6-luna'] })).ask, false, 'a remembered model runs without prices');
-  assert.equal(asks('gpt-7-nova', 'gpt-6.1-sol', prices, { neverAsk: ['gpt-7-nova'] }).ask, false, 'a remembered unknown model runs');
+  assert.equal(decideConsent('gpt-5.6-luna', 'gpt-5.6-luna', undefined, settings({ models: { allow: ['gpt-5.6-luna'] } })).ask, false, 'a remembered model runs without prices');
+  assert.equal(asks('gpt-7-nova', 'gpt-6.1-sol', prices, { models: { allow: ['gpt-7-nova'] } }).ask, false, 'a remembered unknown model runs');
 });
 
+test('the user model rules decide before price, deny over ask over allow, and state the price (owner decision of 2026-10-11)', () => {
+  const denied = asks('gpt-6-astra', 'gpt-6.1-sol', prices, { models: { deny: ['gpt-6-astra'], ask: ['gpt-6-astra'], allow: ['gpt-6-astra'] } });
+  assert.deepEqual([denied.deny, denied.ask, denied.basis], [true, false, 'deny'], 'deny wins over ask and allow');
+  assert.match(denied.reason, /^'gpt-6-astra' is on the user's deny list, governance\.models\.deny \(VS Code: coagent8\.approval\.denyModels\)\. Its output costs 50 USD per million tokens\.$/);
+  const cheap = asks('gpt-6-luna', 'gpt-6.1-sol', prices, { models: { ask: ['gpt-6-luna'] } });
+  assert.deepEqual([cheap.ask, cheap.deny, cheap.basis, cheap.offerRemember], [true, false, 'ask', false], 'ask asks whatever the model costs');
+  assert.match(cheap.reason, /models\.ask .*Its output costs 0\.5 USD per million tokens\./, 'the approval request states the price');
+  const unpriced = asks('gpt-7-nova', 'gpt-6.1-sol', prices, { models: { ask: ['gpt-7-nova'] } });
+  assert.match(unpriced.reason, /No price is known for 'gpt-7-nova'\./, 'an unknown price is stated as unknown');
+  const allowed = asks('gpt-6-astra', 'gpt-6.1-sol', prices, { models: { allow: ['gpt-6-astra'] } });
+  assert.deepEqual([allowed.ask, allowed.deny, allowed.basis], [false, false, 'allow'], 'allow is the user\'s standing approval above every price rule');
+  // agy runs a model doctor lists by its id as `<id>-<effort>`: the id's entry covers each variant.
+  assert.equal(asks('gemini-3.8-flash-high', 'gemini-3.8-flash-high', prices, { models: { deny: ['gemini-3.8-flash'] } }).deny, true, 'an id covers its effort variants');
+  assert.equal(asks('gemini-3.8-flash-high', 'gemini-3.8-flash-high', prices, { models: { deny: ['gemini-3.8-flash-low'] } }).deny, false, 'a variant entry covers only that variant');
+  assert.equal(asks('gpt-6-luna', 'gpt-6.1-sol', prices, { models: { deny: ['gpt-6'] } }).deny, false, 'a name prefix that is no effort covers nothing');
+  assert.equal(asks('gpt-6-astra', 'gpt-6.1-sol').deny, false, 'price rules never deny');
+});
 test('a price is matched exactly, also without an effort or date suffix, and approximately otherwise', () => {
   assert.deepEqual(brief(findPrice(prices, 'gemini-3.8-flash-high')), { output: 3.75, matched: 'google/gemini-3.8-flash', exact: true });
   assert.deepEqual(brief(findPrice(prices, 'claude-haiku-4-5-20251001')), { output: 5, matched: 'anthropic/claude-haiku-4.5', exact: true });

@@ -54,7 +54,7 @@ test('EXEC-001-T03: loadConfigSnapshot provides effective settings, disk provena
         schemaVersion: 1,
         defaultBackend: 'claude',
         routing: { strategy: 'fixed', allowedBackends: ['claude'] },
-        governance: { priceMultiplier: 3, askAbovePrice: 15, alwaysAsk: ['model-a'] },
+        governance: { priceMultiplier: 3, askAbovePrice: 15, models: { ask: ['model-a'] } },
       }),
       'utf8'
     );
@@ -67,8 +67,8 @@ test('EXEC-001-T03: loadConfigSnapshot provides effective settings, disk provena
     assert.equal(fileSnapshot.provenance.configFileOrigin, 'custom-env');
     assert.equal(fileSnapshot.provenance.sources.defaultBackend, 'file');
     assert.equal(fileSnapshot.provenance.sources['routing.strategy'], 'file');
-    assert.equal(fileSnapshot.provenance.sources['governance.alwaysAsk'], 'file');
-    assert.equal(fileSnapshot.provenance.sources['governance.neverAsk'], 'default');
+    assert.equal(fileSnapshot.provenance.sources['governance.models.ask'], 'file');
+    assert.equal(fileSnapshot.provenance.sources['governance.models.allow'], 'default');
     assert.ok(fileSnapshot.provenance.fileStat);
     assert.ok(fileSnapshot.provenance.fileStat.size > 0);
     assert.notEqual(fileSnapshot.changeIdentity, defaultSnapshot.changeIdentity);
@@ -76,18 +76,18 @@ test('EXEC-001-T03: loadConfigSnapshot provides effective settings, disk provena
     // 3. VS Code editor settings override
     process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({
       defaultBackend: 'codex',
-      'approval.alwaysAskModels': ['model-b'],
+      'approval.askModels': ['model-b'],
     });
 
     const editorSnapshot = loadConfigSnapshot(testConfigFile);
     assert.equal(editorSnapshot.config.defaultBackend, 'codex');
     assert.equal(editorSnapshot.provenance.sources.defaultBackend, 'editor');
     // List merge: file had model-a, editor added model-b -> merged
-    assert.equal(editorSnapshot.provenance.sources['governance.alwaysAsk'], 'merged');
-    assert.deepEqual(editorSnapshot.config.governance.alwaysAsk, ['model-a', 'model-b']);
+    assert.equal(editorSnapshot.provenance.sources['governance.models.ask'], 'merged');
+    assert.deepEqual(editorSnapshot.config.governance.models.ask, ['model-a', 'model-b']);
     assert.deepEqual(editorSnapshot.provenance.editorOverridesApplied, [
       'defaultBackend',
-      'approval.alwaysAskModels',
+      'approval.askModels',
     ]);
     assert.notEqual(editorSnapshot.changeIdentity, fileSnapshot.changeIdentity);
   } finally {

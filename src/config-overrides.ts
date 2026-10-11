@@ -6,8 +6,8 @@
  * - Settings passed in `coagent8_EDITOR_SETTINGS` take precedence over file-level configuration.
  * - Scalar settings (`defaultBackend`, `routing.strategy`, backend defaults, approval thresholds)
  *   replace the corresponding values from `config.json`.
- * - Model list settings (`approval.alwaysAskModels`, `approval.neverAskModels`) are appended to
- *   the file lists so that remembered approvals in `config.json` remain active.
+ * - Model list settings (`approval.allowModels`, `approval.askModels`, `approval.denyModels`)
+ *   are appended to the file lists so that remembered approvals in `config.json` remain active.
  * - Provenance tracking distinguishes scalar replacements (`editor`) from list merges (`merged`).
  *
  * @packageDocumentation
@@ -30,8 +30,9 @@ export const EDITOR_SETTINGS = {
   'agy.defaultModel': { field: ['backends', 'agy', 'defaultModel'], list: false },
   'approval.priceMultiplier': { field: ['governance', 'priceMultiplier'], list: false },
   'approval.askAbovePrice': { field: ['governance', 'askAbovePrice'], list: false },
-  'approval.alwaysAskModels': { field: ['governance', 'alwaysAsk'], list: true },
-  'approval.neverAskModels': { field: ['governance', 'neverAsk'], list: true },
+  'approval.allowModels': { field: ['governance', 'models', 'allow'], list: true },
+  'approval.askModels': { field: ['governance', 'models', 'ask'], list: true },
+  'approval.denyModels': { field: ['governance', 'models', 'deny'], list: true },
 } as const satisfies Record<string, { field: readonly string[]; list: boolean }>;
 
 export type EditorSettingKey = keyof typeof EDITOR_SETTINGS;

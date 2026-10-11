@@ -121,6 +121,6 @@ export async function selectModel(
   const catalog = await getCatalog();
   // A limit needs current prices of every model it may choose from.
   const prices = await readPrices({ current: true, models: [...catalogNames(catalog), ...(fallback ? [fallback.model] : [])] });
-  return choosePricedModel(id, catalog, fallback, options.constraint, prices);
+  return choosePricedModel(id, catalog, fallback, options.constraint, prices, configObj.governance.models.deny);
 }
 

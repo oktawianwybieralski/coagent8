@@ -54,8 +54,8 @@ test('an explicit model must have a verified price below the limit; it is never 
     { code: 'PRICE_LIMIT', message: /^'gpt-6-sol' costs 10 USD per million output tokens \(coagent8_PRICES_URL list of \d{4}-\d{2}-\d{2}\), not below 5 USD per million output tokens\. It was not replaced by another model/ });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-6-sol-preview', output_price_below: 100 }), { code: 'PRICE_LIMIT', message: /only approximately/ });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-7-nova', output_price_below: 100 }), { code: 'PRICE_LIMIT', message: /has no price for 'gpt-7-nova'/ });
-  // neverAsk exempts a model from approval, not from the user's limit.
-  await config({ governance: { neverAsk: ['gpt-6-sol', 'gpt-7-nova'] } });
+  // models.allow exempts a model from approval, not from the user's limit.
+  await config({ governance: { models: { allow: ['gpt-6-sol', 'gpt-7-nova'] } } });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-6-sol', output_price_below: 5 }), { code: 'PRICE_LIMIT' });
   await assert.rejects(run({ backend: 'codex', model: 'gpt-7-nova', output_price_below: 5 }), { code: 'PRICE_LIMIT' });
   assert.deepEqual(runs, [], 'no turn ran');
@@ -112,7 +112,7 @@ test('a continuation is checked for the model it runs, the session\'s or a newly
 });
 
 test('the price is checked again after the user approves, right before the turn', async () => {
-  await config({ governance: { alwaysAsk: ['gpt-6-luna'] } });
+  await config({ governance: { models: { ask: ['gpt-6-luna'] } } });
   runs.length = 0;
   const stored = readStoredPrices();
   try {

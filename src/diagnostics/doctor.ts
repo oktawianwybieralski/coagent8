@@ -5,8 +5,8 @@ import { inspectQuotas } from '../backends/availability.js';
 import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
 import { selectModel } from '../execution/selection.js';
 import { redactDiagnostic } from '../security/redaction.js';
-import { isPriceListStale, readPrices } from '../models/prices.js';
-import { decideConsent, type ConsentBasis } from '../models/governance.js';
+import { isPriceListStale, readPrices, type PriceList } from '../models/prices.js';
+import { decideConsent, type ConsentBasis, type GovernanceSettings } from '../models/governance.js';
 import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools, QuotaReport } from '../backends/types.js';
 import { adapterRegistry } from '../backends/registry.js';
 import { createPhaseTracker, type PhaseTracker } from '../execution/runtime/timing.js';
@@ -34,6 +34,8 @@ export interface DoctorDefaultModel {
   recorded?: boolean;
   /** The governance policy asks the user before each turn of the default itself. */
   asks?: boolean;
+  /** The user denies the default: a call that names no model is refused until another is chosen. */
+  denied?: boolean;
 }
 
 /** The price list governance uses: where and when it was read, and how many offered models it prices. */
@@ -83,7 +85,7 @@ export interface DoctorReport {
   quotas: Partial<Record<ProviderId, DoctorQuota>>;
   /** Default model per installed backend; absent when none is known. */
   defaultModels: Partial<Record<ProviderId, DoctorDefaultModel>>;
-  /** Null when no price list could be read; every model not on `neverAsk` is then asked for. */
+  /** Null when no price list could be read; every model not on `models.allow` is then asked for. */
   prices: DoctorPrices | null;
   /**
    * Every model of the diagnosed installed backends with its output price, the price's match
@@ -289,8 +291,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
         }
       }
       defaults[id] = selection;
-      const asks = decideConsent(selection.model, selection.model, prices, config.governance).ask;
-      defaultModels[id] = { ...selection, ...(recorded ? { recorded } : {}), ...(asks ? { asks } : {}) };
+      defaultModels[id] = { ...selection, ...(recorded ? { recorded } : {}), ...defaultApproval(selection.model, prices, config.governance) };
     }));
   }
 
@@ -390,19 +391,36 @@ const MODEL_SOURCE_LABELS: Record<ModelSource, string> = {
 
 /** Why a model asks, as the summary names the rule; the full report carries the sentence. */
 const APPROVAL_LABELS: Partial<Record<ConsentBasis, string>> = {
-  'always-ask': 'alwaysAsk', 'no-price-list': 'no price list', unpriced: 'no price', approximate: 'approximate price',
+  ask: 'user list', 'no-price-list': 'no price list', unpriced: 'no price', approximate: 'approximate price',
   'above-limit': 'askAbovePrice', relative: 'priceMultiplier',
 };
 
 /**
+ * The governance tag of one model: `deny` (never runs), `ask: <rule>` (runs after the user
+ * approves the server's form) or `allow` (the user's standing approval); none when its price
+ * needs no approval.
+ */
+function approvalTag(approval: ModelCandidate['approval']): string {
+  if (approval.denied) return 'deny';
+  if (approval.required) return `ask: ${APPROVAL_LABELS[approval.basis] ?? approval.basis}`;
+  return approval.basis === 'allow' ? 'allow' : '';
+}
+
+/** Whether the default model asks each turn or is denied, as doctor records it. */
+function defaultApproval(model: string, prices: PriceList | undefined, governance: GovernanceSettings): Pick<DoctorDefaultModel, 'asks' | 'denied'> {
+  const decision = decideConsent(model, model, prices, governance);
+  return decision.deny ? { denied: true } : decision.ask ? { asks: true } : {};
+}
+
+/**
  * One model as the summary lists it: name, efforts unless stated once for the backend,
- * price (`~` approximate, `?` unknown), and whether it is the default and asks.
+ * price (`~` approximate, `?` unknown), and whether it is the default and its governance tag.
  */
 function formatCandidate(row: ModelCandidate, sharedEfforts: boolean): string {
   const efforts = !sharedEfforts && row.efforts.length ? ` (${row.efforts.join('|')}${row.effortRequired ? ' required' : ''})` : '';
   const { outputUsdPerMTok: output, match } = row.price;
   const price = output === null ? '?' : `${match === 'approximate' ? '~' : ''}${Number(output.toFixed(4))}`;
-  const tags = [row.defaultSource ? 'default' : '', row.approval.required ? `asks: ${APPROVAL_LABELS[row.approval.basis] ?? row.approval.basis}` : ''].filter(Boolean);
+  const tags = [row.defaultSource ? 'default' : '', approvalTag(row.approval)].filter(Boolean);
   return `${row.model}${efforts} ${price}${tags.length ? ` [${tags.join(', ')}]` : ''}`;
 }
 
@@ -432,7 +450,7 @@ function formatPrices(list: DoctorPrices | null): string {
 
 /** Names the default model and where it came from. */
 function formatDefault(selected: DoctorDefaultModel | undefined): string {
-  return selected ? ` · model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''})` : '';
+  return selected ? ` · model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''}${selected.denied ? ', denied by the user' : ''})` : '';
 }
 
 /** What a backend accepts beyond the listed models: unlisted names, the probe's aliases, or any name. */
@@ -618,7 +636,7 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
       const probe = probes[index], catalog = catalogs[index], fallback = defaults[index];
       backends[id] = { installed: probe.installed, allowed: config.routing.allowedBackends.includes(id),
         ...(probe.version ? { version: probe.version } : {}),
-        ...(fallback ? { defaultModel: { ...fallback, ...(decideConsent(fallback.model, fallback.model, prices, config.governance).ask ? { asks: true } : {}) } } : {}),
+        ...(fallback ? { defaultModel: { ...fallback, ...defaultApproval(fallback.model, prices, config.governance) } } : {}),
         ...(catalog ? { catalogSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) } : {}),
         ...(!catalog && probe.availableModels?.length ? { availableModels: probe.availableModels } : {}) };
     });

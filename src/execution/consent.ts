@@ -11,6 +11,8 @@ import {
   decideConsent,
   describeGovernanceChange,
   consentInvalidatedMessage,
+  findModelRule,
+  modelDeniedMessage,
   usd,
   NO_SUBSTITUTE,
   type ConsentDecision,
@@ -116,7 +118,7 @@ export interface RevalidateConsentResult {
  *
  * @remarks
  * Protects against condition shifts while waiting for user consent:
- * - If governance configuration changed (`alwaysAsk`, `neverAsk`, `askAbovePrice`, `priceMultiplier`), approval is invalidated.
+ * - A model now on `models.deny` is refused; if governance configuration changed (`models.ask`, `models.allow`, `askAbovePrice`, `priceMultiplier`), approval is invalidated.
  * - If model price increased or exceeded price limits (`output_price_below` or relative multiplier), approval is invalidated.
  * - Fail-closed: throws `ToolError('POLICY_DENIED')` or `ToolError('PRICE_LIMIT')` with retry guidance without substituting models.
  *
@@ -143,6 +145,11 @@ export async function revalidateConsent(
     : isConfigModified(initialSnapshot)
     ? loadConfigSnapshot()
     : initialSnapshot;
+
+  // A model the user denied while the approval was pending never runs, whatever was approved.
+  if (findModelRule(model, currentSnapshot.config.governance.models) === 'deny') {
+    throw new ToolError('POLICY_DENIED', modelDeniedMessage(model));
+  }
 
   const governanceChange = describeGovernanceChange(
     initialSnapshot.config.governance,

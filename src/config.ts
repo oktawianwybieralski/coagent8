@@ -8,8 +8,8 @@ import { atomicWrite, withFileLock, isAbortSignal, type FileLockOptions } from '
 import type { BackendReadContext } from './contracts/execution.js';
 import { redactDiagnostic } from './security/redaction.js';
 import { isValidModelIdentifier } from './contracts/models.js';
-import type { GovernanceSettings } from './contracts/governance.js';
-import { applyEditorSetting, readEditorSettings, type EditorSettingKey } from './config-overrides.js';
+import { MODEL_RULES, type GovernanceSettings } from './contracts/governance.js';
+import { applyEditorSetting, readEditorSettings, EDITOR_SETTINGS, type EditorSettingKey } from './config-overrides.js';
 import { COAGENT_SKILL_NAME, type SkillSelection } from './contracts/skills.js';
 
 /** Compatibility alias: config defaults may select a strategy, sessions may not. */
@@ -43,11 +43,11 @@ export interface CoAgent8Config {
   routing: RoutingConfig;
   /** Per-backend settings; doctor records a default model here when it finds none. */
   backends: Partial<Record<ProviderId, BackendSettings>>;
-  /** When the user is asked before a model runs; an approval with "remember" adds to `neverAsk`. */
+  /** Which models run, run after the user's approval, or never run; an approval with "remember" adds to `models.allow`. */
   governance: GovernanceSettings;
 }
 
-/** Longest `alwaysAsk` or `neverAsk` list. */
+/** Longest `governance.models` list. */
 const MAX_GOVERNED_MODELS = 256;
 
 /** Resolves the user's configuration path, honoring the runtime environment override. */
@@ -123,7 +123,7 @@ const DEFAULT_CONFIG: CoAgent8Config = {
   backends: {},
   // Owner decision of 2026-10-07: twice the default's price, and 20 USD per million output
   // tokens for any model, the default included, unless the user relaxes either.
-  governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+  governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
 };
 
 function ensureConfigDir(file = getConfigFile()): void {
@@ -235,7 +235,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     }
   }
 
-  const governance: GovernanceSettings = { ...DEFAULT_CONFIG.governance, alwaysAsk: [], neverAsk: [] };
+  const governance: GovernanceSettings = { ...DEFAULT_CONFIG.governance, models: { allow: [], ask: [], deny: [] } };
   if (config.governance !== undefined && config.governance !== null) {
     if (typeof config.governance !== 'object' || Array.isArray(config.governance)) {
       throw new Error('Configuration Error: governance must be an object.');
@@ -253,13 +253,22 @@ export function validateConfig(value: unknown): CoAgent8Config {
       }
       governance.askAbovePrice = fields.askAbovePrice;
     }
-    for (const list of ['alwaysAsk', 'neverAsk'] as const) {
-      const value = fields[list];
-      if (value === undefined) continue;
-      if (!Array.isArray(value) || value.length > MAX_GOVERNED_MODELS || !value.every(isValidModelIdentifier)) {
-        throw new Error(`Configuration Error: governance.${list} must be a list of at most ${MAX_GOVERNED_MODELS} model identifiers.`);
+    if (fields.models !== undefined && fields.models !== null) {
+      if (typeof fields.models !== 'object' || Array.isArray(fields.models)) {
+        throw new Error('Configuration Error: governance.models must be an object with allow, ask and deny lists.');
       }
-      governance[list] = [...new Set(value)];
+      const rules = fields.models as Record<string, unknown>;
+      // A misspelt list would silently leave a model unrestricted, so it is rejected.
+      const unknown = Object.keys(rules).filter(key => !(MODEL_RULES as readonly string[]).includes(key));
+      if (unknown.length) throw new Error(`Configuration Error: governance.models has unknown lists (${unknown.join(', ')}); supported: allow, ask, deny.`);
+      for (const rule of MODEL_RULES) {
+        const value = rules[rule];
+        if (value === undefined) continue;
+        if (!Array.isArray(value) || value.length > MAX_GOVERNED_MODELS || !value.every(isValidModelIdentifier)) {
+          throw new Error(`Configuration Error: governance.models.${rule} must be a list of at most ${MAX_GOVERNED_MODELS} model identifiers.`);
+        }
+        governance.models[rule] = [...new Set(value)];
+      }
     }
   }
 
@@ -281,7 +290,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
 
 function defaultConfig(): CoAgent8Config {
   return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] }, backends: {},
-    governance: { ...DEFAULT_CONFIG.governance, alwaysAsk: [], neverAsk: [] } };
+    governance: { ...DEFAULT_CONFIG.governance, models: { allow: [], ask: [], deny: [] } } };
 }
 
 /**
@@ -315,8 +324,9 @@ function collectSources(
     'routing.allowedBackends': 'default',
     'governance.priceMultiplier': 'default',
     'governance.askAbovePrice': 'default',
-    'governance.alwaysAsk': 'default',
-    'governance.neverAsk': 'default',
+    'governance.models.allow': 'default',
+    'governance.models.ask': 'default',
+    'governance.models.deny': 'default',
   };
 
   if (rawFile) {
@@ -339,8 +349,8 @@ function collectSources(
       const g = rawFile.governance as Record<string, unknown>;
       if (g.priceMultiplier !== undefined) sources['governance.priceMultiplier'] = 'file';
       if (g.askAbovePrice !== undefined) sources['governance.askAbovePrice'] = 'file';
-      if (g.alwaysAsk !== undefined) sources['governance.alwaysAsk'] = 'file';
-      if (g.neverAsk !== undefined) sources['governance.neverAsk'] = 'file';
+      const rules = g.models && typeof g.models === 'object' && !Array.isArray(g.models) ? g.models as Record<string, unknown> : {};
+      for (const rule of MODEL_RULES) if (rules[rule] !== undefined) sources[`governance.models.${rule}`] = 'file';
     }
   }
 
@@ -353,10 +363,9 @@ function collectSources(
     else if (key === 'agy.defaultModel') sources['backends.agy.defaultModel'] = 'editor';
     else if (key === 'approval.priceMultiplier') sources['governance.priceMultiplier'] = 'editor';
     else if (key === 'approval.askAbovePrice') sources['governance.askAbovePrice'] = 'editor';
-    else if (key === 'approval.alwaysAskModels') {
-      sources['governance.alwaysAsk'] = sources['governance.alwaysAsk'] === 'file' ? 'merged' : 'editor';
-    } else if (key === 'approval.neverAskModels') {
-      sources['governance.neverAsk'] = sources['governance.neverAsk'] === 'file' ? 'merged' : 'editor';
+    else if (EDITOR_SETTINGS[key].list && EDITOR_SETTINGS[key].field[1] === 'models') {
+      const list = `governance.models.${EDITOR_SETTINGS[key].field[2]}`;
+      sources[list] = sources[list] === 'file' ? 'merged' : 'editor';
     }
   }
 
@@ -558,8 +567,9 @@ export async function saveConfig(updates: Partial<CoAgent8Config>): Promise<CoAg
 const REMEMBER_ABORTED_MESSAGE = 'Request cancelled before recording remembered approval.';
 
 /**
- * Adds a model the user approved with "remember" to `governance.neverAsk` of the file; the
- * VS Code list `coagent8.approval.neverAskModels` is added to it, never replaced by it.
+ * Adds a model the user approved with "remember" to `governance.models.allow` of the file;
+ * the VS Code list `coagent8.approval.allowModels` is added to it, never replaced by it.
+ * @remarks A model the user also denies or always asks for stays so: `deny` and `ask` win.
  * @param model - Model identifier to remember.
  * @param options - Optional file lock options, read context, or cancellation signal.
  * @returns Whether the list changed.
@@ -593,8 +603,9 @@ export async function rememberApprovedModel(
     }
     const file = getConfigFile();
     const current = loadFileConfig(file);
-    if (current.governance.neverAsk.includes(model)) return false;
-    await writeConfig(validateConfig({ ...current, governance: { ...current.governance, neverAsk: [...current.governance.neverAsk, model] } }), file);
+    const { models } = current.governance;
+    if (models.allow.includes(model)) return false;
+    await writeConfig(validateConfig({ ...current, governance: { ...current.governance, models: { ...models, allow: [...models.allow, model] } } }), file);
     return true;
   }, options);
 }

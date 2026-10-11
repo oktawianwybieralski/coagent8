@@ -97,8 +97,7 @@ test('early phase budget expiry during consent blocks execution and throws TIMEO
     defaultBackend: 'codex',
     routing: { strategy: 'fixed', allowedBackends: ['codex'] },
     governance: {
-      alwaysAsk: ['gpt-expensive'],
-      neverAsk: [],
+      models: { allow: [], ask: ['gpt-expensive'], deny: [] },
     },
   });
 
@@ -160,7 +159,7 @@ test('adapter receives remainingExecutionMs for every backend (codex, claude, ag
     await saveConfig({
       defaultBackend: backendId,
       routing: { strategy: 'fixed', allowedBackends: [backendId] },
-      governance: { neverAsk: [`model-${backendId}`] },
+      governance: { models: { allow: [`model-${backendId}`] } },
     });
 
     // Budget: 10,000 ms total, 2,000 ms teardown => execution deadline = 8,000 ms from start.
@@ -225,7 +224,7 @@ test('idle activity and streaming events cannot reset or extend the budget deadl
   await saveConfig({
     defaultBackend: 'codex',
     routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-    governance: { neverAsk: ['gpt-5'] },
+    governance: { models: { allow: ['gpt-5'] } },
   });
 
   const budget = createExecutionBudget({ totalBudgetMs: 5000, teardownAllowanceMs: 1000, clock });

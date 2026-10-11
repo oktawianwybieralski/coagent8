@@ -33,19 +33,28 @@ Never grant write permissions or file modification capabilities to external CLI 
 ---
 
 ## 2. Model Cost Governance
-A model runs without asking only when it is not on `governance.alwaysAsk` and its
-approximate output price is known exactly, below `governance.askAbovePrice`
-(default 20 USD per million tokens, the backend's default model included) and
-below `governance.priceMultiplier` (default 2) times the price of its backend's
+The user's own rules in `governance.models` decide first, in the allow/ask/deny
+convention (owner decision 2026-10-11); `deny` wins over `ask`, `ask` over
+`allow`, and an id also covers its effort variants:
+* `deny`: the model never runs; the call fails with `POLICY_DENIED` and that
+  reason, and a price limit never chooses it;
+* `ask`: the model is asked for on every turn whatever it costs, and the request
+  states its price;
+* `allow`: the user's standing approval; the model runs without asking.
+
+Any other model runs without asking only when its approximate output price is
+known exactly, below `governance.askAbovePrice` (default 20 USD per million
+tokens, the backend's default model included) and below
+`governance.priceMultiplier` (default 2) times the price of its backend's
 default model. Otherwise it runs only after the user approves it:
-* a priced model at or above either limit, or on `alwaysAsk`, is asked on every
-  turn;
+* a priced model at or above either limit is asked on every turn;
 * a model without a price, or matched to a price only approximately, is asked
   until the user approves it with "remember", which adds it to
-  `governance.neverAsk`;
-* without any price data, every model not on `neverAsk` is asked.
-`neverAsk` exempts a model unless it is also on `alwaysAsk`; only the user's
-configuration relaxes a limit. Prices are approximate public API prices
+  `governance.models.allow`;
+* without any price data, every model not on `models.allow` is asked.
+
+Only the user's configuration relaxes a limit or edits these lists; a calling
+agent never changes them. Prices are approximate public API prices
 (OpenRouter); they decide only whether to ask, never billing or a model's safety.
 
 **Invariant:** Consent comes from the user through MCP elicitation, asked by the

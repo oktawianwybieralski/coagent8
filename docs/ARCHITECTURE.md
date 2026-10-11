@@ -164,7 +164,7 @@ Old/manual registrations can still set a different coagent8_CONFIG; source
 defaults do not establish what an already running process reads.
 
 Explicit VS Code user settings arrive through coagent8_EDITOR_SETTINGS. Scalars
-override the file; alwaysAsk/neverAsk arrays add to file values. Workspace/default
+override the file; the allow/ask/deny model lists add to file values. Workspace/default
 editor settings are not passed. Recorded defaults and remembered approvals write
 only to the file. Other hosts/CLI read the file, not VS Code settings. Unknown
 file properties are ignored and dropped on write; malformed/unreadable/invalid
@@ -242,12 +242,20 @@ minutes and graceful shutdown waits for a background read (fetch-bounded).
 
 Consent is evaluated for the concrete model on every turn:
 
-1. alwaysAsk requires approval; neverAsk exempts a model unless also alwaysAsk.
+1. The user's governance.models lists decide first, in the allow/ask/deny
+   convention: deny never runs the model, ask requires approval every turn
+   whatever it costs, allow runs it without asking (the user's standing approval);
+   deny wins over ask and ask over allow. An entry naming an id also covers its
+   effort variants (<id>-<effort>). A denied model is refused with POLICY_DENIED
+   and the list as the reason, before any catalog read or approval request; a
+   price limit never chooses one. Every reason states the known price.
 2. Missing list, missing price or approximate match requires approval, with an
-   option for the user to remember it.
+   option for the user to remember it in models.allow.
 3. Output price at least askAbovePrice (default USD 20; null disables) or at
    least priceMultiplier (default 2) times the backend default requires approval
    every turn, without remember.
+
+A misspelt models list fails configuration validation.
 
 Only accepted MCP elicitation with explicit boolean approve: true grants consent.
 Missing capability/content, unchecked box, decline, cancel or timeout fails closed.
@@ -256,10 +264,15 @@ refusal. Consent is request/model-bound and precedes session acquisition/model
 execution; metadata probes may precede it. The form wait is bounded to five minutes
 and follows cancellation. Real UI display still needs client-specific acceptance.
 A refusal tells the caller to inform the user and to switch models only if the
-user asks; it never advises another model by itself (AX-003).
+user asks; it never advises another model by itself (AX-003). When no form
+reached the user, it names the user's own ways out (a client that shows MCP
+forms, or models.allow) and forbids the caller to change that setting. Before a
+call, the model parameter description and the client skills tell the caller to
+ask the user about a model doctor tags ask, so the form is expected, and not to
+call one tagged deny.
 
 The absence of an approval prompt does not prove that a model meets a user's price
-limit. NeverAsk, thresholds, default-model ratios and price staleness make those
+limit. models.allow, thresholds, default-model ratios and price staleness make those
 separate questions; the price limit below answers the user's question.
 
 ### Price limit
@@ -274,9 +287,9 @@ usage, quota or bill; request estimates remain open in AX-001.
   several exact entries count at their highest price. A constrained call reads a
   stale list again (shared, retried after five minutes); if that fails the call
   fails. A null or empty list price is no price, not zero.
-- The check is separate from consent. neverAsk, an approval or the absence of a
+- The check is separate from consent. models.allow, an approval or the absence of a
   prompt cannot satisfy it, and a model within the limit still asks where
-  governance says so (alwaysAsk, askAbovePrice, priceMultiplier, unknown).
+  governance says so (models.ask, askAbovePrice, priceMultiplier, unknown).
 - A named model (request or session continuation) is checked as resolved, aliases
   included. If it does not meet the limit the call fails with PRICE_LIMIT and the
   reason; it is never replaced. A continuation keeps its model.
@@ -606,6 +619,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-11 | Set Up Coding CLIs becomes Manage Coding CLIs, a list of CLIs with one menu per CLI built like Manage Skills; Uninstall CoAgent8 is removed in favour of per-CLI removal and the uninstall hook; vendor extensions stay machine-scoped, because the install command can avoid VS Code's sync question only by excluding them from Sync; only what CoAgent8 installed is offered for removal (CLIMGMT-001). |
 | 2026-10-11 | Release artifacts carry signed build provenance (GitHub artifact attestations) next to `SHA256SUMS`. After beta.2, which is published by hand, npm publishing moves to a workflow started by the published release: npm trusted publishing (OIDC, no token) with provenance, gated by the owner's approval of the `npm` environment, publishing the verified release tarball (REPO-002g). |
 | 2026-10-11 | One numeric version without pre-release suffixes for npm, the VSIX and the Git tag (`vX.Y.Z`), because VS Code accepts only numeric extension versions and offers Restart Extensions only when the number changes. Every version below 1.0.0 is a preview (VS Code and GitHub pre-release, npm `next`); each preview raises the minor. 0.5.0 is skipped: the npm name placeholder 1.0.0-beta.1 held it and is withdrawn, with no tag, GitHub Release or changelog entry. The candidate prepared as beta.2 becomes 0.6.0 and the final release is 1.0.0 (REPO-003). |
+| 2026-10-11 | The user's model rules follow the allow/ask/deny convention (governance.models, VS Code approval.allowModels/askModels/denyModels): deny refuses a model with the reason, ask asks every turn and states the price, allow is standing approval; deny wins over ask, ask over allow. They replace alwaysAsk/neverAsk without aliases: nothing was published with them. Approval stays the server's MCP form only: an answer the calling agent relays from chat is not consent. The model-visible tool-definition budget rises to 5,900 bytes so the model parameter tells the caller to ask the user before a model doctor tags ask. |
 
 ## Known limitations
 

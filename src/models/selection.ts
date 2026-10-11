@@ -9,7 +9,7 @@
  */
 import { ToolError } from '../contracts/error.js';
 import type { ProviderId } from '../contracts/provider.js';
-import type { CatalogModel, ModelCatalog } from '../contracts/models.js';
+import { namesModelOrVariant, type CatalogModel, type ModelCatalog } from '../contracts/models.js';
 import { findCatalogEntry } from './catalog.js';
 import { checkPriceLimit, priceEvidence, type PriceEvidence, type PriceList } from './prices.js';
 import { decideConsent, type ConsentBasis, type GovernanceSettings } from './governance.js';
@@ -57,35 +57,37 @@ export function catalogNames(catalog: ModelCatalog | undefined): string[] {
 /**
  * Chooses the model of a turn under a price limit: the default when its verified price is
  * below the limit, else the highest-priced catalog model below it, catalog order breaking
- * ties. Approval is not considered here: the controller asks for it as for any model.
+ * ties. Approval is not considered here: the controller asks for it as for any model. A
+ * model the user denies, the default included, is never chosen.
  * @param id - Backend, for messages.
  * @param catalog - Its catalog, or undefined; without one only the default can be chosen.
  * @param fallback - The model the backend runs when none is named, if known.
  * @param constraint - The limit and the call's effort.
  * @param prices - The price list the limit is checked against; undefined when none could be read.
+ * @param denied - The user's `governance.models.deny` list.
  * @throws `PRICE_LIMIT` stating why neither the default nor a catalog model meets the limit.
  */
-export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint, prices: PriceList | undefined): ModelSelection {
+export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint, prices: PriceList | undefined, denied: readonly string[] = []): ModelSelection {
   const { below } = constraint;
   const effort = constraint.effort?.toLowerCase();
   const accepts = (entry: CatalogModel | undefined) => !effort || !entry || entry.efforts.includes(effort);
+  const isDenied = (model: string) => denied.some(listed => namesModelOrVariant(listed, model));
   const defaultReason = fallback ? checkPriceLimit(fallback.model, priceEvidence(prices, fallback.model), below) : undefined;
   const defaultEntry = fallback && catalog ? findCatalogEntry(catalog, fallback.model)?.entry : undefined;
-  if (fallback && !defaultReason && accepts(defaultEntry)) return fallback;
-  let best: { entry: CatalogModel; price: number } | undefined;
+  if (fallback && !defaultReason && accepts(defaultEntry) && !isDenied(fallback.model)) return fallback;
+  let best: { model: string; price: number } | undefined;
   for (const entry of catalog?.models ?? []) {
-    if (!accepts(entry)) continue;
+    // The name the turn would run: agy's `<id>-<effort>` when an effort is required and none is passed.
+    const model = entry.effortRequired && !effort && entry.efforts.length ? `${entry.id}-${entry.efforts[0]}` : entry.id;
+    if (!accepts(entry) || isDenied(entry.id) || isDenied(model)) continue;
     const evidence = priceEvidence(prices, entry.id);
-    if (checkPriceLimit(entry.id, evidence, below) === undefined && (!best || evidence.outputUsdPerMTok! > best.price)) best = { entry, price: evidence.outputUsdPerMTok! };
+    if (checkPriceLimit(entry.id, evidence, below) === undefined && (!best || evidence.outputUsdPerMTok! > best.price)) best = { model, price: evidence.outputUsdPerMTok! };
   }
-  if (best) {
-    const { entry } = best;
-    return { model: entry.effortRequired && !effort && entry.efforts.length ? `${entry.id}-${entry.efforts[0]}` : entry.id, source: 'price-limit' };
-  }
+  if (best) return { model: best.model, source: 'price-limit' };
   const reasons = [
-    fallback ? `Default: ${defaultReason ?? `'${fallback.model}' does not accept reasoning_effort '${effort}'.`}` : 'No default model is known.',
+    fallback ? `Default: ${defaultReason ?? (isDenied(fallback.model) ? `'${fallback.model}' is denied by the user.` : `'${fallback.model}' does not accept reasoning_effort '${effort}'.`)}` : 'No default model is known.',
     catalog?.models.length
-      ? `None of its ${catalog.models.length} listed models${effort ? ` accepting reasoning_effort '${effort}'` : ''} has a verified price below the limit; doctor lists their prices.`
+      ? `None of its ${catalog.models.length} listed models${effort ? ` accepting reasoning_effort '${effort}'` : ''}${denied.length ? ' and not denied by the user' : ''} has a verified price below the limit; doctor lists their prices.`
       : `${id} lists no models, so only its default or a named model can be checked.`,
   ];
   throw new ToolError('PRICE_LIMIT', `No ${id} model has a verified price below ${Number(below.toFixed(4))} USD per million output tokens. ${reasons.join(' ')}`);
@@ -102,8 +104,8 @@ export interface ModelCandidate {
   /** Where the backend's default came from; set on the default model's row only. */
   defaultSource?: ModelSource;
   price: PriceEvidence;
-  /** Whether governance asks the user before a turn of this model, and why. */
-  approval: { required: boolean; basis: ConsentBasis; reason: string; rememberable: boolean };
+  /** Whether governance asks the user before a turn of this model or never runs it, and why. */
+  approval: { required: boolean; denied: boolean; basis: ConsentBasis; reason: string; rememberable: boolean };
 }
 
 /**
@@ -115,7 +117,8 @@ export interface ModelCandidate {
  * @param prices - The price list, or undefined.
  * @param settings - The user's governance settings.
  * @remarks Approval is evaluated for the listed name (for the default, the name it runs as);
- * a governance list entry naming one effort variant (`<id>-<effort>`) applies when it runs.
+ * an entry naming the id covers its effort variants, and one naming a single variant
+ * (`<id>-<effort>`) applies when that variant runs.
  */
 export function listModelCandidates(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, prices: PriceList | undefined, settings: GovernanceSettings): ModelCandidate[] {
   const now = Date.now();
@@ -126,7 +129,7 @@ export function listModelCandidates(id: ProviderId, catalog: ModelCatalog | unde
       backend: id, model, efforts, ...(effortRequired ? { effortRequired } : {}),
       ...(isDefault && fallback ? { defaultSource: fallback.source } : {}),
       price: priceEvidence(prices, model, now),
-      approval: { required: consent.ask, basis: consent.basis, reason: consent.reason, rememberable: consent.offerRemember },
+      approval: { required: consent.ask, denied: consent.deny, basis: consent.basis, reason: consent.reason, rememberable: consent.offerRemember },
     };
   };
   const rows = (catalog?.models ?? []).map(entry => row(entry.id, entry.efforts, entry.effortRequired === true, entry === defaultEntry));

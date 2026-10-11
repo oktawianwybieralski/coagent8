@@ -24,7 +24,7 @@ const listed = [['openai/gpt-6-sol', 10], ['openai/gpt-6-luna', 0.5], ['openai/g
 const offered = ['gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-terra', 'gpt-6-astra', 'mystery', 'gemini-3.1-pro-low', 'claude-haiku-4-5[1m]', 'claude-haiku-4-5',
   'gemini-3.8-flash', 'gemini-3.8-flash-high', 'gemini-3.8-flash-low', 'gemini-3.8-flash-max', 'claude-haiku-4-5-20251001'];
 const list = { fetchedAt: now, source: 'openrouter', models: matchPrices(listed, offered) };
-const settings = { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] };
+const settings = { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } };
 
 test('the limit is strict: a model priced at exactly the limit does not meet it (AX-002)', () => {
   const luna = priceEvidence(list, 'gpt-6-luna', now);
@@ -114,13 +114,13 @@ test('no qualifying model is a PRICE_LIMIT error with the reasons, never a subst
 });
 
 test('the selection view lists every model with price evidence, default and approval basis (AX-001)', () => {
-  const rows = listModelCandidates('codex', codexCatalog, { model: 'gpt-6-sol', source: 'catalog' }, list, { ...settings, alwaysAsk: ['gpt-6-luna'] });
-  assert.deepEqual(rows.map(row => [row.model, row.price.outputUsdPerMTok, row.price.match, row.defaultSource, row.approval.required, row.approval.basis]), [
-    ['gpt-6-sol', 10, 'exact', 'catalog', false, 'priced'],
-    ['gpt-6-luna', 0.7, 'exact', undefined, true, 'always-ask'],
-    ['gpt-5.6-luna', 1.2, 'exact', undefined, false, 'priced'],
-    ['gpt-6-astra', null, 'unknown', undefined, true, 'unpriced'],
-    ['gemini-3.1-pro-low', 12, 'approximate', undefined, true, 'approximate'],
+  const rows = listModelCandidates('codex', codexCatalog, { model: 'gpt-6-sol', source: 'catalog' }, list, { ...settings, models: { allow: ['gpt-5.6-luna'], ask: ['gpt-6-luna'], deny: ['gpt-6-astra'] } });
+  assert.deepEqual(rows.map(row => [row.model, row.price.outputUsdPerMTok, row.price.match, row.defaultSource, row.approval.required, row.approval.denied, row.approval.basis]), [
+    ['gpt-6-sol', 10, 'exact', 'catalog', false, false, 'priced'],
+    ['gpt-6-luna', 0.7, 'exact', undefined, true, false, 'ask'],
+    ['gpt-5.6-luna', 1.2, 'exact', undefined, false, false, 'allow'],
+    ['gpt-6-astra', null, 'unknown', undefined, false, true, 'deny'],
+    ['gemini-3.1-pro-low', 12, 'approximate', undefined, true, false, 'approximate'],
   ]);
   const claude = listModelCandidates('claude', undefined, { model: 'claude-haiku-4-5-20251001', source: 'observed' }, list, settings);
   assert.deepEqual(claude.map(row => [row.model, row.efforts, row.defaultSource, row.price.outputUsdPerMTok]), [['claude-haiku-4-5-20251001', [], 'observed', 5]], 'without a catalog, the default alone');

@@ -7,7 +7,8 @@ description: Show which models, reasoning efforts and output prices each CoAgent
 
 1. For models call `doctor` with `scope: models` (the default). It reads cached
    catalogs and lists, per backend, models, reasoning efforts, output prices,
-   price freshness and whether a model needs the user's approval. Pass
+   price freshness and each model's approval tag: `ask: <rule>`, `deny` or
+   `allow`. Pass
    `backend` (`codex`, `claude` or `agy`) to narrow it and `detail: full` for the
    same report as JSON.
 2. For problems call `doctor` with `scope: health`. It checks installation,
@@ -15,8 +16,10 @@ description: Show which models, reasoning efforts and output prices each CoAgent
 3. To apply a user's price limit, pass `output_price_below` to consult or
    review and leave `model` unset; the server picks a model whose verified price
    is below the limit. Do not pick a model from the list to work around it.
-4. A model marked as needing approval runs only after the user approves it in
-   the form the server shows. You cannot approve it.
+4. A model tagged `ask` runs only after the user approves it in the form the
+   server shows; tell the user its price and that the form will follow before
+   you call it. You cannot approve it. A model tagged `deny` never runs: the user
+   denied it, so do not call it. `allow` is the user's standing approval.
 
 Do not edit CoAgent8 or client configuration files to change defaults or
 approval: the running server may read a different configuration file than the

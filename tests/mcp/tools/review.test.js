@@ -296,7 +296,7 @@ test('handleReview passes remaining monotonic execution time to adapter after Gi
     await saveConfig({
       defaultBackend: 'agy',
       routing: { strategy: 'fixed', allowedBackends: ['agy'] },
-      governance: { neverAsk: ['fixture-model'] },
+      governance: { models: { allow: ['fixture-model'] } },
     });
     const result = await handleReview('review', {}, repo, null, null, { budget, clock });
     assert.ok(receivedTimeoutMs !== null, 'Adapter execute should have been called');
@@ -346,7 +346,7 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
     await saveConfig({
       defaultBackend: 'agy',
       routing: { strategy: 'fixed', allowedBackends: ['agy'] },
-      governance: { neverAsk: ['fixture-model'] },
+      governance: { models: { allow: ['fixture-model'] } },
     });
     const context = {
       abortSignal: budget.executionSignal,

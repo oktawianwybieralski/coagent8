@@ -900,15 +900,15 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   assert.equal(require('../../extensions/vscode/package.json').contributes.configuration.properties['coagent8.configPath'].scope, 'machine');
   assert.equal(definition.env.coagent8_EDITOR_SETTINGS, '{}', 'contributed defaults leave config.json in effect');
   Object.assign(inspected, {
-    'approval.neverAskModels': { defaultValue: [], globalValue: ['user-model'], workspaceValue: ['workspace-model'] },
+    'approval.allowModels': { defaultValue: [], globalValue: ['user-model'], workspaceValue: ['workspace-model'] },
     defaultBackend: { defaultValue: 'auto', workspaceValue: 'agy', workspaceFolderValue: 'agy' },
     'claude.defaultModel': { globalValue: 'opus' },
   });
   const before = changes;
-  configurationListener(affects('coagent8.approval.neverAskModels'));
+  configurationListener(affects('coagent8.approval.allowModels'));
   assert.equal(changes, before + 1, 'a backend, model or approval setting refreshes the server definition');
   assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EDITOR_SETTINGS),
-    { 'approval.neverAskModels': ['user-model'], 'claude.defaultModel': 'opus' }, 'only user values; a workspace cannot change backend or approval');
+    { 'approval.allowModels': ['user-model'], 'claude.defaultModel': 'opus' }, 'only user values; a workspace cannot change backend or approval');
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'changed bundle, same package version');
   extensionListener();
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');

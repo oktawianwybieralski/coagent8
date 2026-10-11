@@ -305,7 +305,7 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 5800, `model-visible tool definitions: ${visible} B (owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  assert.ok(visible <= 5900, `model-visible tool definitions: ${visible} B (owner budget raised to 5,900 B for the approval notice on model, 2026-10-11; owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
   for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle', 'timeout_ms']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
@@ -314,6 +314,9 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   // No model names in descriptions (owner decision of 2026-10-07): doctor lists them, and a
   // wrong name fails before any model call with the accepted ones.
   assert.match(consultProperties.model.description, /Omit unless the user names a model or price limit\. doctor lists models, efforts and prices/, 'model points to the place that lists them and permits selection for a limit');
+  // A calling agent learned of the approval only from the refusal (2026-10-11): it checks with the user first.
+  assert.match(consultProperties.model.description, /Tag ask: ask the user first, a form follows; deny: never runs\./, 'model warns before a call that needs approval or is denied');
+  assert.equal(tools.find(t => t.name === 'review').inputSchema.properties.model.description, consultProperties.model.description, 'review warns the same way');
   assert.match(consultProperties.reasoning_effort.description, /Required where listed, or as a model name suffix/, 'the effort requirement is stated before a call fails');
   // AX-002: unit, direction and strict boundary are part of the contract the caller sees.
   assert.deepEqual({ ...consultProperties.output_price_below, description: undefined }, { type: 'number', minimum: 0, description: undefined });

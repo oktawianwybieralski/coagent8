@@ -36,6 +36,19 @@ export interface ModelCatalog {
   acceptsUnlisted?: boolean;
 }
 
+/** Bridge schema union; catalog checks or adapter warnings determine per-model/provider support. */
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+/**
+ * Returns whether `model` is `listed` itself or one of its effort variants (`<id>-<effort>`),
+ * the name agy runs for a model doctor lists by its id.
+ */
+export function namesModelOrVariant(listed: string, model: string): boolean {
+  if (model === listed) return true;
+  if (!model.startsWith(`${listed}-`)) return false;
+  return (REASONING_EFFORTS as readonly string[]).includes(model.slice(listed.length + 1).toLowerCase());
+}
+
 /** Model identifier pattern from the audit; rejects option-like and whitespace values. */
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
 

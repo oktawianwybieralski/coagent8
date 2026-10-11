@@ -22,7 +22,7 @@ Current execution is read-only.
 
 Let the server obtain model consent from the user. On unsupported/unanswered
 elicitation explain the model and reason. Do not set approval yourself or edit
-neverAsk to make a blocked call run. A default config path may differ from the
+the governance.models lists to make a blocked call run. A default config path may differ from the
 running server's environment; do not change guessed config files.
 
 ## Work on the project

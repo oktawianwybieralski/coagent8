@@ -14,7 +14,9 @@ Text the user typed with this command names the scope or the review focus.
    ask the reviewer to answer READY.
 3. Leave `backend` and `model` unset unless the user named one; `auto` prefers a
    different CLI than yours. The author of a change cannot supply its own
-   independent approval.
+   independent approval. A model `coagent8-doctor` tags `ask` runs only after
+   the user approves the server's form: tell the user before the call. Never
+   call a model tagged `deny`.
 4. Read the result. The reviewer's `VERDICT:` in the body is its judgement; the
    server's `Verdict: READY` or `Verdict: BLOCKED (reason)` in the footer is the
    gate decision.

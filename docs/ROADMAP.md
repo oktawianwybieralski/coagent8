@@ -981,7 +981,7 @@ cards pass. Extend existing owners; do not copy selection/policy per client.
   expiry/replay examples and a human-controlled interaction compatible with
   CLI-FIRST-001. Done: review of the proposal identifies who can approve and
   how the server verifies that fact. Check: P. Agent flags, guessed config edits
-  and neverAsk insertion cannot act as approval; retain current refusal meanwhile.
+  and models.allow insertion cannot act as approval; retain current refusal meanwhile.
 - [ ] **AX-003c - split the accepted protocol into code cards.** After AX-003b,
   write separate cards for server proof validation, client interaction and replay/
   expiry failures, naming the accepted protocol files/tests. Implement one card

@@ -60,21 +60,36 @@
           "default": 20,
           "description": "Ask before a model whose output price is at least this many USD per million tokens; null disables this threshold. VS Code setting: coagent8.approval.askAbovePrice."
         },
-        "alwaysAsk": {
-          "type": "array",
-          "maxItems": 256,
-          "uniqueItems": true,
-          "items": { "$ref": "#/definitions/model" },
-          "default": [],
-          "description": "Models that always need your approval before they run, even when also listed in neverAsk. VS Code setting coagent8.approval.alwaysAskModels adds to this list."
-        },
-        "neverAsk": {
-          "type": "array",
-          "maxItems": 256,
-          "uniqueItems": true,
-          "items": { "$ref": "#/definitions/model" },
-          "default": [],
-          "description": "Models that run without asking, unless also listed in alwaysAsk. An approval with \"remember\" adds the model here. VS Code setting coagent8.approval.neverAskModels adds to this list."
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Your own rule for named models: deny wins over ask, ask over allow. An entry also covers the model's effort variants (<id>-<effort>). Price rules apply to the other models.",
+          "properties": {
+            "deny": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/model" },
+              "default": [],
+              "description": "Models that never run, whatever they cost; a request naming one is refused with this reason. VS Code setting coagent8.approval.denyModels adds to this list."
+            },
+            "ask": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/model" },
+              "default": [],
+              "description": "Models that need your approval before every run, whatever they cost; the approval request states the price. VS Code setting coagent8.approval.askModels adds to this list."
+            },
+            "allow": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/model" },
+              "default": [],
+              "description": "Models you approve in advance: they run without asking, whatever they cost. An approval with \"remember\" adds the model here. VS Code setting coagent8.approval.allowModels adds to this list."
+            }
+          }
         }
       }
     }

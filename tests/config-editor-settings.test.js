@@ -18,7 +18,7 @@ const fileBytes = JSON.stringify({
   defaultBackend: 'claude',
   routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] },
   backends: { codex: { defaultModel: 'file-codex' } },
-  governance: { priceMultiplier: 3, askAbovePrice: 30, alwaysAsk: ['file-always'], neverAsk: ['file-never'] },
+  governance: { priceMultiplier: 3, askAbovePrice: 30, models: { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] } },
 }, null, 2);
 
 function withSettings(settings, action) {
@@ -34,7 +34,7 @@ test('without VS Code settings the file is the configuration', () => {
   for (const settings of [undefined, {}]) {
     const config = withSettings(settings, loadConfig);
     assert.equal(config.defaultBackend, 'claude');
-    assert.deepEqual(config.governance.neverAsk, ['file-never']);
+    assert.deepEqual(config.governance.models, { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] });
   }
 });
 
@@ -46,16 +46,16 @@ test('explicit scalar settings replace file values and model lists are added to 
     'claude.defaultModel': 'opus',
     'approval.priceMultiplier': 4,
     'approval.askAbovePrice': null,
-    'approval.alwaysAskModels': ['editor-always'],
-    'approval.neverAskModels': ['editor-never', 'file-never'],
+    'approval.askModels': ['editor-always'],
+    'approval.allowModels': ['editor-never', 'file-never'],
+    'approval.denyModels': ['editor-deny'],
   }, loadConfig);
   assert.equal(config.defaultBackend, null, 'auto is automatic selection');
   assert.deepEqual(config.routing, { strategy: 'smart_quota', allowedBackends: ['agy'] });
   assert.deepEqual(config.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'opus' } });
   assert.equal(config.governance.priceMultiplier, 4);
   assert.equal(config.governance.askAbovePrice, null);
-  assert.deepEqual(config.governance.alwaysAsk, ['file-always', 'editor-always']);
-  assert.deepEqual(config.governance.neverAsk, ['file-never', 'editor-never']);
+  assert.deepEqual(config.governance.models, { allow: ['file-never', 'editor-never'], ask: ['file-always', 'editor-always'], deny: ['file-deny', 'editor-deny'] });
 });
 
 test('an invalid or unknown setting refuses execution and names the VS Code setting', () => {
@@ -63,8 +63,9 @@ test('an invalid or unknown setting refuses execution and names the VS Code sett
     [{ 'approval.priceMultiplier': 1 }, /coagent8\.approval\.priceMultiplier: governance\.priceMultiplier must be a number greater than 1/],
     [{ 'routing.allowedBackends': ['other'] }, /coagent8\.routing\.allowedBackends: Invalid entry/],
     [{ 'codex.defaultModel': '-bad model' }, /coagent8\.codex\.defaultModel/],
-    [{ 'approval.neverAskModels': 'gpt' }, /coagent8\.approval\.neverAskModels/],
-    [{ 'governance.neverAsk': ['x'] }, /unknown setting 'governance\.neverAsk'/],
+    [{ 'approval.allowModels': 'gpt' }, /coagent8\.approval\.allowModels: governance\.models\.allow must be a list/],
+    [{ 'approval.denyModels': ['-bad'] }, /coagent8\.approval\.denyModels/],
+    [{ 'governance.models.allow': ['x'] }, /unknown setting 'governance\.models\.allow'/],
     ['[]', /must be a JSON object/],
     ['{', /not valid JSON/],
   ];
@@ -73,14 +74,14 @@ test('an invalid or unknown setting refuses execution and names the VS Code sett
     assert.match(withSettings(settings, loadConfigForDiagnostics).error, message, 'doctor reports the setting');
   }
   const combined = Array.from({ length: 200 }, (_, index) => `editor-${index}`);
-  fs.writeFileSync(file, JSON.stringify({ governance: { neverAsk: Array.from({ length: 100 }, (_, index) => `file-${index}`) } }));
-  process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'approval.neverAskModels': combined });
-  try { assert.throws(() => loadConfig(), /coagent8\.approval\.neverAskModels: governance\.neverAsk must be a list of at most 256/); }
+  fs.writeFileSync(file, JSON.stringify({ governance: { models: { allow: Array.from({ length: 100 }, (_, index) => `file-${index}`) } } }));
+  process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ 'approval.allowModels': combined });
+  try { assert.throws(() => loadConfig(), /coagent8\.approval\.allowModels: governance\.models\.allow must be a list of at most 256/); }
   finally { delete process.env[EDITOR_SETTINGS_ENV]; }
 });
 
 test('writes keep VS Code settings out of the file; a remembered approval stays effective', async () => {
-  const settings = { defaultBackend: 'codex', 'approval.neverAskModels': ['editor-never'], 'agy.defaultModel': 'editor-gemini' };
+  const settings = { defaultBackend: 'codex', 'approval.allowModels': ['editor-never'], 'agy.defaultModel': 'editor-gemini' };
   fs.writeFileSync(file, fileBytes);
   process.env[EDITOR_SETTINGS_ENV] = JSON.stringify(settings);
   try {
@@ -89,10 +90,10 @@ test('writes keep VS Code settings out of the file; a remembered approval stays 
     assert.equal(await recordDefaultModel('claude', 'detected-claude'), true);
     await setDefaultBackend('codex');
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
-    assert.deepEqual(stored.governance.neverAsk, ['file-never', 'approved-model']);
+    assert.deepEqual(stored.governance.models.allow, ['file-never', 'approved-model']);
     assert.deepEqual(stored.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'detected-claude' } });
-    assert.deepEqual(stored.governance.alwaysAsk, ['file-always']);
-    assert.deepEqual(loadConfig().governance.neverAsk, ['file-never', 'approved-model', 'editor-never']);
+    assert.deepEqual(stored.governance.models.ask, ['file-always']);
+    assert.deepEqual(loadConfig().governance.models.allow, ['file-never', 'approved-model', 'editor-never']);
   } finally { delete process.env[EDITOR_SETTINGS_ENV]; }
 });
 
@@ -118,4 +119,10 @@ test('every contributed setting has an editable control and a default that passe
 test('a cleared model field means no model chosen, not an invalid model', () => {
   const config = withSettings({ 'codex.defaultModel': '', 'claude.defaultModel': '' }, loadConfig);
   assert.deepEqual(config.backends, { codex: { defaultModel: 'file-codex' } });
+});
+
+test('a misspelt governance.models list refuses execution', () => {
+  // A misspelt list would leave a model unrestricted.
+  fs.writeFileSync(file, JSON.stringify({ governance: { models: { denny: ['gpt-6-astra'] } } }));
+  assert.throws(() => loadConfig(), error => error.code === 'POLICY_DENIED' && /governance\.models has unknown lists \(denny\); supported: allow, ask, deny/.test(error.message));
 });

@@ -23,7 +23,7 @@ import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../models/catalog.js';
 import { checkPriceLimit, findPrice, priceEvidence, readPrices } from '../models/prices.js';
 import { revalidateConsent } from './consent.js';
-import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage, decideConsent } from '../models/governance.js';
+import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage, decideConsent, findModelRule, modelDeniedMessage } from '../models/governance.js';
 import { redactDiagnostic } from '../security/redaction.js';
 
 /**
@@ -294,6 +294,11 @@ export async function prepareTask(
 
   assertNotCancelledOrExpired('model selection');
 
+  // The user's deny list is final: no catalog read, price check or approval request follows.
+  if (findModelRule(model, configSnapshot.config.governance.models) === 'deny') {
+    throw new ToolError('POLICY_DENIED', modelDeniedMessage(model));
+  }
+
   // A continuation keeps its session's selection: the effort follows the model it was chosen for.
   const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previousSession?.model ? previousSession?.reasoningEffort : undefined);
 
@@ -334,7 +339,7 @@ export async function prepareTask(
     }
   }
 
-  // The limit is the user's, not governance's: neverAsk or an approval cannot satisfy it.
+  // The limit is the user's, not governance's: models.allow or an approval cannot satisfy it.
   const assertPriceLimit = async (): Promise<string> => {
     // A limit needs a current price list: a week-old one is read again first.
     const prices = await withTimeoutClassification(
@@ -403,6 +408,7 @@ export async function prepareTask(
 
     let userRememberRequested = false;
 
+    if (decision.deny) throw new ToolError('POLICY_DENIED', modelDeniedMessage(model));
     if (decision.ask) {
       if (!consentOptions.askConsent) {
         throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));

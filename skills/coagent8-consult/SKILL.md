@@ -22,10 +22,14 @@ the conversation.
    models and prices.
 4. For a follow-up on the same topic pass the `session_handle` from the result
    footer. A call without it starts a fresh agent that rereads everything.
-5. If the server asks the user to approve an expensive or unpriced model, the
-   user answers that form. Never approve on the user's behalf and never switch
-   models silently to avoid the question. On a price-limit refusal, report the
-   reason.
+5. Before calling a model that `coagent8-doctor` tags `ask` (expensive,
+   unpriced or on the user's ask list), tell the user its price and that the
+   server will show an approval form, and let them choose it or a cheaper model.
+   Never call a model tagged `deny`: the user denied it. Their answer in chat is
+   not approval: only the form is. Never approve on the user's behalf, never
+   change approval settings and never switch models silently to avoid the
+   question. If the form closes without an answer, relay the refusal's ways out
+   to the user. On a price-limit refusal, report the reason.
 
 The answer is another model's opinion. Verify its claims against the code
 before acting, and tell the user where you disagree and why. The consulted agent

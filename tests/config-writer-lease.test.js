@@ -27,7 +27,7 @@ const helperScript = `
     const current = JSON.parse(fs.readFileSync(file, 'utf8'));
     process.send('read');
     await next();
-    current.governance.neverAsk = [...current.governance.neverAsk, 'helper-model'];
+    current.governance.models.allow = [...current.governance.models.allow, 'helper-model'];
     fs.writeFileSync(file, JSON.stringify(current, null, 2));
   }, 10000).then(() => process.send('released', () => process.disconnect()), error => {
     process.stderr.write(String(error && error.stack || error));
@@ -72,7 +72,7 @@ test('saveConfig waits for the configuration lease and keeps the other writer\'s
   assert.equal(await helper.exited, 0, helper.stderr());
   const final = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(final.defaultBackend, 'claude', 'the saveConfig update survives');
-  assert.deepEqual(final.governance.neverAsk, ['helper-model'], 'the lease holder\'s update survives');
+  assert.deepEqual(final.governance.models.allow, ['helper-model'], 'the lease holder\'s update survives');
 });
 
 test('control: a lease-respecting writer keeps both updates', async t => {
@@ -87,7 +87,7 @@ test('control: a lease-respecting writer keeps both updates', async t => {
   assert.equal(await helper.exited, 0, helper.stderr());
   const final = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(final.backends.codex.executable, '/fixture/codex');
-  assert.deepEqual(final.governance.neverAsk, ['helper-model']);
+  assert.deepEqual(final.governance.models.allow, ['helper-model']);
 });
 
 test('saveConfig still fails closed on a malformed configuration and leaves its bytes', async () => {

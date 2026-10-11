@@ -113,10 +113,13 @@ A model's `READY` verdict requires independent verification before release.
 - Catalogs are cached in `~/.coagent8/models.json`. Prices
   come from OpenRouter's public model list (no key, no user data) or from
   `coagent8_PRICES_URL`; they decide whether to ask, they are not billing.
-- The user is asked before a model listed in `governance.alwaysAsk`, without a
-  known or exact price, priced at or above `governance.askAbovePrice` (default
-  20 USD per million output tokens), or at least `governance.priceMultiplier`
-  (default 2) times the backend default. `governance.neverAsk` exempts a model.
+- Your own rules come first, in `governance.models`: `deny` never runs a model
+  (the call fails with the reason), `ask` asks before every turn whatever it
+  costs, `allow` runs it without asking; `deny` wins over `ask`, `ask` over
+  `allow`. Any other model is asked for without a known or exact price, priced
+  at or above `governance.askAbovePrice` (default 20 USD per million output
+  tokens), or at least `governance.priceMultiplier` (default 2) times the backend
+  default.
 - `output_price_below` is a strict limit; without `model` the server picks a
   qualifying model and states its price in the footer, see
   [choosing a model under a price limit](#choosing-a-model-under-a-price-limit).
@@ -423,8 +426,12 @@ through MCP form elicitation; `governance` in `config.json` tunes this. Prices
 are read from OpenRouter's public model list (no key, no user data). Headless
 clients measured on 2026-10-07 cancel elicitation, so such turns fail there. The
 Codex and Antigravity chats in VS Code also answered without showing the form on
-2026-10-07. If an explicit model needs approval, report the unmet requirement;
-do not silently substitute another model or change approval configuration.
+2026-10-07. In such a client the user can allow a model in
+`governance.models.allow` (VS Code: `coagent8.approval.allowModels`) instead.
+Before calling a model doctor tags `ask`, tell the user its price and that a form
+will follow; never call one tagged `deny`. If an explicit model needs approval,
+report the unmet requirement; do not silently substitute another model or change
+approval configuration.
 
 ### Choosing a model under a price limit
 
@@ -445,13 +452,13 @@ Only an exact price from a price list younger than seven days qualifies; an
 unknown, approximate or stale price never does. If no model qualifies, the call
 fails with `PRICE_LIMIT` and each backend's reason instead of running another
 model. The footer's `Price` line states the price, its list and date. A model
-within the limit may still need the user's approval; approval and `neverAsk` do
-not satisfy a limit. Prices are public list prices per output token, not a
+within the limit may still need the user's approval; approval and `models.allow`
+do not satisfy a limit. Prices are public list prices per output token, not a
 request estimate or a bill.
 
 To choose yourself, call `doctor`: by default it lists, from cached data, each
 backend's models with accepted efforts, output price (`~` approximate,
-`?` unknown), the default and why a model asks for approval (`backend` narrows
+`?` unknown), the default and its approval tag: `ask: <rule>`, `deny` or `allow` (`backend` narrows
 it; `detail: "full"` returns the same rows as data). Claude Code's aliases appear
 with the concrete model they run. A named model needs no `backend`: `auto` runs
 it where it is listed. For an explicit model use its ID or alias and an accepted
@@ -495,8 +502,7 @@ Settings** take precedence over the file.
   "governance": {
     "priceMultiplier": 2,
     "askAbovePrice": 20,
-    "alwaysAsk": [],
-    "neverAsk": []
+    "models": { "allow": [], "ask": [], "deny": [] }
   }
 }
 ~~~

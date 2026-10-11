@@ -37,7 +37,7 @@ adapterRegistry.agy = fixture('agy', { source: 'agy', models: [{ id: 'gemini-3.8
 adapterRegistry.claude = fixture('claude', { source: 'claude', acceptsUnlisted: true, models: [{ id: 'claude-sonnet-4-6', efforts: [], aliases: ['sonnet', 'default'], isDefault: true }] },
   { observeModel: async requested => requested });
 const config = (changes = {}) => saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy', 'claude'] }, backends: { codex: {}, agy: {}, claude: {} },
-  governance: { neverAsk: ['gpt-6.1-sol', 'gpt-6-luna', 'gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-1'] }, ...changes });
+  governance: { models: { allow: ['gpt-6.1-sol', 'gpt-6-luna', 'gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-1'] } }, ...changes });
 const run = args => executeTask('x', 'x', args, tempDir).then(readResult);
 
 test.after(() => {

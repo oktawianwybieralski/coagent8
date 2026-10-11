@@ -266,7 +266,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   };
   const opened = [];
   try {
-    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] } });
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } } });
     const callWith = (client, args) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...args } });
     const call = (client, model) => callWith(client, model ? { model } : {});
 
@@ -290,7 +290,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     const unanswered = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(unanswered.code, 'POLICY_DENIED');
     assert.match(unanswered.message, /^The client closed the approval request for model 'claude-opus-4-6-thinking' without an answer, possibly without showing it to the user\. Its price is known only approximately/);
-    assert.match(unanswered.message, /Tell the user; switch to another model only if the user asks\.$/);
+    assert.match(unanswered.message, /Tell the user; switch to another model only if the user asks\. The user can approve it in a client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: coagent8\.approval\.allowModels\); never change that setting yourself\.$/);
     // Only an explicit `approve: true` is consent (CUR-003): an accepted form without the
     // field, with an empty or a non-boolean value, or unchecked, declines.
     const notConsent = [{ action: 'accept' }, { action: 'accept', content: {} }, { action: 'accept', content: { approve: 'true' } },
@@ -334,7 +334,7 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     // An unknown model approved with remember is not asked for again.
     answer = { action: 'accept', content: { approve: true, remember: true } };
     assert.equal(readResult(await call(asking.client, 'gpt-7-nova')).answer, 'approved answer');
-    assert.deepEqual(loadConfig().governance.neverAsk, ['gpt-7-nova']);
+    assert.deepEqual(loadConfig().governance.models.allow, ['gpt-7-nova']);
     answer = { action: 'decline' };
     const asked = requests.length;
     assert.equal(readResult(await call(asking.client, 'gpt-7-nova')).answer, 'approved answer');
@@ -507,7 +507,7 @@ test('EXEC-001-T11c: cancelled or timed-out consent wait reflects actual elapsed
     await saveConfig({
       defaultBackend: 'agy',
       routing: { strategy: 'fixed', allowedBackends: ['agy'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: ['expensive-model'], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: ['expensive-model'], deny: [] } },
     });
     adapterRegistry.agy = {
       ...originalAgy,

@@ -28,6 +28,7 @@ const {
   consentRequiredMessage,
   consentDeclinedMessage,
   consentUnansweredMessage,
+  modelDeniedMessage,
 } = require('../src/models/governance.ts');
 const {
   catalogDefault,
@@ -117,8 +118,7 @@ test('S3 models: prices and governance decisions', () => {
 
   // Governance decision
   const settings = {
-    alwaysAsk: ['model-always'],
-    neverAsk: ['model-never'],
+    models: { allow: ['model-never'], ask: ['model-always'], deny: ['model-denied'] },
     askAbovePrice: 20,
     priceMultiplier: 2,
   };
@@ -128,15 +128,24 @@ test('S3 models: prices and governance decisions', () => {
 
   const decisionAlways = decideConsent('model-always', 'model-x', priceList, settings);
   assert.equal(decisionAlways.ask, true);
-  assert.equal(decisionAlways.basis, 'always-ask');
+  assert.equal(decisionAlways.basis, 'ask');
 
   const decisionNever = decideConsent('model-never', 'model-x', priceList, settings);
   assert.equal(decisionNever.ask, false);
-  assert.equal(decisionNever.basis, 'never-ask');
+  assert.equal(decisionNever.basis, 'allow');
+
+  const decisionDenied = decideConsent('model-denied', 'model-x', priceList, settings);
+  assert.deepEqual([decisionDenied.deny, decisionDenied.ask, decisionDenied.basis], [true, false, 'deny']);
+  assert.match(modelDeniedMessage('model-denied'), /^Model 'model-denied' did not run: the user denied it in governance\.models\.deny \(VS Code: coagent8\.approval\.denyModels\)\. Only the user can remove it from that list\. Tell the user; switch to another model only if the user asks\.$/);
 
   assert.match(consentRequiredMessage('m', 'reason'), /needs the user's approval/);
   assert.match(consentDeclinedMessage('m'), /did not approve/);
   assert.match(consentUnansweredMessage('m', 'reason'), /without an answer/);
+  // No form reached the user: name the user's own ways out and forbid the agent from taking them.
+  for (const message of [consentRequiredMessage('m', 'reason'), consentUnansweredMessage('m', 'reason')]) {
+    assert.match(message, /client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: coagent8\.approval\.allowModels\); never change that setting yourself\./);
+  }
+  assert.doesNotMatch(consentDeclinedMessage('m'), /models\.allow/, 'a refusal by the user is not an invitation to allow the model');
 });
 
 test('S3 models: pure selection decisions', () => {
@@ -169,8 +178,14 @@ test('S3 models: pure selection decisions', () => {
   );
   assert.equal(chosenBelow10.model, 'other-model-low');
   assert.equal(chosenBelow10.source, 'price-limit');
+  // A denied model is never chosen for a limit, by id or by the variant it would run as.
+  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model']),
+    { code: 'PRICE_LIMIT', message: /and not denied by the user has a verified price below the limit/ });
+  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low']), { code: 'PRICE_LIMIT' });
+  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 20 }, priceList, ['default-model', 'other-model']),
+    { code: 'PRICE_LIMIT', message: /Default: 'default-model' is denied by the user\./ });
 
-  const settings = { alwaysAsk: [], neverAsk: [], askAbovePrice: 20, priceMultiplier: 2 };
+  const settings = { models: { allow: [], ask: [], deny: [] }, askAbovePrice: 20, priceMultiplier: 2 };
   const candidates = listModelCandidates('codex', catalog, { model: 'default-model', source: 'config' }, priceList, settings);
   assert.equal(candidates.length, 2);
   assert.equal(candidates[0].model, 'default-model');

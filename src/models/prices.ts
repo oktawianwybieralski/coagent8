@@ -575,7 +575,7 @@ export function priceEvidence(list: PriceList | undefined, model: string, now = 
 const usd = (value: number) => `${Number(value.toFixed(4))} USD`;
 
 /**
- * Checks a user's price limit (`AX-002`). Separate from consent: neither `neverAsk` nor an
+ * Checks a user's price limit (`AX-002`). Separate from consent: neither `models.allow` nor an
  * approval makes a model meet a limit, and only an exact price from a current list does.
  * @param model - The concrete model, for the message.
  * @param evidence - Its {@link priceEvidence}.

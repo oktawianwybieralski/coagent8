@@ -195,7 +195,7 @@ test('prepareTask & confirmConsent: handles consent verification and price limit
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     const cwd = tempDir;
@@ -268,7 +268,7 @@ test('EXEC-001-T05a: catalog observation obtained during routing is reused in mo
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     const prepared = await prepareTask({ model: 'gpt-6-astra' }, tempDir);
@@ -306,7 +306,7 @@ test('EXEC-001-T05b: defaultModel is reused in consent and handles missing backe
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
       backends: { codex: { defaultModel: undefined } },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     // 1. With declared first-listed catalog default
@@ -351,7 +351,7 @@ test('EXEC-001-T05c: price change while consent is pending triggers re-validatio
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: ['gpt-6.1-sol'], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 50, models: { allow: [], ask: ['gpt-6.1-sol'], deny: [] } },
     });
 
     // Initial price for gpt-6.1-sol is 10 USD; output_price_below limit is 15 USD.
@@ -382,7 +382,7 @@ test('EXEC-001-T05c: price change while consent is pending triggers re-validatio
   }
 });
 
-test('EXEC-001-T10b: confirmConsent price increase without price limit throws POLICY_DENIED and leaves neverAsk untouched', async () => {
+test('EXEC-001-T10b: confirmConsent price increase without price limit throws POLICY_DENIED and leaves models.allow untouched', async () => {
   const { recordPrices } = require('../../src/models/store.ts');
   const { loadConfig } = require('../../src/config.ts');
   const original = { ...adapterRegistry };
@@ -408,7 +408,7 @@ test('EXEC-001-T10b: confirmConsent price increase without price limit throws PO
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: ['gpt-6.1-sol'], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 50, models: { allow: [], ask: ['gpt-6.1-sol'], deny: [] } },
     });
 
     await recordPrices({
@@ -444,13 +444,13 @@ test('EXEC-001-T10b: confirmConsent price increase without price limit throws PO
       }
     );
 
-    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-6.1-sol'), 'neverAsk must remain untouched when consent invalidated');
+    assert.ok(!loadConfig().governance.models.allow.includes('gpt-6.1-sol'), 'models.allow must remain untouched when consent invalidated');
   } finally {
     Object.assign(adapterRegistry, original);
   }
 });
 
-test('EXEC-001-T10b: confirmConsent governance config change invalidates approval and leaves neverAsk untouched', async () => {
+test('EXEC-001-T10b: confirmConsent governance config change invalidates approval and leaves models.allow untouched', async () => {
   const { loadConfig } = require('../../src/config.ts');
   try { fs.unlinkSync(path.join(tempDir, 'models.json')); } catch {}
   const original = { ...adapterRegistry };
@@ -477,7 +477,7 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 50, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 50, models: { allow: [], ask: [], deny: [] } },
     });
 
     const prepared = await prepareTask({ model: 'gpt-non-default' }, tempDir);
@@ -489,7 +489,7 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
           await saveConfig({
             defaultBackend: 'codex',
             routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-            governance: { priceMultiplier: 2, askAbovePrice: 5, alwaysAsk: [], neverAsk: [] },
+            governance: { priceMultiplier: 2, askAbovePrice: 5, models: { allow: [], ask: [], deny: [] } },
           });
           return { approved: true, remember: true };
         },
@@ -502,13 +502,13 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
       }
     );
 
-    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-non-default'), 'neverAsk must remain untouched when consent invalidated');
+    assert.ok(!loadConfig().governance.models.allow.includes('gpt-non-default'), 'models.allow must remain untouched when consent invalidated');
   } finally {
     Object.assign(adapterRegistry, original);
   }
 });
 
-test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true succeeds and updates neverAsk', async () => {
+test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true succeeds and updates models.allow', async () => {
   const { loadConfig } = require('../../src/config.ts');
   try { fs.unlinkSync(path.join(tempDir, 'models.json')); } catch {}
   const original = { ...adapterRegistry };
@@ -535,7 +535,7 @@ test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true suc
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     const prepared = await prepareTask({ model: 'gpt-unpriced' }, tempDir);
@@ -545,7 +545,7 @@ test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true suc
     });
 
     assert.deepEqual(res.warnings, []);
-    assert.ok(loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'Valid approval remembered in neverAsk');
+    assert.ok(loadConfig().governance.models.allow.includes('gpt-unpriced'), 'Valid approval remembered in models.allow');
   } finally {
     Object.assign(adapterRegistry, original);
   }
@@ -579,7 +579,7 @@ test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails,
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     const prepared = await prepareTask({ model: 'gpt-unpriced' }, tempDir);
@@ -607,14 +607,14 @@ test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails,
     assert.ok(res.warnings[0].length <= 350, 'Warning must respect bounded diagnostic length');
 
     // Next-call policy consistency: disk state does not contain the model
-    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'Model must NOT be persisted in neverAsk');
+    assert.ok(!loadConfig().governance.models.allow.includes('gpt-unpriced'), 'Model must NOT be persisted in models.allow');
   } finally {
     fs.promises.rename = originalRename;
     Object.assign(adapterRegistry, original);
   }
 });
 
-test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABORTED and leaves neverAsk untouched', async () => {
+test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABORTED and leaves models.allow untouched', async () => {
   const { loadConfig } = require('../../src/config.ts');
   const { ToolError } = require('../../src/contracts/error.ts');
   const original = { ...adapterRegistry };
@@ -641,7 +641,7 @@ test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABO
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     const ac = new AbortController();
@@ -663,13 +663,13 @@ test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABO
       }
     );
 
-    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'neverAsk must remain untouched when cancelled before storage');
+    assert.ok(!loadConfig().governance.models.allow.includes('gpt-unpriced'), 'models.allow must remain untouched when cancelled before storage');
   } finally {
     Object.assign(adapterRegistry, original);
   }
 });
 
-test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with TIMEOUT and leaves neverAsk untouched', async () => {
+test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with TIMEOUT and leaves models.allow untouched', async () => {
   const { loadConfig } = require('../../src/config.ts');
   const { ToolError } = require('../../src/contracts/error.ts');
   const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
@@ -697,7 +697,7 @@ test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with T
     await saveConfig({
       defaultBackend: 'codex',
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
-      governance: { priceMultiplier: 2, askAbovePrice: 20, alwaysAsk: [], neverAsk: [] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
     });
 
     let simulatedTime = 0;
@@ -725,7 +725,7 @@ test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with T
       }
     );
 
-    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unpriced'), 'neverAsk must remain untouched when timed out before storage');
+    assert.ok(!loadConfig().governance.models.allow.includes('gpt-unpriced'), 'models.allow must remain untouched when timed out before storage');
   } finally {
     Object.assign(adapterRegistry, original);
   }

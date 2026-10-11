@@ -52,8 +52,7 @@ async function setupMockConfigAndAdapters() {
     governance: {
       priceMultiplier: 2,
       askAbovePrice: 20,
-      alwaysAsk: ['claude-opus-4-6-thinking', 'gpt-expensive'],
-      neverAsk: [],
+      models: { allow: [], ask: ['claude-opus-4-6-thinking', 'gpt-expensive'], deny: [] },
     },
   });
 
@@ -113,7 +112,7 @@ test('confirmConsent: delayed reply after budget deadline throws TIMEOUT and doe
 
   // Crucial check: approval must NOT have been saved into configuration
   const currentConfig = loadConfig();
-  assert.ok(!currentConfig.governance.neverAsk.includes('gpt-expensive'), 'Late approval must not be remembered');
+  assert.ok(!currentConfig.governance.models.allow.includes('gpt-expensive'), 'Late approval must not be remembered');
 });
 
 test('confirmConsent: caller abort signal during consent wait throws ABORTED and does not remember approval', async () => {
@@ -138,7 +137,7 @@ test('confirmConsent: caller abort signal during consent wait throws ABORTED and
   );
 
   const currentConfig = loadConfig();
-  assert.ok(!currentConfig.governance.neverAsk.includes('gpt-expensive'), 'Cancelled approval must not be remembered');
+  assert.ok(!currentConfig.governance.models.allow.includes('gpt-expensive'), 'Cancelled approval must not be remembered');
 });
 
 test('confirmConsent: pending callback that never resolves rejects immediately upon caller abort', async () => {
@@ -168,7 +167,7 @@ test('confirmConsent: pending callback that never resolves rejects immediately u
     return true;
   });
 
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Pending aborted callback must not remember approval');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Pending aborted callback must not remember approval');
 });
 
 test('confirmConsent: pending callback that never resolves rejects immediately upon budget timeout', async () => {
@@ -189,7 +188,7 @@ test('confirmConsent: pending callback that never resolves rejects immediately u
     return true;
   });
 
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Pending timed-out callback must not remember approval');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Pending timed-out callback must not remember approval');
 });
 
 test('confirmConsent: conflicting response with approved: true and unanswered: true rejects with POLICY_DENIED', async () => {
@@ -208,7 +207,7 @@ test('confirmConsent: conflicting response with approved: true and unanswered: t
     }
   );
 
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Conflicting unanswered response must not remember approval');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Conflicting unanswered response must not remember approval');
 });
 
 test('confirmConsent: cancelled form (unanswered) throws POLICY_DENIED with unanswered message', async () => {
@@ -228,7 +227,7 @@ test('confirmConsent: cancelled form (unanswered) throws POLICY_DENIED with unan
   );
 
   const currentConfig = loadConfig();
-  assert.ok(!currentConfig.governance.neverAsk.includes('gpt-expensive'), 'Unanswered approval must not be remembered');
+  assert.ok(!currentConfig.governance.models.allow.includes('gpt-expensive'), 'Unanswered approval must not be remembered');
 });
 
 test('confirmConsent: user decline throws POLICY_DENIED with user did not approve message', async () => {
@@ -248,7 +247,7 @@ test('confirmConsent: user decline throws POLICY_DENIED with user did not approv
   );
 
   const currentConfig = loadConfig();
-  assert.ok(!currentConfig.governance.neverAsk.includes('gpt-expensive'), 'Declined approval must not be remembered');
+  assert.ok(!currentConfig.governance.models.allow.includes('gpt-expensive'), 'Declined approval must not be remembered');
 });
 
 test('confirmConsent: response identity mismatch (wrong model or backend) throws POLICY_DENIED', async () => {
@@ -282,7 +281,7 @@ test('confirmConsent: response identity mismatch (wrong model or backend) throws
   );
 
   const currentConfig = loadConfig();
-  assert.ok(!currentConfig.governance.neverAsk.includes('gpt-expensive'), 'Mismatched approval must not be remembered');
+  assert.ok(!currentConfig.governance.models.allow.includes('gpt-expensive'), 'Mismatched approval must not be remembered');
 });
 
 test('executeTask: delayed consent reply past budget deadline blocks turn execution', async () => {
@@ -340,7 +339,7 @@ test('executeTask: abort signal during consent blocks turn execution and leaves 
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when consent is aborted');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'));
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'));
 });
 
 test('MCP server: binds elicitInput timeout to execution budget and cancels cleanly', async () => {
@@ -403,7 +402,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
     );
     assert.equal(approvedRes.answer, 'mcp-approved-answer');
     assert.equal(executedModel, 'gpt-unknown');
-    assert.ok(loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Approved model was remembered in config');
+    assert.ok(loadConfig().governance.models.allow.includes('gpt-unknown'), 'Approved model was remembered in config');
     // 4. Elicitation timeout (e.g. client unresponsive past budget)
     elicitHandler = async () => {
       const err = new Error('Request timed out');
@@ -488,7 +487,7 @@ test('EXEC-001-T10b: price increase during consent wait invalidates approval, bl
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when price increased during consent wait');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Invalidated approval must never be remembered in neverAsk');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Invalidated approval must never be remembered in models.allow');
 });
 
 test('EXEC-001-T10b: price change exceeding output_price_below during consent wait blocks turn with PRICE_LIMIT and does not remember approval', async () => {
@@ -535,10 +534,10 @@ test('EXEC-001-T10b: price change exceeding output_price_below during consent wa
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when price exceeded output_price_below limit');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'), 'Invalidated price limit must never remember approval');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Invalidated price limit must never remember approval');
 });
 
-test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates approval, blocks turn and does not remember approval', async () => {
+test('EXEC-001-T10b: adding model to models.ask during consent wait invalidates approval, blocks turn and does not remember approval', async () => {
   await setupMockConfigAndAdapters();
   let executionRan = false;
   adapterRegistry.codex.execute = async () => {
@@ -549,13 +548,13 @@ test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates a
   await assert.rejects(
     executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
       askConsent: async () => {
-        // Add gpt-unknown to alwaysAsk while user is deciding
+        // Add gpt-unknown to models.ask while user is deciding
         const current = loadConfig();
         await saveConfig({
           ...current,
           governance: {
             ...current.governance,
-            alwaysAsk: [...current.governance.alwaysAsk, 'gpt-unknown'],
+            models: { ...current.governance.models, ask: [...current.governance.models.ask, 'gpt-unknown'] },
           },
         });
         return { approved: true, remember: true };
@@ -565,14 +564,14 @@ test('EXEC-001-T10b: adding model to alwaysAsk during consent wait invalidates a
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /The approval for model 'gpt-unknown' was invalidated because conditions changed while awaiting consent/i);
-      assert.match(err.message, /'gpt-unknown' was added to the governance.alwaysAsk list/i);
+      assert.match(err.message, /'gpt-unknown' was added to governance\.models\.ask \(VS Code: coagent8\.approval\.askModels\)/i);
       assert.match(err.message, /Retry the request to approve under current conditions/i);
       return true;
     }
   );
 
-  assert.equal(executionRan, false, 'Turn must never execute when model added to alwaysAsk during wait');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Approval invalidated by alwaysAsk must not be remembered in neverAsk');
+  assert.equal(executionRan, false, 'Turn must never execute when model added to models.ask during wait');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'Approval invalidated by models.ask must not be remembered in models.allow');
 });
 
 test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invalidates approval and blocks turn', async () => {
@@ -581,7 +580,7 @@ test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invali
     ...loadConfig(),
     governance: {
       ...loadConfig().governance,
-      alwaysAsk: [],
+      models: { allow: [], ask: [], deny: [] },
       askAbovePrice: 20,
     },
   });
@@ -616,7 +615,7 @@ test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invali
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when askAbovePrice changed during consent');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'));
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'));
 });
 
 test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait invalidates approval and blocks turn', async () => {
@@ -625,7 +624,7 @@ test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait inva
     ...loadConfig(),
     governance: {
       ...loadConfig().governance,
-      alwaysAsk: [],
+      models: { allow: [], ask: [], deny: [] },
       priceMultiplier: 2,
     },
   });
@@ -660,7 +659,7 @@ test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait inva
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when priceMultiplier changed during consent');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-expensive'));
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'));
 });
 
 test('EXEC-001-T10b: valid consent under unchanged conditions succeeds, executes turn and remembers approval', async () => {
@@ -686,10 +685,10 @@ test('EXEC-001-T10b: valid consent under unchanged conditions succeeds, executes
   assert.equal(res.isError, false);
   assert.equal(res.result.status, 'completed');
   assert.equal(executedModel, 'gpt-unknown');
-  assert.ok(loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Valid approval was remembered in neverAsk');
+  assert.ok(loadConfig().governance.models.allow.includes('gpt-unknown'), 'Valid approval was remembered in models.allow');
 });
 
-test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidate concurrent turn', async () => {
+test('EXEC-001-T10b: modifying models.allow for a different model does not invalidate concurrent turn', async () => {
   await setupMockConfigAndAdapters();
   let executedModel = null;
   adapterRegistry.codex.execute = async (_prompt, options) => {
@@ -713,7 +712,7 @@ test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidat
         ...current,
         governance: {
           ...current.governance,
-          neverAsk: [...current.governance.neverAsk, 'gpt-other'],
+          models: { ...current.governance.models, allow: [...current.governance.models.allow, 'gpt-other'] },
         },
       });
       return { approved: true, remember: false };
@@ -722,20 +721,19 @@ test('EXEC-001-T10b: modifying neverAsk for a different model does not invalidat
 
   assert.equal(res.isError, false);
   assert.equal(executedModel, 'gpt-unknown');
-  assert.ok(loadConfig().governance.neverAsk.includes('gpt-other'));
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'));
+  assert.ok(loadConfig().governance.models.allow.includes('gpt-other'));
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'));
 });
 
-test('EXEC-001-T10b: turn for model on neverAsk executes without POLICY_DENIED even if price list refreshes', async () => {
+test('EXEC-001-T10b: turn for model on models.allow executes without POLICY_DENIED even if price list refreshes', async () => {
   await setupMockConfigAndAdapters();
-  // Put gpt-expensive on neverAsk and remove from alwaysAsk
+  // Put gpt-expensive on models.allow and remove from models.ask
   const current = loadConfig();
   await saveConfig({
     ...current,
     governance: {
       ...current.governance,
-      alwaysAsk: [],
-      neverAsk: ['gpt-expensive'],
+      models: { allow: ['gpt-expensive'], ask: [], deny: [] },
     },
   });
 
@@ -745,7 +743,7 @@ test('EXEC-001-T10b: turn for model on neverAsk executes without POLICY_DENIED e
     return {
       status: 'completed',
       isError: false,
-      output: 'neverAsk success',
+      output: 'models.allow success',
       nativeSessionId: randomUUID(),
       model: options.model,
       truncated: false,
@@ -756,7 +754,7 @@ test('EXEC-001-T10b: turn for model on neverAsk executes without POLICY_DENIED e
   // Turn does not require asking, and routine price refresh must not block turn
   const res = await executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
     askConsent: async () => {
-      throw new Error('askConsent must not be called for model on neverAsk');
+      throw new Error('askConsent must not be called for model on models.allow');
     },
   });
 
@@ -872,7 +870,7 @@ test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing session
   );
 });
 
-test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block turn for model on neverAsk', async () => {
+test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block turn for model on models.allow', async () => {
   await setupMockConfigAndAdapters();
   const current = loadConfig();
   await saveConfig({
@@ -881,8 +879,7 @@ test('EXEC-001-T10b: lowering askAbovePrice or priceMultiplier does not block tu
       ...current.governance,
       askAbovePrice: 50,
       priceMultiplier: 4,
-      alwaysAsk: [],
-      neverAsk: ['gpt-expensive'],
+      models: { allow: ['gpt-expensive'], ask: [], deny: [] },
     },
   });
 
@@ -948,7 +945,7 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
     assert.ok(!rememberWarning.includes(userHome), 'User home path must be redacted');
 
     // Next-call policy consistency: disk state does not contain the model
-    assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'Model must NOT be in neverAsk');
+    assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'Model must NOT be in models.allow');
 
     // Restore rename for the next turn verification
     fs.promises.rename = originalRename;
@@ -967,7 +964,7 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
   }
 });
 
-test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTED and leaves neverAsk untouched', async () => {
+test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTED and leaves models.allow untouched', async () => {
   await setupMockConfigAndAdapters();
   let executed = false;
   adapterRegistry.codex.execute = async () => {
@@ -993,10 +990,10 @@ test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTE
   );
 
   assert.equal(executed, false, 'Adapter execution must not run when cancelled');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'neverAsk must remain untouched');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'models.allow must remain untouched');
 });
 
-test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIMEOUT and leaves neverAsk untouched', async () => {
+test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIMEOUT and leaves models.allow untouched', async () => {
   await setupMockConfigAndAdapters();
   let executed = false;
   adapterRegistry.codex.execute = async () => {
@@ -1028,5 +1025,66 @@ test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIME
   );
 
   assert.equal(executed, false, 'Adapter execution must not run when timed out');
-  assert.ok(!loadConfig().governance.neverAsk.includes('gpt-unknown'), 'neverAsk must remain untouched');
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'models.allow must remain untouched');
+});
+
+test('a model the user denies is refused with the reason before any approval request, catalog read or turn (owner decision of 2026-10-11)', async () => {
+  await setupMockConfigAndAdapters();
+  const current = loadConfig();
+  await saveConfig({ ...current, governance: { ...current.governance, models: { allow: ['gpt-expensive'], ask: ['gpt-expensive'], deny: ['gpt-expensive'] } } });
+  let asked = false, executed = false, catalogReads = 0;
+  const listModels = adapterRegistry.codex.listModels;
+  adapterRegistry.codex.listModels = async () => { catalogReads++; return listModels(); };
+  adapterRegistry.codex.execute = async () => { executed = true; throw new Error('must not run'); };
+  const denied = "Model 'gpt-expensive' did not run: the user denied it in governance.models.deny (VS Code: coagent8.approval.denyModels). Only the user can remove it from that list. Tell the user; switch to another model only if the user asks.";
+  const before = catalogReads;
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, { askConsent: async () => { asked = true; return { approved: true }; } }),
+    { name: 'ToolError', code: 'POLICY_DENIED', message: denied });
+  assert.equal(asked, false, 'deny wins over ask and allow: no form is shown');
+  assert.equal(executed, false);
+  assert.ok(catalogReads - before <= 1, 'only model selection read the catalog; the explicit-model check after it did not run');
+  // A denied default is refused the same way when the call names no model.
+  await saveConfig({ ...loadConfig(), governance: { ...loadConfig().governance, models: { allow: [], ask: [], deny: ['gpt-6.1-sol'] } } });
+  await assert.rejects(executeTask('prompt', 'summary', {}, tempDir), { code: 'POLICY_DENIED', message: /^Model 'gpt-6\.1-sol' did not run: the user denied it/ });
+  assert.equal(executed, false);
+});
+
+test('a model the user denies while the approval is pending never runs and is not remembered', async () => {
+  await setupMockConfigAndAdapters();
+  let executed = false;
+  adapterRegistry.codex.execute = async () => { executed = true; throw new Error('must not run'); };
+  await assert.rejects(
+    executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
+      askConsent: async () => {
+        const current = loadConfig();
+        await saveConfig({ ...current, governance: { ...current.governance, models: { ...current.governance.models, deny: ['gpt-unknown'] } } });
+        return { approved: true, remember: true };
+      },
+    }),
+    { name: 'ToolError', code: 'POLICY_DENIED', message: /^Model 'gpt-unknown' did not run: the user denied it in governance\.models\.deny/ });
+  assert.equal(executed, false);
+  assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'a denied model is never remembered as allowed');
+});
+
+test('MCP: a denied model sends no approval form and returns the reason to the caller', async () => {
+  await setupMockConfigAndAdapters();
+  const current = loadConfig();
+  await saveConfig({ ...current, governance: { ...current.governance, models: { ...current.governance.models, deny: ['gpt-expensive'] } } });
+  const server = createServer();
+  const client = new Client({ name: 'deny-client', version: '1' }, { capabilities: { elicitation: { form: {} } } });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const forms = [];
+  client.setRequestHandler(ElicitRequestSchema, async request => { forms.push(request.params); return { action: 'accept', content: { approve: true } }; });
+  try {
+    const refused = readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, model: 'gpt-expensive' } })).error;
+    assert.equal(refused.code, 'POLICY_DENIED');
+    assert.match(refused.message, /^Model 'gpt-expensive' did not run: the user denied it in governance\.models\.deny \(VS Code: coagent8\.approval\.denyModels\)\. Only the user can remove it from that list\./);
+    assert.equal(forms.length, 0, 'a denied model is never offered for approval');
+  } finally {
+    await client.close();
+    await server.close();
+  }
 });

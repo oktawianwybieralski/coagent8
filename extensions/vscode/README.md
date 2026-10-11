@@ -122,8 +122,9 @@ models or approval rules.
 | `coagent8.codex.defaultModel`, `coagent8.claude.defaultModel`, `coagent8.agy.defaultModel` | empty | Model when a request names none; empty uses config.json, then the CLI default |
 | `coagent8.approval.askAbovePrice` | `20` | Ask for approval before a model costing at least this many USD per million output tokens (`null` in config.json disables it) |
 | `coagent8.approval.priceMultiplier` | `2` | Ask for approval before a model costing at least this many times the backend's default model |
-| `coagent8.approval.alwaysAskModels` | `[]` | Models that always need approval |
-| `coagent8.approval.neverAskModels` | `[]` | Models that run without asking, unless also in Always Ask Models |
+| `coagent8.approval.denyModels` | `[]` | Models that never run; a request naming one is refused with the reason |
+| `coagent8.approval.askModels` | `[]` | Models that need approval before every run, whatever they cost |
+| `coagent8.approval.allowModels` | `[]` | Models approved in advance: they run without asking, unless also in Deny or Ask Models |
 | `coagent8.configPath` | empty | Configuration file; empty uses `~/.coagent8/config.json`, shared with the CLI |
 | `coagent8.nodePath` | `node` | Node.js 24+ executable used to start the bundled MCP server |
 

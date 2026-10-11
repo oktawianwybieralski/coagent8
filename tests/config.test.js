@@ -279,8 +279,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
     governance: {
       priceMultiplier: 2,
       askAbovePrice: 20,
-      alwaysAsk: [],
-      neverAsk: ['initial-model'],
+      models: { allow: ['initial-model'], ask: [], deny: [] },
     },
   });
 
@@ -296,7 +295,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
       return true;
     }
   );
-  assert.ok(!loadConfig().governance.neverAsk.includes('aborted-model'));
+  assert.ok(!loadConfig().governance.models.allow.includes('aborted-model'));
 
   // Direct AbortSignal parameter
   await assert.rejects(
@@ -307,7 +306,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
       return true;
     }
   );
-  assert.ok(!loadConfig().governance.neverAsk.includes('aborted-model-direct'));
+  assert.ok(!loadConfig().governance.models.allow.includes('aborted-model-direct'));
 
   // Expired budget
   let simulatedTime = 0;
@@ -326,7 +325,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
       return true;
     }
   );
-  assert.ok(!loadConfig().governance.neverAsk.includes('timed-out-model'));
+  assert.ok(!loadConfig().governance.models.allow.includes('timed-out-model'));
 
   // Duplicate model returns false without changing list
   const duplicateResult = await rememberApprovedModel('initial-model');
@@ -335,5 +334,5 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
   // Valid model persists and returns true
   const successResult = await rememberApprovedModel('valid-model');
   assert.equal(successResult, true);
-  assert.ok(loadConfig().governance.neverAsk.includes('valid-model'));
+  assert.ok(loadConfig().governance.models.allow.includes('valid-model'));
 });
