@@ -283,7 +283,8 @@ selection of the removed files moves to the remaining installation or is cleared
 
 To uninstall CoAgent8, use the Extensions view. On VS Code's next full start the
 `vscode:uninstall` hook removes the registrations and skill packages CoAgent8 wrote,
-when they are unchanged (recognized by their shape when their record is lost), the
+when they are unchanged (recognized by their shape when their record is lost); another
+VS Code installation, such as Insiders, keeps its own profile entry. It also removes the
 runtime copies nothing references, the private backups written for the extension
 and an emptied `~/.coagent8`. It cannot ask, so it removes no CLI or vendor
 extension: `installs.json` stays, and **Manage Coding CLIs** offers them after

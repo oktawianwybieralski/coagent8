@@ -227,6 +227,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
   const context = {
     subscriptions: [],
     globalStorageUri: { fsPath: storage },
+    extensionPath: extensionRoot,
     globalState: { get(key) { return legacy.get(key); }, async update(key, value) { legacyUpdates.push({ key, value }); if (value === undefined) legacy.delete(key); else legacy.set(key, value); } },
     workspaceState: { get() { return undefined; }, async update() {} },
     asAbsolutePath(relative) { return path.join(extensionRoot, relative); },
@@ -993,7 +994,7 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'fixture bundle');
   const storage = path.join(root, 'User/globalStorage/okidev.coagent8-mcp');
   const workspaceState = new Map();
-  const context = { subscriptions: [], globalStorageUri: { fsPath: storage }, globalState: { get() { return undefined; } },
+  const context = { subscriptions: [], globalStorageUri: { fsPath: storage }, extensionPath: root, globalState: { get() { return undefined; } },
     workspaceState: { get(key) { return workspaceState.get(key); }, async update(key, value) { workspaceState.set(key, value); } }, asAbsolutePath(relative) { return path.join(root, relative); } };
   module.exports.activate(context);
   const mcpFile = path.join(root, 'User/mcp.json');

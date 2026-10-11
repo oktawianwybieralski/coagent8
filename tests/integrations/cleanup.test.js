@@ -185,6 +185,32 @@ test('the bundled vscode:uninstall hook leaves no CoAgent8 registration, runtime
   assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
   assert.equal(fs.existsSync(path.join(p.home, '.coagent8')), false, 'the emptied CoAgent8 directory is removed');
 });
+test('the vscode:uninstall hook removes the profile entries of its own installation only', async t => {
+  const { syncVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8 hook installations '));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bundle = path.join(home, 'bundle.cjs');
+  fs.writeFileSync(bundle, 'bundle');
+  const installed = product => {
+    const storagePath = path.join(home, 'AppData', 'Roaming', product, 'User', 'globalStorage', 'okidev.coagent8-mcp');
+    const installation = path.join(home, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
+    assert.equal(syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation }), 'registered');
+    return path.join(home, 'AppData', 'Roaming', product, 'User', 'mcp.json');
+  };
+  const stable = installed('Code'), insiders = installed('Code - Insiders');
+  // Laid out as VS Code installs it: <extensions folder>/<extension>/dist/uninstall.cjs.
+  const hook = path.join(home, '.vscode', 'extensions', 'okidev.coagent8-mcp-0.6.0', 'dist', 'uninstall.cjs');
+  await require('esbuild').build({ entryPoints: [path.resolve(__dirname, '../../extensions/vscode/src/uninstall.ts')], outfile: hook,
+    bundle: true, platform: 'node', target: 'node24', format: 'cjs', mainFields: ['module', 'main'] });
+  const env = { ...process.env, HOME: home, USERPROFILE: home };
+  for (const key of ['CODEX_HOME', 'CODEX_CONFIG_PATH', 'CLAUDE_CONFIG_DIR', 'GEMINI_CLI_HOME', 'coagent8_DIR', 'coagent8_CONFIG']) delete env[key];
+  const run = require('node:child_process').spawnSync(process.execPath, [hook], { env, encoding: 'utf8', timeout: 5000, windowsHide: true });
+  assert.equal(run.status, 0, run.stderr || run.stdout);
+  assert.deepEqual(JSON.parse(run.stdout).profiles, [{ file: stable, action: 'removed' }]);
+  assert.deepEqual(parse(fs.readFileSync(stable, 'utf8')).servers, {});
+  assert.ok(parse(fs.readFileSync(insiders, 'utf8')).servers.CoAgent8, 'Insiders keeps its entry');
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(home, '.coagent8', 'vscode-mcp.json'), 'utf8'))), [insiders]);
+});
 test('without its ownership record, an entry setup wrote is recognized by its shape; the uninstall removes the extension ones', async t => {
   // As found on 2026-10-10: setup.json and the runtime copies were gone, the entries stayed.
   const p = profile(t);

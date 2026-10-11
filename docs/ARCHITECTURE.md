@@ -499,7 +499,9 @@ the menu needs no confirmation, as in the Extensions view. The record of install
 `~/.coagent8/installs.json`, outside the extension storage VS Code deletes, so an
 Extensions-view uninstall cannot orphan them; only recorded dependencies are
 offered for removal. The `vscode:uninstall` hook removes unchanged profile
-`mcp.json` entries and other owned entries, skills and
+`mcp.json` entries of its own installation (each record names the extensions
+folder of the VS Code installation that wrote it; Stable and Insiders share
+`~/.coagent8`) and other owned entries, skills and
 data and preserves shared config, sign-ins and histories; native lifecycle
 acceptance remains. Sources compare by real path, so an installer link to the
 extension copy is that copy. Standalone removal deletes installer links, never

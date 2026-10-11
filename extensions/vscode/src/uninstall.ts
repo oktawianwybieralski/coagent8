@@ -9,6 +9,7 @@
  * @packageDocumentation
  */
 import os from 'node:os';
+import path from 'node:path';
 import { cleanupClients } from '../../../src/integrations/cleanup.js';
 import { removeVscodeRegistrations, type VscodeRemoval } from '../../../src/integrations/vscode-profile.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
@@ -16,7 +17,8 @@ import { redactDiagnostic } from '../../../src/security/redaction.js';
 
 async function main(): Promise<void> {
   let profiles: VscodeRemoval[] = [], profileError: string | undefined;
-  try { profiles = removeVscodeRegistrations(os.homedir()); }
+  // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
+  try { profiles = removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname))); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
   const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
   const applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token });

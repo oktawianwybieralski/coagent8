@@ -6,20 +6,26 @@ const path = require('node:path');
 const { parse } = require('jsonc-parser');
 const { hasManualVscodeRegistration, profileMcpFile, removeVscodeRegistrations, syncVscodeRegistration, VSCODE_SERVER_NAME } = require('../../src/integrations/vscode-profile.ts');
 
-/** A VS Code profile with the extension's global storage, a bundle and a separate home. */
-function profile(t) {
+/**
+ * A VS Code profile with the extension's global storage, a bundle and a separate home;
+ * `product` and `home` place another installation's profile beside it.
+ */
+function profile(t, { product = 'Code', home: sharedHome } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8 vscode profile '));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const storagePath = path.join(root, 'Code/User/globalStorage/okidev.coagent8-mcp');
+  const storagePath = path.join(root, product, 'User/globalStorage/okidev.coagent8-mcp');
+  // The installation's extensions folder, which the uninstall hook knows from its own path.
+  const installation = path.join(root, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
   const bundle = path.join(root, 'extension/dist/index.cjs');
   fs.mkdirSync(path.dirname(bundle), { recursive: true });
   fs.writeFileSync(bundle, 'bundle v1');
-  const home = path.join(root, 'home');
+  const home = sharedHome ?? path.join(root, 'home');
   const file = profileMcpFile(storagePath);
   const server = { command: 'node', env: { coagent8_DIR: storagePath, coagent8_EDITOR_SETTINGS: '{}' } };
-  const sync = (overrides = {}) => syncVscodeRegistration({ storagePath, bundle, server, home, ...overrides });
+  const sync = (overrides = {}) => syncVscodeRegistration({ storagePath, bundle, server, home, installation, ...overrides });
   const entries = () => parse(fs.readFileSync(file, 'utf8')).servers;
-  return { root, storagePath, bundle, home, file, server, sync, entries };
+  const remove = () => removeVscodeRegistrations(home, installation);
+  return { root, storagePath, bundle, home, installation, file, server, sync, entries, remove };
 }
 
 test('the extension keeps one CoAgent8 entry in the profile mcp.json beside the user\'s servers', t => {
@@ -66,7 +72,7 @@ test('a user entry is preserved and suppresses the extension entry', t => {
   fs.writeFileSync(edited.file, JSON.stringify({ servers }));
   assert.equal(edited.sync(), 'manual');
   assert.deepEqual(edited.entries()[VSCODE_SERVER_NAME], { command: 'node', args: ['C:/elsewhere/index.cjs'] }, 'an edited entry is the user\'s');
-  assert.deepEqual(removeVscodeRegistrations(edited.home), [{ file: edited.file, action: 'preserved' }]);
+  assert.deepEqual(edited.remove(), [{ file: edited.file, action: 'preserved' }]);
   assert.ok(edited.entries()[VSCODE_SERVER_NAME]);
 });
 
@@ -80,7 +86,7 @@ test('an entry the user edited keeps the runtime copy but is no longer the exten
     const text = fs.readFileSync(p.file, 'utf8');
     assert.equal(p.sync(), 'manual', `an entry with an edited ${Object.keys(edit)[0]} is the user's`);
     assert.equal(fs.readFileSync(p.file, 'utf8'), text, 'synchronization does not overwrite it');
-    assert.deepEqual(removeVscodeRegistrations(p.home), [{ file: p.file, action: 'preserved' }]);
+    assert.deepEqual(p.remove(), [{ file: p.file, action: 'preserved' }]);
     assert.equal(fs.readFileSync(p.file, 'utf8'), text, 'uninstall does not remove it');
   }
 });
@@ -185,10 +191,25 @@ test('uninstall removes unchanged entries and the record; an interrupted record 
   fs.rmSync(record);
   assert.equal(p.sync(), 'current', 'the entry shape identifies it without the record');
   assert.ok(fs.existsSync(record), 'the record is written again');
-  assert.deepEqual(removeVscodeRegistrations(p.home), [{ file: p.file, action: 'removed' }]);
+  assert.deepEqual(p.remove(), [{ file: p.file, action: 'removed' }]);
   assert.deepEqual(p.entries(), {});
   assert.equal(fs.existsSync(record), false);
-  assert.deepEqual(removeVscodeRegistrations(p.home), [], 'a repeated cleanup is a no-op');
+  assert.deepEqual(p.remove(), [], 'a repeated cleanup is a no-op');
+});
+
+test('uninstall removes only the entries of its own VS Code installation and keeps the records of others', t => {
+  const stable = profile(t);
+  const insiders = profile(t, { product: 'Code - Insiders', home: stable.home });
+  assert.equal(stable.sync(), 'registered');
+  assert.equal(insiders.sync(), 'registered');
+  const record = path.join(stable.home, '.coagent8/vscode-mcp.json');
+  assert.deepEqual(stable.remove(), [{ file: stable.file, action: 'removed' }]);
+  assert.deepEqual(stable.entries(), {});
+  assert.ok(insiders.entries()[VSCODE_SERVER_NAME], 'the other installation keeps its entry');
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(record, 'utf8'))), [insiders.file], 'and its record');
+  assert.equal(insiders.sync(), 'current', 'which still identifies the entry');
+  assert.deepEqual(insiders.remove(), [{ file: insiders.file, action: 'removed' }]);
+  assert.equal(fs.existsSync(record), false);
 });
 
 test('a malformed profile mcp.json is preserved', t => {

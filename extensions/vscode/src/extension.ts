@@ -246,7 +246,7 @@ export function activate(context: vscode.ExtensionContext): void {
    */
   function syncProfile(restore = false): void {
     try {
-      profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(), folders: folders(), restore });
+      profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(), installation: path.dirname(context.extensionPath), folders: folders(), restore });
       noteWorkspaceDuplicate();
     }
     catch (error) { profileRegistration = undefined; showLifecycleError(error); }

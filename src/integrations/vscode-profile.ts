@@ -10,7 +10,8 @@
  * version activates and rewrites it.
  *
  * Ownership is recorded in `~/.coagent8/vscode-mcp.json`, which survives the uninstall: the
- * `vscode:uninstall` hook removes each entry that is still exactly as written. An entry the
+ * `vscode:uninstall` hook removes each entry of its own VS Code installation that is still
+ * exactly as written. Other installations (Stable, Insiders) share the file and keep theirs. An entry the
  * user edited or wrote is theirs and is never changed; an entry the user removed is not
  * added again until they ask for it.
  *
@@ -38,7 +39,7 @@ export type VscodeRegistration = 'registered' | 'current' | 'manual' | 'declined
  * Ownership per profile `mcp.json`: the digest of the entry written, or the user's removal;
  * `pending` is the digest of an entry being written, until the write completes.
  */
-type RegistrationRecord = Record<string, ({ entry: string } | { declined: true }) & { pending?: string }>;
+type RegistrationRecord = Record<string, ({ entry: string } | { declined: true }) & { pending?: string; installation: string }>;
 
 const FORMATTING = { insertSpaces: true, tabSize: 2 };
 const RUNTIME_SHAPE = new RegExp(`[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE_NAME.replace('.', '\\.')}[\\\\/]runtime[\\\\/][a-f0-9]{64}[\\\\/]index\\.cjs$`, 'i');
@@ -65,6 +66,12 @@ function writeRecord(home: string, before: string | null, record: RegistrationRe
   const text = JSON.stringify(record, null, 2) + '\n';
   writeChecked(file, before, text);
   return text;
+}
+/** Whether two installation folders are the same; Windows paths ignore case. */
+function sameInstallation(a: string | undefined, b: string): boolean {
+  if (a === undefined) return false;
+  const normal = (value: string) => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
+  return normal(a) === normal(b);
 }
 /** Whether an entry has the shape only this extension writes: its bundle copy in global storage. */
 function extensionShaped(entry: unknown): boolean {
@@ -169,8 +176,13 @@ export function syncVscodeRegistration(options: VscodeSyncOptions): VscodeRegist
   }
 }
 /** Inputs of {@link syncVscodeRegistration}. */
-export interface VscodeSyncOptions { storagePath: string; bundle: string; server: VscodeServer; home: string; folders?: string[]; restore?: boolean }
-function syncOnce({ storagePath, bundle, server, home, folders = [], restore = false }: VscodeSyncOptions): VscodeRegistration {
+export interface VscodeSyncOptions {
+  storagePath: string; bundle: string; server: VscodeServer; home: string;
+  /** The extensions folder of this VS Code installation; its uninstall removes only its entries. */
+  installation: string;
+  folders?: string[]; restore?: boolean;
+}
+function syncOnce({ storagePath, bundle, server, home, installation, folders = [], restore = false }: VscodeSyncOptions): VscodeRegistration {
   const file = profileMcpFile(storagePath);
   const { text: recordText, record } = readRecord(home);
   const text = read(file);
@@ -189,7 +201,7 @@ function syncOnce({ storagePath, bundle, server, home, folders = [], restore = f
   }
   if (!restore && current === undefined && recorded !== undefined) {
     // The user removed the entry in VS Code: remember it, never add it back unasked.
-    if (!('declined' in recorded)) writeRecord(home, recordText, { ...record, [file]: { declined: true } });
+    if (!('declined' in recorded) || !sameInstallation(recorded.installation, installation)) writeRecord(home, recordText, { ...record, [file]: { declined: true, installation } });
     return 'declined';
   }
   // This window's workspace provides CoAgent8; nothing is recorded, so other windows add the entry.
@@ -197,7 +209,9 @@ function syncOnce({ storagePath, bundle, server, home, folders = [], restore = f
   const runtime = runtimeCopy(storagePath, bundle);
   const desired = { type: 'stdio', command: server.command, args: [runtime], env: server.env };
   if (ours && JSON.stringify(current) === JSON.stringify(desired)) {
-    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined) writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)) } });
+    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined || !sameInstallation(recorded.installation, installation)) {
+      writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), installation } });
+    }
     pruneRuntimes(storagePath, runtime);
     return 'current';
   }
@@ -209,9 +223,9 @@ function syncOnce({ storagePath, bundle, server, home, folders = [], restore = f
   // record the new entry's shape identifies it. The entry on disk, when ours, is the one recorded
   // as written, whichever digest identified it.
   const written = ours ? { entry: hash(JSON.stringify(current)) } : recorded;
-  const marked = written === undefined ? recordText : writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest } });
+  const marked = written === undefined ? recordText : writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest, installation } });
   writeChecked(file, text, after);
-  writeRecord(home, marked, { ...record, [file]: { entry: digest } });
+  writeRecord(home, marked, { ...record, [file]: { entry: digest, installation } });
   pruneRuntimes(storagePath, runtime);
   return 'registered';
 }
@@ -219,14 +233,21 @@ function syncOnce({ storagePath, bundle, server, home, folders = [], restore = f
 /** Outcome of the uninstall cleanup for one profile `mcp.json`. */
 export interface VscodeRemoval { file: string; action: 'removed' | 'preserved' | 'missing' }
 /**
- * Removes every recorded entry that is still exactly as the extension wrote it, then the
- * record. Runs from the `vscode:uninstall` hook, without the VS Code API.
- * @returns One result per recorded profile; edited entries are preserved.
+ * Removes every entry this installation recorded that is still exactly as the extension wrote
+ * it, then its records. Runs from the `vscode:uninstall` hook, without the VS Code API.
+ * @param home - The directory holding `~/.coagent8`.
+ * @param installation - The extensions folder of the VS Code installation being uninstalled.
+ * @returns One result per profile of this installation; edited entries are preserved, and
+ * other installations' entries and records are left alone.
  */
-export function removeVscodeRegistrations(home: string): VscodeRemoval[] {
+export function removeVscodeRegistrations(home: string, installation: string): VscodeRemoval[] {
   const { text: recordText, record } = readRecord(home);
   const results: VscodeRemoval[] = [];
+  // A record naming no installation was written by an unreleased build before 0.6.0; it is left
+  // alone like another installation's (owner decision 2026-10-11: no migration before 0.6.0).
+  const others = Object.fromEntries(Object.entries(record).filter(([, recorded]) => !sameInstallation(recorded.installation, installation)));
   for (const [file, recorded] of Object.entries(record)) {
+    if (file in others) continue;
     const text = read(file);
     const current = profileServers(text)[VSCODE_SERVER_NAME];
     if (text === null || current === undefined) { results.push({ file, action: 'missing' }); continue; }
@@ -234,6 +255,6 @@ export function removeVscodeRegistrations(home: string): VscodeRemoval[] {
     writeChecked(file, text, applyEdits(text, modify(text, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })));
     results.push({ file, action: 'removed' });
   }
-  writeRecord(home, recordText, {});
+  writeRecord(home, recordText, others);
   return results;
 }
