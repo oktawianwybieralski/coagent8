@@ -85,7 +85,7 @@ test('an entry the user edited keeps the runtime copy but is no longer the exten
   }
 });
 
-test('an interrupted rewrite leaves an entry recognized by its shape', t => {
+test('an interrupted rewrite leaves the entry, old or new, the extension\'s', t => {
   const p = profile(t);
   p.sync();
   const record = path.join(p.home, '.coagent8/vscode-mcp.json');
@@ -98,9 +98,55 @@ test('an interrupted rewrite leaves an entry recognized by its shape', t => {
   });
   assert.throws(() => p.sync({ server: { ...p.server, command: 'C:/tools/node.exe' } }), /interrupted/);
   t.mock.restoreAll();
-  assert.equal(fs.existsSync(record), false, 'no stale digest outlives the rewrite');
+  assert.ok(JSON.parse(fs.readFileSync(record, 'utf8'))[p.file].pending, 'the record names the entry being written');
   assert.equal(p.sync(), 'registered', 'the old entry is still the extension\'s');
   assert.equal(p.sync(), 'current');
+  assert.equal(JSON.parse(fs.readFileSync(record, 'utf8'))[p.file].pending, undefined, 'a completed write clears it');
+});
+
+test('consecutive interrupted rewrites keep the entry on disk the extension\'s', t => {
+  const p = profile(t);
+  p.sync();
+  const record = path.join(p.home, '.coagent8/vscode-mcp.json');
+  const rename = fs.renameSync;
+  // First rewrite: mcp.json is written, its final record write is not.
+  let recordWrites = 0;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === record && ++recordWrites === 2) throw new Error('interrupted');
+    return rename(from, to);
+  });
+  assert.throws(() => p.sync({ server: { ...p.server, command: 'C:/tools/b.exe' } }), /interrupted/);
+  t.mock.restoreAll();
+  assert.equal(p.entries()[VSCODE_SERVER_NAME].command, 'C:/tools/b.exe');
+  // Second rewrite to another entry: interrupted before mcp.json is written.
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === p.file) throw new Error('interrupted');
+    return rename(from, to);
+  });
+  assert.throws(() => p.sync({ server: { ...p.server, command: 'C:/tools/c.exe' } }), /interrupted/);
+  t.mock.restoreAll();
+  assert.equal(p.sync(), 'registered', 'the entry left by the first rewrite is still the extension\'s');
+});
+
+test('an edit or removal racing a rewrite stays the user\'s when synchronization retries', t => {
+  for (const [race, expected] of [['edit', 'manual'], ['remove', 'declined']]) {
+    const p = profile(t);
+    p.sync();
+    fs.writeFileSync(p.bundle, 'bundle v2');
+    const servers = p.entries();
+    const user = race === 'edit' ? { servers: { [VSCODE_SERVER_NAME]: { ...servers[VSCODE_SERVER_NAME], command: 'C:/tools/node.exe' } } } : { servers: {} };
+    // The user saves mcp.json while the extension prepares its write, as another window would.
+    const writeFileSync = fs.writeFileSync;
+    let raced = false;
+    t.mock.method(fs, 'writeFileSync', (target, ...rest) => {
+      if (!raced && String(target).startsWith(p.file + '.')) { raced = true; writeFileSync(p.file, JSON.stringify(user)); }
+      return writeFileSync(target, ...rest);
+    });
+    assert.equal(p.sync(), expected, race);
+    t.mock.restoreAll();
+    assert.ok(raced, race);
+    assert.deepEqual(JSON.parse(fs.readFileSync(p.file, 'utf8')), user, `the ${race} is preserved`);
+  }
 });
 
 test('an entry the user removed in VS Code stays removed until restored', t => {

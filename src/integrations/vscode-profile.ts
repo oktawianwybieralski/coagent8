@@ -34,8 +34,11 @@ export interface VscodeServer { command: string; env: Record<string, string> }
  * removed the extension's entry (`declined`).
  */
 export type VscodeRegistration = 'registered' | 'current' | 'manual' | 'declined';
-/** Ownership per profile `mcp.json`: the digest of the entry written, or the user's removal. */
-type RegistrationRecord = Record<string, { entry: string } | { declined: true }>;
+/**
+ * Ownership per profile `mcp.json`: the digest of the entry written, or the user's removal;
+ * `pending` is the digest of an entry being written, until the write completes.
+ */
+type RegistrationRecord = Record<string, ({ entry: string } | { declined: true }) & { pending?: string }>;
 
 const FORMATTING = { insertSpaces: true, tabSize: 2 };
 const RUNTIME_SHAPE = new RegExp(`[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE_NAME.replace('.', '\\.')}[\\\\/]runtime[\\\\/][a-f0-9]{64}[\\\\/]index\\.cjs$`, 'i');
@@ -69,14 +72,15 @@ function extensionShaped(entry: unknown): boolean {
   return Array.isArray(args) && args.length === 1 && typeof args[0] === 'string' && RUNTIME_SHAPE.test(args[0]);
 }
 /**
- * Whether the extension owns a profile's entry: a recorded digest must match, so an entry the
- * user edited is theirs even while it still starts the runtime copy. Only without any record
- * (lost, or a rewrite interrupted) does the shape identify the entry.
+ * Whether the extension owns a profile's entry: a recorded digest, written or pending, must
+ * match, so an entry the user edited is theirs even while it still starts the runtime copy.
+ * Only without any record (lost) does the shape identify the entry.
  */
 function owned(entry: unknown, recorded: RegistrationRecord[string] | undefined): boolean {
   if (entry === undefined) return false;
   if (recorded === undefined) return extensionShaped(entry);
-  return 'entry' in recorded && recorded.entry === hash(JSON.stringify(entry));
+  const digest = hash(JSON.stringify(entry));
+  return ('entry' in recorded && recorded.entry === digest) || recorded.pending === digest;
 }
 function profileServers(text: string | null): Record<string, unknown> {
   if (text === null) return {};
@@ -175,18 +179,21 @@ function syncOnce({ storagePath, bundle, server, home, restore = false }: { stor
   const runtime = runtimeCopy(storagePath, bundle);
   const desired = { type: 'stdio', command: server.command, args: [runtime], env: server.env };
   if (ours && JSON.stringify(current) === JSON.stringify(desired)) {
-    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current))) writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)) } });
+    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined) writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)) } });
     pruneRuntimes(storagePath, runtime);
     return 'current';
   }
   const base = text ?? '{}\n';
   const after = applyEdits(base, modify(base, ['servers', VSCODE_SERVER_NAME], desired, { formattingOptions: { ...FORMATTING, eol: base.includes('\r\n') ? '\r\n' : '\n' } }));
-  // Drop the old digest first: should the write below be interrupted, no record outlives it and
-  // the entry's shape, old or new, still identifies it as ours.
-  const others = Object.fromEntries(Object.entries(record).filter(([key]) => key !== file));
-  const cleared = recorded === undefined ? recordText : writeRecord(home, recordText, others);
+  const digest = hash(JSON.stringify(profileServers(after)[VSCODE_SERVER_NAME]));
+  // Record the digest being written first: should the write below be interrupted, the entry,
+  // old or new, is still ours, while an edit or removal racing it stays the user's. Without a
+  // record the new entry's shape identifies it. The entry on disk, when ours, is the one recorded
+  // as written, whichever digest identified it.
+  const written = ours ? { entry: hash(JSON.stringify(current)) } : recorded;
+  const marked = written === undefined ? recordText : writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest } });
   writeChecked(file, text, after);
-  writeRecord(home, cleared, { ...others, [file]: { entry: hash(JSON.stringify(profileServers(after)[VSCODE_SERVER_NAME])) } });
+  writeRecord(home, marked, { ...record, [file]: { entry: digest } });
   pruneRuntimes(storagePath, runtime);
   return 'registered';
 }
