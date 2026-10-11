@@ -16,7 +16,9 @@
  *
  * CoAgent8 evaluates the review verdict programmatically: any P1/P2 blocker, PARTIAL coverage,
  * truncation or an incomplete envelope makes the server verdict `BLOCKED`. The reviewer's text is
- * never rewritten; the server verdict and its causes are reported beside it.
+ * never rewritten; the server verdict and its causes are reported beside it. A read-only
+ * reviewer cannot run checks, so a required check reported `NOT_RUN` does not block: READY then
+ * says which checks did not run, and the author and CI run them (rule 03).
  *
  * @packageDocumentation
  */
@@ -49,14 +51,13 @@ export interface ReviewGateContext {
  * @param truncated - Public output truncation.
  * @param requireEnvelope - Require an envelope even when none is detected in the answer.
  * @param context - Server-collected snapshot, input completeness and required checks.
- * @returns The server verdict and, when blocked, every cause; a reviewer READY it overrides is named.
+ * @returns The server verdict and, when blocked, every cause; a reviewer READY it overrides is
+ * named, and a READY names the required checks that did not run.
  * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
  * With context, SNAPSHOT must match and input must be complete and unchanged. Failed
- * checks always block; required checks must report PASS. A reviewer's BLOCKED without a
- * P1/P2 finding quotes its `Blocked:` line. The reason lists every cause; when a reviewer
- * READY is blocked only by required checks reported NOT_RUN, it says instead that a read-only
- * review cannot run them, so repeating it will not change the verdict (`AX-007a`). This does
- * not execute tests, verify a reported PASS or bind a release artifact.
+ * checks always block. A required check reported NOT_RUN does not: a reported PASS is not
+ * evidence either, since this does not execute tests, verify a reported PASS or bind a
+ * release artifact. A reviewer's BLOCKED without a P1/P2 finding quotes its `Blocked:` line.
  */
 export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false, context?: ReviewGateContext): StateEnvelopeEvaluation {
   const rawLines = output.split(/\r?\n/);
@@ -140,11 +141,12 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     const checks = /^typecheck=(PASS|FAIL|NOT_RUN);\s*tests=(PASS|FAIL|NOT_RUN)$/i.exec(checksVal);
     const checkValues = checks ? { typecheck: checks[1].toUpperCase(), tests: checks[2].toUpperCase() } : undefined;
     const failedChecks = checkValues && Object.values(checkValues).includes('FAIL');
-    const missingChecks = context?.requiredChecks.some(check => checkValues?.[check] !== 'PASS');
+    // Unrun required checks are named on READY; the author and CI run them.
+    const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = context && snapshotVal !== context.expectedSnapshot;
     const incompleteInput = context && !context.inputComplete;
     const judged = Boolean(isCompleteEnvelope && checks && !truncated && !wrongSnapshot);
-    const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || missingChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
+    const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
       || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY';
 
     if (shouldBlock) {
@@ -165,23 +167,16 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       if (isEnveloped && wrongSnapshot) reasons.push('Review snapshot does not match the collected input');
       if (isEnveloped && !checks) reasons.push('Invalid CHECKS outcomes');
       if (failedChecks) reasons.push(`A reported check failed (${checkList((_, value) => value === 'FAIL')})`);
-      const notRun = checkList((name, value) => !!context?.requiredChecks.includes(name) && value === 'NOT_RUN');
-      if (notRun) reasons.push(`Required checks were not run (${notRun})`);
       if (verdictVal === 'BLOCKED' && !hasBlockers) {
         reasons.push(blockedVal
           ? `Reviewer reported BLOCKED: ${blockedVal.slice(0, MAX_BLOCKED_REASON_CHARS)}`
           : 'Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason');
       }
-      // A reviewer READY blocked only by required checks it could not run: another review in a
-      // read-only sandbox cannot run them either, so the caller must not repeat it (AX-007a).
-      if (reasons.length === 1 && notRun && verdictVal === 'READY') {
-        return { verdict: 'BLOCKED', judged, reason: `The reviewer answered READY with no [P1/P2] finding, but the server did not observe the required checks (${notRun}); a read-only review cannot run them, so repeating the review will not change this verdict` };
-      }
       // The answer still reads READY; the caller must see that the server overrides it.
       if (verdictVal === 'READY' && verdictCount === 1 && !hasBogusVerdict) reasons.push('the reviewer answered READY');
       return { verdict: 'BLOCKED', judged, reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied' };
     }
-    return { verdict: 'READY', judged };
+    return notRunChecks.length ? { verdict: 'READY', judged, reason: `${notRunChecks.join(' and ')} not run` } : { verdict: 'READY', judged };
   }
 
   return { verdict: 'NOT_APPLICABLE' };

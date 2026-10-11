@@ -1177,6 +1177,8 @@ before EXEC-001-T12.
   Other causes keep their current wording. The tool description states the same
   limit once. Done: the verdict is still BLOCKED; fixtures cover READY with only
   NOT_RUN, READY with a finding and BLOCKED with NOT_RUN. Check: R, REVIEW/MCP.
+  Superseded (owner decision 2026-10-11): a read-only reviewer's NOT_RUN no
+  longer blocks; READY names the unrun checks, which the author and CI run.
   Evidence: [AX-007a](HANDOFF.md#ax-007a-state-when-another-review-cannot-help).
 - [x] **AX-007b - label the continuation handle.** Start: footer formatting in
   `src/mcp/result.ts`, `session_handle` in `src/mcp/schema.ts`, consult/review

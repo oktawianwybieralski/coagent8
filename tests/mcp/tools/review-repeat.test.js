@@ -57,7 +57,8 @@ test('an unchanged repeat review starts no model turn and refers to the earlier 
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy', 'codex'] } });
   const first = readResult(await handleReview('review', {}, repo, null, null, approve));
   assert.equal(turns.agy, 1);
-  assert.equal(first.verdict, 'BLOCKED');
+  assert.equal(first.verdict, 'READY');
+  assert.equal(first.reason, 'typecheck and tests not run');
   assert.ok(first.sessionHandle);
   const second = await handleReview('review', {}, repo, null, null, approve);
   const repeat = readResult(second);

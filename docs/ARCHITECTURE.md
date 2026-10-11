@@ -357,10 +357,11 @@ END_REVIEW
 
 The gate requires complete input/output, exact snapshot, recognized fields and
 terminator, COMPLETE/READY and no literal [P1]/[P2]. Any FAIL blocks. Runtime
-scopes require PASS for both checks; Markdown-only scopes allow honest NOT_RUN.
-When a reviewer READY without P1/P2 is blocked only by required NOT_RUN checks,
-the reason says that a read-only review cannot run them and that repeating it
-will not change the verdict (AX-007a).
+scopes require both checks; a read-only reviewer cannot run them, so its honest
+NOT_RUN does not block and the server verdict names the checks it did not run:
+`Verdict: READY (typecheck and tests not run)`. A reported PASS is not evidence
+either; the author runs the checks locally and CI on the pull request (owner
+decision 2026-10-11, replacing the AX-007a BLOCKED verdict).
 A judged review (complete, untruncated envelope for the collected snapshot)
 stores its snapshot, scope, model and server verdict in its session record. A
 later request in the same workspace with the same snapshot, scope, resolved

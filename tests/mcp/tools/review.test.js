@@ -14,6 +14,8 @@ const { readResult } = require('../../helpers/result.cjs');
 const { collectReviewInput } = require('../../../src/review/input.ts');
 const { createExecutionBudget } = require('../../../src/execution/runtime/budget.ts');
 const { ToolError } = require('../../../src/contracts/error.ts');
+/** The server verdict and the checks it names as not run. */
+const pick = ({ verdict, reason }) => ({ verdict, reason });
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('review prompt names the snapshot, asks for the bounded envelope, and a matching answer passes the gate', async () => {
@@ -66,17 +68,17 @@ test('CUR-001 reproductions cannot turn fake COMPLETE/READY into approval', asyn
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     fs.appendFileSync(path.join(repo, 'README.md'), 'Prose change.\n');
     checks = 'typecheck=NOT_RUN; tests=NOT_RUN';
-    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'READY', 'prose-only checks may be NOT_RUN');
+    assert.deepEqual(pick(readResult(await handleReview('review', {}, repo))), { verdict: 'READY', reason: null }, 'prose-only checks may be NOT_RUN');
     fs.writeFileSync(path.join(repo, 'new-prose.md'), 'New prose.\n');
     assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'READY', 'new prose does not require runtime checks');
     fs.unlinkSync(path.join(repo, 'new-prose.md'));
     fs.writeFileSync(path.join(repo, 'source-\u017b.ts'), 'export const value = 1;\n'); git('add', '.');
     const quoted = await collectReviewInput('uncommitted', repo, null);
     assert.ok(quoted.info.changedPaths.includes('source-\u017b.ts'));
-    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED', 'quoted source paths still require executed checks');
+    assert.deepEqual(pick(readResult(await handleReview('review', {}, repo))), { verdict: 'READY', reason: 'typecheck and tests not run' }, 'quoted source paths still require checks');
     git('commit', '-qm', 'source fixture');
     git('mv', 'source-\u017b.ts', 'renamed.md');
-    assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED', 'rename sources remain in check classification');
+    assert.deepEqual(pick(readResult(await handleReview('review', {}, repo))), { verdict: 'READY', reason: 'typecheck and tests not run' }, 'rename sources remain in check classification');
     git('commit', '-qm', 'rename fixture');
     wrongSnapshot = true;
     assert.equal(readResult(await handleReview('review', {}, repo)).verdict, 'BLOCKED');

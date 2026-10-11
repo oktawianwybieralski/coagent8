@@ -53,7 +53,10 @@ Before merging significant architectural changes, refactors, or creating Release
    The runtime gate blocks incomplete input, a wrong snapshot, changed workspace
    and failed CHECKS (`CUR-001`, fixed locally). It validates reported outcomes
    but does not prove a model's PASS claim or bind a release artifact. Required checks that failed block readiness;
-   inapplicable checks stay NOT_RUN with an explanation.
+   inapplicable checks stay NOT_RUN with an explanation. A read-only reviewer
+   cannot run checks: its NOT_RUN does not block, the server verdict names them
+   (`READY (typecheck and tests not run)`), and the author runs them locally and
+   CI on the pull request (owner decision 2026-10-11).
 4. **Severity Thresholds:**
    * **P1 (Critical / Security / Correctness)**: MUST be remediated immediately. Blocks PR merge.
    * **P2 (Robustness / Resource Leaks / Edge Cases)**: MUST be remediated before PR merge.
