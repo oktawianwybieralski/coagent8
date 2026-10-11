@@ -344,3 +344,25 @@ test('EXEC-001-T08c: probe, listModels, and inspectQuota abort deterministically
     delete process.env.CODEX_FIXTURE_MODE;
   }
 });
+
+test('a Codex review turn may read repository files with read-only shell commands, inside the verified read-only profile', async () => {
+  const { execFileSync } = require('node:child_process');
+  const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
+  const repo = path.join(directory, 'review-repo');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+  await handleReview('review', { backend: 'codex', model: options.model }, repo);
+  const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE, 'utf8'));
+  // Codex has no file tool: its read-only shell (`exec_command`, feature `shell_tool`) is how it reads files.
+  assert.ok(!capture.args.includes('features.shell_tool=false'), 'the read-only shell stays on');
+  assert.doesNotMatch(capture.prompt, /do not run shell commands/i, 'the prompt does not forbid the only way Codex reads files');
+  assert.match(capture.prompt, /if you have none, read them with read-only shell commands/);
+  const start = capture.records.find(r => r.method === 'thread/start').params;
+  assert.equal(start.sandbox, 'read-only'); assert.equal(start.approvalPolicy, 'never');
+  assert.deepEqual(start.config, { mcp_servers: { coagent8: { enabled: false }, 'fixture-http': { enabled: false } } });
+  assert.deepEqual(capture.records.map(r => r.method).slice(-4), ['experimentalFeature/list', 'mcpServerStatus/list', 'mcpServerStatus/list', 'turn/start'], 'the turn starts only after the isolation checks');
+});

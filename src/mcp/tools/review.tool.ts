@@ -129,7 +129,9 @@ export async function handleReview(
   // The answer is read in the caller's context: findings only, each as short as its evidence allows.
   const prompt = [
     `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
-    'The diff is below. Read files with your file tools; do not run shell commands to get what the diff or a file read gives, because a sandbox may deny them and end the turn.',
+    // Claude and agy read with file tools, and agy ends its turn when its sandbox denies a
+    // command; Codex has no file tool and reads only with commands in its read-only sandbox.
+    'The diff is below. Read files with your file tools; if you have none, read them with read-only shell commands (such as rg, git show or Get-Content) and run nothing that writes, builds or uses the network. With file tools, run no shell command: a sandbox may deny it and end the turn.',
     'Focus: ' + instructions,
     'Answer with exactly this envelope and nothing before it:',
     'REVIEW: <turn>',
