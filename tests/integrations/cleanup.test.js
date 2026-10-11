@@ -170,20 +170,48 @@ test('without an extension origin, as in earlier records, uninstall cleanup pres
   assert.ok(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers.coagent8);
   assert.ok(fs.existsSync(p.runtime('a')), 'its runtime copy is still referenced');
 });
+/** Bundles the vscode:uninstall hook as the extension ships it. */
+async function buildHook(hook) {
+  await require('esbuild').build({ entryPoints: [path.resolve(__dirname, '../../extensions/vscode/src/uninstall.ts')], outfile: hook,
+    bundle: true, platform: 'node', target: 'node24', format: 'cjs', mainFields: ['module', 'main'] });
+}
+/** Runs the hook as VS Code does: with Node, in the given home, killed after five seconds. */
+function runHook(hook, home) {
+  const env = { ...process.env, HOME: home, USERPROFILE: home };
+  for (const key of ['CODEX_HOME', 'CODEX_CONFIG_PATH', 'CLAUDE_CONFIG_DIR', 'GEMINI_CLI_HOME', 'coagent8_DIR', 'coagent8_CONFIG']) delete env[key];
+  return require('node:child_process').spawnSync(process.execPath, [hook], { env, encoding: 'utf8', timeout: 5000, windowsHide: true });
+}
 test('the bundled vscode:uninstall hook leaves no CoAgent8 registration, runtime or directory behind', async t => {
   const p = uninstallProfile(t, { withCli: false });
   const manifest = require('../../extensions/vscode/package.json');
   assert.equal(manifest.scripts['vscode:uninstall'], 'node ./dist/uninstall.cjs');
   const hook = path.join(p.home, 'hook', 'uninstall.cjs');
-  await require('esbuild').build({ entryPoints: [path.resolve(__dirname, '../../extensions/vscode/src/uninstall.ts')], outfile: hook,
-    bundle: true, platform: 'node', target: 'node24', format: 'cjs', mainFields: ['module', 'main'] });
-  const env = { ...process.env, HOME: p.home, USERPROFILE: p.home };
-  for (const key of ['CODEX_HOME', 'CODEX_CONFIG_PATH', 'CLAUDE_CONFIG_DIR', 'GEMINI_CLI_HOME', 'coagent8_DIR', 'coagent8_CONFIG']) delete env[key];
-  const run = require('node:child_process').spawnSync(process.execPath, [hook], { env, encoding: 'utf8', timeout: 5000, windowsHide: true });
+  await buildHook(hook);
+  const run = runHook(hook, p.home);
   assert.equal(run.status, 0, run.stderr || run.stdout);
   assert.equal(JSON.parse(run.stdout).results.find(r => r.client === 'claude').action, 'removed');
   assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
   assert.equal(fs.existsSync(path.join(p.home, '.coagent8')), false, 'the emptied CoAgent8 directory is removed');
+});
+test('while a window holds the profile lease, the vscode:uninstall hook still removes its registrations within its time limit', async t => {
+  const { withFileLock } = require('../../src/storage/lock.ts');
+  const p = uninstallProfile(t, { withCli: false });
+  const hook = path.join(p.home, 'hook', 'uninstall.cjs');
+  await buildHook(hook);
+  let release, acquired;
+  const held = new Promise(resolve => { release = resolve; });
+  const leased = new Promise(resolve => { acquired = resolve; });
+  const holder = withFileLock(path.join(p.home, '.coagent8', 'vscode-mcp'), async () => { acquired(); await held; });
+  await leased;
+  const run = runHook(hook, p.home);
+  release();
+  await holder;
+  assert.equal(run.signal, null, 'VS Code does not kill the hook at its five-second limit');
+  assert.equal(run.status, 1, 'the profile entries it could not remove are reported');
+  const output = JSON.parse(run.stdout);
+  assert.match(output.profileError, /lock/);
+  assert.equal(output.results.find(r => r.client === 'claude').action, 'removed', 'the client registrations are still removed');
+  assert.deepEqual(parse(fs.readFileSync(p.files.claude, 'utf8')).mcpServers, { other: { command: 'keep' } });
 });
 test('the vscode:uninstall hook removes the profile entries of its own installation only', async t => {
   const { syncVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
@@ -191,20 +219,17 @@ test('the vscode:uninstall hook removes the profile entries of its own installat
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const bundle = path.join(home, 'bundle.cjs');
   fs.writeFileSync(bundle, 'bundle');
-  const installed = product => {
+  const installed = async product => {
     const storagePath = path.join(home, 'AppData', 'Roaming', product, 'User', 'globalStorage', 'okidev.coagent8-mcp');
     const installation = path.join(home, product === 'Code' ? '.vscode' : '.vscode-insiders', 'extensions');
-    assert.equal(syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation, version: '0.6.0' }), 'registered');
+    assert.equal(await syncVscodeRegistration({ storagePath, bundle, server: { command: 'node', env: {} }, home, installation, version: '0.6.0' }), 'registered');
     return path.join(home, 'AppData', 'Roaming', product, 'User', 'mcp.json');
   };
-  const stable = installed('Code'), insiders = installed('Code - Insiders');
+  const stable = await installed('Code'), insiders = await installed('Code - Insiders');
   // Laid out as VS Code installs it: <extensions folder>/<extension>/dist/uninstall.cjs.
   const hook = path.join(home, '.vscode', 'extensions', 'okidev.coagent8-mcp-0.6.0', 'dist', 'uninstall.cjs');
-  await require('esbuild').build({ entryPoints: [path.resolve(__dirname, '../../extensions/vscode/src/uninstall.ts')], outfile: hook,
-    bundle: true, platform: 'node', target: 'node24', format: 'cjs', mainFields: ['module', 'main'] });
-  const env = { ...process.env, HOME: home, USERPROFILE: home };
-  for (const key of ['CODEX_HOME', 'CODEX_CONFIG_PATH', 'CLAUDE_CONFIG_DIR', 'GEMINI_CLI_HOME', 'coagent8_DIR', 'coagent8_CONFIG']) delete env[key];
-  const run = require('node:child_process').spawnSync(process.execPath, [hook], { env, encoding: 'utf8', timeout: 5000, windowsHide: true });
+  await buildHook(hook);
+  const run = runHook(hook, home);
   assert.equal(run.status, 0, run.stderr || run.stdout);
   assert.deepEqual(JSON.parse(run.stdout).profiles, [{ file: stable, action: 'removed' }]);
   assert.deepEqual(parse(fs.readFileSync(stable, 'utf8')).servers, {});

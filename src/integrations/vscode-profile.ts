@@ -22,6 +22,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parse, applyEdits, modify, type ParseError } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
+import { withFileLock } from '../storage/lock.js';
 import { object } from './rpc.js';
 import { EXTENSION_STORAGE_NAME, hash, json, read, writeChecked } from './setup-storage.js';
 
@@ -47,6 +48,14 @@ const RUNTIME_SHAPE = new RegExp(`[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE
 /** The `mcp.json` of the profile whose global storage is `storagePath`. */
 export function profileMcpFile(storagePath: string): string {
   return path.join(path.dirname(path.dirname(storagePath)), 'mcp.json');
+}
+/**
+ * The lease every VS Code window holds while it synchronizes or removes profile entries: copying
+ * a runtime, writing the entry and record, and pruning copies happen as one step, so no window
+ * deletes a copy another is about to register.
+ */
+function leaseResource(home: string): string {
+  return path.join(home, '.coagent8', 'vscode-mcp');
 }
 function recordFile(home: string): string {
   return path.join(home, '.coagent8', 'vscode-mcp.json');
@@ -180,18 +189,21 @@ function pruneRuntimes(storagePath: string, keep: string): void {
  * @remarks The entry serves every window of the profile, so it is not added while this
  * window's workspace registers CoAgent8 (VS Code would list both), and never removed for it:
  * windows of other workspaces would add it back.
+ * Runs under the lease of `~/.coagent8` that every window and the uninstall hook share.
  * @throws When the profile `mcp.json` or the ownership record is malformed or unreadable,
- * or when another process keeps changing them.
+ * when another process keeps changing them, or when the lease is not acquired in time.
  */
-export function syncVscodeRegistration(options: VscodeSyncOptions): VscodeRegistration {
-  for (let attempt = 0; ; attempt++) {
-    try { return syncOnce(options); }
-    catch (error) {
-      // Another window of the same profile wrote at the same time; read its result again.
-      if (attempt < 2 && error instanceof Error && /changed concurrently/.test(error.message)) continue;
-      throw error;
+export async function syncVscodeRegistration(options: VscodeSyncOptions): Promise<VscodeRegistration> {
+  return withFileLock(leaseResource(options.home), async () => {
+    for (let attempt = 0; ; attempt++) {
+      try { return syncOnce(options); }
+      catch (error) {
+        // VS Code or the user wrote mcp.json at the same time; read their result again.
+        if (attempt < 2 && error instanceof Error && /changed concurrently/.test(error.message)) continue;
+        throw error;
+      }
     }
-  }
+  });
 }
 /** Inputs of {@link syncVscodeRegistration}. */
 export interface VscodeSyncOptions {
@@ -267,10 +279,16 @@ export interface VscodeRemoval { file: string; action: 'removed' | 'preserved' |
  * it, then its records. Runs from the `vscode:uninstall` hook, without the VS Code API.
  * @param home - The directory holding `~/.coagent8`.
  * @param installation - The extensions folder of the VS Code installation being uninstalled.
+ * @param leaseTimeoutMs - How long to wait for the lease a synchronizing window holds; the
+ * hook has a time limit of its own.
  * @returns One result per profile of this installation; edited entries are preserved, and
  * other installations' entries and records are left alone.
+ * @throws When the lease is not acquired within `leaseTimeoutMs`; no entry is changed then.
  */
-export function removeVscodeRegistrations(home: string, installation: string): VscodeRemoval[] {
+export async function removeVscodeRegistrations(home: string, installation: string, leaseTimeoutMs: number): Promise<VscodeRemoval[]> {
+  return withFileLock(leaseResource(home), async () => removeOwned(home, installation), leaseTimeoutMs);
+}
+function removeOwned(home: string, installation: string): VscodeRemoval[] {
   const { text: recordText, record } = readRecord(home);
   const results: VscodeRemoval[] = [];
   // A record naming no installation was written by an unreleased build before 0.6.0; it is left

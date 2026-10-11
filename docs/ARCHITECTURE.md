@@ -472,7 +472,10 @@ user-level editor settings). The windows of a profile share the entry: an
 `mcp.json` change keeps a complete entry another window recorded instead of
 writing this window's back, and an entry recorded by a newer extension version is
 never replaced by an older one, nor its runtime copy deleted, so windows running
-different builds or environments never rewrite it in turn. Ownership is the digest in
+different builds or environments never rewrite it in turn. Each synchronization
+and the uninstall cleanup run under one lease in `~/.coagent8`, so copying a
+runtime, writing the entry and record, and pruning copies are one step and no
+window prunes a copy another is registering. Ownership is the digest in
 `~/.coagent8/vscode-mcp.json`; only when no record exists does that copy's path
 shape identify the entry. A rewrite records the new digest as pending before it
 writes the entry, so an interrupted write leaves either entry the extension's
@@ -506,8 +509,10 @@ offered for removal. The `vscode:uninstall` hook removes unchanged profile
 `mcp.json` entries of its own installation (each record names the extensions
 folder of the VS Code installation that wrote it; Stable and Insiders share
 `~/.coagent8`) and other owned entries, skills and
-data and preserves shared config, sign-ins and histories; native lifecycle
-acceptance remains. Sources compare by real path, so an installer link to the
+data and preserves shared config, sign-ins and histories. VS Code stops the hook
+after five seconds, so it waits at most 1.5 s for the profile lease a window
+holds; without it the profile entries stay and the hook reports them, and the
+rest of the cleanup still runs. Native lifecycle acceptance remains. Sources compare by real path, so an installer link to the
 extension copy is that copy. Standalone removal deletes installer links, never
 their targets' other files, then emptied installer folders and their user PATH
 entries, keeping the registry value's type and unexpanded variables. An extension

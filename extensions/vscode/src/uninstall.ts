@@ -15,10 +15,17 @@ import { removeVscodeRegistrations, type VscodeRemoval } from '../../../src/inte
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { redactDiagnostic } from '../../../src/security/redaction.js';
 
+/**
+ * Longest wait for a lease another VS Code window or CoAgent8 process holds. VS Code kills
+ * the hook after five seconds; the wait leaves time for Node to start and for the rest of
+ * the cleanup, and a window holds the lease for well under a second.
+ */
+const LEASE_TIMEOUT_MS = 1500;
+
 async function main(): Promise<void> {
   let profiles: VscodeRemoval[] = [], profileError: string | undefined;
   // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
-  try { profiles = removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname))); }
+  try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), LEASE_TIMEOUT_MS); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
   const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
   const applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token });

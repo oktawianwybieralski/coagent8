@@ -221,8 +221,11 @@ async function waitForCli(title: string, found: () => boolean): Promise<boolean>
 }
 /** Workspace state: the duplicate CoAgent8 registration notice was shown in this workspace. */
 const DUPLICATE_NOTED = 'coagent8.workspaceDuplicateNoted';
-/** Registers the independent MCP provider and explicit onboarding/registration/cleanup actions. */
-export function activate(context: vscode.ExtensionContext): void {
+/**
+ * Registers the independent MCP provider and explicit onboarding/registration/cleanup actions.
+ * @returns The first synchronization of the profile entry, which VS Code awaits.
+ */
+export function activate(context: vscode.ExtensionContext): Promise<void> {
   const storage = context.globalStorageUri.fsPath;
   const location = (): StateLocation => ({ storage, home: os.homedir() });
   const changed = new vscode.EventEmitter<void>();
@@ -244,13 +247,18 @@ export function activate(context: vscode.ExtensionContext): void {
    * Keeps CoAgent8 in the profile `mcp.json`, where VS Code lists installed MCP servers. When
    * that fails, the definition provider below still offers the server.
    */
-  function syncProfile(restore = false, adopt = false): void {
-    try {
-      profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(),
-        installation: path.dirname(context.extensionPath), version, adopt, folders: folders(), restore });
-      noteWorkspaceDuplicate();
-    }
-    catch (error) { profileRegistration = undefined; showLifecycleError(error); }
+  // Synchronizations run in order, each under the lease every window shares.
+  let profileSync = Promise.resolve();
+  function syncProfile(restore = false, adopt = false): Promise<void> {
+    profileSync = profileSync.then(async () => {
+      try {
+        profileRegistration = await syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(),
+          installation: path.dirname(context.extensionPath), version, adopt, folders: folders(), restore });
+        noteWorkspaceDuplicate();
+      }
+      catch (error) { profileRegistration = undefined; showLifecycleError(error); }
+    });
+    return profileSync;
   }
   /**
    * The profile entry serves every window, so a workspace that also registers CoAgent8 lists it
@@ -262,13 +270,16 @@ export function activate(context: vscode.ExtensionContext): void {
     void context.workspaceState.update(DUPLICATE_NOTED, true);
     void vscode.window.showInformationMessage("CoAgent8 is registered in this workspace's .vscode/mcp.json and in your user MCP servers, so VS Code lists it twice. Remove one of them.");
   }
-  syncProfile();
+  const activated = syncProfile();
+  // Each listener returns its synchronization, so a caller can await the entry it writes.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('coagent8')) {
-      clearCliResolverCache(); syncProfile(); changed.fire();
-    }
+    if (!event.affectsConfiguration('coagent8')) return undefined;
+    clearCliResolverCache();
+    const synced = syncProfile();
+    changed.fire();
+    return synced;
   }));
-  context.subscriptions.push(vscode.extensions.onDidChange(() => { clearCliResolverCache(); syncProfile(); changed.fire(); }));
+  context.subscriptions.push(vscode.extensions.onDidChange(() => { clearCliResolverCache(); const synced = syncProfile(); changed.fire(); return synced; }));
   context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('coagent8', {
     onDidChangeMcpServerDefinitions: changed.event,
     provideMcpServerDefinitions() {
@@ -283,10 +294,10 @@ export function activate(context: vscode.ExtensionContext): void {
   let manualRegistration = false;
   try { manualRegistration = hasManualVscodeRegistration(storage, folders()); }
   catch (error) { showLifecycleError(error); }
-  function registrationChanged(): void {
+  async function registrationChanged(): Promise<void> {
     const declined = profileRegistration === 'declined';
     // Another window may have written the file: its complete entry is kept, not rewritten in turn.
-    syncProfile(false, true);
+    await syncProfile(false, true);
     try {
       const registered = hasManualVscodeRegistration(storage, folders());
       if (registered || manualRegistration || declined !== (profileRegistration === 'declined')) {
@@ -576,7 +587,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register('coagent8.manageMcpServers', async () => {
     if (profileRegistration === 'declined') {
       const choice = await vscode.window.showInformationMessage('CoAgent8 was removed from your MCP servers. Add it again?', 'Add CoAgent8');
-      if (choice === 'Add CoAgent8') { syncProfile(true); changed.fire(); }
+      if (choice === 'Add CoAgent8') { await syncProfile(true); changed.fire(); }
     }
     await vscode.commands.executeCommand('workbench.mcp.listServer');
   });
@@ -1111,4 +1122,5 @@ export function activate(context: vscode.ExtensionContext): void {
     if (next === 'Update CLI Chats') await connect(outdated);
   }
   void offerRegistrationUpdate().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 update check: ${redactDiagnostic(error instanceof Error ? error.message : 'Update check failed.')}`); });
+  return activated;
 }
