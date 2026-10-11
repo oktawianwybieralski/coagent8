@@ -874,6 +874,10 @@ test('at the next start a removed Antigravity extension is finished, deleting th
   assert.ok(fs.existsSync(agy), 'an extension still installed after a start was kept');
   assert.deepEqual(kept.installs, { installedExtensions: ['google.google-antigravity'] });
   assert.deepEqual(kept.state, { welcomed: true });
+  const roots = await runExtension({ home, activationOnly: true, awaitState: true, workspaceFolders: [path.join(home, 'one'), path.join(home, 'two')], storedState: { welcomed: true, removingExtensions: ['google.google-antigravity'] }, installs: { installedExtensions: ['google.google-antigravity'] } });
+  assert.deepEqual(roots.errors, [], 'a multi-root window finishes the removal too');
+  assert.equal(fs.existsSync(agy), false);
+  assert.deepEqual(roots.state, { welcomed: true });
 });
 test('Uninstall Standalone CLI inserts reviewed removal commands and leaves the record once the CLI is gone', async t => {
   const notOffered = await runExtension({ steps: [{ client: 'claude' }] });

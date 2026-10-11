@@ -411,7 +411,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     return installations.some(item => standaloneOnly(client, item));
   }
   function inventory(client: SetupClient): ClientInstallation[] {
-    const opts = options();
+    const opts = localOptions();
     return listInstallations(client, opts.home, opts.env, opts.nodePath);
   }
   /** What the menus show for one CLI. */
@@ -1104,7 +1104,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       await updateInstallList(location(), 'installedExtensions', [], [id]);
       if (!client) continue;
       // A selection of the removed copy moves to the remaining installation or is cleared.
-      const opts = options();
+      const opts = localOptions();
       if (configuredExecutable(client, opts.home, opts.env, opts.nodePath)?.found === false) {
         await setBackendExecutable(SETUP_PROVIDERS[client], inventory(client)[0]?.executable, configurationFile());
         clearCliResolverCache();
