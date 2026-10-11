@@ -123,7 +123,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          npx --no-install git-cliff --config cliff.release-notes.toml --current --strip all > release/notes.md
+          # The commits since the previous release tag. Root commits, such as GitHub's "Initial
+          # commit" that the first release reaches, are no Conventional Commits: skip every one.
+          skips=()
+          for root in $(git rev-list --max-parents=0 "$GITHUB_SHA"); do skips+=(--skip-commit "$root"); done
+          npx --no-install git-cliff --config cliff.release-notes.toml --current "${skips[@]}" --strip all > release/notes.md
           {
             echo
             echo "## Artifacts"
