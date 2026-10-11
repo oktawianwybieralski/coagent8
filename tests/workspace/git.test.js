@@ -60,12 +60,21 @@ test('collectGitScope names the reason when Git refuses the repository or there 
       && /Review needs a Git repository/.test(err.message) && /not a git repository/i.test(err.message) && !/cached/.test(err.message));
   }
   // Git's own test switch reproduces a repository owned by another account (dubious ownership).
-  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+  // CI runners trust every directory (safe.directory=*) in their system or global Git
+  // configuration, which skips the ownership check, so neither is read here.
+  const emptyConfig = path.join(root, 'empty.gitconfig');
+  fs.writeFileSync(emptyConfig, '');
+  const isolated = { GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: emptyConfig };
+  const saved = Object.fromEntries(Object.keys(isolated).map(key => [key, process.env[key]]));
+  Object.assign(process.env, isolated);
   try {
     await assert.rejects(collectGitScope('staged', repo), err => err instanceof ToolError && err.code === 'INPUT_LIMIT'
       && /dubious ownership/.test(err.message) && !/cached/.test(err.message));
   } finally {
-    delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
   assert.equal((await collectGitScope('staged', repo)).type, 'staged');
 });
