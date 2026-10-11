@@ -2118,6 +2118,93 @@ request (2026-10-11); it has no remote branch yet (REPO-002 owner step 5).
   GitHub and anything on npm stay owner actions.
   Evidence: [REPO-003a](HANDOFF.md#repo-003a-one-numeric-version).
 
+## FEEDBACK-060: findings of the 0.6.0 native acceptance
+
+Native acceptance on 2026-10-11: an isolated VS Code instance
+(`--user-data-dir`/`--extensions-dir`) with the VSIX of CI run 38173983280
+(head `ef4d7cc`, files identical to the VSIX), driven by Claude Code, Codex and
+Antigravity agents against the cheapest model of each backend, plus the owner's
+own use. Evidence: [HANDOFF](HANDOFF.md#feedback-060-native-acceptance-of-060).
+PASS: consult on every backend, review findings and READY after fixes,
+continuation, history and paging, close, issue drafts, workspace isolation,
+cancel of a running Codex and agy turn, no home paths in answers.
+
+### Before 0.6.0 (on `release/v0.6.0`)
+
+- [ ] **FEEDBACK-060a - review in a repository Git refuses.** In a repository
+  owned by another account (here the Codex sandbox user `CodexSandboxOnline`)
+  Git reports dubious ownership and treats the folder as no repository, so
+  `git diff --cached` fails with `unknown option 'cached'` and `review` returns
+  that as `PROCESS_ERROR`. Start: `collectGitScope` in `src/workspace/git.ts`.
+  Check the repository first and return Git's own reason as a clear error;
+  never change `safe.directory`. Check: a fixture reproducing the refusal, the
+  error names the cause.
+- [ ] **FEEDBACK-060b - Uninstall opens the extension page.** Manage Coding CLIs
+  > Uninstall of a vendor extension runs `workbench.extensions.search` with the
+  extension ID, so the Extensions view shows a search instead of the extension.
+  Open its page (`extension.open`) where VS Code's own Uninstall and Restart
+  Extensions are. Start: `uninstallExtension` in `extensions/vscode/src/extension.ts`
+  and its test in `tests/integrations/vscode-extension.test.js`. Check: the test
+  and the native case in an isolated instance.
+
+### After 0.6.0 (fix-only preview, then the documentation cleanup)
+
+Each card is its own PR into `develop`; the batch ships as the next fix-only
+preview (version: owner decision, see below).
+
+- [ ] **FEEDBACK-060c - models view right after a CLI appears.** `doctor` scope
+  `models` reported `agy: not installed` while `health` seconds later found agy
+  1.3.3 and consult worked; agy had been installed through its VS Code extension
+  minutes earlier. The models view probes (`probeBackend`, not fresh), so first
+  reproduce: when the CLI resolves, what the probe cache and resolver held. A
+  client choosing from the models view never offers agy meanwhile.
+- [ ] **FEEDBACK-060d - review reasons for untracked binaries.** An untracked
+  `.pyc` made the footer add "Review workspace or input changed during the turn"
+  besides the correct "input is incomplete". Name only the true reasons.
+- [ ] **FEEDBACK-060e - closed sessions.** `consult` with a closed handle ends
+  with "(finished, no history)" although its history stays readable; `cancel`
+  of a closed session says "no running turn" instead of "closed".
+- [ ] **FEEDBACK-060f - session tool details.** `session list` ignores `limit`
+  (it applies to `history` only: document it or page the list); history
+  `sequence` gaps look like lost events (document filtering or number the
+  public events); `activePid` is the server's PID, not the CLI's; the footer
+  of a repeated, unchanged review lacks `session_handle`.
+- [ ] **FEEDBACK-060g - issue report format.** The Codex version renders as
+  `vcodex-cli 0.162...`; the "Detected CLIs" list is not nested; say what
+  `include_doctor` attaches (versions only, no readiness or quota).
+- [ ] **FEEDBACK-060h - cancel acceptance for Claude.** Cancel of a running
+  Claude turn stayed inconclusive (the turn ended first). Add a fixture or a
+  two-client native case with a long turn.
+- [ ] **FEEDBACK-060i - VSIX users and the `coagent8` command.** Skills and
+  messages name `coagent8 status`/`repair`, which a VSIX-only installation does
+  not put on PATH; lead with the VS Code command there.
+- [ ] **FEEDBACK-060j - test credentials that trip push protection.** Synthetic
+  Stripe and Slack keys in `tests/security/redaction.test.js` and
+  `tests/sessions/history.test.js` were allowed once on GitHub; build them at
+  run time so new pushes are not blocked.
+
+### DOCS-002: documentation cleanup after 0.6.0
+
+The active documents carry history that Git already keeps. One PR per document,
+each checked against the 0.6.0 behavior; prose-only checks per rule 04.
+
+- [ ] **DOCS-002a - ROADMAP.** Keep only open work, decisions still in force and
+  acceptance; remove completed cards, superseded beta.1/beta.2 paths, the
+  REPO-002 migration once its owner steps are done, and stale status
+  ("unaccepted candidate", Node 20/22, `main`).
+- [ ] **DOCS-002b - HANDOFF.** Reduce to the current state and the latest
+  evidence; older session evidence stays in Git history.
+- [ ] **DOCS-002c - ARCHITECTURE.** Verify contracts against the 0.6.0 code;
+  keep the decision log, drop descriptions of removed mechanisms.
+- [ ] **DOCS-002d - README and extension README.** Install and first use from
+  the published 0.6.0 packages; known limitations from the release notes.
+- [ ] **DOCS-002e - rules and skills.** Remove references to retired branches,
+  versions and procedures; keep AGENTS.md as the index.
+
+Versioning of the fix-only preview (owner decision pending): rule 02 raises the
+minor for every preview, which makes it `0.7.0` and moves beta.3 to `0.8.0`;
+alternatively a patch `0.6.1` keeps the planned stage numbers.
+
 ## Release acceptance
 
 Stage names stay; each stage ships as the next minor below 1.0.0

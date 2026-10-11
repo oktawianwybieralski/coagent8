@@ -8,6 +8,25 @@ Updated 2026-10-11. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## FEEDBACK-060 native acceptance of 0.6.0
+
+2026-10-11, Windows 11 10.0.26200, Node v26.10.0, isolated VS Code instance
+(`--user-data-dir`/`--extensions-dir`) with the VSIX from CI run 38173983280
+(`extension.cjs` and `uninstall.cjs` SHA-256 equal to the downloaded VSIX).
+Backends: codex-cli 0.162.0-alpha.17.2, Claude Code 2.1.296, agy 1.3.3. Three
+agents (Claude Code, Codex, Antigravity) called every tool on the cheapest
+model per backend (`gpt-6-luna`, `claude-haiku-5-5`, `gpt-oss-120b`).
+
+- PASS: consult on all three (13524), review found both seeded defects and
+  returned READY after the fixes, an unchanged repeat started no turn,
+  continuation kept context, history paging, close, issue drafts, workspace
+  isolation, cancel of a running Codex and agy turn.
+- FAIL/NOTE: findings and their split before/after 0.6.0 are the
+  [FEEDBACK-060 cards](ROADMAP.md#feedback-060-findings-of-the-060-native-acceptance).
+  Reproduced locally: `git diff --cached` in a repository owned by
+  `CodexSandboxOnline` prints dubious ownership, then `unknown option 'cached'`.
+- NOT_RUN: cancel of a running Claude turn (inconclusive), `delete_history`.
+
 ## REPO-002 first release path (2026-10-11)
 
 GitHub state checked read-only and owner decisions for 0.6.0 recorded in
