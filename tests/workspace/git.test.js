@@ -47,6 +47,29 @@ test('collectGitScope resolves staged scope', async () => {
   assert.ok(typeof scope.diff === 'string');
 });
 
+test('collectGitScope names the reason when Git refuses the repository or there is none (FEEDBACK-060a)', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-refused-repo-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const plain = path.join(root, 'plain');
+  const repo = path.join(root, 'repo');
+  fs.mkdirSync(plain);
+  fs.mkdirSync(repo);
+  execFileSync('git', ['init', '-q'], { cwd: repo, windowsHide: true });
+  for (const scope of ['staged', 'uncommitted']) {
+    await assert.rejects(collectGitScope(scope, plain), err => err instanceof ToolError && err.code === 'INPUT_LIMIT'
+      && /Review needs a Git repository/.test(err.message) && /not a git repository/i.test(err.message) && !/cached/.test(err.message));
+  }
+  // Git's own test switch reproduces a repository owned by another account (dubious ownership).
+  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+  try {
+    await assert.rejects(collectGitScope('staged', repo), err => err instanceof ToolError && err.code === 'INPUT_LIMIT'
+      && /dubious ownership/.test(err.message) && !/cached/.test(err.message));
+  } finally {
+    delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER;
+  }
+  assert.equal((await collectGitScope('staged', repo)).type, 'staged');
+});
+
 test('collectGitScope excludes dist/**, *.map, and lockfiles from diff and untracked discovery', async () => {
   assert.ok(GIT_DIFF_PATHSPEC_EXCLUSIONS.includes(':(exclude)dist/**'));
   assert.ok(GIT_DIFF_PATHSPEC_EXCLUSIONS.includes(':(exclude)*.map'));

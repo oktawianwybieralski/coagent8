@@ -228,6 +228,16 @@ export async function collectGitScope(
     throw new Error('Validation Error: scope cannot start with a dash or flag.');
   }
 
+  // Outside a repository, or in one Git refuses (dubious ownership), `git diff` falls back to
+  // `--no-index` and rejects `--cached`. Report Git's own reason instead of that symptom.
+  try {
+    await git(['rev-parse', '--git-dir']);
+  } catch (err) {
+    if (err instanceof ToolError) throw err;
+    const reason = (err as Error).message.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? 'git rev-parse failed';
+    throw new ToolError('INPUT_LIMIT', `Review needs a Git repository that Git accepts in this workspace. Git: ${reason}`);
+  }
+
   // 1. Uncommitted working changes (Default: staged + unstaged + untracked)
   if (scope === 'uncommitted' || scope === 'working' || scope === 'all') {
     let hasHead = true;
