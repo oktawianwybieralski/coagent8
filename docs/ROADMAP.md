@@ -1880,8 +1880,8 @@ unpublished instead of deprecated (step 8); this replaces the beta.1 parts of th
    `main` (after step 2 removed it from the ruleset).
 4. **beta.1:** nothing on GitHub. The local tag `v1.0.0-beta.1` (commit X) is
    not pushed; deleting it locally is the owner's choice.
-5. **beta.2 PR (0.6.0):** rename the local branch `release/v1.0.0-beta.2` to
-   `release/v0.6.0` (REPO-003; agents do not rename it), push it (its
+5. **beta.2 PR (0.6.0):** push `release/v0.6.0` (the local branch formerly
+   `release/v1.0.0-beta.2`, renamed on the owner's request, REPO-003; its
    CHANGELOG.md is final; the pre-push regeneration cannot run before tag
    `v0.6.0` exists and is skipped for this branch only), open the PR into
    `develop` titled `chore(release): v0.6.0` with the prepared notes; the six CI
@@ -1936,8 +1936,8 @@ pre-release, npm `next`):
 
 The withdrawal of the npm placeholder is REPO-002 owner step 8; npm never reuses
 a published version number, so the new numbers do not collide with it. The local
-branch `release/v1.0.0-beta.2` keeps its name until the owner renames it to
-`release/v0.6.0` (REPO-002 owner step 5).
+branch `release/v1.0.0-beta.2` was renamed `release/v0.6.0` on the owner's
+request (2026-10-11); it has no remote branch yet (REPO-002 owner step 5).
 
 - [x] **REPO-003a - versions and release rules.** Start: `package.json`,
   `extensions/vscode/package.json`, `scripts/build-vscode.cjs`,

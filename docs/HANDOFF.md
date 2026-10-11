@@ -12,8 +12,9 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 Owner decision 2026-10-11: previews start at 0.5, so the beta.2 candidate is
 `0.6.0`. Card: [REPO-003](ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags).
-Done locally on `release/v1.0.0-beta.2` (no branch rename, tag, push or npm
-action):
+Done locally on `release/v1.0.0-beta.2`, which was then renamed `release/v0.6.0`
+on the owner's request (`git branch -m`; no upstream existed). No tag, push or
+npm action:
 
 - `package.json`, `package-lock.json`, `plugin.json` and
   `extensions/vscode/package.json` carry `0.6.0`; the changelog scripts start at
