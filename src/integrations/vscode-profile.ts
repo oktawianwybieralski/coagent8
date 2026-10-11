@@ -99,17 +99,27 @@ const mentionsCoagent = ([name, entry]: [string, unknown]) => /coagent8/i.test(n
  * @remarks No other editor profile or machine is read or changed.
  */
 export function hasManualVscodeRegistration(storagePath: string, folders: string[]): boolean {
-  const files = [profileMcpFile(storagePath), ...folders.map(folder => path.join(folder, '.vscode', 'mcp.json'))];
-  for (const file of files) {
-    if (!fs.existsSync(file)) continue;
-    const errors: ParseError[] = [];
-    const value: unknown = parse(readBoundedFileSync(file, 512 * 1024), errors, { allowTrailingComma: true });
-    if (errors.length) throw new Error('Existing VS Code MCP configuration is malformed; preserve it before setup.');
-    const servers = object(value).servers;
-    if (servers === undefined) continue;
-    if (Object.entries(object(servers)).some(mentionsCoagent)) return true;
-  }
-  return false;
+  return [profileMcpFile(storagePath), ...workspaceMcpFiles(folders)].some(fileProvidesCoagent);
+}
+/**
+ * Detects CoAgent8 definitions in the workspace's `.vscode/mcp.json` files, which VS Code
+ * lists beside the profile's entry as a separate server.
+ * @param folders - Workspace folder paths on the current extension host.
+ * @throws When an existing MCP file is malformed or unreadable; preserve it.
+ */
+export function hasWorkspaceVscodeRegistration(folders: string[]): boolean {
+  return workspaceMcpFiles(folders).some(fileProvidesCoagent);
+}
+function workspaceMcpFiles(folders: string[]): string[] {
+  return folders.map(folder => path.join(folder, '.vscode', 'mcp.json'));
+}
+function fileProvidesCoagent(file: string): boolean {
+  if (!fs.existsSync(file)) return false;
+  const errors: ParseError[] = [];
+  const value: unknown = parse(readBoundedFileSync(file, 512 * 1024), errors, { allowTrailingComma: true });
+  if (errors.length) throw new Error('Existing VS Code MCP configuration is malformed; preserve it before setup.');
+  const servers = object(value).servers;
+  return servers !== undefined && Object.entries(object(servers)).some(mentionsCoagent);
 }
 
 /** Copies the bundle to `<storage>/runtime/<sha256>/index.cjs` once and returns the copy. */
@@ -140,11 +150,15 @@ function pruneRuntimes(storagePath: string, keep: string): void {
  * Keeps the extension's CoAgent8 entry in its profile `mcp.json` equal to `server`.
  * @param options - `storagePath`, the extension's global storage in this profile; `bundle`,
  * the runtime bundle shipped with the running extension; `home`, the directory holding
- * `~/.coagent8`; `restore`, which adds the entry again after the user removed it.
+ * `~/.coagent8`; `folders`, the window's workspace folders; `restore`, which adds the entry
+ * again after the user removed it or while a workspace provides CoAgent8.
+ * @remarks The entry serves every window of the profile, so it is not added while this
+ * window's workspace registers CoAgent8 (VS Code would list both), and never removed for it:
+ * windows of other workspaces would add it back.
  * @throws When the profile `mcp.json` or the ownership record is malformed or unreadable,
  * or when another process keeps changing them.
  */
-export function syncVscodeRegistration(options: { storagePath: string; bundle: string; server: VscodeServer; home: string; restore?: boolean }): VscodeRegistration {
+export function syncVscodeRegistration(options: VscodeSyncOptions): VscodeRegistration {
   for (let attempt = 0; ; attempt++) {
     try { return syncOnce(options); }
     catch (error) {
@@ -154,7 +168,9 @@ export function syncVscodeRegistration(options: { storagePath: string; bundle: s
     }
   }
 }
-function syncOnce({ storagePath, bundle, server, home, restore = false }: { storagePath: string; bundle: string; server: VscodeServer; home: string; restore?: boolean }): VscodeRegistration {
+/** Inputs of {@link syncVscodeRegistration}. */
+export interface VscodeSyncOptions { storagePath: string; bundle: string; server: VscodeServer; home: string; folders?: string[]; restore?: boolean }
+function syncOnce({ storagePath, bundle, server, home, folders = [], restore = false }: VscodeSyncOptions): VscodeRegistration {
   const file = profileMcpFile(storagePath);
   const { text: recordText, record } = readRecord(home);
   const text = read(file);
@@ -176,6 +192,8 @@ function syncOnce({ storagePath, bundle, server, home, restore = false }: { stor
     if (!('declined' in recorded)) writeRecord(home, recordText, { ...record, [file]: { declined: true } });
     return 'declined';
   }
+  // This window's workspace provides CoAgent8; nothing is recorded, so other windows add the entry.
+  if (!restore && current === undefined && hasWorkspaceVscodeRegistration(folders)) return 'manual';
   const runtime = runtimeCopy(storagePath, bundle);
   const desired = { type: 'stdio', command: server.command, args: [runtime], env: server.env };
   if (ours && JSON.stringify(current) === JSON.stringify(desired)) {

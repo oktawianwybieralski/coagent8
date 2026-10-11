@@ -12,7 +12,7 @@ import { runCommand } from '../../../src/execution/process.js';
 import type { ModelReport } from '../../../src/diagnostics/doctor.js';
 import type { ModelCandidate } from '../../../src/models/selection.js';
 import type { ConsentBasis, ProviderId } from '../../../src/contracts/index.js';
-import { hasManualVscodeRegistration, syncVscodeRegistration, type VscodeRegistration, type VscodeServer } from '../../../src/integrations/vscode-profile.js';
+import { hasManualVscodeRegistration, hasWorkspaceVscodeRegistration, syncVscodeRegistration, type VscodeRegistration, type VscodeServer } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
 import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js';
@@ -219,6 +219,8 @@ async function waitForCli(title: string, found: () => boolean): Promise<boolean>
     return false;
   });
 }
+/** Workspace state: the duplicate CoAgent8 registration notice was shown in this workspace. */
+const DUPLICATE_NOTED = 'coagent8.workspaceDuplicateNoted';
 /** Registers the independent MCP provider and explicit onboarding/registration/cleanup actions. */
 export function activate(context: vscode.ExtensionContext): void {
   const storage = context.globalStorageUri.fsPath;
@@ -243,8 +245,21 @@ export function activate(context: vscode.ExtensionContext): void {
    * that fails, the definition provider below still offers the server.
    */
   function syncProfile(restore = false): void {
-    try { profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(), restore }); }
+    try {
+      profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(), folders: folders(), restore });
+      noteWorkspaceDuplicate();
+    }
     catch (error) { profileRegistration = undefined; showLifecycleError(error); }
+  }
+  /**
+   * The profile entry serves every window, so a workspace that also registers CoAgent8 lists it
+   * twice; the user chooses which to keep. Said once per workspace.
+   */
+  function noteWorkspaceDuplicate(): void {
+    if (profileRegistration !== 'registered' && profileRegistration !== 'current') return;
+    if (context.workspaceState.get<boolean>(DUPLICATE_NOTED) || !hasWorkspaceVscodeRegistration(folders())) return;
+    void context.workspaceState.update(DUPLICATE_NOTED, true);
+    void vscode.window.showInformationMessage("CoAgent8 is registered in this workspace's .vscode/mcp.json and in your user MCP servers, so VS Code lists it twice. Remove one of them.");
   }
   syncProfile();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {

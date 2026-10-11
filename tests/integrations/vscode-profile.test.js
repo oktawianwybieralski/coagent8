@@ -149,6 +149,23 @@ test('an edit or removal racing a rewrite stays the user\'s when synchronization
   }
 });
 
+test('a workspace that registers CoAgent8 gets no second profile entry; an existing one is kept for the other windows', t => {
+  const p = profile(t);
+  const workspace = path.join(p.root, 'workspace');
+  fs.mkdirSync(path.join(workspace, '.vscode'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, '.vscode/mcp.json'), JSON.stringify({ servers: { coagent8: { command: 'node', args: ['C:/tools/coagent8/index.cjs'] } } }));
+  const record = path.join(p.home, '.coagent8/vscode-mcp.json');
+  assert.equal(p.sync({ folders: [workspace] }), 'manual', 'the workspace provides CoAgent8');
+  assert.equal(fs.existsSync(p.file), false, 'no profile entry duplicates it');
+  assert.equal(fs.existsSync(record), false, 'nothing is recorded, so another window still adds the entry');
+  assert.equal(p.sync({ folders: [workspace], restore: true }), 'registered', 'a restore the user asked for adds it');
+  // The profile entry serves every window of the profile; one workspace never removes it.
+  const text = fs.readFileSync(p.file, 'utf8');
+  assert.equal(p.sync({ folders: [workspace] }), 'current');
+  assert.equal(fs.readFileSync(p.file, 'utf8'), text);
+  assert.equal(p.sync({ folders: [] }), 'current', 'and windows without one keep it');
+});
+
 test('an entry the user removed in VS Code stays removed until restored', t => {
   const p = profile(t);
   p.sync();

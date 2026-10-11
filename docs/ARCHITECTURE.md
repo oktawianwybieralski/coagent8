@@ -476,7 +476,12 @@ and an edit or removal racing it the user's. An edited entry, even one still
 starting the copy, or
 another CoAgent8 entry in the profile is the user's and suppresses the
 extension's; an entry the user removed in VS Code is not added back until
-**Show MCP Servers** restores it on request. The definition provider stays as the
+**Show MCP Servers** restores it on request. VS Code lists a workspace
+`.vscode/mcp.json` server beside the profile's (collections are keyed by file,
+not by name), so the entry is not added while the window's workspace registers
+CoAgent8; an existing entry serves the profile's other windows and is never
+removed for one workspace, which would make windows rewrite it in turn. The
+window then says once per workspace that VS Code lists CoAgent8 twice. The definition provider stays as the
 fallback when the entry cannot be kept and steps aside while any `mcp.json`
 entry or a removal provides CoAgent8. **Manage Coding CLIs** (CLIMGMT-001) lists the three CLIs; each CLI's
 menu handles its installations, installation, login, registration, skills and
