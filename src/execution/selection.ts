@@ -23,6 +23,7 @@ import {
   type PriceConstraint,
 } from '../models/selection.js';
 import type { AdapterProbeResult, ModelCatalog, BackendReadContext } from '../backends/types.js';
+import type { EffortRun } from '../contracts/models.js';
 
 export type { ModelSelection, ModelSource, PriceConstraint };
 
@@ -121,6 +122,11 @@ export async function selectModel(
   const catalog = await getCatalog();
   // A limit needs current prices of every model it may choose from.
   const prices = await readPrices({ current: true, models: [...catalogNames(catalog), ...(fallback ? [fallback.model] : [])] });
-  return choosePricedModel(id, catalog, fallback, options.constraint, prices, configObj.governance.models.deny);
+  return choosePricedModel(id, catalog, fallback, options.constraint, prices, configObj.governance.models.deny, adapterRegistry[id]?.effortReplacesModelSuffix === true);
+}
+
+/** How a turn on backend `id` applies a separately passed reasoning effort, for the user's model rules. */
+export function effortRun(id: ProviderId, effort: string | undefined): EffortRun {
+  return { effort, replacesSuffix: adapterRegistry[id]?.effortReplacesModelSuffix === true };
 }
 

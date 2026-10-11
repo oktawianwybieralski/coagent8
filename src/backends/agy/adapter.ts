@@ -440,5 +440,6 @@ export async function inheritedTools(context?: BackendReadContext): Promise<Inhe
   return { mcpServers: parseAgyMcpList(res.stdout), plugins };
 }
 
-export const agyAdapter: CliAdapter = { id, name, probe, execute, inspectQuota, listModels, inheritedTools };
+// `resolveModelAndEffort` drops a model's effort suffix when an effort is passed separately.
+export const agyAdapter: CliAdapter = { id, name, effortReplacesModelSuffix: true, probe, execute, inspectQuota, listModels, inheritedTools };
 export default agyAdapter;

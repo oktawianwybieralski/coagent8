@@ -11,6 +11,7 @@
 
 import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget } from '../contracts/index.js';
 import type { BackendReadContext } from '../backends/types.js';
+import { effortVariant } from '../contracts/models.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import { getSession, isBudgetExpired } from '../sessions/session.js';
 import { combineSignals } from '../storage/lock.js';
@@ -18,7 +19,7 @@ import type { SessionRecord } from '../sessions/types.js';
 import { assertNotNestedTurn } from './nested-turn.js';
 import { loadConfigSnapshot, rememberApprovedModel, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import { resolveBackend, resolveBackendForModel, type ResolvedBackend } from './routing.js';
-import { selectModel, type ModelSelection, type PriceConstraint } from './selection.js';
+import { effortRun, selectModel, type ModelSelection, type PriceConstraint } from './selection.js';
 import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../models/catalog.js';
 import { checkPriceLimit, findPrice, priceEvidence, readPrices } from '../models/prices.js';
@@ -290,17 +291,20 @@ export async function prepareTask(
       'model selection'
     );
   }
-  const model = selection.model;
-
   assertNotCancelledOrExpired('model selection');
-
-  // The user's deny list is final: no catalog read, price check or approval request follows.
-  if (findModelRule(model, configSnapshot.config.governance.models) === 'deny') {
-    throw new ToolError('POLICY_DENIED', modelDeniedMessage(model));
-  }
 
   // A continuation keeps its session's selection: the effort follows the model it was chosen for.
   const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previousSession?.model ? previousSession?.reasoningEffort : undefined);
+  const run = effortRun(backend.id, reasoningEffort);
+  // A CLI that replaces effort suffixes (agy) runs the passed effort's variant: the rules, the
+  // approval, a remembered approval, the price and the session name that variant.
+  const model = run.replacesSuffix && run.effort !== undefined ? effortVariant(selection.model, run.effort) : selection.model;
+
+  // The user's deny list is final: no catalog read, price check or approval request follows.
+  // The rules see the effort too, which makes the turn run an effort variant.
+  if (findModelRule(model, configSnapshot.config.governance.models, run) === 'deny') {
+    throw new ToolError('POLICY_DENIED', modelDeniedMessage(model, run));
+  }
 
   // An explicit model or effort is checked against the CLI's own catalog before the user is
   // asked for consent and before a model call.
@@ -309,7 +313,7 @@ export async function prepareTask(
       readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog, context: readContext }),
       'reading model catalog'
     );
-    const rejected = checkModelSelection(backend.id, catalog, model, args.reasoning_effort);
+    const rejected = checkModelSelection(backend.id, catalog, selection.model, args.reasoning_effort);
     if (rejected) throw new ToolError(rejected.code, rejected.message);
     assertNotCancelledOrExpired('reading model catalog');
   }
@@ -400,7 +404,8 @@ export async function prepareTask(
       model,
       defaultModel ?? undefined,
       initialPrices,
-      configSnapshot.config.governance
+      configSnapshot.config.governance,
+      run
     );
     const consentWarnings: string[] = [];
 
@@ -408,7 +413,7 @@ export async function prepareTask(
 
     let userRememberRequested = false;
 
-    if (decision.deny) throw new ToolError('POLICY_DENIED', modelDeniedMessage(model));
+    if (decision.deny) throw new ToolError('POLICY_DENIED', modelDeniedMessage(model, run));
     if (decision.ask) {
       if (!consentOptions.askConsent) {
         throw new ToolError('POLICY_DENIED', consentRequiredMessage(model, decision.reason));
@@ -508,6 +513,7 @@ export async function prepareTask(
         outputPriceBelow: below,
         choosing: Boolean(choosing),
         continuing: Boolean(previousSession),
+        effortRun: run,
         context: readContext,
       }),
       'consent revalidation',

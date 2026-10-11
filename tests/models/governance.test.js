@@ -163,3 +163,19 @@ test('resolveWorkspacePath validates directories strictly', () => {
     resolveWorkspacePath('C:\\path\\that\\definitely\\does\\not\\exist_12345');
   }, /does not exist/);
 });
+
+test('a rule sees the effort variant a turn runs, as each CLI applies a separately passed effort', () => {
+  const { findModelRule } = require('../../src/models/governance.ts');
+  const rules = (lists) => ({ allow: [], ask: [], deny: [], ...lists });
+  // Codex and Claude run the model as named, with the effort beside it.
+  assert.equal(findModelRule('gpt-x', rules({ deny: ['gpt-x-high'] }), { effort: 'high' }), 'deny');
+  assert.equal(findModelRule('gpt-x', rules({ deny: ['gpt-x-high'] }), { effort: 'low' }), undefined);
+  assert.equal(findModelRule('custom-low', rules({ allow: ['custom-high'] }), { effort: 'high' }), undefined, 'a rule for another model never applies');
+  assert.equal(findModelRule('gpt-x-high', rules({ deny: ['gpt-x'] }), { effort: 'low' }), 'deny', 'an id still covers its variants');
+  // agy drops the model's effort suffix and runs the variant of the passed effort.
+  const agy = effort => ({ effort, replacesSuffix: true });
+  assert.equal(findModelRule('gemini-3.8-flash-low', rules({ deny: ['gemini-3.8-flash-high'] }), agy('high')), 'deny');
+  assert.equal(findModelRule('gemini-3.8-flash-low', rules({ allow: ['gemini-3.8-flash-low'] }), agy('high')), undefined, 'the variant it no longer runs is not approved');
+  assert.equal(findModelRule('gemini-3.8-flash-low', rules({ deny: ['gemini-3.8-flash'] }), agy('high')), 'deny');
+  assert.equal(findModelRule('gemini-3.8-flash-low', rules({ ask: ['gemini-3.8-flash-low'] })), 'ask', 'without an effort the model runs as named');
+});

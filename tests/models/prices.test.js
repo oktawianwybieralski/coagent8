@@ -105,6 +105,16 @@ test('auto under a limit keeps a qualifying default, else takes the highest-pric
   assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5, effort: 'max' }, list), { code: 'PRICE_LIMIT', message: /accepting reasoning_effort 'max'/ });
 });
 
+test('a denied effort variant is never chosen when the call passes that effort separately', () => {
+  const sol = { model: 'gpt-6-sol', source: 'catalog' };
+  assert.deepEqual(choosePricedModel('codex', codexCatalog, sol, { below: 20, effort: 'high' }, list, ['gpt-6-sol-high']), { model: 'gpt-5.6-luna', source: 'price-limit' }, 'the default runs as the denied variant');
+  assert.deepEqual(choosePricedModel('codex', codexCatalog, sol, { below: 5, effort: 'high' }, list, ['gpt-5.6-luna-high']), { model: 'gpt-6-luna', source: 'price-limit' });
+  assert.deepEqual(choosePricedModel('codex', codexCatalog, sol, { below: 5, effort: 'low' }, list, ['gpt-5.6-luna-high']), { model: 'gpt-5.6-luna', source: 'price-limit' }, 'another effort of the model is not denied');
+  const agy = { source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
+  assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5, effort: 'LOW' }, list, ['gemini-3.8-flash-low'], true), { code: 'PRICE_LIMIT' });
+  assert.throws(() => choosePricedModel('agy', agy, { model: 'gemini-3.8-flash-high', source: 'catalog' }, { below: 5, effort: 'low' }, list, ['gemini-3.8-flash-low'], true), { code: 'PRICE_LIMIT' }, 'agy runs a default variant with another effort as that other variant');
+});
+
 test('no qualifying model is a PRICE_LIMIT error with the reasons, never a substitute', () => {
   assert.throws(() => choosePricedModel('codex', codexCatalog, { model: 'gpt-6-sol', source: 'catalog' }, { below: 0.5 }, list),
     { code: 'PRICE_LIMIT', message: /^No codex model has a verified price below 0\.5 USD per million output tokens\. Default: 'gpt-6-sol' costs 10 USD.*None of its 5 listed models has a verified price below the limit; doctor lists their prices\.$/ });

@@ -49,6 +49,37 @@ export function namesModelOrVariant(listed: string, model: string): boolean {
   return (REASONING_EFFORTS as readonly string[]).includes(model.slice(listed.length + 1).toLowerCase());
 }
 
+/** How a turn runs its model with a reasoning effort passed separately, as the user's rules see it. */
+export interface EffortRun {
+  /** The reasoning effort passed separately from the model. */
+  effort?: string;
+  /**
+   * The CLI drops an effort suffix of the model and runs the variant of `effort`: agy runs
+   * `gemini-3.8-flash-low` with `high` as `gemini-3.8-flash-high`. Other CLIs run the model
+   * as named, with the effort beside it.
+   */
+  replacesSuffix?: boolean;
+}
+
+/**
+ * Returns whether `listed` names what a turn of `model` runs: the model itself, or, with an
+ * effort passed separately, the variant of that effort. When the CLI replaces the model's
+ * effort suffix, only the variant it runs counts.
+ */
+export function namesModelRun(listed: string, model: string, run: EffortRun = {}): boolean {
+  const effort = run.effort?.toLowerCase();
+  if (effort === undefined) return namesModelOrVariant(listed, model);
+  if (!run.replacesSuffix) return namesModelOrVariant(listed, model) || namesModelOrVariant(listed, `${model}-${effort}`);
+  return namesModelOrVariant(listed, effortVariant(model, effort));
+}
+
+/** The variant of `effort` a CLI that replaces effort suffixes runs for `model`: `<id>-<effort>`. */
+export function effortVariant(model: string, effort: string): string {
+  const suffix = model.lastIndexOf('-');
+  const id = suffix > 0 && (REASONING_EFFORTS as readonly string[]).includes(model.slice(suffix + 1).toLowerCase()) ? model.slice(0, suffix) : model;
+  return `${id}-${effort.toLowerCase()}`;
+}
+
 /** Model identifier pattern from the audit; rejects option-like and whitespace values. */
 const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
 

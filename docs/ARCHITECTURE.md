@@ -247,7 +247,11 @@ Consent is evaluated for the concrete model on every turn:
    convention: deny never runs the model, ask requires approval every turn
    whatever it costs, allow runs it without asking (the user's standing approval);
    deny wins over ask and ask over allow. An entry naming an id also covers its
-   effort variants (<id>-<effort>). A denied model is refused with POLICY_DENIED
+   effort variants (<id>-<effort>); an entry naming a variant also applies when
+   the call or its session passes that effort as reasoning_effort, in the deny
+   check, the approval, its revalidation and price-limit choice. agy drops a
+   model's own effort suffix and runs the passed effort's variant, so its rules
+   see only that variant; Codex and Claude run the model as named. A denied model is refused with POLICY_DENIED
    and the list as the reason, before any catalog read or approval request; a
    price limit never chooses one. Every reason states the known price.
 2. Missing list, missing price or approximate match requires approval, with an

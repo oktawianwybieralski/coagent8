@@ -9,7 +9,7 @@
  */
 import { ToolError } from '../contracts/error.js';
 import type { ProviderId } from '../contracts/provider.js';
-import { namesModelOrVariant, type CatalogModel, type ModelCatalog } from '../contracts/models.js';
+import { namesModelRun, type CatalogModel, type ModelCatalog } from '../contracts/models.js';
 import { findCatalogEntry } from './catalog.js';
 import { checkPriceLimit, priceEvidence, type PriceEvidence, type PriceList } from './prices.js';
 import { decideConsent, type ConsentBasis, type GovernanceSettings } from './governance.js';
@@ -65,13 +65,15 @@ export function catalogNames(catalog: ModelCatalog | undefined): string[] {
  * @param constraint - The limit and the call's effort.
  * @param prices - The price list the limit is checked against; undefined when none could be read.
  * @param denied - The user's `governance.models.deny` list.
+ * @param replacesSuffix - The CLI replaces a model's effort suffix with the call's effort (`EffortRun`).
  * @throws `PRICE_LIMIT` stating why neither the default nor a catalog model meets the limit.
  */
-export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint, prices: PriceList | undefined, denied: readonly string[] = []): ModelSelection {
+export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint, prices: PriceList | undefined, denied: readonly string[] = [], replacesSuffix = false): ModelSelection {
   const { below } = constraint;
   const effort = constraint.effort?.toLowerCase();
   const accepts = (entry: CatalogModel | undefined) => !effort || !entry || entry.efforts.includes(effort);
-  const isDenied = (model: string) => denied.some(listed => namesModelOrVariant(listed, model));
+  // The turn passes the call's effort separately, so a denied variant of that effort is denied too.
+  const isDenied = (model: string) => denied.some(listed => namesModelRun(listed, model, { effort, replacesSuffix }));
   const defaultReason = fallback ? checkPriceLimit(fallback.model, priceEvidence(prices, fallback.model), below) : undefined;
   const defaultEntry = fallback && catalog ? findCatalogEntry(catalog, fallback.model)?.entry : undefined;
   if (fallback && !defaultReason && accepts(defaultEntry) && !isDenied(fallback.model)) return fallback;

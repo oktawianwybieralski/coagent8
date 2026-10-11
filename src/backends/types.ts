@@ -92,6 +92,11 @@ export interface CliAdapter {
   id: string;
   /** Human-readable backend name. */
   name: string;
+  /**
+   * The CLI drops an effort suffix of the model and runs the variant of a separately passed
+   * effort (agy), so the user's model rules see that variant (`EffortRun` in contracts/models.ts).
+   */
+  effortReplacesModelSuffix?: boolean;
   /** Probes the environment to verify CLI presence, version, and auth status. */
   probe(context?: BackendReadContext): Promise<AdapterProbeResult>;
   /**

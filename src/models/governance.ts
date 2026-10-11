@@ -6,7 +6,8 @@
  * The user's own rules come first, in the allow/ask/deny convention: `models.deny` refuses a
  * model, `models.ask` asks for it on every turn whatever it costs, and `models.allow` runs it
  * without asking; `deny` wins over `ask` and `ask` over `allow`. An entry also covers the
- * model's effort variants (`<id>-<effort>`). Other models are asked for when no price list
+ * model's effort variants (`<id>-<effort>`), and an entry naming a variant also applies when a
+ * turn passes that effort separately (`model` plus `reasoning_effort`). Other models are asked for when no price list
  * is available; when their price is unknown or matched only approximately; when their output
  * price is at or above `askAbovePrice` (USD per million tokens, default 20, which also covers
  * an expensive default model); or when it is at least `priceMultiplier` (default 2) times the
@@ -21,7 +22,7 @@
  * @packageDocumentation
  */
 import { findPrice, type PriceList } from './prices.js';
-import { namesModelOrVariant } from '../contracts/models.js';
+import { namesModelRun, type EffortRun } from '../contracts/models.js';
 
 import { MODEL_RULES, type GovernanceSettings, type ConsentBasis, type ModelRules } from '../contracts/governance.js';
 export type { GovernanceSettings, ConsentBasis, ModelRules };
@@ -49,11 +50,18 @@ export const MODEL_RULE_SETTINGS: Record<keyof ModelRules, string> = {
 };
 
 /**
- * Returns the first rule list, in `deny`, `ask`, `allow` order, with an entry naming `model`
- * or the model an effort variant `model` belongs to.
+ * Returns the first rule list, in `deny`, `ask`, `allow` order, with an entry naming `model`,
+ * the model an effort variant `model` belongs to, or the effort variant a turn passing its
+ * effort separately runs ({@link namesModelRun}).
  */
-export function findModelRule(model: string, rules: ModelRules): keyof ModelRules | undefined {
-  return MODEL_RULES.find(rule => rules[rule].some(listed => namesModelOrVariant(listed, model)));
+export function findModelRule(model: string, rules: ModelRules, run?: EffortRun): keyof ModelRules | undefined {
+  return MODEL_RULES.find(rule => rules[rule].some(listed => namesModelRun(listed, model, run)));
+}
+
+/** Names a model in a message, with the effort a turn passes beside it. */
+function modelLabel(model: string, run?: EffortRun): string {
+  // A CLI that replaces effort suffixes runs a variant whose name already states the effort.
+  return run?.effort === undefined || run.replacesSuffix ? `'${model}'` : `'${model}' with reasoning effort '${run.effort}'`;
 }
 
 /** States what the price list knows about a model's output price. */
@@ -71,12 +79,13 @@ function priceSentence(model: string, prices: PriceList | undefined): string {
  * @param defaultModel - The backend's default model, the price reference; undefined when none is known.
  * @param prices - The price list, or undefined when none could be read.
  * @param settings - The user's governance settings.
+ * @param run - The reasoning effort the turn passes separately and how the CLI applies it.
  */
-export function decideConsent(model: string, defaultModel: string | undefined, prices: PriceList | undefined, settings: GovernanceSettings): ConsentDecision {
-  const rule = findModelRule(model, settings.models);
+export function decideConsent(model: string, defaultModel: string | undefined, prices: PriceList | undefined, settings: GovernanceSettings, run?: EffortRun): ConsentDecision {
+  const rule = findModelRule(model, settings.models, run);
   if (rule) {
     // The user's own rule decides whatever the model costs; the price is still stated.
-    const listed = `'${model}' is on the user's ${rule} list, ${MODEL_RULE_SETTINGS[rule]}. ${priceSentence(model, prices)}`;
+    const listed = `${modelLabel(model, run)} is on the user's ${rule} list, ${MODEL_RULE_SETTINGS[rule]}. ${priceSentence(model, prices)}`;
     return { ask: rule === 'ask', deny: rule === 'deny', basis: rule, offerRemember: false, reason: listed };
   }
   const decided = (ask: boolean, basis: ConsentBasis, reason: string, offerRemember = false): ConsentDecision => ({ ask, deny: false, basis, offerRemember, reason });
@@ -113,8 +122,8 @@ export const APPROVAL_REMEDY = `The user can approve it in a client that shows M
  * One-line refusal of a model on the user's `models.deny` list: why it did not run, and that
  * lifting the rule is the user's decision.
  */
-export function modelDeniedMessage(model: string): string {
-  return `Model '${model}' did not run: the user denied it in ${MODEL_RULE_SETTINGS.deny}. Only the user can remove it from that list. ${NO_SUBSTITUTE}`;
+export function modelDeniedMessage(model: string, run?: EffortRun): string {
+  return `Model ${modelLabel(model, run)} did not run: the user denied it in ${MODEL_RULE_SETTINGS.deny}. Only the user can remove it from that list. ${NO_SUBSTITUTE}`;
 }
 
 /** One-line refusal when the user's approval cannot be requested. */
@@ -151,19 +160,22 @@ export function consentInvalidatedMessage(model: string, reason: string): string
  * @param previous - Initial governance settings snapshot.
  * @param current - Current governance settings snapshot.
  * @param model - Optional target model identifier to check specific list membership changes.
+ * @param run - The reasoning effort the turn passes separately and how the CLI applies it.
  * @returns A description of the change, or undefined if identical.
  */
 export function describeGovernanceChange(
   previous: GovernanceSettings,
   current: GovernanceSettings,
-  model?: string
+  model?: string,
+  run?: EffortRun
 ): string | undefined {
   if (model) {
-    const before = findModelRule(model, previous.models);
-    const now = findModelRule(model, current.models);
-    if (now === 'deny' && before !== 'deny') return `'${model}' was added to ${MODEL_RULE_SETTINGS.deny}.`;
-    if (now === 'ask' && before !== 'ask' && before !== 'deny') return `'${model}' was added to ${MODEL_RULE_SETTINGS.ask}.`;
-    if (before === 'allow' && now !== 'allow') return `'${model}' was removed from ${MODEL_RULE_SETTINGS.allow}.`;
+    const before = findModelRule(model, previous.models, run);
+    const now = findModelRule(model, current.models, run);
+    const label = modelLabel(model, run);
+    if (now === 'deny' && before !== 'deny') return `${label} was added to ${MODEL_RULE_SETTINGS.deny}.`;
+    if (now === 'ask' && before !== 'ask' && before !== 'deny') return `${label} was added to ${MODEL_RULE_SETTINGS.ask}.`;
+    if (before === 'allow' && now !== 'allow') return `${label} was removed from ${MODEL_RULE_SETTINGS.allow}.`;
     // A model on one of the user's lists is decided by that list, not by price thresholds.
     if (now !== undefined) return undefined;
   }

@@ -20,6 +20,7 @@ import {
 import { readPrices, findPrice, checkPriceLimit, priceEvidence, type PriceList, type ModelPrice } from '../models/prices.js';
 import { selectModel } from './selection.js';
 import type { AdapterProbeResult, BackendReadContext } from '../backends/types.js';
+import type { EffortRun } from '../contracts/models.js';
 
 export type { ConsentDecision };
 
@@ -99,6 +100,8 @@ export interface RevalidateConsentOptions {
   outputPriceBelow?: number;
   choosing?: boolean;
   continuing?: boolean;
+  /** The reasoning effort the turn passes separately and how its CLI applies it. */
+  effortRun?: EffortRun;
   context?: BackendReadContext;
 }
 
@@ -146,15 +149,17 @@ export async function revalidateConsent(
     ? loadConfigSnapshot()
     : initialSnapshot;
 
+  const run = options.effortRun;
   // A model the user denied while the approval was pending never runs, whatever was approved.
-  if (findModelRule(model, currentSnapshot.config.governance.models) === 'deny') {
-    throw new ToolError('POLICY_DENIED', modelDeniedMessage(model));
+  if (findModelRule(model, currentSnapshot.config.governance.models, run) === 'deny') {
+    throw new ToolError('POLICY_DENIED', modelDeniedMessage(model, run));
   }
 
   const governanceChange = describeGovernanceChange(
     initialSnapshot.config.governance,
     currentSnapshot.config.governance,
-    model
+    model,
+    run
   );
   if (governanceChange !== undefined) {
     throw new ToolError(
@@ -218,7 +223,8 @@ export async function revalidateConsent(
     model,
     defaultModel,
     freshPrices,
-    currentSnapshot.config.governance
+    currentSnapshot.config.governance,
+    run
   );
 
   if (options.initialDecision) {

@@ -387,7 +387,8 @@ rules (ask above a price, ask above a multiple of the backend's default) and eac
 backend with its model counts; the second lists that backend's models, the most
 expensive first, with their price and what decides them; the third sets one
 model's rule: **Allow** (runs without asking), **Ask Every Time**, **Deny** (never
-runs) or **Price Rules**. A rule naming a model also covers its effort variants.
+runs) or **Price Rules**. A rule naming a model also covers its effort variants, and a rule naming one variant
+(`gemini-3.8-flash-high`) also applies when the model is asked for with that reasoning effort.
 The rules are written to `config.json`, so they apply in every client, also where
 the client cannot show CoAgent8's approval form (Antigravity, Codex). **Back**
 returns one step; Escape or choosing the rule in force changes nothing.

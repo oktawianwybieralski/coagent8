@@ -1050,6 +1050,81 @@ test('a model the user denies is refused with the reason before any approval req
   assert.equal(executed, false);
 });
 
+test('a rule naming an effort variant governs a call passing that effort separately or through its session', async () => {
+  await setupMockConfigAndAdapters();
+  const runs = [];
+  adapterRegistry.agy = {
+    id: 'agy', name: 'fixture', effortReplacesModelSuffix: true,
+    probe: async () => ({ installed: true, executionSupported: true, version: '1.0.0', config: { defaultModel: 'gemini-3.8-flash-low' } }),
+    listModels: async () => ({ source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true, isDefault: true }] }),
+    execute: async (_prompt, options) => {
+      runs.push(`${options.model}/${options.reasoningEffort}`);
+      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
+    },
+  };
+  const rules = models => saveConfig({ ...loadConfig(), governance: { ...loadConfig().governance, models: { allow: [], ask: [], deny: [], ...models } } });
+  const approve = async () => ({ approved: true });
+  const call = { backend: 'agy', model: 'gemini-3.8-flash' };
+
+  await rules({ deny: ['gemini-3.8-flash-high'] });
+  let asked = false;
+  await assert.rejects(executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, { askConsent: async () => { asked = true; return { approved: true }; } }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run: the user denied it/ });
+  assert.equal(asked, false);
+  // agy replaces a variant's effort with the one passed separately, so this runs the denied variant.
+  await assert.rejects(executeTask('prompt', 'summary', { ...call, model: 'gemini-3.8-flash-low', reasoning_effort: 'high' }, tempDir, null, null, { askConsent: approve }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ });
+  const low = await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'low' }, tempDir, null, null, { askConsent: approve });
+  assert.equal(low.isError, false, 'another effort of the model still runs');
+
+  await rules({ ask: ['gemini-3.8-flash-high'] });
+  let reason = '';
+  await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, { askConsent: async request => { reason = request.reason; return { approved: true }; } });
+  assert.match(reason, /on the user's ask list/, 'the ask rule decides, whatever the price');
+
+  // A continuation keeps its session's effort, so a rule added since then still applies.
+  await rules({});
+  const first = await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, { askConsent: approve });
+  await rules({ deny: ['gemini-3.8-flash-high'] });
+  await assert.rejects(executeTask('follow up', 'follow up', { session_handle: readResult(first).sessionHandle }, tempDir, null, null, { askConsent: approve }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ });
+
+  // A variant denied while the approval is pending never runs.
+  await rules({ ask: ['gemini-3.8-flash'] });
+  const before = runs.length;
+  let pending = false;
+  await assert.rejects(executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, {
+    askConsent: async () => { pending = true; await rules({ ask: ['gemini-3.8-flash'], deny: ['gemini-3.8-flash-high'] }); return { approved: true }; },
+  }), { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ });
+  assert.ok(pending);
+  assert.equal(runs.length, before, 'no turn ran after the denial');
+});
+
+test('agy asks for, remembers and runs the variant of a separately passed effort', async () => {
+  await setupMockConfigAndAdapters();
+  // Earlier tests recorded another agy catalog.
+  fs.rmSync(path.join(tempDir, 'models.json'), { force: true });
+  const runs = [];
+  adapterRegistry.agy = {
+    id: 'agy', name: 'fixture', effortReplacesModelSuffix: true,
+    probe: async () => ({ installed: true, executionSupported: true, version: '1.0.0', config: { defaultModel: 'agy-unpriced-low' } }),
+    listModels: async () => ({ source: 'agy models', models: [{ id: 'agy-unpriced', efforts: ['high', 'low'], effortRequired: true, isDefault: true }] }),
+    execute: async (_prompt, options) => {
+      runs.push(`${options.model}/${options.reasoningEffort}`);
+      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
+    },
+  };
+  const asked = [];
+  const call = () => executeTask('prompt', 'summary', { backend: 'agy', model: 'agy-unpriced-low', reasoning_effort: 'high' }, tempDir, null, null,
+    { askConsent: async request => { asked.push(request.model); return { approved: true, remember: true }; } });
+  assert.equal((await call()).isError, false);
+  assert.deepEqual(asked, ['agy-unpriced-high'], 'the approval names the variant that runs');
+  assert.ok(loadConfig().governance.models.allow.includes('agy-unpriced-high'));
+  assert.equal((await call()).isError, false);
+  assert.deepEqual(asked, ['agy-unpriced-high'], 'the remembered approval covers the repeated call');
+  assert.deepEqual(runs, ['agy-unpriced-high/high', 'agy-unpriced-high/high']);
+});
+
 test('a model the user denies while the approval is pending never runs and is not remembered', async () => {
   await setupMockConfigAndAdapters();
   let executed = false;
