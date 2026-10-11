@@ -427,11 +427,18 @@ Per-call history controls and execution without disk sessions are planned.
 A model priced at or above 20 USD per million output tokens, at least twice its
 backend default, or without a known price runs only after the user approves it
 through MCP form elicitation; `governance` in `config.json` tunes this. Prices
-are read from OpenRouter's public model list (no key, no user data). Headless
-clients measured on 2026-10-07 cancel elicitation, so such turns fail there. The
-Codex and Antigravity chats in VS Code also answered without showing the form on
-2026-10-07. In such a client the user can allow a model in
-`governance.models.allow` (VS Code: `coagent8.approval.allowModels`) instead.
+are read from OpenRouter's public model list (no key, no user data).
+
+The approval is a form the CoAgent8 server sends; the MCP client must display it
+to the user. Not every client supports MCP form elicitation yet, which is a gap
+in the client, not in CoAgent8. Headless clients and Codex 0.160.1 cancel the
+form without showing it (measured 2026-10-07), and so does the Antigravity chat
+(measured 2026-10-07 and 2026-10-11). CoAgent8 never accepts an approval relayed
+by the calling agent, because it cannot verify that the user gave it, so in such
+a client the turn fails closed with `POLICY_DENIED`. To use the model there, allow
+it yourself in `governance.models.allow` (VS Code:
+`coagent8.approval.allowModels`), or call it from a client that shows MCP forms.
+
 Before calling a model doctor tags `ask`, tell the user its price and that a form
 will follow; never call one tagged `deny`. If an explicit model needs approval,
 report the unmet requirement; do not silently substitute another model or change
