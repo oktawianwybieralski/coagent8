@@ -116,7 +116,8 @@ test('custom Codex extension paths and cached standalone removal are revalidated
   fs.rmSync(file);
   assert.equal(resolveSetupClient('codex', p.home, env), null);
   const script = path.join(p.home, 'standalone.cjs'); fs.writeFileSync(script, 'synthetic');
-  assert.equal(resolveCliCommand(script).argsPrefix[0], script);
+  // A script runs from its canonical path (npm shims are links; macOS /var is /private/var).
+  assert.equal(resolveCliCommand(script).argsPrefix[0], fs.realpathSync(script));
   fs.rmSync(script);
   assert.throws(() => resolveCliCommand(script), /not installed/);
 });

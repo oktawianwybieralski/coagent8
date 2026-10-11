@@ -18,7 +18,11 @@ test('backend CLIs resolve to fixtures and real installations are unreachable', 
   assert.equal(process.env.CLAUDE_PATH, path.join(fixtures, 'claude-cli', 'claude.cjs'));
   assert.equal(process.env.CODEX_PATH, path.join(fixtures, 'codex-cli', 'codex.cjs'));
   assert.equal(process.env.AGY_PATH, path.join(fixtures, 'agy-cli', 'agy.cjs'));
-  for (const name of ['claude', 'codex', 'agy', 'agy', 'pwsh', 'powershell']) {
+  // On Windows the PowerShells live outside the kept System32 and Windows folders. On POSIX
+  // the kept /usr/bin is the operating system's and may hold pwsh (GitHub's Ubuntu runners);
+  // no source launches a PowerShell (process.test.js, layer 3).
+  const shells = process.platform === 'win32' ? ['pwsh', 'powershell'] : [];
+  for (const name of ['claude', 'codex', 'agy', ...shells]) {
     assert.throws(() => resolveCliCommand(name), { code: 'CLI_NOT_FOUND' }, `${name} must not resolve on the test PATH`);
   }
   assert.equal(resolveBundledClaude(), null);
