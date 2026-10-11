@@ -70,6 +70,39 @@ test('a user entry is preserved and suppresses the extension entry', t => {
   assert.ok(edited.entries()[VSCODE_SERVER_NAME]);
 });
 
+test('an entry the user edited keeps the runtime copy but is no longer the extension\'s', t => {
+  for (const edit of [{ command: 'C:/tools/node.exe' }, { env: { coagent8_DIR: 'C:/mine' } }]) {
+    const p = profile(t);
+    assert.equal(p.sync(), 'registered');
+    const servers = p.entries();
+    servers[VSCODE_SERVER_NAME] = { ...servers[VSCODE_SERVER_NAME], ...edit };
+    fs.writeFileSync(p.file, JSON.stringify({ servers }, null, 2));
+    const text = fs.readFileSync(p.file, 'utf8');
+    assert.equal(p.sync(), 'manual', `an entry with an edited ${Object.keys(edit)[0]} is the user's`);
+    assert.equal(fs.readFileSync(p.file, 'utf8'), text, 'synchronization does not overwrite it');
+    assert.deepEqual(removeVscodeRegistrations(p.home), [{ file: p.file, action: 'preserved' }]);
+    assert.equal(fs.readFileSync(p.file, 'utf8'), text, 'uninstall does not remove it');
+  }
+});
+
+test('an interrupted rewrite leaves an entry recognized by its shape', t => {
+  const p = profile(t);
+  p.sync();
+  const record = path.join(p.home, '.coagent8/vscode-mcp.json');
+  fs.writeFileSync(p.bundle, 'bundle v2');
+  // Fail the write of mcp.json after the record step, as a crash between the two would.
+  const rename = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (to === p.file) throw new Error('interrupted');
+    return rename(from, to);
+  });
+  assert.throws(() => p.sync({ server: { ...p.server, command: 'C:/tools/node.exe' } }), /interrupted/);
+  t.mock.restoreAll();
+  assert.equal(fs.existsSync(record), false, 'no stale digest outlives the rewrite');
+  assert.equal(p.sync(), 'registered', 'the old entry is still the extension\'s');
+  assert.equal(p.sync(), 'current');
+});
+
 test('an entry the user removed in VS Code stays removed until restored', t => {
   const p = profile(t);
   p.sync();

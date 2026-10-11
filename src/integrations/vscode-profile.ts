@@ -51,22 +51,32 @@ function readRecord(home: string): { text: string | null; record: RegistrationRe
   const text = read(recordFile(home));
   return { text, record: text === null ? {} : json(text) as RegistrationRecord };
 }
-function writeRecord(home: string, before: string | null, record: RegistrationRecord): void {
+/** Writes the record, or removes its file when it is empty; returns the text now on disk. */
+function writeRecord(home: string, before: string | null, record: RegistrationRecord): string | null {
   const file = recordFile(home);
   if (!Object.keys(record).length) {
     if (read(file) !== before) throw new Error('Configuration changed concurrently; setup did not overwrite it.');
     fs.rmSync(file, { force: true });
-    return;
+    return null;
   }
-  writeChecked(file, before, JSON.stringify(record, null, 2) + '\n');
+  const text = JSON.stringify(record, null, 2) + '\n';
+  writeChecked(file, before, text);
+  return text;
 }
 /** Whether an entry has the shape only this extension writes: its bundle copy in global storage. */
 function extensionShaped(entry: unknown): boolean {
   const args = object(entry).args;
   return Array.isArray(args) && args.length === 1 && typeof args[0] === 'string' && RUNTIME_SHAPE.test(args[0]);
 }
+/**
+ * Whether the extension owns a profile's entry: a recorded digest must match, so an entry the
+ * user edited is theirs even while it still starts the runtime copy. Only without any record
+ * (lost, or a rewrite interrupted) does the shape identify the entry.
+ */
 function owned(entry: unknown, recorded: RegistrationRecord[string] | undefined): boolean {
-  return entry !== undefined && ((recorded !== undefined && 'entry' in recorded && recorded.entry === hash(JSON.stringify(entry))) || extensionShaped(entry));
+  if (entry === undefined) return false;
+  if (recorded === undefined) return extensionShaped(entry);
+  return 'entry' in recorded && recorded.entry === hash(JSON.stringify(entry));
 }
 function profileServers(text: string | null): Record<string, unknown> {
   if (text === null) return {};
@@ -171,9 +181,12 @@ function syncOnce({ storagePath, bundle, server, home, restore = false }: { stor
   }
   const base = text ?? '{}\n';
   const after = applyEdits(base, modify(base, ['servers', VSCODE_SERVER_NAME], desired, { formattingOptions: { ...FORMATTING, eol: base.includes('\r\n') ? '\r\n' : '\n' } }));
+  // Drop the old digest first: should the write below be interrupted, no record outlives it and
+  // the entry's shape, old or new, still identifies it as ours.
+  const others = Object.fromEntries(Object.entries(record).filter(([key]) => key !== file));
+  const cleared = recorded === undefined ? recordText : writeRecord(home, recordText, others);
   writeChecked(file, text, after);
-  // Should this write be interrupted, the entry's shape still identifies it as ours.
-  writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(profileServers(after)[VSCODE_SERVER_NAME])) } });
+  writeRecord(home, cleared, { ...others, [file]: { entry: hash(JSON.stringify(profileServers(after)[VSCODE_SERVER_NAME])) } });
   pruneRuntimes(storagePath, runtime);
   return 'registered';
 }

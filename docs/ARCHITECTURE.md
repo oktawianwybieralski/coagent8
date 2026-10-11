@@ -464,7 +464,9 @@ rewrites it. Activation, `coagent8` setting changes, vendor extension changes an
 `mcp.json` changes resynchronize command, copy and environment (current
 extension paths for the shared executable resolver, data directory, config file,
 user-level editor settings). Ownership is the digest in
-`~/.coagent8/vscode-mcp.json`, else that copy's path shape. An edited entry or
+`~/.coagent8/vscode-mcp.json`; only when no record exists does that copy's path
+shape identify the entry, and a rewrite drops the old digest before it writes
+the entry. An edited entry, even one still starting the copy, or
 another CoAgent8 entry in the profile is the user's and suppresses the
 extension's; an entry the user removed in VS Code is not added back until
 **Show MCP Servers** restores it on request. The definition provider stays as the
