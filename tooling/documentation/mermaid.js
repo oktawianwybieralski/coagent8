@@ -4,6 +4,9 @@
 (() => {
   const blocks = [...document.querySelectorAll('pre > code.mermaid')];
   if (blocks.length === 0) return;
+  // TypeDoc separates the highlighted lines with <br> elements, not newline characters, and
+  // textContent drops those: read each <br> as the line break it stands for.
+  const source = code => [...code.childNodes].map(node => node.nodeName === 'BR' ? '\n' : node.textContent).join('');
   const theme = () => {
     const chosen = document.documentElement.dataset.theme;
     const dark = chosen === 'dark' || (chosen !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -14,7 +17,7 @@
     for (const code of blocks) {
       const diagram = document.createElement('div');
       diagram.className = 'mermaid';
-      diagram.textContent = code.textContent;
+      diagram.textContent = source(code);
       code.parentElement.replaceWith(diagram);
     }
     await mermaid.run({ querySelector: 'div.mermaid' });

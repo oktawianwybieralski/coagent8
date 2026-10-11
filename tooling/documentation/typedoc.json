@@ -1,6 +1,6 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "name": "CoAgent8 - Source API",
+  "name": "CoAgent8",
   "entryPoints": [
     "../../src"
   ],
