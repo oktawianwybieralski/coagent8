@@ -82,5 +82,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: evidence-${{ matrix.os }}-node-${{ matrix.node-version }}
+          # The folder name starts with a dot, which upload-artifact skips by default.
+          include-hidden-files: true
+          if-no-files-found: error
           path: |
             .artifacts/
