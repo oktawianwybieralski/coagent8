@@ -177,8 +177,9 @@ A model's `READY` verdict requires independent verification before release.
   [Continue](#continue).
 - Optional `coagent8 setup|repair|status|cleanup|skills` for local registrations
   and skills, with backups, conflict checks and preview-bound changes.
-- Native VS Code extension (MCP server definition provider, setup, skill
-  management and uninstall), built from the npm tarball. Native plugins for
+- Native VS Code extension (CoAgent8 listed with your installed MCP servers
+  through the profile `mcp.json`, setup, skill management and uninstall), built
+  from the npm tarball. Native plugins for
   Codex, Claude Code and Antigravity are planned
   ([PLUGIN-001](docs/ROADMAP.md#plugin-001-native-plugin-in-every-supported-client));
   until then use the npm package or a manual MCP entry.

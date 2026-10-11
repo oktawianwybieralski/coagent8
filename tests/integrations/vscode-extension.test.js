@@ -817,7 +817,8 @@ test('the Windows removal commands delete the installer link, not its target, an
     'entries of removed folders go; the rest, its order, type and unexpanded variables stay');
 });
 
-test('VS Code provider uses bundled server, updates configuration/build identity, and disposes registrations', t => {
+test('the profile mcp.json entry starts the bundled server, follows configuration and build identity; the provider is the fallback', t => {
+  const errors = [];
   let provider, providerId, configurationListener, extensionListener, nodePath = 'node', configPath = '';
   const inspected = {};
   let extensionPath;
@@ -826,6 +827,7 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   const vscode = {
     RelativePattern: class { constructor(base, pattern) { Object.assign(this, { base, pattern }); } },
     env: { remoteName: 'isolated-test' },
+    window: { showErrorMessage(message) { errors.push(message); } },
     extensions: {
       getExtension(id) { return id === 'openai.chatgpt' && extensionPath ? { extensionPath, extensionUri: { scheme: 'file' } } : undefined; },
       // The provider and the removal follow-up both listen; a change reaches every listener.
@@ -863,40 +865,51 @@ test('VS Code provider uses bundled server, updates configuration/build identity
     return name === 'vscode' ? vscode : require(name);
   } });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'extension path with spaces '));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const savedHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = process.env.USERPROFILE = path.join(root, 'home');
+  t.after(() => {
+    for (const [key, value] of Object.entries(savedHome)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
   fs.mkdirSync(path.join(root, 'dist'));
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'fixture bundle');
-  const context = { subscriptions: [], globalStorageUri: { fsPath: path.join(root, 'User/globalStorage/coagent8') }, globalState: { get() { return undefined; } }, asAbsolutePath(relative) { return path.join(root, relative); } };
+  const storage = path.join(root, 'User/globalStorage/okidev.coagent8-mcp');
+  const context = { subscriptions: [], globalStorageUri: { fsPath: storage }, globalState: { get() { return undefined; } }, asAbsolutePath(relative) { return path.join(root, relative); } };
   module.exports.activate(context);
+  const mcpFile = path.join(root, 'User/mcp.json');
+  // VS Code lists only mcp.json entries as installed MCP servers.
+  const entry = () => JSON.parse(fs.readFileSync(mcpFile, 'utf8')).servers.CoAgent8;
   assert.equal(providerId, require('../../extensions/vscode/package.json').contributes.mcpServerDefinitionProviders[0].id);
-  const definition = provider.provideMcpServerDefinitions()[0];
-  assert.equal(definition.label, 'CoAgent8');
+  assert.equal(provider.provideMcpServerDefinitions().length, 0, 'the profile entry provides the server; the provider adds no second one');
+  const definition = entry();
+  assert.equal(definition.type, 'stdio');
   assert.equal(definition.command, 'node');
   assert.equal(definition.args.length, 1);
-  assert.equal(definition.args[0], path.join(root, 'dist/index.cjs'));
-  assert.ok(definition.version.startsWith(require('../../package.json').version + '#'));
+  assert.ok(definition.args[0].startsWith(path.join(storage, 'runtime')), 'a copy in global storage outlives the extension folder of an update');
+  assert.equal(fs.readFileSync(definition.args[0], 'utf8'), 'fixture bundle');
   assert.deepEqual(JSON.parse(definition.env.coagent8_EXTENSION_PATHS), {});
-  assert.equal(definition.env.coagent8_DIR, context.globalStorageUri.fsPath, 'runtime data lives in storage VS Code deletes on uninstall');
+  assert.equal(definition.env.coagent8_DIR, storage, 'runtime data lives in storage VS Code deletes on uninstall');
   assert.equal(definition.env.coagent8_CONFIG, path.resolve(process.env.coagent8_CONFIG || path.join(os.homedir(), '.coagent8', 'config.json')), 'the configuration file is shared with the CLI and other hosts');
-  nodePath = ' C:\\Program Files\\nodejs\\node.exe ';
+  nodePath = ' C:\Program Files\nodejs\node.exe ';
   configurationListener(affects('coagent8.nodePath'));
   assert.equal(changes, 1);
-  assert.equal(provider.provideMcpServerDefinitions()[0].command, nodePath.trim());
+  assert.equal(entry().command, nodePath.trim());
   configurationListener({ affectsConfiguration() { return false; } });
   assert.equal(changes, 1);
   nodePath = ' ';
-  assert.throws(() => provider.provideMcpServerDefinitions(), /Node.js 24\+/);
+  configurationListener(affects('coagent8.nodePath'));
+  assert.match(errors.at(-1), /Node.js 24\+/);
+  assert.equal(entry().command, 'C:\Program Files\nodejs\node.exe', 'an invalid setting leaves the working entry');
   nodePath = 'node';
   extensionPath = path.join(root, 'custom extension root', 'openai-current');
   extensionListener();
-  assert.equal(changes, 2);
-  assert.equal(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EXTENSION_PATHS).codex, extensionPath);
+  assert.equal(JSON.parse(entry().env.coagent8_EXTENSION_PATHS).codex, extensionPath);
   extensionPath = undefined;
   extensionListener();
-  assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EXTENSION_PATHS), {});
+  assert.deepEqual(JSON.parse(entry().env.coagent8_EXTENSION_PATHS), {});
   configPath = path.join(root, 'custom configuration.json');
   configurationListener(affects('coagent8.configPath'));
-  assert.equal(provider.provideMcpServerDefinitions()[0].env.coagent8_CONFIG, configPath);
+  assert.equal(entry().env.coagent8_CONFIG, configPath);
   assert.equal(require('../../extensions/vscode/package.json').contributes.configuration.properties['coagent8.configPath'].scope, 'machine');
   assert.equal(definition.env.coagent8_EDITOR_SETTINGS, '{}', 'contributed defaults leave config.json in effect');
   Object.assign(inspected, {
@@ -907,11 +920,23 @@ test('VS Code provider uses bundled server, updates configuration/build identity
   const before = changes;
   configurationListener(affects('coagent8.approval.allowModels'));
   assert.equal(changes, before + 1, 'a backend, model or approval setting refreshes the server definition');
-  assert.deepEqual(JSON.parse(provider.provideMcpServerDefinitions()[0].env.coagent8_EDITOR_SETTINGS),
+  assert.deepEqual(JSON.parse(entry().env.coagent8_EDITOR_SETTINGS),
     { 'approval.allowModels': ['user-model'], 'claude.defaultModel': 'opus' }, 'only user values; a workspace cannot change backend or approval');
+  const firstCopy = entry().args[0];
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'changed bundle, same package version');
   extensionListener();
-  assert.notEqual(provider.provideMcpServerDefinitions()[0].version, definition.version, 'a replacement development VSIX invalidates tool metadata despite unchanged SemVer');
+  assert.notEqual(entry().args[0], firstCopy, 'a replacement development VSIX starts a new copy despite unchanged SemVer');
+  assert.equal(fs.existsSync(firstCopy), false);
+  // When the entry cannot be kept, the provider still offers the server.
+  fs.writeFileSync(path.join(root, 'home/.coagent8/vscode-mcp.json'), '{');
+  fs.rmSync(mcpFile);
+  configurationListener(affects('coagent8.nodePath'));
+  assert.match(errors.at(-1), /Malformed/);
+  const [fallback] = provider.provideMcpServerDefinitions();
+  assert.equal(fallback.args[0], path.join(root, 'dist/index.cjs'));
+  assert.ok(fallback.version.startsWith(require('../../package.json').version + '#'));
+  fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'another bundle');
+  assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');
   context.subscriptions.forEach(subscription => subscription.dispose());
   assert.equal(disposed, 15);
 });

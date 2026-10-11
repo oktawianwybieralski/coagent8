@@ -453,8 +453,22 @@ only the fields setup writes; a data directory in VS Code global storage
 gone is replaced without the checks that protect a working connection.
 Status reads registration files without running every registered host's doctor.
 
-The VSIX provider supplies current extension paths to the shared executable
-resolver. **Manage Coding CLIs** (CLIMGMT-001) lists the three CLIs; each CLI's
+VS Code lists only `mcp.json` entries and gallery installs as installed MCP
+servers; a definition provider's server appears only under "Extensions" in the
+Agent Customizations editor (source of 1.141, 2026-10-11). The extension
+therefore keeps one stdio entry `CoAgent8` in its profile `mcp.json` (beside its
+global storage), started from `<global storage>/runtime/<sha256>/index.cjs` so
+the entry outlives an extension update until the new version activates and
+rewrites it. Activation, `coagent8` setting changes, vendor extension changes and
+`mcp.json` changes resynchronize command, copy and environment (current
+extension paths for the shared executable resolver, data directory, config file,
+user-level editor settings). Ownership is the digest in
+`~/.coagent8/vscode-mcp.json`, else that copy's path shape. An edited entry or
+another CoAgent8 entry in the profile is the user's and suppresses the
+extension's; an entry the user removed in VS Code is not added back until
+**Show MCP Servers** restores it on request. The definition provider stays as the
+fallback when the entry cannot be kept and steps aside while any `mcp.json`
+entry or a removal provides CoAgent8. **Manage Coding CLIs** (CLIMGMT-001) lists the three CLIs; each CLI's
 menu handles its installations, installation, login, registration, skills and
 removal of what CoAgent8 installed, and reopens with fresh checks after each
 action. `listInstallations` finds installations without starting them: the vendor
@@ -469,7 +483,8 @@ Code does not ask about Settings Sync and does not sync them; their removal from
 the menu needs no confirmation, as in the Extensions view. The record of installed dependencies is
 `~/.coagent8/installs.json`, outside the extension storage VS Code deletes, so an
 Extensions-view uninstall cannot orphan them; only recorded dependencies are
-offered for removal. The `vscode:uninstall` hook removes owned entries, skills and
+offered for removal. The `vscode:uninstall` hook removes unchanged profile
+`mcp.json` entries and other owned entries, skills and
 data and preserves shared config, sign-ins and histories; native lifecycle
 acceptance remains. Sources compare by real path, so an installer link to the
 extension copy is that copy. Standalone removal deletes installer links, never

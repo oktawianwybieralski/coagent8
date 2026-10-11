@@ -936,12 +936,10 @@ VS Code (source of 1.141.0 read 2026-10-11): the Agent Customizations editor
 groups MCP servers by owner. "User" and "Workspace" hold `mcp.json` entries and
 gallery installs (the same list as "MCP Servers - Installed" in the Extensions
 view); "Extensions" holds servers from `mcpServerDefinitionProviders`, labeled
-with the providing extension; "Plugins" holds servers of agent plugins. The
-extension's provider therefore never appears under "User" or in the Extensions
-view list, by VS Code design. A user-profile server needs a gallery entry (MCP
-Registry publication, installed by VS Code into the user `mcp.json`) or an agent
-plugin, and the provider already steps aside when a manual `mcp.json` entry
-names CoAgent8.
+with the providing extension; "Plugins" holds servers of agent plugins. A
+provider server therefore never appears under "User" or in the Extensions view
+list, by VS Code design, so the extension writes a profile `mcp.json` entry
+(PLUGIN-001g).
 
 - [ ] **PLUGIN-001a - loader evidence.** Start: a local plugin directory
   unpacked from `npm pack` output, no publication. Per client and version in an
@@ -976,14 +974,17 @@ names CoAgent8.
   setup refuses while the plugin is enabled. Then the README gains one
   installation section per client and per path, and the release notes name the
   clients whose plugin was accepted. Check: native, P.
-- [ ] **PLUGIN-001g - VS Code placement.** Depends: 001b. Native evidence in
-  the current stable VS Code: where the provider server appears (Agent
-  Customizations "Extensions" group, MCP: List Servers), and whether it starts,
-  stops, toggles and shows output there. Owner decision on a user-profile
-  path: MCP Registry publication with a `vscode:mcp/install` link, a VS Code
-  agent plugin, or neither; whichever is chosen, the provider steps aside as it
-  does for a manual entry, and the extension uninstall removes only what the
-  extension created. Check: native, VS Code scope from rule 04.
+- [ ] **PLUGIN-001g - VS Code installed-server entry.** Owner decision
+  2026-10-11: CoAgent8 appears with the other installed MCP servers. The
+  extension keeps a `CoAgent8` entry in the profile `mcp.json` (contract in
+  [ARCHITECTURE optional integrations](ARCHITECTURE.md#optional-integrations));
+  the provider remains the fallback. Implemented with module and extension
+  tests; remaining: native evidence in the current stable VS Code (listed under
+  "User" and in "MCP Servers - Installed", starts, toggles, shows output, a
+  setting change restarts it with the new environment, removal in VS Code is
+  respected, update and uninstall leave no broken entry). MCP Registry
+  publication stays a later owner decision. Check: native, VS Code scope from
+  rule 04.
 
 ## Agent usability acceptance
 

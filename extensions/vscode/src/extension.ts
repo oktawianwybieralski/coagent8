@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { setBackendExecutable, validateConfig } from '../../../src/config.js';
-import { hasManualVscodeRegistration } from '../../../src/integrations/vscode-profile.js';
+import { hasManualVscodeRegistration, syncVscodeRegistration, type VscodeRegistration, type VscodeServer } from '../../../src/integrations/vscode-profile.js';
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
 import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js';
@@ -201,35 +201,54 @@ export function activate(context: vscode.ExtensionContext): void {
   const location = (): StateLocation => ({ storage, home: os.homedir() });
   const changed = new vscode.EventEmitter<void>();
   context.subscriptions.push(changed);
+  /** The server's command and environment, shared by the profile entry and the provider. */
+  function server(): VscodeServer {
+    const command = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+    if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 24+ executable.');
+    return { command, env: {
+      coagent8_EXTENSION_PATHS: discoveryEnvironment(storage).coagent8_EXTENSION_PATHS!,
+      coagent8_DIR: storage,
+      coagent8_CONFIG: configurationFile(),
+      [EDITOR_SETTINGS_ENV]: editorSettings(),
+    } };
+  }
+  const folders = () => vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [];
+  let profileRegistration: VscodeRegistration | undefined;
+  /**
+   * Keeps CoAgent8 in the profile `mcp.json`, where VS Code lists installed MCP servers. When
+   * that fails, the definition provider below still offers the server.
+   */
+  function syncProfile(restore = false): void {
+    try { profileRegistration = syncVscodeRegistration({ storagePath: storage, bundle: context.asAbsolutePath('dist/index.cjs'), server: server(), home: os.homedir(), restore }); }
+    catch (error) { profileRegistration = undefined; showLifecycleError(error); }
+  }
+  syncProfile();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
     if (event.affectsConfiguration('coagent8')) {
-      clearCliResolverCache(); changed.fire();
+      clearCliResolverCache(); syncProfile(); changed.fire();
     }
   }));
-  context.subscriptions.push(vscode.extensions.onDidChange(() => { clearCliResolverCache(); changed.fire(); }));
+  context.subscriptions.push(vscode.extensions.onDidChange(() => { clearCliResolverCache(); syncProfile(); changed.fire(); }));
   context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('coagent8', {
     onDidChangeMcpServerDefinitions: changed.event,
     provideMcpServerDefinitions() {
-      if (hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [])) return [];
-      const command = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-      if (!command) throw new Error('CoAgent8: configure coagent8.nodePath with a Node.js 24+ executable.');
-      return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], {
-        coagent8_EXTENSION_PATHS: discoveryEnvironment(storage).coagent8_EXTENSION_PATHS!,
-        coagent8_DIR: storage,
-        coagent8_CONFIG: configurationFile(),
-        [EDITOR_SETTINGS_ENV]: editorSettings(),
-      }, `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
+      if (profileRegistration === 'declined' || hasManualVscodeRegistration(storage, folders())) return [];
+      const { command, env } = server();
+      return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], env,
+        `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
     },
   }));
   const profileMcpFile = path.join(path.dirname(path.dirname(context.globalStorageUri.fsPath)), 'mcp.json');
   const mcpFiles = [profileMcpFile, ...vscode.workspace.workspaceFolders?.map(folder => path.join(folder.uri.fsPath, '.vscode', 'mcp.json')) ?? []];
   let manualRegistration = false;
-  try { manualRegistration = hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? []); }
+  try { manualRegistration = hasManualVscodeRegistration(storage, folders()); }
   catch (error) { showLifecycleError(error); }
   function registrationChanged(): void {
+    const declined = profileRegistration === 'declined';
+    syncProfile();
     try {
-      const registered = hasManualVscodeRegistration(context.globalStorageUri.fsPath, vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? []);
-      if (registered || manualRegistration) {
+      const registered = hasManualVscodeRegistration(storage, folders());
+      if (registered || manualRegistration || declined !== (profileRegistration === 'declined')) {
         changed.fire();
       }
       manualRegistration = registered;
@@ -511,7 +530,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }));
   }
   register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`); });
-  register('coagent8.manageMcpServers', async () => { await vscode.commands.executeCommand('workbench.mcp.listServer'); });
+  register('coagent8.manageMcpServers', async () => {
+    if (profileRegistration === 'declined') {
+      const choice = await vscode.window.showInformationMessage('CoAgent8 was removed from your MCP servers. Add it again?', 'Add CoAgent8');
+      if (choice === 'Add CoAgent8') { syncProfile(true); changed.fire(); }
+    }
+    await vscode.commands.executeCommand('workbench.mcp.listServer');
+  });
   /**
    * Opens a picker whose items are known, with an optional Back button in its title bar.
    * @param many - Lets several items be selected; items marked `picked` start selected, which

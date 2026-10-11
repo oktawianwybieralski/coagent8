@@ -56,7 +56,8 @@ function rejectDuplicateKeys(node: JsonNode | undefined): void {
   }
   for (const child of node.children ?? []) rejectDuplicateKeys(child);
 }
-function json(text: string): Record<string, unknown> {
+/** Parses a JSON/JSONC configuration object, rejecting syntax errors and duplicate keys. */
+export function json(text: string): Record<string, unknown> {
   const errors: ParseError[] = [];
   const value: unknown = parse(text, errors, { allowTrailingComma: true });
   if (errors.length) throw new Error('Malformed JSON/JSONC configuration.');
