@@ -8,6 +8,24 @@ Updated 2026-10-11. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## PLUGIN-001g VS Code installed-server entry
+
+Commit `1f36525` on `release/v0.6.0` (local, not pushed). Local checks on
+2026-10-11: typecheck, `lint:docs`, build, full suite 688 pass / 0 fail
+(3 skipped, 1 todo), including `tests/integrations/vscode-profile.test.js`.
+
+Native, VS Code 1.141.0, Windows, default profile, VSIX 0.6.0 installed with
+`--force` beside the pinned 1.0.0, then Reload Window:
+
+- PASS: "MCP Servers - Installed" lists CoAgent8 beside GitHub and Context7; its
+  page shows type stdio, command `node`, the copy in
+  `globalStorage/okidev.coagent8-mcp/runtime/<sha256>/index.cjs` and the four
+  environment variables. The user `mcp.json` keeps both gallery entries;
+  `~/.coagent8/vscode-mcp.json` records the entry digest.
+- NOT_RUN: start and tool discovery from the entry, toggle, output, a setting
+  change restarting it, removal in VS Code respected, update to another build,
+  uninstall leaving no entry. The pinned 1.0.0 copy is still on disk.
+
 ## REPO-003a one numeric version
 
 Owner decision 2026-10-11: previews start at 0.5, so the beta.2 candidate is
