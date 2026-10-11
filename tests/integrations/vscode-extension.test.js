@@ -31,7 +31,7 @@ const SEPARATOR = -1;
  * @param extraInstallations - Installations besides the one in use, per client; one with
  * `requires` appears once that vendor extension is installed.
  */
-async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [] } = {}) {
+async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [] } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
   const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
@@ -57,7 +57,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
       async openTextDocument(uri) { return { uri, text: fs.readFileSync(uri.fsPath, 'utf8') }; },
       onDidChangeConfiguration(listener) { configurationListener = listener; return { dispose }; },
       createFileSystemWatcher() { return { dispose, onDidChange(listener) { savedListener = listener; return { dispose }; }, onDidCreate() { return { dispose }; }, onDidDelete() { return { dispose }; } }; },
-      getConfiguration() { return { get(key, fallback) { return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback; }, inspect() { return {}; } }; }, workspaceFolders: [],
+      getConfiguration() { return { get(key, fallback) { return key === 'nodePath' ? 'node' : key === 'configPath' ? configPath : fallback; }, inspect() { return {}; } }; }, workspaceFolders: workspaceFolders.map(folder => ({ uri: { fsPath: folder } })),
       textDocuments: dirtyFiles.map(file => ({ uri: { scheme: 'file', fsPath: file }, isDirty: true })),
     },
     lm: { registerMcpServerDefinitionProvider() { return { dispose }; } },
@@ -333,6 +333,9 @@ test('an activation with an outdated CLI chat registration offers to update the 
   const again = await runExtension({ activationOnly: true, registrations: { claude: 'outdated' }, storedState: declined.state });
   assert.deepEqual(again.warnings, [], 'the same runtime is offered once');
   assert.deepEqual(again.events, [], 'and reads nothing again');
+  const roots = await runExtension({ activationOnly: true, workspaceFolders: [path.resolve('one'), path.resolve('two')], registrations: { claude: 'outdated' }, awaitWarnings: 1 });
+  assert.deepEqual(roots.errors, [], 'a multi-root window reads the registrations too');
+  assert.match(roots.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI still start the previous version./);
 });
 
 test('the extension keeps no state in globalState, which VS Code keeps after uninstall', async () => {

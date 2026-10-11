@@ -323,13 +323,22 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     output.appendLine(redactDiagnostic(JSON.stringify(value, null, 2)));
     if (reveal) output.show(true);
   }
-  function options() {
+  /**
+   * The bundled runtime, Node.js and environment for reading local state: CLI installations,
+   * registrations and the model view. Works in any window; a multi-root window reads from the
+   * home directory.
+   */
+  function localOptions() {
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
     if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
     const folders = vscode.workspace.workspaceFolders ?? [];
-    if (folders.length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
     clearCliResolverCache();
-    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), skillsSource: context.asAbsolutePath('skills'), nodePath, home: os.homedir(), cwd: folders[0]?.uri.fsPath || os.homedir(), env: discoveryEnvironment(storage), origin: EXTENSION_ORIGIN, dataDirectory: storage };
+    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), skillsSource: context.asAbsolutePath('skills'), nodePath, home: os.homedir(), cwd: folders.length === 1 ? folders[0].uri.fsPath : os.homedir(), env: discoveryEnvironment(storage), origin: EXTENSION_ORIGIN, dataDirectory: storage };
+  }
+  /** {@link localOptions} for setup, which checks the CLIs and project-level entries in the one workspace folder. */
+  function options() {
+    if ((vscode.workspace.workspaceFolders ?? []).length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
+    return localOptions();
   }
   let lastStatus: SetupStatus[] = [];
   /** One readable state per CLI; the full evidence is written only through Show Details. */
@@ -1115,7 +1124,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (vscode.env.remoteName || !readSetupState(storage).welcomed) return;
     const runtime = `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`;
     if (readSetupState(storage).updateOffered === runtime) return;
-    const outdated = readRegistrations(options()).filter(item => item.state === 'owned' && !item.current).map(item => item.client);
+    const outdated = readRegistrations(localOptions()).filter(item => item.state === 'owned' && !item.current).map(item => item.client);
     if (!outdated.length) return;
     await updateSetupState(storage, { updateOffered: runtime });
     const next = await vscode.window.showWarningMessage(`CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Update them now, then restart those chats.`, 'Update CLI Chats');
