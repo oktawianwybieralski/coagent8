@@ -298,24 +298,30 @@ test('direct process launch without PowerShell wrapper or C# Roslyn compilation'
 });
 
 test('terminateProcessTree terminates running process cleanly without leaving orphans', async () => {
-  // Launch an idle child process
+  // Launch an idle child the way the supervisor does: on POSIX it leads its own
+  // process group, which is what terminateProcessTree signals.
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
     stdio: 'ignore',
     windowsHide: true,
+    detached: process.platform !== 'win32',
   });
+  try {
+    const pid = child.pid;
+    assert.ok(pid, 'Child process must have a PID');
 
-  const pid = child.pid;
-  assert.ok(pid, 'Child process must have a PID');
+    // Verify process is running
+    assert.doesNotThrow(() => process.kill(pid, 0), 'Child process should be running');
 
-  // Verify process is running
-  assert.doesNotThrow(() => process.kill(pid, 0), 'Child process should be running');
+    // Terminate process tree
+    await terminateProcessTree(child);
 
-  // Terminate process tree
-  await terminateProcessTree(child);
+    // Allow OS a small grace window to release PID
+    await new Promise(r => setTimeout(r, 200));
 
-  // Allow OS a small grace window to release PID
-  await new Promise(r => setTimeout(r, 200));
-
-  // Verify process is dead
-  assert.throws(() => process.kill(pid, 0), 'Process must be dead after terminateProcessTree');
+    // Verify process is dead
+    assert.throws(() => process.kill(pid, 0), 'Process must be dead after terminateProcessTree');
+  } finally {
+    // A failed assertion must not leave the idle child holding the test file open.
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  }
 });
