@@ -9,20 +9,20 @@
 # CoAgent8 - Cooperating coding agents
 
 [![CI](https://img.shields.io/github/actions/workflow/status/oktawianwybieralski/coagent8/ci.yml?branch=develop&label=CI&logo=github)](https://github.com/oktawianwybieralski/coagent8/actions/workflows/ci.yml)
-[![CI matrix](https://img.shields.io/badge/CI%20matrix-3%20OS%20%C3%97%20Node%2024%2F26-2088FF?logo=github)](.github/workflows/ci.yml)
-[![Coverage gate](https://img.shields.io/badge/coverage%20gate-%E2%89%A570%25-brightgreen)](package.json)
 [![npm next](https://img.shields.io/npm/v/coagent8/next?label=npm%20next&color=007ec6)](https://www.npmjs.com/package/coagent8?activeTab=versions)
-[![Status](https://img.shields.io/badge/status-preview%20beta-orange)](docs/ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-preview-orange)](docs/ROADMAP.md)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+
 [![Node.js](https://img.shields.io/badge/node-%3E%3D%2024-5FA04E)](package.json)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)](tsconfig.json)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](.github/workflows/ci.yml)
 [![MCP](https://img.shields.io/badge/MCP-stdio-black)](https://modelcontextprotocol.io)
 [![Backends](https://img.shields.io/badge/backends-Codex%20%7C%20Claude%20Code%20%7C%20Antigravity-6f42c1)](#backends-and-read-only-profiles)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](.github/workflows/ci.yml)
-[![API reference](https://img.shields.io/badge/docs-API%20reference-informational)](https://oktawianwybieralski.github.io/coagent8/)
-[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)](tsconfig.json)
+[![Coverage gate](https://img.shields.io/badge/coverage%20gate-%E2%89%A570%25-brightgreen)](package.json)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-FE5196)](https://www.conventionalcommits.org)
-[![Forks](https://img.shields.io/github/forks/oktawianwybieralski/coagent8?style=social)](https://github.com/oktawianwybieralski/coagent8/fork)
-[![Stars](https://img.shields.io/github/stars/oktawianwybieralski/coagent8?style=social)](https://github.com/oktawianwybieralski/coagent8/stargazers)
+
+[API reference](https://oktawianwybieralski.github.io/coagent8/)
 
 CoAgent8 exposes Codex, Claude Code and Antigravity (backend `agy`, which runs
 Gemini models) through a stdio MCP server. An agent in a compatible host can request a
