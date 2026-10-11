@@ -1925,6 +1925,28 @@ GitHub's initial LICENSE commit `b962086`; PR #1 (`chore/release-v1.0.0-beta.1`
 ruleset requires checks named Node 20.x/22.x, which `ci.yml` (24.x/26.x) never
 reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
 
+State verified 2026-10-11 (read-only): the default branch is named `devlop`
+(typo) at `b962086`; `main` is deleted; PR #1 is open against `devlop`; there are
+no tags or releases and no Pages site. The branch ruleset "main and release
+branches" still targets `refs/heads/main` and `refs/heads/release/*` (which
+includes the release PR branch `release/v0.6.0`) with signed commits and the
+Node 20.x/22.x checks; `devlop` itself is unprotected. `ci.yml`, `release.yml`
+(`develop|[0-9]*.[0-9]*.x`) and rule 02 name `develop`, so on `devlop` no CI job
+runs and the tag check of `release.yml` fails. `release/v0.6.0` is 353 commits
+ahead of `b962086`, all unsigned.
+
+Owner decisions 2026-10-11 for the first release:
+
+- `develop` receives 0.6.0 as one finished version: the release PR is
+  squash-merged into one GitHub-signed (Verified) commit, and `v0.6.0` is tagged
+  on that commit. The 353 branch commits are not pushed to `develop` one by one;
+  the PR page keeps them and the detailed changelog section lists them.
+- The commits of `release/v0.6.0` need no signature: only the squash commit
+  reaches `develop`. The branch is deleted after the merge.
+- Nothing is tested on `develop`. CI is tested on the draft release PR, the
+  package from that PR's CI artifacts, and the release workflow in a private
+  rehearsal repository (step 5b) before the real tag.
+
 ### Agent cards (local; no push)
 
 - [x] **REPO-002a - rules and documents.** Rule 02 (branching, PRs, five
@@ -1986,14 +2008,22 @@ unpublished instead of deprecated (step 8); this replaces the beta.1 parts of th
 2026-10-10 decisions above.
 
 1. **Branches:** create `develop` at `b962086` and make it the default branch.
-   **Pages:** Settings > Pages > Source "GitHub Actions"; in the `github-pages`
+   State 2026-10-11: created as `devlop`; rename it to `develop` (Settings >
+   Branches, or `gh api -X POST
+   repos/oktawianwybieralski/coagent8/branches/devlop/rename -f
+   new_name=develop`) before step 5, because the workflows and rulesets name
+   `develop`. The rename retargets PR #1. **Pages:** Settings > Pages > Source "GitHub Actions"; in the `github-pages`
    environment allow deployment tags `v*` and the branch `develop`.
 2. **Rulesets** (rule 02 section 8): retarget the branch ruleset to
    `refs/heads/develop`, squash only, required checks
    `Test on {ubuntu,macos,windows}-latest (Node {24.x, 26.x})`; add the
    `release lines` ruleset for `refs/heads/*.*.x`; keep both tag rulesets.
+   Remove `refs/heads/release/*` from the targets: release PR branches are topic
+   branches, and the signed-commit rule would refuse the unsigned
+   `release/v0.6.0` push.
 3. **Cleanup:** close PR #1, delete `chore/release-v1.0.0-beta.1`, then delete
-   `main` (after step 2 removed it from the ruleset).
+   `main` (after step 2 removed it from the ruleset). State 2026-10-11: `main`
+   is deleted; PR #1 and its branch remain.
 4. **beta.1:** nothing on GitHub. The local tag `v1.0.0-beta.1` (commit X) is
    not pushed; deleting it locally is the owner's choice.
 5. **beta.2 PR (0.6.0):** push `release/v0.6.0` (the local branch formerly
@@ -2003,6 +2033,27 @@ unpublished instead of deprecated (step 8); this replaces the beta.1 parts of th
    `develop` titled `chore(release): v0.6.0` with the prepared notes; the six CI
    jobs are EXEC-001-T12c's matrix evidence; run T12c's native checks and T12d's
    independent review on its head.
+   - Open the PR as a **draft**. This is the first CI run on GitHub: a failing
+     job is fixed by a new commit on `release/v0.6.0` (regenerating the frozen
+     changelog section as rule 02 section 6 describes), and CI reruns. Nothing
+     is merged until all six jobs are green on the head.
+   - Tester checks use the packages that CI uploaded for that head
+     (`actions/upload-artifact` in `ci.yml`), not local builds: install the VSIX
+     in a clean VS Code profile and the tarball in a clean directory, then run
+     the native smoke.
+   - **Step 5b - rehearse the release workflow** in a private throwaway
+     repository (for example `coagent8-release-test`), because the real tag is
+     immutable and publishing its release starts `npm-publish.yml`. Push the
+     head of `release/v0.6.0` there as `develop`, push an annotated `v0.6.0` tag
+     on it and check that `release.yml` passes the tag checks, the gate, packing
+     and smoke, attestation and creates the draft pre-release with the tarball,
+     VSIX and `SHA256SUMS`; run step 7's verification on its downloads. Never
+     publish the rehearsal draft, and do not create the `npm` environment, the
+     variable `NPM_TRUSTED_PUBLISHING` or any npm secret there. Delete the
+     repository afterwards. A failure is fixed on `release/v0.6.0` and repeats
+     step 5.
+   - Mark the PR ready for review only after the CI run, the tester checks and
+     step 5b passed.
 6. **Merge and tag:** squash-merge; tag the squash commit `v0.6.0`
    (annotated) and push the tag. `release.yml` creates the draft pre-release.
    Replace its one-entry notes with the prepared detailed notes

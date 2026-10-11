@@ -8,6 +8,17 @@ Updated 2026-10-11. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## REPO-002 first release path (2026-10-11)
+
+GitHub state checked read-only and owner decisions for 0.6.0 recorded in
+[REPO-002](ROADMAP.md#repo-002-branch-model-and-release-workflow): the
+default branch is `devlop` (rename to `develop` before the PR), the branch
+ruleset still targets `main` and `release/*` with Node 20.x/22.x checks,
+`release/v0.6.0` is 353 unsigned commits ahead of `b962086`. 0.6.0 reaches
+`develop` as one squash commit tagged `v0.6.0`; CI is tested on the draft PR,
+packages from its CI artifacts, and `release.yml` in a private rehearsal
+repository (owner step 5b). Nothing pushed; all steps remain owner actions.
+
 ## PLUGIN-001g VS Code installed-server entry
 
 Commit `1f36525` on `release/v0.6.0` (local, not pushed). Local checks on
