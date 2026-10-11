@@ -11,13 +11,11 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-10 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
-
-
-## [1.0.0-beta.2] - 2026-10-10 ([`v1.0.0-beta.2`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.2))
-
-Entries link the commits of the beta.2 pull request, which was squash-merged into
-`develop` as one commit (REPO-002). The pull request page keeps them.
+Entries link the commits of the 0.6.0 pull request (prepared as 1.0.0-beta.2),
+which was squash-merged into `develop` as one commit (REPO-002). The pull request
+page keeps them.
 
 ### Breaking
 - [`d015035`](https://github.com/oktawianwybieralski/coagent8/commit/d0150354e9f2d8b88e59a122fe66cb769f93cce1) **execution:** Layered owned-process termination with protocol interrupts
@@ -33,7 +31,6 @@ Entries link the commits of the beta.2 pull request, which was squash-merged int
 - [`b79f744`](https://github.com/oktawianwybieralski/coagent8/commit/b79f7449f70ae5fd2c76d7b337347d79a62b4c04) **vscode:** One setup list, CLI executable choice and complete uninstall
 - [`b2e483c`](https://github.com/oktawianwybieralski/coagent8/commit/b2e483cd37bdb617da0f43f3863773ea320bcd9a) **vscode:** Share ~/.coagent8/config.json with the CLI and keep it on uninstall
 - [`0fe63f1`](https://github.com/oktawianwybieralski/coagent8/commit/0fe63f152caf3fda9dca7f5f6560b0b17f7a7a27) **doctor:** Default to a cached model view and move health to a scope
-
 
 ### Added
 - [`94acde8`](https://github.com/oktawianwybieralski/coagent8/commit/94acde80943b951739409af15cdf376e81594782) **routing:** Choose another CLI than the client when auto is ambiguous
@@ -184,38 +181,3 @@ Entries link the commits of the beta.2 pull request, which was squash-merged int
 - [`79cc5f6`](https://github.com/oktawianwybieralski/coagent8/commit/79cc5f62d244f0d1104103e4b394dc0726ac6e29) **vscode:** Offer vendor extensions over standalone CLIs and remove standalone installs completely
 - [`78b1bd5`](https://github.com/oktawianwybieralski/coagent8/commit/78b1bd533919f2d8802051bd7ad0d476d72d616b) **setup:** Offer installation when a selected vendor extension copy is missing
 - [`f10166e`](https://github.com/oktawianwybieralski/coagent8/commit/f10166eac1642711e2f83b8a191ca67ace4151c0) **vscode:** End the uninstall with Reload Window to apply extension removals
-
-## [1.0.0-beta.1] - 2026-10-05 ([`v1.0.0-beta.1`](https://github.com/oktawianwybieralski/coagent8/tree/v1.0.0-beta.1))
-
-### Added
-- Canonical tool surface: `consult` (with `task_type`), `review`, `doctor`,
-  `session`, `cancel`, `issue`; compact profile through `run`.
-- Plain `consult` answers with a structured `verdict` field; the State Envelope is
-  enforced for `review` only.
-- Generic MCP interoperability: tools are listed without a recognized client and
-  without invoking a backend.
-- Optional `setup`, `repair` and `status` commands for Codex, Claude Code and agy
-  host registration, reused by the VS Code extension.
-- Claude Code backend in restricted read-only mode with streaming and resume.
-- Claude Code subscription quota read from `/usage` before routing.
-- Native Gemini (`agy`) quota inspection in `doctor`.
-- Focused test file selection in `tests/run.cjs`.
-
-### Changed
-- Session pruning runs in the background after the MCP transport connects.
-- Backend resolution no longer writes the default backend to the configuration.
-- Hidden PowerShell windows for Windows process supervision and tests.
-- License changed to GPL-3.0-only.
-- Product and npm package renamed to CoAgent8 (`coagent8`).
-
-### Deprecated
-- Tools `analyze`, `debug` and `implement`; use `consult` with `task_type`.
-  Removal is planned for v1.1.0.
-
-### Fixed
-- Gemini sandbox-denial handling no longer reports valid results as duplicates.
-- Escaped and structured Windows home paths are redacted in diagnostics.
-- Claude Code events require `init`, `inspectQuota` is version-gated and
-  sessions are hardened.
-- Adapter startup errors keep their diagnostics; billing failures map to
-  authentication errors.
