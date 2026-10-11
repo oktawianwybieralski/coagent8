@@ -659,3 +659,9 @@ test('a model row names the rule entry that decides it, such as the variant its 
   const [none] = listModelCandidates('agy', agy, fallback, list, rules({}));
   assert.equal(none.approval.ruleEntry, undefined);
 });
+
+test('a price limit takes the first permitted variant of an effort-required model, not only its first', () => {
+  const agy = { source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
+  assert.deepEqual(choosePricedModel('agy', agy, undefined, { below: 5 }, list, ['gemini-3.8-flash-high'], true), { model: 'gemini-3.8-flash-low', source: 'price-limit' });
+  assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5 }, list, ['gemini-3.8-flash-high', 'gemini-3.8-flash-low'], true), { code: 'PRICE_LIMIT' });
+});

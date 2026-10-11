@@ -181,7 +181,9 @@ test('S3 models: pure selection decisions', () => {
   // A denied model is never chosen for a limit, by id or by the variant it would run as.
   assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model']),
     { code: 'PRICE_LIMIT', message: /and not denied by the user has a verified price below the limit/ });
-  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low']), { code: 'PRICE_LIMIT' });
+  assert.deepEqual(choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low']),
+    { model: 'other-model-high', source: 'price-limit' }, 'another permitted variant is chosen');
+  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low', 'other-model-high']), { code: 'PRICE_LIMIT' });
   assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 20 }, priceList, ['default-model', 'other-model']),
     { code: 'PRICE_LIMIT', message: /Default: 'default-model' is denied by the user\./ });
 

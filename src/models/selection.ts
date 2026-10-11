@@ -79,9 +79,11 @@ export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefi
   if (fallback && !defaultReason && accepts(defaultEntry) && !isDenied(fallback.model)) return fallback;
   let best: { model: string; price: number } | undefined;
   for (const entry of catalog?.models ?? []) {
-    // The name the turn would run: agy's `<id>-<effort>` when an effort is required and none is passed.
-    const model = entry.effortRequired && !effort && entry.efforts.length ? `${entry.id}-${entry.efforts[0]}` : entry.id;
-    if (!accepts(entry) || isDenied(entry.id) || isDenied(model)) continue;
+    // The name the turn would run: agy's first permitted `<id>-<effort>` when an effort is required
+    // and none is passed.
+    const names = entry.effortRequired && !effort && entry.efforts.length ? entry.efforts.map(variant => `${entry.id}-${variant}`) : [entry.id];
+    const model = names.find(name => !isDenied(name));
+    if (!accepts(entry) || isDenied(entry.id) || model === undefined) continue;
     const evidence = priceEvidence(prices, entry.id);
     if (checkPriceLimit(entry.id, evidence, below) === undefined && (!best || evidence.outputUsdPerMTok! > best.price)) best = { model, price: evidence.outputUsdPerMTok! };
   }
