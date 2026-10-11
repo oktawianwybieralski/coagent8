@@ -703,7 +703,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
    * the server's own caches and configuration file.
    */
   async function readModelReport(): Promise<ModelReport> {
-    const opts = options();
+    const opts = localOptions();
     const result = await runCommand(opts.nodePath, [opts.runtimeSource, 'models', '--json'], { cwd: opts.cwd, env: opts.env, timeoutMs: MODEL_REPORT_TIMEOUT_MS });
     if (result.status !== 'completed' || result.exitCode !== 0) {
       throw new Error(`Reading the models failed: ${result.error?.message || result.stderr.trim() || `exit code ${result.exitCode}`}`);

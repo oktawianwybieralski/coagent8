@@ -804,6 +804,14 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
   assert.deepEqual(variant.config.governance.models, { allow: [], ask: [], deny: [] }, 'Price Rules removes the rule that decided it');
   assert.deepEqual(variant.statusMessages, ['CoAgent8: gemini-3.8-flash-low · price rules']);
 });
+test('Manage Model Approvals opens in a multi-root window, where setup asks for one workspace', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-roots-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const roots = await runExtension({ home, command: 'coagent8.manageModelApprovals', workspaceFolders: [path.join(home, 'one'), path.join(home, 'two')] });
+  assert.deepEqual(roots.errors, []);
+  assert.deepEqual(roots.menus[0].items.filter(item => !item.separator).map(item => item.label), ['$(symbol-number) Ask Above Price', '$(symbol-number) Ask Above Default Price', '$(server) Codex CLI', '$(server) Antigravity CLI']);
+  assert.equal(roots.modelRuns.length, 1, 'the model report is read');
+});
 test('Manage Model Approvals edits the price rules: an empty price turns that rule off, invalid values are refused', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-price-rules-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
