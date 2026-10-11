@@ -1921,9 +1921,9 @@ minor; npm, VSIX and the Git tag carry the same number, so no mapping is needed:
 | rc.1 or rc.2 | 0.9.0 | 0.8.0 / 0.9.0 |
 | release | 1.0.0 | 1.0.0 |
 
-The owner unpublishes the npm package; npm never reuses a published version number
-and blocks the name for 24 hours after its last version is removed. Choosing the
-starting minor (0.5 or 0.6) is an open owner decision.
+What happens to the published npm placeholder is the owner's decision outside this
+card; npm never reuses a published version number, so the new numbers do not
+collide with it. Choosing the starting minor (0.5 or 0.6) is an open owner decision.
 
 - [ ] **REPO-003a - versions and release rules.** Start: `package.json`,
   `extensions/vscode/package.json`, `scripts/build-vscode.cjs`,
@@ -1933,8 +1933,8 @@ starting minor (0.5 or 0.6) is an open owner decision.
   keep VSIX pre-release marking and npm `next` for previews, remove the suffix
   stripping, rename tags/lines/branches in rules and docs (`v0.N.0`, line for 1.0),
   keep historical evidence as history. Check: build, package and VSIX inspection,
-  `npm run changelog:check`, workflow lint where available; owner steps for npm
-  unpublish, tags and the branch rename.
+  `npm run changelog:check`, workflow lint where available. Tags, branch names on
+  GitHub and anything on npm stay owner actions.
 
 ## Release acceptance
 
