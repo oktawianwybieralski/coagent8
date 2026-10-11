@@ -518,7 +518,7 @@ held protects stays, the hook reports it, and the rest of the cleanup runs. Nati
 extension copy is that copy. Standalone removal deletes installer links, never
 their targets' other files, then emptied installer folders and their user PATH
 entries, keeping the registry value's type and unexpanded variables. An extension
-removal shows the extension in the Extensions view (`workbench.extensions.search`),
+removal opens the extension's page (`extension.open`),
 where the native Uninstall and Restart Extensions apply it to every host; no
 public command does that restart, and a developer extension-host restart does not
 apply the Extensions view's internal add/remove delta. The extension records the

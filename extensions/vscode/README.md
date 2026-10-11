@@ -256,7 +256,7 @@ a restart. An entry CoAgent8 wrote stays its own when its record in
 `~/.coagent8/setup.json` is lost: it starts a runtime copy in `~/.coagent8/runtime`
 and holds only the fields CoAgent8 writes.
 
-**Uninstall VS Code Extension** shows the extension in the Extensions view, where
+**Uninstall VS Code Extension** opens the extension's page, where
 you choose VS Code's own **Uninstall** and then **Restart Extensions**, which
 applies the removal to every running extension, the chat included, without
 reloading the window. No command lets an extension do that restart. Once VS Code

@@ -831,14 +831,15 @@ test('Manage Model Approvals edits the price rules: an empty price turns that ru
   assert.equal(cancelled.config.governance.askAbovePrice, null, 'a cancelled input changes nothing');
 });
 
-test('Uninstall VS Code Extension shows the extension in the Extensions view, where VS Code removes and restarts it', async () => {
+test('Uninstall VS Code Extension opens the extension page, where VS Code removes and restarts it', async () => {
   const codex = path.join(path.resolve('vendor', 'openai.chatgpt'), 'bin', 'codex.exe');
   const notOffered = await runExtension({ commands: { codex }, vendorExtensions: ['openai.chatgpt'], steps: [{ client: 'codex' }] });
   assert.ok(!actionsOf(notOffered.menus[1]).includes('uninstallExtension'), 'an extension the user installed is never offered');
   const options = { commands: { codex }, vendorExtensions: ['openai.chatgpt'], installs: { installedExtensions: ['openai.chatgpt'] }, registrations: { codex: 'owned' } };
   const steps = () => [{ client: 'codex' }, { action: 'uninstallExtension' }];
   const shown = await runExtension({ ...options, steps: steps() });
-  assert.deepEqual(shown.requests, [['workbench.extensions.search', 'openai.chatgpt']], 'the native Uninstall and Restart Extensions apply the removal to every running extension');
+  // The page, not a search by ID (FEEDBACK-060b): its Uninstall and Restart Extensions apply the removal to every running extension.
+  assert.deepEqual(shown.requests, [['extension.open', 'openai.chatgpt']], 'the native Uninstall and Restart Extensions apply the removal to every running extension');
   assert.deepEqual([shown.warnings, shown.notifications], [[], []], 'no dialog or notice of its own');
   assert.equal(shown.menus.length, 2, 'the menu closes on the Extensions view');
   assert.deepEqual(shown.state, { welcomed: true, removingExtensions: ['openai.chatgpt'] });

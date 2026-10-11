@@ -2131,7 +2131,7 @@ cancel of a running Codex and agy turn, no home paths in answers.
 
 ### Before 0.6.0 (on `release/v0.6.0`)
 
-- [ ] **FEEDBACK-060a - review in a repository Git refuses.** In a repository
+- [x] **FEEDBACK-060a - review in a repository Git refuses.** In a repository
   owned by another account (here the Codex sandbox user `CodexSandboxOnline`)
   Git reports dubious ownership and treats the folder as no repository, so
   `git diff --cached` fails with `unknown option 'cached'` and `review` returns
@@ -2139,7 +2139,7 @@ cancel of a running Codex and agy turn, no home paths in answers.
   Check the repository first and return Git's own reason as a clear error;
   never change `safe.directory`. Check: a fixture reproducing the refusal, the
   error names the cause.
-- [ ] **FEEDBACK-060b - Uninstall opens the extension page.** Manage Coding CLIs
+- [x] **FEEDBACK-060b - Uninstall opens the extension page.** Manage Coding CLIs
   > Uninstall of a vendor extension runs `workbench.extensions.search` with the
   extension ID, so the Extensions view shows a search instead of the extension.
   Open its page (`extension.open`) where VS Code's own Uninstall and Restart

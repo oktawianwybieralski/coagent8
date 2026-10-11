@@ -889,7 +889,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (registration.state === 'owned' && !registration.current) chat.push({ label: '$(sync) Update CoAgent8 in Its Chat', description: 'another CoAgent8 version', action: 'connect' });
     const removals: MenuItem[] = [];
     if (registration.state === 'owned') removals.push({ label: '$(debug-disconnect) Remove CoAgent8 from Its Chat', description: 'the CLI stays', action: 'disconnect' });
-    if (record.installedExtensions?.includes(vendor.id) && extensionInstalled) removals.push({ label: '$(trash) Uninstall VS Code Extension', description: 'in the Extensions view', action: 'uninstallExtension' });
+    if (record.installedExtensions?.includes(vendor.id) && extensionInstalled) removals.push({ label: '$(trash) Uninstall VS Code Extension', description: 'on its page', action: 'uninstallExtension' });
     if (record.installedClis?.includes(client) && standaloneFound(client, installations)) removals.push({ label: '$(trash) Uninstall Standalone CLI', description: 'installed by CoAgent8', action: 'uninstallStandalone' });
     return [
       ...section('Installations', installed),
@@ -989,9 +989,10 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       case 'uninstallExtension': {
         // VS Code's own Uninstall and Restart Extensions apply the removal to every running
         // extension, the chat included; no command offers that restart. The user removes the
-        // extension there, and CoAgent8 finishes its part once the extension is gone.
+        // extension there, and CoAgent8 finishes its part once the extension is gone. Its page
+        // carries Uninstall; a search by ID would only list it.
         await updateSetupState(storage, { removingExtensions: [...new Set([...readSetupState(storage).removingExtensions ?? [], vendor.id])] });
-        await vscode.commands.executeCommand('workbench.extensions.search', vendor.id);
+        await vscode.commands.executeCommand('extension.open', vendor.id);
         return 'close';
       }
       case 'uninstallStandalone': {
