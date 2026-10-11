@@ -4,7 +4,7 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-10-09. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-11. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -879,6 +879,112 @@ cleared.
   removal of the installation in use, no Sync question when installing a vendor
   extension, Extensions-view uninstall with hook cleanup.
 
+## PLUGIN-001: native plugin in every supported client
+
+Owner decision 2026-10-11: each supported client (Codex, Claude Code,
+Antigravity) can load CoAgent8 as a native plugin, managed by the client's
+own plugin commands, and the npm package remains an independent installer that
+needs no plugin system. This replaces the SKILLS-001 clause "no Codex plugin,
+marketplace or manual-copy installer"; a manual-copy installer stays out of
+scope. Release placement is an owner decision; the recommendation is beta.3
+(0.7.0), because every manifest, setup and native check here changes what
+EXEC-001-T12 accepts for 0.6.0.
+
+Installation paths after this work:
+
+| Path | Who owns the registration | Skills | Update and removal |
+| --- | --- | --- | --- |
+| Native plugin (per client) | The client's plugin manager | Bundled in the plugin | The client's plugin update, disable and uninstall |
+| npm: `npm install -g coagent8@<version>`, then `coagent8 setup` | CoAgent8 setup state | Copied by setup (SKILLS-001/002) | `coagent8 repair`; `coagent8 cleanup` before `npm uninstall -g` |
+| Manual MCP entry (any stdio host) | The user | None | The user |
+| VS Code extension | The extension | Manage Skills | Manage Coding CLIs; extension uninstall |
+
+Principles:
+
+- **One payload.** The npm tarball is the plugin payload for every client. The
+  bundle inlines its dependencies (`scripts/build.cjs` fails on an external
+  import), and `skills/` and `assets/` already ship. `dist/` stays out of Git, so
+  a plugin source that clones the repository has no runtime; marketplace entries
+  reference the npm package at an exact version instead (PACKAGE-001).
+- **One owner per client.** A client uses either the plugin or a setup/VS Code
+  registration, never both: two entries start two servers and list every tool
+  and skill twice. Setup already refuses an enabled CoAgent8 plugin in Codex
+  configuration; the same refusal covers Claude Code and agy. `status` and
+  doctor report the plugin, and cleanup never touches plugin directories.
+- **Pinned versions.** Marketplace entries pin the exact version of the release
+  that published them; the release PR raises them together with `package.json`
+  (REPO-003: one number for npm, VSIX, tag and plugin).
+- **Evidence before claims.** Manifests may ship before acceptance, but the
+  README offers a client's plugin installation only after PLUGIN-001f passes in
+  that client.
+
+Client plugin formats reviewed 2026-10-11 (documentation only; native
+behavior is unverified until PLUGIN-001a):
+
+| Client | Manifest | MCP declaration | Root variable | Distribution and install | Open questions |
+| --- | --- | --- | --- | --- | --- |
+| Claude Code | `.claude-plugin/plugin.json`; `skills/` at the plugin root | `.mcp.json` or inline `mcpServers` | `${CLAUDE_PLUGIN_ROOT}` in stdio `command`, `args`, `env` | `.claude-plugin/marketplace.json` in the repository; entry `source: { "source": "npm", "package": "coagent8", "version": "<exact>" }` (fetched without install scripts or dependency install). `/plugin marketplace add oktawianwybieralski/coagent8`, `/plugin install coagent8@coagent8` | Tool names are namespaced under the plugin; check the skills and the calling-client detection with those names. `claude plugin validate --strict` |
+| Codex | Root `plugin.json` (Agent Plugins layout, `extensions.com.openai`), `.codex-plugin/plugin.json` as fallback | Root `mcp.json` | `PLUGIN_ROOT` is documented for hooks only; the current `mcp.json` relies on `${PLUGIN_ROOT}` in `args` | `.agents/plugins/marketplace.json`; `npm` source supported. `codex plugin marketplace add oktawianwybieralski/coagent8` | Documentation shows only remote MCP servers and installation from the ChatGPT desktop app: verify stdio servers, root expansion and installation in Codex CLI 0.160+ |
+| Antigravity | Root `plugin.json` with `name` (required by the CLI) | Root `mcp_config.json` | None documented | `agy plugin install <GitHub URL or local path>`; stages under `~/.gemini/antigravity-cli/plugins/<name>/` | No root variable: a GitHub install has no runtime and a local path needs a resolvable entry point. Verify against the installed npm package directory; the shared root `plugin.json` must also satisfy Codex |
+
+If a client offers no way to locate the bundle inside its plugin, the fallback
+is `npx -y coagent8@<exact>` as the server command. It costs a registry check on
+the first launch, which slows the first MCP start, and needs a verified Windows
+form, so it is chosen per client from PLUGIN-001a evidence, not by default.
+
+VS Code (source of 1.141.0 read 2026-10-11): the Agent Customizations editor
+groups MCP servers by owner. "User" and "Workspace" hold `mcp.json` entries and
+gallery installs (the same list as "MCP Servers - Installed" in the Extensions
+view); "Extensions" holds servers from `mcpServerDefinitionProviders`, labeled
+with the providing extension; "Plugins" holds servers of agent plugins. The
+extension's provider therefore never appears under "User" or in the Extensions
+view list, by VS Code design. A user-profile server needs a gallery entry (MCP
+Registry publication, installed by VS Code into the user `mcp.json`) or an agent
+plugin, and the provider already steps aside when a manual `mcp.json` entry
+names CoAgent8.
+
+- [ ] **PLUGIN-001a - loader evidence.** Start: a local plugin directory
+  unpacked from `npm pack` output, no publication. Per client and version in an
+  isolated profile: the manifest validates, the stdio server starts from the
+  plugin's own bundle (record which root variable expands, or that none does),
+  the six tools and six skills are listed, an explicit skill use reaches
+  CoAgent8, disable and uninstall leave no server. Windows path with spaces
+  included. Record PASS/FAIL/NOT_RUN in HANDOFF. Check: native, per client.
+- [ ] **PLUGIN-001b - ownership contract.** Depends: 001a. Update
+  [ARCHITECTURE optional integrations](ARCHITECTURE.md#optional-integrations):
+  how setup, status, doctor, cleanup and the VS Code extension detect an
+  installed or enabled plugin per client, the refusal message, and what each
+  owner may remove. Check: P.
+- [ ] **PLUGIN-001c - manifests in the package.** Depends: 001a. Start:
+  `plugin.json`, `mcp.json`, new `.claude-plugin/plugin.json` and
+  `mcp_config.json` as 001a requires, `package.json` `files`,
+  `scripts/package-artifacts.cjs` (`verifyPlugin` for all three layouts),
+  `tests/consumer/smoke.cjs`. Correct the stale descriptions ("Gemini",
+  "orchestration bridge"). Manifest versions must equal `package.json`.
+  Check: R, package scope from rule 04, each client's validator.
+- [ ] **PLUGIN-001d - marketplaces.** Depends: 001c. `.claude-plugin/marketplace.json`
+  and `.agents/plugins/marketplace.json` on `develop`, pinned to the published
+  version; a test fails when their version differs from `package.json`. Rule 02
+  section 5 adds them to the release PR. Check: R, `claude plugin validate`.
+- [ ] **PLUGIN-001e - setup coexistence.** Depends: 001b. `src/integrations/setup.ts`,
+  `setup-storage.ts`, `cleanup.ts`, `skills.ts`, extension CLI menu: detect the
+  plugin per client, refuse duplicate registration and skills, report it in
+  `status`. Check: R, SETUP, VS Code scope from rule 04.
+- [ ] **PLUGIN-001f - native acceptance and documentation.** Depends: 001c-e
+  and a published package. Per client: install from the marketplace or
+  documented source, use, update to the next version, disable, uninstall;
+  setup refuses while the plugin is enabled. Then the README gains one
+  installation section per client and per path, and the release notes name the
+  clients whose plugin was accepted. Check: native, P.
+- [ ] **PLUGIN-001g - VS Code placement.** Depends: 001b. Native evidence in
+  the current stable VS Code: where the provider server appears (Agent
+  Customizations "Extensions" group, MCP: List Servers), and whether it starts,
+  stops, toggles and shows output there. Owner decision on a user-profile
+  path: MCP Registry publication with a `vscode:mcp/install` link, a VS Code
+  agent plugin, or neither; whichever is chosen, the provider steps aside as it
+  does for a manual entry, and the extension uninstall removes only what the
+  extension created. Check: native, VS Code scope from rule 04.
+
 ## Agent usability acceptance
 
 Checked items are local implementations; unchecked cards are remaining work
@@ -1095,9 +1201,11 @@ before EXEC-001-T12.
 
 Owner decisions 2026-10-10: every CoAgent8 function gets a skill so a user can
 name what to use; setup installs a client's skills with its MCP registration,
-and cleanup and the VS Code uninstall remove them. Supported installations are
-the VS Code extension and the npm package only; no Codex plugin, marketplace or
-manual-copy installer. SKILLS-001a-e land before EXEC-001-T12, which accepts
+and cleanup and the VS Code uninstall remove them. Supported installations were
+the VS Code extension and the npm package only; the owner added native plugins
+for every supported client on 2026-10-11
+([PLUGIN-001](#plugin-001-native-plugin-in-every-supported-client)); a
+manual-copy installer remains out of scope. SKILLS-001a-e land before EXEC-001-T12, which accepts
 them. Skills that delegate writing through CoAgent8 profiles remain COAGENT-005.
 The [claudex-loop reference](https://github.com/chaseai-yt/claudex-loop/tree/8cf5e2c1771c5151d90c12642391d0ba8fa71b0e)
 informed the loop's stages and round limits; no upstream text or code is copied.
