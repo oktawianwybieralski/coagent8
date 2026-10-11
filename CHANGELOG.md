@@ -11,7 +11,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-10-10 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
+## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
 Entries link the commits of the 0.6.0 pull request (prepared as 1.0.0-beta.2),
 which was squash-merged into `develop` as one commit (REPO-002). The pull request
@@ -76,7 +76,11 @@ page keeps them.
 - [`2115b39`](https://github.com/oktawianwybieralski/coagent8/commit/2115b397b39cdd5d6d6874ab826a35e770a5a447) **review:** Say when another review cannot change the verdict (AX-007a)
 - [`900c530`](https://github.com/oktawianwybieralski/coagent8/commit/900c530b2dab626c79b7f1595ee4b3ec75960f2f) **mcp:** Label the continuation handle in the result footer (AX-007b)
 - [`9ddc3d1`](https://github.com/oktawianwybieralski/coagent8/commit/9ddc3d1db94af71a2ae5bccaeef273866efe12c3) **review:** Answer an unchanged repeat review without a model turn (AX-007c)
-- [`2cc0b59`](https://github.com/oktawianwybieralski/coagent8/commit/2cc0b591ebbeaaa439460665977bd1573acc65b3) **skills:** Manage skill packages per client from VS Code and the CLI (SKILLS-002)
+- [`2cc0b59`](https://github.com/oktawianwybieralski/coagent8/commit/2cc0b591ebbeaaa439460665977bd1573acc65b3) **skills:** Manage skill packages per client from VS Code and the CLI
+- [`bfe1576`](https://github.com/oktawianwybieralski/coagent8/commit/bfe1576b147f1034f3e2063431775abf24cee399) **vscode:** Manage coding CLIs per client and leave extension removal to VS Code
+- [`edf4b83`](https://github.com/oktawianwybieralski/coagent8/commit/edf4b830d5b354b1cd88dce759107f0512714ea7) **governance:** Allow, ask and deny model rules
+- [`1f36525`](https://github.com/oktawianwybieralski/coagent8/commit/1f3652508eaa5fb0e391c61086663c4d1231b730) **vscode:** List CoAgent8 with the installed MCP servers
+- [`d49cbf9`](https://github.com/oktawianwybieralski/coagent8/commit/d49cbf99efe653292638109e6d6fab39914b619f) **vscode:** Manage model approvals from one menu
 
 ### Changed
 - [`1d2de9b`](https://github.com/oktawianwybieralski/coagent8/commit/1d2de9b7c9e20ed2c7f06c9aeda3a323f399fda9) **src:** Group backend files per CLI and split shared modules
@@ -181,3 +185,20 @@ page keeps them.
 - [`79cc5f6`](https://github.com/oktawianwybieralski/coagent8/commit/79cc5f62d244f0d1104103e4b394dc0726ac6e29) **vscode:** Offer vendor extensions over standalone CLIs and remove standalone installs completely
 - [`78b1bd5`](https://github.com/oktawianwybieralski/coagent8/commit/78b1bd533919f2d8802051bd7ad0d476d72d616b) **setup:** Offer installation when a selected vendor extension copy is missing
 - [`f10166e`](https://github.com/oktawianwybieralski/coagent8/commit/f10166eac1642711e2f83b8a191ca67ace4151c0) **vscode:** End the uninstall with Reload Window to apply extension removals
+- [`80d0e61`](https://github.com/oktawianwybieralski/coagent8/commit/80d0e616815ec655df7e2bd0881dd6025a832598) **vscode:** Keep an edited profile entry the user's when its runtime path is unchanged
+- [`b33acd4`](https://github.com/oktawianwybieralski/coagent8/commit/b33acd43599220bcb28cc376153595f53396c705) **review:** Let reviewers without file tools read files with read-only commands
+- [`527ab7d`](https://github.com/oktawianwybieralski/coagent8/commit/527ab7df9a28dff8aee183c7983451dee2c8ad0d) **vscode:** Record a pending digest so a rewrite never takes a racing user edit
+- [`6af6c80`](https://github.com/oktawianwybieralski/coagent8/commit/6af6c80e5d58ba92ff39e7d151c9204fe5ae4f75) **governance:** Apply model rules to the effort variant a turn runs
+- [`ba442a5`](https://github.com/oktawianwybieralski/coagent8/commit/ba442a51006d81863201c18a4c9b746e3ad22592) **review:** Stop blocking a read-only review on checks it cannot run
+- [`2cd1071`](https://github.com/oktawianwybieralski/coagent8/commit/2cd1071806f8241a59e80bb34d15f071eea70882) **vscode:** Add no profile entry beside a workspace CoAgent8 registration
+- [`30e7737`](https://github.com/oktawianwybieralski/coagent8/commit/30e7737caa37c9f2353d695429d70dc80be64fde) **vscode:** Change the rule entry that decides a model in Manage Model Approvals
+- [`5879925`](https://github.com/oktawianwybieralski/coagent8/commit/58799254c4ac26fdac5c3e21226917e8a95b2de6) **vscode:** Uninstall removes only its own installation's profile entries
+- [`2e9dab7`](https://github.com/oktawianwybieralski/coagent8/commit/2e9dab7cdd35c35ddb34cfb70b170af167cf47d2) **vscode:** Stop windows of one profile from rewriting the shared entry in turn
+- [`1ff3f4e`](https://github.com/oktawianwybieralski/coagent8/commit/1ff3f4e5aa0403699a18b4de8a50a83851bc6487) **models:** Let a price limit choose any permitted effort variant
+- [`6269fb4`](https://github.com/oktawianwybieralski/coagent8/commit/6269fb4f310732adac32000c7b3e30ff7e52249d) **vscode:** Synchronize and remove profile entries under one lease
+- [`ff825e2`](https://github.com/oktawianwybieralski/coagent8/commit/ff825e249f8e23ec11c932870a90d95ed4b9456f) **vscode:** Keep the uninstall hook within its time limit while setup runs
+- [`ee580cb`](https://github.com/oktawianwybieralski/coagent8/commit/ee580cbbfb7d6de1981b36575cd5eae82f4e8cdb) **vscode:** Check for outdated CLI chats in multi-root windows
+- [`272193b`](https://github.com/oktawianwybieralski/coagent8/commit/272193b5e3cf5bdcaf30133815a20ed32fe10b1f) **vscode:** Open Manage Model Approvals in multi-root windows
+- [`f89f5b1`](https://github.com/oktawianwybieralski/coagent8/commit/f89f5b1500c4cffa6382f4327e2312c22bc25a23) **vscode:** Finish CLI extension removals in multi-root windows
+- [`9af3c9d`](https://github.com/oktawianwybieralski/coagent8/commit/9af3c9d26d241b2c509f736a27bea3323d7afd15) **vscode:** Record a first profile entry as pending before writing it
+- [`19387b3`](https://github.com/oktawianwybieralski/coagent8/commit/19387b3b4ac315e2b743155ef3321738f4fef229) **vscode:** Keep cleaning other profiles when one cannot be read on uninstall
