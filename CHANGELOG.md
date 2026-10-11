@@ -204,3 +204,5 @@ page keeps them.
 - [`19387b3`](https://github.com/oktawianwybieralski/coagent8/commit/19387b3b4ac315e2b743155ef3321738f4fef229) **vscode:** Keep cleaning other profiles when one cannot be read on uninstall
 - [`9014aa1`](https://github.com/oktawianwybieralski/coagent8/commit/9014aa1187e99382e15aa74fbdf5006c43c64bec) **redaction:** Redact the canonical path of the home directory
 - [`d8b4237`](https://github.com/oktawianwybieralski/coagent8/commit/d8b4237edd23a800854de39fa9279931a80016a1) **vscode:** Recognize the installation by its canonical path on uninstall
+- [`d74c7c3`](https://github.com/oktawianwybieralski/coagent8/commit/d74c7c3bd0b7e58c20e25df51ab0389a2c6efd91) **review:** Name Git's reason when it refuses the repository
+- [`5128c31`](https://github.com/oktawianwybieralski/coagent8/commit/5128c312eb33fd886e89b4562bef27dd913e188a) **vscode:** Open the extension page for Uninstall VS Code Extension
