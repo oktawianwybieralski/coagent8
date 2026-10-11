@@ -477,9 +477,10 @@ and the uninstall cleanup run under one lease in `~/.coagent8`, so copying a
 runtime, writing the entry and record, and pruning copies are one step and no
 window prunes a copy another is registering. Ownership is the digest in
 `~/.coagent8/vscode-mcp.json`; only when no record exists does that copy's path
-shape identify the entry. A rewrite records the new digest as pending before it
-writes the entry, so an interrupted write leaves either entry the extension's
-and an edit or removal racing it the user's. An edited entry, even one still
+shape identify the entry. Every write, the first included, records the new digest
+as pending before it writes the entry, so an interrupted write leaves either entry
+the extension's, recorded for the uninstall, and an edit or removal racing it the
+user's; a record of only a pending digest is an unfinished write, never a removal. An edited entry, even one still
 starting the copy, or
 another CoAgent8 entry in the profile is the user's and suppresses the
 extension's; an entry the user removed in VS Code is not added back until

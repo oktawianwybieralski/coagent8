@@ -40,7 +40,11 @@ export type VscodeRegistration = 'registered' | 'current' | 'manual' | 'declined
  * Ownership per profile `mcp.json`: the digest of the entry written, or the user's removal;
  * `pending` is the digest of an entry being written, until the write completes.
  */
-type RegistrationRecord = Record<string, ({ entry: string; version?: string } | { declined: true }) & { pending?: string; pendingVersion?: string; installation: string }>;
+/**
+ * Per profile `mcp.json`: the entry written, the user's removal, or only the digest pending
+ * while a first write is under way.
+ */
+type RegistrationRecord = Record<string, ({ entry: string; version?: string } | { declined: true } | { pending: string }) & { pending?: string; pendingVersion?: string; installation: string }>;
 
 const FORMATTING = { insertSpaces: true, tabSize: 2 };
 const RUNTIME_SHAPE = new RegExp(`[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE_NAME.replace('.', '\\.')}[\\\\/]runtime[\\\\/][a-f0-9]{64}[\\\\/]index\\.cjs$`, 'i');
@@ -236,7 +240,8 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
     }
     return 'manual';
   }
-  if (!restore && current === undefined && recorded !== undefined) {
+  // A record of only a pending digest is a first write that did not finish, not a removal.
+  if (!restore && current === undefined && recorded !== undefined && ('entry' in recorded || 'declined' in recorded)) {
     // The user removed the entry in VS Code: remember it, never add it back unasked.
     if (!('declined' in recorded) || !sameInstallation(recorded.installation, installation)) writeRecord(home, recordText, { ...record, [file]: { declined: true, installation } });
     return 'declined';
@@ -260,12 +265,12 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
   const base = text ?? '{}\n';
   const after = applyEdits(base, modify(base, ['servers', VSCODE_SERVER_NAME], desired, { formattingOptions: { ...FORMATTING, eol: base.includes('\r\n') ? '\r\n' : '\n' } }));
   const digest = hash(JSON.stringify(profileServers(after)[VSCODE_SERVER_NAME]));
-  // Record the digest being written first: should the write below be interrupted, the entry,
-  // old or new, is still ours, while an edit or removal racing it stays the user's. Without a
-  // record the new entry's shape identifies it. The entry on disk, when ours, is the one recorded
-  // as written, whichever digest identified it.
-  const written = ours ? { entry: hash(JSON.stringify(current)), ...(writer?.version ? { version: writer.version } : {}) } : recorded;
-  const marked = written === undefined ? recordText : writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest, pendingVersion: version, installation } });
+  // Record the digest being written first, the first write included: should the write below be
+  // interrupted, the entry, old or new, is still ours and the uninstall finds it, while an edit or
+  // removal racing it stays the user's. The entry on disk, when ours, is the one recorded as
+  // written, whichever digest identified it.
+  const written = ours ? { entry: hash(JSON.stringify(current)), ...(writer?.version ? { version: writer.version } : {}) } : recorded ?? {};
+  const marked = writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest, pendingVersion: version, installation } });
   writeChecked(file, text, after);
   writeRecord(home, marked, { ...record, [file]: { entry: digest, version, installation } });
   pruneRuntimes(storagePath, runtime);

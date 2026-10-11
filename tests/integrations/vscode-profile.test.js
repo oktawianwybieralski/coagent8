@@ -285,6 +285,32 @@ test('uninstall removes unchanged entries and the record; an interrupted record 
   assert.deepEqual(await p.remove(), [], 'a repeated cleanup is a no-op');
 });
 
+test('an interrupted first registration is recorded before its entry is written, so the uninstall removes it', async t => {
+  const p = profile(t);
+  const record = path.join(p.home, '.coagent8/vscode-mcp.json');
+  const rename = fs.renameSync;
+  // Renames whose target fails, as when the process stops between two writes.
+  let failing = () => false;
+  t.mock.method(fs, 'renameSync', (from, to) => {
+    if (failing(to)) throw new Error('interrupted');
+    return rename(from, to);
+  });
+  // The entry is written; the record that it was written is not.
+  let entryWritten = false;
+  failing = to => { if (to === p.file) entryWritten = true; return to === record && entryWritten; };
+  await assert.rejects(p.sync(), /interrupted/);
+  assert.ok(p.entries()[VSCODE_SERVER_NAME], 'the entry is on disk');
+  failing = () => false;
+  assert.deepEqual(await p.remove(), [{ file: p.file, action: 'removed' }], 'the pending record identifies the entry');
+  assert.deepEqual(p.entries(), {});
+  assert.equal(fs.existsSync(record), false);
+  // The entry is not written: the pending record is no removal by the user.
+  failing = to => to === p.file;
+  await assert.rejects(p.sync(), /interrupted/);
+  failing = () => false;
+  assert.equal(await p.sync(), 'registered', 'the next synchronization writes the entry');
+  assert.ok(p.entries()[VSCODE_SERVER_NAME]);
+});
 test('uninstall removes only the entries of its own VS Code installation and keeps the records of others', async t => {
   const stable = profile(t);
   const insiders = profile(t, { product: 'Code - Insiders', home: stable.home });
