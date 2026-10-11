@@ -328,6 +328,49 @@ test('diagnostics redact raw, structured and repeatedly JSON-escaped Windows hom
   } finally { os.homedir = original; }
 });
 
+test('diagnostics redact the canonical path of a home reached through a link or short name', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-home-link-'));
+  const target = path.join(root, 'canonical-home');
+  const link = path.join(root, 'linked-home');
+  fs.mkdirSync(target);
+  // A junction needs no privilege on Windows; GitHub runners reach TEMP through an 8.3 name the same way.
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const original = os.homedir;
+  os.homedir = () => link;
+  try {
+    const canonical = fs.realpathSync.native(link);
+    assert.notEqual(canonical, link);
+    const output = redactDiagnostic(path.join(canonical, 'project') + ' and ' + path.join(link, 'project'));
+    assert.equal(output, `~${path.sep}project and ~${path.sep}project`);
+  } finally {
+    os.homedir = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('diagnostic redaction does not throw or print the home when its canonical path fails to resolve', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const home = path.join(os.tmpdir(), 'coagent8-unreadable-home-' + process.pid);
+  const originalHome = os.homedir, originalRealpath = fs.realpathSync.native, originalWrite = process.stderr.write;
+  const warnings = [];
+  os.homedir = () => home;
+  fs.realpathSync.native = target => {
+    throw Object.assign(new Error(`EIO: i/o error, realpath '${target}'`), { code: 'EIO' });
+  };
+  process.stderr.write = chunk => { warnings.push(String(chunk)); return true; };
+  try {
+    assert.equal(redactDiagnostic(path.join(home, 'project')), `~${path.sep}project`);
+  } finally {
+    process.stderr.write = originalWrite;
+    fs.realpathSync.native = originalRealpath;
+    os.homedir = originalHome;
+  }
+  assert.deepEqual(warnings, ['Warning: canonical home directory not resolved for redaction: EIO\n']);
+});
+
 test('AUD-P0-2: user_message stored in history preserves user code and token keywords without diagnostic alteration', async () => {
   const { createHistoryWriter, sessionHistory, deleteHistory } = require('../../src/sessions/history/index.ts');
   const { createSession, getSessionFilePath } = require('../../src/sessions/session.ts');

@@ -8,8 +8,35 @@
  * @packageDocumentation
  */
 
+import fs from 'node:fs';
 import os from 'node:os';
 import { truncateToByteLength } from '../execution/runtime/stream.js';
+
+/** Errors for which a home directory simply has no canonical path to add. */
+const UNRESOLVABLE_HOME = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ELOOP']);
+let canonicalHome: { home: string; canonical: string } | undefined;
+
+/**
+ * The spellings of the home directory: as the environment gives it and its
+ * canonical path. A short 8.3 name, junction or symlink in the home path gives a
+ * different string than canonical paths such as resolved workspaces use.
+ *
+ * Redaction runs inside error handlers, so it never throws: when the canonical
+ * path cannot be read, the literal spelling is still redacted. An unexpected
+ * failure is reported by its code only, because its message names the home path.
+ */
+function homeSpellings(home: string): string[] {
+  if (canonicalHome?.home !== home) {
+    try {
+      canonicalHome = { home, canonical: fs.realpathSync.native(home) };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      if (!UNRESOLVABLE_HOME.has(code)) process.stderr.write(`Warning: canonical home directory not resolved for redaction: ${code}\n`);
+      return [home];
+    }
+  }
+  return canonicalHome.canonical === home ? [home] : [home, canonicalHome.canonical];
+}
 
 /**
  * Filters high-confidence credential formats in public Markdown and model answers
@@ -138,8 +165,7 @@ export function redactDiagnostic(value: unknown, budget = 4096): string {
   text = text.replace(/([?&](?:token|key|secret|apiKey)=)[^&\s]+/gi, '$1***[REDACTED]***');
 
   // 3. User home directory redaction
-  const home = os.homedir();
-  const variants = new Set([home, home.replace(/\\/g, '/')]);
+  const variants = new Set(homeSpellings(os.homedir()).flatMap(home => [home, home.replace(/\\/g, '/')]));
   // Serialized diagnostics can contain JSON inside JSON, doubling backslashes
   // at each boundary. Replace longer encodings first so no private prefix survives.
   for (let level = 0; level < 4; level++) {
