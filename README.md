@@ -82,7 +82,7 @@ A model's `READY` verdict requires independent verification before release.
   health; `issue` prepares a sanitized bug report.
 - **Skills and editor integration.** Optional setup registers CoAgent8 in the
   CLIs' own chats and installs one skill per function; the VS Code extension
-  adds an MCP provider, setup, skill management and a complete uninstall.
+  adds an MCP provider, CLI management, skill management and uninstall cleanup.
 
 ### Backends and read-only profiles
 
@@ -294,7 +294,8 @@ Antigravity CLI offer them as `/coagent8-review` commands.
 | Antigravity | `~/.gemini/config/skills/` |
 
 **CoAgent8: Manage Skills** lets you choose the client, Install / Update,
-Uninstall, Enable or Disable, then one or all packages. It keeps the CLI and
+Uninstall, Enable or Disable (only actions with packages to change), then one or
+all packages; **Back** returns one step. It keeps the CLI and
 MCP connection. Disable retains packages outside discovery in
 `~/.coagent8/disabled-skills/<client>/`; enable restores them. Updates preserve
 disabled choices. Start a new chat after changes; native visibility settings
@@ -340,9 +341,8 @@ macOS), type `CoAgent8` and select one:
 | `CoAgent8: Open Configuration (config.json)` | Opens the runtime configuration, creating defaults only when absent; schema completion and validation cover `~/.coagent8/config.json` | Creates a missing file; preserves existing contents |
 | `CoAgent8: Reset Configuration (config.json)` | Replaces the configuration file with the defaults after a confirmation | Saves the previous file as `config.json.backup`, replacing an earlier backup; keeps VS Code settings |
 | `CoAgent8: Show MCP Servers` | Opens VS Code's `MCP: List Servers` | None |
-| `CoAgent8: Set Up Coding CLIs` | One list of Codex CLI, Claude Code CLI and Antigravity CLI: each line shows the CLI's state, whether CoAgent8 is in its own chat, and where it is installed from. Checked CLIs have CoAgent8 in their chat; check one to install it (VS Code extension or official standalone installer), sign it in and add CoAgent8, uncheck to remove CoAgent8 from its chat. The title bar checks again or shows details | Installs only what you check, in the vendor's own location; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries; never uninstalls a CLI; ends with one notice offering **Restart Extensions** |
+| `CoAgent8: Manage Coding CLIs` | Lists Codex CLI, Claude Code CLI and Antigravity CLI with their state and chat entry, plus actions for all CLI chats at once. A CLI's menu names the installation in use and selects an installation (stored in `config.json`), installs a VS Code extension or official standalone CLI beside another, chooses an executable after a compatibility check, signs in, adds, updates or removes CoAgent8 in its chat, manages its skills, and removes what CoAgent8 installed | Changes only what you choose, in the vendor's own location; writes the CLIs' configuration with private backups; removes only unchanged CoAgent8-owned entries and what CoAgent8 installed; chat changes end with one notice offering **Restart Extensions** |
 | `CoAgent8: Manage Skills` | Selects a client, action and packages: install/update, uninstall, enable or disable | Preserves the CLI and MCP; persists choices for repair; preserves edited packages |
-| `CoAgent8: Uninstall CoAgent8` | Removes CoAgent8's CLI chat registrations and uninstalls it; optionally also the vendor extensions and standalone CLIs CoAgent8 setup installed, after two confirmations. Ends with **Reload Window** to apply extension removal | Removes only what CoAgent8 created; never vendor sign-ins or histories |
 
 The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
 `CoAgent8` starts, stops or restarts it and shows its output.
@@ -357,8 +357,8 @@ The MCP server itself is controlled by VS Code: `F1` -> `MCP: List Servers` ->
    In a trusted project, run
    **Extensions: Install from VSIX...** and select it. Use Node.js 24+.
 2. The first activation shows one notice: the ready CLIs, or an offer to set them
-   up. Run **CoAgent8: Set Up Coding CLIs** at any time to install or sign in a
-   CLI and to add CoAgent8 to the CLIs' own chats, all from one list.
+   up. Run **CoAgent8: Manage Coding CLIs** at any time to install or sign in a
+   CLI and to add CoAgent8 to the CLIs' own chats, one CLI menu at a time.
 3. Start CoAgent8 through **MCP: List Servers**, enable its tools in your chat,
    and request doctor, a consultation, and a review of current workspace changes.
 4. Configure backends, models and approval through **CoAgent8: Open Settings**.

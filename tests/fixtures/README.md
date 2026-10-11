@@ -32,6 +32,11 @@ the models the fixtures name (id and pricing only) and adds `fixture/fixture-mod
 for test doubles; the runner points `coagent8_PRICES_URL` at it, so no test reads
 prices from the network.
 
+`vscode-extension/setup.js` is not an executable: the VS Code extension tests
+bundle it in place of `src/integrations/setup.ts` and script the machine it
+describes (installed CLIs, installations, registrations) through
+`globalThis.setupFixture`.
+
 Most unit/e2e checks load current `src/` via tsx. Setup checks use `dist/index.cjs`
 and need a prior build for current-bundle evidence. Consumer smoke installs and
 checks the tarball, also with fixtures. See the

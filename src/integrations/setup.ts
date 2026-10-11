@@ -14,7 +14,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { modify, applyEdits } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { runCommand } from '../execution/process.js';
-import { resolveBundledClaude, resolveBundledCodex, resolveCliCommand, resolveManagedAgy, type CliCommand } from '../execution/cli-resolver.js';
+import { CliResolutionError, resolveBundledClaude, resolveBundledCodex, resolveCliCommand, resolveManagedAgy, type CliCommand } from '../execution/cli-resolver.js';
 import { backendCommand, environmentOverride, VSCODE_EXTENSION_EXECUTABLE } from '../backends/executable.js';
 import { readBackendExecutable, recordBackendExecutable, readBackendSkills } from '../config.js';
 import type { ProviderId } from '../contracts/index.js';
@@ -104,30 +104,111 @@ export interface ClientSource {
   /** `vscode-extension` survives the versioned folders of extension updates; other sources keep their path. */
   executable: string;
 }
+/** One installation of a client on this machine. */
+export interface ClientInstallation extends ClientSource {
+  /** The file that runs: the vendor extension's current copy for `vscode-extension`, else the executable. */
+  file: string;
+}
+/** The copy the vendor's VS Code extension provides; for agy, the binary in `~/.gemini/bin`. */
+function extensionCopy(client: SetupClient, home: string, env: NodeJS.ProcessEnv): CliCommand | null {
+  return client === 'codex' ? resolveBundledCodex(home, env) : client === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
+}
 /**
- * The other installation of a client that the runtime could use instead of the resolved one:
- * the vendor extension's copy when a standalone CLI is used, or the reverse.
- * @returns The `backends.<id>.executable` value that selects it, or undefined when there is none.
+ * Identifies a file for comparison: a link, such as the agy installer's junction to
+ * `~/.gemini/bin`, is its target, and a path that cannot be resolved, such as a missing
+ * file, compares as written.
  */
-export function alternativeSource(client: SetupClient, current: ClientSource, home = os.homedir(), env = process.env, nodePath = process.execPath): ClientSource | undefined {
-  const bundled = client === 'codex' ? resolveBundledCodex(home, env) : client === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
-  if (current.kind !== 'vscode-extension') return bundled ? { kind: 'vscode-extension', executable: VSCODE_EXTENSION_EXECUTABLE } : undefined;
-  // PATH wins in automatic discovery; a result other than the extension's copy is a standalone CLI.
-  let found: CliCommand;
-  try { found = resolveCliCommand(client, { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
-  catch (error) { if (errorCodeOf(error) === 'CLI_NOT_FOUND') return undefined; throw error; }
-  const source = clientSource(client, found, home, env);
-  return source.kind === 'vscode-extension' ? undefined : source;
+function fileIdentity(file: string): string {
+  let real: string;
+  try { real = fs.realpathSync.native(file); } catch { real = path.resolve(file); }
+  return process.platform === 'win32' ? real.toLowerCase() : real;
 }
 /** Classifies a client that {@link resolveSetupClient} resolved. */
 export function clientSource(client: SetupClient, cli: CliCommand, home = os.homedir(), env = process.env): ClientSource {
-  const bundled = client === 'codex' ? resolveBundledCodex(home, env) : client === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
-  // A link to the extension's copy, such as the agy installer's junction to ~/.gemini/bin, is that copy.
-  // A path that cannot be resolved, such as a missing file, compares as written.
-  const real = (file: string) => { try { return fs.realpathSync.native(file); } catch { return path.resolve(file); } };
-  const same = (a: string, b: string) => process.platform === 'win32' ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b);
-  if (bundled && same(bundled.command, cli.command)) return { kind: 'vscode-extension', executable: VSCODE_EXTENSION_EXECUTABLE };
+  const bundled = extensionCopy(client, home, env);
+  if (bundled && fileIdentity(bundled.command) === fileIdentity(cli.command)) return { kind: 'vscode-extension', executable: VSCODE_EXTENSION_EXECUTABLE };
   return cli.source === 'native' ? { kind: 'standalone', executable: path.resolve(cli.command) } : { kind: 'npm', executable: path.resolve(cli.argsPrefix[0] ?? cli.command) };
+}
+/**
+ * Folders that official installers and package managers use and that may be missing from
+ * the PATH of the process that asks, such as a window started before an installation.
+ */
+function installerFolders(home: string, env: NodeJS.ProcessEnv): string[] {
+  if (process.platform === 'win32') {
+    return [
+      path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'npm'),
+      path.join(home, '.local', 'bin'),
+      path.join(home, '.codex', 'bin'),
+      path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'agy', 'bin'),
+      path.join(env.SCOOP || path.join(home, 'scoop'), 'shims'),
+    ];
+  }
+  return [path.join(home, '.local', 'bin'), path.join(home, '.codex', 'bin'), path.join(home, '.npm-global', 'bin')];
+}
+/**
+ * Lists every installation of a client without starting any: the vendor extension's copy,
+ * each PATH folder, the installer folders and a path set in `backends.<id>.executable`.
+ * @returns One entry per distinct file, the extension's copy first.
+ * @remarks A folder whose launcher cannot be resolved, such as an unsupported shim, holds no
+ * usable installation and is left out; other failures propagate.
+ */
+export function listInstallations(client: SetupClient, home = os.homedir(), env = process.env, nodePath = process.execPath): ClientInstallation[] {
+  const lookup = { env: { ...env, HOME: home, USERPROFILE: home }, nodePath };
+  const found: ClientInstallation[] = [];
+  const seen = new Set<string>();
+  const add = (cli: CliCommand) => {
+    const source = clientSource(client, cli, home, env);
+    const file = source.kind === 'vscode-extension' ? cli.command : source.executable;
+    const key = source.kind === 'vscode-extension' ? VSCODE_EXTENSION_EXECUTABLE : fileIdentity(file);
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push({ ...source, file });
+  };
+  const bundled = extensionCopy(client, home, env);
+  if (bundled) add(bundled);
+  const searchPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? '';
+  const configured = configuredExecutable(client, home, env, nodePath);
+  const candidates = [
+    ...[...searchPath.split(path.delimiter), ...installerFolders(home, env)].filter(Boolean).map(folder => path.join(folder.replace(/^"|"$/g, ''), client)),
+    ...(configured?.found && configured.value !== VSCODE_EXTENSION_EXECUTABLE ? [backendCommand(SETUP_PROVIDERS[client], configured.value, env, home)] : []),
+  ];
+  for (const candidate of candidates) {
+    let cli: CliCommand;
+    try { cli = resolveCliCommand(candidate, lookup); }
+    catch (error) { if (error instanceof CliResolutionError) continue; throw error; }
+    add(cli);
+  }
+  return found;
+}
+/**
+ * The executable set in `backends.<id>.executable`, and whether it can be started.
+ * @returns Undefined when none is set or an environment override replaces it.
+ */
+export function configuredExecutable(client: SetupClient, home = os.homedir(), env = process.env, nodePath = process.execPath): { value: string; found: boolean } | undefined {
+  const id = SETUP_PROVIDERS[client];
+  if (environmentOverride(id, env)) return undefined;
+  const value = readBackendExecutable(id, setupConfigFile(home, env));
+  if (value === undefined) return undefined;
+  try { resolveCliCommand(backendCommand(id, value, env, home), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
+  catch (error) { if (error instanceof CliResolutionError) return { value, found: false }; throw error; }
+  return { value, found: true };
+}
+/**
+ * Checks a file the user chose as a client's executable, as setup checks the CLI it finds.
+ * Starts the file for its version, help and sign-in metadata only.
+ * @returns The `backends.<id>.executable` value that selects the file, and the CLI evidence.
+ * @throws When the file cannot be started or is not a compatible CLI of this client.
+ */
+export async function checkExecutable(client: SetupClient, file: string, home = os.homedir(), env = process.env, nodePath = process.execPath, cwd = home): Promise<{ source: ClientSource; readiness: CliReadiness }> {
+  let cli: CliCommand;
+  try { cli = resolveCliCommand(path.resolve(file), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
+  catch (error) {
+    if (error instanceof CliResolutionError) throw new Error(`${path.basename(file)} cannot be started: ${error.message}`);
+    throw error;
+  }
+  const readiness = await inspectCli(client, cli, env, cwd);
+  if (readiness.compatibility !== 'supported') throw new Error(`${path.basename(file)} is not a compatible ${client} CLI: ${readiness.diagnostic}`);
+  return { source: clientSource(client, cli, home, env), readiness };
 }
 
 function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: string, globalFile: string, home: string): void {
@@ -432,7 +513,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
         } else if (options.statusOnly) {
           // Registration in the CLI's own configuration is optional; the CLI itself is present.
           result.action = 'not-registered';
-          result.message = 'CLI found; CoAgent8 is not registered in this client. Optional: CoAgent8: Set Up Coding CLIs, or coagent8 setup.';
+          result.message = 'CLI found; CoAgent8 is not registered in this client. Optional: CoAgent8: Manage Coding CLIs, or coagent8 setup.';
           return;
         }
         if (!candidate) throw new Error('Setup runtime is unavailable.');

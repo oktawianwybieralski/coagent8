@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { setupClients, readRegistrations, resolveSetupClient, clientSource, alternativeSource } = require('../../src/integrations/setup.ts');
+const { setupClients, readRegistrations, resolveSetupClient, clientSource, listInstallations, configuredExecutable, checkExecutable } = require('../../src/integrations/setup.ts');
 const { parse } = require('jsonc-parser');
 const { parse: toml } = require('smol-toml');
 const { hasManualVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
@@ -331,8 +331,65 @@ test('a link to the extension copy of agy, as the official installer makes, is t
   const linked = path.join(home, 'local', 'agy', 'bin');
   fs.mkdirSync(path.dirname(linked), { recursive: true });
   fs.symlinkSync(path.dirname(copy), linked, 'junction');
-  const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: linked };
+  const env = isolated(home, { PATH: linked });
   const source = clientSource('agy', { command: path.join(linked, name), argsPrefix: [], source: 'native' }, home, env);
   assert.deepEqual(source, { kind: 'vscode-extension', executable: 'vscode-extension' });
-  assert.equal(alternativeSource('agy', source, home, env), undefined, 'the switch offers no second copy of the same file');
+  assert.deepEqual(listInstallations('agy', home, env), [{ kind: 'vscode-extension', executable: 'vscode-extension', file: copy }], 'the menu shows no second copy of the same file');
+});
+/** An environment whose PATH, installer folders and configuration all lie in the temporary profile. */
+function isolated(home, extra = {}) {
+  return { ...process.env, HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'roaming'), LOCALAPPDATA: path.join(home, 'local'), SCOOP: path.join(home, 'scoop'),
+    coagent8_CONFIG: path.join(home, '.coagent8', 'config.json'), coagent8_EXTENSION_PATHS: '{}', CODEX_PATH: undefined, CLAUDE_PATH: undefined, AGY_PATH: undefined, PATH: '', ...extra };
+}
+/** A launcher the resolver accepts as a native executable on every platform. */
+function launcher(file) {
+  write(file, '#!/bin/sh\n');
+  fs.chmodSync(file, 0o755);
+  return file;
+}
+test('the installation list covers every PATH folder, the installer folders and a configured path once each', t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-installations-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const onPath = launcher(path.join(home, 'on-path', 'codex'));
+  // ~/.local/bin is searched also when the PATH this process inherited misses it.
+  const installer = launcher(path.join(home, '.local', 'bin', 'codex'));
+  const custom = launcher(path.join(home, 'tools', 'codex'));
+  const env = isolated(home, { PATH: [path.dirname(onPath), path.dirname(installer)].join(path.delimiter) });
+  assert.deepEqual(listInstallations('codex', home, env), [onPath, installer].map(file => ({ kind: 'standalone', executable: file, file })), 'a folder on PATH and among the installer folders counts once');
+  write(env.coagent8_CONFIG, JSON.stringify({ backends: { codex: { executable: custom } } }));
+  assert.deepEqual(listInstallations('codex', home, env).map(item => item.file), [onPath, installer, custom]);
+  assert.deepEqual(listInstallations('claude', home, env), [], 'other clients are not mixed in');
+  if (process.platform === 'win32') {
+    write(path.join(home, 'shim', 'claude.cmd'), '@echo off\r\n"%~dp0missing.exe" %* extra\r\n');
+    assert.deepEqual(listInstallations('claude', home, isolated(home, { PATH: path.join(home, 'shim') })), [], 'an unsupported shim is no usable installation');
+  }
+});
+test('the configured executable reports whether it can be started; an environment override replaces it', t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-configured-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const env = isolated(home);
+  assert.equal(configuredExecutable('codex', home, env), undefined);
+  const file = launcher(path.join(home, 'tools', 'codex'));
+  const configure = executable => write(env.coagent8_CONFIG, JSON.stringify({ backends: { codex: { executable } } }));
+  configure(file);
+  assert.deepEqual(configuredExecutable('codex', home, env), { value: file, found: true });
+  configure('~/tools/codex');
+  assert.deepEqual(configuredExecutable('codex', home, env), { value: '~/tools/codex', found: true }, 'a path in the profile may start with ~/');
+  configure(path.join(home, 'missing', 'codex'));
+  assert.deepEqual(configuredExecutable('codex', home, env), { value: path.join(home, 'missing', 'codex'), found: false });
+  configure('vscode-extension');
+  assert.deepEqual(configuredExecutable('codex', home, env), { value: 'vscode-extension', found: false }, 'no vendor extension provides a copy');
+  assert.equal(configuredExecutable('codex', home, { ...env, CODEX_PATH: file }), undefined);
+});
+test('a chosen executable is accepted only as a compatible CLI of its client', async t => {
+  const options = profile(t);
+  const cli = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
+  const env = { ...options.env, CODEX_PATH: undefined };
+  const accepted = await checkExecutable('codex', cli, options.home, env, process.execPath, options.cwd);
+  assert.deepEqual(accepted.source, { kind: 'npm', executable: cli }, 'a JavaScript launcher is kept as the file Node runs');
+  assert.equal(accepted.readiness.compatibility, 'supported');
+  assert.equal(accepted.readiness.authentication, 'authenticated');
+  await assert.rejects(checkExecutable('codex', cli, options.home, { ...env, SETUP_FIXTURE_HELP: 'usage: other-tool' }, process.execPath, options.cwd),
+    /^Error: client\.cjs is not a compatible codex CLI: Required CLI controls are missing/);
+  await assert.rejects(checkExecutable('codex', path.join(options.home, 'missing.exe'), options.home, env, process.execPath, options.cwd), /^Error: missing\.exe cannot be started: /);
 });

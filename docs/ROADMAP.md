@@ -783,6 +783,101 @@ not erased. Native refresh/discovery behavior requires client acceptance.
   CoAgent8 uninstall. Bind evidence to the installed VSIX and retain
   SKILLS-001e's loader-path uncertainty until reproduced.
 
+## CLIMGMT-001: manage coding CLIs
+
+Owner decisions 2026-10-11. **CoAgent8: Set Up Coding CLIs** becomes **CoAgent8:
+Manage Coding CLIs**, built like Manage Skills: choose a CLI, then an action.
+**CoAgent8: Uninstall CoAgent8** is removed; its parts move to the per-client
+menu and the `vscode:uninstall` hook. Vendor extensions that CoAgent8 installs
+stay machine-scoped (owner decision after the correction below), and their
+removal from the menu needs no confirmation, as in the Extensions view. The owner asked on
+2026-10-11 to implement it at once, on the beta.2 candidate; a change after
+EXEC-001-T12 invalidates the affected acceptance. Local implementation is complete;
+independent and native acceptance remain pending.
+
+Evidence, VS Code 1.141.0: `workbench.extensions.installExtension` maps
+`donotSync: true` to `isMachineScoped: true`; machine-scoped extensions join
+`settingsSync.ignoredExtensions` in the ignored set unless a `-<id>` entry
+("Sync This Extension") overrides it. Correction 2026-10-11: without the option
+`installFromGallery` receives no `isMachineScoped` and, with extension sync on,
+VS Code asks "Would you like to install and synchronize '<name>' extension across
+your devices?" (Install / Install (Do not sync)); the Extensions view's own Install
+passes `isMachineScoped: false` and asks nothing. The command offers no way to
+request syncing, so the former code comment was right: `donotSync` avoids the
+question by excluding the extension from Sync. The owner chose `donotSync`:
+no question, no sync.
+
+Menu tree as implemented:
+
+```text
+Manage Coding CLIs                (also from the welcome notice)
+├─ $(icon) Codex CLI / Claude Code CLI / Antigravity CLI   state, chat; installation in use
+├─ Add CoAgent8 to All CLI Chats                   (when a compatible CLI has none)
+├─ Update CoAgent8 in All CLI Chats                (when one is outdated; the update
+│                                                   notice runs it directly)
+└─ <CLI> menu   (title: state; Back returns to the list; reopens after each action;
+   │             each line: codicon, label, short description; empty sections hidden)
+   ├─ Installations: in use marked | others selectable | missing selection |
+   │  Use Automatic Discovery (missing file or several installations)
+   ├─ Install: Install VS Code Extension | Install Standalone CLI (each while that
+   │  kind is missing; agy standalone hidden with the Google extension) |
+   │  Choose Executable (checked before config.json changes)
+   ├─ Chat: Sign In | Add / Update CoAgent8 in Its Chat
+   ├─ Skills: Manage Skills
+   └─ Remove: Remove CoAgent8 from Its Chat | Uninstall VS Code Extension |
+      Uninstall Standalone CLI (only what installs.json records as installed by CoAgent8)
+```
+
+Owner feedback 2026-10-11 on the first build: too much text compared with Manage
+Skills. A flat version without sections then looked too poor; the owner preferred
+the sectioned one. The menus now follow the editor's own pickers: section
+separators, a codicon per line, short descriptions and no detail lines except
+the installation in use under each CLI in the list. Owner feedback: Manage
+Skills had no Back; its three steps (CLI, action, packages) now have Back and a
+step count, offer only actions with packages to change and list only those
+packages. Checked against the VS Code UX guidelines (quick picks: title for
+multi-step flows with step count, Back from `QuickInputButtons`, `selectedItems`
+instead of `picked` for `createQuickPick`; command palette: `category` instead of a
+prefix in `title`). `workbench.extensions.installExtension` documents no sync
+option; `donotSync` is read by the installed VS Code (1.141.0) and verified
+there.
+
+Rules: the list always shows the three supported CLIs, installed or not. A
+chosen executable is written to `backends.<id>.executable` in `config.json`,
+never to VS Code settings, because CLI chats start the runtime without them;
+it is written only after the compatibility check accepts the file. The
+installation list always covers the known locations (PATH, the official
+installers' folders in the user profile, vendor extension copies, the configured
+file) without starting them, so no separate Find action exists; it never scans
+the whole disk. A second installation of Codex or Claude Code can be installed
+beside the one in use; agy's extension and installer share one binary. Removing
+the installation in use switches the configured executable to another
+installation or clears it, so no configured path points at a missing file.
+Installations CoAgent8 did not install are never removed; a selection can only be
+cleared.
+
+- [x] **CLIMGMT-001a - sync vendor extensions.** Investigated and reverted:
+  without `donotSync` VS Code asks about Sync on every installation; the owner
+  kept `donotSync`, and the extension README says how to include an extension
+  in Sync. Check: VS Code scope from rule 04.
+- [x] **CLIMGMT-001b - installation inventory.** `src/integrations/setup.ts`:
+  `listInstallations`, `configuredExecutable` and `checkExecutable` replace
+  `alternativeSource`. Versions are shown for the CLI in use only: listing
+  starts no installation. Check: R.
+- [x] **CLIMGMT-001c - per-client menu.** `coagent8.manageClis` replaces
+  `coagent8.setup`; the onboarding and update notices point at it; the setup
+  picker tests are rewritten by action and state. Check: R, SETUP, VS
+  Code/package scope from rule 04.
+- [x] **CLIMGMT-001d - retire Uninstall CoAgent8.** `coagent8.uninstall` is
+  removed; vendor extension and standalone CLI removal live in the menu with
+  configured-path correction; the hook keeps removing registrations and skills.
+  Evidence for 001a-d: [implementation and local checks](HANDOFF.md#climgmt-001-manage-coding-clis).
+- [ ] **CLIMGMT-001e - native acceptance.** Depends: 001a-d. Installed VSIX on
+  Windows: both Codex installations and a switch, Choose Executable with an
+  accepted and a refused file, installer folders outside the window's PATH,
+  removal of the installation in use, no Sync question when installing a vendor
+  extension, Extensions-view uninstall with hook cleanup.
+
 ## Agent usability acceptance
 
 Checked items are local implementations; unchecked cards are remaining work
@@ -1808,6 +1903,39 @@ reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
 
 After step 9 the default flow of rule 02 applies to every change.
 
+## REPO-003: one numeric version for npm, VSIX and tags
+
+Owner decision 2026-10-11: drop SemVer pre-release suffixes. VS Code accepts only
+numeric `major.minor.patch` for an extension and shows Restart Extensions after an
+update only when that number changes (`getRuntimeState` in VS Code 1.141.0 compares
+`e.version !== i.version`). `scripts/build-vscode.cjs` strips `-beta.N`, so every
+beta, rc and the final release would be VSIX `1.0.0`: a new VSIX is not offered a
+restart and the Marketplace refuses a repeated version. Each preview raises the
+minor; npm, VSIX and the Git tag carry the same number, so no mapping is needed:
+
+| Preview | Version (start at 0.6) | Version (start at 0.5, room for rc.2 after three betas) |
+| --- | --- | --- |
+| beta.1 | 0.6.0 | 0.5.0 |
+| beta.2 | 0.7.0 | 0.6.0 |
+| beta.3 or rc.1 | 0.8.0 | 0.7.0 |
+| rc.1 or rc.2 | 0.9.0 | 0.8.0 / 0.9.0 |
+| release | 1.0.0 | 1.0.0 |
+
+The owner unpublishes the npm package; npm never reuses a published version number
+and blocks the name for 24 hours after its last version is removed. Choosing the
+starting minor (0.5 or 0.6) is an open owner decision.
+
+- [ ] **REPO-003a - versions and release rules.** Start: `package.json`,
+  `extensions/vscode/package.json`, `scripts/build-vscode.cjs`,
+  `scripts/package-artifacts.cjs`, `.github/workflows/`, `.agents/rules/02-git-workflow.md`,
+  README tester guide, `CHANGELOG.md` generation (`cliff.toml`), `docs/ROADMAP.md`
+  (REPO-002, Release acceptance), `docs/HANDOFF.md`. Set the next preview's number,
+  keep VSIX pre-release marking and npm `next` for previews, remove the suffix
+  stripping, rename tags/lines/branches in rules and docs (`v0.N.0`, line for 1.0),
+  keep historical evidence as history. Check: build, package and VSIX inspection,
+  `npm run changelog:check`, workflow lint where available; owner steps for npm
+  unpublish, tags and the branch rename.
+
 ## Release acceptance
 
 | Stage | Required scope |
@@ -1838,14 +1966,14 @@ case produces a separate reproduction/fix card before rerunning that case.
   restart banner.
 - Configuration: custom path with spaces, shared default, editor precedence,
   reset cancellation/one backup, valid settings/schema and live server refresh.
-- Onboarding: first-install notice once; single list with state/source/registration;
-  unchanged acceptance does nothing; install/sign-in/add/remove/restart preserve
-  manual registrations and unrelated servers.
+- Onboarding: first-install notice once; Manage Coding CLIs lists state, source
+  and registration; dismissing it does nothing; install/sign-in/add/remove/restart
+  preserve manual registrations and unrelated servers (CLIMGMT-001e).
 - Execution: quiet consult/review while typing elsewhere; report TIMEOUT/BLOCKED
   honestly. Verify consent in a client that actually displays the form.
-- Skills: after Set Up Coding CLIs each selected CLI lists the six skills and an
-  explicit use reaches CoAgent8 (SKILLS-001e); unchecking a CLI and uninstalling
-  remove only unchanged packages the extension installed. Manage Skills and
+- Skills: after Manage Coding CLIs adds CoAgent8 to a CLI's chat it lists the six
+  skills and an explicit use reaches CoAgent8 (SKILLS-001e); removing CoAgent8
+  from a chat and uninstalling remove only unchanged packages the extension installed. Manage Skills and
   `coagent8 skills` install/update/uninstall/enable/disable one or all packages
   while MCP remains; new chats observe changes, repair preserves choices,
   shared-directory effects and native overrides remain visible (SKILLS-002c).

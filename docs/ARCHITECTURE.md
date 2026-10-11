@@ -441,20 +441,35 @@ gone is replaced without the checks that protect a working connection.
 Status reads registration files without running every registered host's doctor.
 
 The VSIX provider supplies current extension paths to the shared executable
-resolver. One Set Up Coding CLIs list handles installation, login and registration;
-unchanged acceptance does nothing. Uninstall removes only owned entries/data,
-offers only recorded installed dependencies, preserves shared config/sign-ins/
-histories and requires native lifecycle acceptance. The record of installed
-dependencies is `~/.coagent8/installs.json`, outside the extension storage VS Code
-deletes, so an Extensions-view uninstall cannot orphan them. A CLI found only as a
-standalone installation is offered the vendor extension once. Sources compare by
-real path, so an installer link to the extension copy is that copy. Standalone
-removal deletes installer links, never their targets' other files, then emptied
-installer folders and their user PATH entries, keeping the registry value's type
-and unexpanded variables. It ends with Reload Window to re-scan installed
-extensions and apply all selected removals. A developer extension-host restart
-does not apply the Extensions view's internal add/remove delta. VS Code deletes
-the extension's files and storage on its next start, which no removal waits for.
+resolver. **Manage Coding CLIs** (CLIMGMT-001) lists the three CLIs; each CLI's
+menu handles its installations, installation, login, registration, skills and
+removal of what CoAgent8 installed, and reopens with fresh checks after each
+action. `listInstallations` finds installations without starting them: the vendor
+extension's copy, each PATH folder, the official installers' folders in the user
+profile and the configured file; it never scans the disk. `checkExecutable` accepts
+a chosen file only as a compatible CLI of its client before the selection is
+written. A selection is `backends.<id>.executable` in config.json, never a VS Code
+setting, because the CLI chats start the runtime without VS Code settings.
+Removing the installation in use moves a selection to the remaining installation or
+clears it. Vendor extensions are installed machine-scoped (`donotSync`), so VS
+Code does not ask about Settings Sync and does not sync them; their removal from
+the menu needs no confirmation, as in the Extensions view. The record of installed dependencies is
+`~/.coagent8/installs.json`, outside the extension storage VS Code deletes, so an
+Extensions-view uninstall cannot orphan them; only recorded dependencies are
+offered for removal. The `vscode:uninstall` hook removes owned entries, skills and
+data and preserves shared config, sign-ins and histories; native lifecycle
+acceptance remains. Sources compare by real path, so an installer link to the
+extension copy is that copy. Standalone removal deletes installer links, never
+their targets' other files, then emptied installer folders and their user PATH
+entries, keeping the registry value's type and unexpanded variables. An extension
+removal shows the extension in the Extensions view (`workbench.extensions.search`),
+where the native Uninstall and Restart Extensions apply it to every host; no
+public command does that restart, and a developer extension-host restart does not
+apply the Extensions view's internal add/remove delta. The extension records the
+pending removal in its state and finishes its part (record, selection, agy
+download) when `extensions.onDidChange` or the next activation no longer finds
+the extension; an extension still installed at activation was kept. VS Code deletes the extension's files and storage on its next start, which
+no removal waits for.
 
 Client skills (`src/integrations/skills.ts`, SKILLS-001/002) share setup ownership.
 The catalog is `skills/` of the npm package and the VSIX: one directory per
@@ -588,6 +603,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-09 | Setup updates its own unchanged Claude and agy registrations once the new runtime starts and lists its tools, as a first registration; only a host setup can check (Codex) must also call it. The previous runtime stays until cleanup. After an update the VSIX offers Set Up CLIs once per runtime when a CLI chat still starts another version. |
 | 2026-10-10 | Every CoAgent8 function has a client skill. Setup installs a client's skills with its registration; cleanup and the VS Code uninstall remove them. Only the VSIX and the npm package install them, and they ship in beta.2 (SKILLS-001). |
 | 2026-10-10 | Git model as PrestaShop: `develop` (default) plus release lines `X.Y.x`, no `main`. Every commit on them is a GitHub-signed squash commit of one PR; fixes are backported by squash PRs, never merged back. A release tag starts a workflow that drafts the GitHub Release with verified artifacts; the owner publishes it and the npm tarball (`next` for previews). Migration: [REPO-002](ROADMAP.md#repo-002-branch-model-and-release-workflow). |
+| 2026-10-11 | Set Up Coding CLIs becomes Manage Coding CLIs, a list of CLIs with one menu per CLI built like Manage Skills; Uninstall CoAgent8 is removed in favour of per-CLI removal and the uninstall hook; vendor extensions stay machine-scoped, because the install command can avoid VS Code's sync question only by excluding them from Sync; only what CoAgent8 installed is offered for removal (CLIMGMT-001). |
 | 2026-10-11 | Release artifacts carry signed build provenance (GitHub artifact attestations) next to `SHA256SUMS`. After beta.2, which is published by hand, npm publishing moves to a workflow started by the published release: npm trusted publishing (OIDC, no token) with provenance, gated by the owner's approval of the `npm` environment, publishing the verified release tarball (REPO-002g). |
 
 ## Known limitations

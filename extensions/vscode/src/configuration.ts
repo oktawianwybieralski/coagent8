@@ -40,20 +40,20 @@ export interface SetupState {
   welcomed?: boolean;
   /** The runtime (`<version>#<sha-256>`) whose outdated CLI chat registrations were last offered for update. */
   updateOffered?: string;
-  /** CLIs found only as a standalone installation for which the user declined the vendor extension. */
-  keptStandalone?: string[];
+  /** Vendor extensions whose removal the user started from a CLI menu, finished once VS Code has removed them. */
+  removingExtensions?: string[];
 }
 /**
- * What CoAgent8 setup installed. It is kept in `~/.coagent8/installs.json`, outside the
- * extension's storage, so that it survives an uninstall from the Extensions view and a
- * later **Uninstall CoAgent8** can still offer to remove what setup installed.
+ * What CoAgent8 installed. It is kept in `~/.coagent8/installs.json`, outside the
+ * extension's storage, so that it survives an uninstall from the Extensions view and
+ * **Manage Coding CLIs** can still offer to remove it after CoAgent8 is installed again.
  */
 export interface InstallRecord {
-  /** Vendor extensions that CoAgent8 setup installed; only these are offered for removal with it. */
+  /** Vendor extensions that CoAgent8 installed; only these are offered for removal. */
   installedExtensions?: string[];
   /** CLIs whose official standalone installer setup opened; one counts as installed once a check finds it. */
   pendingClis?: string[];
-  /** CLIs that CoAgent8 setup installed with the official standalone installer; offered for removal with it. */
+  /** CLIs that CoAgent8 installed with the official standalone installer; only these are offered for removal. */
   installedClis?: string[];
 }
 /** The lists of what CoAgent8 setup installed. */
@@ -90,8 +90,8 @@ export function readSetupState(storage: string): SetupState {
   const record = readObject(setupStateFile(storage));
   const state: SetupState = record.welcomed === true ? { welcomed: true } : {};
   if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
-  const kept = strings(record.keptStandalone);
-  if (kept) state.keptStandalone = kept;
+  const removing = strings(record.removingExtensions);
+  if (removing?.length) state.removingExtensions = removing;
   return state;
 }
 

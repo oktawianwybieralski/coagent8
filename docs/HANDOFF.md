@@ -4,9 +4,105 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-10. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-11. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
+
+## CLIMGMT-001 manage coding CLIs
+
+Owner request 2026-10-11, implemented on the beta.2 candidate checkout
+(`release/v1.0.0-beta.2`, uncommitted). Card:
+[CLIMGMT-001](ROADMAP.md#climgmt-001-manage-coding-clis).
+
+- `src/integrations/setup.ts`: `listInstallations` (vendor extension copy, each
+  PATH folder, profile installer folders, configured file; no process started, no
+  disk scan), `configuredExecutable` and `checkExecutable` (resolve plus
+  `inspectCli`; refuses incompatible files) replace `alternativeSource`.
+- `extensions/vscode/src/extension.ts`: `coagent8.manageClis` (**Manage Coding
+  CLIs**) replaces `coagent8.setup`; `coagent8.uninstall` is removed. A list of the
+  three CLIs with two bulk chat actions, then one menu per CLI (installations,
+  install, connection, skills, removal of what CoAgent8 installed) that reopens
+  after each action. `installExtension` keeps `donotSync` (see below). The update
+  notice's **Update CLI Chats** updates outdated chats directly. The one-time
+  vendor-extension offer and its `keptStandalone` state are gone; the menu shows
+  the install action instead. A vendor extension installed in this window is not
+  dropped from `installs.json` while the extension API still lags.
+- Standalone removal succeeds when one standalone installation seen before has
+  gone (another, such as Scoop's, may stay) and then corrects only a configured
+  path that no longer resolves.
+- Tests: `tests/integrations/vscode-extension.test.js` rewritten around scripted
+  picker steps, with `tests/fixtures/vscode-extension/setup.js` as the setup
+  double; three runtime tests in `tests/integrations/setup.test.js`.
+
+Local evidence on Windows 11, Node v26.10.0, VS Code 1.141.0 sources read for
+`donotSync` (maps to `isMachineScoped`): PASS `npm run typecheck`,
+`npm run lint:docs`, `npm run build`, full `npm test` (679 tests: 675 pass, 0 fail,
+3 skipped, 1 todo, the known WINDOWS-001a reproduction). A later
+standalone-removal fix and LF normalization were followed by typecheck, build,
+the extension, setup and cleanup test files (68 pass) and `npm run package:vscode`
+(VSIX SHA-256 `390439647879d478e7a177e4794f35dc712593ed2d6fae9a5e450a61e709353f`).
+After the owner's first look (too much text compared with Manage Skills) each CLI
+menu line became a short action name: no detail lines, section headers or
+information-only lines; the installation in use moved to the placeholder and the
+list shows states only. Typecheck, the extension test file (34 pass), build and
+`npm run package:vscode` passed again (VSIX SHA-256
+`0041b2acabfbc70ef1f85cbdf87a0ae4d00304f2fd9095621f5d247b75d10d06`; its manifest
+lists `coagent8.manageClis` and no `coagent8.uninstall`; its bundle has no
+`donotSync`). Owner feedback then added Back to every Manage Skills step
+(`choose` with `QuickInputButtons.Back`), step counts and only applicable
+actions/packages, removed the ellipses from menu labels and moved the `CoAgent8`
+prefix of command titles to `category`, after a check against the VS Code UX
+guidelines, built-in command, manifest, Settings Sync and MCP documentation.
+Typecheck, the extension test file (35 pass), build and `npm run package:vscode`
+passed (VSIX SHA-256
+`2cc16ae79faccddf0f41caa1c403da8ca163844d71895feb361b47c066fe2354`).
+Correction: the owner saw VS Code ask "install and synchronize ... across your
+devices?" after `donotSync` was dropped. VS Code 1.141.0 `installFromGallery`
+prompts when `isMachineScoped` is undefined and extension sync is on; the earlier
+claim that the command asks nothing was wrong. Owner decision: keep `donotSync`
+and remove the uninstall confirmation dialog (the notice with Reload Window stays).
+Typecheck, the extension test file (35 pass), build and `npm run package:vscode`
+passed (VSIX SHA-256
+`c0e4c824c5d2b3398023813d1025ef7ead78e33e8812ea8aecd47012d3563278`; its bundle
+passes `donotSync`).
+The owner then found the flat menu too poor and asked for the earlier sectioned
+look, done professionally, also in Manage Skills: sections (Installations,
+Install, Chat, Skills, Remove), a codicon per line, short descriptions, no detail
+lines except the installation in use in the list of CLIs; Manage Skills shows
+state icons per CLI and per action the number of packages it changes.
+Typecheck, the extension test file (35 pass), build and `npm run package:vscode`
+passed (VSIX SHA-256
+`df58db1d7358c94c79e10f2cd441d7a267e3dbfc215d0677c822a2795ff008ee`).
+Owner native report: uninstalling a vendor extension worked; the Extensions view's
+Restart Extensions then applied it flawlessly, so Reload Window is not needed. VS
+Code 1.141.0 offers no command for that action: `uninstallExtension` only marks
+the extension `restartExtensions`, and the native button calls the internal
+`updateRunningExtensions` with the add/remove delta, which
+`workbench.action.restartExtensionHost` lacks. The notice now offers **Open
+Extensions** (`workbench.extensions.search` with `@restartrequired`, the query of
+VS Code's own banner) instead of Reload Window.
+The owner then asked to leave the whole removal to the Extensions view: **Uninstall
+VS Code Extension** now records `removingExtensions` in the extension's setup state
+and shows the extension (`workbench.extensions.search` with its id); the user runs
+VS Code's Uninstall and Restart Extensions. `finishRemovals` completes the record,
+selection and agy-download cleanup on `extensions.onDidChange` or at the next
+activation, and forgets a removal whose extension is still installed then.
+Typecheck, the extension test file (35 pass), build and `npm run package:vscode`
+passed (VSIX SHA-256
+`e0f3ffc7cd7b0ad8e91dc3fb94fca3c73d40e8ac94eb527e57b4c4f3c0a2b016`).
+Closing gate on Windows, Node v26.10.0: typecheck, lint:docs and build PASS; full
+`npm test` 680 tests, 675 pass, 3 skipped, 1 todo (WINDOWS-001a) and 1 fail:
+`tests/backends/agy/adapter.test.js` "Gemini resolves relative primary and legacy
+data directories" compared `c:\...` with `C:\...` because that run started from a
+lower-case drive-letter working directory. The file passed (27/27) from
+`C:\Users\...`; this change touches no backend file. The drive-letter sensitivity
+of that test is a separate pre-existing issue. The versioning follow-up is
+[REPO-003](ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags).
+Typecheck, the extension test file (35 pass), build and `npm run package:vscode`
+passed (VSIX SHA-256
+`17fb9139c991c8765aa25e3c28dc2e2c288cbc2e2ea4f14a1d700e4f999221f4`).
+NOT_RUN: independent review, consumer smoke, native VS Code acceptance
+(CLIMGMT-001e).
 
 ## Beta.2 issue-link correction (2026-10-10)
 
