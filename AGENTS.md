@@ -1,0 +1,88 @@
+# CoAgent8 - Agent & Contributor Guidelines (`AGENTS.md`)
+
+This repository defines strict engineering practices, Git branching workflows, quality gates, and architectural conventions for all AI coding agents (Antigravity, Cursor, Codex, Claude Code) and human contributors.
+
+All rules are organized hierarchically by strict priority from **P0 (Critical System Invariants)** to **P2 (Code Standards & Conventions)** in [`.agents/rules/`](./.agents/rules/):
+
+Use [docs/ROADMAP.md](./docs/ROADMAP.md) as the single active plan,
+[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contracts and design, and
+[docs/HANDOFF.md](./docs/HANDOFF.md) for current work and evidence. These are the
+three active project documents; optional ignored local notes are not instructions.
+The product is a client-independent system for delegating complete tasks to
+cooperating agents (owner decision, 2026-10-08). Roles and model/provider choices are independent;
+client skill installation is planned. The current runtime remains a read-only
+MCP-to-CLI bridge until verified task execution profiles land. Follow the
+roadmap's full coagent direction while preserving audit gates and quiet desktop
+operation. Historical plans and RFCs do not override this direction.
+
+---
+
+## Prioritized Rule Index (`.agents/rules/`)
+
+### P0 - Critical System & Security Invariants
+*Must never be bypassed under any circumstances.*
+
+0. **[P0: Core Invariants, Code Quality & Engineering Integrity (`00-core-invariants.md`)](./.agents/rules/00-core-invariants.md)**:
+   - **Strictly no "hacks"**: Zero shortcuts, no monkey-patching, no silent exception swallowing, root-cause fixes only.
+   - **GitHub & branch protection**: Direct pushes to `develop` or a release line strictly forbidden, green CI matrix, clean PR squash-and-merge; integration and publication are owner actions.
+   - **Verifiable reality**: Zero hallucinated claims, honest evidence, no weakened tests, synchronized metadata.
+   - **Production reliability**: Strict TypeScript strict mode, leak-free process management, defensive schema validation.
+   - **Dependency boundaries (P0)**: One owner per capability; dependencies follow the architecture direction. No new runtime/type cycles, reverse dependencies or transport coupling in the engine. Existing violations require explicit migration, not copied patterns; see [core boundary rules](./.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
+
+1. **[P0: Security & Execution Profiles (`01-security-and-sandboxes.md`)](./.agents/rules/01-security-and-sandboxes.md)**:
+   - Current mandatory read-only profiles: Codex app-server verifies readOnly/never and
+     every inherited MCP server disabled per thread;
+     Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
+     agy receives native --sandbox; its inherited MCP servers and plugins are a
+     documented limitation (owner decision 2026-10-08), with recursion refused.
+   - Planned full coagents use task-scoped capabilities under user policy;
+     writing and bounded delegation require the roadmap's profile migration.
+   - Models priced as expensive (at least 2x the backend default, or 20 USD per
+     million output tokens), unknown or approximately priced require explicit user
+     approval (`approve: true`) through server MCP elicitation; a calling agent
+     cannot grant it.
+   - Automated secret redaction for API keys, tokens, credentials, and user home directory paths, without rewriting ordinary content of public answers.
+
+2. **[P0: Git Workflow, Release Governance & Branch Protection (`02-git-workflow.md`)](./.agents/rules/02-git-workflow.md)**:
+   - **Branch model (PrestaShop style, owner decision 2026-10-10):** `develop` is the default and only integration branch; each maintained version has a release line `X.Y.x` (`1.0.x` from the first release candidate). There is no `main`. Direct pushes to `develop` or a line are strictly forbidden.
+   - All development takes place on topic branches (`feat/*`, `fix/*`, `perf/*`, `docs/*`, `chore/*`, ...) created from and targeting `develop` (a backport: its line). npm, the VSIX and the Git tag share one numeric version without pre-release suffixes (owner decision 2026-10-11); every version below 1.0.0 is a preview and each preview raises the minor. Betas are annotated tags on `develop` (`v0.6.0`, `v0.7.0`); release candidates (`v0.8.0`, `v0.9.0`), `v1.0.0` and patches are tags on `1.0.x`; fixes land on `develop` first and are backported to the line by squash PRs. Every commit on `develop` and a line is a GitHub squash commit `<PR title> (#N)` shown as Verified; no merge commits. The first release for testers is `v0.6.0`, published as a preview (GitHub pre-release, VS Code pre-release, npm `next`); the npm name placeholder `1.0.0-beta.1` held the place of 0.5.0 and is withdrawn, with no tag, GitHub Release or changelog entry.
+   - Merge exclusively via **Pull Requests with Squash and Merge** (`gh pr merge --squash --delete-branch`); commits and PR titles follow Conventional Commits; versions follow SemVer; `CHANGELOG.md` is generated from the history, never edited by hand.
+   - **Releases** follow the five phases of [rule 02 section 5](./.agents/rules/02-git-workflow.md#5-release-process): release PR (an agent may prepare it), owner merge and tag, the tag-triggered release workflow builds a draft GitHub Release with verified artifacts, the owner verifies the downloaded artifacts and publishes the release and the npm tarball. Agents never push, merge, tag or publish without the owner's explicit go-ahead.
+   - **Changelog before every push**: run `npm run changelog` and, if `CHANGELOG.md` changed, commit it alone as `chore(changelog): regenerate`; before opening a PR or changing its title, run `npm run changelog:check -- --with-commit "<PR title>"`. A failure blocks the push or PR.
+   - `develop` and every release line must strictly remain 100% green across all 6 CI matrix jobs (three OSes, Node 24 and 26).
+   - History recovery is strictly an emergency owner procedure with atomic force-with-lease.
+   - **No AI attribution (forbidden)**: never add a `Co-Authored-By` trailer for an AI tool, a "Generated with" line or similar to commits, PRs, changelogs or release notes. The owner is the sole author.
+
+---
+
+### P1 - Verification & Engineering Gates
+*Mandatory quality bars that must be satisfied before PR merge.*
+
+3. **[P1: CoAgent8 Review & Independent Audit (`03-author-reviewer.md`)](./.agents/rules/03-author-reviewer.md)**:
+   - Strict Author/Reviewer separation: roles are independent of model/provider;
+     the implementation author cannot supply their own independent approval.
+   - Independent verification via `review` in read-only sandbox before merging.
+   - Release approval strictly binds to Base SHA, Candidate SHA, Tree SHA, and Artifact SHA-256.
+   - Zero P1 (critical) or P2 (robustness) issues allowed. State Envelope must
+     evaluate to `VERDICT: READY` with independently verified scope/checks; the
+     current text gate alone does not establish complete input or release approval.
+
+4. **[P1: Local Quality Verification Gate (`04-quality-gate.md`)](./.agents/rules/04-quality-gate.md)**:
+   - Choose local checks by change scope using the linked rule; do not repeat a full gate after every edit.
+   - Prose-only README, plan and rule edits require content/link review and `git diff --check`, without runtime tests, builds, packaging or backend AI calls.
+   - Runtime, process, packaging and integration changes require appropriate behavioral checks.
+   - Releases retain the full local package gate, supported CI matrix and independent review. Existing required remote checks must not be bypassed.
+
+---
+
+### P2 - Compatibility & Code Standards
+*Operational standards ensuring cross-platform stability and clean communication.*
+
+5. **[P2: Cross-Platform & CI Matrix Guardrails (`05-cross-platform.md`)](./.agents/rules/05-cross-platform.md)**:
+   - Explicit recursive `tests/*.test.js` discovery through `tests/run.cjs` (no shell glob assumptions for Windows `cmd.exe`).
+   - Teardown terminates only owned handles and owned process groups, after a protocol interrupt where the backend supports one; never select a process by PID, parent PID or name. POSIX uses process group `process.kill(-proc.pid)`.
+   - Strict buffer bounding (`maxBufferBytes: 512KB`, `maxInputBytes: 4MB`).
+
+6. **[P2: Language & Code Style Standards (`06-language-and-style.md`)](./.agents/rules/06-language-and-style.md)**:
+   - Universal English standard for all source code, identifiers, comments, TSDoc annotations, commit messages, and documentation.
+

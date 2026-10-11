@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible CoAgent8 problem, including beta feedback.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Include sanitized diagnostics. Review pasted output and remove any remaining credentials or private project content."
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the host, tool arguments, expected behavior and actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and versions
+      description: OS and architecture, Node.js version, CoAgent8 version, chat host/version, and Codex/Claude Code/agy CLI versions. Note which backend failed.
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: CoAgent8 issue output
+      description: Paste the sanitized report prepared by the issue tool. If unavailable, explain why and include the error code.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: CoAgent8 doctor output
+      description: Paste doctor output for the affected workspace. If unavailable, explain why. Diagnostics do not prove a successful model turn.
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional evidence
+      description: Include relevant sanitized output, session state, and whether restarting the MCP server changes the result.

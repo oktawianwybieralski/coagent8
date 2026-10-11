@@ -1,0 +1,34 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "CoAgent8 - Source API",
+  "entryPoints": [
+    "../../src"
+  ],
+  "entryPointStrategy": "expand",
+  "tsconfig": "../../tsconfig.json",
+  "out": "../../.artifacts/api-docs",
+  "readme": "../../README.md",
+  "treatWarningsAsErrors": true,
+  "projectDocuments": [
+    "../../docs/ARCHITECTURE.md",
+    "../../docs/ROADMAP.md",
+    "../../docs/HANDOFF.md",
+    "../../CHANGELOG.md",
+    "../../.agents/rules/02-git-workflow.md"
+  ],
+  "highlightLanguages": [
+    "bash",
+    "console",
+    "css",
+    "html",
+    "javascript",
+    "json",
+    "jsonc",
+    "json5",
+    "yaml",
+    "tsx",
+    "typescript",
+    "mermaid"
+  ],
+  "customJs": "mermaid.js"
+}

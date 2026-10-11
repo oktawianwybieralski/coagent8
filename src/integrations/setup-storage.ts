@@ -1,0 +1,211 @@
+/**
+ * Bounded configuration parsing, private state and conflict-checked setup writes.
+ * @packageDocumentation
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { parse as parseToml } from 'smol-toml';
+import { parse, parseTree, type ParseError, type Node as JsonNode } from 'jsonc-parser';
+import { readBoundedFileSync } from '../storage/read.js';
+import { object } from './rpc.js';
+import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
+export interface Registration { command: string; args: string[]; env?: Record<string, string> }
+/** Registrations written on behalf of the VS Code extension, which removes them on uninstall. */
+export const EXTENSION_ORIGIN = 'vscode-extension' as const;
+/** Shared configuration file used by a runtime started with this setup environment. */
+export function setupConfigFile(home: string, env: NodeJS.ProcessEnv): string {
+  return path.resolve(env.coagent8_CONFIG || path.join(env.coagent8_DIR || path.join(home, '.coagent8'), 'config.json'));
+}
+export type RegistrationOrigin = typeof EXTENSION_ORIGIN;
+/**
+ * Saved selections and ownership; `origin` is absent for the CLI and for earlier records.
+ * `skills` holds the digests of the skill packages setup wrote per client, and `skillOrigin`
+ * marks those the VS Code extension wrote; both are omitted from the file while empty.
+ */
+export interface Selection {
+  clients: SetupClient[];
+  owned: Partial<Record<SetupClient, string>>;
+  origin: Partial<Record<SetupClient, RegistrationOrigin>>;
+  skills: Partial<Record<SetupClient, Record<string, string>>>;
+  /** Owned disabled packages stored outside client discovery. */
+  disabledSkills?: Partial<Record<SetupClient, Record<string, string>>>;
+  /** Per-package origin, allowing VSIX and CLI installations to coexist. */
+  skillOwners?: Partial<Record<SetupClient, Record<string, RegistrationOrigin | 'cli'>>>;
+  skillOrigin: Partial<Record<SetupClient, RegistrationOrigin>>;
+}
+const CONFIG_LIMIT = 512 * 1024;
+export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+export function read(file: string): string | null {
+  try { return readBoundedFileSync(file, CONFIG_LIMIT); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    // Parser/I/O errors can include configuration excerpts containing secrets.
+    throw new Error('Configuration is unreadable or exceeds the byte limit.');
+  }
+}
+function rejectDuplicateKeys(node: JsonNode | undefined): void {
+  if (!node) return;
+  if (node.type === 'object') {
+    const keys = new Set<string>();
+    for (const property of node.children ?? []) {
+      const key = property.children?.[0]?.value as string;
+      if (keys.has(key)) throw new Error('Configuration contains duplicate keys.');
+      keys.add(key);
+    }
+  }
+  for (const child of node.children ?? []) rejectDuplicateKeys(child);
+}
+/** Parses a JSON/JSONC configuration object, rejecting syntax errors and duplicate keys. */
+export function json(text: string): Record<string, unknown> {
+  const errors: ParseError[] = [];
+  const value: unknown = parse(text, errors, { allowTrailingComma: true });
+  if (errors.length) throw new Error('Malformed JSON/JSONC configuration.');
+  rejectDuplicateKeys(parseTree(text));
+  return object(value);
+}
+export function document(client: SetupClient, text: string): Record<string, unknown> {
+  if (client !== 'codex') return json(text);
+  try { return object(parseToml(text, { integersAsBigInt: 'asNeeded' })); }
+  catch { throw new Error('Malformed TOML configuration.'); }
+}
+export function servers(client: SetupClient, config: Record<string, unknown>): Record<string, unknown> {
+  const value = config[client === 'codex' ? 'mcp_servers' : 'mcpServers'];
+  return value === undefined ? {} : object(value);
+}
+export function registration(value: unknown): Registration {
+  const entry = object(value);
+  if (typeof entry.command !== 'string' || !entry.command || !Array.isArray(entry.args) || !entry.args.every(arg => typeof arg === 'string')) {
+    throw new Error('Existing CoAgent8 entry is not a supported stdio definition; preserve it and resolve the conflict.');
+  }
+  if (entry.disabled === true || entry.enabled === false) throw new Error('Existing CoAgent8 entry is disabled; enable it in the host explicitly.');
+  const env = entry.env === undefined ? undefined : object(entry.env);
+  if (env && !Object.values(env).every(value => typeof value === 'string')) throw new Error('Invalid CoAgent8 environment.');
+  // TOML tables have no prototype; a plain copy keeps deep comparison with a candidate exact.
+  return { command: entry.command, args: [...entry.args], env: env ? { ...env } as Record<string, string> : undefined };
+}
+export function configPath(client: SetupClient, home: string, env: NodeJS.ProcessEnv): string {
+  if (client === 'codex') return path.join(env.CODEX_HOME || path.join(home, '.codex'), 'config.toml');
+  if (client === 'claude') return path.join(env.CLAUDE_CONFIG_DIR || home, '.claude.json');
+  return path.join(env.GEMINI_CLI_HOME || home, '.gemini', 'config', 'mcp_config.json');
+}
+
+
+/** Prefix of private backups written for the VS Code extension, which its uninstall removes. */
+export const EXTENSION_BACKUP_PREFIX = `${EXTENSION_ORIGIN}-`;
+/** Creates a private backup directory, tagged when the VS Code extension made the change. */
+export function backupDirectory(root: string, origin?: RegistrationOrigin): string {
+  const directory = path.join(root, 'setup-backups', `${origin ? EXTENSION_BACKUP_PREFIX : ''}${randomUUID()}`);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  return directory;
+}
+export function writeChecked(file: string, before: string | null, after: string): void {
+  if (read(file) !== before) throw new Error('Configuration changed concurrently; setup did not overwrite it.');
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temp = file + '.' + randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(temp, after, { flag: 'wx', mode: before === null ? 0o600 : fs.statSync(file).mode & 0o777 });
+    if (read(file) !== before) throw new Error('Configuration changed concurrently; setup did not overwrite it.');
+    fs.renameSync(temp, file);
+  } finally {
+    fs.rmSync(temp, { force: true });
+  }
+}
+export function readSelection(file: string, snapshot?: string | null): Selection {
+  const content = snapshot === undefined ? read(file) : snapshot;
+  if (content === null) return { clients: [], owned: {}, origin: {}, skills: {}, skillOrigin: {} };
+  const data = json(content);
+  if (!Array.isArray(data.clients) || !data.clients.every(client => SETUP_CLIENTS.includes(client as SetupClient))) throw new Error('Invalid saved setup selections.');
+  const owned: Selection['owned'] = {};
+  if (data.owned) for (const [client, value] of Object.entries(object(data.owned))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient)) throw new Error('Invalid setup ownership record.');
+    if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new Error('Invalid setup ownership fingerprint.');
+    owned[client as SetupClient] = value;
+  }
+  const origin: Selection['origin'] = {};
+  if (data.origin) for (const [client, value] of Object.entries(object(data.origin))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || !owned[client as SetupClient]) throw new Error('Invalid setup origin record.');
+    origin[client as SetupClient] = value;
+  }
+  function skillRecords(records: unknown): Selection['skills'] {
+    const skills: Selection['skills'] = {};
+    if (records !== undefined) for (const [client, value] of Object.entries(object(records))) {
+    const record = object(value);
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || !Object.entries(record).every(([name, digest]) => /^coagent8-[a-z]+(?:-[a-z]+)*$/.test(name) && typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest))) {
+      throw new Error('Invalid setup skill record.');
+    }
+    skills[client as SetupClient] = { ...record } as Record<string, string>;
+    }
+    return skills;
+  }
+  const skills = skillRecords(data.skills), disabledSkills = skillRecords(data.disabledSkills);
+  const skillOwners: NonNullable<Selection['skillOwners']> = {};
+  if (data.skillOwners !== undefined) for (const [client, record] of Object.entries(object(data.skillOwners))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient)) throw new Error('Invalid skill owner client.');
+    const owners: Record<string, RegistrationOrigin | 'cli'> = {};
+    for (const [name, origin] of Object.entries(object(record))) {
+      if ((origin !== EXTENSION_ORIGIN && origin !== 'cli') || (!skills[client as SetupClient]?.[name] && !disabledSkills[client as SetupClient]?.[name])) throw new Error('Invalid skill package owner.');
+      owners[name] = origin;
+    }
+    if (Object.keys(owners).length) skillOwners[client as SetupClient] = owners;
+  }
+  const skillOrigin: Selection['skillOrigin'] = {};
+  if (data.skillOrigin) for (const [client, value] of Object.entries(object(data.skillOrigin))) {
+    if (!SETUP_CLIENTS.includes(client as SetupClient) || value !== EXTENSION_ORIGIN || (!skills[client as SetupClient] && !disabledSkills[client as SetupClient])) throw new Error('Invalid setup skill origin record.');
+    skillOrigin[client as SetupClient] = value;
+  }
+  return { clients: [...new Set(data.clients)] as SetupClient[], owned, origin, skills, skillOrigin, ...(Object.keys(disabledSkills).length ? { disabledSkills } : {}), ...(Object.keys(skillOwners).length ? { skillOwners } : {}) };
+}
+/** The setup state file's contents; empty skill records are left out, as earlier versions wrote it. */
+export function serializeSelection(saved: Selection): string {
+  const { skills, disabledSkills, skillOrigin, skillOwners, ...rest } = saved;
+  const recorded = Object.fromEntries(Object.entries(skills).filter(([, record]) => Object.keys(record ?? {}).length));
+  const disabled = Object.fromEntries(Object.entries(disabledSkills ?? {}).filter(([, record]) => Object.keys(record ?? {}).length));
+  const origins = Object.fromEntries(Object.entries(skillOrigin).filter(([client]) => Object.hasOwn(recorded, client) || Object.hasOwn(disabled, client)));
+  const packageOwners = Object.fromEntries(Object.entries(skillOwners ?? {}).map(([client, owners]) => [client, Object.fromEntries(Object.entries(owners ?? {}).filter(([name]) => saved.skills[client as SetupClient]?.[name] || saved.disabledSkills?.[client as SetupClient]?.[name]))]).filter(([, owners]) => Object.keys(owners).length));
+  return JSON.stringify({ ...rest, ...(Object.keys(recorded).length ? { skills: recorded } : {}), ...(Object.keys(disabled).length ? { disabledSkills: disabled } : {}), ...(Object.keys(origins).length ? { skillOrigin: origins } : {}), ...(Object.keys(packageOwners).length ? { skillOwners: packageOwners } : {}) }, null, 2) + '\n';
+}
+
+/** Codex stops an MCP tool call after 60 s by default; a review can take several minutes. */
+export const CODEX_TOOL_TIMEOUT_SEC = 1800;
+/** Folder of the VS Code extension's global storage (`<publisher>.<name>`), the data directory of its registrations. */
+export const EXTENSION_STORAGE_NAME = 'okidev.coagent8-mcp';
+const SETUP_ENTRY_ENV = ['coagent8_CONFIG', 'coagent8_DIR'];
+
+/**
+ * Recognizes an entry setup wrote by its shape, for when its ownership record is missing,
+ * as after `~/.coagent8/setup.json` was deleted: it starts a runtime copy setup keeps in
+ * `<root>/runtime/<sha256>/index.cjs` and holds only the fields setup writes. Nothing else
+ * writes there; an entry with any other field or variable stays the user's.
+ * @param root - The `~/.coagent8` directory.
+ * @returns Null for any other entry; otherwise the VS Code extension as its origin when its
+ * data directory is the extension's global storage, which VS Code deletes on uninstall.
+ */
+export function setupShapedEntry(client: SetupClient, entry: unknown, root: string): { origin?: RegistrationOrigin } | null {
+  let parsed: Registration;
+  try { parsed = registration(entry); }
+  catch { return null; }
+  const extra: Record<string, unknown> = client === 'codex' ? { tool_timeout_sec: CODEX_TOOL_TIMEOUT_SEC } : {};
+  const fields = object(entry);
+  if (!Object.keys(fields).every(key => ['command', 'args', 'env'].includes(key) || (Object.hasOwn(extra, key) && fields[key] === extra[key]))) return null;
+  if (!Object.keys(parsed.env ?? {}).every(key => SETUP_ENTRY_ENV.includes(key))) return null;
+  const runtime = parsed.args.at(-1);
+  if (runtime === undefined || !path.isAbsolute(runtime)) return null;
+  const relative = path.relative(path.join(root, 'runtime'), runtime).split(path.sep);
+  if (relative.length !== 2 || !/^[a-f0-9]{64}$/.test(relative[0]!) || relative[1] !== 'index.cjs') return null;
+  return extensionStorage(parsed.env?.coagent8_DIR) ? { origin: EXTENSION_ORIGIN } : {};
+}
+/** Whether a data directory is the VS Code extension's global storage, in any profile or VS Code variant. */
+function extensionStorage(directory: string | undefined): boolean {
+  return directory !== undefined && path.basename(directory).toLowerCase() === EXTENSION_STORAGE_NAME
+    && path.basename(path.dirname(directory)).toLowerCase() === 'globalstorage';
+}
+/**
+ * Whether setup owns a client's CoAgent8 entry and on whose behalf it wrote it: the recorded
+ * fingerprint, else the shape only setup writes ({@link setupShapedEntry}).
+ */
+export function entryOwnership(client: SetupClient, entry: unknown, saved: Selection, root: string): { owned: boolean; origin?: RegistrationOrigin } {
+  if (saved.owned[client] === hash(JSON.stringify(entry))) return { owned: true, origin: saved.origin[client] };
+  const shaped = setupShapedEntry(client, entry, root);
+  return shaped ? { owned: true, ...shaped } : { owned: false };
+}

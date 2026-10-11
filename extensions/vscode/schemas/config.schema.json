@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CoAgent8 configuration",
+  "description": "Shared by the coagent8 CLI, its MCP server and every MCP host. In VS Code, CoAgent8 settings set in the user settings take precedence.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "maxLength": 2048, "description": "Optional schema location for a custom configuration path." },
+    "schemaVersion": { "const": 1, "default": 1, "description": "Configuration format version. Must be 1." },
+    "defaultBackend": {
+      "enum": [null, "codex", "claude", "agy", "smart_quota"],
+      "default": null,
+      "description": "Backend used when a request does not name one. null chooses among routing.allowedBackends by routing.strategy. gemini is Antigravity. VS Code setting: coagent8.defaultBackend.",
+      "markdownEnumDescriptions": ["Automatic: choose among the allowed backends.", "Codex CLI.", "Claude Code CLI.", "Antigravity CLI (agy).", "Compatibility alias for routing.strategy smart_quota."]
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How automatic requests choose a backend.",
+      "properties": {
+        "strategy": {
+          "enum": ["fixed", "smart_quota"],
+          "default": "fixed",
+          "description": "fixed always uses the default backend; smart_quota prefers a backend whose quota is not exhausted. VS Code setting: coagent8.routing.strategy.",
+          "markdownEnumDescriptions": ["Always use the default backend.", "Prefer a backend whose quota is not exhausted."]
+        },
+        "allowedBackends": {
+          "type": "array",
+          "items": { "enum": ["codex", "claude", "agy"] },
+          "uniqueItems": true,
+          "default": ["codex", "claude", "agy"],
+          "description": "Backends CoAgent8 may run. gemini is Antigravity. VS Code setting: coagent8.routing.allowedBackends."
+        }
+      }
+    },
+    "backends": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-backend settings.",
+      "properties": {
+        "codex": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Codex CLI. VS Code setting: coagent8.codex.defaultModel." },
+        "claude": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Claude Code CLI. VS Code setting: coagent8.claude.defaultModel." },
+        "agy": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Antigravity CLI (agy). VS Code setting: coagent8.agy.defaultModel." }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "When CoAgent8 asks for your approval before a model runs. A calling agent cannot grant it.",
+      "properties": {
+        "priceMultiplier": {
+          "type": "number",
+          "exclusiveMinimum": 1,
+          "default": 2,
+          "description": "Ask before a model that costs at least this many times the backend's default model. VS Code command: CoAgent8: Manage Model Approvals."
+        },
+        "askAbovePrice": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": 20,
+          "description": "Ask before a model whose output price is at least this many USD per million tokens; null disables this threshold. VS Code command: CoAgent8: Manage Model Approvals."
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Your own rule for named models: deny wins over ask, ask over allow. An entry also covers the model's effort variants (<id>-<effort>). Price rules apply to the other models.",
+          "properties": {
+            "deny": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/model" },
+              "default": [],
+              "description": "Models that never run, whatever they cost; a request naming one is refused with this reason. VS Code command: CoAgent8: Manage Model Approvals."
+            },
+            "ask": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/model" },
+              "default": [],
+              "description": "Models that need your approval before every run, whatever they cost; the approval request states the price. VS Code command: CoAgent8: Manage Model Approvals."
+            },
+            "allow": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": { "$ref": "#/definitions/model" },
+              "default": [],
+              "description": "Models you approve in advance: they run without asking, whatever they cost. An approval with \"remember\" adds the model here. VS Code command: CoAgent8: Manage Model Approvals."
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$", "description": "Model identifier or CLI alias, for example opus." },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultModel": { "allOf": [{ "$ref": "#/definitions/model" }], "description": "Model used when a request names none. Recorded by doctor when missing." },
+        "skills": {
+          "type": "object", "additionalProperties": false, "required": ["installed", "disabled"],
+          "description": "Explicit package selection. Omitted installs all catalog skills. An empty installed list installs none. Disabled packages stay outside client discovery; disabled must be a subset of installed.",
+          "properties": {
+            "installed": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^coagent8-[a-z]+(?:-[a-z]+)*$" } },
+            "disabled": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^coagent8-[a-z]+(?:-[a-z]+)*$" } }
+          }
+        },
+        "executable": {"type": "string", "minLength": 1, "maxLength": 1024, "anyOf": [{"const": "vscode-extension"}, {"pattern": "^~[\\\\/]."}, {"pattern": "^([A-Za-z]:[\\\\/]|\\\\\\\\|/)"}], "description": "CLI to run: an absolute path, a path starting with ~/, or \"vscode-extension\" for the newest copy the vendor's VS Code extension provides (it survives extension updates). Omitted, the CLI is found on PATH, then in the vendor's VS Code extension. Setup records the CLI it finds at the first registration; change it at any time. The CODEX_PATH, CLAUDE_PATH and AGY_PATH environment variables take precedence."}
+      }
+    }
+  }
+}
