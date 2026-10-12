@@ -107,7 +107,7 @@ test('Claude error mapping is table driven, defaults to PROCESS_ERROR and carrie
   assert.equal(classifyClaudeFailure({ apiErrorStatus: 429 }).code, 'RATE_LIMITED');
   assert.equal(classifyClaudeFailure({ apiErrorStatus: 503 }).retryable, true);
   assert.equal(classifyClaudeFailure({ errors: ['Some other failure'] }).code, 'PROCESS_ERROR');
-  const limited = classifyClaudeFailure({ category: 'rate_limit', message: 'Usage limit reached', rateLimitResetsAt: 1791237000 });
+  const limited = classifyClaudeFailure({ category: 'rate_limit', message: 'Usage limit reached', rateLimitResetsAt: 1791242400 });
   assert.match(limited.message, /resets at 2026-10-0\dT\d\d:\d\d:00\.000Z/);
   assert.ok(Object.isFrozen(CLAUDE_ERROR_CATEGORIES));
 });
