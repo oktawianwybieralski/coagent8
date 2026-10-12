@@ -203,8 +203,8 @@ supports stdio MCP in Agent mode through the same definition, following
   check makes it `BLOCKED (reason)`; a workspace change during the turn is
   reported only when the snapshot or its completeness changed.
 - A review of unchanged code with the same scope, backend and model starts no
-  new turn and returns the earlier verdict, retaining a valid `session_handle`
-  for the workspace.
+  new turn and returns the earlier verdict, retaining the review's or passed
+  `session_handle` for the workspace.
 - Staged, commit and range scopes are reviewed only when their files match the
   current workspace; otherwise review the uncommitted changes.
 
