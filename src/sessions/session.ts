@@ -175,7 +175,8 @@ export function createSession(backend: string, workspace = process.cwd(), thread
 }
 
 /**
- * Atomically acquires turn ownership on an idle session record.
+ * Atomically acquires turn ownership on an idle session record, recording this
+ * CoAgent8 server process (`process.pid`, not a backend CLI child PID) as `activePid`.
  *
  * Checks cancellation signals and execution budget before lock acquisition,
  * during the lock wait, and across synchronous boundaries immediately after write.
@@ -385,6 +386,16 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
   executionCanceller = fn;
 }
 
+/**
+ * Cancels the active turn of a session owned by this CoAgent8 server process, or
+ * recovers a stale turn lease left by a dead owner process.
+ *
+ * @remarks
+ * `activePid` on the session record identifies the CoAgent8 server process that
+ * owns the turn lease, not the backend CLI child process. If `activePid` belongs
+ * to another live CoAgent8 server process, cancellation is refused rather than
+ * signalling a foreign process.
+ */
 export async function cancelSession(handle: string, workspace?: string): Promise<{ cancelled: boolean; message: string }> {
   const sanitized = sanitizeHandle(handle);
   if (!sanitized) throw new Error(`Invalid session handle: '${handle}'.`);
@@ -420,7 +431,7 @@ export async function cancelSession(handle: string, workspace?: string): Promise
     if (!s) return;
 
     if (s.activePid && s.activePid !== process.pid && isProcessAlive(s.activePid)) {
-      throw new Error(`Cannot cancel session '${sanitized}': actively running in another process (PID ${s.activePid}).`);
+      throw new Error(`Cannot cancel session '${sanitized}': actively running in another CoAgent8 server process (PID ${s.activePid}).`);
     }
 
     if (targetToken ? s.turnToken === targetToken : !s.turnToken && (s.state === 'running' || s.activePid)) {

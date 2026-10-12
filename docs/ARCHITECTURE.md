@@ -386,11 +386,12 @@ created; full other-tree review is pending.
 
 ## Sessions and history
 
-Every current execution needs a workspace/provider-bound disk session and lease.
-Explicit invalid/busy handles fail closed. Continuations retain model and effort;
-changing model does not inherit effort. Idle records expire after two hours;
-archive retention is seven days. No implicit auto-resume or ephemeral mode exists.
-Close retains history unless delete_history is requested.
+Every current execution needs a workspace/provider-bound disk session and lease;
+`activePid` records the CoAgent8 server process owning the active turn, not the
+backend CLI child PID. Explicit invalid/busy handles fail closed. Continuations
+retain model and effort; changing model does not inherit effort. Idle records
+expire after two hours; archive retention is seven days. No implicit auto-resume
+or ephemeral mode exists. Close retains history unless delete_history is requested.
 
 Archive writes are best-effort. Initial/periodic/final failures warn and preserve
 execution/answer; coagent8_HISTORY=off suppresses archives only. Session acquisition

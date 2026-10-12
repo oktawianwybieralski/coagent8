@@ -38,7 +38,10 @@ export const cancelToolDefinition = {
   },
 };
 
-/** A session record as shown to clients: the workspace path with the home directory as `~`. */
+/**
+ * A session record as shown to clients: the workspace path with the home directory as `~`.
+ * `activePid` identifies the CoAgent8 server process owning the active turn, not the backend CLI child PID.
+ */
 export function publicSessionRecord(record: SessionRecord): SessionRecord {
   return { ...record, workspace: redactDiagnostic(record.workspace, 1024) };
 }
@@ -85,6 +88,10 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
   throw new ToolError('INPUT_LIMIT', `Unknown action: ${action}`);
 }
 
+/**
+ * Cancels the active turn of a session owned by this CoAgent8 server process (`activePid`),
+ * or reclaims a stale turn lease from a dead server process.
+ */
 export async function handleCancelSession(args: { session_handle: string; workspace_path?: string }) {
   if (!args?.session_handle || typeof args.session_handle !== 'string') {
     throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required and must be a string.');

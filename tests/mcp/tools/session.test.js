@@ -133,7 +133,7 @@ test('cancelSession respects external live processes and protects replacement tu
 
     await assert.rejects(
       async () => handleCancelSession({ session_handle: handle, workspace_path: tempDir }),
-      /actively running in another process/
+      /actively running in another CoAgent8 server process/
     );
   }
 
