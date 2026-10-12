@@ -3,6 +3,7 @@ import { classifyGeminiError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { runCommand } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../security/redaction.js';
@@ -22,7 +23,7 @@ import {
   type TerminalExecutionResult,
   type CliAdapter,
 } from '../types.js';
-import { errorCodeOf, ToolError, type ExecutionError } from '../../contracts/index.js';
+import { errorCodeOf, ToolError, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
 
 export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';
@@ -31,6 +32,35 @@ const AGY_SIGNAL_GRACE_MS = 2000;
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+/**
+ * Sent once on `--conversation <id>` when an `agy --sandbox` turn ends without an answer
+ * because headless mode auto-denied a shell command (#20).
+ */
+export const SANDBOX_DENIAL_RECOVERY_PROMPT =
+  'Your sandbox denied a shell command and your previous turn ended without an answer. Answer the previous request now, in the format it asks for. Run no shell command: read files only with your file tools, or answer from what you already know and say what you could not check.';
+
+function prefixRetryId(id: string): string {
+  const prefixed = `retry-${id}`;
+  return Buffer.byteLength(prefixed, 'utf8') <= 256 ? prefixed : prefixed.slice(0, 256);
+}
+
+function mergeUsage(
+  first: TerminalExecutionResult['usage'],
+  second: TerminalExecutionResult['usage']
+): TerminalExecutionResult['usage'] {
+  if (!first || !second) return undefined;
+  const merged: NonNullable<TerminalExecutionResult['usage']> = { source: 'provider' };
+  if (typeof first.inputTokens === 'number' && typeof second.inputTokens === 'number') {
+    merged.inputTokens = first.inputTokens + second.inputTokens;
+  }
+  if (typeof first.outputTokens === 'number' && typeof second.outputTokens === 'number') {
+    merged.outputTokens = first.outputTokens + second.outputTokens;
+  }
+  if (typeof first.totalTokens === 'number' && typeof second.totalTokens === 'number') {
+    merged.totalTokens = first.totalTokens + second.totalTokens;
+  }
+  return merged;
+}
 
 /** Caps caller timeout to the operation's default bound (`EXEC-001-T08e`). */
 function boundReadTimeout(context: BackendReadContext | undefined, defaultMs: number): number {
@@ -229,6 +259,9 @@ function failed(error: ExecutionError): TerminalExecutionResult {
  * in internal state, so its own choice is unknown before the turn and could be top-tier
  * (AUD-P1-7). The deadline and cancellation are `runCommand`'s: it validates `timeoutMs`,
  * stops the process and reports `timed_out` or `cancelled`, which this result keeps.
+ * When a headless sandbox denial ends the turn with an empty answer, `execute` resumes the
+ * same native conversation at most once within the remaining `timeoutMs` and `abortSignal`
+ * to ask for an answer without shell commands (#20).
  */
 export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const model = options.model;
@@ -266,41 +299,95 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
 
   const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(model, options.reasoningEffort);
 
-  const collector = createGeminiCollector(options.onEvent);
-  const args = [...resolved.argsPrefix, '--sandbox', '--output-format', 'stream-json'];
+  const baseArgs = [...resolved.argsPrefix, '--sandbox', '--output-format', 'stream-json'];
   if (options.cwd) {
-    args.push('--add-dir', path.resolve(options.cwd));
+    baseArgs.push('--add-dir', path.resolve(options.cwd));
   }
   if (targetModel) {
-    args.push('--model', targetModel);
+    baseArgs.push('--model', targetModel);
   }
   if (targetEffort) {
-    args.push('--effort', targetEffort);
-  }
-  if (native) {
-    args.push('--conversation', native);
+    baseArgs.push('--effort', targetEffort);
   }
 
-  const processResult = await runCommand(resolved.command, args, {
-    cwd: options.cwd ? path.resolve(options.cwd) : process.cwd(),
-    env: turnEnvironment(agyEnvironment()),
-    stdinInput: prompt,
-    abortSignal: options.abortSignal,
-    timeoutMs: options.timeoutMs,
-    // agy has no headless interrupt; on POSIX, SIGTERM lets it cancel its own commands first.
-    signalGraceMs: AGY_SIGNAL_GRACE_MS,
-    maxBufferBytes: 512 * 1024,
-    maxLineBytes: 512 * 1024,
-    onStdoutLine: collector.line,
-    onStderrLine(line) {
-      if (/jetski:.*auto-denied/i.test(line)) {
-        collector.denySandbox();
-      }
-    },
-  });
+  const resolvedCwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
+  const env = turnEnvironment(agyEnvironment());
 
+  const runTurn = async (
+    turnPrompt: string,
+    conversationId: string | null | undefined,
+    timeoutMs: number | undefined,
+    onEvent: ((event: AdapterEvent) => void) | undefined
+  ) => {
+    const collector = createGeminiCollector(onEvent);
+    const args = conversationId ? [...baseArgs, '--conversation', conversationId] : [...baseArgs];
+    const processResult = await runCommand(resolved.command, args, {
+      cwd: resolvedCwd,
+      env,
+      stdinInput: turnPrompt,
+      abortSignal: options.abortSignal,
+      timeoutMs,
+      // agy has no headless interrupt; on POSIX, SIGTERM lets it cancel its own commands first.
+      signalGraceMs: AGY_SIGNAL_GRACE_MS,
+      maxBufferBytes: 512 * 1024,
+      maxLineBytes: 512 * 1024,
+      onStdoutLine: collector.line,
+      onStderrLine(line) {
+        if (/jetski:.*auto-denied/i.test(line)) {
+          collector.denySandbox();
+        }
+      },
+    });
+    return { processResult, snapshot: collector.snapshot() };
+  };
 
-  const s = collector.snapshot();
+  const startedAtMs = performance.now();
+  const first = await runTurn(prompt, native, options.timeoutMs, options.onEvent);
+  let processResult = first.processResult;
+  let s = first.snapshot;
+  let retriedAfterDenial = false;
+
+  const canRetryEmptyDenial =
+    processResult.status === 'completed' &&
+    !processResult.error &&
+    !s.terminalError &&
+    s.terminal &&
+    Boolean(s.nativeSessionId) &&
+    (!native || s.nativeSessionId === native) &&
+    s.sandboxDenied &&
+    !s.output.trim() &&
+    !options.abortSignal?.aborted;
+
+  if (canRetryEmptyDenial) {
+    const elapsedMs = Math.max(0, Math.round(performance.now() - startedAtMs));
+    const remainingTimeoutMs = options.timeoutMs !== undefined ? options.timeoutMs - elapsedMs : undefined;
+    if (remainingTimeoutMs === undefined || remainingTimeoutMs > 0) {
+      retriedAfterDenial = true;
+      const retrySessionId = s.nativeSessionId!;
+      const retryOnEvent = options.onEvent
+        ? (event: AdapterEvent) => {
+            if ((event.type === 'assistant_delta' || event.type === 'assistant_message') && event.messageId !== 'final') {
+              options.onEvent?.({ ...event, messageId: prefixRetryId(event.messageId) });
+            } else if (event.type === 'tool_started' || event.type === 'tool_finished') {
+              options.onEvent?.({ ...event, toolId: prefixRetryId(event.toolId) });
+            } else {
+              options.onEvent?.(event);
+            }
+          }
+        : undefined;
+      const second = await runTurn(SANDBOX_DENIAL_RECOVERY_PROMPT, retrySessionId, remainingTimeoutMs, retryOnEvent);
+      processResult = second.processResult;
+      const s2 = second.snapshot;
+      s = {
+        ...s2,
+        model: s2.model ?? s.model,
+        sandboxDenied: s.sandboxDenied || s2.sandboxDenied,
+        truncated: s.truncated || s2.truncated,
+        usage: mergeUsage(s.usage, s2.usage),
+      };
+    }
+  }
+
   // A denied action shows that the sandbox works; the answer stays, as with Claude permission denials.
   if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
   let error: ExecutionError | undefined = processResult.error || s.terminalError;
@@ -315,27 +402,38 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   }
   // A headless denial ends agy's turn before the model answers; an empty success is no answer.
   if (!error && s.sandboxDenied && !s.output.trim()) {
-    error = { code: 'POLICY_DENIED', message: 'agy ended the turn without an answer after its sandbox denied a command (headless mode cannot ask for permission). Ask again for an answer that reads files without running commands.', retryable: false };
+    error = {
+      code: 'POLICY_DENIED',
+      message: retriedAfterDenial
+        ? 'agy ended the turn without an answer after its sandbox denied a command, including on automatic retry without shell commands (headless mode cannot ask for permission).'
+        : 'agy ended the turn without an answer after its sandbox denied a command (headless mode cannot ask for permission). Ask again for an answer that reads files without running commands.',
+      retryable: false,
+    };
   }
-  if (!error && native && s.nativeSessionId !== native) {
+  const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
+  if (!error && expectedSessionId && s.nativeSessionId !== expectedSessionId) {
     error = { code: 'SESSION_INVALID', message: 'Resume returned a different Gemini session.', retryable: false };
   }
+  const effectiveSessionId = error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
+    ? s.nativeSessionId
+    : (s.nativeSessionId ?? expectedSessionId ?? null);
 
   const status = processResult.status === 'cancelled' || processResult.status === 'timed_out' ? processResult.status : error ? 'failed' : 'completed';
   return {
     ...s,
+    nativeSessionId: effectiveSessionId,
     // agy may omit the model from `init`; then the requested model is the best known.
     model: s.model ?? targetModel,
     status,
     isError: status !== 'completed',
     error,
     errorDetail: error?.message,
-    threadId: s.nativeSessionId,
+    threadId: effectiveSessionId,
     exitCode: processResult.exitCode,
     signal: processResult.signal,
     // The collector owns the answer; the runner's bounded stdout copy of the event stream is diagnostic.
     truncated: s.truncated || error?.code === 'BUFFER_LIMIT',
-    continuationAvailable: !!(s.nativeSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
+    continuationAvailable: !!(effectiveSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
   };
 }
 

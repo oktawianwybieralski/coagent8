@@ -3,7 +3,7 @@ import { EXECUTION_PARAMETERS } from '../schema.js';
 import { executeTask, type TaskOptions } from '../../execution/controller.js';
 import { collectReviewInput } from '../../review/index.js';
 import { assertReviewWorkspace } from '../../workspace/git.js';
-import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import { CANONICAL_TOOL_NAMES, READ_ONLY_FILE_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { createPhaseTracker, type PhaseTracker } from '../../execution/runtime/timing.js';
 import type { TimingObserver, MonotonicClock, BackendReadContext, ExecutionBudget } from '../../contracts/execution.js';
@@ -137,9 +137,7 @@ export async function handleReview(
   // The answer is read in the caller's context: findings only, each as short as its evidence allows.
   const prompt = [
     `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
-    // Claude and agy read with file tools, and agy ends its turn when its sandbox denies a
-    // command; Codex has no file tool and reads only with commands in its read-only sandbox.
-    'The diff is below. Read files with your file tools; if you have none, read them with read-only shell commands (such as rg, git show or Get-Content) and run nothing that writes, builds or uses the network. With file tools, run no shell command: a sandbox may deny it and end the turn.',
+    `The diff is below. ${READ_ONLY_FILE_TOOL_GUIDANCE}`,
     'Focus: ' + instructions,
     'Answer with exactly this envelope and nothing before it:',
     'REVIEW: <turn>',

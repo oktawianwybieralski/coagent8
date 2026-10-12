@@ -398,3 +398,39 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
     adapterRegistry.agy = original;
   }
 });
+
+test('Issue #20: handleReview on agy recovers automatically from an initial sandbox command denial and passes the State Envelope gate', async () => {
+  const repo = path.join(tempDir, 'repo-review-agy-recover');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
+
+  const input = await collectReviewInput('uncommitted', repo, null);
+  const originalAgyPath = process.env.AGY_PATH;
+  process.env.AGY_PATH = path.resolve(__dirname, '../../fixtures/agy-cli/agy.cjs');
+  process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+  process.env.coagent8_FIXTURE_RECOVER_RESPONSE = [
+    'REVIEW: 1',
+    `SNAPSHOT: ${input.context.expectedSnapshot}`,
+    'COVERAGE: COMPLETE',
+    'VERDICT: READY',
+    'Reviewed: a.ts',
+    'CHECKS: typecheck=PASS; tests=PASS',
+    'END_REVIEW',
+  ].join('\n');
+
+  try {
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const result = await handleReview('review', { backend: 'agy' }, repo);
+    const parsed = readResult(result);
+    assert.equal(parsed.status, 'completed', JSON.stringify(result));
+    assert.equal(parsed.verdict, 'READY', JSON.stringify(parsed));
+  } finally {
+    if (originalAgyPath === undefined) delete process.env.AGY_PATH;
+    else process.env.AGY_PATH = originalAgyPath;
+    delete process.env.coagent8_FIXTURE_MODE;
+    delete process.env.coagent8_FIXTURE_RECOVER_RESPONSE;
+  }
+});

@@ -813,3 +813,68 @@ test('EXEC-001-T08e: stalled agy reads ended by budget expiration during run rej
     delete process.env.AGY_FIXTURE_MODE;
   }
 });
+
+test('Issue #20: agy automatically resumes once when sandbox denies a command with an empty answer and preserves history across reused step_index', async () => {
+  const { executeTask } = require('../../../src/execution/controller.ts');
+  const { sessionHistory } = require('../../../src/sessions/history/index.ts');
+  const { saveConfig } = require('../../../src/config.ts');
+
+  process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+  try {
+    const warnings = [];
+    const direct = await execute('Analyze architecture', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: e => {
+        if (e.type === 'warning') warnings.push(e.message);
+      },
+    });
+    assert.equal(direct.status, 'completed');
+    assert.equal(direct.isError, false);
+    assert.equal(direct.output, 'Recovered answer from read_file without shell commands.');
+    assert.equal(direct.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
+    assert.equal(direct.continuationAvailable, true);
+    assert.deepEqual(direct.usage, { source: 'provider', inputTokens: 25, outputTokens: 25, totalTokens: 50 });
+    assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'sandbox warning emitted exactly once across initial and recovery turns');
+
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const response = await executeTask('Analyze architecture', 'Analyze architecture', { backend: 'agy' }, tempDir);
+    const parsed = readResult(response);
+    assert.equal(parsed.status, 'completed', JSON.stringify(response));
+    assert.equal(parsed.answer, 'Recovered answer from read_file without shell commands.');
+
+    const page = await sessionHistory(parsed.sessionHandle, tempDir);
+    const toolStartedIds = page.events.filter(e => e.type === 'tool_started').map(e => e.toolId);
+    const toolFinishedIds = page.events.filter(e => e.type === 'tool_finished').map(e => e.toolId);
+    assert.deepEqual(toolStartedIds, ['tool-1', 'retry-tool-1'], 'initial and retry tool IDs must not collide when agy reuses step_index');
+    assert.deepEqual(toolFinishedIds, ['tool-1', 'retry-tool-1']);
+
+    const assistantMessages = page.events.filter(e => e.type === 'assistant_message');
+    assert.deepEqual(
+      assistantMessages.map(m => ({ messageId: m.messageId, text: m.text })),
+      [
+        { messageId: 'msg-2', text: '   ' },
+        { messageId: 'retry-msg-2', text: 'Recovered answer from read_file without shell commands.' },
+      ],
+      'recovered assistant answer must be recorded in durable history without colliding with initial step_index'
+    );
+    assert.equal(page.events.at(-1).type, 'turn_finished');
+    assert.equal(page.events.at(-1).status, 'completed');
+
+    process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
+    const emptyWarnings = [];
+    const stillEmpty = await execute('Analyze architecture', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: e => {
+        if (e.type === 'warning') emptyWarnings.push(e.message);
+      },
+    });
+    assert.equal(stillEmpty.status, 'failed');
+    assert.equal(stillEmpty.error.code, 'POLICY_DENIED');
+    assert.match(stillEmpty.error.message, /including on automatic retry without shell commands/);
+    assert.equal(emptyWarnings.filter(w => /sandbox denied/.test(w)).length, 1, 'sandbox warning emitted once even when retry also fails');
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
+});
