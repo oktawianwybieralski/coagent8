@@ -429,7 +429,11 @@ export async function execute(
 
   // A denied action shows that the sandbox works; the answer stays, as with Claude permission denials.
   if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
-  let error: ExecutionError | undefined = processResult.error || s.terminalError;
+  const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
+  const sessionMismatch = Boolean(expectedSessionId && s.nativeSessionId && s.nativeSessionId !== expectedSessionId);
+  let error: ExecutionError | undefined = sessionMismatch
+    ? { code: 'SESSION_INVALID', message: 'Resume returned a different Gemini session.', retryable: false }
+    : (processResult.error || s.terminalError);
   if (!error && processResult.status !== 'completed') {
     const fallbackStderr = processResult.stderr ? processResult.stderr.trim() : '';
     error = fallbackStderr
@@ -449,15 +453,15 @@ export async function execute(
       retryable: false,
     };
   }
-  const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
-  if (!error && expectedSessionId && s.nativeSessionId !== expectedSessionId) {
-    error = { code: 'SESSION_INVALID', message: 'Resume returned a different Gemini session.', retryable: false };
-  }
-  const effectiveSessionId = error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
-    ? s.nativeSessionId
+  const effectiveSessionId = sessionMismatch || error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
+    ? null
     : (s.nativeSessionId ?? expectedSessionId ?? null);
 
-  const status = processResult.status === 'cancelled' || processResult.status === 'timed_out' ? processResult.status : error ? 'failed' : 'completed';
+  const status = !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
+    ? processResult.status
+    : error
+      ? 'failed'
+      : 'completed';
   return {
     ...s,
     nativeSessionId: effectiveSessionId,

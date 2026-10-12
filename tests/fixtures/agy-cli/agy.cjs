@@ -114,7 +114,10 @@ function run() {
     return;
   }
 
-  const sid = mode === 'wrong-session' ? '99999999-aaaa-bbbb-cccc-123456789012' : native;
+  const isRecoveryTurn = args.includes('--conversation') && prompt.includes('Your sandbox denied a shell command');
+  const sid = mode === 'wrong-session' || (isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION === '1')
+    ? '99999999-aaaa-bbbb-cccc-123456789012'
+    : native;
   send(mode === 'init-without-model' ? { event: 'init', conversation_id: sid } : { event: 'init', conversation_id: sid, model });
 
   if (mode === 'secret-hang') {
@@ -124,7 +127,6 @@ function run() {
   }
 
   if (mode.startsWith('sandbox-denied')) {
-    const isRecoveryTurn = args.includes('--conversation') && prompt.includes('Your sandbox denied a shell command');
     if (mode === 'sandbox-denied-recover' && isRecoveryTurn) {
       if (process.env.coagent8_FIXTURE_RETRY_HANG === '1') {
         setInterval(() => {}, 1000);

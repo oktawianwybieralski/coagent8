@@ -927,8 +927,22 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
     });
     assert.equal(retryTimedOut.status, 'timed_out', 'omitted timeoutMs passes remaining default budget to retry');
     assert.equal(retryTimedOut.error.code, 'TIMEOUT');
+    delete process.env.coagent8_FIXTURE_RETRY_HANG;
+
+    // Verify a recovery turn that reports a different conversation UUID fails with SESSION_INVALID and disables continuation even when the retry also fails
+    process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION = '1';
+    for (const retryMode of ['sandbox-denied-empty', 'sandbox-denied-recover']) {
+      process.env.coagent8_FIXTURE_MODE = retryMode;
+      const mismatchedRetry = await execute('Analyze architecture', { model: MODEL, cwd: tempDir });
+      assert.equal(mismatchedRetry.status, 'failed', retryMode);
+      assert.equal(mismatchedRetry.error.code, 'SESSION_INVALID', retryMode);
+      assert.equal(mismatchedRetry.nativeSessionId, null, retryMode);
+      assert.equal(mismatchedRetry.threadId, null, retryMode);
+      assert.equal(mismatchedRetry.continuationAvailable, false, retryMode);
+    }
   } finally {
     delete process.env.coagent8_FIXTURE_MODE;
     delete process.env.coagent8_FIXTURE_RETRY_HANG;
+    delete process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION;
   }
 });
