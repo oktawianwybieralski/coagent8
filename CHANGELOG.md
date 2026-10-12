@@ -13,7 +13,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 ### Fixed
 - [`d1d90a7`](https://github.com/oktawianwybieralski/coagent8/commit/d1d90a71f05b2f333f2cff4ac5401fe65f4b8cd5) **locks:** Report a budget-bounded lock wait as budget expiry ([#5](https://github.com/oktawianwybieralski/coagent8/pull/5))
-- [`b43011c`](https://github.com/oktawianwybieralski/coagent8/commit/b43011cebf42dbd4060627f26841da9baef4509d) **docs:** Render the mermaid diagrams and name the site CoAgent8
+- [`32fdb01`](https://github.com/oktawianwybieralski/coagent8/commit/32fdb01cdcac9a39d9e9e62f9ebd1ea4e9487269) **docs:** Render the mermaid diagrams and name the site CoAgent8 ([#6](https://github.com/oktawianwybieralski/coagent8/pull/6))
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
