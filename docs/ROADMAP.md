@@ -2322,13 +2322,71 @@ history stays as published; nothing found justifies rewriting it.
   remaining cards for outside readers: decisions and acceptance instead of
   session notes and internal procedure.
 - [ ] **PUBLIC-001d - name and logo trademark notice.** Prepare a short
-  notice for README and the extension README declining to grant trademark
-  rights to the CoAgent8 name and logo under GPL-3.0 section 7(e). Preserve
-  existing GPL-3.0 copyright permissions for the logo artwork (SVG, PNG and
-  Affinity source); the notice must not claim to revoke or exclude those
-  permissions (section 2). The owner approves the wording before integration.
-  Check: content against LICENSE sections 2 and 7(e), link review and
-  `git diff --check`.
+  separate trademark notice for README and the extension README reserving
+  trademark rights to the CoAgent8 name and logo. Coordinate with LIC-001:
+  trademark policy must not add restrictions to the standard MIT copyright
+  grant or claim to revoke existing GPL permissions for artwork (SVG, PNG and
+  Affinity source). GPL section 7(e) concerns trademark rights, not withdrawal
+  of copyright permissions under section 2. The owner approves the wording
+  before integration. Check: consistency with the approved artwork scope,
+  current LICENSE and the standard MIT text, link review and `git diff --check`.
+
+### LIC-001: planned MIT relicensing
+
+Owner request, 2026-10-12: plan MIT relicensing together with the 0.6.1 work.
+Target: standard MIT for owner-controlled source, documentation and artwork
+from 0.6.1, subject to a verified rights inventory. This card plans the change;
+the current LICENSE and manifests remain GPL-3.0-only until implementation.
+Previously distributed GPL copies retain their permissions; do not rewrite
+tags, published artifacts or generated historical changelog entries. Third-party
+material keeps its own license and notices. Trademark policy is PUBLIC-001d,
+separate from the copyright grant.
+
+References: [standard MIT text](https://opensource.org/license/mit),
+[GNU licensing FAQ](https://www.gnu.org/licenses/gpl-faq.html#HeardOtherLicense)
+and the current LICENSE sections 2 and 7(e). Git author names alone do not
+establish copyright ownership or permission to relicense imported material.
+
+- [ ] **LIC-001a - rights and material inventory.** Inspect tracked source,
+  documentation, skills, logo/artwork sources, fixtures and copied/vendored
+  material; use history and attribution to identify rights holders and existing
+  terms. Record owner confirmation/permissions for the scope being relicensed,
+  plus an inventory of third-party exceptions and their required notices in
+  HANDOFF. Acceptance: every included category has an evidenced MIT basis;
+  uncertain ownership or GPL-only third-party code blocks LIC-001b until
+  resolved, excluded lawfully or replaced in a separate task. Do not infer
+  sole ownership from squash history or remove attribution to obtain a clean
+  score. This is a bounded audit task; no license files change in its PR.
+- [ ] **LIC-001b - license text and metadata.** After LIC-001a, replace the
+  root LICENSE with the unmodified standard MIT terms and accurate owner/year
+  notice. Update root package/lock metadata, `plugin.json`, the extension
+  manifest and applicable owner-controlled file headers together; inventory
+  other manifests rather than changing independent tooling/third-party terms
+  indiscriminately. Keep dependency license texts and THIRD_PARTY_NOTICES.
+  Acceptance: all first-party distribution metadata agrees with the approved
+  MIT scope; version stays 0.6.0 until the release PR. Check: scope-based package
+  gate, affected package regressions and notice comparison.
+- [ ] **LIC-001c - public license and contribution guidance.** After b,
+  DOCS-002d1 and DOCS-002d2 each update their README badges/terms and explain
+  the first MIT release without claiming older GPL copies changed license.
+  Update contribution guidance in its own small PR (LIC-001c1) so future
+  contributions use the applicable project license; do not introduce a CLA or
+  copyright assignment silently. Coordinate artwork scope and trademark text
+  with PUBLIC-001d. Acceptance: user/contributor guidance agrees with LICENSE
+  and manifests, and third-party exceptions remain explicit. Parent c closes
+  only after c1 and both README tasks; content/link checks per rule 04.
+- [ ] **LIC-001d - exact-artifact and publication verification.** PATCH-061-R3
+  and R4 inspect the packaged npm/VSIX LICENSE, manifest license fields,
+  README text, artwork scope and third-party notices against the approved
+  inventory. PATCH-061-R7 checks the published copies and the 0.6.1 Socket
+  license score/detected expression. Acceptance: MIT is the first-party license,
+  legitimate MIT/BSD/etc. dependency notices are retained, any GPL detection
+  has an investigated cause, and measured scores are recorded without a 100%
+  guarantee. No extra implementation PR duplicates these release checks.
+
+If LIC-001a cannot establish the required rights, record the specific blocker
+and let the owner decide whether to defer MIT and ship 0.6.1 under the current
+GPL terms. The coding agent must not silently change the planned release scope.
 
 ## SUPPLY-001: Socket package scores
 
@@ -2364,11 +2422,11 @@ Alerts on `coagent8` itself:
 | Shell access, filesystem access, environment variable access | Inherent: the bridge runs coding CLIs and keeps configuration and histories | none |
 | Network access, URL strings | Inherent: `src/models/prices.ts` fetches price lists; documentation and issue links | none |
 | Unpopular package | Download count of a new package | none |
-| Copyleft license, non-permissive license | `GPL-3.0-only` | none (see below) |
+| Copyleft license, non-permissive license | Published 0.6.0 is `GPL-3.0-only` | LIC-001; remeasure after publication |
 
-License limit: both license alerts are the GPL-3.0-only license itself, so the
-license score cannot reach 100 % while the project keeps that license. A license
-change is a separate owner decision, not part of this card. The detected
+License baseline: the published 0.6.0 license alerts reflect GPL-3.0-only.
+LIC-001 now plans the owner-requested MIT change for 0.6.1 after the rights audit;
+SUPPLY-001f measures its actual effect instead of promising a score. The detected
 `BSD-3-Clause` and `MIT` are accurate: the bundle contains MIT packages and
 BSD-3-Clause `fast-uri` and `smol-toml`, whose notices in
 `dist/THIRD_PARTY_NOTICES.txt` must stay.
@@ -2461,11 +2519,14 @@ delegate concurrently. Dependencies mean merged, verified behavior.
 | 9 | FEEDBACK-060i: actionable VSIX-only guidance | None; commands/skills/messages agree |
 | 10 | SUPPLY-001a: omit source maps from both packages | None; fresh build, exact package inspection and consumer smoke |
 | 11 | SUPPLY-001b: bundled packages become development dependencies | SUPPLY-001a; packed manifest and isolated consumer tree verified |
-| 12 | PUBLIC-001d: prepare name/logo notice in both READMEs | Owner wording approval required before integration; preserve third-party notices |
-| 13 | DOCS-002d1: root README instructions/limitations | Tasks 3-12; accurate candidate behavior and command examples |
-| 14 | DOCS-002d2: extension README instructions/limitations | Tasks 3-12; accurate VSIX-only first use |
-| 15 | DOCS-002a + PUBLIC-001c: reduce and rephrase ROADMAP | Tasks 1-14; keep open work, current decisions, this queue and acceptance |
-| 16 | DOCS-002b + PUBLIC-001b: reduce HANDOFF in place | Tasks 1-15; current state/evidence retained, history removed, links valid |
+| 12 | LIC-001a: rights/material audit for MIT | None; evidenced rights and third-party exception inventory |
+| 13 | LIC-001b: MIT LICENSE and distribution metadata | LIC-001a and SUPPLY-001b; coherent manifests, notices retained |
+| 14 | LIC-001c1: contribution license guidance | LIC-001b; existing rights preserved, no implicit CLA |
+| 15 | PUBLIC-001d: prepare name/logo trademark notice | LIC-001a/b; owner wording approval, separate trademark/copyright terms |
+| 16 | DOCS-002d1: root README instructions/license/limitations | Tasks 3-15; candidate behavior and MIT scope accurately described |
+| 17 | DOCS-002d2: extension README instructions/license/limitations | Tasks 3-15; VSIX-only first use and MIT scope accurately described |
+| 18 | DOCS-002a + PUBLIC-001c: reduce and rephrase ROADMAP | Tasks 1-17; keep open work, current decisions, this queue and acceptance |
+| 19 | DOCS-002b + PUBLIC-001b: reduce HANDOFF in place | Tasks 1-18; current evidence/rights inventory retained, links valid |
 
 DOCS-002c (whole ARCHITECTURE cleanup) and DOCS-002e (whole rules/skills
 cleanup) follow 0.6.1; corrections to contracts/instructions affected by this
@@ -2482,7 +2543,7 @@ Mark PASS/FAIL/NOT_RUN against the actual snapshot and exact artifact digest.
 Any defect gets its own fix PR into `develop`; a changed candidate invalidates
 approval and requires renewed checks of the replacement candidate.
 
-- [ ] **PATCH-061-R1 - freeze the scope.** After implementation tasks 1-16,
+- [ ] **PATCH-061-R1 - freeze the scope.** After implementation tasks 1-19,
   verify the linked cards are complete, required CI is green on `develop`,
   no P0/P1 issue is open and no P1/P2 finding remains unresolved. Record the
   previous tag/base SHA and agreed scope; unresolved work blocks preparation
@@ -2497,10 +2558,12 @@ approval and requires renewed checks of the replacement candidate.
   documentation, coverage and VSIX checks. Inspect tarball/VSIX exclusions,
   notices and bundled startup; record platform/Node, candidate/tree and both
   SHA-256 digests. Prepare tester notes and upgrade/known-limit guidance.
+  Include LIC-001d's license/artwork/third-party notice inspection.
 - [ ] **PATCH-061-R4 - release PR and CI artifacts.** After R3 and owner
   authorization, push/open the release PR. Acceptance: all six OS/Node jobs
   pass on its current head; download that run's tarball/VSIX and record hashes
   and provenance separately from locally built files. N1-N7 use these artifacts.
+  Include LIC-001d's comparison of CI artifact licenses with the rights inventory.
 
 Each native task below depends on R4 and uses an isolated VS Code profile or
 clean npm folder. Record pre-state, operation, observed result, preservation
@@ -2552,6 +2615,7 @@ does not complete a native task.
   published version/channels, download hashes, attestations, npm integrity,
   Marketplace artifact and installed MCP startup. Complete the 0.6.1 portion
   of SUPPLY-001f with measured Socket scores/alerts; keep its 0.7.0 portion open.
+  Complete LIC-001d's published-license checks and record the first MIT release.
 
 ## Release acceptance
 
