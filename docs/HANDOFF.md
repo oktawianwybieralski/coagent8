@@ -8,107 +8,183 @@ Updated 2026-10-12. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## Current state and 0.6.1 queue
+
+- **Released baseline (`0.6.0`):** `v0.6.0` (the `beta.2` preview stage, numbered
+  by [`REPO-003`](ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags))
+  is published on GitHub (`9b78a0a`), npm (`next` and `latest`) and the VS Code
+  Marketplace ([release evidence](#060-release-evidence)). Manifest versions stay
+  at `0.6.0` until the `release/v0.6.1` release PR (`PATCH-061-R2`).
+- **Merged on `develop` for `0.6.1` (through `fc76539`):**
+  - `FEEDBACK-060c` (#4): `doctor` skips caching a `not installed` probe when
+    `backends.agy.executable` is `vscode-extension` and no CLI path is resolved yet.
+  - `FEEDBACK-060d`: post-turn review rechecks report a workspace change only
+    when the snapshot or input completeness changed.
+  - `FEEDBACK-060e`: same-workspace refused session handles report their actual
+    state (`closed` with readable history, `invalidated`, `expired`), and
+    `cancel` on a closed session reports that it is closed.
+  - `FEEDBACK-060j`: test files build synthetic Stripe and Slack token prefixes
+    at run time so tracked sources contain no literal push-protection tokens.
+  - `FEEDBACK-060s` (#2): `runCommand` preserves the call budget's `TIMEOUT`
+    abort reason instead of reporting budget expiry as `ABORTED`.
+  - `LIC-001a`, `LIC-001b`, `LIC-001c1` (#19, `fc76539`): standard MIT licensing
+    for project source, documentation and artwork (`LICENSE`, distribution
+    manifests, README license sections and contributor guidance;
+    [rights and material inventory](#lic-001-mit-candidate)).
+- **Prepared on topic branches from `develop` (awaiting squash-merge before
+  `PATCH-061-R1`):**
+  - Group 1 (`docs/roadmap-current-state`): `DOCS-002a` and `PUBLIC-001c`
+    (`ROADMAP.md` reduced to open work, active decisions and public-reader
+    phrasing).
+  - Group 2 (`test/synthetic-account-fixtures`): `PUBLIC-001a1` through
+    `PUBLIC-001a3` (synthetic account and quota values across Claude, Codex and
+    Antigravity fixtures and tests).
+  - Group 3 (`build/package-distribution`): `SUPPLY-001a` and `SUPPLY-001b`
+    (omit `.map` source maps from npm and VSIX packages; move bundled runtime
+    packages to `devDependencies`).
+  - Group 4 (`fix/session-feedback`): `FEEDBACK-060f1` through `FEEDBACK-060f4`
+    (history-only paging parameter scope, public history sequence-gap
+    documentation, `activePid` documented as the CoAgent8 server PID, and
+    `session_handle` retained on unchanged repeat-review refusals).
+  - Group 5 (`fix/issue-report-format`): `FEEDBACK-060g` (exact CLI versions
+    without duplicate `v`, nested `Detected CLIs` Markdown list and
+    `include_doctor` versions-only attachment wording).
+  - Group 6 (`test/claude-cancel-fixture`): `FEEDBACK-060h` (deterministic
+    running-turn handshake and two-client cancellation/continuation coverage for
+    Claude fixtures).
+  - Group 7 (`fix/vsix-user-guidance`): `FEEDBACK-060i`, `DOCS-002d1`,
+    `DOCS-002d2` and `PUBLIC-001d` (VS Code command-first guidance for VSIX-only
+    users, root and extension README alignment for `0.6.0`/`0.6.1`, and trademark
+    notice for the CoAgent8 name and logo).
+  - Group 8 (`docs/handoff-current-state`): `DOCS-002b` and `PUBLIC-001b`
+    (this handoff reduction and public-reader update).
+- **Remaining `0.6.1` release steps ([`PATCH-061`](ROADMAP.md#patch-061-061-task-queue)):**
+  1. Integrate Groups 1–8 into `develop` with green six-job CI and freeze the
+     `0.6.1` scope (`PATCH-061-R1`).
+  2. Prepare `release/v0.6.1` (`PATCH-061-R2`), run the clean-checkout full
+     release gate and `LIC-001d` artifact inspection (`PATCH-061-R3`), and build
+     CI release artifacts across all six OS/Node jobs (`PATCH-061-R4`).
+  3. Execute isolated native acceptance (`PATCH-061-N1` through `N7`), rehearse
+     the release workflow (`PATCH-061-R5`), obtain artifact-bound independent
+     release approval (`PATCH-061-R6`), complete owner tag/publication
+     (`PATCH-061-O1`), and verify published packages, attestations and Socket
+     scores (`PATCH-061-R7`, `LIC-001d`, `SUPPLY-001f`).
+
 ## LIC-001 MIT candidate
 
-2026-10-12, `chore/mit-relicense`, based on `cccfa9d` (merged PR #16).
-The owner instructed implementation of MIT relicensing after that PR.
-LICENSE, the four distribution license fields, both README license sections
-and contribution guidance now describe MIT for project source, documentation
-and artwork. Version remains 0.6.0 until the 0.6.1 release PR. This is a local
-candidate, not a replacement for any published 0.6.0 artifact.
+Prepared on `chore/mit-relicense` (based on `cccfa9d`) and merged to `develop`
+in PR #19 (`fc76539`, 2026-10-12) for `LIC-001a`, `LIC-001b` and `LIC-001c1`.
+`LICENSE`, the four distribution license fields (`package.json`,
+`package-lock.json`, `plugin.json`, `extensions/vscode/package.json`), both
+README license sections and contributor guidance apply standard MIT terms to
+project source, documentation and artwork from `0.6.1` onward. Manifest versions
+remain `0.6.0` until the `release/v0.6.1` release PR (`PATCH-061-R2`), and
+published `0.6.0` artifacts are not replaced.
 
-Rights/material inventory:
+Rights/material inventory (`LIC-001a`):
 
 - Inspected all 302 tracked files by category: 113 source files, 107 tests and
   fixtures, six client skills, 25 artwork files, 19 documentation/rule files
-  and 32 other files. Existing project copyright attribution identifies
-  Oktawian Wybieralski (oki.dev), and rule 02 section 2 records the owner as
-  sole author and copyright holder of the project work. The owner's instruction
-  authorizes this project license change. History has the owner's two email identities only,
-  which is corroborating attribution, not proof of rights to imported work.
-- Searched tracked text for copyright/SPDX/license notices and copied/adapted/
-  derived-material attribution. No additional first-party copyright holder or
+  and 32 other files. Project copyright attribution identifies Oktawian
+  Wybieralski (`oki.dev`), and [rule 02](../.agents/rules/02-git-workflow.md)
+  section 2 records the owner as sole author and copyright holder of the
+  first-party work. Git history contains only the owner's two email identities
+  as corroborating attribution.
+- Searched tracked text for copyright, SPDX and license notices and for copied,
+  adapted or derived material. No additional first-party copyright holder or
   GPL-only imported code was identified. Artwork includes the Affinity source,
-  SVGs and PNG derivatives. Generated server icon comes from project artwork.
-- Test doubles implement provider protocols; recorded CLI outputs and the
-  abridged OpenRouter model/pricing data are external fixture data. The change
-  makes no new ownership claim over vendor responses, protocols or model names.
-  No vendor CLI implementation is distributed with the package.
+  SVGs and PNG derivatives; the generated server icon derives from project
+  artwork.
+- Test doubles implement provider protocols; recorded CLI outputs and abridged
+  OpenRouter model/pricing data are external fixture data. Relicensing makes no
+  ownership claim over vendor responses, protocols or model names, and no vendor
+  CLI implementation is distributed with the package.
 - All three lockfiles contain no dependency license labeled GPL. The bundle's
-  notice inventory contains MIT packages (@modelcontextprotocol/sdk, ajv,
-  ajv-formats, fast-deep-equal, json-schema-traverse, jsonc-parser, zod) and
-  BSD-3-Clause packages (fast-uri, smol-toml). Their license texts remain intact.
-  Private documentation/VSIX tooling manifests have no project license field
-  to change; their dependency licenses are untouched.
-- Previously distributed GPL copies retain their permissions. Historical tags,
-  release packages and generated changelog entries were not rewritten.
-  PUBLIC-001d's separate trademark notice remains pending owner wording approval.
+  notice inventory (`dist/THIRD_PARTY_NOTICES.txt`) contains MIT packages
+  (`@modelcontextprotocol/sdk`, `ajv`, `ajv-formats`, `fast-deep-equal`,
+  `json-schema-traverse`, `jsonc-parser`, `zod`) and BSD-3-Clause packages
+  (`fast-uri`, `smol-toml`), whose license texts remain intact. Private
+  documentation and VSIX packaging manifests carry no project license field and
+  leave dependency licenses untouched.
+- Previously distributed GPL copies (`0.6.0` and withdrawn `1.0.0-beta.1`)
+  retain their permissions; historical tags, release packages and generated
+  changelog entries were not rewritten. The separate trademark notice
+  (`PUBLIC-001d`) is prepared in Group 7 (`fix/vsix-user-guidance`).
 
-Local evidence, Windows 11 / Node v26.10.0: PASS typecheck,
-`check:dependencies`, fresh build, package regressions (7 pass / 0 fail),
-consumer smoke (installed package startup/tool discovery, fixture turns/history,
-setup dispatch and EOF), VSIX packaging and exact-artifact inspection.
-The consumer tarball equals the one used to stage the VSIX. MIT LICENSE and
-metadata are present in both, and the third-party notices are byte-identical
-to the pre-change build (SHA-256
-`b29a2a04d624f9c7630c56db62474732c6a12911ac5061657754aea91c91cb67`).
+Pre-merge candidate verification on `chore/mit-relicense` (Windows 11, Node
+v26.10.0): PASS `typecheck`, `check:dependencies`, fresh `build`, package
+regressions (`tests/package.test.js`, 7/7 pass), `test:consumer` (installed
+package startup, tool discovery, fixture turns/history, setup dispatch and EOF),
+`package:vscode` and exact-artifact inspection. MIT `LICENSE` and metadata were
+verified in both candidate artifacts, and `dist/THIRD_PARTY_NOTICES.txt` was
+byte-identical to the pre-change build (SHA-256
+`b29a2a04d624f9c7630c56db62474732c6a12911ac5061657754aea91c91cb67`):
 
-- Tarball SHA-256:
+- `chore/mit-relicense` candidate tarball SHA-256:
   `18e4b2ddf8ce4a73343630786bd81ede2e3e16908ceb0235a233fbc09cc6f7f6`.
-- VSIX SHA-256:
+- `chore/mit-relicense` candidate VSIX SHA-256:
   `396e1652bd447cb23700f0cf4c9c23225ef91466ac57976a6e93820771495132`.
 
-NOT_RUN: native host acceptance, published MIT artifact verification and Socket
-remeasurement; these belong to the 0.6.1 release tasks. Independent review and
-integration of this local candidate are pending.
+NOT_RUN: native host acceptance, published `0.6.1` MIT artifact verification and
+Socket license/supply-chain remeasurement; these run in `PATCH-061-R3`, `R4` and
+`R7` (`LIC-001d`, `SUPPLY-001f`).
 
 ## 0.6.0 release evidence
 
-Release of 0.6.0 (REPO-002 owner steps 1-8), checked again on 2026-10-12 on
-Windows 11, Node v26.10.0, from downloads of the published release:
+Published `0.6.0` release (`REPO-002` owner steps 1–8), verified on 2026-10-12 on
+Windows 11, Node v26.10.0, against the downloaded release artifacts:
 
 - PASS: `v0.6.0` is an annotated tag on `9b78a0a` (`chore(release): v0.6.0 (#3)`,
-  the squash commit on `develop`); `git cat-file -t v0.6.0`, `git rev-parse v0.6.0^{commit}`.
-- PASS: `gh release download v0.6.0`; `sha256sum -c SHA256SUMS` OK for
-  `coagent8-0.6.0.tgz` (`4bf66c25fa1facf8b23320f3501475361ad7f69b52e15a3e7f99e7219f19500c`)
-  and `coagent8-mcp-0.6.0.vsix`
-  (`a2bb079f3b8cfa6bf60b3d6267007a0adc2ed50772b346fbe82eb92e072e14d7`). The
-  owner's rehearsal (step 5b) reported the same tarball hash; its repository is
-  deleted, so that comparison was not repeated.
-- PASS: `gh attestation verify <file> -R oktawianwybieralski/coagent8` for both
-  files: SLSA provenance v1 from `release.yml` at `refs/tags/v0.6.0`, commit `9b78a0a`.
-- PASS: `npm view coagent8`: versions `0.6.0` only, dist-tags `latest` and `next`
-  = `0.6.0`; `dist.integrity` (sha512) and `dist.shasum` equal those computed from
-  the release tarball. `1.0.0-beta.1` is unpublished, not deprecated.
-- PASS: the VS Code Marketplace VSIX `okidev.coagent8-mcp` 0.6.0 is byte-identical
-  to the release VSIX (same SHA-256); the owner installed it from the Marketplace.
-- PASS: `npx -y coagent8@next` started by an MCP SDK stdio client: server
-  `coagent8` 0.6.0, six tools (consult, review, doctor, session, cancel, issue),
-  `doctor` without error, `consult` on codex `gpt-6-luna` answered in 3.8 s.
-- NOTE: the GitHub Release `v0.6.0` (published 2026-10-11T22:57:25Z) is not
-  marked as a pre-release, while rule 02 keeps releases below 1.0.0 as
-  pre-releases; the owner decides whether to change it.
-- NOTE: the rehearsal repository `coagent8-release-test` no longer exists.
-- Open: REPO-002 owner step 9 (npm trusted publishing).
+  the squash commit on `develop`); verified via `git cat-file -t v0.6.0` and
+  `git rev-parse v0.6.0^{commit}`.
+- PASS: `gh release download v0.6.0`; `sha256sum -c SHA256SUMS` succeeded for
+  `coagent8-0.6.0.tgz`
+  (`4bf66c25fa1facf8b23320f3501475361ad7f69b52e15a3e7f99e7219f19500c`) and
+  `coagent8-mcp-0.6.0.vsix`
+  (`a2bb079f3b8cfa6bf60b3d6267007a0adc2ed50772b346fbe82eb92e072e14d7`), matching
+  the pre-tag release-workflow rehearsal digest.
+- PASS: `gh attestation verify <file> -R oktawianwybieralski/coagent8` verified
+  SLSA provenance v1 from `release.yml` at `refs/tags/v0.6.0`, commit `9b78a0a`,
+  for both artifacts.
+- PASS: `npm view coagent8` lists version `0.6.0` only, with dist-tags `latest`
+  and `next` set to `0.6.0`; `dist.integrity` (sha512) and `dist.shasum` match
+  the release tarball, and the `1.0.0-beta.1` placeholder is unpublished.
+- PASS: the VS Code Marketplace package `okidev.coagent8-mcp` `0.6.0` is
+  byte-identical to the GitHub Release VSIX (same SHA-256).
+- PASS: `npx -y coagent8@next` launched over MCP SDK stdio reported server
+  `coagent8` `0.6.0`, six tools (`consult`, `review`, `doctor`, `session`,
+  `cancel`, `issue`), clean `doctor` output, and a completed `consult` turn on
+  `codex` (`gpt-6-luna`, 3.8 s).
+- NOTE: GitHub Release `v0.6.0` (published `2026-10-11T22:57:25Z`) is not marked
+  as a GitHub pre-release, whereas [rule 02](../.agents/rules/02-git-workflow.md)
+  marks versions below `1.0.0` as pre-releases.
+- Open: `REPO-002` owner step 9 (enabling npm trusted publishing for
+  `npm-publish.yml`).
 
 ## FEEDBACK-060 native acceptance of 0.6.0
 
-2026-10-11, Windows 11 10.0.26200, Node v26.10.0, isolated VS Code instance
-(`--user-data-dir`/`--extensions-dir`) with the VSIX from CI run 38173983280
-(`extension.cjs` and `uninstall.cjs` SHA-256 equal to the downloaded VSIX).
-Backends: codex-cli 0.162.0-alpha.17.2, Claude Code 2.1.296, agy 1.3.3. Three
-agents (Claude Code, Codex, Antigravity) called every tool on the cheapest
-model per backend (`gpt-6-luna`, `claude-haiku-5-5`, `gpt-oss-120b`).
+Executed on 2026-10-11 on Windows 11 (`10.0.26200`), Node v26.10.0, in an
+isolated VS Code instance (`--user-data-dir` and `--extensions-dir`) using the
+VSIX from CI run `38173983280` (`extension.cjs` and `uninstall.cjs` SHA-256
+matching the downloaded VSIX) across `codex-cli 0.162.0-alpha.17.2`,
+`Claude Code 2.1.296` and `agy 1.3.3` on the lowest-priced model per backend
+(`gpt-6-luna`, `claude-haiku-5-5`, `gpt-oss-120b`):
 
-- PASS: consult on all three (13524), review found both seeded defects and
-  returned READY after the fixes, an unchanged repeat started no turn,
-  continuation kept context, history paging, close, issue drafts, workspace
-  isolation, cancel of a running Codex and agy turn.
-- FAIL/NOTE: findings and their split before/after 0.6.0 are the
-  [FEEDBACK-060 cards](ROADMAP.md#feedback-060-findings-of-the-060-native-acceptance).
-  Reproduced locally: `git diff --cached` in a repository owned by
-  `CodexSandboxOnline` prints dubious ownership, then `unknown option 'cached'`.
-- NOT_RUN: cancel of a running Claude turn (inconclusive), `delete_history`.
+- PASS: `consult` across all three backends, `review` detecting two seeded
+  defects and returning `READY` after fixes, unchanged repeat review starting no
+  new turn, session continuation preserving context, history paging, `close`,
+  `issue` draft generation, workspace isolation, and cancellation of running
+  Codex and Antigravity turns.
+- FAIL/NOTE: defects identified during the run and their split between `0.6.0`
+  and `0.6.1` are tracked under
+  [`FEEDBACK-060`](ROADMAP.md#feedback-060-findings-of-the-060-native-acceptance)
+  (including the local reproduction where `git diff --cached` in a repository
+  owned by `CodexSandboxOnline` reported dubious ownership followed by
+  `unknown option 'cached'`).
+- NOT_RUN: cancellation of a running Claude turn (inconclusive because the turn
+  completed before `cancel` arrived; covered by fixture in `FEEDBACK-060h` and
+  scheduled for native retest in `PATCH-061-N4`) and `close` with
+  `delete_history` (`PATCH-061-N3`).
 
 ## PLUGIN-001g VS Code installed-server entry
 
