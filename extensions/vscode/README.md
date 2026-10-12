@@ -38,8 +38,8 @@ chats.
 Model access and billing follow your CLI account. For SSH or WSL, install the
 extension on the remote host, where Node.js and the CLIs must be available too.
 There the server works in chat, but the CoAgent8 commands are not available:
-run `npx -y coagent8@next status` (or `setup`, `cleanup`) in that machine's
-terminal and edit `~/.coagent8/config.json` there.
+run `npx -y coagent8@next status` (or `setup`, `repair`, `skills`, `cleanup`) in
+that machine's terminal and edit `~/.coagent8/config.json` there.
 
 ## Quick start
 
@@ -53,8 +53,10 @@ terminal and edit `~/.coagent8/config.json` there.
    out.
 5. Ask for a consultation or a review, as below.
 
-VS Code starts and stops the bundled server itself. A manual CoAgent8 entry in
-your MCP configuration takes precedence over the extension's.
+The extension registers CoAgent8 in your user MCP servers (`mcp.json`) so it
+appears in **MCP: List Servers**, and VS Code starts and stops the bundled
+server itself. A manual CoAgent8 entry in your MCP configuration takes
+precedence over the extension's.
 
 ## Example requests
 
@@ -78,7 +80,10 @@ backend when you want a specific agent.
 
 A review's verdict is derived by CoAgent8 from the other agent's findings: an
 incomplete review, a serious finding or a failed check makes it `BLOCKED`. It
-is still one agent's judgement, not a test run.
+is still one agent's judgement, not a test run. Repeating a review of the same
+unchanged snapshot with the same scope, backend and model starts no new turn
+and returns the earlier verdict; a workspace change during a review is reported
+only when the snapshot or its completeness changed.
 
 ## Tools
 
@@ -87,9 +92,9 @@ is still one agent's judgement, not a test run.
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives |
 | `doctor` | Models, efforts, prices and approval per backend; installation, sign-in and quota with `scope: "health"` |
-| `session` | List sessions, page a session's history or close a session |
+| `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session; a closed session reports that it is closed on a follow-up or `cancel`, while its history stays readable |
 | `cancel` | Cancel the running turn of a session |
-| `issue` | Prepare a sanitized bug report and a prefilled GitHub issue link; it never submits anything |
+| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a prefilled GitHub issue link; it never submits anything |
 
 Answers come back as Markdown with the backend, model, duration and session
 handle; passing the handle continues the same conversation. Your chat host
@@ -234,7 +239,7 @@ reinstall. To remove CoAgent8 from a CLI's chat without uninstalling, use
 | --- | --- |
 | CoAgent8 is missing from the server list | VS Code 1.101+, a trusted folder on disk, and the extension enabled on the right local or remote host |
 | The server cannot find Node.js | Run `node --version` on the extension host; set `coagent8.nodePath` to its absolute path |
-| `CLI_NOT_FOUND` or `AUTH_REQUIRED` | Install or sign in the reported CLI on the same machine as the server, then run `doctor` again |
+| `CLI_NOT_FOUND` or `AUTH_REQUIRED` | Run **CoAgent8: Manage Coding CLIs** to install or sign in the reported CLI on the same machine as the server (on a remote host, use the CLI's own installer or `npx -y coagent8@next status`), then run `doctor` again |
 | `POLICY_DENIED` for a model | Read the reason in the error: the model is denied by a rule, you declined it, or it needs approval your chat cannot show; allow it in **Manage Model Approvals** or choose another model |
 | `INPUT_LIMIT` from a review in a repository | Git refuses the folder, for example because another account owns it; the message names Git's reason |
 | Tools look outdated after an update | Restart CoAgent8 in **MCP: List Servers** and start a new chat |
@@ -249,9 +254,14 @@ check the generated report for private data before submitting it.
 - **Antigravity's own tools.** agy gives the other agent your agy MCP servers
   and plugins, which CoAgent8 cannot turn off; `doctor` lists them and calls
   back into CoAgent8 are refused.
+- **Antigravity readiness.** `agy` may report not ready in a cached check and
+  still run a turn; `doctor` with `scope: "health"` rechecks readiness.
 - **Leftover agy processes on Windows.** Cancelling an agy turn stops agy, but a
   process it started outside itself, such as one of its MCP servers, can keep
   running until it exits or the server stops.
+- **Default model price.** A plain `consult` with no model and no price limit
+  runs the backend's default model (still subject to your approval thresholds);
+  pass `output_price_below` or a model to bound the price.
 - **Approval forms.** Not every chat shows MCP forms; Codex and the Antigravity
   chat did not when measured. Allow such models in **Manage Model Approvals**.
 - **Host deadlines.** A chat host can stop a tool call before CoAgent8's own
@@ -259,8 +269,9 @@ check the generated report for private data before submitting it.
 - **Restart Extensions** restarts every extension: VS Code has no way to restart
   only the vendor chat extensions.
 - On a remote extension host (SSH, WSL) the CoAgent8 commands are not
-  available; use the `coagent8` command in that machine's terminal. Virtual and
-  untrusted workspaces are not supported.
+  available; run `npx -y coagent8@next status` (or `setup`, `repair`, `skills`,
+  `cleanup`, or `coagent8 ...` when installed globally) in that machine's
+  terminal. Virtual and untrusted workspaces are not supported.
 - Icons, tool grouping and refreshing existing chats depend on the chat host.
 
 ## Updates, support and license
@@ -281,3 +292,12 @@ extension includes `LICENSE` and the notices of its bundled dependencies in
 The planned MIT release is 0.6.1. Copies of published 0.6.0 and the withdrawn
 npm version 1.0.0-beta.1 retain their GPL-3.0-only permissions. Previously
 granted licenses are not revoked.
+
+**Trademarks.** CoAgent8 and the CoAgent8 logo are trademarks of Oktawian
+Wybieralski (oki.dev). The copyright licenses under which CoAgent8 is or was
+distributed cover the software, documentation and artwork, including the logo
+files, and this notice does not limit them. They do not grant rights to use the
+name or logo as a trademark, for example to brand a modified version or another
+distribution, or to suggest endorsement. Accurate references to CoAgent8, such
+as naming it as the origin of a fork or describing compatibility, need no
+permission.

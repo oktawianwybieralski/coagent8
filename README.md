@@ -78,7 +78,9 @@ and run **Extensions: Install from VSIX...**. Then:
 1. The first start shows one notice with the CLIs it found, or an offer to set
    them up. **CoAgent8: Manage Coding CLIs** installs or signs in a CLI at any
    time.
-2. CoAgent8 appears in **MCP: List Servers**. Enable its tools in your chat.
+2. CoAgent8 is registered in your user MCP servers (`mcp.json`) and appears in
+   **MCP: List Servers**; start it there, accept VS Code's trust prompt, and
+   enable its tools in your chat.
 3. Ask your agent, for example: *"Use CoAgent8 doctor with scope health"*, *"Ask CoAgent8 for a
    second opinion on this plan"* or *"Have CoAgent8 review my uncommitted
    changes"*.
@@ -198,7 +200,8 @@ supports stdio MCP in Agent mode through the same definition, following
   findings as `[P1|P2|P3] file:line`, and the checks it ran.
 - CoAgent8 derives the verdict: an incomplete answer, partial coverage,
   truncated input, another snapshot, a `[P1]` or `[P2]` finding, or a failed
-  check makes it `BLOCKED (reason)`.
+  check makes it `BLOCKED (reason)`; a workspace change during the turn is
+  reported only when the snapshot or its completeness changed.
 - A review of unchanged code with the same scope, backend and model starts no
   new turn and returns the earlier verdict.
 - Staged, commit and range scopes are reviewed only when their files match the
@@ -208,12 +211,16 @@ supports stdio MCP in Agent mode through the same definition, following
 
 - Sessions belong to one workspace and one backend; a follow-up through
   `session_handle` keeps the session's model and effort.
-- History pages hold up to 100 events and 240 KiB. MCP resources
-  `coagent8://sessions` and `coagent8://sessions/{id}/history` show the
-  connection's workspace only.
-- A session handle expires after two hours without use. The history archive is
-  best effort: up to 10 MiB per session and 100 MiB in total, old archives
-  removed after seven days.
+- `session` with `action: "history"` pages events with `cursor` and `limit` (up
+  to 100 events and 240 KiB per page). Each event's `sequence` is its position
+  in the stored log, so gaps where streaming deltas were combined do not mean
+  lost events, and `activePid` identifies the CoAgent8 server process owning the
+  active turn. MCP resources `coagent8://sessions` and
+  `coagent8://sessions/{id}/history` show the connection's workspace only.
+- A session handle expires after two hours without use; a closed session reports
+  that it is closed on a follow-up or `cancel`, while its history stays readable
+  until deleted. The history archive is best effort: up to 10 MiB per session
+  and 100 MiB in total, old archives removed after seven days.
   `coagent8_HISTORY=off` turns archive files off. Private reasoning and raw tool
   output are never archived or returned.
 
@@ -238,9 +245,9 @@ supports stdio MCP in Agent mode through the same definition, following
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
-| `session` | List sessions, page a session's history or close a session |
+| `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session |
 | `cancel` | Cancel the running turn of a session |
-| `issue` | Prepare a sanitized bug report and a prefilled GitHub issue link |
+| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a prefilled GitHub issue link |
 
 A consultation can be as small as:
 
@@ -292,8 +299,10 @@ still need your approval.
 
 To choose yourself, call `doctor`: it lists each backend's models with their
 accepted efforts, output price (`~` approximate, `?` unknown), default and
-approval tag (`ask: <rule>`, `deny` or `allow`). `coagent8 models` prints the
-same list in a terminal. Then name the model and an accepted effort:
+approval tag (`ask: <rule>`, `deny` or `allow`). **CoAgent8: Manage Model
+Approvals** in VS Code and `npx -y coagent8@next models` (`coagent8 models`
+when installed globally) show the same list. Then name the model and an
+accepted effort:
 
 ```json
 {
@@ -326,17 +335,18 @@ where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
 | Codex | `~/.agents/skills/` |
 | Antigravity | `~/.gemini/config/skills/` |
 
-**CoAgent8: Manage Skills** in VS Code and `coagent8 skills` in a terminal
-install, update, uninstall, enable or disable one or all skills per client.
-Your choices are kept, so repair does not bring back a skill you removed.
-Disabled skills move to `~/.coagent8/disabled-skills/<client>/`. A skill you
-edited is never overwritten. Start a new chat to see changes. VS Code chat also
-reads `~/.claude/skills/` and `~/.agents/skills/`, so with both Claude Code and
-Codex set up it lists each skill twice.
+**CoAgent8: Manage Skills** in VS Code and `npx -y coagent8@next skills`
+(`coagent8 skills` when installed globally) in a terminal install, update,
+uninstall, enable or disable one or all skills per client. Your choices are
+kept, so repair does not bring back a skill you removed. Disabled skills move
+to `~/.coagent8/disabled-skills/<client>/`. A skill you edited is never
+overwritten. Start a new chat to see changes. VS Code chat also reads
+`~/.claude/skills/` and `~/.agents/skills/`, so with both Claude Code and Codex
+set up it lists each skill twice.
 
 ```sh
-coagent8 skills status --clients=agy
-coagent8 skills install --clients=agy --skills=coagent8-review
+npx -y coagent8@next skills status --clients=agy
+npx -y coagent8@next skills install --clients=agy --skills=coagent8-review
 ```
 
 Changes are shown as a preview first; repeat the command for one client with
@@ -418,11 +428,16 @@ error.
 - **Antigravity's own tools.** agy gives the other agent your agy MCP servers
   and plugins, which CoAgent8 cannot turn off; `doctor` lists them. Calls back
   into CoAgent8 are refused.
+- **Antigravity readiness.** `agy` may report not ready in a cached check and
+  still run a turn; `doctor` with `scope: "health"` rechecks readiness.
 - **Leftover agy processes on Windows.** Cancelling or timing out an agy turn
   stops agy itself, but a process agy started outside it, such as one of its MCP
   servers, can keep running until it exits or the CoAgent8 server stops.
 - **Parent crash on macOS and Linux.** If the host dies unexpectedly, the
   processes CoAgent8 started are not cleaned up.
+- **Default model price.** A plain `consult` with no model and no price limit
+  runs the backend's default model (still subject to your approval thresholds);
+  pass `output_price_below` or a model to bound the price.
 - **Approval forms.** Clients that cannot show MCP forms cannot approve an
   expensive model (see [approving expensive models](#approving-expensive-models)).
 - **Host deadlines.** A host can stop a tool call before CoAgent8's own deadline;
@@ -439,8 +454,9 @@ For suspected security vulnerabilities, follow the
 and report privately. Do not include vulnerability details in public issues.
 
 Ask your agent to run the `issue` tool: it prepares a sanitized report with
-your OS, Node and CLI versions and a link that opens a new GitHub issue with it.
-Add the steps and what you expected, and check the text for private data
+your OS, Node and detected CLI versions (when `include_doctor` is `true`, the
+default; no readiness or quota) and a link that opens a new GitHub issue with
+it. Add the steps and what you expected, and check the text for private data
 before you submit it. You can also use the
 [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
 directly.
@@ -486,6 +502,15 @@ disclaimer. Bundled dependencies retain their own licenses and notices in
 The planned MIT release is 0.6.1. Copies of published 0.6.0 and the withdrawn
 npm version 1.0.0-beta.1 retain their GPL-3.0-only permissions. This change
 does not revoke any license previously granted for a distributed copy.
+
+**Trademarks.** CoAgent8 and the CoAgent8 logo are trademarks of Oktawian
+Wybieralski (oki.dev). The copyright licenses under which CoAgent8 is or was
+distributed cover the software, documentation and artwork, including the logo
+files, and this notice does not limit them. They do not grant rights to use the
+name or logo as a trademark, for example to brand a modified version or another
+distribution, or to suggest endorsement. Accurate references to CoAgent8, such
+as naming it as the origin of a fork or describing compatibility, need no
+permission.
 
 Created by [Oktawian Wybieralski](https://oki.dev) ·
 [GitHub repository](https://github.com/oktawianwybieralski/coagent8)

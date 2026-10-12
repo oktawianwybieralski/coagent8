@@ -337,7 +337,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   }
   /** {@link localOptions} for setup, which checks the CLIs and project-level entries in the one workspace folder. */
   function options() {
-    if ((vscode.workspace.workspaceFolders ?? []).length > 1) throw new Error('Run coagent8 setup from the intended workspace in a multi-root window.');
+    if ((vscode.workspace.workspaceFolders ?? []).length > 1) throw new Error('Open the intended workspace folder in its own window and run this command again.');
     return localOptions();
   }
   let lastStatus: SetupStatus[] = [];
@@ -587,7 +587,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   }
   function register(name: string, action: () => Promise<void>): void {
     context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
-      if (vscode.env.remoteName) { await vscode.window.showWarningMessage('CoAgent8 setup supports the local default profile. Run coagent8 status/setup/cleanup on the intended machine.'); return; }
+      if (vscode.env.remoteName) { await vscode.window.showWarningMessage('CoAgent8 commands are not available in a remote window. In a terminal on the remote machine, run npx -y coagent8@next status (or setup, repair, skills, cleanup).'); return; }
       try { await action(); }
       catch (error) { await vscode.window.showErrorMessage(`CoAgent8 setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Action failed or was cancelled; retry.')}`); }
     }));

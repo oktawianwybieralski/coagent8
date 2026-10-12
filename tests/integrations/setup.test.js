@@ -216,6 +216,7 @@ test('status with registrations reads host files only: no runtime start, no host
   const log = path.join(options.home, 'probes.log');
   const result = await setupClients({ ...options, clients: undefined, statusOnly: true, env: { ...options.env, SETUP_FIXTURE_PROBE_LOG: log } });
   assert.ok(result.every(item => item.registered && item.ready && item.action === 'preserved'), JSON.stringify(result));
+  assert.ok(result.every(item => item.message === 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.'));
   assert.ok(result.every(item => !item.runtimeCallable && !item.hostCallable && !item.tools.length), 'status claims no connection evidence');
   const launches = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.ok(!launches.some(args => args.length === 1 && args[0] === 'app-server'), 'no Codex discovery thread');
