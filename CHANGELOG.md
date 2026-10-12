@@ -22,6 +22,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`c27d79e`](https://github.com/oktawianwybieralski/coagent8/commit/c27d79e2985c96a074c85a81ef5fffc92cace7b9) **sessions:** Identify activePid as the CoAgent8 server process
 - [`a29006a`](https://github.com/oktawianwybieralski/coagent8/commit/a29006ac05f3ba6a7315089f33d610cd358d5e83) **review:** Retain session_handle on unchanged repeat review
 - [`511be64`](https://github.com/oktawianwybieralski/coagent8/commit/511be6455945928efc900ff48ddb5c703f67f28a) **review:** Check live turn ownership on repeat review and keep cancel description
+- [`6ff4ff9`](https://github.com/oktawianwybieralski/coagent8/commit/6ff4ff9d0fe702eb11b9efef6a3a6b6c66796b84) **review:** Re-read explicit session handle after async preparation
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
