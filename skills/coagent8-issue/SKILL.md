@@ -7,7 +7,8 @@ description: Prepare a sanitized CoAgent8 bug report with a pre-filled GitHub is
 
 1. Call `issue` with `error_message` (the exact error) and `context` (what led
    to it: the tool, parameters and expected result, without secrets or private
-   code). `include_doctor` defaults to true and attaches diagnostics.
+   code). `include_doctor` defaults to true and attaches detected CLI versions
+   only (no readiness or quota).
 2. The server removes secrets, diffs and code blocks. Show the user the preview
    and the link, and ask them to check it for anything private.
 3. The user opens the link and submits the issue. Never submit it for them.

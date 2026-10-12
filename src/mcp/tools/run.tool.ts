@@ -71,7 +71,7 @@ export const runToolDefinition = {
       },
       include_doctor: {
         type: 'boolean',
-        description: 'Whether to attach non-sensitive environment diagnostics for action "issue" (default: true).',
+        description: 'Whether to attach detected CLI versions only (no readiness or quota) for action "issue" (default: true).',
       },
       context_files: {
         type: 'array',
