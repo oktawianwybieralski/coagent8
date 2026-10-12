@@ -219,6 +219,16 @@ function failure(code: ExecutionError['code'], message: string): RunCommandResul
 }
 
 /**
+ * Code and message of a stop requested through the abort signal: an execution budget aborts
+ * with its `TIMEOUT` error as the reason, which stays a timeout; any other reason is a
+ * cancellation.
+ */
+function abortOutcome(signal: AbortSignal | null | undefined, cancelled: string): [ExecutionError['code'], string] {
+  const reason: unknown = signal?.aborted ? signal.reason : undefined;
+  return errorCodeOf(reason, 'ABORTED') === 'TIMEOUT' ? ['TIMEOUT', (reason as Error).message] : ['ABORTED', cancelled];
+}
+
+/**
  * Executes a CLI executable or shim with robust streaming line decoders, buffer bounding,
  * deadline enforcement, and layered termination.
  *
@@ -234,7 +244,7 @@ function failure(code: ExecutionError['code'], message: string): RunCommandResul
  */
 export function runCommand(command: string, args: string[], options: RunCommandOptions = {}): Promise<RunCommandResult> {
   if (shuttingDown) return Promise.resolve(failure('ABORTED', 'Server shutdown has stopped subprocess admission.'));
-  if (options.abortSignal?.aborted) return Promise.resolve(failure('ABORTED', 'Operation cancelled before launch.'));
+  if (options.abortSignal?.aborted) return Promise.resolve(failure(...abortOutcome(options.abortSignal, 'Operation cancelled before launch.')));
   const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS, limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
   const grace = options.interruptGraceMs ?? INTERRUPT_GRACE_MS;
   const signalGrace = options.signalGraceMs ?? SIGNAL_GRACE_MS;
@@ -292,7 +302,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       try { session.interrupt(channel); }
       catch { forceStop(); }
     };
-    cancel = () => stop('ABORTED', 'Operation cancelled.');
+    cancel = () => stop(...abortOutcome(options.abortSignal, 'Operation cancelled.'));
     child.on('error', (err: NodeJS.ErrnoException) => stop(err.code === 'ENOENT' ? 'CLI_NOT_FOUND' : 'PROCESS_ERROR', err.message));
     child.stdin?.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE' && err.code !== 'ERR_STREAM_DESTROYED') stop('PROCESS_ERROR', 'CLI stdin failed.'); });
     function collect(chunk: Buffer, channelName: 'stdout' | 'stderr') {

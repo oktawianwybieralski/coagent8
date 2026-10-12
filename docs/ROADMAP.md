@@ -2196,6 +2196,13 @@ preview, `0.6.1` (see below).
   `tests/sessions/history.test.js` (and a Slack token in
   `tests/diagnostics/issue.test.js`) were allowed once on GitHub; their
   prefixes are now joined at run time, so the sources hold no literal token.
+- [x] **FEEDBACK-060s - budget expiry reported as a cancellation (#2).** When
+  `timeout_ms` ran out during the CLI turn, 0.6.0 answered `ABORTED: Operation
+  cancelled.` (not retryable) on Codex and agy: `runCommand` dropped the
+  budget's `TIMEOUT` abort reason. It now reports `TIMEOUT` with the budget's
+  message. A caller's `timeout_ms` still bounds the complete call; the agy
+  headless host's own 180-second limit is a client constraint
+  ([ARCHITECTURE](ARCHITECTURE.md)), not a CoAgent8 default (900 s).
 
 ### DOCS-002: documentation cleanup after 0.6.0
 
