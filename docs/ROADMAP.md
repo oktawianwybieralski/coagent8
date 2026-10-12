@@ -251,16 +251,16 @@ Effective configuration provenance and bounded diagnostics are implemented in `E
 ### AX-006: first-use contract
 
 - [ ] **AX-006a - prepare the acceptance script.** Start: `src/mcp/schema.ts`, `src/mcp/constants.ts`, `tests/mcp/surface.test.js`. Define identical prompts and expected recorded fields in `HANDOFF.md` for plain consult, price ceiling, exact model/effort, continuation and a rejected request. Acceptance: tool schemas alone provide sufficient guidance and fixtures pass. Check: R, MCP/POLICY.
-- [ ] **AX-006b - run fresh Codex acceptance.** Execute `AX-006a` in an isolated Codex client, recording calls, model/effort, price source, retries, phase/total time and consent rendering without source or private config reads.
-- [ ] **AX-006c - run fresh Claude acceptance.** Execute `AX-006a` in an isolated Claude client and record the same fields.
-- [ ] **AX-006d - run fresh agy acceptance.** Execute `AX-006a` in an isolated agy client, additionally recording host timeout and inline-result behavior.
+- [ ] **AX-006b - run fresh Codex acceptance.** Execute `AX-006a` in an isolated Codex client, recording calls, model/effort, price source, retries, phase/total time and consent rendering without source or private config reads. Native cards do not authorize paid escalation, live config changes or installation changes.
+- [ ] **AX-006c - run fresh Claude acceptance.** Execute `AX-006a` in an isolated Claude client and record the same fields, under the same native-card safeguards.
+- [ ] **AX-006d - run fresh agy acceptance.** Execute `AX-006a` in an isolated agy client, additionally recording host timeout and inline-result behavior, under the same native-card safeguards.
 
 ### AX-007: bounded review and continuation cost
 
 Implemented in `0.6.0` (`AX-007a` through `AX-007c`; [evidence](HANDOFF.md#ax-007a-state-when-another-review-cannot-help)):
 - `AX-007a`: read-only reviewer `NOT_RUN` checks do not block `READY`; the footer names unrun checks so the author and CI verify them.
 - `AX-007b`: result footers label `session_handle=<handle> (<state>)` and tool schemas explain continuation vs. fresh turns.
-- `AX-007c`: an unchanged repeat review in the same workspace returns the prior server verdict without starting a new model turn (`FEEDBACK-060f4` retains the handle in the refusal footer).
+- `AX-007c`: an unchanged repeat review in the same workspace returns the prior server verdict without starting a new model turn (retaining the handle in the refusal footer remains open under `FEEDBACK-060f4`).
 
 - [ ] **AX-007d - warn about an abandoned ready session.** After `SESSION-001` mode design: when the same connection and workspace start a new session while a recent session is `ready`, emit one `Warning:` naming that handle without continuing it implicitly. Check: R, SESSION/MCP.
 
@@ -271,9 +271,9 @@ Implemented in `0.6.0` (`SKILLS-001a` through `SKILLS-001d`; [evidence](HANDOFF.
 Client discovery directories:
 - **Claude Code:** `~/.claude/skills/<name>/SKILL.md` (`/coagent8-review`)
 - **Codex:** `~/.agents/skills/<name>/SKILL.md` (`$coagent8-review` or `/skills`)
-- **Antigravity:** `~/.gemini/config/skills/<name>/SKILL.md` (`/coagent8-review`)
+- **Antigravity:** `~/.gemini/config/skills/<name>/SKILL.md` (`/coagent8-review`; native loader path unverified against web docs' `~/.gemini/antigravity-cli/skills/<name>/SKILL.md` until `SKILLS-001e`)
 
-- [ ] **SKILLS-001e - native discovery acceptance.** In an isolated profile per client after setup (`PATCH-061-N6`), verify the six skills are listed, explicit invocation loads the skill and reaches CoAgent8, and VS Code chat's shared-directory listing is recorded.
+- [ ] **SKILLS-001e - native discovery acceptance.** In an isolated profile per client after setup (`PATCH-061-N6`), verify the six skills are listed, explicit invocation loads the skill and reaches CoAgent8, settle the Antigravity skill directory from native evidence (a mismatch produces a fix card rather than a second installed copy), and record VS Code chat's shared-directory listing.
 
 ## Full coagent direction
 
@@ -326,7 +326,7 @@ Retain these foundation IDs for candidate acceptance and follow-up cards. Use th
 | `WINDOWS-001` | `CUR-011`: POSIX parent-death cleanup and Windows per-call descendant containment ([`WINDOWS-001b-e`](#windows-001-per-call-process-containment)) before write/command profiles, plus native no-survivor/quiet-desktop evidence. Never select teardown targets by PID, PPID or process name. |
 | `REDACTION-002` | Preserve credential-only answers, diagnostic home-path redaction and split-stream secret boundaries across all execution paths. |
 | `EXEC-001`, `CLI-INTERACT-001` | `CUR-007`: `T01`–`T12b` implemented; complete native/remote acceptance (`T12c`) and independent review binding (`T12d`). |
-| `SESSION-001`, `HISTORY-002` | `CUR-008`: early handle publication before turn completion and ephemeral (`none`) / `auto` / `new` session modes (distinct from `coagent8_HISTORY=off`), preserving fail-closed busy/invalid handle checks, retention, pagination and history compatibility. |
+| `SESSION-001`, `HISTORY-002` | `CUR-008`: early handle publication before turn completion and ephemeral (`none`) / `auto` / `new` session modes (distinct from `coagent8_HISTORY=off`). Opt-in `auto` reuses a same-workspace/provider session used within 15 minutes and starts fresh when that session is busy; only a native expiry proven before execution allows one fresh retry within the original budget. Preserve fail-closed busy/invalid handle checks, retention, pagination and history compatibility. |
 | `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Preserve renewed token leases, single cooldown recording, accurate quota reporting and concurrency-safe caches (`EXEC-001-T08/T09`, `AUDIT-001-A01`–`A07`). |
 | `SURFACE-001`, `CONSULT-001`, `CONTEXT-001`, `MCP-001`, `STARTUP-001` | Preserve six tools, plain consult, client roots/resources and probe-free startup; deduplicate review prompt/description wording and verify tool-definition byte budgets across native clients (`AX-006`). |
 | `CLAUDE-BACKEND-001`, `DIAGNOSTICS-001` | `CUR-009`: auth evidence, bounded cancellable native quota reads, real client approval acceptance and restricted-review hook/plugin/skill verification. |
@@ -340,7 +340,7 @@ Retain these foundation IDs for candidate acceptance and follow-up cards. Use th
 
 libuv places non-detached server children into one server-wide `KILL_ON_JOB_CLOSE` job, so server termination leaves no survivors (`AUD-P2-14`), but per-call cancellation or timeout stops only the owned root process (`src/execution/process.ts`). While Codex and Claude stop their children after a protocol interrupt, Antigravity has no headless interrupt and launches the user's MCP servers on every turn. `WINDOWS-001a` reproduced per-call survivor processes outside the root job ([evidence](HANDOFF.md#windows-001a-per-call-descendant-survivors)); this is a documented known limitation for read-only `0.6.0`/`0.6.1` and must be resolved by `WINDOWS-001b-e` before enabling any `COAGENT-002` write or command profile.
 
-- [ ] **WINDOWS-001b - launcher contract.** Check: P. Specify a hidden launcher helper (**new**, `coagent8-job.exe`) that creates a per-call Job Object with `KILL_ON_JOB_CLOSE` (and optional memory/process limits), starts the CLI with `CREATE_SUSPENDED`, assigns and resumes it, inherits standard streams directly for protocol interrupts, and closes the job when stopped via its owned handle or when the server exits. `process.ts` remains the single owner with zero PID-based selection. Define `CREATE_BREAKAWAY_FROM_JOB` policy, JSON launch specification over an extra descriptor, post-root-exit descendant handling, missing-helper behavior (write/command profiles fail closed; read-only retains current behavior) and a platform-neutral interface reusable for `CUR-011`.
+- [ ] **WINDOWS-001b - launcher contract.** Check: P. Specify a hidden launcher helper (**new**, `coagent8-job.exe`) that creates a per-call Job Object with `KILL_ON_JOB_CLOSE` (and optional memory/process limits), starts the CLI with `CREATE_SUSPENDED`, assigns and resumes it, inherits standard streams directly for protocol interrupts, and closes the job when stopped via its owned handle or when the server exits. `process.ts` remains the single owner with zero PID-based selection. Define `CREATE_BREAKAWAY_FROM_JOB` policy (tested with npm, Git and a browser), JSON launch specification over an extra descriptor, post-root-exit descendant handling (default: stopped; exceptions only by explicit task policy), missing-helper behavior (write/command profiles fail closed; read-only retains current behavior) and a platform-neutral interface reusable for `CUR-011`.
 - [ ] **WINDOWS-001c - implement the helper.** After `001b`. Implement the static Rust (`windows-sys`) helper binary and measure first-launch overhead. Acceptance: fixture trees, breakaway requests, root exit and helper teardown match the contract. Check: R, PROCESS/LIFE plus helper tests.
 - [ ] **WINDOWS-001d - package and verify the helper.** After `001c`. Build reproducible Authenticode-signed `x64` and `arm64` binaries in CI, ship them in the npm tarball and VSIX, and verify SHA-256 digests before launch. Acceptance: package inspection and consumer smoke verify the helper and refuse tampered binaries.
 - [ ] **WINDOWS-001e - native acceptance.** After `001d`. Verify per backend on Windows that cancel/expiry leaves no surviving descendants, preserves quiet desktop operation and keeps the cold agy updater disabled.
