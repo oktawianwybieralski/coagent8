@@ -293,3 +293,12 @@ extension includes `LICENSE` and the notices of its bundled dependencies in
 The planned MIT release is 0.6.1. Copies of published 0.6.0 and the withdrawn
 npm version 1.0.0-beta.1 retain their GPL-3.0-only permissions. Previously
 granted licenses are not revoked.
+
+**Trademarks.** CoAgent8 and the CoAgent8 logo are trademarks of Oktawian
+Wybieralski (oki.dev). The copyright licenses under which CoAgent8 is or was
+distributed cover the software, documentation and artwork, including the logo
+files, and this notice does not limit them. They do not grant rights to use the
+name or logo as a trademark, for example to brand a modified version or another
+distribution, or to suggest endorsement. Accurate references to CoAgent8, such
+as naming it as the origin of a fork or describing compatibility, need no
+permission.
