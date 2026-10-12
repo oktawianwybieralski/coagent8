@@ -18,6 +18,10 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`7a3d427`](https://github.com/oktawianwybieralski/coagent8/commit/7a3d42773a0d58606a9736479ba1f356405e5833) **doctor:** List a CLI in the models view as soon as it appears ([#10](https://github.com/oktawianwybieralski/coagent8/pull/10))
 - [`d109069`](https://github.com/oktawianwybieralski/coagent8/commit/d1090696a33ed5ef42f468595c564b3a4b3f6d55) **review:** Name a change during the turn only when the input changed ([#11](https://github.com/oktawianwybieralski/coagent8/pull/11))
 - [`cbf503a`](https://github.com/oktawianwybieralski/coagent8/commit/cbf503af2bab76b3c6cb002d80e12c42029e2c11) **sessions:** Say that a session is closed when a call or cancel uses it ([#12](https://github.com/oktawianwybieralski/coagent8/pull/12))
+- [`1ac5376`](https://github.com/oktawianwybieralski/coagent8/commit/1ac53769636f0cd050b094ef6ff55c5aa982a3f0) **sessions:** Scope cursor and limit to session history
+- [`c27d79e`](https://github.com/oktawianwybieralski/coagent8/commit/c27d79e2985c96a074c85a81ef5fffc92cace7b9) **sessions:** Identify activePid as the CoAgent8 server process
+- [`a29006a`](https://github.com/oktawianwybieralski/coagent8/commit/a29006ac05f3ba6a7315089f33d610cd358d5e83) **review:** Retain session_handle on unchanged repeat review
+- [`511be64`](https://github.com/oktawianwybieralski/coagent8/commit/511be6455945928efc900ff48ddb5c703f67f28a) **review:** Check live turn ownership on repeat review and keep cancel description
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
