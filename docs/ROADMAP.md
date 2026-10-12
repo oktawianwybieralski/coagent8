@@ -4,7 +4,7 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-10-11. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-12. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -16,12 +16,13 @@ started; [AGENTS.md](../AGENTS.md) owns contributor rules.
 
 ## Current snapshot status
 
-The checkout carries `0.6.0` (the beta.2 stage, numbered by
-[REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)), an unaccepted
-development candidate. Beta.2 remains BLOCKED pending candidate validation,
-native acceptance and independent review. Local implementation and historical
-tests are not release approval. The owner handles Git integration and
-publication; agent work stays local and preserves the existing checkout.
+`0.6.0` (the beta.2 stage, numbered by
+[REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)) is released:
+tag `v0.6.0` on `develop`, GitHub Release, npm and the VS Code Marketplace
+([evidence](HANDOFF.md#060-release-evidence)). The next version is the fix-only
+patch `0.6.1` ([FEEDBACK-060](#feedback-060-findings-of-the-060-native-acceptance));
+the checkout keeps `0.6.0` until its release PR. The owner handles merges, tags
+and publication.
 
 | Area | Present locally | Remaining |
 | --- | --- | --- |
@@ -2006,6 +2007,12 @@ beta.2 is published as `0.6.0` (tag `v0.6.0`). Owner decision 2026-10-11: beta.1
 has no tag, GitHub Release or changelog entry, and npm `1.0.0-beta.1` is
 unpublished instead of deprecated (step 8); this replaces the beta.1 parts of the
 2026-10-10 decisions above.
+
+State 2026-10-12: steps 1-8 are done; 0.6.0 is released and `1.0.0-beta.1` is
+unpublished, not deprecated
+([evidence](HANDOFF.md#060-release-evidence)). Step 9 (npm trusted publishing)
+is open, so `npm-publish.yml` stays skipped and npm versions are published by
+hand.
 
 1. **Branches:** create `develop` at `b962086` and make it the default branch.
    State 2026-10-11: created as `devlop`; rename it to `develop` (Settings >
