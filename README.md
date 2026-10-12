@@ -22,7 +22,7 @@
 [![Coverage gate](https://img.shields.io/badge/coverage%20gate-%E2%89%A570%25-brightgreen)](package.json)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-FE5196)](https://www.conventionalcommits.org)
 
-[API reference](https://oktawianwybieralski.github.io/coagent8/)
+[Documentation](https://oktawianwybieralski.github.io/coagent8/)
 
 CoAgent8 lets the coding agent you work with ask another one. It is an MCP
 server that puts Codex, Claude Code and Antigravity (`agy`, which runs Gemini and
@@ -463,7 +463,7 @@ release. Restart a running MCP server after rebuilding.
 | Branches, pull requests and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
 | Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
 | Release history | [Changelog](CHANGELOG.md) |
-| API reference | [oktawianwybieralski.github.io/coagent8](https://oktawianwybieralski.github.io/coagent8/) |
+| Documentation site: this README, the project documents and the source API | [oktawianwybieralski.github.io/coagent8](https://oktawianwybieralski.github.io/coagent8/) |
 
 The npm package does not include `docs/` or the contributor rules; these links
 work in the repository.
