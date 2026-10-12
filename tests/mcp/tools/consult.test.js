@@ -201,3 +201,45 @@ test('MCP server callTool creates root budget and formats TIMEOUT on expired bud
   assert.equal(formatted.error?.code, 'ABORTED');
   assert.equal(executeCalled, false, 'Adapter should not execute when aborted');
 });
+
+test('Issue #20: handleConsult includes read-only file tool guidance when task_type or context_files is set and keeps plain consult neutral', async () => {
+  const { READ_ONLY_FILE_TOOL_GUIDANCE } = require('../../../src/mcp/constants.ts');
+  const receivedPrompts = [];
+
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async prompt => {
+      receivedPrompts.push(prompt);
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'Consult answer',
+        nativeSessionId: randomUUID(),
+        model: 'fixture-model',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
+
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  await handleConsult('consult', { proposal: 'Plain question' }, tempDir);
+  assert.equal(
+    receivedPrompts[0],
+    'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nPlain question',
+    'plain consult without task_type or context_files stays byte-for-byte neutral'
+  );
+  assert.ok(!receivedPrompts[0].includes(READ_ONLY_FILE_TOOL_GUIDANCE));
+
+  await handleConsult('consult', { proposal: 'Architecture check', task_type: 'architecture' }, tempDir);
+  assert.ok(receivedPrompts[1].includes('[TASK: ARCHITECTURAL & CODE ANALYSIS]'));
+  assert.ok(receivedPrompts[1].includes(READ_ONLY_FILE_TOOL_GUIDANCE), 'task_type consult includes read-only file tool guidance');
+
+  const sampleFile = path.join(tempDir, 'sample.ts');
+  fs.writeFileSync(sampleFile, 'export const sample = 1;\n');
+  await handleConsult('consult', { proposal: 'File check', context_files: ['sample.ts'] }, tempDir);
+  assert.ok(receivedPrompts[2].includes(READ_ONLY_FILE_TOOL_GUIDANCE), 'context_files consult includes read-only file tool guidance');
+});

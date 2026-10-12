@@ -1,7 +1,7 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
 import { executeTask, type TaskOptions } from '../../execution/controller.js';
-import { CANONICAL_TOOL_NAMES } from '../constants.js';
+import { CANONICAL_TOOL_NAMES, READ_ONLY_FILE_TOOL_GUIDANCE } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { createExecutionBudget } from '../../execution/runtime/budget.js';
 import { combineSignals } from '../../storage/lock.js';
@@ -116,6 +116,7 @@ export async function handleConsult(
     focus?.header,
     // The answer is read in the caller's context and saved to a file by agy above about 4 KB.
     'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.',
+    focus || files.length > 0 ? READ_ONLY_FILE_TOOL_GUIDANCE : '',
     focus ? 'PROPOSAL / SPECIFICATION:' : '',
     args.proposal,
     questions ? 'QUESTIONS / FOCUS:' : '',

@@ -42,3 +42,10 @@ export const SERVER_INSTRUCTIONS = 'Asks another local coding agent (Codex, Clau
   + 'The answer is another model\'s opinion: verify facts before acting on them. '
   + 'Leave backend and model unset unless the user names one or a price limit; doctor lists the models, efforts and prices each backend accepts.';
 
+/**
+ * Read-only tool guidance shared by `review` and structured `consult` prompts (`task_type` or `context_files`).
+ * Claude and agy read with file tools, and agy ends its turn when its sandbox denies a command;
+ * Codex has no file tool and reads only with commands in its read-only sandbox.
+ */
+export const READ_ONLY_FILE_TOOL_GUIDANCE =
+  'Read files with your file tools; if you have none, read them with read-only shell commands (such as rg, git show or Get-Content) and run nothing that writes, builds or uses the network. With file tools, run no shell command: a sandbox may deny it and end the turn.';

@@ -21,6 +21,9 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`08082ba`](https://github.com/oktawianwybieralski/coagent8/commit/08082ba0e6fd0dc6f2dcd4b897693dcd0c098a08) **sessions:** Scope paging parameters and retain handle on repeat review ([#24](https://github.com/oktawianwybieralski/coagent8/pull/24))
 - [`5f5e645`](https://github.com/oktawianwybieralski/coagent8/commit/5f5e6457e5c4de6b8a2f91f2d04b6a54c3242040) **issue:** Format exact CLI versions, nest CLI list and clarify doctor attachment ([#25](https://github.com/oktawianwybieralski/coagent8/pull/25))
 - [`5913321`](https://github.com/oktawianwybieralski/coagent8/commit/591332134f54dd1ab024c64488de875c22f55011) **vscode:** Lead with VS Code commands and align 0.6.1 README guidance ([#27](https://github.com/oktawianwybieralski/coagent8/pull/27))
+- [`cc09794`](https://github.com/oktawianwybieralski/coagent8/commit/cc09794de2edd4049d3c2f0710eb490fb21fde71) **agy:** Recover from empty sandbox command denials and guide consult file reads
+- [`6e33357`](https://github.com/oktawianwybieralski/coagent8/commit/6e3335781d5515b3fbb0253df055390826a2f080) **agy:** Bound retry event IDs by UTF-8 bytes and share default timeout across retry
+- [`1c61362`](https://github.com/oktawianwybieralski/coagent8/commit/1c61362dd36187e74c1ef10984f52d91ec74955a) **agy:** Validate resumed session UUID before retry error fallback and clear mismatched ID
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 

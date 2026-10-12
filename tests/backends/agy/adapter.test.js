@@ -813,3 +813,136 @@ test('EXEC-001-T08e: stalled agy reads ended by budget expiration during run rej
     delete process.env.AGY_FIXTURE_MODE;
   }
 });
+
+test('Issue #20: agy automatically resumes once when sandbox denies a command with an empty answer and preserves history across reused step_index', async () => {
+  const { executeTask } = require('../../../src/execution/controller.ts');
+  const { sessionHistory } = require('../../../src/sessions/history/index.ts');
+  const { saveConfig } = require('../../../src/config.ts');
+
+  process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+  try {
+    const warnings = [];
+    const direct = await execute('Analyze architecture', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: e => {
+        if (e.type === 'warning') warnings.push(e.message);
+      },
+    });
+    assert.equal(direct.status, 'completed');
+    assert.equal(direct.isError, false);
+    assert.equal(direct.output, 'Recovered answer from read_file without shell commands.');
+    assert.equal(direct.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
+    assert.equal(direct.continuationAvailable, true);
+    assert.deepEqual(direct.usage, { source: 'provider', inputTokens: 25, outputTokens: 25, totalTokens: 50 });
+    assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'sandbox warning emitted exactly once across initial and recovery turns');
+
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const response = await executeTask('Analyze architecture', 'Analyze architecture', { backend: 'agy' }, tempDir);
+    const parsed = readResult(response);
+    assert.equal(parsed.status, 'completed', JSON.stringify(response));
+    assert.equal(parsed.answer, 'Recovered answer from read_file without shell commands.');
+
+    const page = await sessionHistory(parsed.sessionHandle, tempDir);
+    const toolStartedIds = page.events.filter(e => e.type === 'tool_started').map(e => e.toolId);
+    const toolFinishedIds = page.events.filter(e => e.type === 'tool_finished').map(e => e.toolId);
+    assert.deepEqual(toolStartedIds, ['tool-1', 'retry-tool-1'], 'initial and retry tool IDs must not collide when agy reuses step_index');
+    assert.deepEqual(toolFinishedIds, ['tool-1', 'retry-tool-1']);
+
+    const assistantMessages = page.events.filter(e => e.type === 'assistant_message');
+    assert.deepEqual(
+      assistantMessages.map(m => ({ messageId: m.messageId, text: m.text })),
+      [
+        { messageId: 'msg-2', text: '   ' },
+        { messageId: 'retry-msg-2', text: 'Recovered answer from read_file without shell commands.' },
+      ],
+      'recovered assistant answer must be recorded in durable history without colliding with initial step_index'
+    );
+    assert.equal(page.events.at(-1).type, 'turn_finished');
+    assert.equal(page.events.at(-1).status, 'completed');
+
+    process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
+    const emptyWarnings = [];
+    const stillEmpty = await execute('Analyze architecture', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: e => {
+        if (e.type === 'warning') emptyWarnings.push(e.message);
+      },
+    });
+    assert.equal(stillEmpty.status, 'failed');
+    assert.equal(stillEmpty.error.code, 'POLICY_DENIED');
+    assert.match(stillEmpty.error.message, /including on automatic retry without shell commands/);
+    assert.equal(emptyWarnings.filter(w => /sandbox denied/.test(w)).length, 1, 'sandbox warning emitted once even when retry also fails');
+
+    // Verify retry ID mapper preserves 256-byte UTF-8 bound and distinctness for multibyte and long ASCII IDs
+    const { createRetryIdMapper } = require('../../../src/backends/agy/adapter.ts');
+    const { validEventIdentifier } = require('../../../src/contracts/index.ts');
+    const mapRetryId = createRetryIdMapper(['retry-msg-1']);
+    assert.equal(mapRetryId('msg-2'), 'retry-msg-2');
+    assert.equal(mapRetryId('msg-2'), 'retry-msg-2', 'same input ID maps deterministically across repeated events');
+    assert.equal(mapRetryId('msg-1'), 'retry-id-1', 'avoids colliding with an initial turn ID already named retry-msg-1');
+
+    const multibyte256Bytes = 'é'.repeat(128);
+    assert.equal(Buffer.byteLength(multibyte256Bytes, 'utf8'), 256);
+    const mappedMultibyte = mapRetryId(multibyte256Bytes);
+    assert.ok(validEventIdentifier(mappedMultibyte), `mapped multibyte ID must be valid: ${mappedMultibyte}`);
+    assert.equal( mapRetryId(multibyte256Bytes), mappedMultibyte);
+
+    const longAsciiA = `${'a'.repeat(255)}1`;
+    const longAsciiB = `${'a'.repeat(255)}2`;
+    const mappedA = mapRetryId(longAsciiA);
+    const mappedB = mapRetryId(longAsciiB);
+    assert.ok(validEventIdentifier(mappedA));
+    assert.ok(validEventIdentifier(mappedB));
+    assert.notEqual(mappedA, mappedB, 'distinct 256-char IDs differing at the end must not collapse to the same retry ID');
+    assert.equal(mapRetryId(longAsciiA), mappedA);
+    assert.equal(mapRetryId(longAsciiB), mappedB);
+
+    // Verify omitted timeoutMs resolves DEFAULT_TIMEOUT_MS once and subtracts elapsed time before recovery
+    const { DEFAULT_TIMEOUT_MS } = require('../../../src/execution/process.ts');
+    process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-recover';
+    let fakeNow = 1000;
+    const exhaustedDefaultBudget = await execute('Analyze architecture', {
+      model: MODEL,
+      cwd: tempDir,
+      clock: () => fakeNow,
+      onEvent: e => {
+        if (e.type === 'tool_finished') fakeNow += DEFAULT_TIMEOUT_MS;
+      },
+    });
+    assert.equal(exhaustedDefaultBudget.status, 'failed', 'exhausted default budget during turn 1 skips retry');
+    assert.equal(exhaustedDefaultBudget.error.code, 'POLICY_DENIED');
+    assert.doesNotMatch(exhaustedDefaultBudget.error.message, /including on automatic retry/);
+
+    process.env.coagent8_FIXTURE_RETRY_HANG = '1';
+    let fakeNowHang = 1000;
+    const retryTimedOut = await execute('Analyze architecture', {
+      model: MODEL,
+      cwd: tempDir,
+      clock: () => fakeNowHang,
+      onEvent: e => {
+        if (e.type === 'tool_finished') fakeNowHang += DEFAULT_TIMEOUT_MS - 120;
+      },
+    });
+    assert.equal(retryTimedOut.status, 'timed_out', 'omitted timeoutMs passes remaining default budget to retry');
+    assert.equal(retryTimedOut.error.code, 'TIMEOUT');
+    delete process.env.coagent8_FIXTURE_RETRY_HANG;
+
+    // Verify a recovery turn that reports a different conversation UUID fails with SESSION_INVALID and disables continuation even when the retry also fails
+    process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION = '1';
+    for (const retryMode of ['sandbox-denied-empty', 'sandbox-denied-recover']) {
+      process.env.coagent8_FIXTURE_MODE = retryMode;
+      const mismatchedRetry = await execute('Analyze architecture', { model: MODEL, cwd: tempDir });
+      assert.equal(mismatchedRetry.status, 'failed', retryMode);
+      assert.equal(mismatchedRetry.error.code, 'SESSION_INVALID', retryMode);
+      assert.equal(mismatchedRetry.nativeSessionId, null, retryMode);
+      assert.equal(mismatchedRetry.threadId, null, retryMode);
+      assert.equal(mismatchedRetry.continuationAvailable, false, retryMode);
+    }
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+    delete process.env.coagent8_FIXTURE_RETRY_HANG;
+    delete process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION;
+  }
+});
