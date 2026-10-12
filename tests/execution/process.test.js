@@ -15,6 +15,7 @@ const {
 const { resolveCliCommand } = require('../../src/execution/cli-resolver.ts');
 const { createLineDecoder, truncateToByteLength } = require('../../src/execution/runtime/stream.ts');
 const { readBoundedFile } = require('../../src/storage/read.ts');
+const { ToolError } = require('../../src/contracts/error.ts');
 
 // Fake protocol CLI: NDJSON on stdin; answers an interrupt with a terminal record unless told to ignore it.
 const protocolCli = `
@@ -45,6 +46,23 @@ function protocolSession(onStarted) {
     },
   };
 }
+
+test('a stop whose abort reason is a budget TIMEOUT reports TIMEOUT, not a cancellation (FEEDBACK-060s, #2)', async () => {
+  const expiry = () => new ToolError('TIMEOUT', 'Execution deadline exceeded (180000 ms).');
+  const before = new AbortController(); before.abort(expiry());
+  const early = await runCommand('coagent8-nonexistent-command', [], { abortSignal: before.signal });
+  assert.equal(early.status, 'timed_out'); assert.equal(early.error.code, 'TIMEOUT'); assert.equal(early.error.retryable, true);
+  assert.match(early.error.message, /Execution deadline exceeded \(180000 ms\)/);
+  const during = new AbortController();
+  const late = await runCommand(process.execPath, ['-e', "console.log('ready'); setInterval(() => {}, 1000);"],
+    { abortSignal: during.signal, timeoutMs: 15000, onStdoutLine() { during.abort(expiry()); } });
+  assert.equal(late.status, 'timed_out'); assert.equal(late.error.code, 'TIMEOUT');
+  assert.match(late.error.message, /Execution deadline exceeded \(180000 ms\)/);
+  const cancel = new AbortController();
+  const cancelled = await runCommand(process.execPath, ['-e', "console.log('ready'); setInterval(() => {}, 1000);"],
+    { abortSignal: cancel.signal, timeoutMs: 15000, onStdoutLine() { cancel.abort(); } });
+  assert.equal(cancelled.status, 'cancelled'); assert.equal(cancelled.error.code, 'ABORTED');
+});
 
 test('F05: pre-abort with a missing executable never launches or emits uncaught ENOENT', async () => {
   const controller = new AbortController(); controller.abort();
