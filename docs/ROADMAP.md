@@ -38,19 +38,7 @@ their dependencies and release acceptance. Use it to select one bounded task.
 
 ### Beta.2 issue-link acceptance
 
-- [ ] Verify the issue link in the native agy chat after rebuilding and restarting
-  MCP. The owner's 2026-10-10 report showed a multiline truncated title and a
-  description containing URL escapes instead of the report. The local generator
-  now produces a single-line title, encodes Markdown delimiters in URL parameters,
-  wraps the link destination in angle brackets and provides a copyable URL with
-  a plain Markdown preview with complete sanitized context/diagnostics within
-  the existing input bounds. The tool instructs agents to provide concise,
-  actionable reproduction details and sanitized telemetry, mark unknown facts
-  and preserve issueUrl verbatim. The owner approved a 5,800-byte tool-definition
-  budget for this instruction on 2026-10-10. Focused regression and rendering checks
-  establish intact title/body parameters; they do not establish agy UI behavior.
-  Before beta.2, click the generated link and compare GitHub's title and complete
-  description with the sanitized preview, including CLI names with parentheses.
+Single-line issue titles, encoded Markdown delimiters in URL parameters, angle-bracketed link destinations and copyable URLs with plain Markdown previews shipped in `0.6.0` (5,800-byte tool-definition budget). Native verification in the Antigravity chat UI is tracked under [`PATCH-061-N5`](#patch-061-061-task-queue).
 
 ## Agent usability gaps
 
@@ -60,275 +48,58 @@ that an agent with only MCP tools cannot select a model by price. Evidence and
 its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 
 - Doctor exposed the price list's source, date and size, not per-model prices,
-  and no request accepted a price limit. Fixed locally on 2026-10-08: doctor lists
-  each model's output price, match, freshness and approval need, and
-  `output_price_below` enforces a strict limit separate from consent (`AX-001/002`);
-  native fresh-client acceptance remains (`AX-006`).
+  and no request accepted a price limit. Doctor now lists each model's output
+  price, match, freshness and approval need, and `output_price_below` enforces a
+  strict limit separate from consent (`AX-001/002`); native fresh-client
+  acceptance remains (`AX-006`).
 - Trials exposed misleading fallback advice after unanswered approval. Refusal
   messages were corrected locally; form-less recovery and native acceptance
   remain (`AX-003`).
 - Older registrations can point at a different config file than the default the
-  agent edits. Doctor now separates cached models from explicit health checks;
-  effective config provenance and bounded diagnostics remain (`AX-004`).
+  agent edits. Doctor separates cached models from explicit health checks and
+  reports effective config provenance (`AX-004`).
 - agy can report not-ready and then execute successfully (`AX-005`).
 - Model/price-limit/effort descriptions were corrected locally; fresh-client
   first-attempt acceptance remains (`AX-006`).
-- A plain `consult` through `auto` can run an expensive default model; earlier
-  `auto` chose a large model for 52.8 s (owner decision: make plain consult cost
-  predictable, `AX-002`). A per-call limit now bounds a constrained call; a call
-  without one still runs the default.
-- An owner-observed Gemini/agy client (2026-10-09) repeated `review` rounds
-  without `session_handle`, pasted earlier context into `instructions` and asked
-  for READY. Read-only review of code cannot observe typecheck/tests, so the
-  server verdict stays BLOCKED and each round starts a fresh, expensive reviewer.
-  Termination message, labelled continuation and a repeat limit follow (`AX-007`).
+- A plain `consult` through `auto` can run an expensive default model. A
+  per-call `output_price_below` limit bounds a constrained call; a call without
+  one still runs the default (`AX-002`).
+- Repeated `review` rounds without `session_handle` can start fresh, expensive
+  reviewers. Labelled continuation handles and repeat-review refusal shipped in
+  `0.6.0` (`AX-007a-c`); abandoned-session warnings (`AX-007d`) and handle
+  retention on unchanged review refusals (`FEEDBACK-060f4`) remain.
 
 ## Execution order
 
-1. Preserve/finalize audit and desktop-safety fixes (`AUDIT-001`). Resolve
-   relevant blockers before enabling affected capabilities.
-2. Fix agent-facing selection (`AX-001` through `AX-006`) while designing
-   the shared task/profile contract (`COAGENT-001/002`). Complete the measured
-   execution work below (`EXEC-001-T01` through `T12`) before expanding the
-   affected lifecycle owners for writing or delegation.
-3. Complete independent skill management (`SKILLS-002`) after EXEC: one shared
-   CLI/VS Code implementation of install/update/uninstall/enable/disable,
-   durable per-client choices and recoverable package writes. Owner-approved
-   full scope on 2026-10-10, with high reasoning effort for implementation.
-4. Deliver one host-led write/check/review/fix path, role configuration and
-   skill installation (`COAGENT-003/004/005/007`).
-5. Add delegated coordination and parallel work (`COAGENT-006`), with root
+1. Complete the `0.6.1` preview patch queue ([`PATCH-061`](#patch-061-061-task-queue))
+   and its release acceptance tasks.
+2. Complete remaining audit and foundation items (`AUDIT-001-A08` through `A21`,
+   `WINDOWS-001b-e`, `SUPPLY-001c-e`) and agent-facing acceptance (`AX-001`
+   through `AX-007`, `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`, `PLUGIN-001`)
+   while designing the shared task/profile contract (`COAGENT-001/002`).
+3. Deliver host-led write/check/review/fix profiles, role configuration and
+   multi-file skills (`COAGENT-003/004/005/007`) after `WINDOWS-001b-e`
+   per-call process containment lands.
+4. Add delegated coordination and parallel work (`COAGENT-006`), with root
    limits, writer ownership and recoverable task state.
-6. Accept CLI execution, supported clients/platforms and benchmarks
+5. Accept CLI execution, supported clients/platforms and benchmarks
    (`CLI-FIRST-001`, `COAGENT-008`), then complete the release gates.
 
-Beta.2 path (owner decision 2026-10-09): beta.2 ships after EXEC-001-T12, not
-after the whole roadmap. Before T12 complete AUDIT-001-A01 through A07, AX-007a
-through AX-007c and WINDOWS-001a. T12b-d is the beta.2 gate; do not run a
-second separate gate. SKILLS-001a-d also land before T12 (owner decision
-2026-10-10), and T12's native checks include SKILLS-001e. Any change after T12
-invalidates the affected acceptance. The owner added the full SKILLS-002 package
-after EXEC on 2026-10-10; renew affected package/native/review evidence before
-beta.2, under the same T12 release gate. AUDIT-001-A08 through A20 stay open past beta.2 with
-explicit status in A21. Beta.2 release notes list known limits: plain `auto`
-consult may run an expensive default (AX-002), agy may report not-ready and still
-run (AX-005), and a cancelled or expired agy turn can leave native child processes
-outside its job, such as MCP servers, running until they exit or the server stops
-(WINDOWS-001a REPRODUCED; owner decision 2026-10-10: known limit, fixed by
-WINDOWS-001b-e before write profiles).
+Known limitations carried from `0.6.0`: plain `auto` consult without a price
+limit may run an expensive default (`AX-002`), agy may report not-ready and
+still run (`AX-005`), and a cancelled or expired agy turn on Windows can leave
+native child processes outside its job, such as MCP servers, running until they
+exit or the server stops (`WINDOWS-001a`; fixed by `WINDOWS-001b-e` before write
+profiles).
 
-## SIMPLIFY-001: module boundary migration
+### Verification shorthand and test groups
 
-Local implementation plan requested on 2026-10-08. Status: S0 baseline captured;
-S1, S2, S3, S4, S5, and S6 implemented and verified. This is
-the active plan, not an additional plan under docs/.local/. Work stays local;
-Git integration and publication remain owner-managed. Audit blockers retain
-priority. Apply the slices before expanding the affected owners for COAGENT
-and CLI-FIRST, without implementing those features as part of this refactor.
+Select local checks by change scope using the [quality gate](../.agents/rules/04-quality-gate.md) (the single source of truth). In task cards below:
 
-Use the [target ownership map](ARCHITECTURE.md#dependency-boundaries) and
-[P0 rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries).
-Success means clear ownership and dependency direction, not fewer visible files.
+- **P** means prose/contract review against source, local link checks and `git diff --check`.
+- **R** adds `npm run typecheck`, `npm run check:dependencies` and the listed test groups passed to `node tests/run.cjs <files>`. Source-comment changes also require `npm run lint:docs` and `npm run docs`.
 
-### Ordered slices and acceptance
-
-- [x] **S0 - Capture the actual baseline.** Recheck branch, dirty files and
-  concurrent work before any move. Preserve the current checkout and local
-  changes; no automatic stash/reset/rebase or new checkout. Inventory runtime,
-  type-only, dynamic and re-export edges, cycles, package/build entrypoints,
-  source-importing tests, extension imports and generated references. Record
-  exact legacy edges with S1-S6 owners. Distinguish existing failures from
-  migration failures. Implement on an appropriate topic branch under the Git
-  rules when the owner integrates the existing local stack.
-  Evidence: [S0 baseline](HANDOFF.md#simplify-001-s0-baseline), captured at
-  `ac394ad`. S0 inspection authorized starting S1 on this branch.
-- [x] **S1 - Extract contracts and shared mechanisms.** Split conversation.ts
-  and the shared parts of backends/types.ts into cohesive contracts; keep
-  adapter-local types in backends. Move file locking/atomic writes from
-  sessions/lock.ts and bounded file reads from execution/stream.ts to storage/.
-  Keep byte/stream/process primitives in execution/runtime/; they must not
-  import the controller. Group configuration and separate data-directory
-  resolution from workspace choice in paths.ts. Move canonical workspace
-  identity to workspace/; session handle validation stays with sessions.
-  Acceptance: config, model stores and integrations no longer depend on
-  session implementation or application execution for file operations.
-  Evidence: [S1 implementation](HANDOFF.md#simplify-001-s1-implementation).
-- [x] **S2 - Separate execution from MCP presentation.** Extract review input
-  and verdict policy into review/. Make the controller return a neutral result
-  with all evidence needed by handlers. Move formatting to the transport edge;
-  keep consent, cancellation and progress contracts independent of the SDK.
-  Then group server.ts, stdio-server.ts and transport parts of tools/ in mcp/.
-  Keep index.ts as dispatch/composition. Acceptance: execution and review have
-  no runtime or type imports from MCP; review completeness/post-turn snapshot
-  checks, redaction, error status and Markdown-only execution answers survive.
-  Evidence: [S2 implementation](HANDOFF.md#simplify-001-s2-implementation).
-- [x] **S3 - Separate model policy from provider discovery.** Group catalog,
-  identifier, price, governance and model-store modules in models/. Split
-  model-selection.ts and consent.ts: pure decisions stay there; registry,
-  native observations, effective selection and user-consent sequencing belong
-  to application operations. Move the routing composition accordingly; keep
-  probes, native quota reads, cooldown/cache mechanisms and adapters in
-  backends. Supply observations through narrow contracts. Doctor and execution
-  reuse the same selection policy. Acceptance: no models/backends cycle,
-  duplicate policy or change to explicit-model, price-limit and consent rules.
-  Evidence: [S3 implementation](HANDOFF.md#simplify-001-s3-implementation).
-- [x] **S4 - Split history by responsibility.** With storage extracted,
-  split sessions/history.ts into history reader/recovery, writer and
-  retention/capacity modules; place history-page.ts alongside them. Move safe
-  credential fragment boundaries together with redaction into security/.
-  Keep the session service entrypoint cohesive. Replace the current
-  session.ts/history.ts import cycle with a narrow activity/lease contract.
-  Extract one responsibility at a time; preserve lock order, reservations
-  and finalization semantics. Acceptance: history remains compatible on disk
-  and across restart; no session/history cycle or duplicated cache/capacity state.
-  Evidence: [S4 implementation](HANDOFF.md#simplify-001-s4-implementation).
-- [x] **S5 - Finish consumers and physical layout.** Update diagnostics,
-  integrations, extension imports, tests, fixtures, scripts and documentation
-  to their owning modules. Mirror source owners in unit tests; retain e2e,
-  consumer, helpers and fixtures as distinct test purposes. Split remaining
-  mixed files only for demonstrated responsibility conflicts. Keep adapters
-  in provider directories and generated assets in generated/. Remove stale
-  internal forwarding files instead of leaving permanent import aliases.
-  Acceptance: no unresolved old paths, orphan modules, eager setup imports or
-  broken packaged entrypoints; preserve genuinely public compatibility paths.
-  Evidence: [S5 implementation](HANDOFF.md#simplify-001-s5-implementation).
-- [x] **S6 - Enforce and accept the final boundaries.** Add an automated
-  dependency check using the real module graph, covering types, dynamic imports
-  and re-exports as well as ordinary imports. Prove it detects forbidden edges
-  and cycles with isolated fixtures. Enforce external MCP/editor SDK ownership
-  and indirect paths to transport or optional setup; forwarding modules must not
-  inherit entrypoint privileges. If staged earlier, allow only individually
-  recorded legacy edges with removal stages, never directory-wide exclusions;
-  remove those entries as slices land. Wire it into local and CI verification
-  without bypassing existing checks. Update the architecture's current map
-  only after source moves, and record evidence in HANDOFF. Independent review
-  and required remote checks precede merge; local passes are not release approval.
-  Evidence: [S6 implementation](HANDOFF.md#simplify-001-s6-implementation).
-
-Every slice includes its import/caller/test/reference updates and relevant
-checks; S5 is a final sweep, not permission to leave earlier slices broken.
-Separate mechanical moves from behavior-affecting boundary extraction so each
-diff is reviewable. Roll back only the owned slice against its recorded baseline,
-preserving concurrent edits and user data; never reset the whole workspace.
-
-### Execution checkpoints
-
-Owner instruction of 2026-10-08: work sequentially and stop after each slice
-for owner inspection. Do not begin the next slice until the owner continues.
-Keep the current slice's evidence and next action in HANDOFF so a new context
-can resume without rereading a session transcript. Recheck HEAD, dirty paths
-and affected file contents at every resumption; reconcile concurrent changes
-before using the S0 inventory as a migration baseline.
-
-| Slice | Internal work order | Completion checkpoint |
-| --- | --- | --- |
-| S0 | Checkout identity and concurrent-work visibility; real import graph and cycles; caller/build/reference inventory; exact debt owners and evidence limits | Recorded in HANDOFF; stop for owner inspection |
-| S1 | Extract cohesive contracts and independent config syntax/settings types; extract locks/atomic writes and bounded reads; separate runtime primitives and shared errors; group config/data paths and workspace identity; update every affected caller | Config/model stores/integrations use storage, runtime never loads controller, no new cycles; scoped checks and stop |
-| S2 | Extract review input/verdict policy; neutralize controller results and preserve evidence; move formatting to handlers; group MCP modules and tool constants; retain lazy startup composition | No execution/review import from MCP, including types; review/result/MCP checks and stop |
-| S3 | Move pure catalog/identifier/price/governance/store owners; separate selection policy from native observations; move routing/consent sequencing to application; supply narrow observations to shared doctor/execution policy | No models/backends cycle or duplicated policy; selection/consent/cache checks and stop |
-| S4 | Extract credential commit boundaries to security; split history types/reader/writer/retention without duplicating state; keep pagination with history; replace session service dependency with activity/lease contract | Remove both runtime session/history and type history/page cycles; disk/restart/lock/redaction checks and stop |
-| S5 | Resolve remaining consumer/layout conflicts, including cli-readiness/setup type cycle; update extension/test/fixture/build/docs references; remove stale internal forwarding modules and check generated/public paths | All consumers point to owners; optional setup stays lazy; packaging/reference checks and stop |
-| S6 | Implement real graph enforcement and negative fixtures; remove individually recorded migration debt; wire local/CI checks; run combined package gate once; update actual architecture and evidence | No forbidden edges/cycles; local gates recorded, independent/remote approval still separate; stop |
-
-The S0 graph also found the history-page/history type cycle and the
-cli-readiness/setup type cycle. Their exact edges and S4/S5 removal owners are
-recorded in HANDOFF; do not preserve them as type-only exceptions in S6.
-
-### Risks and verification
-
-| Area | Preserve and verify |
-| --- | --- |
-| Concurrent local work | Re-read files immediately before edits; do not move modules while another change owns them. Stop the affected slice on a conflict and reconcile it without overwriting work. |
-| Import graph | Check types and runtime edges separately; avoid barrel-induced eager loading, split singleton caches and duplicate registries. A successful typecheck alone does not prove boundaries. |
-| Model/config state | Preserve precedence, exact/approximate/stale price handling, explicit selections, consent recheck timing, remembered approvals, observation keys and on-disk schemas. Re-inspect current source; the price work is evolving. |
-| Execution and review | Preserve cancellation propagation, active task tracking, session release, warnings/footer, typed failures and server-derived review acceptance. Moving formatting must not bypass security/review gates. |
-| Storage and history | Test lock contention/renewal, torn-tail recovery, capacity reservation/release, cache invalidation, retention and UTF-8 pagination. Preserve file paths, bytes and history compatibility. |
-| Redaction | Test secrets split across chunks and persisted bytes, credential-only answers and diagnostic home-path redaction. Moving redaction must not change when unsafe fragments become visible. |
-| Processes | Preserve hidden Windows children, owned teardown and protocol interruption; never switch to PID/name/PPID-selected cleanup. Directory changes do not establish native-host safety. |
-| Packaging | Check relative package.json/assets paths, setup.cjs sibling loading, generated icon output, build entrypoints, source tests, VSIX imports and tarball contents. Build before tests that consume dist. |
-
-Select checks using the [quality gate](../.agents/rules/04-quality-gate.md):
-
-- This rules/plan change: content/source/link review and git diff --check only.
-- S1: typecheck; config/editor, workspace, lock, stream, cache and affected
-  integration tests. Build/package/consumer checks when moved paths affect
-  entrypoints or shipped contents.
-- S2: typecheck, build, controller/pipeline, tool result/review, surface/server
-  and MCP/stdio e2e checks, including legacy aliases and workspace resources.
-- S3: typecheck and catalog/identifier/selection/governance/price-limit,
-  routing/probe/cache/doctor plus execution selection tests; adapter tests when
-  their discovery bindings change.
-- S4: typecheck, history/capacity/session/lock/redaction and controller-history
-  regressions, including interruption and restart recovery.
-- S5-S6: dependency-check fixtures, test discovery and docs tooling if affected;
-  full local package gate once for the combined shared-runtime refactor:
-  typecheck, build, full suite, package inspection and consumer smoke. Run
-  lint:docs/docs when source documentation changes. Preserve all required CI
-  jobs and distinguish fixture evidence from native client/OS acceptance.
-
-Do not repeat a passing full gate after every move. New failures or changes
-determine which checks must run again. Add behavioral regressions for uncovered
-risks, not tests that merely mirror the new directory tree.
-
-## EXEC-001: measured preparation and complete call lifecycle
-
-Plan requested on 2026-10-09 after SIMPLIFY-001. All tasks below are pending.
-This is the detailed work breakdown for existing `EXEC-001`,
-`CLI-INTERACT-001`/CUR-007 and the timing/configuration portions of `AX-004`;
-it does not create a second execution stack or replace the coagent roadmap.
-The S6 follow-up is committed at `af9f7d2`; its independent review remains
-required before integration. Resolve relevant audit blockers first.
-
-The inspection found repeated configuration/selection reads across routing,
-selection and consent. `loadConfig` reads and validates the file each time.
-The controller starts its duration timer after preparation and session
-acquisition, and passes the original timeout to the adapter. These are source
-observations, not measured bottlenecks or a demonstrated speedup. Preparation,
-consent, execution and finalization currently share one large lifecycle owner.
-
-T01-T12 are stages, not single implementation assignments. Execute one
-task card below, for example `EXEC-001-T03b`, at a time. Short IDs such as `T03b`
-always carry the `EXEC-001-` prefix. All cards are pending. Finish cards in their
-listed order; each stage depends on the preceding stage. The named stage
-acceptance criteria apply to every relevant card and close only when all its
-cards pass. Completed SIMPLIFY-001 slices are historical evidence, not new work.
-
-### Instructions for executing one task card
-
-1. Read HANDOFF, the assigned card, its parent acceptance criteria and the
-   relevant ARCHITECTURE contract. Record `git status --short`, branch and HEAD.
-   Preserve unrelated edits; an earlier PASS does not approve a changed file.
-2. Read the listed starting files and their direct callers/tests. Paths are
-   current at `32b9f8e`; use `rg` to find moved symbols if a prerequisite renamed
-   them. A proposed new file is explicitly marked **new**. Never guess an API.
-3. State the one behavior/deliverable being changed. Update required callers
-   in the same card so the checkout remains usable. Start a new owner module
-   only for the responsibility named by the card; do not copy policy or leave
-   forwarding aliases to make imports pass.
-4. Use existing fixture/adapter injection seams. Run tests through
-   `node tests/run.cjs`, which installs the isolated environment. Do not launch
-   native model turns or edit live config to produce test data. Use an injected
-   clock or controlled fixture events for timing assertions; wall-clock speed
-   alone is not a deterministic regression test.
-5. Run the card's checks and the applicable [quality gate](../.agents/rules/04-quality-gate.md).
-   Record command, exit code and evidence path. `Done` is an observable result,
-   not merely a new function or a green typecheck. An unrelated failure is
-   recorded and investigated, never fixed by weakening an assertion.
-6. Update this card and HANDOFF with changed behavior, actual checks and the next
-   card. Stop at the owner inspection checkpoint. A design choice left open in
-   a card must be resolved there before dependent code; never invent a timeout,
-   consent rule or migration silently. No commit/push/merge follows from a
-   checkbox alone; use the authority already granted in the active session.
-
-Test groups below are shorthand for exact existing files, not new npm scripts.
-For a group, pass its files to `node tests/run.cjs <files>`. Add the regression
-created by the card to that same command. **P** means content/source/local-link
-review and `git diff --check` only. **R** adds `npm run typecheck`,
-`npm run check:dependencies` and the listed test groups. Source-comment changes
-also require `npm run lint:docs` and `npm run docs`; runtime/package changes use
-the linked gate. Do not run the complete suite for every small card.
-
-| Group | Existing files under tests/ |
+| Group | Existing files under `tests/` |
 | --- | --- |
 | CONFIG | `config.test.js`, `config-editor-settings.test.js` |
 | SELECT | `execution/routing.test.js`, `execution/model-routing.test.js`, `models/selection.test.js` |
@@ -348,936 +119,165 @@ the linked gate. Do not run the complete suite for every small card.
 | REDACT | `security/redaction.test.js` |
 | SETUP | `integrations/setup.test.js`, `integrations/cleanup.test.js`, `integrations/skills.test.js`, `integrations/vscode-extension.test.js`, `package.test.js` |
 
-Example for a CONFIG/POLICY card:
+## SIMPLIFY-001: module boundary migration
 
-```text
-npm run typecheck
-npm run check:dependencies
-node tests/run.cjs tests/config.test.js tests/config-editor-settings.test.js tests/models/governance.test.js tests/execution/price-limit.test.js
-git diff --check
-```
+Completed in `0.6.0` (`S0` through `S6`: contract and storage extraction, MCP presentation separation, model policy vs. provider discovery separation, session history split, consumer layout cleanup, and automated dependency-graph enforcement in `npm run check:dependencies`). Use the [target ownership map](ARCHITECTURE.md#dependency-boundaries) and [P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries). Evidence: [S0](HANDOFF.md#simplify-001-s0-baseline), [S1](HANDOFF.md#simplify-001-s1-implementation), [S2](HANDOFF.md#simplify-001-s2-implementation), [S3](HANDOFF.md#simplify-001-s3-implementation), [S4](HANDOFF.md#simplify-001-s4-implementation), [S5](HANDOFF.md#simplify-001-s5-implementation), [S6](HANDOFF.md#simplify-001-s6-implementation).
 
-### EXEC-001-T01: establish a reproducible baseline
+### Execution checkpoints
 
-- [x] **T01a - map calls and waits.** Start: `src/mcp/tools/consult.tool.ts`,
-  `src/mcp/tools/review.tool.ts`, `src/execution/controller.ts` and direct
-  routing/selection/consent/session callees. Change: HANDOFF only; add one row
-  per phase with function, caller, side effect, timeout and abort support.
-  Done: the map includes early exceptions, review Git work and finalization.
-  Check: P; unknown behavior is labelled unverified, not inferred.
-- [x] **T01b - prepare the baseline harness.** Start: `tests/helpers/environment.cjs`,
-  `tests/execution/price-limit.test.js`, `tests/backends/probe-cache.test.js` and
-  `tests/fixtures/`. Add a **new** fixture-only baseline test under
-  `tests/execution/`, using existing injection seams to count observations and
-  adapter launches. Cover plain, explicit model/effort, priced auto, continuation
-  and review. Done: cold runs reset only owned fixture state; warm/concurrent
-  runs reuse it intentionally. Record counters that cannot yet be observed as
-  NOT_MEASURED. Check: R, the new test and `tests/environment.test.js`.
-- [x] **T01c - record baseline measurements.** Run the T01b command against the
-  recorded source identity; keep configuration, delays and repetition count in
-  the evidence. Report individual samples and median/range, not a single fast
-  run. Done: HANDOFF links reproducible logs and states platform, Node, commit,
-  tree, dirty diff identity and missing counters. Check: P plus the baseline
-  run itself; native/client overhead stays NOT_MEASURED.
+Slices `S0` through `S6` are complete and enforced by `check:dependencies`; details of individual slice moves remain in Git history and `HANDOFF.md`.
 
-Acceptance: another agent can reproduce the baseline; no performance claim
-depends on footer timing alone. Verification: inspect existing fixtures and run
-only the selected baseline scenarios. Depends on the S6 follow-up.
+## EXEC-001: measured preparation and complete call lifecycle
 
-### EXEC-001-T02: measure phases without changing timeout behavior
+Stages `EXEC-001-T01` through `EXEC-001-T11` and `T12a`/`T12b` are implemented in `0.6.0`:
 
-- [x] **T02a - implement the timing primitive.** Start: `src/contracts/execution.ts`
-  and `src/execution/runtime/`. Add a **new** timing primitive with an injectable
-  monotonic clock and bounded named phases. Done: nested/overlapping intervals
-  preserve total wall time; closing a phase twice does not double-count it;
-  no module imports MCP. Check: R and a **new** timing test with a fake clock.
-- [x] **T02b - instrument the controller.** Start: `executeTask` and
-  `executeTaskInternal` in `src/execution/controller.ts`. Record preparation,
-  consent, session acquisition, execution and finalization, including throws
-  before session creation. Done: fixture delays enter the right spans and the
-  existing `durationMs` retains its meaning. Use an internal observer for early
-  failures rather than changing public error shape here. Check: R, LIFE/POLICY.
-- [x] **T02c - instrument outer preparation and diagnostics.** Start:
-  `src/mcp/tools/review.tool.ts`, `src/review/input.ts`,
-  `src/diagnostics/doctor.ts`. Include Git collection and health/model-report
-  work in a call-level trace; reuse the primitive without inventing a task
-  session. Done: delayed Git/probes are visible once, totals do not sum parallel
-  spans, and traces contain no prompt/path/credential. Check: R, REVIEW/DOCTOR;
-  repeat T01c only for previously missing phase measurements.
-
-Acceptance: deliberate fixture delays appear in the correct phase and total;
-instrumentation does not change routing, retries or timeouts. Verification:
-focused success/failure/timing fixtures and typecheck. Depends on T01.
-
-### EXEC-001-T03: supply effective configuration with provenance
-
-- [x] **T03a - specify snapshot freshness.** Start: `loadConfig`, `getConfigFile`
-  in `src/config.ts`, `src/config-overrides.ts` and `src/paths.ts`. Document the
-  current precedence and which settings must be re-read after consent. Define
-  a request-local view and non-secret change identity. Done: cases for config
-  path changes, invalid JSON, editor overrides and governance changes have an
-  explicit expected outcome. Check: P; settle these choices before T03b.
-- [x] **T03b - return settings and provenance together.** Implement T03a in the
-  existing config owner. Done: one load returns validated effective settings
-  and each setting's source; defaults and malformed config behave as before;
-  public diagnostic identities contain no raw secrets. Check: R, CONFIG.
-- [x] **T03c - pass one view through preparation.** Start:
-  `src/execution/routing.ts`, `selection.ts`, `consent.ts` and `controller.ts`.
-  Supply the view explicitly and update all callers in this change. Done:
-  unchanged preparation reads once, required post-consent revalidation still
-  occurs and concurrent requests cannot overwrite each other's settings.
-  Check: R, CONFIG/SELECT/POLICY; use counting fixture evidence from T01b.
-- [x] **T03d - show redacted provenance in doctor.** Start:
-  `src/diagnostics/doctor.ts`, `src/mcp/tools/doctor.tool.ts` and
-  `src/security/redaction.ts`. Use T03b data without copying precedence logic.
-  Done: custom paths/old registration overrides are understandable, secrets
-  and home paths are redacted, summary remains bounded and invalid config
-  produces diagnostic evidence. Check: R, DOCTOR/MCP and REDACT if changed.
-  Evidence: [EXEC-001-T03 implementation](HANDOFF.md#exec-001-t03-effective-configuration-with-provenance).
-
-Acceptance: stable preparation does not repeatedly read the same config;
-custom paths, old registration overrides and editor settings remain effective.
-Verification: config/editor/doctor tests, malformed and concurrently changed
-config fixtures, typecheck and dependency check. Depends on T02.
-
-### EXEC-001-T04: extract cohesive task preparation
-
-- [x] **T04a - extract input/continuation validation.** Start:
-  `executeTaskInternal`, `src/sessions/session.ts:getSession` and
-  `src/models/identifier.ts`. Move preparation validation to a **new** cohesive
-  execution preparation owner; have the controller call it immediately.
-  Done: invalid model, expired/foreign handle and provider-switch cases retain
-  their errors and start no backend turn. Check: R, SELECT/SESSION/POLICY.
-- [x] **T04b - extract provider/model preparation.** Move routing, concrete
-  model/alias resolution and effort/catalog checks into the T04a owner, returning
-  neutral prepared data to the controller. Keep price policy in models/, native
-  reads in backends/, consent and lease acquisition explicit in the controller.
-  Done: plain, named, priced and continued calls match baseline identity/effort;
-  busy acquisition remains a later fail-closed operation. Check: R, SELECT/POLICY/LIFE.
-  Evidence: [EXEC-001-T04 implementation](HANDOFF.md#exec-001-t04-cohesive-task-preparation).
-
-Acceptance: behavior and error codes match the baseline for plain, explicit,
-priced and continued calls; invalid/busy handles fail closed. Verification:
-selection/routing/price-limit/continuation regressions, typecheck and dependency
-check. Depends on T03. Treat this as structural extraction, not a speedup claim.
-
-### EXEC-001-T05: reuse observations within preparation
-
-- [x] **T05a - reuse catalog evidence.** Start: `src/execution/selection.ts`,
-  `src/execution/routing.ts`, `src/backends/probe-cache.ts`. Pass an observation
-  obtained during provider eligibility into final model selection. Done: counts
-  decrease only for duplicate reads with the same backend/key/freshness; a
-  different key or explicit fresh request still reads again. Check: R, SELECT/CACHE.
-- [x] **T05b - reuse the default-model price reference.** Start:
-  `src/execution/consent.ts:consentFor` and the prepared data from T04b. Reuse
-  the backend default observation, keeping it distinct from the requested
-  model; preserve unknown-default handling and relative-price governance.
-  Done: consent decisions match POLICY fixtures, including expensive explicit
-  models and missing defaults, with fewer repeated observations. Check: R, POLICY/CACHE.
-- [x] **T05c - verify invalidation and measure the delta.** Extend counting
-  fixtures for TTL expiry, environment/executable/config changes, fresh doctor,
-  replaced adapter and concurrent misses. Re-run the same baseline conditions.
-  Done: each removed read is explained; changed prices while consent is pending
-  still fail or revalidate, never reuse stale permission. Check: R, CACHE/POLICY
-  and the T01b baseline; record speed as unproven if samples do not support it.
-  Evidence: [EXEC-001-T05 implementation](HANDOFF.md#exec-001-t05-reuse-observations-within-preparation).
-
-Acceptance: fixture counters show which reads/launches were removed while
-selection, price limits and approval outcomes remain identical. Verification:
-probe-cache/selection/governance/price-change concurrency tests and a focused
-cold/warm baseline comparison. Depends on T04.
-
-### EXEC-001-T06: guarantee finalization after resource acquisition
-
-- [x] **T06a - guard acquisition and registration.** Start:
-  `src/execution/controller.ts` around `acquireAndResolveSession`, writer
-  creation, `activeSessionAborts` and timer/listener registration. Enter a
-  guaranteed finalization scope immediately after acquiring the turn token.
-  Done: injected writer/registration failure releases owned state and settles
-  waiters. Check: R, LIFE/SESSION with failure after each acquisition boundary.
-- [x] **T06b - isolate finalization failures.** In that scope, ensure metadata
-  failure, archive failure and lease failure cannot skip the other mandatory
-  cleanup attempts. Preserve warning/error priority and continuation invalidation.
-  Done: archive failure keeps a valid answer, lease failure remains fail-closed,
-  cooldown is recorded at most once, failed snapshot recheck cannot yield READY.
-  Check: R, LIFE/SESSION/REVIEW.
-- [x] **T06c - verify cancellation settlement.** Start:
-  `cancelSessionExecution`, `waitForActiveExecutionTasks` and
-  `src/execution/process.ts`. Cover cancel/EOF during execution and finalization
-  without changing process ownership. Done: awaited settlement means timers,
-  listeners and owned children have completed cleanup; no orphaned raced promise
-  is treated as completion. Check: R, PROCESS/LIFE/E2E; report platform limits.
-  Evidence: [EXEC-001-T06 implementation](HANDOFF.md#exec-001-t06-guarantee-finalization-after-resource-acquisition).
-
-Acceptance: injected failure/cancellation at each acquisition/finalization
-boundary leaves no owned active entry, timer or turn lease without a reported
-outcome; archive failure does not erase a valid answer. Verification: controller,
-history/session and process failure-path tests on affected platforms. Depends
-on T05. Report fixture and native teardown evidence separately.
-
-### EXEC-001-T07: define the complete-call budget contract
-
-- [x] **T07a - settle timeout semantics in writing.** Start:
-  `src/contracts/execution.ts:ExecutionOptions`, `src/mcp/schema.ts` and timeout
-  sites found by `rg` in execution/backends. Propose start-before-Git,
-  consent-counted timing and a finite teardown allowance; specify omitted/zero/
-  invalid timeout behavior, host cancellation and migration of `timeout_ms`.
-  Done: HANDOFF records the owner's accepted semantics and chosen values;
-  no unresolved choice is implemented by T07b. Check: P.
-- [x] **T07b - implement budget arithmetic.** Add a **new** neutral budget
-  primitive alongside the timing owner; it uses one absolute monotonic deadline,
-  reports remaining time and distinguishes timeout from caller abort. Done:
-  already-expired, exact-boundary and repeated checks cannot reset the budget;
-  cleanup allowance is separate and finite. Check: R and a **new** fake-clock
-  budget test. Public timeout behavior remains unchanged until T11.
-- [x] **T07c - centralize timeout defaults.** Move only duplicated settings
-  identified in T07a into their owning contract/config mechanism and update
-  current consumers. Done: defaults have one owner and existing adapter behavior
-  remains identical; no layer imports controller policy. Check: R, PROCESS and
-  the affected provider adapter tests; docs checks for changed source comments.
-  Evidence: [EXEC-001-T07 implementation](HANDOFF.md#exec-001-t07-complete-call-budget-contract).
-
-Acceptance: the contract answers what happens when a deadline expires in every
-phase, including consent and cleanup. Owner inspection of this contract is the
-checkpoint before propagation. Verification: focused budget arithmetic/expiry
-tests and documentation review. Depends on T06.
-
-### EXEC-001-T08: make native observations cancellable
-
-- [x] **T08a - define read ownership and extend the contract.** Start:
-  `src/backends/types.ts:CliAdapter`, `src/backends/probe-cache.ts:coalesce` and
-  the T07 budget. Define per-waiter deadline/abort versus shared-read ownership,
-  then thread the neutral context through callers and adapter signatures.
-  Done: existing callers still work, actual support is not claimed prematurely,
-  and a decision table specifies who owns cancellation and inflight removal.
-  Check: R, CACHE/CODEX/CLAUDE/AGY for contract compatibility.
-- [x] **T08b - implement shared-read waiter ownership.** Change only the
-  probe-cache coalescing mechanism and its neutral callbacks from T08a. Done:
-  one cancelled waiter leaves another live waiter intact; the last waiter
-  triggers owned abort; late settlement cannot remove a newer inflight entry.
-  Check: R, CACHE with two-waiter/all-cancelled/replacement-race fixtures.
-  Evidence: [EXEC-001-T08b implementation](HANDOFF.md#exec-001-t08b-shared-read-waiter-ownership).
-- [x] **T08c - bound Codex reads.** Start: `src/backends/codex/adapter.ts`,
-  `models.ts`, `app-server.ts`. Implement context propagation for probe/catalog/
-  quota paths of this backend only. Done: stalled fixture RPCs abort, pending
-  promises settle and owned handles close. Check: R, CACHE and
-  `tests/backends/codex/adapter.test.js`; fetch current CLI docs before API edits.
-  Evidence: [EXEC-001-T08c implementation](HANDOFF.md#exec-001-t08c-bound-codex-reads).
-- [x] **T08d - bound Claude reads.** Start: `src/backends/claude/adapter.ts`,
-  `usage.ts`. Cover probe, model observation/catalog and native quota reads.
-  Done: stalled initialize/usage fixtures clean up, and no native model call
-  is used to obtain missing evidence. Check: R, CACHE/CLAUDE;
-  fetch current CLI docs before protocol edits.
-  Evidence: [EXEC-001-T08d implementation](HANDOFF.md#exec-001-t08d-bound-claude-reads).
-- [x] **T08e - bound agy reads.** Start: `src/backends/agy/adapter.ts` and its
-  discovery/quota callees. Done: stalled discovery cleans up without changing
-  sandbox/inherited-tool policy or mislabelling timeout as unauthenticated.
-  Check: R, CACHE and `tests/backends/agy/adapter.test.js`; fetch current CLI docs.
-  Evidence: [EXEC-001-T08e implementation](HANDOFF.md#exec-001-t08e-bound-agy-reads).
-- [x] **T08f - bound price fetches and close shared-read races.** Start:
-  `src/models/prices.ts`, `src/backends/probe-cache.ts`,
-  `src/backends/availability.ts`. Apply cancellation to owned price I/O and verify
-  fresh/default reads, cache failures and last-waiter cancellation across the
-  integrated providers. Done: late completions do not poison inflight/cache
-  state; freshness and unknown-price policy remain unchanged. Check: R, CACHE/POLICY.
-  Evidence: [EXEC-001-T08f implementation](HANDOFF.md#exec-001-t08f-bound-price-fetches-and-close-shared-read-races).
-
-Acceptance: deliberately stalled fixture reads settle within their allocated
-budget, clean owned processes and do not poison concurrent calls. Verification:
-probe-cache, price fetch, native quota and process cancellation tests; Context7
-documentation before changing provider-specific CLI/API behavior. Depends on T07.
-
-### EXEC-001-T09: bound Git collection and storage waits
-
-- [x] **T09a - bound review Git work.** Start: `src/workspace/git.ts:runGit`,
-  `collectGitScope`, `snapshotId` and `src/review/input.ts`. Pass the request
-  budget through collection and recheck; await owned process cleanup on expiry.
-  Done: stalled Git stops, partial input and failed recheck cannot be READY,
-  and foreign-tree rejection survives. Check: R, REVIEW/PROCESS.
-  Evidence: [EXEC-001-T09a implementation](HANDOFF.md#exec-001-t09a-bound-review-git-work).
-- [x] **T09b - cancel lock waiters safely.** Start:
-  `src/storage/lock.ts:withFileLock`. Cover both the in-process queue and on-disk
-  lease contention; preserve queue progress, token ownership and renewal.
-  Done: aborting the middle of three waiters does not strand the third or
-  release another owner's lease. Check: R, LOCK and cross-process contention
-  fixtures. Keep ordinary callers without context compatible.
-  Evidence: [EXEC-001-T09b implementation](HANDOFF.md#exec-001-t09b-cancel-lock-waiters-safely).
-- [x] **T09c - stop session acquisition after expiry.** Start:
-  `src/sessions/session.ts:acquireAndResolveSession` and history reservation
-  callers. Pass the context into waits and check around synchronous boundaries.
-  Done: cancellation during acquisition creates no executable turn or leaked
-  reservation; partial acquisition is finalized through T06. Check: R, SESSION/
-  LIFE/LOCK; document I/O that cannot be interrupted immediately.
-  Evidence: [EXEC-001-T09c implementation](HANDOFF.md#exec-001-t09c-stop-session-acquisition-after-expiry).
-
-Acceptance: stalled Git and contended-lock fixtures cannot start a model turn
-after expiry or leak a reservation; failed snapshot verification blocks READY.
-Verification: review/workspace, lock/session and controller cancellation
-regressions. Depends on T08.
-
-### EXEC-001-T10: bind consent and revalidation to the budget
-
-- [x] **T10a - cancel a pending approval.** Start: `ConsentPrompt` and the
-  consent block in `src/execution/controller.ts`, plus elicitation in
-  `src/mcp/server.ts`. Bind the response to this request/backend/model and the
-  T07 deadline. Done: missing/false/late responses and cancelled forms cannot
-  start a turn or remember approval. Check: R, POLICY/MCP with a delayed reply.
-  Evidence: [EXEC-001-T10a implementation](HANDOFF.md#exec-001-t10a-cancel-a-pending-approval).
-- [x] **T10b - revalidate just before acquisition.** Start:
-  `src/execution/consent.ts`, `src/models/governance.ts`, the controller's price
-  checks and the T03 snapshot. Recheck changed identity/policy/price evidence.
-  Use fail-closed retry guidance for invalidated approval unless a bounded
-  renewal flow was explicitly accepted; do not invent that flow here.
-  Done: changed prices/config during consent cannot bypass policy or replace
-  the selected model. Check: R, CONFIG/POLICY/SELECT.
-  Evidence: [EXEC-001-T10b implementation](HANDOFF.md#exec-001-t10b-revalidate-just-before-acquisition).
-- [x] **T10c - preserve remembered-approval outcomes.** Start:
-  `src/config.ts:rememberApprovedModel` and controller consent warnings. Test
-  valid remembered approval, failed persistence and cancellation before storage.
-  Done: a storage failure retains an otherwise valid approval with a warning;
-  next-call policy remains correct and credentials do not leak. Check: R,
-  CONFIG/POLICY/MCP. Form-less approval design remains AX-003.
-  Evidence: [EXEC-001-T10c implementation](HANDOFF.md#exec-001-t10c-preserve-remembered-approval-outcomes).
-
-Acceptance: cancellation, late replies, changed prices/config and invalidated
-approval never start an unauthorized turn. Verification: consent, governance,
-price-limit and MCP elicitation fixtures; native consent acceptance remains
-AX-003/006. Depends on T09.
-
-### EXEC-001-T11: wire the complete call and migrate timing output
-
-- [x] **T11a - activate the budget for consult/review.** Start:
-  `src/mcp/tools/consult.tool.ts`, `review.tool.ts`, `src/mcp/server.ts`, and
-  `src/execution/controller.ts`. Create one context before preparation/Git and
-  pass remaining time to every adapter. Update `timeout_ms` documentation and
-  source contracts in this same card. Done: expiry in any earlier phase
-  prevents execution, and idle activity cannot reset the budget. Check: R,
-  LIFE/REVIEW/MCP/E2E/CODEX/CLAUDE/AGY; build before bundle checks.
-  Evidence: [EXEC-001-T11a implementation](HANDOFF.md#exec-001-t11a-activate-the-budget-for-consultreview).
-- [x] **T11b - apply bounds to diagnostics.** Start: `runDoctor`, `runModelReport`
-  in `src/diagnostics/doctor.ts`, `src/mcp/tools/doctor.tool.ts` and their server
-  dispatch. Thread caller cancellation and an explicitly defined diagnostic
-  budget; do not silently add an execution timeout argument to doctor. Done:
-  health reads are bounded, cached model view remains cheap, startup waits for
-  no probes and doctor creates no session. Check: R, DOCTOR/CACHE/MCP/E2E.
-  Evidence: [EXEC-001-T11b implementation](HANDOFF.md#exec-001-t11b-apply-bounds-to-diagnostics).
-- [x] **T11c - expose accurate timing.** Start: `ExecutionMeta` in
-  `src/contracts/execution.ts`, `src/mcp/result.ts`, error formatting in
-  `src/mcp/server.ts`. Add accepted phase/total fields, preserving or explicitly
-  migrating legacy duration semantics. Done: preparation failures and cleanup
-  overruns are represented honestly; footer remains useful and bounded. Update
-  README/ARCHITECTURE with implemented behavior. Check: R, MCP/POLICY/REVIEW,
-  REDACT if affected, lint:docs/docs and fresh package consumer checks.
-  Evidence: [EXEC-001-T11c implementation](HANDOFF.md#exec-001-t11c-expose-accurate-timing).
-
-Acceptance: total accounting includes every phase and cleanup; idle reasoning
-can remain silent without granting extra time. Verification: adapter/controller,
-MCP/stdio, review and doctor regressions, typecheck, dependency check, build and
-applicable docs checks. Depends on T10; caller-visible migration follows T07.
+- **Completed stages (`EXEC-001-T01`–`T12b`):** baseline harness and measurements (`T01a`–`T01c`), monotonic phase timing (`T02a`–`T02c`), effective configuration with redacted provenance (`T03a`–`T03d`), cohesive task preparation (`T04a`–`T04b`), catalog and default-model observation reuse (`T05a`–`T05c`), guaranteed finalization and cancellation settlement (`T06a`–`T06c`), complete-call budget contract and centralized timeout defaults (`T07a`–`T07c`), cancellable shared native reads and price fetches (`T08a`–`T08f`), bounded review Git collection and lock/session acquisition (`T09a`–`T09c`), budget-bound consent and pre-acquisition revalidation (`T10a`–`T10c`), end-to-end budget activation and phase timing output (`T11a`–`T11c`), and baseline repetition plus local package validation (`T12a`–`T12b`). Evidence: [HANDOFF.md](HANDOFF.md#exec-001-t01a-call-and-wait-map) through [T12b](HANDOFF.md#exec-001-t12b-local-candidate-package-validation).
 
 ### EXEC-001-T12: compare results and bind independent acceptance
 
-- [x] **T12a - repeat the baseline.** Run T01b with the same parameters and
-  repetitions as T01c. Done: HANDOFF compares phase/total timings, reads and
-  launches for each scenario, including concurrent/error paths; inconclusive
-  results are labelled so. Check: P plus baseline execution; retain raw logs.
-  Evidence: [T12a baseline repetition](HANDOFF.md#exec-001-t12a-repeat-the-baseline).
-- [x] **T12b - validate the local candidate package.** Follow the full package
-  gate once on the final source, build before bundle-dependent tests and retain
-  the actual tarball digest/manifest. Done: source, bundle and exact-package
-  results are recorded separately. Check: typecheck, dependency check, build,
-  full suite or equivalent full coverage run, pack inspection, consumer smoke
-  and applicable docs/VSIX gates. Do not publish as part of validation.
-  Evidence: [T12b](HANDOFF.md#exec-001-t12b-local-candidate-package-validation).
-- [ ] **T12c - collect native/remote acceptance.** Use the candidate from T12b
-  for the required six OS/Node jobs and applicable native client scenarios.
-  Do one client/platform scenario at a time; record CLI/host versions and
-  quiet-desktop/no-survivor evidence. Done: every required cell has observed
-  evidence or an explicit NOT_RUN blocker. Do not infer native PASS from fixtures.
-  First owner run 2026-10-10: FAIL (uninstall left entries whose ownership
-  record was lost; closing notice asked to quit VS Code); fixed, rerun pending.
-  Evidence: [T12c first run](HANDOFF.md#exec-001-t12c-native-vs-code-acceptance-first-run-2026-10-10).
-- [ ] **T12d - bind independent review.** Review the actual committed scope
-  through `review`, recording base/candidate/tree, reviewer session/reference,
-  commands/exits/logs and artifact digest when accepting a release. Done: no
-  unresolved P1/P2 and evidence matches that candidate; changes invalidate the
-  affected acceptance. A READY string alone is not approval. Depends on T12c.
-
-Acceptance: HANDOFF makes the achieved behavior, measured differences and
-remaining native/remote limits reproducible. Follow-up coagent work reuses
-these owners; early handles, ephemeral modes and delegation stay in their
-existing SESSION-001/COAGENT milestones. Depends on T11.
+- [ ] **T12c - collect native/remote acceptance.** Validate the required six OS/Node CI jobs and applicable native client scenarios one scenario at a time, recording CLI/host versions and quiet-desktop/no-survivor evidence. Initial `0.6.0` native acceptance is recorded in [FEEDBACK-060](HANDOFF.md#feedback-060-native-acceptance-of-060) and [T12c first run](HANDOFF.md#exec-001-t12c-native-vs-code-acceptance-first-run-2026-10-10); remaining `0.6.1` native scenarios run under [`PATCH-061-N1` through `N7`](#patch-061-061-task-queue).
+- [ ] **T12d - bind independent review.** Review the committed release candidate through `review`, recording base/candidate/tree SHAs, reviewer session/reference, commands/exits/logs and artifact SHA-256 digests (`PATCH-061-R6` for `0.6.1`). Acceptance: no unresolved P1/P2 and evidence matches the candidate; any content change invalidates approval. Depends on `T12c`.
 
 ## SKILLS-002: independent skill management
 
-Owner decision 2026-10-10: implement the full package after EXEC with high
-reasoning effort. Extend SKILLS-001's catalog and setup ownership rather than
-adding a separate installer. Multi-file packages remain COAGENT-005. Local
-implementation is complete; independent and native acceptance remain pending.
+Independent skill management extends `SKILLS-001`'s catalog and setup ownership across the CLI and VS Code extension (`SKILLS-002a` and `SKILLS-002b` implemented in `0.6.0`; [evidence](HANDOFF.md#skills-002-complete-independent-skill-management)). Multi-file skill packages remain `COAGENT-005`.
 
-VS Code entry: **CoAgent8: Manage Skills**. Choose the client, an action
-(Install / Update, Uninstall, Enable or Disable), then one or more packages.
-Show enabled/disabled/absent/conflicting state and available updates. Select-all
-covers the complete set; cancellation or an empty selection changes nothing.
-The CLI exposes the same owner through `coagent8 skills
-status|install|uninstall|enable|disable`, with per-client/package selection and
-preview-bound apply. Applying a change leaves CLI installation and MCP entries
-intact, and starts no backend.
+VS Code entry: **CoAgent8: Manage Skills** (choose client, action: Install / Update, Uninstall, Enable or Disable, then packages, with Back navigation and step counts). CLI entry: `coagent8 skills status|install|uninstall|enable|disable`. Applying a change leaves CLI installation and MCP entries intact and starts no backend.
 
-Persist `backends.<client>.skills = { installed, disabled }` in user configuration,
-separate from actual ownership/digests in setup state. An absent preference keeps
-the existing default of installing the catalog; an explicit empty selection
-means no skills. Setup, repair and update must honor it. Explicit selections do
-not silently gain newly added catalog packages; management must show new packages
-as available. An update/removal conflict reports actual state separately from
-desired state, preserving edited or foreign packages and allowing retry. Disabled
-packages are retained in `~/.coagent8/disabled-skills/<client>/<name>/SKILL.md`,
-outside client discovery; enable restores them to the existing client root.
-Install/update retains an existing disabled choice. Native visibility settings
-are never cleared. Per-package origins distinguish CLI and extension ownership
-even when they coexist for one client. Reuse the setup lease, digest checks and
-bounded journal; failed writes roll back, interrupted writes recover, and user
-edits stop recovery without being overwritten. Desired intent remains durable
-if applying files fails; repair can retry it.
+Contract summary (`SKILLS-002a/b`):
+- `backends.<client>.skills = { installed, disabled }` is persisted in user configuration, separate from actual ownership/digests in `setup.json`. Absent preference defaults to installing the catalog; an explicit empty selection installs none.
+- Setup, repair and update honor user preferences; explicit selections do not silently add new catalog packages.
+- Update/removal conflicts preserve edited or foreign packages and report actual vs. desired state.
+- Disabled packages live in `~/.coagent8/disabled-skills/<client>/<name>/SKILL.md` outside client discovery; enable restores them. Client-native visibility overrides (`[[skills.config]]` in Codex, `skillOverrides` in Claude Code) are never cleared.
+- Per-package origins distinguish CLI and extension ownership. Writes use the setup lease, digest checks and bounded journal with rollback and crash recovery.
+- Shared-directory changes (`~/.agents/skills`, `~/.claude/skills`, `~/.gemini/config/skills`) can affect other consumers that scan those directories.
 
-Client documentation reviewed 2026-10-10:
-
-- [Codex](https://learn.chatgpt.com/docs/build-skills) supports disabling a local
-  skill through `[[skills.config]]` with `enabled = false`, followed by a Codex
-  restart; its user skill root is shared `~/.agents/skills`.
-- [Claude Code](https://code.claude.com/docs/en/skills) supports `skillOverrides`
-  with `off`; invocation flags alone have different semantics. These native
-  settings are user choices and must not be cleared by installing a package.
-- [Antigravity](https://antigravity.google/docs/skills) distinguishes global
-  Antigravity 2.0/IDE skills in `~/.gemini/config/skills` from documented CLI
-  skills in `~/.gemini/antigravity-cli/skills`, and supports plugin skill bundles.
-  Existing native loader evidence in SKILLS-001 remains the migration basis;
-  do not add a second copy or change paths solely from documentation.
-- [VS Code](https://code.visualstudio.com/docs/agent-customization/agent-skills)
-  can also discover skills from directories shared with coding clients. Describe
-  the directory/scope being managed; do not promise a private per-client copy.
-
-Scope is physical management of CoAgent8's catalog, including portable
-enable/disable through discovery directories. It does not manage third-party
-skills or edit client-native activation settings. Shared-directory changes can
-affect other consumers; native overrides and other discovered copies remain
-effective. Start a new conversation after changes; already loaded content is
-not erased. Native refresh/discovery behavior requires client acceptance.
-
-- [x] **SKILLS-002a - specify the selection contract.** Start:
-  `src/config.ts`, `src/integrations/setup-storage.ts`, `skills.ts`, `setup.ts`,
-  `cleanup.ts`. Define per-client desired packages, migration defaults, unknown
-  names, disabled native skills, failed/partial apply, ownership origin and
-  coexistence of VSIX/npm installs. Reuse the existing setup lease and skill
-  owner; do not call registration cleanup to remove skills. Check: P.
-- [x] **SKILLS-002b - shared operation, CLI and VS Code picker.** Depends: 002a.
-  Start: `skills.ts`, `setup.ts`, `extensions/vscode/src/extension.ts`,
-  `extensions/vscode/package.json`, `scripts/build-vscode.cjs`, and skills/extension tests.
-  Add status/apply, update/enable/disable and recovery, retain unchanged recorded
-  copies for uninstall, honor preferences during setup/repair, and expose one
-  management command. Ownership and desired state remain separate.
-  Acceptance: remove only agy skills while MCP remains; later repair keeps them
-  absent; reinstall one or all; cancellation/no-op; edited/foreign/link conflicts;
-  rollback/crash recovery/retry, catalog changes, mixed origins and unchanged
-  Codex/Claude selections. Check: R, SETUP,
-  VS Code/package scope from rule 04.
-  Evidence: [implementation and final local checks](HANDOFF.md#skills-002-complete-independent-skill-management).
-- [ ] **SKILLS-002c - native acceptance.** Depends: 002b. Verify discovery and
-  disappearance in new chats for each supported client/version, shared-directory
-  effects, refresh instructions, repair/update persistence and subsequent
-  CoAgent8 uninstall. Bind evidence to the installed VSIX and retain
-  SKILLS-001e's loader-path uncertainty until reproduced.
+- [ ] **SKILLS-002c - native acceptance.** Verify discovery and disappearance in new chats for each supported client/version, shared-directory effects, refresh instructions, repair/update persistence and subsequent CoAgent8 uninstall (`PATCH-061-N6`). Bind evidence to the installed VSIX and retain `SKILLS-001e`'s loader-path verification.
 
 ## CLIMGMT-001: manage coding CLIs
 
-Owner decisions 2026-10-11. **CoAgent8: Set Up Coding CLIs** becomes **CoAgent8:
-Manage Coding CLIs**, built like Manage Skills: choose a CLI, then an action.
-**CoAgent8: Uninstall CoAgent8** is removed; its parts move to the per-client
-menu and the `vscode:uninstall` hook. Vendor extensions that CoAgent8 installs
-stay machine-scoped (owner decision after the correction below), and their
-removal from the menu needs no confirmation, as in the Extensions view. The owner asked on
-2026-10-11 to implement it at once, on the beta.2 candidate; a change after
-EXEC-001-T12 invalidates the affected acceptance. Local implementation is complete;
-independent and native acceptance remain pending.
+**CoAgent8: Manage Coding CLIs** (`coagent8.manageClis`) replaces `coagent8.setup` and `coagent8.uninstall` (`CLIMGMT-001a` through `CLIMGMT-001d` implemented in `0.6.0`; [evidence](HANDOFF.md#climgmt-001-manage-coding-clis)). Vendor extensions installed by CoAgent8 use `donotSync: true` (machine-scoped, avoiding VS Code's sync prompt), and extension uninstall uses `extension.open` plus the `vscode:uninstall` hook.
 
-Evidence, VS Code 1.141.0: `workbench.extensions.installExtension` maps
-`donotSync: true` to `isMachineScoped: true`; machine-scoped extensions join
-`settingsSync.ignoredExtensions` in the ignored set unless a `-<id>` entry
-("Sync This Extension") overrides it. Correction 2026-10-11: without the option
-`installFromGallery` receives no `isMachineScoped` and, with extension sync on,
-VS Code asks "Would you like to install and synchronize '<name>' extension across
-your devices?" (Install / Install (Do not sync)); the Extensions view's own Install
-passes `isMachineScoped: false` and asks nothing. The command offers no way to
-request syncing, so the former code comment was right: `donotSync` avoids the
-question by excluding the extension from Sync. The owner chose `donotSync`:
-no question, no sync.
+Menu structure and rules (`CLIMGMT-001a-d`):
+- Lists all three supported CLIs (`codex`, `claude`, `agy`), showing state, chat registration and the installation in use (`listInstallations`, `configuredExecutable`, `checkExecutable`), plus bulk actions (`Add CoAgent8 to All CLI Chats`, `Update CoAgent8 in All CLI Chats`).
+- Per-CLI menu sections: `Installations` (switch active installation or `Use Automatic Discovery`), `Install` (`Install VS Code Extension`, `Install Standalone CLI`, `Choose Executable`), `Chat` (`Sign In`, `Add / Update CoAgent8 in Its Chat`), `Skills` (`Manage Skills`), and `Remove` (`Remove CoAgent8 from Its Chat`, `Uninstall VS Code Extension`, `Uninstall Standalone CLI` for CoAgent8-owned installs recorded in `installs.json`).
+- A chosen executable is written to `backends.<id>.executable` in `config.json` only after passing compatibility verification. Removing the installation in use switches to another known installation or clears the setting. Foreign installations are never uninstalled.
 
-Menu tree as implemented:
-
-```text
-Manage Coding CLIs                (also from the welcome notice)
-├─ $(icon) Codex CLI / Claude Code CLI / Antigravity CLI   state, chat; installation in use
-├─ Add CoAgent8 to All CLI Chats                   (when a compatible CLI has none)
-├─ Update CoAgent8 in All CLI Chats                (when one is outdated; the update
-│                                                   notice runs it directly)
-└─ <CLI> menu   (title: state; Back returns to the list; reopens after each action;
-   │             each line: codicon, label, short description; empty sections hidden)
-   ├─ Installations: in use marked | others selectable | missing selection |
-   │  Use Automatic Discovery (missing file or several installations)
-   ├─ Install: Install VS Code Extension | Install Standalone CLI (each while that
-   │  kind is missing; agy standalone hidden with the Google extension) |
-   │  Choose Executable (checked before config.json changes)
-   ├─ Chat: Sign In | Add / Update CoAgent8 in Its Chat
-   ├─ Skills: Manage Skills
-   └─ Remove: Remove CoAgent8 from Its Chat | Uninstall VS Code Extension |
-      Uninstall Standalone CLI (only what installs.json records as installed by CoAgent8)
-```
-
-Owner feedback 2026-10-11 on the first build: too much text compared with Manage
-Skills. A flat version without sections then looked too poor; the owner preferred
-the sectioned one. The menus now follow the editor's own pickers: section
-separators, a codicon per line, short descriptions and no detail lines except
-the installation in use under each CLI in the list. Owner feedback: Manage
-Skills had no Back; its three steps (CLI, action, packages) now have Back and a
-step count, offer only actions with packages to change and list only those
-packages. Checked against the VS Code UX guidelines (quick picks: title for
-multi-step flows with step count, Back from `QuickInputButtons`, `selectedItems`
-instead of `picked` for `createQuickPick`; command palette: `category` instead of a
-prefix in `title`). `workbench.extensions.installExtension` documents no sync
-option; `donotSync` is read by the installed VS Code (1.141.0) and verified
-there.
-
-Rules: the list always shows the three supported CLIs, installed or not. A
-chosen executable is written to `backends.<id>.executable` in `config.json`,
-never to VS Code settings, because CLI chats start the runtime without them;
-it is written only after the compatibility check accepts the file. The
-installation list always covers the known locations (PATH, the official
-installers' folders in the user profile, vendor extension copies, the configured
-file) without starting them, so no separate Find action exists; it never scans
-the whole disk. A second installation of Codex or Claude Code can be installed
-beside the one in use; agy's extension and installer share one binary. Removing
-the installation in use switches the configured executable to another
-installation or clears it, so no configured path points at a missing file.
-Installations CoAgent8 did not install are never removed; a selection can only be
-cleared.
-
-- [x] **CLIMGMT-001a - sync vendor extensions.** Investigated and reverted:
-  without `donotSync` VS Code asks about Sync on every installation; the owner
-  kept `donotSync`, and the extension README says how to include an extension
-  in Sync. Check: VS Code scope from rule 04.
-- [x] **CLIMGMT-001b - installation inventory.** `src/integrations/setup.ts`:
-  `listInstallations`, `configuredExecutable` and `checkExecutable` replace
-  `alternativeSource`. Versions are shown for the CLI in use only: listing
-  starts no installation. Check: R.
-- [x] **CLIMGMT-001c - per-client menu.** `coagent8.manageClis` replaces
-  `coagent8.setup`; the onboarding and update notices point at it; the setup
-  picker tests are rewritten by action and state. Check: R, SETUP, VS
-  Code/package scope from rule 04.
-- [x] **CLIMGMT-001d - retire Uninstall CoAgent8.** `coagent8.uninstall` is
-  removed; vendor extension and standalone CLI removal live in the menu with
-  configured-path correction; the hook keeps removing registrations and skills.
-  Evidence for 001a-d: [implementation and local checks](HANDOFF.md#climgmt-001-manage-coding-clis).
-- [ ] **CLIMGMT-001e - native acceptance.** Depends: 001a-d. Installed VSIX on
-  Windows: both Codex installations and a switch, Choose Executable with an
-  accepted and a refused file, installer folders outside the window's PATH,
-  removal of the installation in use, no Sync question when installing a vendor
-  extension, Extensions-view uninstall with hook cleanup.
+- [ ] **CLIMGMT-001e - native acceptance.** Verify in the installed VSIX on Windows (`PATCH-061-N1`/`N6`): both Codex installations and switching, `Choose Executable` with accepted and refused files, installer folders outside the window's `PATH`, removal of the installation in use, no Sync prompt when installing a vendor extension, and Extensions-view uninstall with hook cleanup.
 
 ## PLUGIN-001: native plugin in every supported client
 
-Owner decision 2026-10-11: each supported client (Codex, Claude Code,
-Antigravity) can load CoAgent8 as a native plugin, managed by the client's
-own plugin commands, and the npm package remains an independent installer that
-needs no plugin system. This replaces the SKILLS-001 clause "no Codex plugin,
-marketplace or manual-copy installer"; a manual-copy installer stays out of
-scope. Release placement is an owner decision; the recommendation is beta.3
-(0.7.0), because every manifest, setup and native check here changes what
-EXEC-001-T12 accepts for 0.6.0.
+Each supported client (Codex, Claude Code, Antigravity) will be able to load CoAgent8 as a native plugin managed by the client's own plugin commands, while the npm package and VS Code extension remain independent installers. Target stage: `0.7.0` (`beta.3`).
 
-Installation paths after this work:
+Installation paths:
 
-| Path | Who owns the registration | Skills | Update and removal |
+| Path | Registration owner | Skills | Update and removal |
 | --- | --- | --- | --- |
-| Native plugin (per client) | The client's plugin manager | Bundled in the plugin | The client's plugin update, disable and uninstall |
-| npm: `npm install -g coagent8@<version>`, then `coagent8 setup` | CoAgent8 setup state | Copied by setup (SKILLS-001/002) | `coagent8 repair`; `coagent8 cleanup` before `npm uninstall -g` |
-| Manual MCP entry (any stdio host) | The user | None | The user |
-| VS Code extension | The extension | Manage Skills | Manage Coding CLIs; extension uninstall |
+| Native plugin (per client) | Client plugin manager | Bundled in the plugin | Client plugin update, disable and uninstall |
+| npm (`npm install -g coagent8@<version>`, `coagent8 setup`) | CoAgent8 setup state | Copied by setup (`SKILLS-001/002`) | `coagent8 repair`; `coagent8 cleanup` before `npm uninstall -g` |
+| Manual MCP entry (any stdio host) | User | None | User |
+| VS Code extension | Extension | Manage Skills | Manage Coding CLIs; extension uninstall |
 
 Principles:
 
-- **One payload.** The npm tarball is the plugin payload for every client. The
-  bundle inlines its dependencies (`scripts/build.cjs` fails on an external
-  import), and `skills/` and `assets/` already ship. `dist/` stays out of Git, so
-  a plugin source that clones the repository has no runtime; marketplace entries
-  reference the npm package at an exact version instead (PACKAGE-001).
-- **One owner per client.** A client uses either the plugin or a setup/VS Code
-  registration, never both: two entries start two servers and list every tool
-  and skill twice. Setup already refuses an enabled CoAgent8 plugin in Codex
-  configuration; the same refusal covers Claude Code and agy. `status` and
-  doctor report the plugin, and cleanup never touches plugin directories.
-- **Pinned versions.** Marketplace entries pin the exact version of the release
-  that published them; the release PR raises them together with `package.json`
-  (REPO-003: one number for npm, VSIX, tag and plugin).
-- **Evidence before claims.** Manifests may ship before acceptance, but the
-  README offers a client's plugin installation only after PLUGIN-001f passes in
-  that client.
+- **One payload.** The npm tarball is the plugin payload for every client, with bundled runtime dependencies, `skills/` and `assets/`. Marketplace entries reference the npm package at an exact version (`PACKAGE-001`).
+- **One owner per client.** A client uses either the native plugin or a setup/VS Code registration, never both. Setup refuses duplicate registration when an enabled CoAgent8 plugin is detected, `status` and `doctor` report the plugin, and cleanup never removes plugin directories.
+- **Pinned versions.** Marketplace entries pin the exact release version alongside `package.json` (`REPO-003`).
+- **Evidence before claims.** README documents a client's plugin installation only after `PLUGIN-001f` passes in that client.
 
-Client plugin formats reviewed 2026-10-11 (documentation only; native
-behavior is unverified until PLUGIN-001a):
+Client plugin formats (native behavior unverified until `PLUGIN-001a`):
 
 | Client | Manifest | MCP declaration | Root variable | Distribution and install | Open questions |
 | --- | --- | --- | --- | --- | --- |
-| Claude Code | `.claude-plugin/plugin.json`; `skills/` at the plugin root | `.mcp.json` or inline `mcpServers` | `${CLAUDE_PLUGIN_ROOT}` in stdio `command`, `args`, `env` | `.claude-plugin/marketplace.json` in the repository; entry `source: { "source": "npm", "package": "coagent8", "version": "<exact>" }` (fetched without install scripts or dependency install). `/plugin marketplace add oktawianwybieralski/coagent8`, `/plugin install coagent8@coagent8` | Tool names are namespaced under the plugin; check the skills and the calling-client detection with those names. `claude plugin validate --strict` |
-| Codex | Root `plugin.json` (Agent Plugins layout, `extensions.com.openai`), `.codex-plugin/plugin.json` as fallback | Root `mcp.json` | `PLUGIN_ROOT` is documented for hooks only; the current `mcp.json` relies on `${PLUGIN_ROOT}` in `args` | `.agents/plugins/marketplace.json`; `npm` source supported. `codex plugin marketplace add oktawianwybieralski/coagent8` | Documentation shows only remote MCP servers and installation from the ChatGPT desktop app: verify stdio servers, root expansion and installation in Codex CLI 0.160+ |
-| Antigravity | Root `plugin.json` with `name` (required by the CLI) | Root `mcp_config.json` | None documented | `agy plugin install <GitHub URL or local path>`; stages under `~/.gemini/antigravity-cli/plugins/<name>/` | No root variable: a GitHub install has no runtime and a local path needs a resolvable entry point. Verify against the installed npm package directory; the shared root `plugin.json` must also satisfy Codex |
+| Claude Code | `.claude-plugin/plugin.json`; `skills/` at plugin root | `.mcp.json` or inline `mcpServers` | `${CLAUDE_PLUGIN_ROOT}` in stdio `command`, `args`, `env` | `.claude-plugin/marketplace.json` (`source: { "source": "npm", "package": "coagent8", "version": "<exact>" }`); `/plugin marketplace add oktawianwybieralski/coagent8`, `/plugin install coagent8@coagent8` | Verify namespaced tool names with skills and calling-client detection; `claude plugin validate --strict` |
+| Codex | Root `plugin.json` (`extensions.com.openai`), `.codex-plugin/plugin.json` fallback | Root `mcp.json` | `PLUGIN_ROOT` documented for hooks; verify `${PLUGIN_ROOT}` in `args` | `.agents/plugins/marketplace.json`; `codex plugin marketplace add oktawianwybieralski/coagent8` | Verify stdio servers, root expansion and installation in Codex CLI 0.160+ |
+| Antigravity | Root `plugin.json` with `name` | Root `mcp_config.json` | None documented | `agy plugin install <GitHub URL or local path>`; stages under `~/.gemini/antigravity-cli/plugins/<name>/` | Verify resolvable entry point against installed npm package directory while keeping root `plugin.json` compatible with Codex |
 
-If a client offers no way to locate the bundle inside its plugin, the fallback
-is `npx -y coagent8@<exact>` as the server command. It costs a registry check on
-the first launch, which slows the first MCP start, and needs a verified Windows
-form, so it is chosen per client from PLUGIN-001a evidence, not by default.
+If a client cannot resolve the bundle path inside its plugin directory, `npx -y coagent8@<exact>` is the per-client fallback only if required by `PLUGIN-001a` evidence.
 
-VS Code (source of 1.141.0 read 2026-10-11): the Agent Customizations editor
-groups MCP servers by owner. "User" and "Workspace" hold `mcp.json` entries and
-gallery installs (the same list as "MCP Servers - Installed" in the Extensions
-view); "Extensions" holds servers from `mcpServerDefinitionProviders`, labeled
-with the providing extension; "Plugins" holds servers of agent plugins. A
-provider server therefore never appears under "User" or in the Extensions view
-list, by VS Code design, so the extension writes a profile `mcp.json` entry
-(PLUGIN-001g).
-
-- [ ] **PLUGIN-001a - loader evidence.** Start: a local plugin directory
-  unpacked from `npm pack` output, no publication. Per client and version in an
-  isolated profile: the manifest validates, the stdio server starts from the
-  plugin's own bundle (record which root variable expands, or that none does),
-  the six tools and six skills are listed, an explicit skill use reaches
-  CoAgent8, disable and uninstall leave no server. Windows path with spaces
-  included. Record PASS/FAIL/NOT_RUN in HANDOFF. Check: native, per client.
-- [ ] **PLUGIN-001b - ownership contract.** Depends: 001a. Update
-  [ARCHITECTURE optional integrations](ARCHITECTURE.md#optional-integrations):
-  how setup, status, doctor, cleanup and the VS Code extension detect an
-  installed or enabled plugin per client, the refusal message, and what each
-  owner may remove. Check: P.
-- [ ] **PLUGIN-001c - manifests in the package.** Depends: 001a. Start:
-  `plugin.json`, `mcp.json`, new `.claude-plugin/plugin.json` and
-  `mcp_config.json` as 001a requires, `package.json` `files`,
-  `scripts/package-artifacts.cjs` (`verifyPlugin` for all three layouts),
-  `tests/consumer/smoke.cjs`. Correct the stale descriptions ("Gemini",
-  "orchestration bridge"). Manifest versions must equal `package.json`.
-  Check: R, package scope from rule 04, each client's validator.
-- [ ] **PLUGIN-001d - marketplaces.** Depends: 001c. `.claude-plugin/marketplace.json`
-  and `.agents/plugins/marketplace.json` on `develop`, pinned to the published
-  version; a test fails when their version differs from `package.json`. Rule 02
-  section 5 adds them to the release PR. Check: R, `claude plugin validate`.
-- [ ] **PLUGIN-001e - setup coexistence.** Depends: 001b. `src/integrations/setup.ts`,
-  `setup-storage.ts`, `cleanup.ts`, `skills.ts`, extension CLI menu: detect the
-  plugin per client, refuse duplicate registration and skills, report it in
-  `status`. Check: R, SETUP, VS Code scope from rule 04.
-- [ ] **PLUGIN-001f - native acceptance and documentation.** Depends: 001c-e
-  and a published package. Per client: install from the marketplace or
-  documented source, use, update to the next version, disable, uninstall;
-  setup refuses while the plugin is enabled. Then the README gains one
-  installation section per client and per path, and the release notes name the
-  clients whose plugin was accepted. Check: native, P.
-- [ ] **PLUGIN-001g - VS Code installed-server entry.** Owner decision
-  2026-10-11: CoAgent8 appears with the other installed MCP servers. The
-  extension keeps a `CoAgent8` entry in the profile `mcp.json` (contract in
-  [ARCHITECTURE optional integrations](ARCHITECTURE.md#optional-integrations));
-  the provider remains the fallback. Implemented with module and extension
-  tests; remaining: native evidence in the current stable VS Code (listed under
-  "User" and in "MCP Servers - Installed", starts, toggles, shows output, a
-  setting change restarts it with the new environment, removal in VS Code is
-  respected, update and uninstall leave no broken entry). MCP Registry
-  publication stays a later owner decision. Check: native, VS Code scope from
-  rule 04.
+- [ ] **PLUGIN-001a - loader evidence.** Using a local plugin directory unpacked from `npm pack` in an isolated profile per client: verify manifest validation, stdio server startup from the plugin bundle (recording root-variable expansion), six tools and six skills listed, explicit skill invocation reaching CoAgent8, disable/uninstall cleanup, and Windows paths with spaces. Check: native, per client.
+- [ ] **PLUGIN-001b - ownership contract.** Depends: `001a`. Document in [ARCHITECTURE optional integrations](ARCHITECTURE.md#optional-integrations) how setup, status, doctor, cleanup and the VS Code extension detect an installed or enabled plugin per client, the refusal message, and removal boundaries. Check: P.
+- [ ] **PLUGIN-001c - manifests in the package.** Depends: `001a`. Update `plugin.json`, `mcp.json`, `.claude-plugin/plugin.json` and `mcp_config.json` as required by `001a`, `package.json` `files`, `scripts/package-artifacts.cjs` (`verifyPlugin`), and `tests/consumer/smoke.cjs`. Synchronize descriptions and exact versions with `package.json`. Check: R, package scope from rule 04, client validators.
+- [ ] **PLUGIN-001d - marketplaces.** Depends: `001c`. Add `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json` pinned to the published version, with a test enforcing version agreement with `package.json` and release-PR updates under rule 02 section 5. Check: R, `claude plugin validate`.
+- [ ] **PLUGIN-001e - setup coexistence.** Depends: `001b`. Update `src/integrations/setup.ts`, `setup-storage.ts`, `cleanup.ts`, `skills.ts` and the extension CLI menu to detect the plugin per client, refuse duplicate registration and skills, and report it in `status`. Check: R, SETUP, VS Code scope from rule 04.
+- [ ] **PLUGIN-001f - native acceptance and documentation.** Depends: `001c-e` and a published package. Verify install, use, update, disable, uninstall and setup refusal while enabled for each client, then document accepted client plugin paths in README and release notes. Check: native, P.
+- [ ] **PLUGIN-001g - VS Code installed-server entry.** The extension maintains a `CoAgent8` entry in the profile `mcp.json` ([ARCHITECTURE optional integrations](ARCHITECTURE.md#optional-integrations)) so CoAgent8 appears under "User" and "MCP Servers - Installed" in VS Code, with the provider as fallback (implemented locally; [evidence](HANDOFF.md#plugin-001g-vs-code-installed-server-entry)). Remaining: native verification in stable VS Code (`PATCH-061-N1`: listed, starts, toggles, shows output, restarts on setting change, respects user removal, clean update/uninstall). Check: native, VS Code scope from rule 04.
 
 ## Agent usability acceptance
 
-Checked items are local implementations; unchecked cards are remaining work
-or acceptance. Existing model/price-limit arguments remain available. Execute
-one labelled card at a time under the same task-card instructions and test
-groups as EXEC-001. A parent requirement is satisfied only after its dependent
-cards pass. Extend existing owners; do not copy selection/policy per client.
+Execute one labelled card at a time using the verification shorthand and test groups above. A parent requirement closes only after its dependent cards pass. Extend existing owners rather than duplicating selection or governance policy per client.
 
 ### AX-001: prices before execution
 
-- [x] Expose a bounded MCP selection view: backend, concrete model, accepted
-  efforts, default source, output USD per million tokens, price source/date,
-  exact/approximate/unknown match and approval requirement/reason. Keep concise
-  text and structured data consistent; reuse it for the CLI models command.
-  Doctor selection rows and summary (3,900 bytes), from listModelCandidates.
-- [x] `coagent8 models [--backend] [--json]` prints the same view; the VS Code
-  command Manage Model Approvals reads its JSON and writes the user's rules to
-  config.json (owner decision 2026-10-11). Native check in the owner's VS Code
-  is pending: open the command, set allow/ask/deny and price rules, confirm the
-  file and a call from Antigravity follow them.
-- [ ] **AX-001a - define usage evidence.** Start: `src/contracts/execution.ts`,
-  `src/contracts/conversation.ts`, `src/models/prices.ts`. Specify measured input,
-  cached input, output and reasoning tokens, source/availability and price-tier
-  assumptions. Distinguish unit price, estimate, list-price equivalent, quota
-  and actual billing. Done: unknown is never zero and absent provider fields
-  have example payloads. Check: P; accept the contract before adapter changes.
-- [x] Keep a model registry from the CLIs themselves: Codex model/list, agy models,
-  Claude stream-json initialize (aliases with concrete models); store prices only
-  for offered models, refreshed daily; route a named model by catalog (2026-10-08).
-- [ ] **AX-001b - parse Codex usage.** Start: `src/backends/codex/collector.ts`,
-  `app-server.ts` and their tests. Implement AX-001a using recorded provider
-  events, fetching current protocol docs first. Done: missing/repeated/partial
-  events neither fabricate nor double-count usage. Check: R, CODEX.
-- [ ] **AX-001c - parse Claude usage.** Start: `src/backends/claude/collector.ts`,
-  `adapter.ts` and Claude recordings. Same contract; verify streamed versus
-  terminal counters and cached-token semantics. Done: fixture totals retain
-  source and unknown fields. Check: R, CLAUDE.
-- [ ] **AX-001d - parse agy usage.** Start: `src/backends/agy/collector.ts`,
-  `adapter.ts` and agy fixtures. Verify current event semantics before mapping
-  fields. Done: unsupported fields remain unknown and repeated events do not
-  inflate counts. Check: R, AGY.
-- [ ] **AX-001e - define subscription-window observations.** Start:
-  `src/backends/availability.ts`, Codex account/rateLimits and Claude/agy quota
-  readers. Specify before/after evidence, freshness, read cost and effects of
-  concurrent calls. Done: a window delta is not attributed as exact turn cost;
-  any added native reads follow the bounded-read contract and explicit policy.
-  Check: P first, then one provider implementation card per accepted protocol;
-  do not add three live quota reads inside execute as a shortcut.
-- [ ] **AX-001f - persist usage compatibly.** After AX-001b-d, start:
-  `src/sessions/history/types.ts`, `writer.ts`, `reader.ts`.
-  Add optional history fields and round-trip tests. Done: old history still
-  loads and new records retain measured values/source without changing public
-  answer bytes. Check: R, SESSION/LIFE.
-- [ ] **AX-001g - present usage and list-price equivalents.** After AX-001f,
-  start: `src/models/prices.ts`, `src/mcp/result.ts`. Calculate only from usable
-  usage/price evidence and label billing versus equivalent explicitly. Done:
-  cached/reasoning tokens are not counted twice, unknowns stay visible and the
-  footer remains bounded. Check: R, MCP/CACHE with arithmetic fixtures.
-- [ ] **AX-001h - specify the estimate policy.** After AX-001g, define grouping
-  by backend/model/tool, minimum sample policy, retention window and displayed
-  assumptions. Done: accepted examples state when estimates remain unknown
-  and how mixed/partial observations are excluded. Check: P only.
-- [ ] **AX-001i - calculate estimates from history.** Implement AX-001h in one
-  owner consuming measured history; reuse it in presentation. Done: no history
-  means unknown and controlled samples produce the specified median. Check: R,
-  focused history/estimate tests and MCP.
-- [x] Test missing/stale lists, aliases, approximate matches, tiers, truncation
-  and invalid price fields. Expose freshness/matching before selection.
+Implemented in `0.6.0`: `doctor` (3,900-byte summary/selection view from `listModelCandidates`) and `coagent8 models [--backend] [--json]` expose per-model output prices, accepted efforts, default sources, match types/freshness and approval requirements from cached CLI catalogs and daily OpenRouter price refreshes; VS Code **Manage Model Approvals** edits `config.json` rules. Native verification of Manage Model Approvals in VS Code remains open under `PATCH-061-N1`.
+
+- [ ] **AX-001a - define usage evidence.** Start: `src/contracts/execution.ts`, `src/contracts/conversation.ts`, `src/models/prices.ts`. Specify measured input, cached input, output and reasoning tokens, source/availability and price-tier assumptions. Distinguish unit price, estimate, list-price equivalent, quota and actual billing. Acceptance: unknown is never reported as zero and absent provider fields have example payloads. Check: P; settle contract before adapter changes.
+- [ ] **AX-001b - parse Codex usage.** Start: `src/backends/codex/collector.ts`, `app-server.ts` and their tests. Implement `AX-001a` using recorded provider events after checking current protocol docs. Acceptance: missing, repeated or partial events neither fabricate nor double-count usage. Check: R, CODEX.
+- [ ] **AX-001c - parse Claude usage.** Start: `src/backends/claude/collector.ts`, `adapter.ts` and Claude recordings. Implement `AX-001a`, verifying streamed versus terminal counters and cached-token semantics. Acceptance: fixture totals retain source and unknown fields. Check: R, CLAUDE.
+- [ ] **AX-001d - parse agy usage.** Start: `src/backends/agy/collector.ts`, `adapter.ts` and agy fixtures. Verify event semantics before mapping fields. Acceptance: unsupported fields remain unknown and repeated events do not inflate counts. Check: R, AGY.
+- [ ] **AX-001e - define subscription-window observations.** Start: `src/backends/availability.ts`, Codex `account/rateLimits` and Claude/agy quota readers. Specify before/after evidence, freshness, read cost and concurrent-call effects. Acceptance: window deltas are not attributed as exact turn cost, and any native reads follow the bounded-read contract without adding live quota reads inside `execute`. Check: P first, then one provider card per accepted protocol.
+- [ ] **AX-001f - persist usage compatibly.** After `AX-001b-d`, start: `src/sessions/history/types.ts`, `writer.ts`, `reader.ts`. Add optional history fields and round-trip tests. Acceptance: older histories load cleanly and new records retain measured values/source without changing public answer bytes. Check: R, SESSION/LIFE.
+- [ ] **AX-001g - present usage and list-price equivalents.** After `AX-001f`, start: `src/models/prices.ts`, `src/mcp/result.ts`. Calculate only from usable usage/price evidence and label billing versus list-price equivalent explicitly. Acceptance: cached/reasoning tokens are not double-counted, unknowns stay visible and the footer remains bounded. Check: R, MCP/CACHE with arithmetic fixtures.
+- [ ] **AX-001h - specify the estimate policy.** After `AX-001g`, define grouping by backend/model/tool, minimum sample count, retention window and displayed assumptions. Acceptance: examples state when estimates remain unknown and how mixed/partial observations are excluded. Check: P.
+- [ ] **AX-001i - calculate estimates from history.** Implement `AX-001h` in one owner consuming measured history and reuse it in presentation. Acceptance: empty history yields unknown and controlled samples produce the specified median. Check: R, focused history/estimate tests and MCP.
 
 ### AX-002: enforce the selection constraint
 
-- [x] Define currency, token unit, direction and strict/inclusive boundary:
-  below USD 5 per million output tokens excludes 5. Recheck the concrete model
-  and applicable price before execution. Unknown/stale/approximate data cannot
-  silently satisfy a constraint. `output_price_below`, `PRICE_LIMIT`.
-- [x] Keep selection separate from consent: neverAsk cannot override a requested
-  ceiling. Auto chooses only qualifying policy-allowed models. An explicit
-  unavailable/over-limit model returns a reason without substitution. Auto takes
-  the qualifying default, else the highest-priced qualifying model, which still
-  asks where governance says so (owner decision of 2026-10-08).
-- [ ] **AX-002a - accept the existing selection flow.** Use AX-006's per-client
-  cards for minimal unconstrained calls and constrained calls with at most one
-  discovery plus one execution, without web/config reads. Keep POLICY fixtures
-  for boundaries/no-match/resume/config changes. Concurrent root budgets belong
-  to COAGENT-003/006 and need their own evidence; do not mark them done here.
-- [ ] **AX-002b - choose the plain-consult default policy.** Compare a configured
-  default ceiling with the present unconstrained default using existing config/
-  selection/governance owners. State precedence, unavailable-price behavior and
-  migration for current users; record the owner decision. Check: P only.
-- [ ] **AX-002c - implement the accepted default policy.** After AX-002b,
-  update config validation and selection plus schema/README together. Done:
-  explicit requests and consent remain binding, the accepted default is tested
-  at the exact boundary, and no model is silently substituted. Check: R,
-  CONFIG/SELECT/POLICY/MCP. Do not implement an unchosen policy.
+Implemented in `0.6.0`: `output_price_below` enforces a strict USD per million output token ceiling (`PRICE_LIMIT`), rechecked before execution and kept separate from `neverAsk` governance. `auto` selects the qualifying default model or the highest-priced qualifying policy-allowed model (still prompting for consent when governance requires it); explicit over-limit or unpriced models fail without silent substitution.
+
+- [ ] **AX-002a - accept the existing selection flow.** Use `AX-006`'s per-client cards for minimal unconstrained calls and constrained calls with at most one discovery plus one execution, without web or private config reads. Retain POLICY fixtures for boundary, no-match, resume and config-change cases.
+- [ ] **AX-002b - choose the plain-consult default policy.** Compare a configured default price ceiling with the current unconstrained default using existing config, selection and governance owners. Document precedence, unavailable-price behavior and migration for existing users. Check: P.
+- [ ] **AX-002c - implement the accepted default policy.** After `AX-002b`, update config validation, selection, schema and README together. Acceptance: explicit requests and consent remain binding, exact boundary behavior is tested, and no model is silently substituted. Check: R, CONFIG/SELECT/POLICY/MCP.
 
 ### AX-003: consent across clients
 
-- [ ] **AX-003a - classify current elicitation outcomes.** Start:
-  `src/mcp/server.ts`, `src/execution/consent.ts`, `src/models/governance.ts`.
-  Separate unsupported, advertised, declined and unanswered outcomes; claim
-  displayed/verified only from native observation. Done: absent capability,
-  cancelled form and false/missing checkbox fixtures retain the concrete model
-  and actionable policy reason. Check: R, MCP/POLICY. Refusal wording is already fixed.
-- [ ] **AX-003b - design form-less consent.** Produce request/model/scope binding,
-  expiry/replay examples and a human-controlled interaction compatible with
-  CLI-FIRST-001. Done: review of the proposal identifies who can approve and
-  how the server verifies that fact. Check: P. Agent flags, guessed config edits
-  and models.allow insertion cannot act as approval; retain current refusal meanwhile.
-- [ ] **AX-003c - split the accepted protocol into code cards.** After AX-003b,
-  write separate cards for server proof validation, client interaction and replay/
-  expiry failures, naming the accepted protocol files/tests. Implement one card
-  at a time after this planning card; reuse T10's cancellation and evidence
-  binding. Done: each new card names a verifiable failure outcome, and native
-  form-less acceptance is assigned under AX-006. Check: P. Explicit-model
-  preservation remains mandatory; auto route-skipping needs an accepted preference.
+- [ ] **AX-003a - classify current elicitation outcomes.** Start: `src/mcp/server.ts`, `src/execution/consent.ts`, `src/models/governance.ts`. Separate unsupported, advertised, declined and unanswered outcomes, claiming displayed/verified consent only from native observation. Acceptance: absent capability, cancelled form and false/missing checkbox fixtures retain the concrete model and actionable policy reason. Check: R, MCP/POLICY.
+- [ ] **AX-003b - design form-less consent.** Specify request/model/scope binding, expiry/replay protection and a human-controlled approval flow compatible with `CLI-FIRST-001`. Acceptance: proposal identifies who can approve and how the server verifies approval; agent flags, guessed config edits and `models.allow` insertions cannot grant consent. Check: P.
+- [ ] **AX-003c - split the accepted protocol into code cards.** After `AX-003b`, write separate implementation cards for server proof validation, client interaction and replay/expiry failures, reusing `EXEC-001-T10`'s cancellation and evidence binding. Check: P.
 
 ### AX-004: diagnostics and effective configuration
 
-The shared configuration/timing/cancellation work is broken down in
-[EXEC-001](#exec-001-measured-preparation-and-complete-call-lifecycle),
-especially T02/T03/T08/T11/T12. The configuration and native acceptance items
-below retain their own acceptance criteria.
+Effective configuration provenance and bounded diagnostics are implemented in `EXEC-001-T02/T03/T08/T11`. Remaining acceptance:
 
-- [ ] **AX-004a - accept config provenance in fixtures.** Implementation belongs
-  to T03a-d. Extend CONFIG/DOCTOR and setup fixtures for old registration paths,
-  paths with spaces, explicit editor/backend overrides and malformed files.
-  Done: effective source/location is correct and redacted; no config is silently
-  rewritten to make diagnostics green. Check: R plus affected setup tests.
-- [ ] **AX-004b - accept read effects and timings.** After T08/T11b, use DOCTOR/
-  CACHE to compare cold/warm model and health views. Done: measured native reads,
-  optional cache writes and observed-default writes match documented behavior;
-  missing caches and cancellation remain controlled. Check: R and phase evidence.
-- [ ] **AX-004c - accept one live config change.** In an isolated client profile,
-  record registration/config path, change an owned setting, perform any required
-  restart and inspect the resulting effective value. Repeat as separate cases
-  for each claimed client. Done: real host evidence supports refresh/restart
-  guidance and custom user state is preserved. Record NOT_RUN if host unavailable.
+- [ ] **AX-004a - accept config provenance in fixtures.** Extend CONFIG/DOCTOR and setup fixtures for legacy registration paths, paths with spaces, explicit editor/backend overrides and malformed files. Acceptance: effective source/location is accurate and redacted, and diagnostics never silently rewrite config. Check: R plus affected setup tests.
+- [ ] **AX-004b - accept read effects and timings.** Compare cold and warm model and health views using DOCTOR/CACHE fixtures. Acceptance: measured native reads, optional cache writes and observed-default writes match documented contracts under missing caches and cancellation. Check: R and phase timing evidence.
+- [ ] **AX-004c - accept one live config change.** In an isolated client profile per supported client, record registration/config path, change an owned setting, perform any required restart and verify the effective value while preserving user state (`PATCH-061-N1`).
 
 ### AX-005: readiness with evidence
 
-- [ ] **AX-005a - define the readiness decision table.** Start:
-  `src/diagnostics/doctor.ts`, `src/backends/types.ts`, `availability.ts`.
-  Specify unknown/failed/verified separately for installation, login, execution,
-  quota freshness and profile evidence. Done: quota disabled, expired login,
-  rate limit and sandbox rejection have distinct outcomes. Check: P first.
-- [ ] **AX-005b - implement and render that evidence.** After AX-005a, keep the
-  decision logic in one diagnostic owner and update report/summary together.
-  Done: a successful turn is timestamped for its actual model/profile; cold agy
-  followed by success does not imply universal isolation. Check: R, DOCTOR/CACHE/
-  MCP with each decision-table row, preserving agy's inherited-tool limitation.
+- [ ] **AX-005a - define the readiness decision table.** Start: `src/diagnostics/doctor.ts`, `src/backends/types.ts`, `availability.ts`. Specify unknown, failed and verified states separately for installation, login, execution, quota freshness and sandbox profile evidence. Acceptance: quota disabled, expired login, rate limit and sandbox rejection produce distinct outcomes. Check: P.
+- [ ] **AX-005b - implement and render that evidence.** After `AX-005a`, implement the decision table in one diagnostic owner and update report and summary together. Acceptance: a successful turn is timestamped for its actual model/profile without implying universal isolation on cold agy runs. Check: R, DOCTOR/CACHE/MCP.
 
 ### AX-006: first-use contract
 
-- [ ] **AX-006a - prepare the acceptance script.** Start: `src/mcp/schema.ts`,
-  `src/mcp/constants.ts`, `tests/mcp/surface.test.js`. Write identical prompts
-  for plain consult, price ceiling, exact model/effort, continuation and a
-  rejected request. Define recorded fields and expected outcomes in HANDOFF.
-  Done: schemas alone contain needed instructions and fixtures pass. Check: R, MCP/POLICY.
-- [ ] **AX-006b - run fresh Codex acceptance.** Execute AX-006a in an isolated
-  Codex client. Record calls, actual model/effort, price source, retries, ToolSearch,
-  phase/total time and versions. Done: first-attempt selection uses no source or
-  private config reads; consent rendering is observed, not assumed.
-- [ ] **AX-006c - run fresh Claude acceptance.** Repeat AX-006a with the same
-  task/ceiling in an isolated Claude client and record the same fields. Do not
-  inherit Codex's result or change config to hide a failed first attempt.
-- [ ] **AX-006d - run fresh agy acceptance.** Repeat AX-006a in an isolated agy
-  client; additionally record host timeout and inline-result behavior. Keep
-  inherited-tool limitations explicit. Native unavailability is NOT_RUN.
-
-Native cards do not authorize paid model escalation, live user-config mutation
-or installation changes. Use existing task authority and server-mediated consent.
+- [ ] **AX-006a - prepare the acceptance script.** Start: `src/mcp/schema.ts`, `src/mcp/constants.ts`, `tests/mcp/surface.test.js`. Define identical prompts and expected recorded fields in `HANDOFF.md` for plain consult, price ceiling, exact model/effort, continuation and a rejected request. Acceptance: tool schemas alone provide sufficient guidance and fixtures pass. Check: R, MCP/POLICY.
+- [ ] **AX-006b - run fresh Codex acceptance.** Execute `AX-006a` in an isolated Codex client, recording calls, model/effort, price source, retries, phase/total time and consent rendering without source or private config reads.
+- [ ] **AX-006c - run fresh Claude acceptance.** Execute `AX-006a` in an isolated Claude client and record the same fields.
+- [ ] **AX-006d - run fresh agy acceptance.** Execute `AX-006a` in an isolated agy client, additionally recording host timeout and inline-result behavior.
 
 ### AX-007: bounded review and continuation cost
 
-A weaker client can loop on `review` and drop the session between rounds (see
-[Agent usability gaps](#agent-usability-gaps)). Owner decisions 2026-10-09: keep
-the reviewer's `VERDICT:` in the body (review judgement) and the server
-`Verdict:` in the footer (gate decision); do not change the gate contract, add
-no footer lines and add no implicit auto-continuation. AX-007a through c land
-before EXEC-001-T12.
+Implemented in `0.6.0` (`AX-007a` through `AX-007c`; [evidence](HANDOFF.md#ax-007a-state-when-another-review-cannot-help)):
+- `AX-007a`: read-only reviewer `NOT_RUN` checks do not block `READY`; the footer names unrun checks so the author and CI verify them.
+- `AX-007b`: result footers label `session_handle=<handle> (<state>)` and tool schemas explain continuation vs. fresh turns.
+- `AX-007c`: an unchanged repeat review in the same workspace returns the prior server verdict without starting a new model turn (`FEEDBACK-060f4` retains the handle in the refusal footer).
 
-- [x] **AX-007a - state when another review cannot help.** Start:
-  `src/review/gate.ts:evaluateStateEnvelopeGate`, `src/review/input.ts` (required
-  checks) and the `review` description in `src/mcp/tools/review.tool.ts`. When the
-  reviewer answered READY, reported no P1/P2 finding and the only blocking cause
-  is required checks reported NOT_RUN by a read-only reviewer, the reason says
-  so: reviewer READY, typecheck/tests not observed by the server, read-only
-  review cannot run them, repeating the review will not change the verdict.
-  Other causes keep their current wording. The tool description states the same
-  limit once. Done: the verdict is still BLOCKED; fixtures cover READY with only
-  NOT_RUN, READY with a finding and BLOCKED with NOT_RUN. Check: R, REVIEW/MCP.
-  Superseded (owner decision 2026-10-11): a read-only reviewer's NOT_RUN no
-  longer blocks; READY names the unrun checks, which the author and CI run.
-  Evidence: [AX-007a](HANDOFF.md#ax-007a-state-when-another-review-cannot-help).
-- [x] **AX-007b - label the continuation handle.** Start: footer formatting in
-  `src/mcp/result.ts`, `session_handle` in `src/mcp/schema.ts`, consult/review
-  descriptions and `SERVER_INSTRUCTIONS` in `src/mcp/constants.ts`. The existing
-  footer line shows `session_handle=<handle> (<state>)` instead of the bare
-  handle. Descriptions say that a follow-up on the same topic passes
-  `session_handle` and that a call without it starts a fresh agent that rereads
-  everything. Done: no new footer line; definition-size change is measured
-  (SURFACE-001); legacy parsing of the handle still works. Check: R, MCP/E2E.
-  Evidence: [AX-007b](HANDOFF.md#ax-007b-label-the-continuation-handle).
-- [x] **AX-007c - refuse an unchanged repeat review.** Start: `snapshotId` and
-  scope collection in `src/review/input.ts`, session/history owners in
-  `src/sessions/`. A review request whose collected snapshot, scope and resolved
-  backend/model equal a completed review in the same workspace within session
-  retention starts no model turn and returns a bounded reference to the previous
-  server verdict and its session. A changed snapshot, scope, backend or model
-  proceeds. Done: the second identical request costs no turn; history being
-  disabled or unreadable yields an explicit outcome, never a silent pass.
-  Per-connection call budgets remain COAGENT-003b. Check: R, REVIEW/SESSION/MCP.
-  Evidence: [AX-007c](HANDOFF.md#ax-007c-refuse-an-unchanged-repeat-review).
-- [ ] **AX-007d - warn about an abandoned ready session.** After beta.2 and
-  SESSION-001's mode design. When the same connection and workspace start a new
-  session while a recent one is ready, add one `Warning:` naming that handle.
-  Done: the warning appears only in that case and never continues a session
-  implicitly. Check: R, SESSION/MCP.
+- [ ] **AX-007d - warn about an abandoned ready session.** After `SESSION-001` mode design: when the same connection and workspace start a new session while a recent session is `ready`, emit one `Warning:` naming that handle without continuing it implicitly. Check: R, SESSION/MCP.
 
 ### SKILLS-001: client skills installed with the registration
 
-Owner decisions 2026-10-10: every CoAgent8 function gets a skill so a user can
-name what to use; setup installs a client's skills with its MCP registration,
-and cleanup and the VS Code uninstall remove them. Supported installations were
-the VS Code extension and the npm package only; the owner added native plugins
-for every supported client on 2026-10-11
-([PLUGIN-001](#plugin-001-native-plugin-in-every-supported-client)); a
-manual-copy installer remains out of scope. SKILLS-001a-e land before EXEC-001-T12, which accepts
-them. Skills that delegate writing through CoAgent8 profiles remain COAGENT-005.
-The [claudex-loop reference](https://github.com/chaseai-yt/claudex-loop/tree/8cf5e2c1771c5151d90c12642391d0ba8fa71b0e)
-informed the loop's stages and round limits; no upstream text or code is copied.
+Implemented in `0.6.0` (`SKILLS-001a` through `SKILLS-001d`; [evidence](HANDOFF.md#skills-001-client-skills)): six single-file skills (`consult`, `review`, `doctor`, `session`, `issue`, `loop`) ship in `skills/`, install/update with `coagent8 setup` and the VS Code extension, record per-client digests and origin in `setup.json`, and remove unchanged owned copies during `coagent8 cleanup` and extension uninstall while preserving edited or foreign files.
 
-Loader evidence, 2026-10-10, local default profile, user scope:
+Client discovery directories:
+- **Claude Code:** `~/.claude/skills/<name>/SKILL.md` (`/coagent8-review`)
+- **Codex:** `~/.agents/skills/<name>/SKILL.md` (`$coagent8-review` or `/skills`)
+- **Antigravity:** `~/.gemini/config/skills/<name>/SKILL.md` (`/coagent8-review`)
 
-| Client | Version | Directory | Explicit use | Source |
-| --- | --- | --- | --- | --- |
-| Claude Code | 2.1.295 | `~/.claude/skills/<name>/SKILL.md`, watched live | `/coagent8-review` | [skills docs](https://code.claude.com/docs/en/skills) |
-| Codex | 0.160.0 | `~/.agents/skills/<name>/SKILL.md`, detected automatically; shared with other tools (the owner's profile holds third-party skills there) | `$coagent8-review` or `/skills`; no per-skill slash command | [build skills](https://learn.chatgpt.com/docs/build-skills) |
-| agy | 1.3.2 | `~/.gemini/config/skills/<name>/SKILL.md`: the bundled `agy-customizations` guide names `~/.gemini/config/` the global root, the root of setup's `mcp_config.json` | `/coagent8-review` in the TUI | bundled guide; [Antigravity docs](https://antigravity.google/docs/skills) instead list `~/.gemini/antigravity-cli/skills/` for the CLI |
-
-VS Code chat reads `~/.claude/skills/` and `~/.agents/skills/` too and lists a
-duplicate when both clients are set up ([VS Code docs](https://code.visualstudio.com/docs/agent-customization/agent-skills)).
-npm 7 and later run no uninstall lifecycle script, so `npm uninstall -g coagent8`
-cannot remove anything; the user runs `coagent8 cleanup` first. Setup stays an
-explicit command: no postinstall writes into a user profile.
-
-- [x] **SKILLS-001a - skill catalog.** Six single-file packages under `skills/`:
-  consult, review, doctor, session (with cancel), issue and loop. Frontmatter
-  `name` equals the directory and `description` says when to use it; no
-  scripts and no client-specific argument placeholders; read-only and consent
-  statements match current profiles. Done 2026-10-10; native use is 001e.
-  Check: P.
-- [x] **SKILLS-001b - install with setup.** `src/integrations/skills.ts`,
-  `setup.ts`, `setup-storage.ts`. After a client's registration is installed,
-  updated or preserved, setup writes missing packages, updates the unchanged copy
-  it recorded and removes recorded packages the catalog dropped. A changed,
-  multi-file, linked or foreign `coagent8-*` entry is preserved and unrecorded.
-  An invalid catalog stops setup before any client change. `setup.json` records
-  digests per client and the extension origin, omitted while empty. Done
-  2026-10-10 locally. Check: R, SETUP.
-- [x] **SKILLS-001c - remove with cleanup and uninstall.** `cleanup.ts`,
-  `setup-cli.ts`, `extensions/vscode/src/uninstall.ts`. The preview lists each
-  recorded package in the same token; apply removes unchanged packages and
-  re-checks after the preview; the VS Code origin keeps CLI-installed packages.
-  Kept or failed packages set the CLI exit code; failed ones fail the hook.
-  Done 2026-10-10 locally. Check: R, SETUP.
-- [x] **SKILLS-001d - ship the catalog.** npm `files`, VSIX staging and VSIX
-  `files` carry `skills/`; the CLI reads it beside `dist/`, the extension from
-  its install directory. The consumer smoke requires all six files in the
-  tarball. Done 2026-10-10 locally (`npm pack --dry-run`); the exact VSIX
-  check runs in T12. Check: R, SETUP; package gate in T12.
-- [ ] **SKILLS-001e - native discovery acceptance.** One isolated profile per
-  client after setup: the skill is listed, explicit use loads it and its tool
-  call reaches CoAgent8; record version and PASS/FAIL/NOT_RUN. Resolve the agy
-  directory from this evidence; a failure there is a fix card, not a second
-  copy. Also record VS Code chat's duplicate listing. Native unavailability is
-  NOT_RUN. Part of T12's native checks.
+- [ ] **SKILLS-001e - native discovery acceptance.** In an isolated profile per client after setup (`PATCH-061-N6`), verify the six skills are listed, explicit invocation loads the skill and reaches CoAgent8, and VS Code chat's shared-directory listing is recorded.
 
 ## Full coagent direction
 
-All milestones are pending. The table summarizes milestones; a whole row is
-not an assignment for a model. Start with the design cards below, then write
-implementation cards against accepted contracts and current source. Do not
-invent write/delegation interfaces while implementing an EXEC or AX card.
-Roles do not grant capabilities or imply model size.
-A client may coordinate or delegate coordination. Any supported provider/model
-may plan, implement, verify or review. Independent review uses a separate session
-and cannot be supplied by the implementation author.
+All milestones are pending. Start with the contract design cards below (`Check: P`), recording proposals in [ARCHITECTURE.md](ARCHITECTURE.md) (labelled unimplemented) and open decisions in [HANDOFF.md](HANDOFF.md), before adding implementation cards. Roles do not grant capabilities or imply model size; any supported provider/model may plan, implement, verify or review, and independent review must use a separate session from the implementation author.
 
 | Milestone | Deliverable and acceptance |
 | --- | --- |
@@ -1285,221 +285,65 @@ and cannot be supplied by the implementation author.
 | `COAGENT-002` Profiles | Verify read-only, workspace-write and bounded commands per backend/version/OS. One writer per canonical workspace; baseline dirty files, prevent path escapes/conflicts, preserve partial work. Parallel writers need authorized separate workspaces or verified disjoint ownership. No automatic worktree/reset/cleanup. Native containment/failure tests precede claims. |
 | `COAGENT-003` Routing/limits | Role/task defaults independent of provider/model/effort; explicit choices and opt-in cost/latency/quality/quota preferences. Atomic root reservations for calls/concurrency/time/depth shared by children/retries. No silent explicit-model fallback, fabricated monetary cap or self-approved escalation. Reconcile request identity before replaying writers; test contention/lost replies. |
 | `COAGENT-004` Lifecycle/evidence | Minimal durable state/leases independent of transcript archival or a daemon. Early handles, progress, inspect/cancel, recovery; disconnect cancels by default. Detached execution requires verified supervision. Preserve original requirements, bounded context/omissions. Capture checks in the actual candidate with commands/exits/logs; separate observed from reported evidence. Test interruption, stale evidence and root-incomplete results. |
-| `COAGENT-005` Skills | Builds on SKILLS-001's single-file packages and ownership record. Composable coordination/planning/work/verification/review/recovery SKILL.md packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Detect real client/loader, scope and remote path access. Verify discovery/use per advertised client; unsupported clients retain MCP. |
+| `COAGENT-005` Skills | Builds on `SKILLS-001/002` ownership records. Composable coordination/planning/work/verification/review/recovery `SKILL.md` packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Verify discovery/use per advertised client. |
 | `COAGENT-006` Delegation | After host-led execution, add a task-scoped gateway with verified root/parent identity, capabilities and shared limits. Keep nested refusal until accepted. Bound fan-out/depth, reject cycles/replay, propagate cancellation and recover partial launches. Account for or disable unobservable native subagents where limits require it. Test forged delegation/restarts/launch races. |
 | `COAGENT-007` Migration | Update schemas/profiles/security rules/README/skills together before writes. Preserve compatible config, sessions, registrations and legacy read-only calls. Commit/push/merge/deploy/publication need task/user authority; skills cannot grant it. Reuse owners, not a parallel orchestration stack. |
 | `COAGENT-008` Acceptance | Compare direct/host-led/delegated runs on identical starting trees: feature, bug, refactor, docs, investigation, failed-test repair, ambiguous plan, interruption. Cover strong/small, small/strong, peers and one worker. Measure correctness, regressions, time, calls, overhead, repairs and available usage, including failures. Native evidence, exact-package six-job CI and independent boundary review before RC. |
 
 ### Coagent contract cards
 
-These are pending design/evidence cards, checked with P. Their deliverable is
-an in-place proposal in the owning ARCHITECTURE section, labelled unimplemented,
-with acceptance examples and unresolved decisions in HANDOFF. EXEC-001 runtime
-work remains the immediate implementation track; contract design may proceed
-alongside it as the execution order permits. After acceptance, add code cards
-here before implementation: one operation/provider/storage transition per card,
-real starting files, a failure example and an exact test command. Model strength
-never substitutes for acceptance of an unresolved contract.
+- [ ] **COAGENT-001a - task payload examples.** Read `src/contracts/execution.ts`, `src/mcp/schema.ts` and the target task contract in ARCHITECTURE. Specify valid and invalid start/inspect/continue/cancel payloads; distinguish task/root/parent identity, role, profile and actual provider/model while preserving legacy `consult`/`review`.
+- [ ] **COAGENT-001b - task transitions.** After `001a`, define allowed status transitions and outcomes for repeated requests, lost replies, cancellation and restart (`src/sessions/types.ts`, `session.ts`). Acceptance: duplicate starts cannot create duplicate writers and worker completion cannot finish the root task.
+- [ ] **COAGENT-002a - profile evidence inventory.** Read all three adapters and `.agents/rules/01-security-and-sandboxes.md`. Record verified vs. unknown capabilities per backend/version/OS and the agy inherited-tool limitation, keeping read-only evidence separate from planned write/command profiles.
+- [ ] **COAGENT-002b - writer ownership design.** After `001b`/`002a`, start from `src/workspace/identity.ts`, `src/storage/lock.ts`, `src/sessions/session.ts`. Specify dirty-baseline ownership, conflict detection, path-escape prevention, partial-work preservation and restart recovery, rejecting concurrent writers to one canonical workspace.
+- [ ] **COAGENT-003a - role/route precedence.** After `001a`, read config, routing and model selection. Specify request vs. role vs. configured defaults with examples for explicit models and optional preferences, keeping roles provider-independent and preserving explicit-model refusal.
+- [ ] **COAGENT-003b - root reservation protocol.** After `001b`, specify atomic reservation/release/recovery for calls, concurrency, time and depth across children and retries using existing storage/lease owners.
+- [ ] **COAGENT-004a - durable state and early handles.** After `001b`/`002b`, read session/history owners and `EXEC-001-T06` finalization. Specify a minimal task record, early handle publication, inspect/cancel and restart recovery independent of transcript archives.
+- [ ] **COAGENT-004b - observed evidence and compact handoff.** After `004a`, read `src/review/input.ts`, `gate.ts` and Git snapshot logic. Specify candidate-bound command/exit/log evidence and `HANDOFF-001` fields, distinguishing observed PASS from agent-reported PASS.
+- [ ] **COAGENT-005a - multi-file skill ownership.** Read `src/integrations/skills.ts`, `setup-storage.ts`, `cleanup.ts`. Specify manifests and digests for multi-file skill packages with references, conflict/traversal rejection and rollback, without executing bundled scripts.
+- [ ] **COAGENT-005b - remote and workspace loader scope.** After `005a`, extend `SKILLS-001`'s user-scope loader evidence per client to workspace and remote paths.
+- [ ] **COAGENT-006a - delegation failure protocol.** After accepted `001-005/007` host-led execution, read `src/execution/nested-turn.ts` and root reservations. Specify capability-bound parent/root requests, fan-out/depth bounds, replay/cycle refusal, partial launch recovery and tree cancellation while keeping the existing nested guard enabled until replacement acceptance.
+- [ ] **COAGENT-007a - compatibility inventory.** Alongside the relevant contract, list affected MCP schemas, config/history formats, registrations, README, skills and security rules, pairing each changed contract with a legacy fixture and migration owner.
+- [ ] **COAGENT-008a - benchmark cases.** After task/evidence contracts are accepted, define one starting-tree fixture per task category in the milestone table, specifying expected changes/checks, interruption recovery and role/model combinations.
 
-- [ ] **COAGENT-001a - task payload examples.** Read `src/contracts/execution.ts`,
-  `src/mcp/schema.ts` and the target task contract in ARCHITECTURE. Specify one
-  valid start/inspect/continue/cancel payload and invalid variants; distinguish
-  task/root/parent identity, role, profile and actual provider/model. Done:
-  examples preserve legacy consult/review and never infer capabilities from role.
-- [ ] **COAGENT-001b - task transitions.** After 001a, define allowed status
-  transitions and outcomes for repeated request, lost reply, cancel and restart.
-  Start from `src/sessions/types.ts` and `session.ts`. Done: duplicate starts
-  cannot create duplicate writers; worker completion cannot finish the root.
-- [ ] **COAGENT-002a - profile evidence inventory.** Read all three adapters and
-  `.agents/rules/01-security-and-sandboxes.md`. Record current verified/unknown
-  capabilities per backend/version/OS and the agy limitation. Done: existing
-  read-only evidence is separate from planned write/command profiles.
-- [ ] **COAGENT-002b - writer ownership design.** After 001b/002a, start from
-  `src/workspace/identity.ts`, `src/storage/lock.ts`, `src/sessions/session.ts`.
-  Specify dirty-baseline ownership, conflicts, path escapes, partial work and
-  restart recovery. Done: examples reject two writers to one canonical workspace
-  and preserve user edits. Split later profile implementation by backend and
-  native acceptance by OS; no write claim before those tests pass.
-- [ ] **COAGENT-003a - role/route precedence.** After 001a, read config, routing
-  and model selection. Specify request versus role versus configured defaults
-  with examples for explicit model and optional preferences. Done: roles remain
-  provider-independent and explicit-model refusal never becomes fallback.
-- [ ] **COAGENT-003b - root reservation protocol.** After 001b, specify atomic
-  reservation/release/recovery for calls, concurrency, time and depth across
-  children and retries. Use the existing storage/lease owners. Done: race and
-  lost-reply timelines prove no double execution or overspend of defined limits;
-  monetary caps require measured support and cannot be invented from token limits.
-- [ ] **COAGENT-004a - durable state and early handles.** After 001b/002b, read
-  session/history owners and T06 finalization. Specify a minimal task record,
-  handle publication, inspect/cancel and restart recovery independent of archives.
-  Done: disconnect cancellation and absence of history have explicit outcomes;
-  detached supervision remains unimplemented until verified separately.
-- [ ] **COAGENT-004b - observed evidence and compact handoff.** After 004a, read
-  `src/review/input.ts`, `gate.ts` and Git snapshot logic. Specify candidate-bound
-  command/exit/log evidence and HANDOFF-001 fields. Done: reported PASS differs
-  from observed PASS, omissions are explicit and stale evidence blocks acceptance.
-- [ ] **COAGENT-005a - multi-file skill ownership.** Read `src/integrations/skills.ts`
-  (SKILLS-001's single-file record), `setup-storage.ts`, `cleanup.ts`. Specify
-  manifests and digests for packages with references, conflicts, traversal
-  rejection and rollback. Done: examples cover custom user files and scripts
-  that must never execute.
-- [ ] **COAGENT-005b - remote and workspace loader scope.** After 005a, extend
-  SKILLS-001's user-scope loader evidence per client to workspace and remote
-  paths. Done: each lifecycle operation becomes a separate implementation card;
-  other clients require their own loader evidence, not copied claims.
-- [ ] **COAGENT-006a - delegation failure protocol.** After accepted 001-005/007
-  host-led execution, read `src/execution/nested-turn.ts` and root reservations.
-  Specify capability-bound parent/root requests, fan-out/depth, replay/cycle
-  refusal, partial launch recovery and tree cancellation. Done: forged-request
-  and launch-race examples fail closed; the existing nested guard stays enabled
-  until a complete replacement passes acceptance.
-- [ ] **COAGENT-007a - compatibility inventory.** Alongside the relevant contract,
-  list affected MCP schemas, config/history formats, registrations, README,
-  skills and security rules. Start from existing MCP/session/setup tests. Done:
-  every changed contract has a legacy fixture and migration owner; documentation
-  and profile changes ship with their feature, not after enabling writes.
-- [ ] **COAGENT-008a - benchmark cases.** After task/evidence contracts are
-  accepted, define one starting-tree fixture per task category in the milestone
-  table. Specify expected changes/checks, interruption recovery and role/model
-  combinations. Done: each run can be assigned independently with identical
-  inputs; fixture validation and native model runs are reported separately.
-
-`HANDOFF-001` joins COAGENT-004/005: versioned compact handoffs carry task/role/
-profile, branch/target, base/candidate/diff identity, objective, scope, acceptance,
-context and PASS/FAIL/NOT_RUN evidence. Fresh agents must understand them without
-previous chat. Do not copy rulebooks or duplicate the review tool's envelope.
-
-Claudex was inspected historically at `8cf5e2c1771c5151d90c12642391d0ba8fa71b0e`.
-Its composable skills/handoffs are design input, not a dependency or verified
-integration. Do not copy opposite-provider routing, host-only budgets or PID-based
-teardown. Preserve applicable licenses if reusing material. Fetch current client
-documentation through Context7 before implementing adapters.
+`HANDOFF-001` joins `COAGENT-004/005`: versioned compact handoffs carry task/role/profile, branch/target, base/candidate/diff identity, objective, scope, acceptance, context and `PASS`/`FAIL`/`NOT_RUN` evidence so fresh agents can operate without prior chat transcripts.
 
 ### FAILOVER-001: continue a task after quota exhaustion
 
-Use case (owner, 2026-10-09): a subscription backend reaches its 5-hour or
-7-day limit during a task and the work continues on another backend. Today the
-error records a cooldown and `auto` avoids that backend, but a continuation is
-bound to its backend and a new call starts from nothing. Routing still never
-retries a failed turn on another backend; every handoff below is explicit or
-authorized by the user's configuration. Independent review sessions are never
-seeded with an author's history.
+When a subscription backend hits a usage window limit during a task, routing records a cooldown so `auto` avoids that backend, while existing session continuations stay bound to their original backend. `FAILOVER-001` adds explicit or configuration-authorized cross-backend handoff without automatic silent retries or seeding independent review sessions from author history:
 
-- [ ] **FAILOVER-001a - report the way forward.** After beta.2. Start:
-  `RATE_LIMITED` in `src/contracts/error.ts`, cooldown recording in
-  `src/execution/controller.ts` and error formatting in `src/mcp/server.ts`.
-  A rate-limited session turn reports the reset time when native quota evidence
-  provides it (otherwise unknown) and names the explicit continuation choices:
-  wait, or hand off with the session handle and another backend. Done: no turn
-  starts on another backend; fixtures cover known and unknown reset times.
-  Check: R, LIFE/CACHE/MCP.
-- [ ] **FAILOVER-001b - seeded fork contract.** After COAGENT-001a and 004a;
-  checked with P. Specify a new session on another backend created from a
-  bounded seed: the task record when it exists, otherwise the original objective,
-  the latest turns within a byte limit and an interrupted partial answer
-  labelled incomplete. The seed is quoted data, never instructions. The new
-  handle links its source; the source stays intact. Sending history to another
-  provider needs user consent through elicitation or configuration; model,
-  price-limit and expensive-model consent are evaluated again. Done: examples
-  cover consult, a writing task whose workspace already holds the changes, and
-  a refused review seed.
-- [ ] **FAILOVER-001c - configuration-authorized failover.** After 001b and
-  COAGENT-003a. Specify user configuration naming eligible backends and an output
-  price limit for automatic handoff after quota exhaustion. Only the user's
-  configuration can enable it; a calling agent cannot. Amend the routing rule in
-  ARCHITECTURE explicitly. Done: examples cover disabled, enabled, no eligible
-  backend and a price limit that excludes every candidate.
-
-Implementation cards follow accepted 001b/001c, one operation per card.
+- [ ] **FAILOVER-001a - report the way forward.** Start: `RATE_LIMITED` in `src/contracts/error.ts`, cooldown recording in `src/execution/controller.ts` and error formatting in `src/mcp/server.ts`. Report the reset time when native quota evidence provides it (otherwise unknown) and state the explicit continuation choices (wait, or hand off with the session handle and another backend) without starting a fallback turn. Check: R, LIFE/CACHE/MCP.
+- [ ] **FAILOVER-001b - seeded fork contract.** After `COAGENT-001a` and `004a`; check: P. Specify creating a new session on another backend from a bounded quoted-data seed (task record or original objective, latest turns within a byte cap, and any interrupted partial answer labelled incomplete), linking the source handle while re-evaluating cross-provider history consent, model selection, price limits and expensive-model approval.
+- [ ] **FAILOVER-001c - configuration-authorized failover.** After `001b` and `COAGENT-003a`; check: P. Specify user configuration naming eligible backends and an output price limit for automatic handoff after quota exhaustion (configurable only by the user, never by a calling agent).
 
 ## Remaining foundation work
 
-Retain these work IDs; local fixes still need candidate acceptance. For the
-reviewed source-analysis findings, use the existing
-[AUDIT-001 follow-up cards](#audit-001-corrected-analysis-follow-up)
-instead of creating a duplicate assignment.
+Retain these foundation IDs for candidate acceptance and follow-up cards. Use the [AUDIT-001 follow-up cards](#audit-001-corrected-analysis-follow-up) for source-analysis items rather than creating duplicate tasks.
 
-These rows are acceptance inventories, not permission to rewrite every listed
-subsystem. For an assigned row, first select one finding/behavior and one
-platform or client. Create a card using the EXEC template (start/change/done/
-check) before implementation. Reuse the following concrete split points:
-
-| Owner | Small assignment sequence and starting point |
+| Owner | Scope and remaining acceptance |
 | --- | --- |
-| AUDIT-001 | Reproduce one historical finding on the candidate; use its mapped owner/test below. Record fixed/reproduced/NOT_RUN, then make one regression/fix card only if evidence requires it. |
-| WINDOWS-001 | Read `src/execution/process.ts`; first reproduce POSIX parent death, then specify owned-supervision behavior, then implement it. Native Windows quiet-desktop and cold-updater scenarios are separate acceptance cards. Per-call Windows containment uses the [WINDOWS-001 cards](#windows-001-per-call-process-containment). |
-| REDACTION-002 | Start with `tests/security/redaction.test.js` and history tests; assign credential-only answer, split-chunk credential and persisted bytes as separate cases. Assert the actual public/disk bytes. |
-| SESSION-001/HISTORY-002 | Specify new/auto/none semantics first, then implement one mode per card using `src/sessions/session.ts`. Early-handle publication is a separate COAGENT-004a-dependent card; native-expiry retry needs its own proof-before-execution fixture. |
-| LOCKS-001/QUOTA-001 | Use LOCK/CACHE/LIFE tests; assign token renewal, cooldown single-write and optional-cache failure separately. Reuse T08/T09 changes instead of adding another cache or lock owner. |
-| SURFACE-001/STARTUP-001 | Start with `src/mcp/constants.ts`, schema and surface tests; separately remove duplicated review wording, measure definition bytes, and verify no-probe startup. Preserve six tools and legacy compatibility. |
-| INSTALL-001/MIGRATION-001/UNINSTALL-002 | One client and one lifecycle operation per card, starting with `src/integrations/setup.ts` or `cleanup.ts` and their fixtures. Test owned registration/rollback before the matching isolated native-host scenario. |
-| ERRORS-001/DOCS-001 | Inventory one owner's catch sites; classify expected absence versus real I/O failure. Fix one error path with a behavioral fixture. Timeout defaults already belong to T07c. |
-| PACKAGE-001/VERIFY-001 | Use T12b for local package evidence, T12c for native/remote cells and T12d for independent binding. Reuse those results rather than inventing another full gate. |
-
-For rows whose design is not settled, the first card produces a decision and
-failure examples, not speculative implementation. Preserve every acceptance
-condition in the inventory when splitting; a narrower card does not waive it.
-
-| Owner | Remaining acceptance |
-| --- | --- |
-| `AUDIT-001` | Rerun original process/redaction/history/cooldown/error/config/lease/resource reproductions on the candidate. CUR-001/003/004/005/006/010/012 have local fixes; old reports do not reopen them. Independent scope/check evidence remains required. |
-| `WINDOWS-001` | CUR-011: POSIX parent-death cleanup. Per-call containment of native descendants before write/command profiles. Native no-survivor/quiet-desktop evidence, including cold agy updater conditions. Never PID/name/PPID-select teardown; owned handles/groups and protocol interrupt only. |
-| `REDACTION-002` | Preserve credential-only answers, broader diagnostic redaction and split-stream secret handling in new task paths. |
-| `EXEC-001`, `CLI-INTERACT-001` | CUR-007: complete [T01-T12](#exec-001-measured-preparation-and-complete-call-lifecycle): reproducible baseline, phase timing, config/preparation reuse, guaranteed finalization, complete-call budget, cancellable observations/Git/storage/consent, transport migration and independent measured acceptance. Preserve activity-aware idle behavior and account for agy host deadlines. |
-| `SESSION-001`, `HISTORY-002` | CUR-008: return a session handle before the turn ends and allow calls without a disk session; this is separate from `coagent8_HISTORY=off`, which only disables archives. Specify how session modes `new`, `auto` and `none` relate to existing calls. Explicit invalid/busy handles fail closed; opt-in `auto` reuses a session of the same workspace/provider used within 15 minutes and starts a fresh one when that session is busy. Only a native expiry proven before execution permits one fresh retry within the original time budget. Preserve retention, pagination and migration of existing histories. |
-| `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Keep renewed token leases, single cooldown recording, honest quota and optional caches under concurrency. No retries of policy/sandbox/cancel/partial-execution errors. |
-| `SURFACE-001`, `CONSULT-001`, `CONTEXT-001`, `MCP-001`, `STARTUP-001` | Preserve the six tools, plain consult, client roots/resources and startup that does not wait for backend probes. Remove review instructions duplicated between tool descriptions and prompts; measure the definition-size budgets in native clients. Icon or UI claims need evidence from the host. Failures of a first call by a fresh agent belong to AX-006. |
-| `CLAUDE-BACKEND-001`, `DIAGNOSTICS-001` | CUR-009: auth evidence, bounded cancellable native quota reads, real approval/client acceptance. Verify user hooks/plugins and skill delivery in restricted review without silently enabling tools. |
-| `INSTALL-001`, `MIGRATION-001`, `ONBOARDING-002`, `UNINSTALL-002` | Clean-environment setup and shared-config migration; native install/update/repair/restart/uninstall for claimed clients. Preserve manual registrations/credentials/histories. Single setup list has preliminary owner acceptance; full lifecycle is pending. |
-| `ANTIGRAVITY-HUB-001` | Accept configured managed CLI and quiet launches. Revisit private hub only with supported versioned API, verified task capabilities and no authority escape through inherited tools. |
-| `ERRORS-001`, `SIMPLIFY-001`, `DOCS-001` | Finish the review of I/O errors and empty catch blocks so every failure is actionable; type auth, quota, context-length and crash failures; remove duplicated timeout constants. Refactor only where a module holds unrelated responsibilities, and document logic that is hard to follow. Do not change behavior merely to rename folders. |
-| `PACKAGE-001`, `TESTS-001`, `VERIFY-SCOPE-001`, `VERIFY-001` | `dist/` stays untracked; the VSIX and plugin payloads are derived from the npm tarball. Tests prove they remove only their own temporary files and keep logs that explain a failure. Accept in CI the change that runs the suite once per matrix job through `test:coverage` instead of a separate full run. Report source tests, bundle checks, exact-artifact checks and native-host evidence separately. |
-| `CHANGELOG-001`, `REPO-001`, `REPO-002` | Keep generated changelog/pre-push/title checks and license notices. Branch model, rulesets and release workflow follow [REPO-002](#repo-002-branch-model-and-release-workflow); GitHub settings, tags, releases and npm stay owner actions. |
+| `AUDIT-001` | Rerun process, redaction, history, cooldown, error, config, lease and resource reproductions on the release candidate. `CUR-001/003/004/005/006/010/012` and `AUDIT-001-A01` through `A07` are fixed locally; `A08` through `A21` remain below. |
+| `WINDOWS-001` | `CUR-011`: POSIX parent-death cleanup and Windows per-call descendant containment ([`WINDOWS-001b-e`](#windows-001-per-call-process-containment)) before write/command profiles, plus native no-survivor/quiet-desktop evidence. Never select teardown targets by PID, PPID or process name. |
+| `REDACTION-002` | Preserve credential-only answers, diagnostic home-path redaction and split-stream secret boundaries across all execution paths. |
+| `EXEC-001`, `CLI-INTERACT-001` | `CUR-007`: `T01`–`T12b` implemented; complete native/remote acceptance (`T12c`) and independent review binding (`T12d`). |
+| `SESSION-001`, `HISTORY-002` | `CUR-008`: early handle publication before turn completion and ephemeral (`none`) / `auto` / `new` session modes (distinct from `coagent8_HISTORY=off`), preserving fail-closed busy/invalid handle checks, retention, pagination and history compatibility. |
+| `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Preserve renewed token leases, single cooldown recording, accurate quota reporting and concurrency-safe caches (`EXEC-001-T08/T09`, `AUDIT-001-A01`–`A07`). |
+| `SURFACE-001`, `CONSULT-001`, `CONTEXT-001`, `MCP-001`, `STARTUP-001` | Preserve six tools, plain consult, client roots/resources and probe-free startup; deduplicate review prompt/description wording and verify tool-definition byte budgets across native clients (`AX-006`). |
+| `CLAUDE-BACKEND-001`, `DIAGNOSTICS-001` | `CUR-009`: auth evidence, bounded cancellable native quota reads, real client approval acceptance and restricted-review hook/plugin/skill verification. |
+| `INSTALL-001`, `MIGRATION-001`, `ONBOARDING-002`, `UNINSTALL-002` | Clean-environment setup, shared-config migration and native install/update/repair/restart/uninstall acceptance across supported clients while preserving manual registrations, credentials and histories. |
+| `ANTIGRAVITY-HUB-001` | Verify configured managed CLI and quiet launches; revisit private hub integration only with a supported versioned API and verified sandbox isolation. |
+| `ERRORS-001`, `SIMPLIFY-001`, `DOCS-001` | Keep actionable I/O error classification, typed auth/quota/context-length/crash errors, centralized timeout defaults (`EXEC-001-T07c`) and enforced module boundaries (`SIMPLIFY-001`). |
+| `PACKAGE-001`, `TESTS-001`, `VERIFY-SCOPE-001`, `VERIFY-001` | Keep `dist/` untracked, derive VSIX/plugin payloads from the npm tarball, verify hermetic test cleanup and report source, bundle, exact-artifact and native-host evidence separately. |
+| `CHANGELOG-001`, `REPO-001`, `REPO-002` | Maintain `git-cliff` changelog generation (`npm run changelog`, `npm run changelog:check`), pre-push/PR-title checks, third-party license notices and the `develop` + `X.Y.x` release workflow ([`REPO-002`](#repo-002-branch-model-and-release-workflow)). |
 
 ### WINDOWS-001: per-call process containment
 
-libuv places every non-detached child of the server in one server-wide
-`KILL_ON_JOB_CLOSE` job; c2eb228 (AUD-P2-14) observed no survivor after a server
-crash. Per-call cancellation and expiry stop only the owned root through its
-handle (`src/execution/process.ts`), so native descendants can live until the
-server exits. Codex and Claude end their children after a protocol interrupt;
-agy has no headless interrupt and starts the user's MCP servers every turn.
-Full and writing agents will start builds, watchers and servers, so per-call
-containment precedes enabling any COAGENT-002 write or command profile.
+libuv places non-detached server children into one server-wide `KILL_ON_JOB_CLOSE` job, so server termination leaves no survivors (`AUD-P2-14`), but per-call cancellation or timeout stops only the owned root process (`src/execution/process.ts`). While Codex and Claude stop their children after a protocol interrupt, Antigravity has no headless interrupt and launches the user's MCP servers on every turn. `WINDOWS-001a` reproduced per-call survivor processes outside the root job ([evidence](HANDOFF.md#windows-001a-per-call-descendant-survivors)); this is a documented known limitation for read-only `0.6.0`/`0.6.1` and must be resolved by `WINDOWS-001b-e` before enabling any `COAGENT-002` write or command profile.
 
-- [x] **WINDOWS-001a - reproduce per-call survivors.** Before EXEC-001-T12.
-  Start: `terminateProcessTree` in `src/execution/process.ts` and the agy
-  adapter fixtures. With the server alive, cancel a fixture agy turn whose owned
-  fixture tree includes a native descendant; observe only that tree. Done:
-  REPRODUCED or NOT_REPRODUCED with the limits of the experiment. The owner
-  decides whether a reproduction blocks beta.2 or is a documented limit.
-  Check: R, PROCESS/AGY; no live desktop sweep.
-  Evidence: REPRODUCED for a descendant outside the root job, NOT_REPRODUCED inside it; [WINDOWS-001a](HANDOFF.md#windows-001a-per-call-descendant-survivors). Owner decision 2026-10-10: known limit of beta.2, not a blocker.
-- [ ] **WINDOWS-001b - launcher contract.** After beta.2; checked with P.
-  Specify a launcher helper (**new**, working name `coagent8-job.exe`): the server
-  starts it hidden; it creates a job with `KILL_ON_JOB_CLOSE` and optional memory/
-  process limits, starts the CLI with `CREATE_SUSPENDED`, assigns it, resumes it
-  and returns the root's exit code. Standard streams are inherited directly so
-  protocol interrupts are unchanged. Stopping the helper through its owned handle,
-  or server death, closes the job. `process.ts` stays the single owner; no
-  process is selected by PID. Decide: `CREATE_BREAKAWAY_FROM_JOB` policy (tested
-  with npm, Git and a browser), launch specification as JSON over an extra
-  descriptor instead of a requoted command line, descendants after root exit
-  (default: stopped; exceptions only by explicit task policy), and a missing
-  helper (write/command profiles fail closed; read-only keeps current behavior).
-  Keep the interface platform-neutral so CUR-011 can reuse it.
-- [ ] **WINDOWS-001c - implement the helper.** After 001b. Rust with
-  `windows-sys`: a static binary without a runtime. Done: fixture trees,
-  breakaway requests, root exit and helper stop match the contract; the
-  first-launch overhead is measured. Check: R, PROCESS/LIFE plus helper tests.
-- [ ] **WINDOWS-001d - package and verify the helper.** After 001c. x64 and
-  arm64 builds produced reproducibly in CI, Authenticode-signed, shipped in the
-  npm package and VSIX, with SHA-256 verified before launch and recorded in the
-  artifact provenance. Done: package inspection and consumer smoke find and
-  verify the helper; a tampered helper is refused.
-- [ ] **WINDOWS-001e - native acceptance.** After 001d. One scenario at a time:
-  cancel/expiry per backend leaves no survivor, quiet desktop is preserved and
-  the cold agy updater stays disabled. Fixtures cannot approve a native cell.
+- [ ] **WINDOWS-001b - launcher contract.** Check: P. Specify a hidden launcher helper (**new**, `coagent8-job.exe`) that creates a per-call Job Object with `KILL_ON_JOB_CLOSE` (and optional memory/process limits), starts the CLI with `CREATE_SUSPENDED`, assigns and resumes it, inherits standard streams directly for protocol interrupts, and closes the job when stopped via its owned handle or when the server exits. `process.ts` remains the single owner with zero PID-based selection. Define `CREATE_BREAKAWAY_FROM_JOB` policy, JSON launch specification over an extra descriptor, post-root-exit descendant handling, missing-helper behavior (write/command profiles fail closed; read-only retains current behavior) and a platform-neutral interface reusable for `CUR-011`.
+- [ ] **WINDOWS-001c - implement the helper.** After `001b`. Implement the static Rust (`windows-sys`) helper binary and measure first-launch overhead. Acceptance: fixture trees, breakaway requests, root exit and helper teardown match the contract. Check: R, PROCESS/LIFE plus helper tests.
+- [ ] **WINDOWS-001d - package and verify the helper.** After `001c`. Build reproducible Authenticode-signed `x64` and `arm64` binaries in CI, ship them in the npm tarball and VSIX, and verify SHA-256 digests before launch. Acceptance: package inspection and consumer smoke verify the helper and refuse tampered binaries.
+- [ ] **WINDOWS-001e - native acceptance.** After `001d`. Verify per backend on Windows that cancel/expiry leaves no surviving descendants, preserves quiet desktop operation and keeps the cold agy updater disabled.
 
 ## AUDIT-001: corrected analysis follow-up
 
@@ -1535,153 +379,31 @@ remove a price check, weaken secret-prefix handling, replace price matching
 with an alias table, or remove collector dialects under these cards.
 Do not introduce a general utilities module or rename folders to satisfy style.
 
-### Assignment protocol
-
-- Assign **one full card ID** per model turn. Read this section, that card's
-  starting files and the relevant architecture contract. Do not reread all
-  analysis reports or attempt an entire track.
-- Recheck the checkout and prerequisite evidence. Dependencies below are
-  completion requirements, not permission to edit another agent's work.
-- Each reproduction records input, expected/actual behavior, source identity,
-  command and persisted bytes or other directly measured property. Use isolated
-  fixture state and deterministic synchronization; timing sleeps are not proof
-  of a race. Never use live credentials, registrations or paid model calls.
-- A reproduction-only card may expose an expected failure locally. Label it
-  REPRODUCED and keep the regression for its paired fix; do not weaken assertions,
-  commit/publish a known-red candidate, or describe that as a green gate.
-- If the hypothesis is not reproduced, record NOT_REPRODUCED and the limits of
-  the experiment. Skip its fix until a concrete failing case exists. A missing
-  fixture capability is NOT_RUN, not a reason to rewrite production for the test.
-- Prefer existing fixture/injection seams. Any new seam must be narrow, owned
-  by the affected capability and justified; no global filesystem monkey-patching.
-- A fix changes only its behavior and necessary callers/tests. If it needs a
-  contract decision outside the card, record the precise open decision and stop
-  dependent implementation; continue no unrelated refactoring.
-- Use existing **P/R** checks and test groups above. A listed test path is passed
-  to `node tests/run.cjs`. Async signature changes also require every affected
-  caller test found by search, even if outside the named group. Build/package
-  changes and source comments follow the scope-based quality rule.
-- Update the card and a concise evidence entry in HANDOFF when done; report
-  files changed, actual checks, evidence limits and next eligible card. Stop
-  after the assigned card for the existing owner checkpoint.
-- Architecture changes belong in ARCHITECTURE; no local note is an instruction.
-  Git integration, publication and release approval retain their existing gates.
-
-Suggested handoff prompt:
-
-~~~text
-Implement only <full card ID> from docs/ROADMAP.md.
-Check its dependencies against docs/HANDOFF.md and the current source.
-Stay within its Change scope and preserve the contracts listed above.
-Run its Checks, record actual evidence, and stop after this card.
-If the reproduction fails to establish the defect, do not implement its fix.
-~~~
-
 ### Order and ownership
 
-Start with A01-A03 (QUOTA-001/ERRORS-001), then A04-A05
-(LOCKS-001/config). Address A06-A07 (configuration write reliability) next.
-A08-A09 (SESSION-001) and A10-A12 (INSTALL-001) are separate conditional
-write-reliability tracks. A13-A15 (EXEC-001 cache) and A16-A18 (HISTORY-002)
-are measured optimizations after correctness work. A19-A20
-(REDACTION-002/diagnostic privacy) are conditional. A21 closes this batch.
-Beta.2 requires A01-A07 only; A08-A20 may remain open past beta.2 with the
-explicit status A21 records (see [Execution order](#execution-order)).
+Completed for 0.6.0:
 
-These are subordinate cards of existing foundation owners, not a replacement
-for EXEC-001. Coordinate shared-file changes with EXEC-001-T03/T05 (config/cache),
-T06 (session cleanup), T08 (cancellable observations) and T09 (storage waits).
-Reuse whichever contracts are already implemented; do not build a second
-cache, retry framework or timeout system. If an EXEC card has already resolved
-a case, cite its exact evidence and skip duplicate implementation.
+- `AUDIT-001-A01`, `AUDIT-001-A02`, `AUDIT-001-A03` (`QUOTA-001`/`ERRORS-001`):
+  distinguished missing quota caches from unreadable existing caches and refused
+  destructive quota merges on read failure
+  ([evidence](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure)).
+- `AUDIT-001-A04`, `AUDIT-001-A05` (`LOCKS-001`/config): serialized configuration
+  read-modify-write under the file lease across all callers
+  ([evidence](HANDOFF.md#audit-001-a04-a05-serialize-configuration-writers)).
+- `AUDIT-001-A06`, `AUDIT-001-A07` (configuration write reliability): routed
+  configuration updates through `atomicWrite` inside the lease
+  ([evidence](HANDOFF.md#audit-001-a06-a07-atomic-configuration-writes)).
 
-### Quota cache: retain other providers on read failure
-
-- [x] **AUDIT-001-A01 - reproduce quota state loss.**
-  Depends: none. Start: `src/backends/availability.ts`,
-  `src/storage/read.ts`, `tests/backends/availability.test.js`.
-  Change: fixture/regression only; seed two active provider cooldowns, simulate
-  an I/O failure reading the existing cache inside the locked update, and attempt
-  an update of just one provider. Cover inspectQuotas and recordQuotaCooldown.
-  Done: inspect actual file bytes after the attempt; distinguish observed loss
-  from the separate missing-file case. Keep injection scoped to owned fixture I/O.
-  Checks: the focused availability test; P for the evidence.
-  Evidence: REPRODUCED, [A01-A03](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure).
-
-- [x] **AUDIT-001-A02 - preserve read-failure identity.**
-  Depends: A01 reproduces loss. Start: `src/backends/availability.ts:readQuotaCache`
-  and its callers. Change: define an internal read result that distinguishes
-  missing, valid, invalid content and I/O failure; preserve the public
-  best-effort read contract where needed. No writer behavior change in this card.
-  Done: ENOENT differs from EBUSY/EPERM/EACCES, malformed JSON and oversize input;
-  locked writers can obtain the distinction without a second storage owner.
-  Checks: R, `tests/backends/availability.test.js`; record A01's still-open failure
-  explicitly if it is not yet fixed.
-  Evidence: [A01-A03](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure).
-
-- [x] **AUDIT-001-A03 - refuse destructive quota merges.**
-  Depends: A02. Start: inspectQuotas and recordQuotaCooldown in
-  `src/backends/availability.ts`.
-  Change: use the classified read inside the lock; create missing caches, but
-  skip/propagate a failed read of an existing file before any write. Do not
-  replace unreadable state with an unlocked stale in-memory copy. Preserve
-  existing best-effort warnings and successful primary answers.
-  Done: A01 passes, another provider's persisted cooldown survives, and optional
-  cache failures produce warnings without a successful write claim.
-  Checks: R, `tests/backends/availability.test.js`,
-  `tests/execution/controller-cooldown.test.js`, `tests/config.test.js`.
-  Evidence: [A01-A03](HANDOFF.md#audit-001-a01-a03-quota-cache-read-failure).
-
-### Configuration: serialize every writer
-
-- [x] **AUDIT-001-A04 - prove the unlocked configuration writer.**
-  Depends: none; schedule after A03 or its documented non-reproduction.
-  Start: `src/config.ts:saveConfig`, setDefaultBackend, rememberApprovedModel,
-  recordDefaultModel; `tests/config.test.js`, `tests/storage/lock.test.js`.
-  Change: fixture/regression only. An owned helper process holds the same file
-  lease, signals that it has read state, then coordinates a competing saveConfig
-  update and release using explicit messages.
-  Done: demonstrate lease bypass/lost fields using final parsed configuration;
-  include a control with two lease-respecting writers.
-  Checks: focused config regression and P; helper processes clean up owned handles.
-  Evidence: REPRODUCED, [A04-A05](HANDOFF.md#audit-001-a04-a05-serialize-configuration-writers).
-
-- [x] **AUDIT-001-A05 - serialize saveConfig and migrate its callers.**
-  Depends: A04 reproduces the defect. Start: `src/config.ts`; search all source,
-  extension and test callers of saveConfig/setDefaultBackend before editing.
-  Change: put the entire read-modify-write under the existing file lease.
-  If asynchronous signatures are necessary, migrate all callers in this card;
-  retain current write implementation until A07. Preserve editor/file precedence.
-  Done: concurrent updates retain unrelated fields; no unawaited call or changed
-  error assertion remains; malformed config still fails closed.
-  Checks: R, CONFIG, POLICY, DOCTOR and every affected caller test found by search.
-  Do not mark the card complete with only a typecheck.
-  Evidence: [A04-A05](HANDOFF.md#audit-001-a04-a05-serialize-configuration-writers).
+Remaining tracks: A08-A09 (`SESSION-001`) and A10-A12 (`INSTALL-001`) are
+separate conditional write-reliability tracks; A13-A15 (`EXEC-001` cache) and
+A16-A18 (`HISTORY-002`) are measured optimizations; A19-A20
+(`REDACTION-002`/diagnostic privacy) are conditional; A21 reconciles batch
+evidence. These cards remain subordinate to existing foundation owners (`EXEC-001`)
+and reuse implemented cache, retry and timeout contracts. Each reproduction uses
+isolated fixture state and deterministic synchronization; if a reproduction does
+not establish a defect, its fix is skipped.
 
 ### Write reliability: separate each caller's contract
-
-- [x] **AUDIT-001-A06 - reproduce transient configuration write failure.**
-  Depends: A05 or documented skip. Start: `src/config.ts:writeConfig`,
-  `src/storage/lock.ts:atomicWrite`, `tests/storage/lock.test.js`,
-  `tests/config.test.js`.
-  Change: fixture/regression only for transient destination sharing failure and
-  permanent write failure. Prefer an owned native Windows sharing fixture;
-  distinguish simulated error handling from native Windows evidence.
-  Done: record errors, attempts, old/new destination bytes and temporary-file
-  cleanup. Do not claim every open read handle blocks rename.
-  Checks: focused reproduction; existing atomic-write coverage; P.
-  Evidence: REPRODUCED (simulated; native sharing NOT_RUN), [A06-A07](HANDOFF.md#audit-001-a06-a07-atomic-configuration-writes).
-
-- [x] **AUDIT-001-A07 - reuse atomicWrite for configuration.**
-  Depends: A06 establishes a failure addressed by existing atomicWrite.
-  Start: `src/config.ts:writeConfig` and every writer calling it.
-  Change: await the existing atomic writer within the configuration lease;
-  migrate affected callers together. Keep validation and file/editor precedence.
-  Done: transient case completes, permanent failure is surfaced, old bytes are
-  preserved on failed replacement, and no caller reports success before writing.
-  Checks: R, CONFIG, LOCK, POLICY, DOCTOR and affected caller tests.
-  Share retry/deadline behavior with EXEC-001-T09; add no parallel retry loop.
-  Evidence: [A06-A07](HANDOFF.md#audit-001-a06-a07-atomic-configuration-writes).
 
 - [ ] **AUDIT-001-A08 - check initial session publication separately.**
   Depends: none. Start: `src/sessions/session.ts:saveSessionFile`, createSession,
@@ -1914,280 +636,95 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
 
 ## REPO-002: branch model and release workflow
 
-Owner decisions 2026-10-10: PrestaShop-style `develop` plus release lines
-`X.Y.x`, no `main`; every commit on a protected branch is a GitHub-signed
-(Verified) squash commit `<PR title> (#N)`; the 293 local commits since beta.1
-reach `develop` as one squash PR whose page keeps them; beta.1 gets a GitHub
-Release; beta.2 is a preview (GitHub pre-release, npm `next`); npm
-`1.0.0-beta.1` is deprecated, not unpublished; CI tests Node 24 and 26. The
-steady-state process is [rule 02](../.agents/rules/02-git-workflow.md); this
-section is the one-time migration.
+PrestaShop-style branch model (owner decision 2026-10-10): `develop` is the
+default and only integration branch, and each maintained release has a `X.Y.x`
+line (`1.0.x` from the first release candidate). Every commit on a protected
+branch is a GitHub-signed (Verified) squash commit `<PR title> (#N)`. CI tests
+Node 24 and 26 across Ubuntu, macOS and Windows. Steady-state branching,
+changelog generation and release phases are governed by
+[rule 02](../.agents/rules/02-git-workflow.md).
 
-State verified 2026-10-10 (read-only): the public repo's `main` holds only
-GitHub's initial LICENSE commit `b962086`; PR #1 (`chore/release-v1.0.0-beta.1`
--> `main`) has six failing checks; there are no tags or releases; the branch
-ruleset requires checks named Node 20.x/22.x, which `ci.yml` (24.x/26.x) never
-reports, so no PR can merge; npm `1.0.0-beta.1` (GPL) holds `latest` and `beta`.
+Completed for `0.6.0`:
 
-State verified 2026-10-11 (read-only): the default branch is named `devlop`
-(typo) at `b962086`; `main` is deleted; PR #1 is open against `devlop`; there are
-no tags or releases and no Pages site. The branch ruleset "main and release
-branches" still targets `refs/heads/main` and `refs/heads/release/*` (which
-includes the release PR branch `release/v0.6.0`) with signed commits and the
-Node 20.x/22.x checks; `devlop` itself is unprotected. `ci.yml`, `release.yml`
-(`develop|[0-9]*.[0-9]*.x`) and rule 02 name `develop`, so on `devlop` no CI job
-runs and the tag check of `release.yml` fails. `release/v0.6.0` is 353 commits
-ahead of `b962086`, all unsigned.
+- `REPO-002a`, `REPO-002b`, `REPO-002c`, `REPO-002d`, `REPO-002e`: established
+  rule 02, `ci.yml`, `release.yml`, `docs.yml` (TypeDoc API site on GitHub Pages)
+  and the `0.6.0` release branch
+  ([evidence](HANDOFF.md#repo-002cde-beta2-pull-request-branch-and-api-site)).
+- `REPO-002g`: added build provenance attestation (`actions/attest-build-provenance`)
+  for the tarball and VSIX in `release.yml` and added `npm-publish.yml`
+  (gated by environment `npm` and repository variable `NPM_TRUSTED_PUBLISHING`).
+- Owner migration steps 1-8: configured `develop` and branch/tag rulesets,
+  released `v0.6.0` on GitHub, npm (`next`) and the VS Code Marketplace, and
+  unpublished the `1.0.0-beta.1` placeholder ([evidence](HANDOFF.md#060-release-evidence)).
 
-Owner decisions 2026-10-11 for the first release:
+Open work:
 
-- `develop` receives 0.6.0 as one finished version: the release PR is
-  squash-merged into one GitHub-signed (Verified) commit, and `v0.6.0` is tagged
-  on that commit. The 353 branch commits are not pushed to `develop` one by one;
-  the PR page keeps them and the detailed changelog section lists them.
-- The commits of `release/v0.6.0` need no signature: only the squash commit
-  reaches `develop`. The branch is deleted after the merge.
-- Nothing is tested on `develop`. CI is tested on the draft release PR, the
-  package from that PR's CI artifacts, and the release workflow in a private
-  rehearsal repository (step 5b) before the real tag.
-
-### Agent cards (local; no push)
-
-- [x] **REPO-002a - rules and documents.** Rule 02 (branching, PRs, five
-  release phases, npm channels, rulesets), rule 00 section 2, AGENTS.md, the
-  workflow skill, ARCHITECTURE decision log, HANDOFF. Check: P.
-- [x] **REPO-002b - CI triggers and release workflow.** `ci.yml` runs on
-  `develop` and `[0-9]+.[0-9]+.x`; `release.yml` (tag `v*`): verifies an
-  annotated tag matching `package.json` on `develop` or a line, runs the full
-  gate on Ubuntu/Node 24, packs and smoke-tests the exact tarball, packages the
-  VSIX, writes `SHA256SUMS`, generates notes with git-cliff `--current` and
-  creates a draft (pre-)release. It never publishes. Check: both files parse as
-  YAML; the notes template renders `--current --offline` on tag
-  `v1.0.0-beta.1`. The workflow itself first runs on GitHub (REPO-002e).
-- [x] **REPO-002c - prepare the beta.2 PR branch.** Needs `git fetch origin`.
-  Create commit X: parent `b962086`, tree of `v1.0.0-beta.1` (`ae55f01^{tree}`),
-  message `chore(release): v1.0.0-beta.1`; move the unpublished local tag
-  `v1.0.0-beta.1` to X (owner approval). Replay the work with
-  `git rebase --onto X v1.0.0-beta.1 <candidate>` into `release/v1.0.0-beta.2`
-  (identical base tree, so no conflicts; verify the final tree equals the
-  candidate tree). On that branch: freeze the detailed beta.2 changelog section
-  into the `cliff.toml` footer above beta.1, start generation at
-  `v1.0.0-beta.2` in the changelog scripts, generate the beta.2 release notes
-  into the PR description draft, and add one release commit
-  `chore(release): v1.0.0-beta.2`. Repeat T12b on its head (new SHAs).
-  Check: tree equality, changelog/notes review, full gate.
-- [x] **REPO-002d - README and VS Code links.** Install instructions use
-  `coagent8@next`; VS Code README and `tooling/vscode/package.cjs` link to
-  `blob/develop`. Lands in REPO-002c's branch before its gate. Check: P plus VSIX.
-  Evidence: [REPO-002c/d](HANDOFF.md#repo-002cde-beta2-pull-request-branch-and-api-site).
-- [x] **REPO-002e - API site on GitHub Pages.** `docs.yml` (release published or
-  manual run): lint:docs, TypeDoc, deploy with the official Pages actions.
-  TypeDoc includes README (home), the three project documents, CHANGELOG and
-  rule 02 as documents (front matter titles), highlights and renders mermaid
-  (`mermaid.js`, pinned CDN version). Roadmap headings use `ID: title` so
-  GitHub and TypeDoc agree on anchors. Check: `npm run docs` without warnings,
-  workflow YAML parses; first deployment and diagram rendering are NOT_RUN until
-  the owner publishes a release.
-- [x] **REPO-002g - provenance and npm publishing from Actions.** Owner
-  decision 2026-10-11: `release.yml` signs build provenance for the tarball and
-  the VSIX (`actions/attest-build-provenance`) and the notes show how to verify
-  it; `npm-publish.yml` (release published, environment `npm` with owner
-  approval, off until the variable `NPM_TRUSTED_PUBLISHING` is `true`) checks
-  the release tarball against `SHA256SUMS` and that provenance, then publishes it
-  with npm trusted publishing and `--provenance` to `next` or `latest`. beta.2 is
-  still published by hand; the owner enables the job after it (owner step 9).
-  Check: both workflows parse as YAML; the first runs on GitHub are NOT_RUN.
 - [ ] **REPO-002f - versioned API site.** With the first `X.Y.x` line, publish
   `develop` and each maintained line under their own path (for example through a
   `gh-pages` branch with one folder per line and a version switcher), because the
   official Pages deployment replaces the whole site. Not needed while every
   release is tagged on `develop`.
-
-### Owner steps (GitHub and npm; in this order)
-
-Version numbers follow [REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags):
-beta.2 is published as `0.6.0` (tag `v0.6.0`). Owner decision 2026-10-11: beta.1
-has no tag, GitHub Release or changelog entry, and npm `1.0.0-beta.1` is
-unpublished instead of deprecated (step 8); this replaces the beta.1 parts of the
-2026-10-10 decisions above.
-
-State 2026-10-12: steps 1-8 are done; 0.6.0 is released and `1.0.0-beta.1` is
-unpublished, not deprecated
-([evidence](HANDOFF.md#060-release-evidence)). Step 9 (npm trusted publishing)
-is open, so `npm-publish.yml` stays skipped and npm versions are published by
-hand.
-
-1. **Branches:** create `develop` at `b962086` and make it the default branch.
-   State 2026-10-11: created as `devlop`; rename it to `develop` (Settings >
-   Branches, or `gh api -X POST
-   repos/oktawianwybieralski/coagent8/branches/devlop/rename -f
-   new_name=develop`) before step 5, because the workflows and rulesets name
-   `develop`. The rename retargets PR #1. **Pages:** Settings > Pages > Source "GitHub Actions"; in the `github-pages`
-   environment allow deployment tags `v*` and the branch `develop`.
-2. **Rulesets** (rule 02 section 8): retarget the branch ruleset to
-   `refs/heads/develop`, squash only, required checks
-   `Test on {ubuntu,macos,windows}-latest (Node {24.x, 26.x})`; add the
-   `release lines` ruleset for `refs/heads/*.*.x`; keep both tag rulesets.
-   Remove `refs/heads/release/*` from the targets: release PR branches are topic
-   branches, and the signed-commit rule would refuse the unsigned
-   `release/v0.6.0` push.
-3. **Cleanup:** close PR #1, delete `chore/release-v1.0.0-beta.1`, then delete
-   `main` (after step 2 removed it from the ruleset). State 2026-10-11: `main`
-   is deleted; PR #1 and its branch remain.
-4. **beta.1:** nothing on GitHub. The local tag `v1.0.0-beta.1` (commit X) is
-   not pushed; deleting it locally is the owner's choice.
-5. **beta.2 PR (0.6.0):** push `release/v0.6.0` (the local branch formerly
-   `release/v1.0.0-beta.2`, renamed on the owner's request, REPO-003; its
-   CHANGELOG.md is final; the pre-push regeneration cannot run before tag
-   `v0.6.0` exists and is skipped for this branch only), open the PR into
-   `develop` titled `chore(release): v0.6.0` with the prepared notes; the six CI
-   jobs are EXEC-001-T12c's matrix evidence; run T12c's native checks and T12d's
-   independent review on its head.
-   - Open the PR as a **draft**. This is the first CI run on GitHub: a failing
-     job is fixed by a new commit on `release/v0.6.0` (regenerating the frozen
-     changelog section as rule 02 section 6 describes), and CI reruns. Nothing
-     is merged until all six jobs are green on the head.
-   - Tester checks use the packages that CI uploaded for that head
-     (`actions/upload-artifact` in `ci.yml`), not local builds: install the VSIX
-     in a clean VS Code profile and the tarball in a clean directory, then run
-     the native smoke.
-   - **Step 5b - rehearse the release workflow** in a private throwaway
-     repository (for example `coagent8-release-test`), because the real tag is
-     immutable and publishing its release starts `npm-publish.yml`. Push the
-     head of `release/v0.6.0` there as `develop`, push an annotated `v0.6.0` tag
-     on it and check that `release.yml` passes the tag checks, the gate, packing
-     and smoke, attestation and creates the draft pre-release with the tarball,
-     VSIX and `SHA256SUMS`; run step 7's verification on its downloads. Never
-     publish the rehearsal draft, and do not create the `npm` environment, the
-     variable `NPM_TRUSTED_PUBLISHING` or any npm secret there. Delete the
-     repository afterwards. A failure is fixed on `release/v0.6.0` and repeats
-     step 5.
-   - Mark the PR ready for review only after the CI run, the tester checks and
-     step 5b passed.
-6. **Merge and tag:** squash-merge; tag the squash commit `v0.6.0`
-   (annotated) and push the tag. `release.yml` creates the draft pre-release.
-   Replace its one-entry notes with the prepared detailed notes
-   (`.local/release/v0.6.0/release-notes.md`). After tagging,
-   `npm run changelog` must leave CHANGELOG.md unchanged.
-7. **Verify downloads** (rule 02 phase D): `gh release download`, check
-   `SHA256SUMS` and `gh attestation verify` for the tarball and the VSIX,
-   install both in clean profiles, repeat the native smoke.
-8. **Publish:** publish the draft pre-release (this deploys the API site; the
-   npm job stays skipped); publish by hand:
-   `npm publish ./coagent8-0.6.0.tgz --tag next`;
-   `npm dist-tag rm coagent8 beta`; then `npm unpublish coagent8@1.0.0-beta.1`.
-   Unpublish only after 0.6.0 is on npm: removing the only version deletes the
-   whole package and blocks new versions for 24 hours. npm allows it for a
-   version older than 72 hours only without dependents, with under 300 downloads
-   in the last week and a single owner; the number is never reusable. Then check
-   `npm dist-tag ls coagent8` (npm keeps a `latest` tag).
-   - **Step 8a - VS Code Marketplace:** publish the VSIX downloaded from the
-     release, verified in step 7, as a pre-release under the publisher
-     `okidev`: `npx @vscode/vsce publish --pre-release --packagePath
-     coagent8-mcp-0.6.0.vsix` with the publisher's token. The Marketplace never
-     accepts a version twice, so only the verified file goes up. Open VSX is not
-     part of this release.
-9. **npm trusted publishing** (rule 02 section 8): on npmjs.com, package
-   `coagent8` > Settings > Trusted publishing: GitHub Actions, repository
-   `oktawianwybieralski/coagent8`, workflow `npm-publish.yml`, environment
-   `npm`; then disallow token publishing. On GitHub create the environment `npm`
-   (required reviewer: the owner; deployment tags `v*`) and the repository
-   variable `NPM_TRUSTED_PUBLISHING` = `true`.
-
-After step 9 the default flow of rule 02 applies to every change.
+- [ ] **Owner step 9 - npm trusted publishing** (rule 02 section 8): on
+  npmjs.com, package `coagent8` > Settings > Trusted publishing: GitHub Actions,
+  repository `oktawianwybieralski/coagent8`, workflow `npm-publish.yml`,
+  environment `npm`; then disallow token publishing. On GitHub create the
+  environment `npm` (required reviewer: the owner; deployment tags `v*`) and the
+  repository variable `NPM_TRUSTED_PUBLISHING` = `true`. Until enabled,
+  `npm-publish.yml` stays skipped and npm releases are published manually.
 
 ## REPO-003: one numeric version for npm, VSIX and tags
 
 Owner decision 2026-10-11: drop SemVer pre-release suffixes. VS Code accepts only
-numeric `major.minor.patch` for an extension and shows Restart Extensions after an
-update only when that number changes (`getRuntimeState` in VS Code 1.141.0 compares
-`e.version !== i.version`). `scripts/build-vscode.cjs` strips `-beta.N`, so every
-beta, rc and the final release would be VSIX `1.0.0`: a new VSIX is not offered a
-restart and the Marketplace refuses a repeated version. Each preview raises the
-minor; npm, VSIX and the Git tag carry the same number, so no mapping is needed.
-Owner decision 2026-10-11: start at 0.5, which leaves room for rc.2 after three
-betas. Every version below 1.0.0 is a preview (VS Code pre-release, GitHub
+numeric `major.minor.patch` for an extension and offers Restart Extensions after
+an update only when that number changes, and the Marketplace refuses a repeated
+version. Each preview stage raises the minor, while a fix-only preview release
+raises the patch (`0.6.1`). npm, the VSIX and the Git tag carry the same number.
+Every version below `1.0.0` is a preview (VS Code pre-release, GitHub
 pre-release, npm `next`):
 
 | Preview | Version | Tag |
 | --- | --- | --- |
 | beta.1 (npm name placeholder) | 0.5.0, skipped | none; npm `1.0.0-beta.1` is withdrawn |
-| beta.2 | 0.6.0 | `v0.6.0` |
+| beta.2 | 0.6.0 (released) | `v0.6.0` |
+| Fix-only preview patch | 0.6.1 | `v0.6.1` |
 | beta.3 or rc.1 | 0.7.0 | `v0.7.0` |
 | rc.1 or rc.2 | 0.8.0 / 0.9.0 | `v0.8.0` / `v0.9.0` |
 | release | 1.0.0 | `v1.0.0` |
 
-The withdrawal of the npm placeholder is REPO-002 owner step 8; npm never reuses
-a published version number, so the new numbers do not collide with it. The local
-branch `release/v1.0.0-beta.2` was renamed `release/v0.6.0` on the owner's
-request (2026-10-11); it has no remote branch yet (REPO-002 owner step 5).
-
-- [x] **REPO-003a - versions and release rules.** Start: `package.json`,
-  `extensions/vscode/package.json`, `scripts/build-vscode.cjs`,
-  `scripts/package-artifacts.cjs`, `.github/workflows/`, `.agents/rules/02-git-workflow.md`,
-  README tester guide, `CHANGELOG.md` generation (`cliff.toml`), `docs/ROADMAP.md`
-  (REPO-002, Release acceptance), `docs/HANDOFF.md`. Set the next preview's number,
-  keep VSIX pre-release marking and npm `next` for previews, remove the suffix
-  stripping, rename tags/lines/branches in rules and docs (`v0.N.0`, line for 1.0),
-  keep historical evidence as history. Check: build, package and VSIX inspection,
-  `npm run changelog:check`, workflow lint where available. Tags, branch names on
-  GitHub and anything on npm stay owner actions.
-  Evidence: [REPO-003a](HANDOFF.md#repo-003a-one-numeric-version).
+Completed: `REPO-003a` synchronized manifests, VSIX packaging, workflows and
+changelog rules ([evidence](HANDOFF.md#repo-003a-one-numeric-version)).
 
 ## FEEDBACK-060: findings of the 0.6.0 native acceptance
 
-Native acceptance on 2026-10-11: an isolated VS Code instance
-(`--user-data-dir`/`--extensions-dir`) with the VSIX of CI run 38173983280
-(head `ef4d7cc`, files identical to the VSIX), driven by Claude Code, Codex and
-Antigravity agents against the cheapest model of each backend, plus the owner's
-own use. Evidence: [HANDOFF](HANDOFF.md#feedback-060-native-acceptance-of-060).
-PASS: consult on every backend, review findings and READY after fixes,
-continuation, history and paging, close, issue drafts, workspace isolation,
-cancel of a running Codex and agy turn, no home paths in answers.
+Native acceptance on 2026-10-11 verified the `0.6.0` VSIX and tarball in an
+isolated VS Code instance across Claude Code, Codex and Antigravity
+([evidence](HANDOFF.md#feedback-060-native-acceptance-of-060)).
 
-### Before 0.6.0 (on `release/v0.6.0`)
+Completed before `0.6.0`:
 
-- [x] **FEEDBACK-060a - review in a repository Git refuses.** In a repository
-  owned by another account (here the Codex sandbox user `CodexSandboxOnline`)
-  Git reports dubious ownership and treats the folder as no repository, so
-  `git diff --cached` fails with `unknown option 'cached'` and `review` returns
-  that as `PROCESS_ERROR`. Start: `collectGitScope` in `src/workspace/git.ts`.
-  Check the repository first and return Git's own reason as a clear error;
-  never change `safe.directory`. Check: a fixture reproducing the refusal, the
-  error names the cause.
-- [x] **FEEDBACK-060b - Uninstall opens the extension page.** Manage Coding CLIs
-  > Uninstall of a vendor extension runs `workbench.extensions.search` with the
-  extension ID, so the Extensions view shows a search instead of the extension.
-  Open its page (`extension.open`) where VS Code's own Uninstall and Restart
-  Extensions are. Start: `uninstallExtension` in `extensions/vscode/src/extension.ts`
-  and its test in `tests/integrations/vscode-extension.test.js`. Check: the test
-  and the native case in an isolated instance.
+- `FEEDBACK-060a`: `collectGitScope` in `src/workspace/git.ts` checks repository
+  usability first and returns Git's own refusal reason (such as dubious
+  ownership) without modifying `safe.directory`.
+- `FEEDBACK-060b`: Manage Coding CLIs > Uninstall opens the extension page
+  (`extension.open`) instead of a search query.
 
-### After 0.6.0 (fix-only preview, then the documentation cleanup)
+Completed on `develop` for `0.6.1`:
 
-Cards remain small implementation tasks; related cards share a PR according
-to PATCH-061 below. The batch ships as the fix-only preview `0.6.1`.
+- `FEEDBACK-060c` (#4): `doctor` no longer caches a "not installed" probe when
+  `backends.agy.executable` is `vscode-extension` and no CLI path is resolved yet.
+- `FEEDBACK-060d`: post-turn review recheck reports a workspace change only when
+  the snapshot or completeness changed, without duplicating the incomplete-input
+  reason on untracked binaries.
+- `FEEDBACK-060e`: same-workspace refused session handles report their actual
+  state (`closed` with readable history, `invalidated`, `expired`), and `cancel`
+  on a closed session reports that it is closed.
+- `FEEDBACK-060j`: test files construct synthetic Stripe and Slack token
+  prefixes at run time so tracked sources hold no literal push-protection tokens.
+- `FEEDBACK-060s` (#2): `runCommand` preserves the call budget's `TIMEOUT` abort
+  reason instead of reporting budget expiry as `ABORTED: Operation cancelled.`.
 
-- [x] **FEEDBACK-060c - models view right after a CLI appears (#4).** `doctor`
-  scope `models` reported `agy: not installed` while `health` seconds later found
-  agy 1.3.3 and consult worked; agy had been installed through its VS Code
-  extension minutes earlier. Cause: with `backends.agy.executable` set to
-  `vscode-extension`, the probe before the extension provided agy has no command,
-  so its cache key holds only environment stamps and the models view reused
-  "not installed" for the five-minute probe TTL (`health` probes afresh). Such a
-  probe is no longer cached; checking again launches nothing.
-- [x] **FEEDBACK-060d - review reasons for untracked binaries.** An untracked
-  `.pyc` made the footer add "Review workspace or input changed during the turn"
-  besides the correct "input is incomplete": the post-turn recheck treated any
-  incomplete input as a change. It now names a change only for a different
-  snapshot or a change in completeness; incomplete input keeps blocking READY
-  with its own reason.
-- [x] **FEEDBACK-060e - closed sessions.** `consult` with a closed handle ends
-  with "(finished, no history)" although its history stays readable; `cancel`
-  of a closed session says "no running turn" instead of "closed". Now a refused
-  handle of the same workspace names its state (closed, with readable history;
-  invalidated; expired), another workspace's still gets the generic refusal, a
-  call that started no turn omits "no history", and `cancel` says "is closed".
+### Remaining 0.6.1 feedback tasks
+
 - [ ] **FEEDBACK-060f1 - scope session paging parameters.** Keep the current
   list behavior; describe `limit` and `cursor` as history-only in the tool
   schema and session skill. Start: `src/mcp/tools/session.tool.ts`,
@@ -2244,18 +781,6 @@ to PATCH-061 below. The batch ships as the fix-only preview `0.6.1`.
   installing the npm CLI; standalone instructions remain valid. Check: content
   against contributed commands, extension regressions if messages change;
   native verification belongs to PATCH-061-N1.
-- [x] **FEEDBACK-060j - test credentials that trip push protection.** Synthetic
-  Stripe and Slack keys in `tests/security/redaction.test.js` and
-  `tests/sessions/history.test.js` (and a Slack token in
-  `tests/diagnostics/issue.test.js`) were allowed once on GitHub; their
-  prefixes are now joined at run time, so the sources hold no literal token.
-- [x] **FEEDBACK-060s - budget expiry reported as a cancellation (#2).** When
-  `timeout_ms` ran out during the CLI turn, 0.6.0 answered `ABORTED: Operation
-  cancelled.` (not retryable) on Codex and agy: `runCommand` dropped the
-  budget's `TIMEOUT` abort reason. It now reports `TIMEOUT` with the budget's
-  message. A caller's `timeout_ms` still bounds the complete call; the agy
-  headless host's own 180-second limit is a client constraint
-  ([ARCHITECTURE](ARCHITECTURE.md)), not a CoAgent8 default (900 s).
 
 ### DOCS-002: documentation cleanup after 0.6.0
 
@@ -2264,10 +789,9 @@ merged behavior; prose-only checks per rule 04. PATCH-061 groups DOCS-002a with
 PUBLIC-001c, DOCS-002b with PUBLIC-001b, and both README tasks with FEEDBACK-060i.
 Do not duplicate their edits. The queue distinguishes 0.6.1 from later cleanup.
 
-- [ ] **DOCS-002a - ROADMAP.** Keep only open work, decisions still in force and
+- [x] **DOCS-002a - ROADMAP.** Keep only open work, decisions still in force and
   acceptance; remove completed cards, superseded beta.1/beta.2 paths, the
-  REPO-002 migration once its owner steps are done, and stale status
-  ("unaccepted candidate", Node 20/22, `main`).
+  REPO-002 migration once its owner steps are done, and stale status.
 - [ ] **DOCS-002b - HANDOFF.** Reduce to the current state and the latest
   evidence; older session evidence stays in Git history.
 - [ ] **DOCS-002c - ARCHITECTURE.** Verify contracts against the 0.6.0 code;
@@ -2310,15 +834,10 @@ history stays as published; nothing found justifies rewriting it.
   fixtures and replaces any real account values with synthetic data. Each
   records the inspected files and runs the affected backend tests; an audit
   finding no replacement needed is evidence, not a reason to fabricate changes.
-- [ ] **PUBLIC-001b - HANDOFF written for public readers.** HANDOFF is agent
-  working memory: CI run IDs, local tool versions, owner release steps and
-  stale states (`devlop`, a ruleset on `main`). With DOCS-002b the owner
-  chooses: keep it tracked and reduced to the current state and evidence, or
-  move it to the ignored `/docs/.local/` and update `AGENTS.md`, rule 04 and
-  every link that names it as an active document.
-  Default for DOCS-002b/PUBLIC-001b: keep HANDOFF tracked as required by the
-  current active-document contract, reduce it in place to current state and
-  evidence, and preserve release hashes/check results. Moving it is a separate
+- [ ] **PUBLIC-001b - HANDOFF written for public readers.** With DOCS-002b,
+  keep HANDOFF tracked as required by the active-document contract, reduce it in
+  place to the current state and evidence, and preserve the rights inventory and
+  release hashes/check results. Moving it to `/docs/.local/` would be a separate
   owner decision, not a prerequisite for this cleanup.
 - [ ] **PUBLIC-001c - ROADMAP tone.** Together with DOCS-002a, phrase the
   remaining cards for outside readers: decisions and acceptance instead of
@@ -2335,57 +854,29 @@ history stays as published; nothing found justifies rewriting it.
 
 ### LIC-001: planned MIT relicensing
 
-Owner request, 2026-10-12: plan MIT relicensing together with the 0.6.1 work.
-Target: standard MIT for owner-controlled source, documentation and artwork
-from 0.6.1. PR #19 merged as `fc76539` updates LICENSE, distribution metadata
-and license guidance on `develop`; its six CI jobs passed. Published 0.6.0 and
-the withdrawn npm 1.0.0-beta.1 retain their GPL-3.0-only permissions.
-Previously distributed GPL copies retain their permissions; do not rewrite
-tags, published artifacts or generated historical changelog entries. Third-party
-material keeps its own license and notices. Trademark policy is PUBLIC-001d,
-separate from the copyright grant.
-
+Standard MIT applies to owner-controlled source, documentation and artwork from
+`0.6.1` (owner decision 2026-10-12). Published `0.6.0` and the withdrawn npm
+`1.0.0-beta.1` retain their `GPL-3.0-only` permissions; do not rewrite tags,
+published artifacts or generated historical changelog entries. Third-party
+material keeps its own license and notices (`dist/THIRD_PARTY_NOTICES.txt`).
+Trademark policy (`PUBLIC-001d`) remains separate from the copyright grant.
 References: [standard MIT text](https://opensource.org/license/mit),
 [GNU licensing FAQ](https://www.gnu.org/licenses/gpl-faq.html#HeardOtherLicense)
 and [the 0.6.0 GPL license](https://github.com/oktawianwybieralski/coagent8/blob/v0.6.0/LICENSE)
-sections 2 and 7(e). Git author names alone do not
-establish copyright ownership or permission to relicense imported material.
+sections 2 and 7(e).
 
-- [x] **LIC-001a - rights and material inventory.** Inventory recorded in
-  HANDOFF for the owner-authorized MIT change in PR #19; third-party dependency
-  licenses stay unchanged. Inspect tracked source,
-  documentation, skills, logo/artwork sources, fixtures and copied/vendored
-  material; use history and attribution to identify rights holders and existing
-  terms. Record owner confirmation/permissions for the scope being relicensed,
-  plus an inventory of third-party exceptions and their required notices in
-  HANDOFF. Acceptance: every included category has an evidenced MIT basis;
-  uncertain ownership or GPL-only third-party code blocks LIC-001b until
-  resolved, excluded lawfully or replaced in a separate task. Do not infer
-  sole ownership from squash history or remove attribution to obtain a clean
-  score. Audit evidence precedes license edits. The implementation candidate
-  combines a/b/c1 and the README license sections in one licensing PR so the
-  terms and metadata remain synchronized; broader README cleanup stays separate.
-- [x] **LIC-001b - license text and metadata.** Merged in PR #19 after
-  independent READY review; six PR and six post-merge CI jobs passed. After LIC-001a,
-  replace the root LICENSE with the unmodified standard MIT terms and accurate owner/year
-  notice. Update root package/lock metadata, `plugin.json`, the extension
-  manifest and applicable owner-controlled file headers together; inventory
-  other manifests rather than changing independent tooling/third-party terms
-  indiscriminately. Keep dependency license texts and THIRD_PARTY_NOTICES.
-  Acceptance: all first-party distribution metadata agrees with the approved
-  MIT scope; version stays 0.6.0 until the release PR. Check: scope-based package
-  gate, affected package regressions and notice comparison.
-- [x] **LIC-001c - public license and contribution guidance.** License
-  sections/badges in both READMEs and contribution guidance (LIC-001c1) merged
-  in PR #19. Broader DOCS-002d1/d2 first-use/limitations work remains open;
-  it does not require repeating these license edits. Both READMEs describe
-  the planned MIT release without claiming older GPL copies changed license.
-  Update contribution guidance (LIC-001c1) so future
-  contributions use the applicable project license; do not introduce a CLA or
-  copyright assignment silently. Coordinate artwork scope and trademark text
-  with PUBLIC-001d. Acceptance: user/contributor guidance agrees with LICENSE
-  and manifests, and third-party exceptions remain explicit. License guidance
-  acceptance is separate from broader README cleanup; content/link checks per rule 04.
+Completed on `develop` in PR #19 (`fc76539`):
+
+- `LIC-001a`: recorded the first-party rights inventory and third-party dependency
+  notice audit in [HANDOFF](HANDOFF.md#lic-001-mit-relicensing-and-rights-inventory).
+- `LIC-001b`: replaced root `LICENSE` with standard MIT terms and synchronized
+  first-party package, plugin and extension metadata while retaining
+  `THIRD_PARTY_NOTICES.txt`.
+- `LIC-001c` (`LIC-001c1`): updated the README license sections, badges and
+  contributor license guidance in `AGENTS.md` and `.agents/rules/02-git-workflow.md`.
+
+Remaining verification:
+
 - [ ] **LIC-001d - exact-artifact and publication verification.** PATCH-061-R3
   and R4 inspect the packaged npm/VSIX LICENSE, manifest license fields,
   README text, artwork scope and third-party notices against the approved
@@ -2394,9 +885,6 @@ establish copyright ownership or permission to relicense imported material.
   legitimate MIT/BSD/etc. dependency notices are retained, any GPL detection
   has an investigated cause, and measured scores are recorded without a 100%
   guarantee. No extra implementation PR duplicates these release checks.
-
-LIC-001a/b/c are complete; LIC-001d remains a release verification task. Preserve
-the rights inventory and dependency notices during the remaining packaging work.
 
 ## SUPPLY-001: Socket package scores
 
@@ -2659,14 +1147,17 @@ does not complete a native task.
 
 ## Release acceptance
 
-Stage names stay; each stage ships as the next minor below 1.0.0
+Stage names stay; each stage ships as the next minor below 1.0.0, while fix-only
+preview updates raise the patch
 ([REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)): beta.2 is
-`0.6.0`, the following previews `0.7.0`, `0.8.0` and `0.9.0`.
+`0.6.0` (released), the current fix-only preview is `0.6.1`, and the following
+previews are `0.7.0`, `0.8.0` and `0.9.0`.
 
 | Stage | Required scope |
 | --- | --- |
-| BETA-001: beta.2 (0.6.0) | Bridge audit blockers (AUDIT-001-A01 to A07), AX-007a-c, WINDOWS-001a, SKILLS-001a-d, then EXEC-001-T12 as the fresh package/matrix/independent review and native VS Code checks below. Release notes list known limits. First tester release; beta.1 was the name placeholder. No write claim. |
-| BETA-001: beta.3 (0.7.0) | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e may ship. |
+| BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](HANDOFF.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
+| PATCH-061: 0.6.1 (fix-only preview) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
+| BETA-001: beta.3 (0.7.0) | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e and SUPPLY-001c-e may ship. |
 | RC-001: rc.1 (next preview, first on `1.0.x`) | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
