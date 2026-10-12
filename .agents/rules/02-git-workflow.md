@@ -245,6 +245,8 @@ become the final commit, so they must meet this section.
   Before confirming, edit the squash message so that it complies with section 2
   (keep footers such as `Fixes #...` and `BREAKING CHANGE:`; remove any AI
   attribution). There is no other merge method: the rulesets allow only squash.
+  An agent merging PRs that the owner listed follows the
+  [pr-merge skill](../skills/pr-merge/SKILL.md) step by step.
 
 ---
 
