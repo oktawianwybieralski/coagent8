@@ -2165,12 +2165,14 @@ cancel of a running Codex and agy turn, no home paths in answers.
 Each card is its own PR into `develop`; the batch ships as the next fix-only
 preview, `0.6.1` (see below).
 
-- [ ] **FEEDBACK-060c - models view right after a CLI appears.** `doctor` scope
-  `models` reported `agy: not installed` while `health` seconds later found agy
-  1.3.3 and consult worked; agy had been installed through its VS Code extension
-  minutes earlier. The models view probes (`probeBackend`, not fresh), so first
-  reproduce: when the CLI resolves, what the probe cache and resolver held. A
-  client choosing from the models view never offers agy meanwhile.
+- [x] **FEEDBACK-060c - models view right after a CLI appears (#4).** `doctor`
+  scope `models` reported `agy: not installed` while `health` seconds later found
+  agy 1.3.3 and consult worked; agy had been installed through its VS Code
+  extension minutes earlier. Cause: with `backends.agy.executable` set to
+  `vscode-extension`, the probe before the extension provided agy has no command,
+  so its cache key holds only environment stamps and the models view reused
+  "not installed" for the five-minute probe TTL (`health` probes afresh). Such a
+  probe is no longer cached; checking again launches nothing.
 - [ ] **FEEDBACK-060d - review reasons for untracked binaries.** An untracked
   `.pyc` made the footer add "Review workspace or input changed during the turn"
   besides the correct "input is incomplete". Name only the true reasons.

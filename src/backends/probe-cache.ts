@@ -306,7 +306,8 @@ export interface ProbeBackendOptions {
 /**
  * Returns the backend's probe, reusing a cached result while its CLI, configuration and
  * selected environment stamps are unchanged and it is younger than the five-minute TTL.
- * Concurrent misses share one probe; a failed probe is not cached.
+ * Concurrent misses share one probe; a failed probe, and an uninstalled probe without a
+ * command (a configured executable that does not exist yet), is not cached.
  * @param id - Backend to probe.
  * @param options - `fresh` always probes and replaces the cached result (doctor); `context` supplies read budget/signal.
  */
@@ -320,8 +321,12 @@ export async function probeBackend(id: ProviderId, options: ProbeBackendOptions 
   const inflightKey = `probe:${id}`;
   return coalesce(inflightKey, probeFn, !options.fresh, async (readContext) => {
     const probe = await probeFn.call(adapter, readContext);
+    // An uninstalled probe without a command reports a configured executable that is not there
+    // yet (for example a vendor extension still installing its CLI). Its key cannot see the
+    // file appear, and repeating that check launches nothing, so it is never reused.
     if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
-      cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
+      if (probe.installed || probe.command) cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
+      else cache.delete(id);
     }
     return probe;
   }, options.context);

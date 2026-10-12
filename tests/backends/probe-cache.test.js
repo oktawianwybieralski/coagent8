@@ -613,3 +613,27 @@ test('EXEC-001-T08f: inspectQuotas forwards BackendReadContext and enforces pre-
     if (budget) budget.dispose();
   }
 });
+
+test('a probe without a command (an unresolved configured executable) is not reused, so a CLI that appears is seen (FEEDBACK-060c, #4)', async () => {
+  const original = adapterRegistry.agy;
+  const executable = path.join(tempDir, 'agy-appears.cjs');
+  let probes = 0, available = false;
+  adapterRegistry.agy = { id: 'agy', name: 'fixture', execute: async () => { throw new Error('must not run'); },
+    probe: async () => {
+      probes++;
+      // As `probeCommand` reports `backends.agy.executable: "vscode-extension"` before the extension provides agy.
+      return available ? { id: 'agy', name: 'fixture', installed: true, executionSupported: true, command: executable }
+        : { id: 'agy', name: 'fixture', installed: false, executionSupported: false, authStatus: 'unknown', authEvidence: ['no copy yet'] };
+    } };
+  try {
+    assert.equal((await probeBackend('agy')).installed, false);
+    fs.writeFileSync(executable, 'console.log("1.3.3")\n');
+    available = true;
+    assert.equal((await probeBackend('agy')).installed, true, 'the models view sees the CLI once it exists');
+    assert.equal(probes, 2);
+    await probeBackend('agy');
+    assert.equal(probes, 2, 'a resolved probe is still reused');
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});
