@@ -483,8 +483,9 @@ under the [MIT License](LICENSE). See LICENSE for the terms and warranty
 disclaimer. Bundled dependencies retain their own licenses and notices in
 `dist/THIRD_PARTY_NOTICES.txt`.
 
-The first planned MIT release is 0.6.1. Published 0.6.0 copies remain available
-under GPL-3.0-only; earlier copies distributed under MIT retain those terms.
+The planned MIT release is 0.6.1. Copies of published 0.6.0 and the withdrawn
+npm version 1.0.0-beta.1 retain their GPL-3.0-only permissions. This change
+does not revoke any license previously granted for a distributed copy.
 
 Created by [Oktawian Wybieralski](https://oki.dev) ·
 [GitHub repository](https://github.com/oktawianwybieralski/coagent8)

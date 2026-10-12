@@ -2362,7 +2362,7 @@ establish copyright ownership or permission to relicense imported material.
   score. Audit evidence precedes license edits. The implementation candidate
   combines a/b/c1 and the README license sections in one licensing PR so the
   terms and metadata remain synchronized; broader README cleanup stays separate.
-- [x] **LIC-001b - license text and metadata.** Implemented locally on
+- [ ] **LIC-001b - license text and metadata.** Implemented locally on
   `chore/mit-relicense`, pending independent review/integration. After LIC-001a,
   replace the root LICENSE with the unmodified standard MIT terms and accurate owner/year
   notice. Update root package/lock metadata, `plugin.json`, the extension

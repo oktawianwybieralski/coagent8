@@ -278,5 +278,6 @@ new number, so VS Code offers **Restart Extensions** after an update. The
 This checkout is licensed under **MIT**, including the project artwork. The
 extension includes `LICENSE` and the notices of its bundled dependencies in
 `dist/THIRD_PARTY_NOTICES.txt`; those dependencies retain their own licenses.
-The first planned MIT release is 0.6.1. Published 0.6.0 copies retain their
-GPL-3.0-only permissions.
+The planned MIT release is 0.6.1. Copies of published 0.6.0 and the withdrawn
+npm version 1.0.0-beta.1 retain their GPL-3.0-only permissions. Previously
+granted licenses are not revoked.

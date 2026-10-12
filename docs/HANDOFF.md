@@ -54,9 +54,9 @@ to the pre-change build (SHA-256
 `b29a2a04d624f9c7630c56db62474732c6a12911ac5061657754aea91c91cb67`).
 
 - Tarball SHA-256:
-  `4b08507efe101ce104f39ecf09e8b183fa9317fe545b175a1965fd63305e4ec3`.
+  `18e4b2ddf8ce4a73343630786bd81ede2e3e16908ceb0235a233fbc09cc6f7f6`.
 - VSIX SHA-256:
-  `ed1a17e5588ac25d155d6d5d93716cf3a9b720f6d72dc08f07db8b13ebd42852`.
+  `396e1652bd447cb23700f0cf4c9c23225ef91466ac57976a6e93820771495132`.
 
 NOT_RUN: native host acceptance, published MIT artifact verification and Socket
 remeasurement; these belong to the 0.6.1 release tasks. Independent review and
