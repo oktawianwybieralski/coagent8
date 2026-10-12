@@ -242,6 +242,11 @@ test('Gemini (agy) gets a 2 s SIGTERM grace on POSIX to shut down its own comman
     const controller = new AbortController();
     const result = await execute('request', { model: MODEL, cwd: tempDir, timeoutMs: 15000, abortSignal: controller.signal, onEvent: event => { if (event.type === 'assistant_delta' || event.type === 'assistant_message') controller.abort(); } });
     assert.equal(result.status, 'cancelled');
+    // Exit code, signal and the handler marker tell a signal before the handler (SIGTERM, no
+    // marker) from a cleanup that outlasted the grace (SIGKILL).
+    const exit = `exitCode=${result.exitCode} signal=${result.signal} handlerEntered=${fs.existsSync(`${marker}.received`)}`;
+    assert.equal(result.exitCode, 0, exit);
+    assert.equal(result.signal, null, exit);
     assert.equal(fs.readFileSync(marker, 'utf8'), 'clean', 'agy finished its SIGTERM cleanup before SIGKILL');
   } finally {
     delete process.env.coagent8_FIXTURE_MODE;
