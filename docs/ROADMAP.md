@@ -2234,6 +2234,40 @@ Versioning (owner decision 2026-10-11, rule 02 section 4): a fix-only release
 of a preview raises the patch, so this batch ships as `0.6.1`; the planned stage
 numbers (`0.7.0` beta.3, `0.8.0`/`0.9.0` release candidates) stay.
 
+### PUBLIC-001: public repository content
+
+Review of the tracked files on 2026-10-12 (owner request): no real secrets
+(token-shaped strings are synthetic test inputs) and no unredacted home paths.
+The fixes below ship with `0.6.1`, each as its own PR into `develop`. Squashed
+history stays as published; nothing found justifies rewriting it.
+
+- [ ] **PUBLIC-001a - synthetic account data in Claude recordings.**
+  `tests/fixtures/claude-cli/recordings/usage-subscription.json` is a real
+  `/usage` capture of the owner's account (limit percentages, time zone,
+  request and session counts, context and subagent shares); the `.jsonl`
+  recordings carry real `rate_limit_event` utilization and overage fields.
+  Replace those values with synthetic ones that keep the exact recorded format
+  (line anchors, `·` separators, the `11:49pm`-style reset times the parser
+  reads) and update the expectations in `tests/backends/claude/usage.test.js`
+  and users of `tests/fixtures/claude-cli/claude.cjs`. Check the Codex fixture
+  (`planType`, credits) the same way. Check: affected backend tests green, no
+  recorded value comes from a real account.
+- [ ] **PUBLIC-001b - HANDOFF written for public readers.** HANDOFF is agent
+  working memory: CI run IDs, local tool versions, owner release steps and
+  stale states (`devlop`, a ruleset on `main`). With DOCS-002b the owner
+  chooses: keep it tracked and reduced to the current state and evidence, or
+  move it to the ignored `/docs/.local/` and update `AGENTS.md`, rule 04 and
+  every link that names it as an active document.
+- [ ] **PUBLIC-001c - ROADMAP tone.** Together with DOCS-002a, phrase the
+  remaining cards for outside readers: decisions and acceptance instead of
+  session notes and internal procedure.
+- [ ] **PUBLIC-001d - name and logo outside the GPL.** The logo files (SVG,
+  PNG and the Affinity source, which holds the same artwork) are covered by
+  GPL-3.0 like the code. Add a short notice to README and the extension README
+  that the CoAgent8 name and logo are not licensed under the GPL (GPL-3.0
+  section 7(e) permits declining trademark rights); the owner approves the
+  wording. Check: content and link review, `git diff --check`.
+
 ## SUPPLY-001: Socket package scores
 
 Goal (owner request 2026-10-12): Socket's supply-chain score of the published
