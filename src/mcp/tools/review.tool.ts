@@ -28,6 +28,14 @@ export function getCanonicalReviewToolDefinition() {
   };
 }
 
+/**
+ * Collects the Git review input, executes or reuses a review verdict, and formats the result.
+ *
+ * @remarks
+ * When the collected snapshot, scope, backend and model match a completed review in a live
+ * session of the same workspace, no model turn is started and the refusal footer retains the
+ * workspace's valid `session_handle` so the caller can read history or continue after editing.
+ */
 export async function handleReview(
   toolName: string,
   args: ToolArguments,

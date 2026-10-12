@@ -276,6 +276,10 @@ async function executeTaskInternal(
       if (previous) {
         const trace = emitTrace();
         const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
+        const retainedHandle = prepared.previousSession?.sessionHandle ?? previous.sessionHandle;
+        const continuationAvailable = prepared.previousSession
+          ? prepared.previousSession.state === 'idle' && Boolean(prepared.previousSession.threadId)
+          : previous.continuationAvailable;
         return {
           isError: false,
           provider: prepared.backend.id,
@@ -285,9 +289,9 @@ async function executeTaskInternal(
             output: `No model turn: this request matches a completed review (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again.`,
             ...(prepared.model ? { model: prepared.model } : {}),
             truncated: false,
-            continuationAvailable: false,
+            continuationAvailable,
           },
-          sessionHandle: null,
+          sessionHandle: retainedHandle,
           meta: { turn: 0, toolCount: 0, durationMs: totalMs, totalMs, historyAvailable: false, phases: trace.phases },
           warnings: [...(options.warnings || []), ...(prepared.backend.warnings || [])],
           review: { verdict: previous.review.verdict, ...(previous.review.reason ? { reason: previous.review.reason } : {}) },

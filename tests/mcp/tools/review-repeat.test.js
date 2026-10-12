@@ -12,8 +12,9 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-review-repeat-')
 process.env.coagent8_DIR = path.join(tempDir, 'data');
 const { adapterRegistry } = require('../../../src/backends/registry.ts');
 const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
+const { handleSession } = require('../../../src/mcp/tools/session.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
-const { getSessionsDir } = require('../../../src/sessions/session.ts');
+const { createSession, updateSession, getSessionsDir } = require('../../../src/sessions/session.ts');
 const { readResult } = require('../../helpers/result.cjs');
 const original = { agy: adapterRegistry.agy, codex: adapterRegistry.codex };
 test.after(() => {
@@ -51,7 +52,7 @@ function installReviewers(answer = snapshot => ['REVIEW: 1', `SNAPSHOT: ${snapsh
   return turns;
 }
 
-test('an unchanged repeat review starts no model turn and refers to the earlier verdict', async () => {
+test('an unchanged repeat review starts no model turn, refers to the earlier verdict and retains session_handle', async () => {
   const { repo } = fixtureRepo('unchanged');
   const turns = installReviewers();
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy', 'codex'] } });
@@ -66,8 +67,47 @@ test('an unchanged repeat review starts no model turn and refers to the earlier 
   assert.match(repeat.answer, new RegExp(`^No model turn: this request matches a completed review \\(same snapshot, scope, backend and model\\) in session ${first.sessionHandle}, completed `));
   assert.equal(repeat.verdict, first.verdict, 'the earlier server verdict is reported');
   assert.equal(repeat.reason, first.reason);
-  assert.equal(repeat.sessionHandle, null, 'no continuation is offered for the unchanged input');
+  assert.equal(repeat.sessionHandle, first.sessionHandle, 'retains the workspace session_handle in the refusal footer (FEEDBACK-060f4)');
+  assert.equal(repeat.continuationAvailable, true, 'retained session remains ready for continuation');
+  assert.equal(repeat.historyAvailable, true, 'zero-turn refusal does not mark existing session history as missing');
   assert.ok(second.content[0].text.length < 2000, 'the reference is bounded');
+
+  // Caller can read history directly with the retained handle without calling session action: list
+  const hist = await handleSession({ action: 'history', session_handle: repeat.sessionHandle, workspace_path: repo });
+  assert.ok(hist.structuredContent.events.length > 0);
+
+  // If the caller explicitly passed another valid session_handle in the same workspace, that handle is retained
+  const otherSameWorkspace = createSession('agy', repo, '11111111-2222-3333-4444-555555555599');
+  const repeatWithExplicit = readResult(await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve));
+  assert.equal(turns.agy, 1);
+  assert.equal(repeatWithExplicit.sessionHandle, otherSameWorkspace.sessionHandle);
+  assert.equal(repeatWithExplicit.continuationAvailable, true);
+
+  // If the matched session has no native threadId, the handle is still retained for history with (finished)
+  await updateSession(first.sessionHandle, { threadId: null });
+  const repeatFinished = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(repeatFinished.sessionHandle, first.sessionHandle);
+  assert.equal(repeatFinished.continuationAvailable, false);
+  await updateSession(first.sessionHandle, { threadId: '11111111-2222-3333-4444-555555555551' });
+
+  // Caller can continue with the retained handle after changing the code
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 4;\n');
+  const continued = readResult(await handleReview('review', { session_handle: repeat.sessionHandle }, repo, null, null, approve));
+  assert.equal(turns.agy, 2);
+  assert.equal(continued.sessionHandle, repeat.sessionHandle);
+  assert.equal(continued.turn, 2);
+
+  // Another workspace never matches or discloses the first workspace's session_handle
+  const { repo: otherRepo } = fixtureRepo('unchanged-other-workspace');
+  await assert.rejects(
+    async () => handleReview('review', { session_handle: repeat.sessionHandle }, otherRepo, null, null, approve),
+    /belongs to another workspace/
+  );
+  assert.equal(turns.agy, 2, 'cross-workspace handle rejection starts no turn');
+  const otherFirst = readResult(await handleReview('review', {}, otherRepo, null, null, approve));
+  assert.equal(turns.agy, 3, 'identical diff in another workspace runs its own review');
+  assert.notEqual(otherFirst.sessionHandle, repeat.sessionHandle);
+  assert.ok(!otherFirst.text.includes(repeat.sessionHandle), 'never discloses another workspace handle');
 });
 
 test('a changed snapshot, scope, model or backend proceeds', async () => {

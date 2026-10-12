@@ -174,7 +174,8 @@ export function formatExecutionResult(
   const durationSec = (durationMs / 1000).toFixed(1);
   const ops = executionMeta.toolCount > 0 ? ` \u{b7} ${executionMeta.toolCount} ${executionMeta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = executionMeta.turn > 1 ? `turn ${executionMeta.turn}, ` : '';
-  // A call that started no turn wrote nothing, which says nothing about the session's history.
+  // A call that started no turn wrote nothing, which says nothing about the session's history;
+  // an unchanged repeat review still retains a valid workspace session_handle in the footer (FEEDBACK-060f4).
   const history = executionMeta.historyAvailable || executionMeta.turn === 0 ? '' : ', no history';
   // Labelled with its parameter name, so a caller passes it back as `session_handle` (AX-007b).
   const session = activeHandle ? ` \u{b7} session_handle=${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';

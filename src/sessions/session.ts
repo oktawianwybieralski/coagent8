@@ -481,15 +481,21 @@ export function listSessions(workspace: string): SessionRecord[] {
 /**
  * Finds the most recent completed review with this identity among the live sessions of one
  * workspace and backend (`AX-007c`).
- * @returns The session handle and stored outcome, or null when none matches.
+ * @returns The session handle, stored outcome and whether the session can continue, or null when none matches.
  * @throws When the sessions directory cannot be read; an unreadable record counts as absent.
  */
-export function findCompletedReview(workspace: string, backend: string, identity: ReviewIdentity): { sessionHandle: string; review: CompletedReview } | null {
-  let found: { sessionHandle: string; review: CompletedReview } | null = null;
+export function findCompletedReview(
+  workspace: string,
+  backend: string,
+  identity: ReviewIdentity
+): { sessionHandle: string; review: CompletedReview; continuationAvailable: boolean } | null {
+  let found: { sessionHandle: string; review: CompletedReview; continuationAvailable: boolean } | null = null;
   for (const s of listSessions(workspace)) {
     const r = s.lastReview;
     if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model) continue;
-    if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) found = { sessionHandle: s.sessionHandle, review: r };
+    if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) {
+      found = { sessionHandle: s.sessionHandle, review: r, continuationAvailable: s.state === 'idle' && Boolean(s.threadId) };
+    }
   }
   return found;
 }
