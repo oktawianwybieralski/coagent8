@@ -14,7 +14,7 @@ const { adapterRegistry } = require('../../../src/backends/registry.ts');
 const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
 const { handleSession } = require('../../../src/mcp/tools/session.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
-const { createSession, updateSession, getSessionsDir } = require('../../../src/sessions/session.ts');
+const { createSession, updateSession, acquireSessionTurn, releaseSessionTurn, getSessionsDir } = require('../../../src/sessions/session.ts');
 const { readResult } = require('../../helpers/result.cjs');
 const original = { agy: adapterRegistry.agy, codex: adapterRegistry.codex };
 test.after(() => {
@@ -83,12 +83,22 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
   assert.equal(repeatWithExplicit.sessionHandle, otherSameWorkspace.sessionHandle);
   assert.equal(repeatWithExplicit.continuationAvailable, true);
 
-  // If the matched session has no native threadId, the handle is still retained for history with (finished)
+  // If the matched session has no native threadId or is busy running a turn, the handle is retained with (finished)
   await updateSession(first.sessionHandle, { threadId: null });
   const repeatFinished = readResult(await handleReview('review', {}, repo, null, null, approve));
   assert.equal(repeatFinished.sessionHandle, first.sessionHandle);
   assert.equal(repeatFinished.continuationAvailable, false);
   await updateSession(first.sessionHandle, { threadId: '11111111-2222-3333-4444-555555555551' });
+
+  const busyTurn = await acquireSessionTurn(otherSameWorkspace.sessionHandle);
+  assert.equal(busyTurn.ok, true);
+  try {
+    const repeatBusy = readResult(await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve));
+    assert.equal(repeatBusy.sessionHandle, otherSameWorkspace.sessionHandle);
+    assert.equal(repeatBusy.continuationAvailable, false);
+  } finally {
+    await releaseSessionTurn(otherSameWorkspace.sessionHandle, busyTurn.data.token);
+  }
 
   // Caller can continue with the retained handle after changing the code
   fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 4;\n');

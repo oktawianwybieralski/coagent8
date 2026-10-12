@@ -16,9 +16,9 @@ export const sessionToolDefinition = {
     properties: {
       action: { type: 'string', enum: ['list', 'history', 'close'] },
       session_handle: { type: 'string', description: 'history/close.' },
-      cursor: { type: 'string', description: 'history only.' },
-      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history only.' },
-      delete_history: { type: 'boolean', description: 'close: delete history.' },
+      cursor: { type: 'string', description: 'history.' },
+      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history.' },
+      delete_history: { type: 'boolean', description: 'close: drop history.' },
       ...WORKSPACE_PARAMETER,
     },
     required: ['action'],
@@ -27,7 +27,7 @@ export const sessionToolDefinition = {
 
 export const cancelToolDefinition = {
   name: CANONICAL_TOOL_NAMES.CANCEL,
-  description: 'Cancel a running turn.',
+  description: 'Cancel the running turn of a session.',
   inputSchema: {
     type: 'object',
     properties: {

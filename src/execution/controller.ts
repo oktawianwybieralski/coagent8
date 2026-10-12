@@ -35,7 +35,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { loadConfigSnapshot } from '../config.js';
-import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
+import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, isProcessAlive, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
@@ -278,7 +278,7 @@ async function executeTaskInternal(
         const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
         const retainedHandle = prepared.previousSession?.sessionHandle ?? previous.sessionHandle;
         const continuationAvailable = prepared.previousSession
-          ? prepared.previousSession.state === 'idle' && Boolean(prepared.previousSession.threadId)
+          ? !isProcessAlive(prepared.previousSession.activePid) && prepared.previousSession.state === 'idle' && Boolean(prepared.previousSession.threadId)
           : previous.continuationAvailable;
         return {
           isError: false,

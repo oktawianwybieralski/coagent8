@@ -494,7 +494,7 @@ export function findCompletedReview(
     const r = s.lastReview;
     if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model) continue;
     if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) {
-      found = { sessionHandle: s.sessionHandle, review: r, continuationAvailable: s.state === 'idle' && Boolean(s.threadId) };
+      found = { sessionHandle: s.sessionHandle, review: r, continuationAvailable: !active(s) && s.state === 'idle' && Boolean(s.threadId) };
     }
   }
   return found;
