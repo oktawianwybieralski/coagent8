@@ -24,8 +24,8 @@ patch `0.6.1` ([FEEDBACK-060](#feedback-060-findings-of-the-060-native-acceptanc
 the checkout keeps `0.6.0` until its release PR. The owner handles merges, tags
 and publication.
 
-The [0.6.1 task queue](#patch-061-061-task-queue) orders the remaining cards,
-their dependencies and release acceptance. Use it to select one bounded task.
+The [0.6.1 task queue](#patch-061-061-task-queue) orders the remaining `0.6.1`
+cards, their PR groups and release acceptance.
 
 | Area | Present locally | Remaining |
 | --- | --- | --- |
@@ -205,7 +205,7 @@ If a client cannot resolve the bundle path inside its plugin directory, `npx -y 
 
 ## Agent usability acceptance
 
-Execute one labelled card at a time using the verification shorthand and test groups above. A parent requirement closes only after its dependent cards pass. Extend existing owners rather than duplicating selection or governance policy per client.
+Each parent requirement closes only after its dependent cards pass. Extend existing owners rather than duplicating selection or governance policy per client.
 
 ### AX-001: prices before execution
 
@@ -347,10 +347,8 @@ libuv places non-detached server children into one server-wide `KILL_ON_JOB_CLOS
 
 ## AUDIT-001: corrected analysis follow-up
 
-Planned 2026-10-09 after checking the local source-analysis report against the
-code at `b1dbd99`. This section is the executable task list; local analysis
-files are historical input. All cards below are pending. This planning update
-does not authorize running the whole queue or mark any runtime defect fixed.
+Source-analysis triage against the codebase (`b1dbd99`, 2026-10-09). Cards `A01`
+through `A07` shipped in `0.6.0`; `A08` through `A21` remain open below.
 
 ### Triage and preserved contracts
 
@@ -557,10 +555,8 @@ not establish a defect, its fix is skipped.
 
 ### Audit traceability
 
-Audit `c265cdf` predates rewritten history; review `24052e3` is historical too.
-Mappings retain ownership, not an assertion that all findings remain open.
-Detailed reproductions remain recoverable from Git; optional local copies are
-not dependencies of this plan.
+Historical audit findings map to their owning roadmap tracks below; ownership
+mappings do not imply that fixed findings remain open.
 
 | Historical findings | Owner |
 | --- | --- |
@@ -577,8 +573,7 @@ not dependencies of this plan.
 ### CLI-FIRST-001: public CLI and MCP adapter
 
 These cards follow the accepted task/profile contracts and preserve the public
-MCP bridge until the CLI replacement is accepted. Use one command or native
-platform scenario per implementation assignment. CLI-first precedes rc.1 (owner
+MCP bridge until the CLI replacement is accepted. CLI-first precedes rc.1 (owner
 decision 2026-10-09). Cards 001a-001e do not depend on execution profiles and
 may proceed in the beta.3 window; 001f waits for accepted profiles.
 
@@ -784,10 +779,10 @@ Completed on `develop` for `0.6.1`:
 
 ### DOCS-002: documentation cleanup after 0.6.0
 
-The active documents carry history that Git already keeps. Check edits against
-merged behavior; prose-only checks per rule 04. PATCH-061 groups DOCS-002a with
-PUBLIC-001c, DOCS-002b with PUBLIC-001b, and both README tasks with FEEDBACK-060i.
-Do not duplicate their edits. The queue distinguishes 0.6.1 from later cleanup.
+Active project documents keep current contracts, open work and latest evidence
+while older history remains in Git. Check edits against merged behavior using
+prose-only checks per rule 04. PATCH-061 groups DOCS-002a with PUBLIC-001c,
+DOCS-002b with PUBLIC-001b, and both README tasks with FEEDBACK-060i.
 
 - [x] **DOCS-002a - ROADMAP.** Keep only open work, decisions still in force and
   acceptance; remove completed cards, superseded beta.1/beta.2 paths, the
@@ -812,22 +807,22 @@ numbers (`0.7.0` beta.3, `0.8.0`/`0.9.0` release candidates) stay.
 
 ### PUBLIC-001: public repository content
 
-Review of the tracked files on 2026-10-12 (owner request): no real secrets
-(token-shaped strings are synthetic test inputs) and no unredacted home paths.
-The fixes below ship with `0.6.1`, grouped into PRs by PATCH-061. Squashed
-history stays as published; nothing found justifies rewriting it.
+Tracked-file audit (2026-10-12): no real secrets (token-shaped strings are
+synthetic test inputs) and no unredacted home paths. The public-content updates
+below ship with `0.6.1`, grouped into PRs by PATCH-061. Squashed history stays
+as published.
 
 - [ ] **PUBLIC-001a - synthetic account data in Claude recordings.**
-  `tests/fixtures/claude-cli/recordings/usage-subscription.json` is a real
-  `/usage` capture of the owner's account (limit percentages, time zone,
-  request and session counts, context and subagent shares); the `.jsonl`
-  recordings carry real `rate_limit_event` utilization and overage fields.
-  Replace those values with synthetic ones that keep the exact recorded format
-  (line anchors, middle-dot separators, the `11:49pm`-style reset times the parser
-  reads) and update the expectations in `tests/backends/claude/usage.test.js`
-  and users of `tests/fixtures/claude-cli/claude.cjs`. Check the Codex fixture
-  (`planType`, credits) the same way. Check: affected backend tests green, no
-  recorded value comes from a real account.
+  `tests/fixtures/claude-cli/recordings/usage-subscription.json` and the
+  `.jsonl` recordings contain recorded account usage values (limit percentages,
+  time zone, request and session counts, context and subagent shares, and
+  `rate_limit_event` utilization/overage fields). Replace those values with
+  synthetic ones that keep the exact recorded format (line anchors, middle-dot
+  separators, the `11:49pm`-style reset times the parser reads) and update the
+  expectations in `tests/backends/claude/usage.test.js` and users of
+  `tests/fixtures/claude-cli/claude.cjs`. Check the Codex fixture (`planType`,
+  credits) the same way. Check: affected backend tests green, no recorded value
+  comes from a real account.
   Execute as two subtasks in `test/synthetic-account-fixtures`:
   PUBLIC-001a1 replaces Claude account values and updates
   affected Claude fixture expectations; PUBLIC-001a2 audits Codex plan/credit
@@ -839,7 +834,7 @@ history stays as published; nothing found justifies rewriting it.
   place to the current state and evidence, and preserve the rights inventory and
   release hashes/check results. Moving it to `/docs/.local/` would be a separate
   owner decision, not a prerequisite for this cleanup.
-- [ ] **PUBLIC-001c - ROADMAP tone.** Together with DOCS-002a, phrase the
+- [x] **PUBLIC-001c - ROADMAP tone.** Together with DOCS-002a, phrase the
   remaining cards for outside readers: decisions and acceptance instead of
   session notes and internal procedure.
 - [ ] **PUBLIC-001d - name and logo trademark notice.** Prepare a short
@@ -868,7 +863,7 @@ sections 2 and 7(e).
 Completed on `develop` in PR #19 (`fc76539`):
 
 - `LIC-001a`: recorded the first-party rights inventory and third-party dependency
-  notice audit in [HANDOFF](HANDOFF.md#lic-001-mit-relicensing-and-rights-inventory).
+  notice audit in [HANDOFF](HANDOFF.md#lic-001-mit-candidate).
 - `LIC-001b`: replaced root `LICENSE` with standard MIT terms and synchronized
   first-party package, plugin and extension metadata while retaining
   `THIRD_PARTY_NOTICES.txt`.
@@ -888,7 +883,7 @@ Remaining verification:
 
 ## SUPPLY-001: Socket package scores
 
-Goal (owner request 2026-10-12): Socket's supply-chain score of the published
+Goal (owner decision 2026-10-12): Socket's supply-chain score of the published
 npm package at least 90 % and its license score as high as the license allows.
 Baseline for `coagent8@0.6.0` from Socket's public firewall API
 (`https://firewall-api.socket.dev/purl/pkg%3Anpm%2Fcoagent8%400.6.0`), read
@@ -896,8 +891,6 @@ Baseline for `coagent8@0.6.0` from Socket's public firewall API
 vulnerability 1.00, overall 0.70; detected license
 `BSD-3-Clause AND GPL-3.0-only AND MIT`; 137 files, 4.5 MB unpacked. Socket
 publishes no alert weights, so each step is measured after its publication.
-Plan reviewed by Codex gpt-6.1-sol on 2026-10-12; its claims were checked
-against `node_modules` and the tests.
 
 Dependency alerts come from the installed tree, which exists only because
 `package.json` declares the bundled `@modelcontextprotocol/sdk`, `jsonc-parser`
@@ -923,8 +916,8 @@ Alerts on `coagent8` itself:
 | Copyleft license, non-permissive license | Published 0.6.0 is `GPL-3.0-only` | LIC-001; remeasure after publication |
 
 License baseline: the published 0.6.0 license alerts reflect GPL-3.0-only.
-LIC-001 now plans the owner-requested MIT change for 0.6.1 after the rights audit;
-SUPPLY-001f measures its actual effect instead of promising a score. The detected
+LIC-001 switches first-party terms to MIT for `0.6.1` after the rights audit;
+SUPPLY-001f measures the published effect rather than assuming a score. The detected
 `BSD-3-Clause` and `MIT` are accurate: the bundle contains MIT packages and
 BSD-3-Clause `fast-uri` and `smol-toml`, whose notices in
 `dist/THIRD_PARTY_NOTICES.txt` must stay.
@@ -997,22 +990,18 @@ approval or claim that their work has run.
 
 ### Implementation queue
 
-Owner-approved grouping, 2026-10-12, after the Opus 5.5 consultation: eight
-working PRs plus the release PR. Small task boundaries remain; each row below
-is a PR group, not one large coding-agent instruction. The group count is a
-planning baseline, not a reason to combine unrelated fixes or weaken checks.
-LIC-001a/b/c1 and the README license sections are already merged in PR #19.
-
-Execute groups in this serial order. Start each branch from fresh `develop`
-after the preceding PR merges; do not stack topic branches. The dependency
-column distinguishes technical dependencies from this chosen execution order.
-Complete the owning cards and their scope-based checks, then independently
-review the whole branch and prepare its PR evidence. Existing push/merge
-authorization rules, six CI jobs and sandbox constraints remain in force.
+Eight working PR groups plus the release PR, executed in serial order from
+fresh `develop` after each preceding PR merges (without stacking topic
+branches). The dependency column distinguishes technical dependencies from the
+chosen execution order. `LIC-001a/b/c1` and the README license sections are
+already merged in PR #19 (`fc76539`). Complete the owning cards and their
+scope-based checks, then independently review the whole branch and prepare its
+PR evidence. Existing push/merge authorization rules, six CI jobs and sandbox
+constraints remain in force.
 
 | Group | Branch / one PR | Ordered subtasks | Dependency / acceptance |
 | --- | --- | --- | --- |
-| 1 | `docs/roadmap-current-state` | DOCS-002a + PUBLIC-001c: inventory retained decisions/anchors; remove obsolete history; rephrase remaining work; synchronize PATCH-061 and completed MIT status | No technical dependency; establish the current plan before implementation. This grouping edit alone does not complete whole-document cleanup. |
+| 1 (done on branch) | `docs/roadmap-current-state` | DOCS-002a + PUBLIC-001c: inventory retained decisions/anchors; remove obsolete history; rephrase remaining work; synchronize PATCH-061 and completed MIT status | No technical dependency; establish the current plan before implementation. |
 | 2 | `test/synthetic-account-fixtures` | PUBLIC-001a1: synthetic Claude account values and expectations; PUBLIC-001a2: audit/synthesize Codex plan/credit fixtures | No technical dependency; affected backend tests and inspected-file inventory, or documented clean Codex audit. |
 | 3 | `build/package-distribution` | SUPPLY-001a: omit source maps with meaningful bundle-separation checks; SUPPLY-001b: move bundled dependencies to development dependencies | b after a within this branch; fresh packages, isolated consumer tree, MIT metadata and unchanged dependency notices verified. |
 | 4 | `fix/session-feedback` | FEEDBACK-060f1: paging parameters; f2: sequence gaps; f3: server-owner PID; f4: handle on unchanged review | f2 after f1; f4 last with no-turn and workspace-isolation regressions. Preserve stored sequence/cursor/ownership contracts. |
@@ -1022,14 +1011,13 @@ authorization rules, six CI jobs and sandbox constraints remain in force.
 | 8 | `docs/handoff-current-state` | DOCS-002b + PUBLIC-001b: inventory retained evidence; remove historical reports; summarize current state and remaining release checks | After groups 1-7, before R1; keep HANDOFF tracked, rights inventory, required hashes/check results and valid links. |
 | Release | `release/v0.6.1` | PATCH-061-R2: synchronized version fields and generated changelog only | After R1; release acceptance tasks below attach evidence to this candidate, without one PR per check. |
 
-### Small-agent execution and grouping safeguards
+### Grouping and verification safeguards
 
-Give the agent one subtask at a time with its ID, the card's starting files,
-expected behavior, acceptance and applicable checks. Record a focused commit
-and PASS/FAIL/NOT_RUN evidence before moving to the next subtask on the same
-branch. A parent card closes only when its children complete. Review the full
-PR once the group is ready; a changed reviewed snapshot requires renewed review.
-No full gate after every small edit and no arbitrary number of test repetitions.
+Execute one subtask per focused commit with its applicable scope-based checks
+(rule 04) and recorded PASS/FAIL/NOT_RUN evidence before advancing to the next
+subtask on the branch. A parent card closes only when its child tasks complete.
+Independently review the full branch diff before merge; any change to a
+reviewed snapshot requires renewed review.
 
 - Session feedback: finish f1-f3 before the behavioral f4 change. If f4 needs
   broader lifecycle/ownership changes, split it into
@@ -1171,12 +1159,11 @@ and [Git workflow](../.agents/rules/02-git-workflow.md).
 
 ### Native VS Code acceptance
 
-Record host/CLI versions, candidate/VSIX digest and PASS/FAIL/NOT_RUN per scenario:
-
-Each named operation below is one native acceptance case in an isolated profile,
-not a request to execute the entire lifecycle against the owner's installation.
-Record pre-state, action, observed post-state and preservation checks. A failed
-case produces a separate reproduction/fix card before rerunning that case.
+Record host/CLI versions, candidate/VSIX digest and PASS/FAIL/NOT_RUN per scenario.
+Each named operation below is a native acceptance scenario executed in an
+isolated VS Code profile, recording pre-state, action, observed post-state and
+preservation checks. A failed case produces a separate reproduction/fix card
+before rerunning that case.
 
 - Install/update: native restart, one provider, six current tools, no persistent
   restart banner.
@@ -1197,8 +1184,8 @@ case produces a separate reproduction/fix card before rerunning that case.
   standalone removal commands await user action. Full quit/restart and separate
   Extensions-view removal. Remove owned registrations/runtime/tagged backups/
   extension storage; preserve shared config/settings/credentials/histories.
-- Reinstall: first-install behavior with preserved config. Preliminary owner
-  acceptance predates 1353fb9 and does not accept its config migration.
+- Reinstall: verify first-install behavior and config migration with preserved
+  user configuration.
 
 ## Documentation ownership
 
