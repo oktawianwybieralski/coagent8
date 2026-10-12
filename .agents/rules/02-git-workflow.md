@@ -29,7 +29,9 @@ features, fixes, releases, backports - travels as its own pushed branch and PR.
 | Topic branch, commits, local checks, changelog regeneration | Yes | Yes |
 | Push a topic branch, open or update a PR | Only after the owner's explicit go-ahead in the session | Yes |
 | Independent review ([03-author-reviewer](03-author-reviewer.md)) | Yes (Reviewer role) | Yes |
-| Merge a PR, create a release line, push a tag | Never | Yes |
+| Merge a PR | Only on the owner's explicit instruction for that PR | Yes |
+| Create a release line, push a tag | Never | Yes |
+| Verify a draft release, edit its notes | Yes | Yes |
 | Publish a GitHub Release, approve the `npm` environment, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
 
 An agent prepares release PRs, release notes and evidence (section 5) and
@@ -246,105 +248,185 @@ become the final commit, so they must meet this section.
 | npm dist-tag | Holds | Install |
 | --- | --- | --- |
 | `next` | The newest preview (a version below 1.0.0) | `npm install coagent8@next` |
-| `latest` | The newest final release | `npm install coagent8` |
+| `latest` | The newest final release; before 1.0.0 the newest preview | `npm install coagent8` |
 
-* A preview is never published to `latest`. npm always keeps a `latest` tag, so
-  while only previews exist it can point at one; the README install instructions
-  use `@next` until 1.0.0.
-* The `beta` dist-tag is retired; the owner removes it when publishing 0.6.0
-  (`npm dist-tag rm coagent8 beta`).
+* A preview is published to `next`. npm always keeps a `latest` tag and its
+  package page shows the version and README `latest` points at, so while only
+  previews exist `latest` follows the newest preview (owner decision
+  2026-10-12, after the npm page kept showing the withdrawn 1.0.0-beta.1). From
+  1.0.0 on, `latest` holds only final releases and a preview stays on `next`.
+  The README install instructions use `@next` until 1.0.0.
+* The `beta` dist-tag is retired (removed with 0.6.0).
 
 ---
 
 ## 5. Release Process
 
-Every release follows the same five phases. The owner performs every action
-marked (owner); an agent may prepare everything else.
+A release is a tag on a commit that already passed every check. Nothing is
+built, fixed or edited after the tag; a defect found later ships in the next
+version (section 4: a fix-only release raises the patch, `0.6.1`). The owner
+performs every step marked (owner); an agent prepares the rest and stops there.
 
-### Phase A - release PR (agent may prepare)
+The **target** is the branch that carries the tag (section 1): `develop` for
+betas and their patches; `X.Y.x` for release candidates, `X.Y.0` and later
+patches. Before the first release candidate the owner creates `X.Y.x` from
+`develop`. Every step below uses that target; `<repo>` is
+`oktawianwybieralski/coagent8` unless a step names another.
 
-1. **Gate:** the stage's entry gate in the roadmap is satisfied on the target
-   branch with green CI. Betas target `develop`; release candidates, `X.Y.0`
-   and patches target `X.Y.x` (for the first release candidate, the owner
-   creates `X.Y.x` from `develop` first).
-2. Branch `release/vX.Y.Z` from the target. One commit
-   `chore(release): vX.Y.Z` that only:
-   * sets the version (section 4) where it differs;
-   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`,
-     which writes the commits since the previous tag under the new version
-     heading with the release date (section 6).
-3. Run the full local gate ([04-quality-gate](04-quality-gate.md#full-release-gate))
-   on that commit and record platform, Node, commit, tree and artifact digests.
-4. Open the PR titled `chore(release): vX.Y.Z`; attach the local gate
-   evidence and the release notes preview (`npm run release-notes -- --tag vX.Y.Z`).
-   The independent review binds to that commit ([03-author-reviewer](03-author-reviewer.md)).
+### Between releases: every change is one pull request
+
+1. Branch from the target (`git switch -c fix/<topic> origin/<target>`), one
+   concern per branch (section 1); a fix a line also needs lands on `develop`
+   first and is backported.
+2. Before pushing: the local checks of the change's scope
+   ([04-quality-gate](04-quality-gate.md)), `npm run changelog` (section 6) and,
+   for code, an independent CoAgent8 review of the branch with `VERDICT: READY`
+   ([03-author-reviewer](03-author-reviewer.md)).
+3. Open the PR into the target (section 3). It merges when the six CI jobs are
+   green on its head and no P1/P2 finding is open; squash and delete the branch.
+4. After each merge CI runs again on the target. When a job there fails, only
+   the PR that fixes it may merge next: find the cause and fix it with a test
+   that reproduces it. A job is re-run only when its cause is known and its fix
+   is in a PR; a green re-run alone is not evidence.
+5. A PR that completes a planned card ticks it in the roadmap.
+
+### Phase A - prepare and accept the release candidate (agent may prepare)
+
+6. **Scope.** The roadmap names the cards of the version. Preparation starts
+   when all of them are merged, CI is green on the target's head, no P0/P1 issue
+   is open, and README, extension README and known limitations describe the
+   merged behavior.
+7. **Release branch.** `git switch -c release/vX.Y.Z origin/<target>` with one
+   commit `chore(release): vX.Y.Z` that only:
+   * sets the version with `npm version X.Y.Z --no-git-tag-version` (it updates
+     `package.json` and `package-lock.json`) and in `plugin.json` and
+     `extensions/vscode/package.json`; `git grep -n "<previous version>"` then
+     finds no other manifest still carrying the old number;
+   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`.
+
+   On this branch every later regeneration (section 6, before each push) also
+   passes `--tag vX.Y.Z`; plain `npm run changelog` would turn the version
+   heading back into Unreleased.
+8. **Local checks on that commit:** the full local gate
+   ([04-quality-gate](04-quality-gate.md#full-release-gate)) with platform, Node,
+   commit, tree and tarball digest recorded.
+9. **Release notes draft** in English for testers: a hand-written header (what
+   CoAgent8 is, install, what changed in plain words, known limitations,
+   upgrade notes), then the generated entries
+   (`npm run release-notes -- --tag vX.Y.Z`). No internal card IDs or process
+   notes in the header.
+10. Run `npm run changelog -- --tag vX.Y.Z` once more (it must leave the file
+    unchanged), push the branch and open the PR `chore(release): vX.Y.Z` into
+    the target, with the evidence and the notes draft. Its six CI jobs must be green; they
+    build the release candidate's VSIX and tarball with the new version.
+11. **Native acceptance of the candidate.** Download the VSIX and the tarball
+    from the PR head's CI run (`gh run download <run> --repo <repo>
+    -n evidence-<os>-node-24.x -D <empty folder>`) and run the stage's native
+    acceptance (roadmap) with them: an isolated VS Code instance
+    (`--user-data-dir`, `--extensions-dir`) and a clean npm folder, at least
+    `doctor` with `scope: "health"`, `consult` and `review` on each backend. A
+    finding is fixed by its own PR into the target (step 1); then rebase the
+    release branch, regenerate the changelog and repeat from step 8.
+12. **Rehearsal when release tooling changed.** If any PR since the previous
+    tag changed `.github/workflows/`, `package.json` or `package-lock.json`,
+    `scripts/`, `tooling/` or `cliff*.toml`, rehearse with the release PR's
+    head in a throwaway public repository `<repo>-release-test`:
+    * push the head as `develop` and make `develop` its default branch (the
+      workflow accepts tags only on `develop` or a line);
+    * push the release tags that exist in `<repo>` (each tag listed by
+      `git ls-remote --tags --refs origin 'v*'`, as
+      `git push <throwaway> refs/tags/<tag>:refs/tags/<tag>`; never local-only
+      tags), so the notes start at the previous version as they will in `<repo>`;
+    * push an annotated `vX.Y.Z` on the head and verify the draft as in Phase D
+      with `<repo>` set to the throwaway repository;
+    * when `docs.yml` changed, enable Pages there and publish the draft: the
+      documentation must deploy;
+    * delete the repository afterwards.
+
+    `npm-publish.yml` cannot be rehearsed without publishing. When it changed
+    since the previous tag, keep `NPM_TRUSTED_PUBLISHING` off for this release
+    and publish npm by hand (step 22). The real tag cannot be retried.
+13. **Independent review** of `<previous tag>...release/vX.Y.Z`, bound to the
+    base, candidate, tree and tarball hashes ([03-author-reviewer](03-author-reviewer.md)).
 
 ### Phase B - merge and tag (owner)
 
-5. Squash-merge the release PR after green CI and review. Verify CI on the
-   resulting commit of the target branch.
-6. Tag that exact commit with an annotated tag and push only the tag:
-   ```bash
-   git fetch origin
-   git tag -a vX.Y.Z <verified-sha> -m "CoAgent8 vX.Y.Z"
-   git push origin vX.Y.Z
-   ```
+14. Squash-merge the release PR. Replace the default squash body (the whole PR
+    description) with two or three lines on what the version brings; the title
+    stays `chore(release): vX.Y.Z (#N)`. An agent may merge only on the owner's
+    explicit instruction for that PR.
+15. Verify before tagging: `origin/<target>` is the squash commit, its tree
+    equals the release PR head's tree (`git rev-parse <sha>^{tree}`), GitHub
+    shows it Verified, and CI on the target is green on it.
+16. Tag that exact commit and push only the tag (owner; the tag is immutable):
+    ```bash
+    git fetch origin
+    git tag -a vX.Y.Z <verified-sha> -m "CoAgent8 vX.Y.Z"
+    git push origin vX.Y.Z
+    ```
 
 ### Phase C - build (release workflow)
 
-7. The tag push starts `.github/workflows/release.yml`. It checks that the tag is
-   a numeric `vX.Y.Z` and annotated, that `package.json` carries the same version
-   and that the tagged commit is on `develop` or an `X.Y.x` line; runs the full
-   gate on Ubuntu with Node 24; packs and smoke-tests the exact npm tarball,
-   packages the VSIX, writes `SHA256SUMS`, signs build provenance for the tarball and the VSIX
-   (GitHub artifact attestations), generates the release notes with git-cliff
-   and creates a **draft** GitHub Release (marked pre-release for a version
-   below 1.0.0) with these assets. It never publishes to npm and never
-   publishes the draft.
+17. The tag starts `.github/workflows/release.yml`: it checks that the tag is a
+    numeric annotated `vX.Y.Z` on `develop` or an `X.Y.x` line matching
+    `package.json`, runs the full gate on Ubuntu with Node 24, packs and
+    smoke-tests the exact tarball, packages the VSIX, writes `SHA256SUMS`, signs
+    build provenance for both, generates notes with git-cliff (`--current`,
+    root commits skipped) and creates a **draft** release, a pre-release below
+    1.0.0. It never publishes anything. A failure here is fixed by a new patch
+    version; the tag stays.
 
-### Phase D - verify the published artifacts (owner, agent may assist locally)
+### Phase D - verify the draft (agent may run, owner decides)
 
-8. Download the assets from the draft release (`gh release download vX.Y.Z`)
-   and verify them: `sha256sum --check --ignore-missing SHA256SUMS` and
-   `gh attestation verify <file> --repo oktawianwybieralski/coagent8` for the
-   tarball and the VSIX. Install both in clean profiles and run the stage's
-   native acceptance (roadmap). Add known issues and security notes to the
-   draft notes. Local gate digests can differ from CI builds (different machine,
-   archive timestamps); `SHA256SUMS` and the attestation are authoritative.
-
-### Phase E - publish (owner)
-
-9. Publish the draft GitHub Release (keep "pre-release" for previews).
-   Publishing starts `.github/workflows/docs.yml`, which validates the TSDoc
-   comments, generates the TypeDoc site (source API plus the project documents:
-   README, Architecture, Roadmap, Handoff, Changelog, Git workflow) and deploys it
-   to GitHub Pages. Pages always shows the latest published release; versioned
-   documentation per line is planned with the first `X.Y.x` line (REPO-002).
-10. Publish the verified tarball, not a rebuild. With npm trusted publishing
-    enabled (section 8), publishing the release starts
-    `.github/workflows/npm-publish.yml`: after the owner approves the `npm`
-    environment, it downloads the release's tarball, checks it against
-    `SHA256SUMS` and the provenance of `release.yml`, and runs
-    `npm publish --provenance` to `next` (a version below 1.0.0) or `latest`
-    (1.0.0 and later); the GitHub pre-release flag must agree with the version.
-    A failed job is re-run; npm never accepts the same version twice. Until it
-    is enabled, and for `0.6.0`, the owner publishes the downloaded, verified
-    tarball by hand:
+18. Download and verify in one empty folder:
     ```bash
-    npm publish ./coagent8-0.N.0.tgz --tag next    # preview
-    npm publish ./coagent8-X.Y.Z.tgz               # 1.0.0 and later: latest
+    gh release download vX.Y.Z --repo <repo> -D <empty folder>
+    cd <empty folder>
+    sha256sum --check --ignore-missing SHA256SUMS
+    gh attestation verify coagent8-X.Y.Z.tgz --repo <repo>
+    gh attestation verify coagent8-mcp-X.Y.Z.vsix --repo <repo>
     ```
-    Publish the verified VSIX from the release to the VS Code Marketplace under
-    the publisher `okidev`, as a pre-release for a preview:
+    Check the version inside both files and, below 1.0.0, the VSIX pre-release
+    flag.
+19. Install the downloaded VSIX in an isolated VS Code instance and the
+    downloaded tarball in a clean npm folder, confirm the installed extension
+    files equal the VSIX (VS Code adds only `__metadata` to `package.json`), and
+    repeat `doctor` with `scope: "health"` and one `consult` through each.
+20. Replace the draft's generated notes with the Phase A notes, keeping the
+    generated Contributors, Full Changelog and Artifacts sections.
+
+### Phase E - publish (owner, in this order, from the Phase D folder)
+
+21. Publish the draft release (keep "pre-release" below 1.0.0). This deploys
+    the documentation site (`docs.yml`). GitHub lists a pre-release under
+    Releases but never as "Latest" on the repository page.
+22. Publish the verified tarball, never a rebuild. With npm trusted publishing
+    enabled (section 8), approving the `npm` environment of `npm-publish.yml`
+    publishes it to `next` or `latest`; below 1.0.0 the owner then runs only the
+    `dist-tag add` line below. Otherwise by hand:
     ```bash
-    npx @vscode/vsce publish --pre-release --packagePath ./coagent8-mcp-0.N.0.vsix   # preview
+    npm publish ./coagent8-X.Y.Z.tgz --tag next    # below 1.0.0
+    npm dist-tag add coagent8@X.Y.Z latest         # below 1.0.0, while only previews exist (section 4)
+    npm publish ./coagent8-X.Y.Z.tgz               # 1.0.0 and later: latest
+    npm dist-tag ls coagent8                       # check the tags
+    ```
+    npm never accepts the same version twice. The package page then shows this
+    version and its README.
+23. Publish the same verified VSIX on the VS Code Marketplace under `okidev`:
+    ```bash
+    npx @vscode/vsce publish --pre-release --packagePath ./coagent8-mcp-X.Y.Z.vsix   # below 1.0.0
     npx @vscode/vsce publish --packagePath ./coagent8-mcp-X.Y.Z.vsix                 # 1.0.0 and later
     ```
-11. Announce the release to testers with the GitHub Release link.
+24. Announce the release to testers with the GitHub Release link.
 
-Any content change after Phase A's gate restarts it with a new commit; a pushed
-tag is never moved. A failed release workflow is fixed by a new release number
-when the tag was already pushed.
+### After the release
+
+25. Confirm on the target: CI green and `npm run changelog` leaves
+    `CHANGELOG.md` unchanged. Record the release evidence in HANDOFF, mark the
+    version done in the roadmap and close the issues it fixed.
+
+Any change to the release branch after step 13 repeats steps 8 to 13 for the new
+head. A pushed tag is never moved, deleted or reused.
 
 ### Final release and end of support
 
@@ -407,7 +489,8 @@ The agent does this itself, without being asked.
 
 1. **Before every `git push`** (any branch), after the last change is
    committed:
-   * Run `npm run changelog`. It fails when any commit since `v0.6.0` is
+   * Run `npm run changelog` (on a release branch `npm run changelog -- --tag
+     vX.Y.Z`, section 5 step 7). It fails when any commit since `v0.6.0` is
      not a Conventional Commit. A failure blocks the push: reword the offending
      commit; never push past it.
    * If `CHANGELOG.md` changed, commit it alone as `chore(changelog): regenerate`.
