@@ -11,11 +11,11 @@ title: Git workflow
 
 The process follows widely used conventions:
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
-[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/),
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and the
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) and the
 `develop` plus release-line model of PrestaShop (owner decision 2026-10-10):
 a permanent integration branch, one branch per maintained `X.Y` line, releases as
-tags on those branches, and squash-merged pull requests.
+tags on those branches, and squash-merged pull requests. The changelog follows
+the PrestaShop changelog layout (owner decision 2026-10-13, section 6).
 
 Every commit on `develop` and on a line is a squash commit that GitHub created
 from one pull request: `<PR title> (#N)`, signed by GitHub and therefore shown as
@@ -487,29 +487,36 @@ head. A pushed tag is never moved, deleted or reused.
 ## 6. Changelog
 
 * `CHANGELOG.md` at the repository root is generated from the Conventional
-  Commits history by git-cliff (`cliff.toml`, `npm run changelog`). It follows
-  Keep a Changelog 1.1.0 with one section per released version, newest first.
+  Commits history by git-cliff (`cliff.toml`, `npm run changelog`) in the layout
+  of the PrestaShop changelog (owner decision 2026-10-13), with one section per
+  released version (`## vX.Y.Z - (YYYY-MM-DD)`), newest first.
 * Nobody edits it by hand; the Reviewer rejects a manual edit. It is regenerated
   before every push (below) and, with `--tag`, in each release PR (section 5).
-* Each entry starts with its commit, linked to GitHub; the `(#N)` suffix of a
-  squash subject becomes a link to the PR. On a topic branch the entries are the
-  branch commits. After the squash merge they are replaced by the PR title (one
-  entry per PR) at the next regeneration on the target branch.
+* Each section is a nested list: area (commit scope; "General" without one),
+  then type, then entries, newest first. Each entry is
+  `#PR: description (by @author)`, linked to the PR and the author's GitHub
+  account. The PR number comes from the `(#N)` suffix of the squash subject and
+  the account from GitHub's no-reply author address; another address gives no
+  author.
+* On a topic branch the entries are the branch commits, named by their commit
+  instead of a PR number. After the squash merge they are replaced by the PR
+  title (one entry per PR) at the next regeneration on the target branch.
 * Each branch generates its own file: on `develop` the versions tagged on
   `develop` (betas), on a line the versions tagged on that line. Before the
   first line exists (the first release candidate), the owner decides how
   `develop` lists the line's releases; until then every release is tagged on
   `develop`.
-* The detailed entries of 0.6.0 (prepared as 1.0.0-beta.2) come from the 293
-  local commits that were squash-merged as one PR (REPO-002). They are generated
-  on that PR branch after its last change and before the merge, never written by
-  hand, and kept as a fixed section, the oldest entry at the end of the file
-  (`cliff.toml` footer, which names the command); generation after it starts at
-  tag `v0.6.0`.
-* Groups: Breaking (`!` or `BREAKING CHANGE`), Added (`feat`), Changed (`perf`,
-  `refactor`), Removed (`revert`), Fixed (`fix`). `docs`, `chore`, `test`, `ci`,
-  `build` and `style` are omitted. A breaking commit is listed under Breaking
-  only, not again under its type.
+* The detailed entries of 0.6.0 (prepared as 1.0.0-beta.2) come from the
+  commits of PR #3, squash-merged as one commit (REPO-002); GitHub keeps them as
+  `refs/pull/3/head`. They are generated from those commits, never written by
+  hand, named by their commit, and kept as a fixed section, the oldest entry at
+  the end of the file (`cliff.toml` footer, which names the command); generation
+  after it starts at tag `v0.6.0`.
+* Types, in this order: Breaking change (`!` or `BREAKING CHANGE`), New feature
+  (`feat`), Improvement (`perf`), Bug fix (`fix`), Refactoring (`refactor`),
+  Removal (`revert`). `docs`, `chore`, `test`, `ci`, `build` and `style` are
+  omitted unless breaking. A breaking commit is listed under Breaking change of
+  its area only, not again under its type.
 * A subject that is not a Conventional Commit (for example GitHub's default
   `Revert "..."` title) fails the generation (`require_conventional`) instead of
   silently losing its entry.
