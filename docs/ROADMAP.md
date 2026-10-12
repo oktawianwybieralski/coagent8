@@ -2173,9 +2173,12 @@ preview, `0.6.1` (see below).
   so its cache key holds only environment stamps and the models view reused
   "not installed" for the five-minute probe TTL (`health` probes afresh). Such a
   probe is no longer cached; checking again launches nothing.
-- [ ] **FEEDBACK-060d - review reasons for untracked binaries.** An untracked
+- [x] **FEEDBACK-060d - review reasons for untracked binaries.** An untracked
   `.pyc` made the footer add "Review workspace or input changed during the turn"
-  besides the correct "input is incomplete". Name only the true reasons.
+  besides the correct "input is incomplete": the post-turn recheck treated any
+  incomplete input as a change. It now names a change only for a different
+  snapshot or a change in completeness; incomplete input keeps blocking READY
+  with its own reason.
 - [ ] **FEEDBACK-060e - closed sessions.** `consult` with a closed handle ends
   with "(finished, no history)" although its history stays readable; `cancel`
   of a closed session says "no running turn" instead of "closed".

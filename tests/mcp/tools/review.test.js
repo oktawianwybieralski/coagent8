@@ -196,6 +196,42 @@ test('recheck failure or workspace mutation during review turn blocks READY verd
   }
 });
 
+test('an untracked binary blocks READY as incomplete input only, not as a change during the turn (FEEDBACK-060d)', async () => {
+  const repo = path.join(tempDir, 'untracked-binary');
+  fs.mkdirSync(repo);
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'file.ts'), 'const x = 1;\n'); git('add', '.'); git('commit', '-qm', 'initial');
+  fs.writeFileSync(path.join(repo, 'file.ts'), 'const x = 2;\n');
+  fs.writeFileSync(path.join(repo, 'module.pyc'), Buffer.from([0x55, 0x0d, 0x0d, 0x0a, 0, 0, 0, 0, 0xff, 0x00, 0x01]));
+
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async prompt => {
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      return {
+        status: 'completed',
+        isError: false,
+        output: ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: file.ts',
+          'CHECKS: typecheck=PASS; tests=PASS', 'END_REVIEW'].join('\n'),
+      };
+    },
+  };
+
+  try {
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const { verdict, reason } = readResult(await handleReview('review', {}, repo));
+    assert.equal(verdict, 'BLOCKED');
+    assert.match(reason, /Review input is incomplete/i);
+    assert.doesNotMatch(reason, /changed during the turn/i, 'nothing changed during the turn');
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});
+
 test('handleReview with pre-aborted signal stops before turn and rejects promptly', async () => {
   const repo = path.join(tempDir, 'pre-abort-review');
   fs.mkdirSync(repo);
