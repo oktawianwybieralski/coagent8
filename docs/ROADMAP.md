@@ -2165,8 +2165,8 @@ cancel of a running Codex and agy turn, no home paths in answers.
 
 ### After 0.6.0 (fix-only preview, then the documentation cleanup)
 
-Each card is its own PR into `develop`; the batch ships as the next fix-only
-preview, `0.6.1` (see below).
+Cards remain small implementation tasks; related cards share a PR according
+to PATCH-061 below. The batch ships as the fix-only preview `0.6.1`.
 
 - [x] **FEEDBACK-060c - models view right after a CLI appears (#4).** `doctor`
   scope `models` reported `agy: not installed` while `health` seconds later found
@@ -2259,10 +2259,10 @@ preview, `0.6.1` (see below).
 
 ### DOCS-002: documentation cleanup after 0.6.0
 
-The active documents carry history that Git already keeps. One PR per document,
-checked against merged behavior; prose-only checks per rule 04. DOCS-002a with
-PUBLIC-001c is one task/PR, as is DOCS-002b with PUBLIC-001b; do not duplicate
-their edits. The queue below distinguishes the 0.6.1 scope from later cleanup.
+The active documents carry history that Git already keeps. Check edits against
+merged behavior; prose-only checks per rule 04. PATCH-061 groups DOCS-002a with
+PUBLIC-001c, DOCS-002b with PUBLIC-001b, and both README tasks with FEEDBACK-060i.
+Do not duplicate their edits. The queue distinguishes 0.6.1 from later cleanup.
 
 - [ ] **DOCS-002a - ROADMAP.** Keep only open work, decisions still in force and
   acceptance; remove completed cards, superseded beta.1/beta.2 paths, the
@@ -2274,7 +2274,8 @@ their edits. The queue below distinguishes the 0.6.1 scope from later cleanup.
   keep the decision log, drop descriptions of removed mechanisms.
 - [ ] **DOCS-002d - README and extension README.** Install and first use from
   the published 0.6.0 packages; known limitations from the release notes.
-  Handle each README in its own PR (DOCS-002d1 root, DOCS-002d2 extension).
+  Keep two subtasks (DOCS-002d1 root, DOCS-002d2 extension) in the shared
+  `fix/vsix-user-guidance` PR; finish d2 after FEEDBACK-060i, then d1.
   For 0.6.1, verify instructions and describe the fixes/known limitations;
   broader editorial cleanup remains separate. Check examples against available
   commands and the candidate; do not claim 0.6.1 is published before publication.
@@ -2289,7 +2290,7 @@ numbers (`0.7.0` beta.3, `0.8.0`/`0.9.0` release candidates) stay.
 
 Review of the tracked files on 2026-10-12 (owner request): no real secrets
 (token-shaped strings are synthetic test inputs) and no unredacted home paths.
-The fixes below ship with `0.6.1`, each as its own PR into `develop`. Squashed
+The fixes below ship with `0.6.1`, grouped into PRs by PATCH-061. Squashed
 history stays as published; nothing found justifies rewriting it.
 
 - [ ] **PUBLIC-001a - synthetic account data in Claude recordings.**
@@ -2298,12 +2299,13 @@ history stays as published; nothing found justifies rewriting it.
   request and session counts, context and subagent shares); the `.jsonl`
   recordings carry real `rate_limit_event` utilization and overage fields.
   Replace those values with synthetic ones that keep the exact recorded format
-  (line anchors, `·` separators, the `11:49pm`-style reset times the parser
+  (line anchors, middle-dot separators, the `11:49pm`-style reset times the parser
   reads) and update the expectations in `tests/backends/claude/usage.test.js`
   and users of `tests/fixtures/claude-cli/claude.cjs`. Check the Codex fixture
   (`planType`, credits) the same way. Check: affected backend tests green, no
   recorded value comes from a real account.
-  Execute as two PRs: PUBLIC-001a1 replaces Claude account values and updates
+  Execute as two subtasks in `test/synthetic-account-fixtures`:
+  PUBLIC-001a1 replaces Claude account values and updates
   affected Claude fixture expectations; PUBLIC-001a2 audits Codex plan/credit
   fixtures and replaces any real account values with synthetic data. Each
   records the inspected files and runs the affected backend tests; an audit
@@ -2335,8 +2337,9 @@ history stays as published; nothing found justifies rewriting it.
 
 Owner request, 2026-10-12: plan MIT relicensing together with the 0.6.1 work.
 Target: standard MIT for owner-controlled source, documentation and artwork
-from 0.6.1. The local candidate on `chore/mit-relicense` updates LICENSE,
-distribution metadata and license guidance; published 0.6.0 remains GPL-3.0-only.
+from 0.6.1. PR #19 merged as `fc76539` updates LICENSE, distribution metadata
+and license guidance on `develop`; its six CI jobs passed. Published 0.6.0 and
+the withdrawn npm 1.0.0-beta.1 retain their GPL-3.0-only permissions.
 Previously distributed GPL copies retain their permissions; do not rewrite
 tags, published artifacts or generated historical changelog entries. Third-party
 material keeps its own license and notices. Trademark policy is PUBLIC-001d,
@@ -2349,7 +2352,7 @@ sections 2 and 7(e). Git author names alone do not
 establish copyright ownership or permission to relicense imported material.
 
 - [x] **LIC-001a - rights and material inventory.** Inventory recorded in
-  HANDOFF for the owner-authorized MIT candidate; third-party dependency
+  HANDOFF for the owner-authorized MIT change in PR #19; third-party dependency
   licenses stay unchanged. Inspect tracked source,
   documentation, skills, logo/artwork sources, fixtures and copied/vendored
   material; use history and attribution to identify rights holders and existing
@@ -2362,8 +2365,8 @@ establish copyright ownership or permission to relicense imported material.
   score. Audit evidence precedes license edits. The implementation candidate
   combines a/b/c1 and the README license sections in one licensing PR so the
   terms and metadata remain synchronized; broader README cleanup stays separate.
-- [ ] **LIC-001b - license text and metadata.** Implemented locally on
-  `chore/mit-relicense`, pending independent review/integration. After LIC-001a,
+- [x] **LIC-001b - license text and metadata.** Merged in PR #19 after
+  independent READY review; six PR and six post-merge CI jobs passed. After LIC-001a,
   replace the root LICENSE with the unmodified standard MIT terms and accurate owner/year
   notice. Update root package/lock metadata, `plugin.json`, the extension
   manifest and applicable owner-controlled file headers together; inventory
@@ -2372,18 +2375,17 @@ establish copyright ownership or permission to relicense imported material.
   Acceptance: all first-party distribution metadata agrees with the approved
   MIT scope; version stays 0.6.0 until the release PR. Check: scope-based package
   gate, affected package regressions and notice comparison.
-- [ ] **LIC-001c - public license and contribution guidance.** Depends on b.
-  License sections/badges in both READMEs and contribution guidance are updated
-  locally; broader DOCS-002d1/d2 acceptance and integration remain pending.
-  DOCS-002d1 and DOCS-002d2 each update their README badges/terms and explain
-  the first MIT release without claiming older GPL copies changed license.
+- [x] **LIC-001c - public license and contribution guidance.** License
+  sections/badges in both READMEs and contribution guidance (LIC-001c1) merged
+  in PR #19. Broader DOCS-002d1/d2 first-use/limitations work remains open;
+  it does not require repeating these license edits. Both READMEs describe
+  the planned MIT release without claiming older GPL copies changed license.
   Update contribution guidance (LIC-001c1) so future
   contributions use the applicable project license; do not introduce a CLA or
   copyright assignment silently. Coordinate artwork scope and trademark text
   with PUBLIC-001d. Acceptance: user/contributor guidance agrees with LICENSE
-  and manifests, and third-party exceptions remain explicit. Parent c closes
-  only after c1 and both README tasks; content/link checks per rule 04.
-  LIC-001c1's contribution guidance is implemented in the local candidate.
+  and manifests, and third-party exceptions remain explicit. License guidance
+  acceptance is separate from broader README cleanup; content/link checks per rule 04.
 - [ ] **LIC-001d - exact-artifact and publication verification.** PATCH-061-R3
   and R4 inspect the packaged npm/VSIX LICENSE, manifest license fields,
   README text, artwork scope and third-party notices against the approved
@@ -2393,9 +2395,8 @@ establish copyright ownership or permission to relicense imported material.
   has an investigated cause, and measured scores are recorded without a 100%
   guarantee. No extra implementation PR duplicates these release checks.
 
-If LIC-001a cannot establish the required rights, record the specific blocker
-and let the owner decide whether to defer MIT and ship 0.6.1 under the current
-GPL terms. The coding agent must not silently change the planned release scope.
+LIC-001a/b/c are complete; LIC-001d remains a release verification task. Preserve
+the rights inventory and dependency notices during the remaining packaging work.
 
 ## SUPPLY-001: Socket package scores
 
@@ -2508,35 +2509,63 @@ approval or claim that their work has run.
 
 ### Implementation queue
 
-Each row is one task for a coding agent; keep one concern per PR. The licensing
-candidate groups the synchronized LIC-001 changes as specified above. Use a topic
-branch from current `develop`; finish the row's acceptance and scope-based
-checks, update its owning card and prepare the PR evidence before taking the
-next task. A parent card completes only when all its children complete.
-The order is the recommended serial execution order, not a requirement to
-delegate concurrently. Dependencies mean merged, verified behavior.
+Owner-approved grouping, 2026-10-12, after the Opus 5.5 consultation: eight
+working PRs plus the release PR. Small task boundaries remain; each row below
+is a PR group, not one large coding-agent instruction. The group count is a
+planning baseline, not a reason to combine unrelated fixes or weaken checks.
+LIC-001a/b/c1 and the README license sections are already merged in PR #19.
 
-| Order | Task | Dependency / completion evidence |
-| --- | --- | --- |
-| 1 | PUBLIC-001a1: synthetic Claude account fixtures | None; affected Claude tests and inspected fixture inventory |
-| 2 | PUBLIC-001a2: audit/synthesize Codex account fixtures | None; affected Codex tests, or documented clean audit |
-| 3 | FEEDBACK-060f1: history-only paging parameters | None; schema and skill agree with existing actions |
-| 4 | FEEDBACK-060f2: explain sequence gaps | f1; reader/cursor contract reviewed, no renumbering |
-| 5 | FEEDBACK-060f3: explain the server owner's PID | None; ownership contract preserved |
-| 6 | FEEDBACK-060f4: handle on repeat-review refusal | None; no-turn and workspace-isolation regressions |
-| 7 | FEEDBACK-060g: issue report formatting | None; report/attachment/URL regressions |
-| 8 | FEEDBACK-060h: deterministic Claude cancel fixture | None; cancellation observed while running, cleanup verified |
-| 9 | FEEDBACK-060i: actionable VSIX-only guidance | None; commands/skills/messages agree |
-| 10 | SUPPLY-001a: omit source maps from both packages | None; fresh build, exact package inspection and consumer smoke |
-| 11 | SUPPLY-001b: bundled packages become development dependencies | SUPPLY-001a; packed manifest and isolated consumer tree verified |
-| 12 | LIC-001a: rights/material audit for MIT | None; evidenced rights and third-party exception inventory |
-| 13 | LIC-001b: MIT LICENSE and distribution metadata | LIC-001a and SUPPLY-001b; coherent manifests, notices retained |
-| 14 | LIC-001c1: contribution license guidance | LIC-001b; existing rights preserved, no implicit CLA |
-| 15 | PUBLIC-001d: prepare name/logo trademark notice | LIC-001a/b; owner wording approval, separate trademark/copyright terms |
-| 16 | DOCS-002d1: root README instructions/license/limitations | Tasks 3-15; candidate behavior and MIT scope accurately described |
-| 17 | DOCS-002d2: extension README instructions/license/limitations | Tasks 3-15; VSIX-only first use and MIT scope accurately described |
-| 18 | DOCS-002a + PUBLIC-001c: reduce and rephrase ROADMAP | Tasks 1-17; keep open work, current decisions, this queue and acceptance |
-| 19 | DOCS-002b + PUBLIC-001b: reduce HANDOFF in place | Tasks 1-18; current evidence/rights inventory retained, links valid |
+Execute groups in this serial order. Start each branch from fresh `develop`
+after the preceding PR merges; do not stack topic branches. The dependency
+column distinguishes technical dependencies from this chosen execution order.
+Complete the owning cards and their scope-based checks, then independently
+review the whole branch and prepare its PR evidence. Existing push/merge
+authorization rules, six CI jobs and sandbox constraints remain in force.
+
+| Group | Branch / one PR | Ordered subtasks | Dependency / acceptance |
+| --- | --- | --- | --- |
+| 1 | `docs/roadmap-current-state` | DOCS-002a + PUBLIC-001c: inventory retained decisions/anchors; remove obsolete history; rephrase remaining work; synchronize PATCH-061 and completed MIT status | No technical dependency; establish the current plan before implementation. This grouping edit alone does not complete whole-document cleanup. |
+| 2 | `test/synthetic-account-fixtures` | PUBLIC-001a1: synthetic Claude account values and expectations; PUBLIC-001a2: audit/synthesize Codex plan/credit fixtures | No technical dependency; affected backend tests and inspected-file inventory, or documented clean Codex audit. |
+| 3 | `build/package-distribution` | SUPPLY-001a: omit source maps with meaningful bundle-separation checks; SUPPLY-001b: move bundled dependencies to development dependencies | b after a within this branch; fresh packages, isolated consumer tree, MIT metadata and unchanged dependency notices verified. |
+| 4 | `fix/session-feedback` | FEEDBACK-060f1: paging parameters; f2: sequence gaps; f3: server-owner PID; f4: handle on unchanged review | f2 after f1; f4 last with no-turn and workspace-isolation regressions. Preserve stored sequence/cursor/ownership contracts. |
+| 5 | `fix/issue-report-format` | FEEDBACK-060g: exact Codex version; nested CLI Markdown; accurate attachment wording | No technical dependency; issue regressions preserve redaction and URL bounds. |
+| 6 | `test/claude-cancel-fixture` | FEEDBACK-060h: running-turn handshake; second-client cancel; owned cleanup/lease checks; later turn reuse | After group 2 to avoid competing edits to Claude fixtures; no semantic dependency on synthetic account values. Native confirmation stays PATCH-061-N4. |
+| 7 | `fix/vsix-user-guidance` | FEEDBACK-060i: VSIX-only guidance; DOCS-002d2: extension README; DOCS-002d1: root README; PUBLIC-001d only with approved wording | After groups 3-6 to describe merged behavior; d2 after i. Reuse completed MIT guidance and verify commands/examples. |
+| 8 | `docs/handoff-current-state` | DOCS-002b + PUBLIC-001b: inventory retained evidence; remove historical reports; summarize current state and remaining release checks | After groups 1-7, before R1; keep HANDOFF tracked, rights inventory, required hashes/check results and valid links. |
+| Release | `release/v0.6.1` | PATCH-061-R2: synchronized version fields and generated changelog only | After R1; release acceptance tasks below attach evidence to this candidate, without one PR per check. |
+
+### Small-agent execution and grouping safeguards
+
+Give the agent one subtask at a time with its ID, the card's starting files,
+expected behavior, acceptance and applicable checks. Record a focused commit
+and PASS/FAIL/NOT_RUN evidence before moving to the next subtask on the same
+branch. A parent card closes only when its children complete. Review the full
+PR once the group is ready; a changed reviewed snapshot requires renewed review.
+No full gate after every small edit and no arbitrary number of test repetitions.
+
+- Session feedback: finish f1-f3 before the behavioral f4 change. If f4 needs
+  broader lifecycle/ownership changes, split it into
+  `fix/review-repeat-session-handle` instead of expanding the contract PR.
+- Cancellation: use a fixture handshake confirming a running turn, not sleeps
+  as synchronization. Natural completion cannot count as a cancellation pass.
+  Verify owned resource cleanup, released lease and later reuse; use bounded
+  waits and deterministic teardown. Repeat checks only for new changes,
+  failures or an unresolved stability concern. Keep production cancellation
+  changes out of this test-only group.
+- Trademark wording: include PUBLIC-001d as a separate final commit in group 7
+  only if the owner approves the text before integration. Otherwise prepare
+  `docs/trademark-notice` separately so README fixes can proceed. The card stays
+  in 0.6.1 scope unless the owner explicitly defers it; it must be resolved at R1.
+- Documentation: before deleting sections, inventory card IDs, active decisions,
+  required evidence, anchors and incoming links. Work section by section with
+  separate deletion and wording commits; describe retained/removed content in
+  the PR. Keep open work, current decisions and release acceptance in ROADMAP,
+  and the rights inventory plus required artifact/check evidence in HANDOFF.
+  Preserve or repair referenced anchors. A deletion-heavy diff may exceed the
+  preferred PR size with an explanation; split substantial unrelated rewriting.
+- A discovered runtime defect gets a focused `fix/...` PR with reproduction
+  evidence before continuing the affected group. Do not mix a cancellation
+  defect into privacy-fixture changes or weaken checks to meet the PR count.
 
 DOCS-002c (whole ARCHITECTURE cleanup) and DOCS-002e (whole rules/skills
 cleanup) follow 0.6.1; corrections to contracts/instructions affected by this
@@ -2553,8 +2582,9 @@ Mark PASS/FAIL/NOT_RUN against the actual snapshot and exact artifact digest.
 Any defect gets its own fix PR into `develop`; a changed candidate invalidates
 approval and requires renewed checks of the replacement candidate.
 
-- [ ] **PATCH-061-R1 - freeze the scope.** After implementation tasks 1-19,
-  verify the linked cards are complete, required CI is green on `develop`,
+- [ ] **PATCH-061-R1 - freeze the scope.** After working PR groups 1-8 and any
+  necessary focused split/fix PRs, verify the linked cards are complete
+  (including PUBLIC-001d or its explicit owner-approved deferral), required CI is green on `develop`,
   no P0/P1 issue is open and no P1/P2 finding remains unresolved. Record the
   previous tag/base SHA and agreed scope; unresolved work blocks preparation
   unless the owner explicitly changes the release scope in this roadmap.
