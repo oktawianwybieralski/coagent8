@@ -404,15 +404,15 @@ test('gemini-adapter: parseGeminiUsage parses agy usage groups and computes bott
                 id: 'gemini-weekly',
                 name: 'Weekly Limit Remaining',
                 window: 'weekly',
-                remaining_fraction: 0.512,
-                reset_time: '2026-10-05T17:31:49Z',
+                remaining_fraction: 0.596,
+                reset_time: '2026-10-05T18:00:00Z',
               },
               {
                 id: 'gemini-5h',
                 name: 'Five Hour Limit Remaining',
                 window: '5h',
-                remaining_fraction: 0.723,
-                reset_time: '2026-10-05T17:35:23Z',
+                remaining_fraction: 0.796,
+                reset_time: '2026-10-05T16:00:00Z',
               },
             ],
           },
@@ -424,9 +424,9 @@ test('gemini-adapter: parseGeminiUsage parses agy usage groups and computes bott
   const quota = parseGeminiUsage(samplePayload);
   assert.ok(quota);
   assert.equal(quota.measured, true);
-  assert.equal(quota.headroomPercent, 51);
-  assert.equal(quota.usedPercent, 49);
-  assert.equal(quota.resetsAt, '2026-10-05T17:31:49Z');
+  assert.equal(quota.headroomPercent, 60);
+  assert.equal(quota.usedPercent, 40);
+  assert.equal(quota.resetsAt, '2026-10-05T18:00:00Z');
   assert.equal(quota.window, 'weekly');
   assert.equal(quota.buckets.length, 2);
 });

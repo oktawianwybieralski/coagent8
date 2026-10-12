@@ -2,8 +2,8 @@
 import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';
 
 /**
- * One limit line, e.g. `Current session: 67% used · resets Oct 5, 11:49pm (Europe/Warsaw)`
- * or `Current week (all models): 9% used · resets Oct 6, 3:59pm (Europe/Warsaw)`
+ * One limit line, e.g. `Current session: 40% used · resets Oct 5, 7:20pm (America/New_York)`
+ * or `Current week (all models): 15% used · resets Oct 6, 2:15pm (America/New_York)`
  * (observed with Claude Code 2.1.289).
  */
 const LIMIT_LINE = /^Current (session|week)(?: \(([^)\n]+)\))?: (\d{1,3})% used(?: · resets ([^(\n]+?) \(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?[ \t]*$/gm;
@@ -30,7 +30,7 @@ function zonedToEpoch(year: number, month: number, day: number, hour: number, mi
 
 /**
  * Resolves a `/usage` reset label to an ISO time.
- * @param label - `Oct 5, 11:49pm` or `11:49pm`; the CLI omits the year and, for today, the date.
+ * @param label - `Oct 5, 7:20pm` or `7:20pm`; the CLI omits the year and, for today, the date.
  * @param timeZone - IANA zone printed by the CLI.
  * @param now - Reference time in epoch milliseconds.
  * @returns The next matching reset as ISO 8601, or `null` when the label or zone is not recognized.

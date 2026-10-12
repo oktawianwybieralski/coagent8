@@ -123,7 +123,7 @@ test('Claude probe reads version and login state without a model call',()=>withF
 test('Claude reads subscription quota from /usage without a model turn and feeds quota-aware routing',()=>withFixture(async({dir,captured})=>{
   const {inspectQuota}=require('../../../src/backends/claude/adapter.ts');
   const quota=await inspectQuota();
-  assert.equal(quota.measured,true);assert.equal(quota.usedPercent,67);assert.equal(quota.window,'session');
+  assert.equal(quota.measured,true);assert.equal(quota.usedPercent,40);assert.equal(quota.window,'session');
   const {argv}=captured();assert.equal(argv.at(-1),'/usage');assert.ok(!argv.includes('--model'),'no model is named for a local command');assert.equal(argv[argv.indexOf('--tools')+1],'');assert.ok(argv.includes('--restricted'));
   process.env.CLAUDE_FIXTURE_USAGE='api-key';assert.equal(await inspectQuota(),undefined);captured();
   process.env.CLAUDE_FIXTURE_USAGE='model-turn';assert.equal(await inspectQuota(),undefined,'a model turn is never reported as quota');captured();
@@ -138,7 +138,7 @@ test('Claude reads subscription quota from /usage without a model turn and feeds
   try{
     for(const id of ['codex','agy'])adapterRegistry[id]={id,name:id,probe:async()=>({installed:false}),execute:async()=>{throw new Error('not executed');}};
     const report=await inspectQuotas(true);
-    assert.equal(report.claude.measured,true);assert.equal(report.claude.headroomPercent,33);assert.equal(report.claude.status,'operational');
+    assert.equal(report.claude.measured,true);assert.equal(report.claude.headroomPercent,60);assert.equal(report.claude.status,'operational');
     const overridden=await inspectQuotas(true,{claude:{installed:true}});assert.equal(overridden.claude.measured,true,'cached measurement is kept');
     captured();
     await inspectQuotas(true,{claude:{installed:true}});assert.equal(captured(),null,'caller-supplied probes do not trigger native reads by default');

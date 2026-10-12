@@ -111,11 +111,11 @@ function handle(message) {
     ] } });
   } else if (method === 'account/rateLimits/read') {
     if (mode === 'hang-limits') return;
-    // Shape of Codex app-server `account/rateLimits/read` (2026-10-08), account details removed;
+    // Shape of Codex app-server `account/rateLimits/read` (2026-10-08) with synthetic usage and reset values;
     // CODEX_FIXTURE_LIMITS=error answers with an error.
     if (process.env.CODEX_FIXTURE_LIMITS === 'error') { send({ id, error: { code: -32600, message: 'not signed in with ChatGPT' } }); return; }
-    const bucket = { limitId: 'codex', limitName: null, primary: { usedPercent: 14, windowDurationMins: 300, resetsAt: 1791500090 },
-      secondary: { usedPercent: 49, windowDurationMins: 10080, resetsAt: 1791968199 }, credits: { hasCredits: false, unlimited: false, balance: '0' }, planType: 'plus', rateLimitReachedType: null };
+    const bucket = { limitId: 'codex', limitName: null, primary: { usedPercent: 20, windowDurationMins: 300, resetsAt: 1791504000 },
+      secondary: { usedPercent: 45, windowDurationMins: 10080, resetsAt: 1791936045 }, credits: { hasCredits: false, unlimited: false, balance: '0' }, planType: 'plus', rateLimitReachedType: null };
     send({ id, result: { ordinaryUsageAllowed: true, rateLimits: bucket, rateLimitsByLimitId: { codex: bucket } } });
   } else if (method === 'turn/start') {
     send({ id, result: { turn: { id: TURN, items: [], status: 'inProgress', error: null } } });
