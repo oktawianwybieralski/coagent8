@@ -123,6 +123,15 @@ export async function handleCloseSession(args: ToolArguments, workspace = resolv
   };
 }
 
+/**
+ * Pages and renders public conversation history for a session handle.
+ *
+ * @remarks
+ * Each event's `sequence` is its stored log position. Consolidated snapshots
+ * combine streaming deltas into messages and the Markdown view filters internal
+ * lifecycle events (such as `turn_started` and `tool_started`), so gaps in
+ * `sequence` numbering do not indicate lost events.
+ */
 export async function handleSessionHistory(args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number }, workspace = resolveWorkspacePath(args.workspace_path)) {
   const history = await sessionHistory(args.session_handle, workspace, args.cursor, args.limit);
   if (!history.events.length) {

@@ -19,7 +19,12 @@ export const PAGE_LIMIT = 240 * 1024;
  * @param limit - Maximum events, 1..100; defaults to 50.
  * @returns Events, safe UTF-8 fragments, and an opaque continuation cursor.
  * @throws On malformed cursor, changed revision or invalid page size.
- * @remarks Metadata and text jointly consume the 240 KiB serialized page budget.
+ * @remarks
+ * Metadata and text jointly consume the 240 KiB serialized page budget.
+ * Event `sequence` values reflect stored log positions and may have gaps where
+ * streaming deltas were combined; cursor continuation seeks the first event with
+ * `sequence > after` (or `sequence - 1` with a byte `offset` for message fragments),
+ * so sequence gaps do not affect pagination.
  */
 export function paginateHistory(h: History, handle: string, cursor?: string, limit = 50) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('History limit must be 1..100.');

@@ -3,6 +3,10 @@
  *
  * @remarks
  * Reads consolidated `.json` snapshots or replays append-only `.jsonl` deltas.
+ * Each event's `sequence` is its 1-based stored log position; consolidating
+ * streaming `assistant_delta` records into an `assistant_message` keeps the
+ * first record's `sequence` while advancing `nextSequence`, so sequence gaps in
+ * consolidated history are expected and do not indicate lost events.
  * Recovers from ungraceful process crashes by ignoring torn trailing lines,
  * and maintains an in-memory snapshot cache bounded to 64 entries.
  *
@@ -56,6 +60,12 @@ export function invalidateHistoryCache(handle: string): void {
 
 /**
  * Low-level history loader with automatic cache management and crash recovery.
+ *
+ * @remarks
+ * Preserves each event's stored `sequence` position while folding `assistant_delta`
+ * chunks and final `assistant_message` or `turn_finished` updates into their initial
+ * turn record. Resulting `sequence` values remain strictly increasing with gaps
+ * wherever intermediate delta records were combined.
  *
  * @param handle - Valid session handle.
  * @param forceLog - If true, bypasses the JSON snapshot and replays the JSONL log directly.
@@ -247,6 +257,11 @@ export async function getHistory(handle: string): Promise<History | null> {
 
 /**
  * Paginates through conversation history events for a given session handle.
+ *
+ * @remarks
+ * Returned events carry their original stored `sequence` position; because
+ * streaming deltas are combined into consolidated messages, gaps between
+ * consecutive `sequence` values are normal and do not mean lost events.
  *
  * @param handle - Session handle to paginate.
  * @param workspace - Calling workspace path for ownership enforcement.
