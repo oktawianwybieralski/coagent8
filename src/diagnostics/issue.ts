@@ -11,7 +11,7 @@
  *   Redaction strictly precedes byte truncation to ensure credential prefixes cannot be exposed.
  * - **Pre-Filled GitHub URL Construction**: Builds URL-encoded issue links targeting the canonical
  *   GitHub repository issues page (`/issues/new?title=...&body=...`), including system architecture,
- *   Node runtime, OS version, and non-sensitive CLI doctor diagnostics.
+ *   Node runtime, OS version, and detected CLI versions only (no readiness or quota).
  *
  * @packageDocumentation
  */
@@ -113,7 +113,7 @@ export function sanitizeText(text?: string | null): string {
 /**
  * Builds a sanitized, pre-filled GitHub bug report URL and markdown preview.
  *
- * Collects runtime environment parameters (Node.js, OS architecture, CLI doctor status),
+ * Collects runtime environment parameters (Node.js, OS architecture, detected CLI versions),
  * strips sensitive code blocks and credentials, and encodes parameters into a GitHub new issue URL.
  *
  * @param options - Error message, context, and optional DoctorReport diagnostics.
@@ -128,12 +128,19 @@ export function generateBugReport(options: BugReportOptions): BugReportResult {
     const firstLine = cleanError.split(/[\r\n\u2028\u2029]/)[0].replace(/\s+/g, ' ').trim() || 'Unknown error';
     const title = `[Bug]: ${safeSlice(firstLine, 110)}`;
 
-    let doctorSummary = 'Not provided';
-    if (doctorReport && doctorReport.backends) {
-      doctorSummary = Object.entries(doctorReport.backends)
-        .map(([id, backend]) => `- **${sanitizeText(backend.name || id)}**: ${backend.installed ? `v${sanitizeText(backend.version || 'unknown')}` : 'Not installed'}`)
-        .join('\n');
-    }
+    const singleLine = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const backendEntries = Object.entries(doctorReport?.backends ?? {});
+    const detectedClis = backendEntries.length > 0
+      ? `- **Detected CLIs**:\n${backendEntries
+          .map(([id, backend]) => {
+            const label = singleLine(sanitizeText(backend.name || id)) || singleLine(sanitizeText(id)) || 'unknown';
+            const value = backend.installed
+              ? (singleLine(sanitizeText(backend.version || 'unknown')) || 'unknown')
+              : 'Not installed';
+            return `  - **${label}**: ${value}`;
+          })
+          .join('\n')}`
+      : '- **Detected CLIs**: Not provided';
 
     const body = `### Description & Context
 ${cleanContext}
@@ -147,8 +154,7 @@ ${cleanError}
 - **${BRAND.NAME} MCP Version**: ${BRAND.SERVER_VERSION}
 - **Node.js**: ${process.version}
 - **OS**: ${os.type()} ${os.release()} (${os.arch()})
-- **Detected CLIs**:
-${doctorSummary}
+${detectedClis}
 
 ---
 *Note: Best-effort automated redaction was applied. Please review the details above before submitting to ensure no sensitive or proprietary data is included.*

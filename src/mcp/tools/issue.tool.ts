@@ -3,7 +3,7 @@
  *
  * @remarks
  * Provides a privacy-sanitized bug report generator, pre-filled GitHub issue URL,
- * and optional diagnostic probe via doctor service.
+ * and optional detected CLI version attachment (no readiness or quota) via doctor service.
  *
  * @packageDocumentation
  */
@@ -30,14 +30,14 @@ export const issueOutputSchema = {
 
 export const issueToolDefinition = {
   name: CANONICAL_TOOL_NAMES.ISSUE,
-  description: 'Sanitized bug report with a GitHub link. Be concise and actionable: reproduction steps, expected/actual behavior, impact, and sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them. Keep issueUrl verbatim; do not decode or re-escape it.',
+  description: 'Sanitized bug report with GitHub link. Be concise and actionable: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them. Keep issueUrl verbatim; do not decode or re-escape it.',
   outputSchema: issueOutputSchema,
   inputSchema: {
     type: 'object',
     properties: {
       error_message: { type: 'string' },
-      context: { type: 'string', description: 'What led to the problem.' },
-      include_doctor: { type: 'boolean', description: 'Default true: attach doctor diagnostics.' },
+      context: { type: 'string', description: 'What led to it.' },
+      include_doctor: { type: 'boolean', description: 'Default true: CLI versions only, no readiness/quota.' },
     },
   },
 };
@@ -46,7 +46,8 @@ export const issueToolDefinition = {
  * Handles the canonical issue tool execution.
  *
  * Sanitizes input to strip secrets, passwords, git diffs, and code blocks before
- * assembling a pre-filled GitHub issue URL and preview prompt.
+ * assembling a pre-filled GitHub issue URL and preview prompt. When `include_doctor`
+ * is enabled (the default), attaches detected CLI versions only (no readiness or quota).
  *
  * @param args - Issue parameters including optional error message, context, and doctor flag.
  * @returns MCP tool result with user prompt and structuredContent.
@@ -55,7 +56,7 @@ export async function handleIssue(args: IssueToolArgs = {}) {
   let doctorReport: DoctorReport | null = null;
   if (args.include_doctor !== false) {
     try {
-      doctorReport = await runDoctor();
+      doctorReport = await runDoctor({ quota: false });
     } catch (_) {
       doctorReport = null;
     }

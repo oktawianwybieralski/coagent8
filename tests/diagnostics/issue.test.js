@@ -10,6 +10,7 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
   const errorMessage = 'No file-reading tools or filesystem resources are available, so I could not verify the surrounding syncPage code or authorization call site to confirm rejection precedes every side effect; shell commands were prohibited.';
   const context = 'Review of card RC26-01-06a3 with backend codex and model gpt-6.1-sol returned BLOCKED with PARTIAL coverage because no file-reading tools or filesystem resources were available to read workspace files outside the diff.';
   const report = generateBugReport({ errorMessage, context, doctorReport: { backends: {
+    codex: { name: 'OpenAI Codex CLI', installed: true, version: 'codex-cli 0.162.0-alpha.17.2' },
     agy: { name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.2' },
     claude: { name: 'Claude Code CLI', installed: true, version: '2.1.296 (Claude Code)' },
   } } });
@@ -25,12 +26,41 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
   assert.ok(!/[!'()*]/.test(url.search));
   assert.ok(report.body.includes(context));
   assert.ok(report.body.includes(errorMessage));
-  assert.ok(report.body.includes('Google Gemini (Antigravity agy)'));
+  assert.ok(report.body.includes(
+    '- **Detected CLIs**:\n' +
+    '  - **OpenAI Codex CLI**: codex-cli 0.162.0-alpha.17.2\n' +
+    '  - **Google Gemini (Antigravity agy)**: 1.3.2\n' +
+    '  - **Claude Code CLI**: 2.1.296 (Claude Code)'
+  ));
+  assert.ok(!report.body.includes('vcodex-cli'));
+  assert.ok(!report.body.includes('v1.3.2'));
+  assert.ok(!report.body.includes('v2.1.296'));
   assert.ok(!/[\r\n]/.test(report.title));
   assert.ok(!report.title.includes('[truncated]'));
   assert.ok(Array.from(report.title).length <= 120);
   assert.ok(!report.prompt.includes('<details>'));
   assert.ok(report.prompt.endsWith(`Preview Sanitized Report\n\n${report.body}`));
+
+  const emptyBackendsReport = generateBugReport({ errorMessage: 'Error', doctorReport: { backends: {} } });
+  assert.ok(emptyBackendsReport.body.includes('- **Detected CLIs**: Not provided'));
+
+  const unknownVersionReport = generateBugReport({
+    errorMessage: 'Error',
+    doctorReport: {
+      backends: {
+        codex: { name: 'OpenAI Codex CLI', installed: true },
+        agy: { name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.3\nbuild 2026-10' },
+        claude: { name: 'Claude Code CLI', installed: false },
+      },
+    },
+  });
+  assert.ok(unknownVersionReport.body.includes(
+    '- **Detected CLIs**:\n' +
+    '  - **OpenAI Codex CLI**: unknown\n' +
+    '  - **Google Gemini (Antigravity agy)**: 1.3.3 build 2026-10\n' +
+    '  - **Claude Code CLI**: Not installed'
+  ));
+  assert.ok(!unknownVersionReport.body.includes('vunknown'));
 });
 
 test('issue URL preserves punctuation, Unicode and literal URL-like text without extra parameters', () => {
