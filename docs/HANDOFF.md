@@ -15,7 +15,7 @@ Do not append another session transcript or treat old test counts as fresh evide
   is published on GitHub (`9b78a0a`), npm (`next` and `latest`) and the VS Code
   Marketplace ([release evidence](#060-release-evidence)). Manifest versions stay
   at `0.6.0` until the `release/v0.6.1` release PR (`PATCH-061-R2`).
-- **Merged on `develop` for `0.6.1` (through `fc76539`):**
+- **Merged on `develop` for `0.6.1` (through `5913321`):**
   - `FEEDBACK-060c` (#4): `doctor` skips caching a `not installed` probe when
     `backends.agy.executable` is `vscode-extension` and no CLI path is resolved yet.
   - `FEEDBACK-060d`: post-turn review rechecks report a workspace change only
@@ -31,37 +31,42 @@ Do not append another session transcript or treat old test counts as fresh evide
     for project source, documentation and artwork (`LICENSE`, distribution
     manifests, README license sections and contributor guidance;
     [rights and material inventory](#lic-001-mit-candidate)).
+  - Group 1 (`docs/roadmap-current-state`, #21, `c00eeb2`): `DOCS-002a` and
+    `PUBLIC-001c` (`ROADMAP.md` reduced to open work, active decisions and
+    public-reader phrasing, with incoming `HANDOFF.md#...` links aligned to the
+    25 preserved evidence anchors).
+  - Group 2 (`test/synthetic-account-fixtures`, #22, `461ae75`): `PUBLIC-001a1`
+    through `PUBLIC-001a3` (synthetic account and quota values across Claude,
+    Codex and Antigravity fixtures and tests).
+  - Group 3 (`build/package-distribution`, #23, `e29aeaf`): `SUPPLY-001a` and
+    `SUPPLY-001b` (omit `.map` source maps from npm and VSIX packages; move
+    bundled runtime packages to `devDependencies`).
+  - Group 4 (`fix/session-feedback`, #24, `08082ba`): `FEEDBACK-060f1` through
+    `FEEDBACK-060f4` (history-only paging parameter scope, public history
+    sequence-gap documentation, `activePid` documented as the CoAgent8 server
+    PID, and `session_handle` retained on unchanged repeat-review refusals).
+  - Group 5 (`fix/issue-report-format`, #25, `5f5e645`): `FEEDBACK-060g` (exact
+    CLI versions without duplicate `v`, nested `Detected CLIs` Markdown list and
+    `include_doctor` versions-only attachment wording).
+  - Group 6 (`test/claude-cancel-fixture`, #26, `0a49fa7`): `FEEDBACK-060h`
+    (deterministic running-turn handshake and two-client
+    cancellation/continuation coverage for Claude fixtures).
+  - Group 7 (`fix/vsix-user-guidance`, #27, `5913321`): `FEEDBACK-060i`,
+    `DOCS-002d1`, `DOCS-002d2` and `PUBLIC-001d` (VS Code command-first guidance
+    for VSIX-only users, root and extension README alignment for `0.6.0`/`0.6.1`,
+    and trademark notice for the CoAgent8 name and logo).
 - **Prepared on topic branches from `develop` (awaiting squash-merge before
   `PATCH-061-R1`):**
-  - Group 1 (`docs/roadmap-current-state`): `DOCS-002a` and `PUBLIC-001c`
-    (`ROADMAP.md` reduced to open work, active decisions and public-reader
-    phrasing).
-  - Group 2 (`test/synthetic-account-fixtures`): `PUBLIC-001a1` through
-    `PUBLIC-001a3` (synthetic account and quota values across Claude, Codex and
-    Antigravity fixtures and tests).
-  - Group 3 (`build/package-distribution`): `SUPPLY-001a` and `SUPPLY-001b`
-    (omit `.map` source maps from npm and VSIX packages; move bundled runtime
-    packages to `devDependencies`).
-  - Group 4 (`fix/session-feedback`): `FEEDBACK-060f1` through `FEEDBACK-060f4`
-    (history-only paging parameter scope, public history sequence-gap
-    documentation, `activePid` documented as the CoAgent8 server PID, and
-    `session_handle` retained on unchanged repeat-review refusals).
-  - Group 5 (`fix/issue-report-format`): `FEEDBACK-060g` (exact CLI versions
-    without duplicate `v`, nested `Detected CLIs` Markdown list and
-    `include_doctor` versions-only attachment wording).
-  - Group 6 (`test/claude-cancel-fixture`): `FEEDBACK-060h` (deterministic
-    running-turn handshake and two-client cancellation/continuation coverage for
-    Claude fixtures).
-  - Group 7 (`fix/vsix-user-guidance`): `FEEDBACK-060i`, `DOCS-002d1`,
-    `DOCS-002d2` and `PUBLIC-001d` (VS Code command-first guidance for VSIX-only
-    users, root and extension README alignment for `0.6.0`/`0.6.1`, and trademark
-    notice for the CoAgent8 name and logo).
   - Group 8 (`docs/handoff-current-state`): `DOCS-002b` and `PUBLIC-001b`
-    (this handoff reduction and public-reader update; merges after Group 1
-    updates `ROADMAP.md` incoming links to the 25 preserved section anchors).
+    (this handoff reduction and public-reader update).
+  - Issue #20 fix (`fix/agy-sandbox-guidance`): recover from empty Antigravity
+    (`agy`) `--sandbox` command-denial turns with a single guided retry and
+    steer `consult`/`review` prompts toward direct file-read tools instead of
+    shell commands (`Fixes #20`).
 - **Remaining `0.6.1` release steps ([`PATCH-061`](ROADMAP.md#patch-061-061-task-queue)):**
-  1. Integrate Groups 1–8 into `develop` with green six-job CI and freeze the
-     `0.6.1` scope (`PATCH-061-R1`).
+  1. Integrate Group 8 (`docs/handoff-current-state`) and the Issue #20 fix
+     (`fix/agy-sandbox-guidance`) into `develop` with green six-job CI and
+     freeze the `0.6.1` scope (`PATCH-061-R1`).
   2. Prepare `release/v0.6.1` (`PATCH-061-R2`), run the clean-checkout full
      release gate and `LIC-001d` artifact inspection (`PATCH-061-R3`), and build
      CI release artifacts across all six OS/Node jobs (`PATCH-061-R4`).
