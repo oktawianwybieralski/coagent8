@@ -24,6 +24,17 @@ features, fixes, releases, backports - travels as its own pushed branch and PR.
 
 ## 0. Who does what
 
+Agents implement changes and prepare the review evidence. The owner focuses on
+architecture and code review; the Author must not leave routine PR preparation,
+check selection or evidence collection for the owner. Independent verification
+does not imply the owner's approval or replace their architectural decisions.
+The owner's code review normally happens before opening the PR (owner
+clarification, 2026-10-12). Agents prepare the local candidate, relevant diff,
+check evidence and open questions for that review, address the feedback, then
+open the PR within the owner's authorization. Opening a PR does not require
+the owner to repeat a completed review of the same snapshot. Later changes
+must be disclosed with their effect on the earlier review.
+
 | Action | Agent | Owner |
 | --- | --- | --- |
 | Topic branch, commits, local checks, changelog regeneration | Yes | Yes |
@@ -175,19 +186,44 @@ become the final commit, so they must meet this section.
 * Open as **draft** while work or verification is incomplete.
 * One concern per PR. Prefer under ~400 changed lines excluding generated files
   and lockfiles; split larger work into reviewable steps.
-* **Description** (English) with these sections:
-  1. **Summary** - what changes and why.
+* **Description** (English) follows the
+  [PR template](../../.github/pull_request_template.md) and has these sections.
+  Scale detail to the change's risk; a small prose PR can use a sentence per
+  section. The template is a writing aid, not another source of requirements.
+  1. **Summary** - the concrete problem and resulting behavior, suitable for
+     the squash commit body. Keep verification and process notes below.
   2. **Links** - `Fixes #...` / `Refs #...`, roadmap item and audit finding IDs.
+     Link referenced documents and headings; write `None` if none apply.
   3. **Changes** - notable behavior, contract or migration effects, and the
-     `pending` changelog entry from the title preview (section 6).
+     `pending` changelog entry from the title preview (section 6), or explain
+     why the generator omits it. Highlight architectural decisions the owner
+     should assess. Do not narrate commit organization or repeat the file list.
+     Screenshots and before/after examples are useful only when they help
+     evaluate the affected behavior.
   4. **Verification** - the commands run, platform and Node version, and each
      result as PASS, FAIL or NOT_RUN with a reason, selected per
      [04-quality-gate](04-quality-gate.md). Never report an unexecuted check as PASS.
+     Identify the checked snapshot (commit SHA, or explicitly a local dirty
+     diff). Separately record independent review per
+     [03-author-reviewer](03-author-reviewer.md#recording-pr-evidence), including
+     pending review honestly. GitHub Checks is the record of remote CI on the
+     current head; do not duplicate its status in a checkbox or paste its logs.
+     Link a relevant run or failure when it helps assess the change.
   5. **Risk and rollback** - what could break and how to revert.
+     Documentation can establish policy, so assess its accuracy and impact
+     rather than assuming prose has no risk.
   6. **Checklist** - docs, runtime contract and roadmap status updated where
      behavior changed; `CHANGELOG.md` regenerated, never edited by hand
      (section 6); the title preview passed;
      no secrets, local paths or personal data in the diff.
+     Include only Author-controlled preparation items. Mark inapplicable items
+     `N/A` with a reason; do not check them as completed. CI and review readiness
+     remain the merge gates below, not duplicated checklist items.
+* The Author maintains the body and checklist as work, findings and evidence
+  change, within the owner's authorization in section 0. Before requesting
+  owner review, provide a current description and clearly name unresolved
+  findings, missing checks and decisions needing the owner's judgment. Never
+  imply owner approval or mark independent review complete from a `consult`.
 
 ### Review and merge
 

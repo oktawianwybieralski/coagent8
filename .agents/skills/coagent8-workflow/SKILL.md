@@ -61,6 +61,19 @@ and docs; executable changes need their scope's behavioral checks. Keep source,
 bundle, exact-artifact and native-host evidence distinct. A model READY string
 does not establish independent checks or release approval.
 
+Prepare and maintain the PR description and checklist per
+[rule 02 section 3](../../rules/02-git-workflow.md#3-pull-requests), within the
+owner's authorization. Provide the owner with current check evidence, the
+reviewed snapshot, unresolved findings and architectural decisions to assess.
+The owner's code review normally precedes opening the PR: prepare the local
+candidate and evidence first, address feedback, then open the PR when authorized.
+Carry actual pre-PR review evidence into the description without inventing
+approval or requesting the same owner review again for an unchanged snapshot.
+Keep author checks, independent review and owner approval distinct; a consult
+is advisory. GitHub Checks owns current CI status; do not duplicate it in a
+checklist. Use the [PR template](../../../.github/pull_request_template.md)
+without copying rules or narrating the commit history.
+
 Update the owning document in place: roadmap for remaining work/acceptance,
 architecture for contracts/design, handoff for current evidence/next action.
 README serves users. Remove superseded reports rather than append transcripts.

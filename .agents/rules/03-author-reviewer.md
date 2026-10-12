@@ -64,6 +64,29 @@ Before merging significant architectural changes, refactors, or creating Release
 
 ---
 
+## Recording PR evidence
+
+The Author records checks they actually executed separately from the independent
+reviewer's findings. In the PR's Verification section, record the review verdict,
+reviewed commit SHA, target/base and scope, coverage and unresolved P1/P2 findings;
+link the review record when available. For example:
+
+```text
+Independent review: READY; head <sha>; base <sha>; scope <base>...<head>;
+coverage COMPLETE; unresolved P1/P2: 0; evidence <link or record>.
+```
+
+Until review is performed, record `NOT_RUN` and the reason. A plain `consult`
+is advice, not independent approval. Report the review's actual limitations:
+reviewer NOT_RUN checks do not become PASS because author checks or CI passed.
+The reviewed head must match the current PR head before merge (rule 02); after
+new commits or a rebase, mark old review evidence as superseded until the
+independent reviewer has verified the new snapshot. Editing the PR description
+alone does not change the code snapshot. Release reviews additionally require
+the hashes in section 3. Never write or imply the owner's approval on their behalf.
+
+---
+
 ## 3. Release Candidate Audit Binding
 For releases and release candidates, the Reviewer's review must evaluate the complete committed release diff against its accepted base commit (`<base_sha>..<candidate_sha>`).
 * Approval must explicitly record and bind to:
