@@ -48,7 +48,9 @@ listed PRs' branches; it covers nothing else.
    - Stop if `headRefName` starts with `release/`: a release PR is merged by
      the owner per rule 02 section 5, and its changelog needs `--tag`.
    - Stop unless the body's Verification section records an independent
-     review with verdict `READY` (rule 03).
+     review with verdict `READY` in the format of
+     [rule 03](../../rules/03-author-reviewer.md#recording-pr-evidence). If its
+     reviewed head differs from `headRefOid`, step 9 reviews the head again.
    - Remember `title`, `body`, `headRefName` (the branch) and `headRefOid`
      (the observed head).
 2. `gh pr checks N`: stop if any job failed; never rerun jobs.
@@ -92,10 +94,22 @@ listed PRs' branches; it covers nothing else.
    pending. Exactly six jobs must be listed and all must be `pass`, also
    when step 3 skipped the update. On a failure, stop and report the last 60
    lines of `gh run view <run id> --log-failed`; never rerun jobs.
-9. `gh pr view N --json mergeStateStatus` must be `CLEAN`; if it is `BEHIND`
-   again, go back to step 4. `CLEAN` also means that the ruleset's conditions
-   (resolved conversations, required checks) hold.
-10. Write the squash message body (rule 02 section 2) to a file outside the
+9. Independent review of the current head (rule 03). A rebase or new commit
+   supersedes earlier review evidence, so unless the PR body already records
+   `READY` for exactly `headRefOid`:
+   - with `<branch>` checked out, run the CoAgent8 `review` tool with scope
+     `origin/develop...<branch>` (backend and model as the owner named, else
+     the defaults);
+   - require `VERDICT: READY` and `COVERAGE: COMPLETE`; on `BLOCKED`, stop and
+     report the findings (do not fix them: that is the Author's work);
+   - update the PR body's Verification section with `gh pr edit N --body-file
+     <file>`: mark the old review line superseded and add the new one in the
+     rule 03 format (verdict, head, base, scope, coverage, unresolved P1/P2,
+     session handle as evidence). Change nothing else in the body.
+10. `gh pr view N --json mergeStateStatus` must be `CLEAN`; if it is
+    `BEHIND` again, go back to step 4. `CLEAN` also means that the ruleset's
+    conditions (resolved conversations, required checks) hold.
+11. Write the squash message body (rule 02 section 2) to a file outside the
     repository, for example in the system temp directory:
     - the text of the PR body's `## Summary` section (why the change is
       needed and what behavior changes), wrapped at 72 characters;
@@ -104,11 +118,11 @@ listed PRs' branches; it covers nothing else.
       `BREAKING CHANGE:` footer;
     - nothing else: no Verification table, checklist, file list or AI
       attribution. Stop if the Summary is missing or a footer is ambiguous.
-11. `gh pr merge N --squash --match-head-commit <headRefOid> --subject "<title> (#N)" --body-file <file>`.
+12. `gh pr merge N --squash --match-head-commit <headRefOid> --subject "<title> (#N)" --body-file <file>`.
     The repository deletes the merged branch itself.
-12. `gh pr view N --json state,mergeCommit`: `state` must be `MERGED`;
+13. `gh pr view N --json state,mergeCommit`: `state` must be `MERGED`;
     remember `mergeCommit.oid`. Delete the message file.
-13. Wait for the CI run of that merge commit: run
+14. Wait for the CI run of that merge commit: run
     `gh run list --workflow CI --commit <mergeCommit.oid>` every two minutes
     until it lists a finished run, and require conclusion `success` before the
     next PR. If it is red, stop the batch and report: the
