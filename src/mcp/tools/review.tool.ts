@@ -184,7 +184,9 @@ export async function handleReview(
           try {
             const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker, teardownReadContext);
             await assertReviewWorkspace(after.info, workspaceCwd, abortSignal, teardownReadContext);
-            return after.context.expectedSnapshot !== snapshot || !after.context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
+            // Input that was incomplete before the turn already blocks READY with its own reason;
+            // only a different snapshot or a change in completeness shows a change.
+            return after.context.expectedSnapshot !== snapshot || after.context.inputComplete !== context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
           } finally {
             verifyHandle.end();
           }
