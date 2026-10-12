@@ -16,7 +16,10 @@ listed PRs' branches; it covers nothing else.
 - Run each command as its own terminal call. Do not chain with `&&` or `;`,
   and do not use command substitution.
 - **Any command that fails or prints something this file does not expect:
-  stop and report the command and its output.** Do not improvise a fix.
+  stop and report the command and its output.** Do not improvise a fix. Two
+  non-zero exits are expected: `git rebase` and `rebase --continue` stopping
+  on a conflict (handled in step 5), and `gh pr checks` exiting with 8 while
+  checks are pending (step 8).
 - Never open an editor: continue a rebase with
   `git -c core.editor=true rebase --continue`.
 - Never use `git stash`, `git worktree`, `git merge`, `git reset`,
@@ -31,9 +34,10 @@ listed PRs' branches; it covers nothing else.
 1. `git status --short` must be empty. If it is not, stop and report: the
    files belong to someone else.
 2. Note the current branch (`git branch --show-current`) for the report.
-3. `gh run list --branch develop --limit 1`: the latest `develop` run must have
-   finished with `success`. If it is red, stop: rule 02 allows no further merge
-   until a fix restores green CI.
+3. `git fetch origin`, then `git rev-parse origin/develop` gives the current
+   `develop` commit; `gh run list --workflow CI --commit <that SHA>` must list
+   a finished run with conclusion `success`. If it is red or missing, stop:
+   rule 02 allows no further merge until a fix restores green CI.
 
 ## For each PR number N
 
@@ -79,10 +83,13 @@ listed PRs' branches; it covers nothing else.
    - For each test file the PR changes
      (`git diff --name-only origin/develop -- tests`),
      `node tests/run.cjs <file>`, which must report `fail 0`.
-7. `git push --force-with-lease=<branch>:<headRefOid> origin <branch>`, then
-   `gh pr view N --json headRefOid` and remember the new `headRefOid`.
-8. CI on the current head: run `gh pr checks N` every two minutes until no job
-   is pending. Exactly six jobs must be listed and all must be `pass`, also
+7. `git rev-parse HEAD` gives the new local head. Push with
+   `git push --force-with-lease=<branch>:<headRefOid> origin <branch>`, then
+   `gh pr view N --json headRefOid` must equal the new local head (otherwise
+   stop: someone else pushed). From now on `headRefOid` is that SHA.
+8. CI on the current head: `gh pr view N --json headRefOid` must still equal
+   `headRefOid`; run `gh pr checks N` every two minutes until no job is
+   pending. Exactly six jobs must be listed and all must be `pass`, also
    when step 3 skipped the update. On a failure, stop and report the last 60
    lines of `gh run view <run id> --log-failed`; never rerun jobs.
 9. `gh pr view N --json mergeStateStatus` must be `CLEAN`; if it is `BEHIND`
@@ -99,10 +106,12 @@ listed PRs' branches; it covers nothing else.
       attribution. Stop if the Summary is missing or a footer is ambiguous.
 11. `gh pr merge N --squash --match-head-commit <headRefOid> --subject "<title> (#N)" --body-file <file>`.
     The repository deletes the merged branch itself.
-12. `gh pr view N --json state` must be `MERGED`. Delete the message file.
-13. Wait for the `develop` run of this merge
-    (`gh run list --branch develop --limit 1`, every two minutes) and require
-    `success` before the next PR. If it is red, stop the batch and report: the
+12. `gh pr view N --json state,mergeCommit`: `state` must be `MERGED`;
+    remember `mergeCommit.oid`. Delete the message file.
+13. Wait for the CI run of that merge commit: run
+    `gh run list --workflow CI --commit <mergeCommit.oid>` every two minutes
+    until it lists a finished run, and require conclusion `success` before the
+    next PR. If it is red, stop the batch and report: the
     cause is found and fixed in a new PR before anything else is merged.
 
 ## Report
