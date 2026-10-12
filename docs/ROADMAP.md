@@ -820,13 +820,16 @@ as published.
   synthetic ones that keep the exact recorded format (line anchors, middle-dot
   separators, the `11:49pm`-style reset times the parser reads) and update the
   expectations in `tests/backends/claude/usage.test.js` and users of
-  `tests/fixtures/claude-cli/claude.cjs`. Check the Codex (`codex.cjs`) and
-  Antigravity (`agy.cjs`) fixtures and quota tests the same way. Check: affected
-  backend and doctor tests green, no recorded value comes from a real account.
+  `tests/fixtures/claude-cli/claude.cjs`. Check the Codex
+  (`tests/fixtures/codex-cli/codex.cjs`) and Antigravity
+  (`tests/fixtures/agy-cli/agy.cjs`) fixtures and quota tests the same way.
+  Check: affected backend and doctor tests green, no recorded value comes from a
+  real account.
   Execute as three subtasks in `test/synthetic-account-fixtures`:
   PUBLIC-001a1 replaces Claude account values and updates
   affected Claude fixture expectations; PUBLIC-001a2 audits Codex rate-limit/plan/credit
-  fixtures and replaces any real account values with synthetic data; PUBLIC-001a3
+  fixtures (`tests/fixtures/codex-cli/codex.cjs` and `tests/backends/codex/adapter.test.js`)
+  and replaces any real account values with synthetic data; PUBLIC-001a3
   replaces recorded Antigravity `/usage` fractions and reset timestamps in
   `tests/fixtures/agy-cli/agy.cjs`, `tests/backends/agy/adapter.test.js` and
   `tests/diagnostics/doctor.test.js`. Each records the inspected files and runs
