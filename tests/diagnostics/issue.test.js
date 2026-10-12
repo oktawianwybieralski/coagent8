@@ -49,6 +49,7 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
     doctorReport: {
       backends: {
         codex: { name: 'OpenAI Codex CLI', installed: true },
+        agy: { name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.3\nbuild 2026-10' },
         claude: { name: 'Claude Code CLI', installed: false },
       },
     },
@@ -56,6 +57,7 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
   assert.ok(unknownVersionReport.body.includes(
     '- **Detected CLIs**:\n' +
     '  - **OpenAI Codex CLI**: unknown\n' +
+    '  - **Google Gemini (Antigravity agy)**: 1.3.3 build 2026-10\n' +
     '  - **Claude Code CLI**: Not installed'
   ));
   assert.ok(!unknownVersionReport.body.includes('vunknown'));

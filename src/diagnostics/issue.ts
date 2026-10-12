@@ -128,10 +128,17 @@ export function generateBugReport(options: BugReportOptions): BugReportResult {
     const firstLine = cleanError.split(/[\r\n\u2028\u2029]/)[0].replace(/\s+/g, ' ').trim() || 'Unknown error';
     const title = `[Bug]: ${safeSlice(firstLine, 110)}`;
 
+    const singleLine = (text: string) => text.replace(/\s+/g, ' ').trim();
     const backendEntries = Object.entries(doctorReport?.backends ?? {});
     const detectedClis = backendEntries.length > 0
       ? `- **Detected CLIs**:\n${backendEntries
-          .map(([id, backend]) => `  - **${sanitizeText(backend.name || id)}**: ${backend.installed ? sanitizeText(backend.version || 'unknown') : 'Not installed'}`)
+          .map(([id, backend]) => {
+            const label = singleLine(sanitizeText(backend.name || id)) || singleLine(sanitizeText(id)) || 'unknown';
+            const value = backend.installed
+              ? (singleLine(sanitizeText(backend.version || 'unknown')) || 'unknown')
+              : 'Not installed';
+            return `  - **${label}**: ${value}`;
+          })
           .join('\n')}`
       : '- **Detected CLIs**: Not provided';
 
