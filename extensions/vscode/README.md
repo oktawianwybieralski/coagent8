@@ -10,7 +10,7 @@ By [Oktawian Wybieralski](https://oki.dev)
 [![Status: preview](https://img.shields.io/badge/status-preview-F59E0B?style=flat)](#known-limitations)
 ![MCP: stdio](https://img.shields.io/badge/MCP-stdio-6E40C9?style=flat&logo=modelcontextprotocol)
 ![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-5FA04E?style=flat&logo=nodedotjs&logoColor=white)
-[![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-3DA639?style=flat)](https://github.com/oktawianwybieralski/coagent8/blob/develop/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-3DA639?style=flat)](https://github.com/oktawianwybieralski/coagent8/blob/develop/LICENSE)
 
 CoAgent8 connects VS Code chat to **OpenAI Codex**, **Claude Code** and
 **Google Antigravity** (`agy`). Ask another agent to examine a design,
@@ -275,5 +275,8 @@ new number, so VS Code offers **Restart Extensions** after an update. The
 [Source](https://github.com/oktawianwybieralski/coagent8) |
 [Documentation](https://github.com/oktawianwybieralski/coagent8#readme)
 
-Licensed under **GPL-3.0-only**. The extension includes `LICENSE` and the
-notices of its bundled dependencies in `dist/THIRD_PARTY_NOTICES.txt`.
+This checkout is licensed under **MIT**, including the project artwork. The
+extension includes `LICENSE` and the notices of its bundled dependencies in
+`dist/THIRD_PARTY_NOTICES.txt`; those dependencies retain their own licenses.
+The first planned MIT release is 0.6.1. Published 0.6.0 copies retain their
+GPL-3.0-only permissions.

@@ -11,7 +11,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/oktawianwybieralski/coagent8/ci.yml?branch=develop&label=CI&logo=github)](https://github.com/oktawianwybieralski/coagent8/actions/workflows/ci.yml)
 [![npm next](https://img.shields.io/npm/v/coagent8/next?label=npm%20next&color=007ec6)](https://www.npmjs.com/package/coagent8?activeTab=versions)
 [![Status](https://img.shields.io/badge/status-preview-orange)](#status)
-[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D%2024-5FA04E)](package.json)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](.github/workflows/ci.yml)
@@ -478,10 +478,13 @@ work in the repository.
 
 Copyright (c) 2026 Oktawian Wybieralski (oki.dev).
 
-Licensed under the [GNU General Public License, version 3 only](LICENSE)
-(`GPL-3.0-only`). Distributed derivative works must comply with GPLv3 and its
-source-distribution requirements. See LICENSE for the full terms and warranty
-disclaimer. Copies previously distributed under MIT retain those terms.
+The project source, documentation and artwork in this checkout are licensed
+under the [MIT License](LICENSE). See LICENSE for the terms and warranty
+disclaimer. Bundled dependencies retain their own licenses and notices in
+`dist/THIRD_PARTY_NOTICES.txt`.
+
+The first planned MIT release is 0.6.1. Published 0.6.0 copies remain available
+under GPL-3.0-only; earlier copies distributed under MIT retain those terms.
 
 Created by [Oktawian Wybieralski](https://oki.dev) ·
 [GitHub repository](https://github.com/oktawianwybieralski/coagent8)

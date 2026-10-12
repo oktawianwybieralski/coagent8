@@ -2329,14 +2329,14 @@ history stays as published; nothing found justifies rewriting it.
   Affinity source). GPL section 7(e) concerns trademark rights, not withdrawal
   of copyright permissions under section 2. The owner approves the wording
   before integration. Check: consistency with the approved artwork scope,
-  current LICENSE and the standard MIT text, link review and `git diff --check`.
+  approved LICENSE and the standard MIT text, link review and `git diff --check`.
 
 ### LIC-001: planned MIT relicensing
 
 Owner request, 2026-10-12: plan MIT relicensing together with the 0.6.1 work.
 Target: standard MIT for owner-controlled source, documentation and artwork
-from 0.6.1, subject to a verified rights inventory. This card plans the change;
-the current LICENSE and manifests remain GPL-3.0-only until implementation.
+from 0.6.1. The local candidate on `chore/mit-relicense` updates LICENSE,
+distribution metadata and license guidance; published 0.6.0 remains GPL-3.0-only.
 Previously distributed GPL copies retain their permissions; do not rewrite
 tags, published artifacts or generated historical changelog entries. Third-party
 material keeps its own license and notices. Trademark policy is PUBLIC-001d,
@@ -2344,10 +2344,13 @@ separate from the copyright grant.
 
 References: [standard MIT text](https://opensource.org/license/mit),
 [GNU licensing FAQ](https://www.gnu.org/licenses/gpl-faq.html#HeardOtherLicense)
-and the current LICENSE sections 2 and 7(e). Git author names alone do not
+and [the 0.6.0 GPL license](https://github.com/oktawianwybieralski/coagent8/blob/v0.6.0/LICENSE)
+sections 2 and 7(e). Git author names alone do not
 establish copyright ownership or permission to relicense imported material.
 
-- [ ] **LIC-001a - rights and material inventory.** Inspect tracked source,
+- [x] **LIC-001a - rights and material inventory.** Inventory recorded in
+  HANDOFF for the owner-authorized MIT candidate; third-party dependency
+  licenses stay unchanged. Inspect tracked source,
   documentation, skills, logo/artwork sources, fixtures and copied/vendored
   material; use history and attribution to identify rights holders and existing
   terms. Record owner confirmation/permissions for the scope being relicensed,
@@ -2356,9 +2359,12 @@ establish copyright ownership or permission to relicense imported material.
   uncertain ownership or GPL-only third-party code blocks LIC-001b until
   resolved, excluded lawfully or replaced in a separate task. Do not infer
   sole ownership from squash history or remove attribution to obtain a clean
-  score. This is a bounded audit task; no license files change in its PR.
-- [ ] **LIC-001b - license text and metadata.** After LIC-001a, replace the
-  root LICENSE with the unmodified standard MIT terms and accurate owner/year
+  score. Audit evidence precedes license edits. The implementation candidate
+  combines a/b/c1 and the README license sections in one licensing PR so the
+  terms and metadata remain synchronized; broader README cleanup stays separate.
+- [x] **LIC-001b - license text and metadata.** Implemented locally on
+  `chore/mit-relicense`, pending independent review/integration. After LIC-001a,
+  replace the root LICENSE with the unmodified standard MIT terms and accurate owner/year
   notice. Update root package/lock metadata, `plugin.json`, the extension
   manifest and applicable owner-controlled file headers together; inventory
   other manifests rather than changing independent tooling/third-party terms
@@ -2366,15 +2372,18 @@ establish copyright ownership or permission to relicense imported material.
   Acceptance: all first-party distribution metadata agrees with the approved
   MIT scope; version stays 0.6.0 until the release PR. Check: scope-based package
   gate, affected package regressions and notice comparison.
-- [ ] **LIC-001c - public license and contribution guidance.** After b,
+- [ ] **LIC-001c - public license and contribution guidance.** Depends on b.
+  License sections/badges in both READMEs and contribution guidance are updated
+  locally; broader DOCS-002d1/d2 acceptance and integration remain pending.
   DOCS-002d1 and DOCS-002d2 each update their README badges/terms and explain
   the first MIT release without claiming older GPL copies changed license.
-  Update contribution guidance in its own small PR (LIC-001c1) so future
+  Update contribution guidance (LIC-001c1) so future
   contributions use the applicable project license; do not introduce a CLA or
   copyright assignment silently. Coordinate artwork scope and trademark text
   with PUBLIC-001d. Acceptance: user/contributor guidance agrees with LICENSE
   and manifests, and third-party exceptions remain explicit. Parent c closes
   only after c1 and both README tasks; content/link checks per rule 04.
+  LIC-001c1's contribution guidance is implemented in the local candidate.
 - [ ] **LIC-001d - exact-artifact and publication verification.** PATCH-061-R3
   and R4 inspect the packaged npm/VSIX LICENSE, manifest license fields,
   README text, artwork scope and third-party notices against the approved
@@ -2499,7 +2508,8 @@ approval or claim that their work has run.
 
 ### Implementation queue
 
-Each row is one task for a coding agent and one concern per PR. Use a topic
+Each row is one task for a coding agent; keep one concern per PR. The licensing
+candidate groups the synchronized LIC-001 changes as specified above. Use a topic
 branch from current `develop`; finish the row's acceptance and scope-based
 checks, update its owning card and prepare the PR evidence before taking the
 next task. A parent card completes only when all its children complete.

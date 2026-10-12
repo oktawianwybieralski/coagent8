@@ -9,7 +9,7 @@
   },
   "homepage": "https://oki.dev",
   "repository": "https://github.com/oktawianwybieralski/coagent8",
-  "license": "GPL-3.0-only",
+  "license": "MIT",
   "extensions": {
     "com.openai": {
       "interface": {
