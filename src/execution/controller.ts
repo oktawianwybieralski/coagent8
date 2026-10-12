@@ -35,7 +35,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { loadConfigSnapshot } from '../config.js';
-import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, isProcessAlive, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
+import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, getSession, isProcessAlive, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
@@ -276,9 +276,20 @@ async function executeTaskInternal(
       if (previous) {
         const trace = emitTrace();
         const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
-        const retainedHandle = prepared.previousSession?.sessionHandle ?? previous.sessionHandle;
-        const continuationAvailable = prepared.previousSession
-          ? !isProcessAlive(prepared.previousSession.activePid) && prepared.previousSession.state === 'idle' && Boolean(prepared.previousSession.threadId)
+        let explicitSession: ReturnType<typeof getSession> = null;
+        if (prepared.previousSession) {
+          try {
+            const current = getSession(prepared.previousSession.sessionHandle, { workspace: cwd });
+            if (current && current.backend === prepared.backend.id) {
+              explicitSession = current;
+            }
+          } catch {
+            explicitSession = null;
+          }
+        }
+        const retainedHandle = explicitSession?.sessionHandle ?? previous.sessionHandle;
+        const continuationAvailable = explicitSession
+          ? !isProcessAlive(explicitSession.activePid) && explicitSession.state === 'idle' && Boolean(explicitSession.threadId)
           : previous.continuationAvailable;
         return {
           isError: false,

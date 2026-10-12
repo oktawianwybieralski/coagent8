@@ -100,6 +100,25 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
     await releaseSessionTurn(otherSameWorkspace.sessionHandle, busyTurn.data.token);
   }
 
+  // If another turn acquires the explicit session_handle during async preparation, re-reading marks it (finished)
+  const baseProbe = adapterRegistry.agy.probe;
+  let acquiredDuringPrep = null;
+  adapterRegistry.agy.probe = async (...probeArgs) => {
+    acquiredDuringPrep = await acquireSessionTurn(otherSameWorkspace.sessionHandle);
+    assert.equal(acquiredDuringPrep.ok, true);
+    return baseProbe(...probeArgs);
+  };
+  try {
+    const repeatBusyDuringPrep = readResult(await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve));
+    assert.equal(repeatBusyDuringPrep.sessionHandle, otherSameWorkspace.sessionHandle);
+    assert.equal(repeatBusyDuringPrep.continuationAvailable, false);
+  } finally {
+    adapterRegistry.agy.probe = baseProbe;
+    if (acquiredDuringPrep?.ok) {
+      await releaseSessionTurn(otherSameWorkspace.sessionHandle, acquiredDuringPrep.data.token);
+    }
+  }
+
   // Caller can continue with the retained handle after changing the code
   fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 4;\n');
   const continued = readResult(await handleReview('review', { session_handle: repeat.sessionHandle }, repo, null, null, approve));
