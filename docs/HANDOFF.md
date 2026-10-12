@@ -57,7 +57,8 @@ Do not append another session transcript or treat old test counts as fresh evide
     users, root and extension README alignment for `0.6.0`/`0.6.1`, and trademark
     notice for the CoAgent8 name and logo).
   - Group 8 (`docs/handoff-current-state`): `DOCS-002b` and `PUBLIC-001b`
-    (this handoff reduction and public-reader update).
+    (this handoff reduction and public-reader update; merges after Group 1
+    updates `ROADMAP.md` incoming links to the 25 preserved section anchors).
 - **Remaining `0.6.1` release steps ([`PATCH-061`](ROADMAP.md#patch-061-061-task-queue)):**
   1. Integrate Groups 1–8 into `develop` with green six-job CI and freeze the
      `0.6.1` scope (`PATCH-061-R1`).
@@ -531,12 +532,12 @@ verified fixes before `0.6.0`:
   extension-owned runtime paths (`globalStorage/okidev.coagent8-mcp`); the second
   run verified `PASS` for hook removal, 3-client registration and 18 installed skills.
 - **Standalone CLI install tracking and missing `vscode-extension` copies
-  (`3d23dc1`, VSIX `261c790c...c22d`, and follow-up VSIX `18838a2b...74a56`):**
+  (`3d23dc1`, VSIX `261c790c...b65ed2`, and follow-up VSIX `18838a2b...74a56`):**
   Second run showed extension-storage install records were wiped on VSIX
   uninstall (`FAIL`) and missing `vscode-extension` copies suppressed install
   offers. Moved install tracking to `~/.coagent8/installs.json` with
   junction-aware `agy` detection and registry-safe user `PATH` cleanup (`3d23dc1`,
-  VSIX `261c790c...c22d`), then reported missing selected extension copies as
+  VSIX `261c790c...b65ed2`), then reported missing selected extension copies as
   `not installed` (VSIX `18838a2b...74a56`; owner-reported `PASS` for recovery
   and skill visibility).
 - **Cross-client MCP smoke:** `consult` calls succeeded across Codex (`agy` /
