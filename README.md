@@ -434,6 +434,10 @@ error.
 
 ## Reporting problems
 
+For suspected security vulnerabilities, follow the
+[security policy](https://github.com/oktawianwybieralski/coagent8/security/policy)
+and report privately. Do not include vulnerability details in public issues.
+
 Ask your agent to run the `issue` tool: it prepares a sanitized report with
 your OS, Node and CLI versions and a link that opens a new GitHub issue with it.
 Add the steps and what you expected, and check the text for private data
@@ -456,6 +460,8 @@ release. Restart a running MCP server after rebuilding.
 
 | Need | Document |
 | --- | --- |
+| How to contribute | [Contributing](https://github.com/oktawianwybieralski/coagent8/blob/develop/CONTRIBUTING.md) |
+| Security support and private reports | [Security policy](https://github.com/oktawianwybieralski/coagent8/security/policy) |
 | Priorities and acceptance | [Roadmap](docs/ROADMAP.md) |
 | Contracts, limitations and design | [Architecture](docs/ARCHITECTURE.md) |
 | Current work and evidence | [Handoff](docs/HANDOFF.md) |
