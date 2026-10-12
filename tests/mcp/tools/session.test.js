@@ -310,6 +310,7 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
   const [client1Transport, server1Transport] = InMemoryTransport.createLinkedPair();
   const [client2Transport, server2Transport] = InMemoryTransport.createLinkedPair();
 
+  let turn1Promise;
   try {
     process.env.CLAUDE_PATH = path.resolve(__dirname, '../../fixtures/claude-cli/claude.cjs');
     process.env.CLAUDE_FIXTURE_SCENARIO = 'interruptible';
@@ -331,7 +332,7 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
 
     // 1. Client 1 starts a Claude consult turn that enters the active running state
     let turn1Settled = false;
-    const turn1Promise = client1.callTool({
+    turn1Promise = client1.callTool({
       name: 'consult',
       arguments: {
         proposal: 'Long-running architecture check',
@@ -469,6 +470,7 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     await server1.close().catch(() => {});
     await client2.close().catch(() => {});
     await server2.close().catch(() => {});
+    await turn1Promise?.catch(() => {});
     for (const key of Object.keys(process.env)) {
       if (!(key in previousEnv)) delete process.env[key];
     }

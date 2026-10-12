@@ -427,8 +427,9 @@ test('FEEDBACK-060h: deterministic running-turn handshake confirms live Claude t
 
   const controller = new AbortController();
   let turn1Settled = false;
+  let turn1Promise;
   try {
-    const turn1Promise = executeClaude('Analyze while running', {
+    turn1Promise = executeClaude('Analyze while running', {
       cwd: dir,
       model: MODEL,
       abortSignal: controller.signal,
@@ -495,6 +496,7 @@ test('FEEDBACK-060h: deterministic running-turn handshake confirms live Claude t
     delete process.env.CLAUDE_FIXTURE_READY;
     delete process.env.CLAUDE_FIXTURE_SCENARIO;
     await terminateAllProcesses();
+    await turn1Promise?.catch(() => {});
   }
 }));
 
