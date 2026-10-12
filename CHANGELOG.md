@@ -20,8 +20,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`cbf503a`](https://github.com/oktawianwybieralski/coagent8/commit/cbf503af2bab76b3c6cb002d80e12c42029e2c11) **sessions:** Say that a session is closed when a call or cancel uses it ([#12](https://github.com/oktawianwybieralski/coagent8/pull/12))
 - [`08082ba`](https://github.com/oktawianwybieralski/coagent8/commit/08082ba0e6fd0dc6f2dcd4b897693dcd0c098a08) **sessions:** Scope paging parameters and retain handle on repeat review ([#24](https://github.com/oktawianwybieralski/coagent8/pull/24))
 - [`5f5e645`](https://github.com/oktawianwybieralski/coagent8/commit/5f5e6457e5c4de6b8a2f91f2d04b6a54c3242040) **issue:** Format exact CLI versions, nest CLI list and clarify doctor attachment ([#25](https://github.com/oktawianwybieralski/coagent8/pull/25))
-- [`75134b2`](https://github.com/oktawianwybieralski/coagent8/commit/75134b28904bc0d7447fbf989b3f2c8b14164ca3) **vscode:** Lead with VS Code commands in setup and skill guidance
-- [`587e1f8`](https://github.com/oktawianwybieralski/coagent8/commit/587e1f8aa8f388a490388072ad7938f07d9174f5) **setup:** Use npx repair command in statusOnly guidance and cover it in tests
+- [`5913321`](https://github.com/oktawianwybieralski/coagent8/commit/591332134f54dd1ab024c64488de875c22f55011) **vscode:** Lead with VS Code commands and align 0.6.1 README guidance ([#27](https://github.com/oktawianwybieralski/coagent8/pull/27))
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
