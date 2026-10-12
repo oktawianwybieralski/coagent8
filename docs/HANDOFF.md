@@ -141,8 +141,9 @@ Windows 11, Node v26.10.0, against the downloaded release artifacts:
   `coagent8-0.6.0.tgz`
   (`4bf66c25fa1facf8b23320f3501475361ad7f69b52e15a3e7f99e7219f19500c`) and
   `coagent8-mcp-0.6.0.vsix`
-  (`a2bb079f3b8cfa6bf60b3d6267007a0adc2ed50772b346fbe82eb92e072e14d7`), matching
-  the pre-tag release-workflow rehearsal digest.
+  (`a2bb079f3b8cfa6bf60b3d6267007a0adc2ed50772b346fbe82eb92e072e14d7`). The
+  owner's pre-tag rehearsal of `release.yml` reported the same tarball hash; its
+  repository is deleted, so that comparison was not repeated.
 - PASS: `gh attestation verify <file> -R oktawianwybieralski/coagent8` verified
   SLSA provenance v1 from `release.yml` at `refs/tags/v0.6.0`, commit `9b78a0a`,
   for both artifacts.
@@ -241,8 +242,9 @@ Card: [CLIMGMT-001](ROADMAP.md#climgmt-001-manage-coding-clis). Implemented
   view (`removingExtensions` state plus `finishRemovals` cleanup).
 - Local evidence (Windows 11, Node v26.10.0): PASS `npm run typecheck`,
   `npm run lint:docs`, `npm run build`, `tests/integrations/vscode-extension.test.js`
-  (35/35 pass) and `tests/integrations/setup.test.js` (68 pass across setup,
-  extension and cleanup suites), local VSIX SHA-256
+  (35/35 pass) and the combined extension, setup and cleanup suites
+  (`tests/integrations/vscode-extension.test.js`, `tests/integrations/setup.test.js`,
+  `tests/integrations/cleanup.test.js`: 68/68 pass), local VSIX SHA-256
   `17fb9139c991c8765aa25e3c28dc2e2c288cbc2e2ea4f14a1d700e4f999221f4`.
   NOT_RUN: native VS Code acceptance (`CLIMGMT-001e`, tracked under `PATCH-061-N1`/`N6`).
 
@@ -326,7 +328,7 @@ and routing orchestration to `src/execution/selection.ts`, `consent.ts` and
 - Verification (Windows 11, Node v26.10.0): PASS `npm run typecheck`,
   `tests/simplify-s3.test.js` (5/5), S3 scoped suite (57/57), full suite
   (406 tests: 403 pass, 0 fail, 3 skipped), `npm run lint:docs` and
-  `git diff --check`; independent review `VERDICT: READY`.
+  `git diff --check`.
 
 ## SIMPLIFY-001 S4 implementation
 
@@ -339,7 +341,7 @@ cycles between `session.ts`, `history.ts` and `history-page.ts`.
 - Verification (Windows 11, Node v26.10.0): PASS `npm run typecheck`,
   `tests/simplify-s4.test.js` (7/7), S4 scoped suite (48/48), full suite
   (413 tests: 410 pass, 0 fail, 3 skipped), `npm run lint:docs` and
-  `git diff --check`; independent review `VERDICT: READY`.
+  `git diff --check`.
 
 ## SIMPLIFY-001 S5 implementation
 
@@ -529,13 +531,14 @@ verified fixes before `0.6.0`:
   extension-owned runtime paths (`globalStorage/okidev.coagent8-mcp`); the second
   run verified `PASS` for hook removal, 3-client registration and 18 installed skills.
 - **Standalone CLI install tracking and missing `vscode-extension` copies
-  (`3d23dc1`, VSIX `18838a2b...74a56`):** Second run showed extension-storage
-  install records were wiped on VSIX uninstall (`FAIL`) and missing
-  `vscode-extension` copies suppressed install offers. Moved install tracking to
-  `~/.coagent8/installs.json`, added junction-aware `agy` detection and
-  registry-safe user `PATH` cleanup, and reported missing selected extension
-  copies as `not installed` (owner-reported `PASS` for recovery and skill
-  visibility).
+  (`3d23dc1`, VSIX `261c790c...c22d`, and follow-up VSIX `18838a2b...74a56`):**
+  Second run showed extension-storage install records were wiped on VSIX
+  uninstall (`FAIL`) and missing `vscode-extension` copies suppressed install
+  offers. Moved install tracking to `~/.coagent8/installs.json` with
+  junction-aware `agy` detection and registry-safe user `PATH` cleanup (`3d23dc1`,
+  VSIX `261c790c...c22d`), then reported missing selected extension copies as
+  `not installed` (VSIX `18838a2b...74a56`; owner-reported `PASS` for recovery
+  and skill visibility).
 - **Cross-client MCP smoke:** `consult` calls succeeded across Codex (`agy` /
   `gemini-3.8-flash-high`), Claude Code (`codex` / `gpt-5.6-luna` and `agy` /
   `gpt-oss-120b-medium` with `output_price_below: 3`) and Antigravity (`codex` /
