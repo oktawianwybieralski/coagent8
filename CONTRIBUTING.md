@@ -6,6 +6,14 @@ an issue to discuss scope with the maintainer. The roadmap is the active plan;
 the [architecture](docs/ARCHITECTURE.md) defines contracts and the
 [handoff](docs/HANDOFF.md) records current work and evidence.
 
+## Contribution license
+
+Contributions to the project source, documentation and artwork use the
+[MIT License](LICENSE). Submit only material you have the right to contribute
+under those terms, and identify third-party material with its original license
+and required notices. This does not assign copyright to the maintainer or
+change the terms of previously distributed copies.
+
 ## Reports and questions
 
 Use the [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)

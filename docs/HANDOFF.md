@@ -8,6 +8,60 @@ Updated 2026-10-12. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
+## LIC-001 MIT candidate
+
+2026-10-12, `chore/mit-relicense`, based on `cccfa9d` (merged PR #16).
+The owner instructed implementation of MIT relicensing after that PR.
+LICENSE, the four distribution license fields, both README license sections
+and contribution guidance now describe MIT for project source, documentation
+and artwork. Version remains 0.6.0 until the 0.6.1 release PR. This is a local
+candidate, not a replacement for any published 0.6.0 artifact.
+
+Rights/material inventory:
+
+- Inspected all 302 tracked files by category: 113 source files, 107 tests and
+  fixtures, six client skills, 25 artwork files, 19 documentation/rule files
+  and 32 other files. Existing project copyright attribution identifies
+  Oktawian Wybieralski (oki.dev), and rule 02 section 2 records the owner as
+  sole author and copyright holder of the project work. The owner's instruction
+  authorizes this project license change. History has the owner's two email identities only,
+  which is corroborating attribution, not proof of rights to imported work.
+- Searched tracked text for copyright/SPDX/license notices and copied/adapted/
+  derived-material attribution. No additional first-party copyright holder or
+  GPL-only imported code was identified. Artwork includes the Affinity source,
+  SVGs and PNG derivatives. Generated server icon comes from project artwork.
+- Test doubles implement provider protocols; recorded CLI outputs and the
+  abridged OpenRouter model/pricing data are external fixture data. The change
+  makes no new ownership claim over vendor responses, protocols or model names.
+  No vendor CLI implementation is distributed with the package.
+- All three lockfiles contain no dependency license labeled GPL. The bundle's
+  notice inventory contains MIT packages (@modelcontextprotocol/sdk, ajv,
+  ajv-formats, fast-deep-equal, json-schema-traverse, jsonc-parser, zod) and
+  BSD-3-Clause packages (fast-uri, smol-toml). Their license texts remain intact.
+  Private documentation/VSIX tooling manifests have no project license field
+  to change; their dependency licenses are untouched.
+- Previously distributed GPL copies retain their permissions. Historical tags,
+  release packages and generated changelog entries were not rewritten.
+  PUBLIC-001d's separate trademark notice remains pending owner wording approval.
+
+Local evidence, Windows 11 / Node v26.10.0: PASS typecheck,
+`check:dependencies`, fresh build, package regressions (7 pass / 0 fail),
+consumer smoke (installed package startup/tool discovery, fixture turns/history,
+setup dispatch and EOF), VSIX packaging and exact-artifact inspection.
+The consumer tarball equals the one used to stage the VSIX. MIT LICENSE and
+metadata are present in both, and the third-party notices are byte-identical
+to the pre-change build (SHA-256
+`b29a2a04d624f9c7630c56db62474732c6a12911ac5061657754aea91c91cb67`).
+
+- Tarball SHA-256:
+  `18e4b2ddf8ce4a73343630786bd81ede2e3e16908ceb0235a233fbc09cc6f7f6`.
+- VSIX SHA-256:
+  `396e1652bd447cb23700f0cf4c9c23225ef91466ac57976a6e93820771495132`.
+
+NOT_RUN: native host acceptance, published MIT artifact verification and Socket
+remeasurement; these belong to the 0.6.1 release tasks. Independent review and
+integration of this local candidate are pending.
+
 ## 0.6.0 release evidence
 
 Release of 0.6.0 (REPO-002 owner steps 1-8), checked again on 2026-10-12 on
