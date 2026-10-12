@@ -17,7 +17,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`809c3a0`](https://github.com/oktawianwybieralski/coagent8/commit/809c3a01ec31692e96f89bc63ed40d629015f921) **execution:** Report an expired call budget as TIMEOUT, not a cancellation ([#9](https://github.com/oktawianwybieralski/coagent8/pull/9))
 - [`7a3d427`](https://github.com/oktawianwybieralski/coagent8/commit/7a3d42773a0d58606a9736479ba1f356405e5833) **doctor:** List a CLI in the models view as soon as it appears ([#10](https://github.com/oktawianwybieralski/coagent8/pull/10))
 - [`d109069`](https://github.com/oktawianwybieralski/coagent8/commit/d1090696a33ed5ef42f468595c564b3a4b3f6d55) **review:** Name a change during the turn only when the input changed ([#11](https://github.com/oktawianwybieralski/coagent8/pull/11))
-- [`69dd879`](https://github.com/oktawianwybieralski/coagent8/commit/69dd87976d231dc6e98302e72b3987d40220947b) **sessions:** Say that a session is closed when a call or cancel uses it
+- [`cbf503a`](https://github.com/oktawianwybieralski/coagent8/commit/cbf503af2bab76b3c6cb002d80e12c42029e2c11) **sessions:** Say that a session is closed when a call or cancel uses it ([#12](https://github.com/oktawianwybieralski/coagent8/pull/12))
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
