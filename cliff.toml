@@ -1,7 +1,7 @@
 # git-cliff configuration: CHANGELOG.md is generated from Conventional Commits
 # (CHANGELOG-001 in docs/ROADMAP.md). `npm run changelog` runs before every push and,
 # with `--tag`, in release commits; `npm run changelog:check` previews a PR title.
-# The layout is the PrestaShop changelog: area (commit scope), then type, then
+# Each version is a list by area (commit scope), then type, then
 # "#PR: description (by @author)".
 
 [changelog]
