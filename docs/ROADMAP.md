@@ -2234,6 +2234,107 @@ Versioning (owner decision 2026-10-11, rule 02 section 4): a fix-only release
 of a preview raises the patch, so this batch ships as `0.6.1`; the planned stage
 numbers (`0.7.0` beta.3, `0.8.0`/`0.9.0` release candidates) stay.
 
+## SUPPLY-001: Socket package scores
+
+Goal (owner request 2026-10-12): Socket's supply-chain score of the published
+npm package at least 90 % and its license score as high as the license allows.
+Baseline for `coagent8@0.6.0` from Socket's public firewall API
+(`https://firewall-api.socket.dev/purl/pkg%3Anpm%2Fcoagent8%400.6.0`), read
+2026-10-12: supply chain 0.76, license 0.70, quality 0.99, maintenance 0.88,
+vulnerability 1.00, overall 0.70; detected license
+`BSD-3-Clause AND GPL-3.0-only AND MIT`; 137 files, 4.5 MB unpacked. Socket
+publishes no alert weights, so each step is measured after its publication.
+Plan reviewed by Codex gpt-6.1-sol on 2026-10-12; its claims were checked
+against `node_modules` and the tests.
+
+Dependency alerts come from the installed tree, which exists only because
+`package.json` declares the bundled `@modelcontextprotocol/sdk`, `jsonc-parser`
+and `smol-toml` as `dependencies` (for example `express` > `qs` >
+`es-define-property`; the stdio bundle contains no express): unmaintained (21
+packages), new author (11), URL strings (11), AI-detected code anomaly (14 in
+10), optimized override available (8), environment variable access (8),
+network access (7), uses eval (6), filesystem access (5), debug access (3),
+AI-detected security risk, shell access and dynamic require. SUPPLY-001b
+removes the installed tree; code bundled from those packages stays in
+`dist/` and is scanned as part of `coagent8`.
+
+Alerts on `coagent8` itself:
+
+| Alert | Cause | Card |
+| --- | --- | --- |
+| Uses eval (`Function`, two locations) | Bundled ajv compiles validators with `Function(...)`; zod's `allowsEval` probe (`zod/v4/core/util.js`) | SUPPLY-001c |
+| Dynamic require | `src/index.ts` loads `setup.cjs` through `require(path.join(__dirname, 'setup.cjs'))` | SUPPLY-001d |
+| Minified code | `scripts/build.cjs` minifies for first launch | SUPPLY-001e |
+| Shell access, filesystem access, environment variable access | Inherent: the bridge runs coding CLIs and keeps configuration and histories | none |
+| Network access, URL strings | Inherent: `src/models/prices.ts` fetches price lists; documentation and issue links | none |
+| Unpopular package | Download count of a new package | none |
+| Copyleft license, non-permissive license | `GPL-3.0-only` | none (see below) |
+
+License limit: both license alerts are the GPL-3.0-only license itself, so the
+license score cannot reach 100 % while the project keeps that license. A license
+change is a separate owner decision, not part of this card. The detected
+`BSD-3-Clause` and `MIT` are accurate: the bundle contains MIT packages and
+BSD-3-Clause `fast-uri` and `smol-toml`, whose notices in
+`dist/THIRD_PARTY_NOTICES.txt` must stay.
+
+- [ ] **SUPPLY-001a - stop publishing source maps.** Build without maps for
+  the npm tarball and the VSIX, or keep them out of `files`; if stack traces
+  need them, attach them to the GitHub Release instead. `clean: false` in
+  `scripts/build.cjs` leaves old maps in `dist/`: remove the owned stale
+  outputs or exclude them explicitly. Update `tests/consumer/smoke.cjs` and
+  `scripts/build-vscode.cjs`, which require the maps today, and keep the
+  setup-separation assertion of `tests/package.test.js` with build-module
+  evidence instead of the map. Check: the tarball and VSIX list no `.map`, the
+  tarball drops about 2.8 MB, consumer smoke passes, notices unchanged.
+- [ ] **SUPPLY-001b - no runtime dependencies.** Move the three bundled
+  packages to `devDependencies` and update the lockfile; builds keep installing
+  development dependencies. The VSIX does not take its runtime from the root
+  dependencies (`scripts/build-vscode.cjs` copies the bundles,
+  `tooling/vscode/package.cjs` packs without dependencies). In
+  `tests/consumer/smoke.cjs` replace the step that renames the installed
+  dependencies with an assertion that the consumer tree contains only
+  `coagent8`. Check: the packed `package.json` (not `npm pack --json`, which
+  lists files) has no `dependencies`, consumer smoke passes.
+- [ ] **SUPPLY-001c - no generated code at run time.** The SDK imports
+  `AjvJsonSchemaValidator` statically (`server/index.js`) and uses it as the
+  constructor default, so passing `CfWorkerJsonSchemaValidator`
+  (`@modelcontextprotocol/sdk/validation/cfworker`, no code generation, optional
+  peer `@cfworker/json-schema`) does not remove ajv from the bundle, and zod
+  keeps its `Function` probe. Find an upstream-supported path that removes both
+  (an SDK entry or release without the static ajv import, a zod build without
+  the probe); never rewrite SDK or zod sources in the build. If none exists,
+  record the alert as open with that reason and file the upstream request. If
+  the validator changes, add checks for malformed approval and remember
+  responses: it validates elicitation results, including the consent form in
+  `src/mcp/server.ts`. Check: no `Function(` or `eval(` in `dist/`,
+  schema-validation and consent tests green.
+- [ ] **SUPPLY-001d - static setup require.** Use a literal
+  `require('./setup.cjs')` inside the dispatch branch and add that exact
+  specifier to `inputOptions.external` in `scripts/build.cjs`; rolldown does
+  not resolve it otherwise. The external-import guard there reads
+  `output.imports`, which omits CommonJS requires, so it cannot prove "no
+  external packages": validate the emitted `require` calls instead, allowing
+  builtins and exactly the setup sibling. Check: no computed `require` in
+  `dist/`, `coagent8 setup`/`status` from the tarball and the VSIX work, server
+  start does not load setup code.
+- [ ] **SUPPLY-001e - minification against first launch.** Minification serves
+  the first-launch priority ([ARCHITECTURE](ARCHITECTURE.md): remeasure cold
+  starts before changing minification). Measure a readable build (whitespace
+  and names kept, legal comments still stripped) on fresh-file first launch,
+  warm start and the real VS Code host on Windows and Linux; the owner chooses
+  with both numbers and the score after `0.6.1`.
+- [ ] **SUPPLY-001f - acceptance per publication.** After `0.6.1`: the
+  package page lists no dependency alerts; record the scores. After `0.7.0`:
+  supply chain >= 0.90, or every remaining alert has a stated reason (inherent,
+  upstream request, owner choice in e). Notices stay complete. Record scores
+  and remaining alerts in HANDOFF.
+
+Order: a and b are packaging fixes and ship with `0.6.1` (preview patch,
+rule 02). c, d and e change the runtime bundle and ship with `0.7.0`; each
+remeasures first launch (ARCHITECTURE). Checks for a/b/d: typecheck, dependency
+check, fresh build, tarball and VSIX inspection, consumer smoke and affected
+regressions.
+
 ## Release acceptance
 
 Stage names stay; each stage ships as the next minor below 1.0.0
