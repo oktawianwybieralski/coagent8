@@ -24,6 +24,9 @@ patch `0.6.1` ([FEEDBACK-060](#feedback-060-findings-of-the-060-native-acceptanc
 the checkout keeps `0.6.0` until its release PR. The owner handles merges, tags
 and publication.
 
+The [0.6.1 task queue](#patch-061-061-task-queue) orders the remaining cards,
+their dependencies and release acceptance. Use it to select one bounded task.
+
 | Area | Present locally | Remaining |
 | --- | --- | --- |
 | Execution | Six tools, three CLI adapters, plain consult, explicit model/effort | Full tasks, write/execute profiles, bounded orchestration |
@@ -2185,20 +2188,62 @@ preview, `0.6.1` (see below).
   handle of the same workspace names its state (closed, with readable history;
   invalidated; expired), another workspace's still gets the generic refusal, a
   call that started no turn omits "no history", and `cancel` says "is closed".
-- [ ] **FEEDBACK-060f - session tool details.** `session list` ignores `limit`
-  (it applies to `history` only: document it or page the list); history
-  `sequence` gaps look like lost events (document filtering or number the
-  public events); `activePid` is the server's PID, not the CLI's; the footer
-  of a repeated, unchanged review lacks `session_handle`.
+- [ ] **FEEDBACK-060f1 - scope session paging parameters.** Keep the current
+  list behavior; describe `limit` and `cursor` as history-only in the tool
+  schema and session skill. Start: `src/mcp/tools/session.tool.ts`,
+  `skills/coagent8-session/SKILL.md`. Acceptance: callers can tell which action
+  accepts paging; `history` still honors its limit/cursor and `list` remains
+  workspace-scoped. Check: schema/content review and affected tests in
+  `tests/mcp/tools/session.test.js`; no new list paging contract in this patch.
+- [ ] **FEEDBACK-060f2 - explain history sequence gaps.** Describe `sequence`
+  as the stored event position: the public history filters/combines events,
+  so gaps alone do not mean events were lost. Start:
+  `src/sessions/history/reader.ts`, `src/sessions/history/page.ts`,
+  `src/mcp/tools/session.tool.ts`, `skills/coagent8-session/SKILL.md`.
+  Acceptance: documentation matches filtering and cursor behavior; existing
+  sequence values and cursor semantics stay compatible. Check: content against
+  the reader/page implementation; affected history tests if behavior changes.
+- [ ] **FEEDBACK-060f3 - identify the session owner's PID.** Explain that
+  `activePid` identifies the CoAgent8 server owning the turn, not the backend
+  CLI. Start: `src/sessions/types.ts`, `src/sessions/session.ts`,
+  `src/mcp/tools/session.tool.ts` and the session contract in ARCHITECTURE.
+  Acceptance: the public field has an accurate description; persisted field
+  names, ownership checks and cancellation behavior stay compatible. Check:
+  scope-based documentation checks; session/tool tests if output changes.
+- [ ] **FEEDBACK-060f4 - retain the handle on an unchanged review.** Include
+  `session_handle` in the repeat-review refusal footer when a valid handle is
+  available for the same workspace. Start: `src/mcp/tools/review.tool.ts`,
+  `src/mcp/result.ts`, `tests/mcp/tools/review-repeat.test.js`.
+  Acceptance: the caller can read history or continue using the returned handle,
+  no backend turn starts, and another workspace's handle is not disclosed.
+  Check: typecheck and repeat-review/result regressions.
 - [ ] **FEEDBACK-060g - issue report format.** The Codex version renders as
   `vcodex-cli 0.162...`; the "Detected CLIs" list is not nested; say what
   `include_doctor` attaches (versions only, no readiness or quota).
+  Start: `src/diagnostics/issue.ts`, `src/mcp/tools/issue.tool.ts`,
+  `tests/diagnostics/issue.test.js`, `tests/mcp/tools/issue.test.js`.
+  Acceptance: one report shows the exact CLI version without the extra `v`,
+  valid nested Markdown and accurate attachment wording; redaction and URL
+  bounds remain intact. Check: typecheck and affected issue tests. Native link
+  rendering belongs to PATCH-061-N5.
 - [ ] **FEEDBACK-060h - cancel acceptance for Claude.** Cancel of a running
-  Claude turn stayed inconclusive (the turn ended first). Add a fixture or a
-  two-client native case with a long turn.
+  Claude turn stayed inconclusive (the turn ended first). Add a deterministic
+  fixture that signals a running turn before the second client cancels it.
+  Start: `tests/fixtures/claude-cli/claude.cjs`,
+  `tests/backends/claude/adapter.test.js`, `tests/mcp/tools/session.test.js`.
+  Acceptance: cancel reaches a live turn, reports cancellation, releases owned
+  resources/lease and permits a later turn; natural completion cannot count as
+  a cancellation pass. Check: affected lifecycle tests and typecheck. Native
+  Claude confirmation is a separate release task (PATCH-061-N4).
 - [ ] **FEEDBACK-060i - VSIX users and the `coagent8` command.** Skills and
   messages name `coagent8 status`/`repair`, which a VSIX-only installation does
   not put on PATH; lead with the VS Code command there.
+  Start: `skills/`, `extensions/vscode/src/extension.ts`,
+  `extensions/vscode/README.md`; search user-facing status/repair guidance.
+  Acceptance: a VSIX-only user can follow every affected instruction without
+  installing the npm CLI; standalone instructions remain valid. Check: content
+  against contributed commands, extension regressions if messages change;
+  native verification belongs to PATCH-061-N1.
 - [x] **FEEDBACK-060j - test credentials that trip push protection.** Synthetic
   Stripe and Slack keys in `tests/security/redaction.test.js` and
   `tests/sessions/history.test.js` (and a Slack token in
@@ -2215,7 +2260,9 @@ preview, `0.6.1` (see below).
 ### DOCS-002: documentation cleanup after 0.6.0
 
 The active documents carry history that Git already keeps. One PR per document,
-each checked against the 0.6.0 behavior; prose-only checks per rule 04.
+checked against merged behavior; prose-only checks per rule 04. DOCS-002a with
+PUBLIC-001c is one task/PR, as is DOCS-002b with PUBLIC-001b; do not duplicate
+their edits. The queue below distinguishes the 0.6.1 scope from later cleanup.
 
 - [ ] **DOCS-002a - ROADMAP.** Keep only open work, decisions still in force and
   acceptance; remove completed cards, superseded beta.1/beta.2 paths, the
@@ -2227,12 +2274,119 @@ each checked against the 0.6.0 behavior; prose-only checks per rule 04.
   keep the decision log, drop descriptions of removed mechanisms.
 - [ ] **DOCS-002d - README and extension README.** Install and first use from
   the published 0.6.0 packages; known limitations from the release notes.
+  Handle each README in its own PR (DOCS-002d1 root, DOCS-002d2 extension).
+  For 0.6.1, verify instructions and describe the fixes/known limitations;
+  broader editorial cleanup remains separate. Check examples against available
+  commands and the candidate; do not claim 0.6.1 is published before publication.
 - [ ] **DOCS-002e - rules and skills.** Remove references to retired branches,
   versions and procedures; keep AGENTS.md as the index.
 
 Versioning (owner decision 2026-10-11, rule 02 section 4): a fix-only release
 of a preview raises the patch, so this batch ships as `0.6.1`; the planned stage
 numbers (`0.7.0` beta.3, `0.8.0`/`0.9.0` release candidates) stay.
+
+### PUBLIC-001: public repository content
+
+Review of the tracked files on 2026-10-12 (owner request): no real secrets
+(token-shaped strings are synthetic test inputs) and no unredacted home paths.
+The fixes below ship with `0.6.1`, each as its own PR into `develop`. Squashed
+history stays as published; nothing found justifies rewriting it.
+
+- [ ] **PUBLIC-001a - synthetic account data in Claude recordings.**
+  `tests/fixtures/claude-cli/recordings/usage-subscription.json` is a real
+  `/usage` capture of the owner's account (limit percentages, time zone,
+  request and session counts, context and subagent shares); the `.jsonl`
+  recordings carry real `rate_limit_event` utilization and overage fields.
+  Replace those values with synthetic ones that keep the exact recorded format
+  (line anchors, `·` separators, the `11:49pm`-style reset times the parser
+  reads) and update the expectations in `tests/backends/claude/usage.test.js`
+  and users of `tests/fixtures/claude-cli/claude.cjs`. Check the Codex fixture
+  (`planType`, credits) the same way. Check: affected backend tests green, no
+  recorded value comes from a real account.
+  Execute as two PRs: PUBLIC-001a1 replaces Claude account values and updates
+  affected Claude fixture expectations; PUBLIC-001a2 audits Codex plan/credit
+  fixtures and replaces any real account values with synthetic data. Each
+  records the inspected files and runs the affected backend tests; an audit
+  finding no replacement needed is evidence, not a reason to fabricate changes.
+- [ ] **PUBLIC-001b - HANDOFF written for public readers.** HANDOFF is agent
+  working memory: CI run IDs, local tool versions, owner release steps and
+  stale states (`devlop`, a ruleset on `main`). With DOCS-002b the owner
+  chooses: keep it tracked and reduced to the current state and evidence, or
+  move it to the ignored `/docs/.local/` and update `AGENTS.md`, rule 04 and
+  every link that names it as an active document.
+  Default for DOCS-002b/PUBLIC-001b: keep HANDOFF tracked as required by the
+  current active-document contract, reduce it in place to current state and
+  evidence, and preserve release hashes/check results. Moving it is a separate
+  owner decision, not a prerequisite for this cleanup.
+- [ ] **PUBLIC-001c - ROADMAP tone.** Together with DOCS-002a, phrase the
+  remaining cards for outside readers: decisions and acceptance instead of
+  session notes and internal procedure.
+- [ ] **PUBLIC-001d - name and logo trademark notice.** Prepare a short
+  separate trademark notice for README and the extension README reserving
+  trademark rights to the CoAgent8 name and logo. Coordinate with LIC-001:
+  trademark policy must not add restrictions to the standard MIT copyright
+  grant or claim to revoke existing GPL permissions for artwork (SVG, PNG and
+  Affinity source). GPL section 7(e) concerns trademark rights, not withdrawal
+  of copyright permissions under section 2. The owner approves the wording
+  before integration. Check: consistency with the approved artwork scope,
+  current LICENSE and the standard MIT text, link review and `git diff --check`.
+
+### LIC-001: planned MIT relicensing
+
+Owner request, 2026-10-12: plan MIT relicensing together with the 0.6.1 work.
+Target: standard MIT for owner-controlled source, documentation and artwork
+from 0.6.1, subject to a verified rights inventory. This card plans the change;
+the current LICENSE and manifests remain GPL-3.0-only until implementation.
+Previously distributed GPL copies retain their permissions; do not rewrite
+tags, published artifacts or generated historical changelog entries. Third-party
+material keeps its own license and notices. Trademark policy is PUBLIC-001d,
+separate from the copyright grant.
+
+References: [standard MIT text](https://opensource.org/license/mit),
+[GNU licensing FAQ](https://www.gnu.org/licenses/gpl-faq.html#HeardOtherLicense)
+and the current LICENSE sections 2 and 7(e). Git author names alone do not
+establish copyright ownership or permission to relicense imported material.
+
+- [ ] **LIC-001a - rights and material inventory.** Inspect tracked source,
+  documentation, skills, logo/artwork sources, fixtures and copied/vendored
+  material; use history and attribution to identify rights holders and existing
+  terms. Record owner confirmation/permissions for the scope being relicensed,
+  plus an inventory of third-party exceptions and their required notices in
+  HANDOFF. Acceptance: every included category has an evidenced MIT basis;
+  uncertain ownership or GPL-only third-party code blocks LIC-001b until
+  resolved, excluded lawfully or replaced in a separate task. Do not infer
+  sole ownership from squash history or remove attribution to obtain a clean
+  score. This is a bounded audit task; no license files change in its PR.
+- [ ] **LIC-001b - license text and metadata.** After LIC-001a, replace the
+  root LICENSE with the unmodified standard MIT terms and accurate owner/year
+  notice. Update root package/lock metadata, `plugin.json`, the extension
+  manifest and applicable owner-controlled file headers together; inventory
+  other manifests rather than changing independent tooling/third-party terms
+  indiscriminately. Keep dependency license texts and THIRD_PARTY_NOTICES.
+  Acceptance: all first-party distribution metadata agrees with the approved
+  MIT scope; version stays 0.6.0 until the release PR. Check: scope-based package
+  gate, affected package regressions and notice comparison.
+- [ ] **LIC-001c - public license and contribution guidance.** After b,
+  DOCS-002d1 and DOCS-002d2 each update their README badges/terms and explain
+  the first MIT release without claiming older GPL copies changed license.
+  Update contribution guidance in its own small PR (LIC-001c1) so future
+  contributions use the applicable project license; do not introduce a CLA or
+  copyright assignment silently. Coordinate artwork scope and trademark text
+  with PUBLIC-001d. Acceptance: user/contributor guidance agrees with LICENSE
+  and manifests, and third-party exceptions remain explicit. Parent c closes
+  only after c1 and both README tasks; content/link checks per rule 04.
+- [ ] **LIC-001d - exact-artifact and publication verification.** PATCH-061-R3
+  and R4 inspect the packaged npm/VSIX LICENSE, manifest license fields,
+  README text, artwork scope and third-party notices against the approved
+  inventory. PATCH-061-R7 checks the published copies and the 0.6.1 Socket
+  license score/detected expression. Acceptance: MIT is the first-party license,
+  legitimate MIT/BSD/etc. dependency notices are retained, any GPL detection
+  has an investigated cause, and measured scores are recorded without a 100%
+  guarantee. No extra implementation PR duplicates these release checks.
+
+If LIC-001a cannot establish the required rights, record the specific blocker
+and let the owner decide whether to defer MIT and ship 0.6.1 under the current
+GPL terms. The coding agent must not silently change the planned release scope.
 
 ## SUPPLY-001: Socket package scores
 
@@ -2268,11 +2422,11 @@ Alerts on `coagent8` itself:
 | Shell access, filesystem access, environment variable access | Inherent: the bridge runs coding CLIs and keeps configuration and histories | none |
 | Network access, URL strings | Inherent: `src/models/prices.ts` fetches price lists; documentation and issue links | none |
 | Unpopular package | Download count of a new package | none |
-| Copyleft license, non-permissive license | `GPL-3.0-only` | none (see below) |
+| Copyleft license, non-permissive license | Published 0.6.0 is `GPL-3.0-only` | LIC-001; remeasure after publication |
 
-License limit: both license alerts are the GPL-3.0-only license itself, so the
-license score cannot reach 100 % while the project keeps that license. A license
-change is a separate owner decision, not part of this card. The detected
+License baseline: the published 0.6.0 license alerts reflect GPL-3.0-only.
+LIC-001 now plans the owner-requested MIT change for 0.6.1 after the rights audit;
+SUPPLY-001f measures its actual effect instead of promising a score. The detected
 `BSD-3-Clause` and `MIT` are accurate: the bundle contains MIT packages and
 BSD-3-Clause `fast-uri` and `smol-toml`, whose notices in
 `dist/THIRD_PARTY_NOTICES.txt` must stay.
@@ -2334,6 +2488,134 @@ rule 02). c, d and e change the runtime bundle and ship with `0.7.0`; each
 remeasures first launch (ARCHITECTURE). Checks for a/b/d: typecheck, dependency
 check, fresh build, tarball and VSIX inspection, consumer smoke and affected
 regressions.
+
+## PATCH-061: 0.6.1 task queue
+
+Goal: ship the remaining 0.6.0 corrections and packaging/public-content fixes
+as the preview patch `0.6.1` on `develop`. Detailed implementation acceptance
+belongs to the cards above; this queue owns ordering and release dependencies.
+Completed corrections stay completed; splitting cards creates no new release
+approval or claim that their work has run.
+
+### Implementation queue
+
+Each row is one task for a coding agent and one concern per PR. Use a topic
+branch from current `develop`; finish the row's acceptance and scope-based
+checks, update its owning card and prepare the PR evidence before taking the
+next task. A parent card completes only when all its children complete.
+The order is the recommended serial execution order, not a requirement to
+delegate concurrently. Dependencies mean merged, verified behavior.
+
+| Order | Task | Dependency / completion evidence |
+| --- | --- | --- |
+| 1 | PUBLIC-001a1: synthetic Claude account fixtures | None; affected Claude tests and inspected fixture inventory |
+| 2 | PUBLIC-001a2: audit/synthesize Codex account fixtures | None; affected Codex tests, or documented clean audit |
+| 3 | FEEDBACK-060f1: history-only paging parameters | None; schema and skill agree with existing actions |
+| 4 | FEEDBACK-060f2: explain sequence gaps | f1; reader/cursor contract reviewed, no renumbering |
+| 5 | FEEDBACK-060f3: explain the server owner's PID | None; ownership contract preserved |
+| 6 | FEEDBACK-060f4: handle on repeat-review refusal | None; no-turn and workspace-isolation regressions |
+| 7 | FEEDBACK-060g: issue report formatting | None; report/attachment/URL regressions |
+| 8 | FEEDBACK-060h: deterministic Claude cancel fixture | None; cancellation observed while running, cleanup verified |
+| 9 | FEEDBACK-060i: actionable VSIX-only guidance | None; commands/skills/messages agree |
+| 10 | SUPPLY-001a: omit source maps from both packages | None; fresh build, exact package inspection and consumer smoke |
+| 11 | SUPPLY-001b: bundled packages become development dependencies | SUPPLY-001a; packed manifest and isolated consumer tree verified |
+| 12 | LIC-001a: rights/material audit for MIT | None; evidenced rights and third-party exception inventory |
+| 13 | LIC-001b: MIT LICENSE and distribution metadata | LIC-001a and SUPPLY-001b; coherent manifests, notices retained |
+| 14 | LIC-001c1: contribution license guidance | LIC-001b; existing rights preserved, no implicit CLA |
+| 15 | PUBLIC-001d: prepare name/logo trademark notice | LIC-001a/b; owner wording approval, separate trademark/copyright terms |
+| 16 | DOCS-002d1: root README instructions/license/limitations | Tasks 3-15; candidate behavior and MIT scope accurately described |
+| 17 | DOCS-002d2: extension README instructions/license/limitations | Tasks 3-15; VSIX-only first use and MIT scope accurately described |
+| 18 | DOCS-002a + PUBLIC-001c: reduce and rephrase ROADMAP | Tasks 1-17; keep open work, current decisions, this queue and acceptance |
+| 19 | DOCS-002b + PUBLIC-001b: reduce HANDOFF in place | Tasks 1-18; current evidence/rights inventory retained, links valid |
+
+DOCS-002c (whole ARCHITECTURE cleanup) and DOCS-002e (whole rules/skills
+cleanup) follow 0.6.1; corrections to contracts/instructions affected by this
+patch remain part of their implementation PRs. SUPPLY-001c/d/e and full
+coagent execution remain 0.7.0 work. No 90% Socket score is promised for 0.6.1;
+SUPPLY-001f measures the published result.
+
+### Release preparation and acceptance tasks
+
+These tasks record evidence in HANDOFF and the release PR rather than creating
+one implementation PR per check. Follow rule 02 section 5 for the procedure;
+this list does not grant push, merge, tag or publication authorization.
+Mark PASS/FAIL/NOT_RUN against the actual snapshot and exact artifact digest.
+Any defect gets its own fix PR into `develop`; a changed candidate invalidates
+approval and requires renewed checks of the replacement candidate.
+
+- [ ] **PATCH-061-R1 - freeze the scope.** After implementation tasks 1-19,
+  verify the linked cards are complete, required CI is green on `develop`,
+  no P0/P1 issue is open and no P1/P2 finding remains unresolved. Record the
+  previous tag/base SHA and agreed scope; unresolved work blocks preparation
+  unless the owner explicitly changes the release scope in this roadmap.
+- [ ] **PATCH-061-R2 - prepare the version/changelog candidate.** After R1,
+  create `release/v0.6.1` with only the four manifest version updates and the
+  generated changelog, per rule 02. Acceptance: manifest agreement, valid
+  generated changelog and recorded candidate/tree SHA; no implementation fix
+  hidden in the release commit.
+- [ ] **PATCH-061-R3 - local package gate and notes.** After R2, run the full
+  release gate in a clean checkout, including applicable dependency,
+  documentation, coverage and VSIX checks. Inspect tarball/VSIX exclusions,
+  notices and bundled startup; record platform/Node, candidate/tree and both
+  SHA-256 digests. Prepare tester notes and upgrade/known-limit guidance.
+  Include LIC-001d's license/artwork/third-party notice inspection.
+- [ ] **PATCH-061-R4 - release PR and CI artifacts.** After R3 and owner
+  authorization, push/open the release PR. Acceptance: all six OS/Node jobs
+  pass on its current head; download that run's tarball/VSIX and record hashes
+  and provenance separately from locally built files. N1-N7 use these artifacts.
+  Include LIC-001d's comparison of CI artifact licenses with the rights inventory.
+
+Each native task below depends on R4 and uses an isolated VS Code profile or
+clean npm folder. Record pre-state, operation, observed result, preservation
+checks, host/CLI versions and the candidate/artifact identity. A fixture pass
+does not complete a native task.
+
+- [ ] **PATCH-061-N1 - install/update and VSIX-only first use.** Verify native
+  restart, one provider, six tools and no persistent restart banner; follow the
+  corrected status/repair guidance without a global npm CLI. Cover onboarding
+  and configuration cases listed in Native VS Code acceptance below.
+- [ ] **PATCH-061-N2 - backend tool smoke.** With the CI VSIX and tarball,
+  verify health, consult and review on Codex, Claude and agy, quiet execution,
+  model discovery after installation and accurate timeout reporting. Record
+  each backend/package result separately.
+- [ ] **PATCH-061-N3 - session and review behavior.** Verify continuation,
+  history paging/sequence explanation, closed-session responses, workspace
+  isolation and a repeat review with a usable handle and no new turn. Verify
+  `close` with `delete_history` in an owned disposable session.
+- [ ] **PATCH-061-N4 - native cancellation.** Use two clients and a confirmed
+  running turn for each backend, including Claude; cancel it and observe owned
+  cleanup and later reuse. Natural completion or an inconclusive run remains
+  NOT_RUN for cancellation; do not substitute FEEDBACK-060h's fixture evidence.
+- [ ] **PATCH-061-N5 - issue links and model consent.** In native agy chat,
+  click the generated issue link and compare title/body with the sanitized
+  preview, including CLI names/version formatting. Verify model consent in a
+  client that displays the form, without a calling agent granting approval.
+- [ ] **PATCH-061-N6 - skills and installation lifecycle.** Run the skills,
+  uninstall/reinstall and preservation cases listed below with owned test
+  registrations. Keep the owner's installation/configuration intact.
+- [ ] **PATCH-061-N7 - soak and failure paths.** Verify concurrency, cancel,
+  EOF/crashes, recovery, leases, histories and memory/resource bounds against
+  the candidate. Record scenario results and logs; do not reuse 0.6.0 evidence
+  as proof for the changed artifact.
+- [ ] **PATCH-061-R5 - release workflow rehearsal.** After R4, rehearse the
+  release workflow per rule 02 step 12 with the same candidate. Required for
+  this scope because SUPPLY-001a/b change build/package tooling and manifests.
+  External repository creation/push/deletion requires owner authorization;
+  verify the draft, hashes and attestations, and record npm publication mode.
+- [ ] **PATCH-061-R6 - independent release approval.** After N1-N7 and R5,
+  obtain the independent review required by rule 03, bound to Base SHA,
+  Candidate SHA, Tree SHA and artifact SHA-256. Acceptance: verified scope and
+  checks, READY, no unresolved P1/P2. The author cannot provide this approval.
+- [ ] **PATCH-061-O1 - owner merge/tag/publication.** After R6, follow rule 02
+  phases B-E: owner merge, equal-tree/Verified/green-target checks, immutable
+  annotated tag, draft artifact verification and publication to GitHub,
+  npm and Marketplace with preview channels. Packaging changes after tagging
+  ship in a later patch.
+- [ ] **PATCH-061-R7 - published-package verification.** After O1, verify
+  published version/channels, download hashes, attestations, npm integrity,
+  Marketplace artifact and installed MCP startup. Complete the 0.6.1 portion
+  of SUPPLY-001f with measured Socket scores/alerts; keep its 0.7.0 portion open.
+  Complete LIC-001d's published-license checks and record the first MIT release.
 
 ## Release acceptance
 
