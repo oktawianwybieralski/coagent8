@@ -17,13 +17,17 @@ const {
   isProcessAlive,
   setExecutionCanceller,
 } = require('../../../src/sessions/session.ts');
-const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/session.tool.ts');
+const { handleSession, handleCancelSession, sessionToolDefinition } = require('../../../src/mcp/tools/session.tool.ts');
 const { createHistoryWriter } = require('../../../src/sessions/history/index.ts');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('session tool consolidates list, history and close actions', async () => {
+  assert.match(sessionToolDefinition.inputSchema.properties.cursor.description, /history/i);
+  assert.match(sessionToolDefinition.inputSchema.properties.limit.description, /history/i);
+
   const sess = createSession('agy', tempDir);
+  const sessExtra = createSession('codex', tempDir);
   const handle = sess.sessionHandle;
 
   // Write durable history so history action has data
@@ -34,15 +38,17 @@ test('session tool consolidates list, history and close actions', async () => {
   writer.accept({ type: 'turn_finished', status: 'completed' });
   await writer.flush();
 
-  // 1. action: list
+  // 1. action: list (workspace-scoped; cursor and limit are history-only)
   const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-list-'));
   const other = createSession('agy', otherDir);
-  const listRes = await handleSession({ action: 'list', workspace_path: tempDir });
+  const listRes = await handleSession({ action: 'list', limit: 1, cursor: '{"v":1,"after":1,"offset":0}', workspace_path: tempDir });
   assert.ok(!listRes.structuredContent.sessions.some(s => s.sessionHandle === other.sessionHandle), 'list shows only this workspace (AUD-P1-8)');
   fs.rmSync(otherDir, { recursive: true, force: true });
   assert.equal(listRes.structuredContent.schemaVersion, 1);
   assert.ok(listRes.structuredContent.sessions.some(s => s.sessionHandle === handle));
+  assert.ok(listRes.structuredContent.sessions.some(s => s.sessionHandle === sessExtra.sessionHandle));
   assert.ok(listRes.content[0].text.includes(handle));
+  await handleSession({ action: 'close', session_handle: sessExtra.sessionHandle, workspace_path: tempDir });
 
   // 2. action: history
   const histRes = await handleSession({ action: 'history', session_handle: handle, workspace_path: tempDir });
@@ -127,7 +133,7 @@ test('cancelSession respects external live processes and protects replacement tu
 
     await assert.rejects(
       async () => handleCancelSession({ session_handle: handle, workspace_path: tempDir }),
-      /actively running in another process/
+      /actively running in another CoAgent8 server process/
     );
   }
 

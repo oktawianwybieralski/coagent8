@@ -20,7 +20,7 @@ export interface SessionRecord {
   threadId: string | null;
   /** Canonical workspace path bound to this session. */
   workspace: string;
-  /** CoAgent8 owner-process PID for the active turn, not the native CLI child's PID. */
+  /** CoAgent8 server process PID owning the active turn, not the backend CLI child PID. */
   activePid: number | null;
   /** Timestamp when the currently active turn started execution. */
   activeTurnAt: number | null;

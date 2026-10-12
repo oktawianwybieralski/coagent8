@@ -10,15 +10,15 @@ import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description: 'List sessions, read a session history or close a session.',
+  description: 'List, page history or close sessions.',
   inputSchema: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['list', 'history', 'close'] },
-      session_handle: { type: 'string', description: 'Required for history and close.' },
-      cursor: { type: 'string' },
-      limit: { type: 'integer', minimum: 1, maximum: 100 },
-      delete_history: { type: 'boolean', description: 'close: also delete the history.' },
+      session_handle: { type: 'string', description: 'history/close.' },
+      cursor: { type: 'string', description: 'history.' },
+      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history.' },
+      delete_history: { type: 'boolean', description: 'close: drop history.' },
       ...WORKSPACE_PARAMETER,
     },
     required: ['action'],
@@ -38,7 +38,10 @@ export const cancelToolDefinition = {
   },
 };
 
-/** A session record as shown to clients: the workspace path with the home directory as `~`. */
+/**
+ * A session record as shown to clients: the workspace path with the home directory as `~`.
+ * `activePid` identifies the CoAgent8 server process owning the active turn, not the backend CLI child PID.
+ */
 export function publicSessionRecord(record: SessionRecord): SessionRecord {
   return { ...record, workspace: redactDiagnostic(record.workspace, 1024) };
 }
@@ -85,6 +88,10 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
   throw new ToolError('INPUT_LIMIT', `Unknown action: ${action}`);
 }
 
+/**
+ * Cancels the active turn of a session owned by this CoAgent8 server process (`activePid`),
+ * or reclaims a stale turn lease from a dead server process.
+ */
 export async function handleCancelSession(args: { session_handle: string; workspace_path?: string }) {
   if (!args?.session_handle || typeof args.session_handle !== 'string') {
     throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required and must be a string.');
@@ -123,6 +130,15 @@ export async function handleCloseSession(args: ToolArguments, workspace = resolv
   };
 }
 
+/**
+ * Pages and renders public conversation history for a session handle.
+ *
+ * @remarks
+ * Each event's `sequence` is its stored log position. Consolidated snapshots
+ * combine streaming deltas into messages and the Markdown view filters internal
+ * lifecycle events (such as `turn_started` and `tool_started`), so gaps in
+ * `sequence` numbering do not indicate lost events.
+ */
 export async function handleSessionHistory(args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number }, workspace = resolveWorkspacePath(args.workspace_path)) {
   const history = await sessionHistory(args.session_handle, workspace, args.cursor, args.limit);
   if (!history.events.length) {

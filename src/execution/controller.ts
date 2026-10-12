@@ -35,7 +35,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { loadConfigSnapshot } from '../config.js';
-import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
+import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, getSession, isProcessAlive, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
@@ -276,6 +276,21 @@ async function executeTaskInternal(
       if (previous) {
         const trace = emitTrace();
         const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
+        let explicitSession: ReturnType<typeof getSession> = null;
+        if (prepared.previousSession) {
+          try {
+            const current = getSession(prepared.previousSession.sessionHandle, { workspace: cwd });
+            if (current && current.backend === prepared.backend.id) {
+              explicitSession = current;
+            }
+          } catch {
+            explicitSession = null;
+          }
+        }
+        const retainedHandle = explicitSession?.sessionHandle ?? previous.sessionHandle;
+        const continuationAvailable = explicitSession
+          ? !isProcessAlive(explicitSession.activePid) && explicitSession.state === 'idle' && Boolean(explicitSession.threadId)
+          : previous.continuationAvailable;
         return {
           isError: false,
           provider: prepared.backend.id,
@@ -285,9 +300,9 @@ async function executeTaskInternal(
             output: `No model turn: this request matches a completed review (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again.`,
             ...(prepared.model ? { model: prepared.model } : {}),
             truncated: false,
-            continuationAvailable: false,
+            continuationAvailable,
           },
-          sessionHandle: null,
+          sessionHandle: retainedHandle,
           meta: { turn: 0, toolCount: 0, durationMs: totalMs, totalMs, historyAvailable: false, phases: trace.phases },
           warnings: [...(options.warnings || []), ...(prepared.backend.warnings || [])],
           review: { verdict: previous.review.verdict, ...(previous.review.reason ? { reason: previous.review.reason } : {}) },

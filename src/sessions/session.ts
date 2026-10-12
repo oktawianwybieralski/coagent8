@@ -175,7 +175,8 @@ export function createSession(backend: string, workspace = process.cwd(), thread
 }
 
 /**
- * Atomically acquires turn ownership on an idle session record.
+ * Atomically acquires turn ownership on an idle session record, recording this
+ * CoAgent8 server process (`process.pid`, not a backend CLI child PID) as `activePid`.
  *
  * Checks cancellation signals and execution budget before lock acquisition,
  * during the lock wait, and across synchronous boundaries immediately after write.
@@ -385,6 +386,16 @@ export function setExecutionCanceller(fn: ExecutionCanceller): void {
   executionCanceller = fn;
 }
 
+/**
+ * Cancels the active turn of a session owned by this CoAgent8 server process, or
+ * recovers a stale turn lease left by a dead owner process.
+ *
+ * @remarks
+ * `activePid` on the session record identifies the CoAgent8 server process that
+ * owns the turn lease, not the backend CLI child process. If `activePid` belongs
+ * to another live CoAgent8 server process, cancellation is refused rather than
+ * signalling a foreign process.
+ */
 export async function cancelSession(handle: string, workspace?: string): Promise<{ cancelled: boolean; message: string }> {
   const sanitized = sanitizeHandle(handle);
   if (!sanitized) throw new Error(`Invalid session handle: '${handle}'.`);
@@ -420,7 +431,7 @@ export async function cancelSession(handle: string, workspace?: string): Promise
     if (!s) return;
 
     if (s.activePid && s.activePid !== process.pid && isProcessAlive(s.activePid)) {
-      throw new Error(`Cannot cancel session '${sanitized}': actively running in another process (PID ${s.activePid}).`);
+      throw new Error(`Cannot cancel session '${sanitized}': actively running in another CoAgent8 server process (PID ${s.activePid}).`);
     }
 
     if (targetToken ? s.turnToken === targetToken : !s.turnToken && (s.state === 'running' || s.activePid)) {
@@ -470,15 +481,21 @@ export function listSessions(workspace: string): SessionRecord[] {
 /**
  * Finds the most recent completed review with this identity among the live sessions of one
  * workspace and backend (`AX-007c`).
- * @returns The session handle and stored outcome, or null when none matches.
+ * @returns The session handle, stored outcome and whether the session can continue, or null when none matches.
  * @throws When the sessions directory cannot be read; an unreadable record counts as absent.
  */
-export function findCompletedReview(workspace: string, backend: string, identity: ReviewIdentity): { sessionHandle: string; review: CompletedReview } | null {
-  let found: { sessionHandle: string; review: CompletedReview } | null = null;
+export function findCompletedReview(
+  workspace: string,
+  backend: string,
+  identity: ReviewIdentity
+): { sessionHandle: string; review: CompletedReview; continuationAvailable: boolean } | null {
+  let found: { sessionHandle: string; review: CompletedReview; continuationAvailable: boolean } | null = null;
   for (const s of listSessions(workspace)) {
     const r = s.lastReview;
     if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model) continue;
-    if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) found = { sessionHandle: s.sessionHandle, review: r };
+    if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) {
+      found = { sessionHandle: s.sessionHandle, review: r, continuationAvailable: !active(s) && s.state === 'idle' && Boolean(s.threadId) };
+    }
   }
   return found;
 }
