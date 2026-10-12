@@ -49,6 +49,14 @@ if (args.includes('-p')) {
 }
 
 function run() {
+  // agy-like shutdown: SIGTERM starts a 1 s cleanup that records its completion. The handler is
+  // installed before any output, because the first answer delta makes the test cancel the turn.
+  if (mode === 'sigterm-cleanup') {
+    process.on('SIGTERM', () => {
+      fs.writeFileSync(`${process.env.coagent8_FIXTURE_MARKER}.received`, '1');
+      setTimeout(() => { fs.writeFileSync(process.env.coagent8_FIXTURE_MARKER, 'clean'); process.exit(0); }, 1000);
+    });
+  }
   if (prompt === '/usage') {
     if (mode === 'hang-usage' || mode === 'hang-quota') {
       setInterval(() => {}, 1000);
@@ -166,9 +174,8 @@ function run() {
     }, 20);
     return;
   }
-  // agy-like shutdown: SIGTERM starts a 1 s cleanup that records its completion.
+  // The SIGTERM handler of this mode is installed at the start of `run`.
   if (mode === 'sigterm-cleanup') {
-    process.on('SIGTERM', () => setTimeout(() => { require('node:fs').writeFileSync(process.env.coagent8_FIXTURE_MARKER, 'clean'); process.exit(0); }, 1000));
     setInterval(() => {}, 1000);
     return;
   }
