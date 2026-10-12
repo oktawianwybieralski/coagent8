@@ -321,3 +321,13 @@ test('EXEC-001-T11c: formatExecutionResult retains plaintext frame structure and
     }
   }
 });
+
+test('a refused call that started no turn does not claim its session has no history (FEEDBACK-060e)', async () => {
+  const refused = await formatExecutionResult('codex', {
+    status: 'failed', isError: true, output: '', truncated: false, continuationAvailable: false,
+    error: { code: 'SESSION_INVALID', message: 'Session is closed.', retryable: false },
+  }, '', 'syn_sess_closed', { turn: 0, toolCount: 0, durationMs: 0, historyAvailable: false });
+  const text = refused.content[0].text;
+  assert.match(text, /session_handle=syn_sess_closed \(finished\)/);
+  assert.doesNotMatch(text, /no history/);
+});

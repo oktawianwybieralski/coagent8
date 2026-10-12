@@ -64,6 +64,20 @@ export function getSession(handle: string, options: GetSessionOptions = {}): Ses
   if ((options.backend && s.backend !== options.backend) || (options.workspace && canonicalPath(s.workspace) !== canonicalPath(options.workspace))) return null;
   return s;
 }
+/**
+ * Why a stored session of this workspace cannot continue, so a refusal can name it.
+ * @param handle - Requested session handle.
+ * @param workspace - Workspace of the request.
+ * @returns `closed`, `invalidated` or `expired`; undefined when the session is usable, unknown or
+ * belongs to another workspace, which a refusal must not reveal.
+ */
+export function unavailableSessionState(handle: string, workspace: string): 'closed' | 'invalidated' | 'expired' | undefined {
+  const file = getSessionFilePath(handle); if (!file) return undefined;
+  const s = readRecord(file, handle);
+  if (!s || canonicalPath(s.workspace) !== canonicalPath(workspace)) return undefined;
+  if (s.state === 'closed' || s.state === 'invalidated') return s.state;
+  return !active(s) && Date.now() - Date.parse(s.lastUsedAt) > DEFAULT_SESSION_TTL_MS ? 'expired' : undefined;
+}
 function parseSessionOptions(
   options?: number | AbortSignal | FileLockOptions | BackendReadContext
 ): {
@@ -385,6 +399,10 @@ export async function cancelSession(handle: string, workspace?: string): Promise
 
   if (workspace && canonicalPath(stored.workspace) !== canonicalPath(workspace)) {
     throw new Error('Session workspace mismatch.');
+  }
+  // Closing releases the turn, so a closed session never has one to cancel.
+  if (stored.state === 'closed') {
+    return { cancelled: false, message: `Session '${sanitized}' is closed; nothing to cancel.` };
   }
 
   const targetToken = stored.turnToken;

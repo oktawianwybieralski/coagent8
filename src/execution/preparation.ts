@@ -13,7 +13,7 @@ import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget } from '.
 import type { BackendReadContext } from '../backends/types.js';
 import { effortVariant } from '../contracts/models.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
-import { getSession, isBudgetExpired } from '../sessions/session.js';
+import { getSession, isBudgetExpired, unavailableSessionState } from '../sessions/session.js';
 import { combineSignals } from '../storage/lock.js';
 import type { SessionRecord } from '../sessions/types.js';
 import { assertNotNestedTurn } from './nested-turn.js';
@@ -163,7 +163,12 @@ export function validateTaskContext(
 
   const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
   if (args.session_handle && !previous) {
-    throw new ToolError('SESSION_INVALID', 'Session is expired, invalidated, closed or belongs to another workspace.');
+    const state = unavailableSessionState(args.session_handle, cwd);
+    throw new ToolError('SESSION_INVALID', state === 'closed'
+      ? 'Session is closed; its history stays readable through the session tool. Omit session_handle to start a new session.'
+      : state
+        ? `Session is ${state}. Omit session_handle to start a new session.`
+        : 'Session is expired, invalidated, closed or belongs to another workspace.');
   }
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) {
     throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');

@@ -2179,9 +2179,12 @@ preview, `0.6.1` (see below).
   incomplete input as a change. It now names a change only for a different
   snapshot or a change in completeness; incomplete input keeps blocking READY
   with its own reason.
-- [ ] **FEEDBACK-060e - closed sessions.** `consult` with a closed handle ends
+- [x] **FEEDBACK-060e - closed sessions.** `consult` with a closed handle ends
   with "(finished, no history)" although its history stays readable; `cancel`
-  of a closed session says "no running turn" instead of "closed".
+  of a closed session says "no running turn" instead of "closed". Now a refused
+  handle of the same workspace names its state (closed, with readable history;
+  invalidated; expired), another workspace's still gets the generic refusal, a
+  call that started no turn omits "no history", and `cancel` says "is closed".
 - [ ] **FEEDBACK-060f - session tool details.** `session list` ignores `limit`
   (it applies to `history` only: document it or page the list); history
   `sequence` gaps look like lost events (document filtering or number the
