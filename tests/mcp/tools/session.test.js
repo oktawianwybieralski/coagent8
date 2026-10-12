@@ -479,4 +479,3 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
-
