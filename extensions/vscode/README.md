@@ -53,8 +53,10 @@ that machine's terminal and edit `~/.coagent8/config.json` there.
    out.
 5. Ask for a consultation or a review, as below.
 
-VS Code starts and stops the bundled server itself. A manual CoAgent8 entry in
-your MCP configuration takes precedence over the extension's.
+The extension registers CoAgent8 in your user MCP servers (`mcp.json`) so it
+appears in **MCP: List Servers**, and VS Code starts and stops the bundled
+server itself. A manual CoAgent8 entry in your MCP configuration takes
+precedence over the extension's.
 
 ## Example requests
 
@@ -78,7 +80,11 @@ backend when you want a specific agent.
 
 A review's verdict is derived by CoAgent8 from the other agent's findings: an
 incomplete review, a serious finding or a failed check makes it `BLOCKED`. It
-is still one agent's judgement, not a test run.
+is still one agent's judgement, not a test run. Repeating a review of the same
+unchanged snapshot with the same scope, backend and model starts no new turn
+and returns the earlier verdict, retaining a valid `session_handle` for the
+workspace; a workspace change during a review is reported only when the
+snapshot or its completeness changed.
 
 ## Tools
 
@@ -87,9 +93,9 @@ is still one agent's judgement, not a test run.
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives |
 | `doctor` | Models, efforts, prices and approval per backend; installation, sign-in and quota with `scope: "health"` |
-| `session` | List sessions, page a session's history or close a session |
+| `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session; a closed session reports that it is closed on a follow-up or `cancel`, while its history stays readable |
 | `cancel` | Cancel the running turn of a session |
-| `issue` | Prepare a sanitized bug report and a prefilled GitHub issue link; it never submits anything |
+| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a prefilled GitHub issue link; it never submits anything |
 
 Answers come back as Markdown with the backend, model, duration and session
 handle; passing the handle continues the same conversation. Your chat host
@@ -249,9 +255,14 @@ check the generated report for private data before submitting it.
 - **Antigravity's own tools.** agy gives the other agent your agy MCP servers
   and plugins, which CoAgent8 cannot turn off; `doctor` lists them and calls
   back into CoAgent8 are refused.
+- **Antigravity readiness.** `agy` may report not ready in a cached check and
+  still run a turn; `doctor` with `scope: "health"` rechecks readiness.
 - **Leftover agy processes on Windows.** Cancelling an agy turn stops agy, but a
   process it started outside itself, such as one of its MCP servers, can keep
   running until it exits or the server stops.
+- **Default model price.** A plain `consult` with no model and no price limit
+  runs the backend's default model (still subject to your approval thresholds);
+  pass `output_price_below` or a model to bound the price.
 - **Approval forms.** Not every chat shows MCP forms; Codex and the Antigravity
   chat did not when measured. Allow such models in **Manage Model Approvals**.
 - **Host deadlines.** A chat host can stop a tool call before CoAgent8's own
