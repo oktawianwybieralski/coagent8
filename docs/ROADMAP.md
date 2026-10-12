@@ -2184,10 +2184,11 @@ preview, `0.6.1` (see below).
 - [ ] **FEEDBACK-060i - VSIX users and the `coagent8` command.** Skills and
   messages name `coagent8 status`/`repair`, which a VSIX-only installation does
   not put on PATH; lead with the VS Code command there.
-- [ ] **FEEDBACK-060j - test credentials that trip push protection.** Synthetic
+- [x] **FEEDBACK-060j - test credentials that trip push protection.** Synthetic
   Stripe and Slack keys in `tests/security/redaction.test.js` and
-  `tests/sessions/history.test.js` were allowed once on GitHub; build them at
-  run time so new pushes are not blocked.
+  `tests/sessions/history.test.js` (and a Slack token in
+  `tests/diagnostics/issue.test.js`) were allowed once on GitHub; their
+  prefixes are now joined at run time, so the sources hold no literal token.
 
 ### DOCS-002: documentation cleanup after 0.6.0
 
