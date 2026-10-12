@@ -19,8 +19,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - [`d109069`](https://github.com/oktawianwybieralski/coagent8/commit/d1090696a33ed5ef42f468595c564b3a4b3f6d55) **review:** Name a change during the turn only when the input changed ([#11](https://github.com/oktawianwybieralski/coagent8/pull/11))
 - [`cbf503a`](https://github.com/oktawianwybieralski/coagent8/commit/cbf503af2bab76b3c6cb002d80e12c42029e2c11) **sessions:** Say that a session is closed when a call or cancel uses it ([#12](https://github.com/oktawianwybieralski/coagent8/pull/12))
 - [`08082ba`](https://github.com/oktawianwybieralski/coagent8/commit/08082ba0e6fd0dc6f2dcd4b897693dcd0c098a08) **sessions:** Scope paging parameters and retain handle on repeat review ([#24](https://github.com/oktawianwybieralski/coagent8/pull/24))
-- [`e794f57`](https://github.com/oktawianwybieralski/coagent8/commit/e794f570ffac60608adef32c11f7f96fea59137a) **issue:** Format exact CLI versions, nest CLI list and clarify doctor attachment (FEEDBACK-060g)
-- [`762cbf0`](https://github.com/oktawianwybieralski/coagent8/commit/762cbf0632dee72cf3e009339bc5c62a6cce5bb6) **issue:** Normalize CLI labels and versions to single lines in nested list
+- [`5f5e645`](https://github.com/oktawianwybieralski/coagent8/commit/5f5e6457e5c4de6b8a2f91f2d04b6a54c3242040) **issue:** Format exact CLI versions, nest CLI list and clarify doctor attachment ([#25](https://github.com/oktawianwybieralski/coagent8/pull/25))
 
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 

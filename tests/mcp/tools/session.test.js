@@ -286,3 +286,196 @@ test('session list and the sessions resource show a workspace under the home dir
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test('second client cancels a confirmed running Claude turn, releases lease and process resources, and permits a subsequent turn in the same session (FEEDBACK-060h)', async () => {
+  const { createServer } = require('../../../src/mcp/server.ts');
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { saveConfig } = require('../../../src/config.ts');
+  const { activeProcesses, terminateAllProcesses } = require('../../../src/execution/process.ts');
+  const { readResult } = require('../../helpers/result.cjs');
+
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-claude-cancel-'));
+  const readyFile = path.join(workspace, 'claude-ready.json');
+  const captureTurn1 = path.join(workspace, 'claude-capture-1.json');
+  const captureTurn2 = path.join(workspace, 'claude-capture-2.json');
+  const previousEnv = { ...process.env };
+
+  // Creating the servers installs the real execution canceller via composeExecutionCancellation(),
+  // replacing any stub canceller left by earlier unit tests.
+  const server1 = createServer();
+  const server2 = createServer();
+  const client1 = new Client({ name: 'turn-client', version: '1' }, { capabilities: {} });
+  const client2 = new Client({ name: 'cancel-client', version: '1' }, { capabilities: {} });
+  const [client1Transport, server1Transport] = InMemoryTransport.createLinkedPair();
+  const [client2Transport, server2Transport] = InMemoryTransport.createLinkedPair();
+
+  let turn1Promise;
+  try {
+    process.env.CLAUDE_PATH = path.resolve(__dirname, '../../fixtures/claude-cli/claude.cjs');
+    process.env.CLAUDE_FIXTURE_SCENARIO = 'interruptible';
+    process.env.CLAUDE_FIXTURE_READY = readyFile;
+    process.env.CLAUDE_FIXTURE_CAPTURE = captureTurn1;
+    delete process.env.CLAUDE_FIXTURE_MODE;
+    delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+
+    await saveConfig({
+      defaultBackend: 'claude',
+      routing: { strategy: 'fixed', allowedBackends: ['claude'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: ['claude-sonnet-4-6'], ask: [], deny: [] } },
+    });
+
+    await server1.connect(server1Transport);
+    await client1.connect(client1Transport);
+    await server2.connect(server2Transport);
+    await client2.connect(client2Transport);
+
+    // 1. Client 1 starts a Claude consult turn that enters the active running state
+    let turn1Settled = false;
+    turn1Promise = client1.callTool({
+      name: 'consult',
+      arguments: {
+        proposal: 'Long-running architecture check',
+        backend: 'claude',
+        model: 'claude-sonnet-4-6',
+        workspace_path: workspace,
+      },
+    }).finally(() => {
+      turn1Settled = true;
+    });
+
+    // 2. Bounded wait for the deterministic running-turn handshake from claude.cjs
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(readyFile)) {
+      if (turn1Settled) {
+        const early = await turn1Promise;
+        assert.fail(`Turn 1 settled before ready handshake: ${JSON.stringify(early)}`);
+      }
+      if (Date.now() >= deadline) {
+        assert.fail('Timed out waiting for CLAUDE_FIXTURE_READY handshake');
+      }
+      await new Promise(r => setTimeout(r, 15));
+    }
+
+    const readyData = JSON.parse(fs.readFileSync(readyFile, 'utf8'));
+    assert.equal(readyData.state, 'running');
+    assert.equal(readyData.scenario, 'interruptible');
+    assert.equal(turn1Settled, false, 'natural completion must not count as a cancellation pass');
+    assert.ok(
+      [...activeProcesses].some(proc => proc.pid === readyData.pid),
+      'live Claude child process must be tracked in activeProcesses while turn is running'
+    );
+
+    // 3. Client 2 lists active sessions in the workspace and confirms the session is running
+    const listRes = await client2.callTool({
+      name: 'session',
+      arguments: { action: 'list', workspace_path: workspace },
+    });
+    assert.equal(listRes.isError, undefined);
+    const listedSessions = listRes.structuredContent.sessions;
+    assert.equal(listedSessions.length, 1);
+    const handle = listedSessions[0].sessionHandle;
+    assert.equal(listedSessions[0].backend, 'claude');
+    assert.equal(listedSessions[0].state, 'running');
+
+    const activeRecord = getSession(handle);
+    assert.ok(activeRecord, 'running session record must exist');
+    assert.equal(activeRecord.state, 'running');
+    assert.equal(activeRecord.activePid, process.pid);
+    assert.ok(activeRecord.turnToken, 'running session must hold a non-null turnToken lease');
+    assert.equal(turn1Settled, false, 'Turn 1 must still be running right before Client 2 invokes cancel');
+
+    // 4. Client 2 cancels the running Claude turn
+    const cancelRes = await client2.callTool({
+      name: 'cancel',
+      arguments: { session_handle: handle, workspace_path: workspace },
+    });
+    assert.equal(cancelRes.isError, undefined);
+    assert.equal(cancelRes.structuredContent.cancelled, true);
+    assert.equal(cancelRes.structuredContent.sessionHandle, handle);
+    assert.match(cancelRes.content[0].text, /cancelled and resources released/);
+
+    // 5. Immediately when cancel resolves, process resources and session lease are already released
+    assert.ok(
+      ![...activeProcesses].some(proc => proc.pid === readyData.pid),
+      'Claude child process must be cleaned up before cancel returns'
+    );
+    assert.equal(activeProcesses.size, 0, 'no active child processes remain after cancel');
+    const afterCancel = getSession(handle);
+    assert.ok(afterCancel, 'session record remains available after cancel');
+    assert.equal(afterCancel.state, 'idle', 'session state must be reset to idle');
+    assert.equal(afterCancel.activePid, null, 'session activePid must be cleared');
+    assert.equal(afterCancel.turnToken, null, 'session turnToken lease must be released');
+    assert.equal(afterCancel.threadId, readyData.sessionId, 'native Claude session ID from system/init is preserved for continuation');
+    assert.equal(fs.existsSync(`${getSessionFilePath(handle)}.lease`), false, 'no storage lock lease file remains after cancel');
+
+    // 6. Client 1 receives the cancelled turn result with ABORTED and continuationAvailable
+    const turn1Res = await turn1Promise;
+    assert.equal(turn1Res.isError, true);
+    const parsedTurn1 = readResult(turn1Res);
+    assert.equal(parsedTurn1.status, 'cancelled');
+    assert.equal(parsedTurn1.error?.code, 'ABORTED');
+    assert.equal(parsedTurn1.sessionHandle, handle);
+    assert.equal(parsedTurn1.continuationAvailable, true, 'cancelled turn after init and partial output stays resumable');
+
+    const captured1 = JSON.parse(fs.readFileSync(captureTurn1, 'utf8'));
+    assert.deepEqual(captured1.records.map(r => r.type), ['user', 'control_request']);
+    assert.equal(captured1.records[1].request.subtype, 'interrupt');
+
+    // 7. Subsequent turn in the same session reuses the handle and resumes the native Claude session
+    fs.rmSync(readyFile, { force: true });
+    delete process.env.CLAUDE_FIXTURE_READY;
+    delete process.env.CLAUDE_FIXTURE_SCENARIO;
+    process.env.CLAUDE_FIXTURE_CAPTURE = captureTurn2;
+
+    const turn2Res = await client1.callTool({
+      name: 'consult',
+      arguments: {
+        proposal: 'Follow-up question after cancellation',
+        backend: 'claude',
+        model: 'claude-sonnet-4-6',
+        session_handle: handle,
+        workspace_path: workspace,
+      },
+    });
+    assert.equal(turn2Res.isError, false, turn2Res.content?.[0]?.text);
+    const parsedTurn2 = readResult(turn2Res);
+    assert.equal(parsedTurn2.status, 'completed');
+    assert.equal(parsedTurn2.sessionHandle, handle);
+    assert.equal(parsedTurn2.turn, 2);
+    assert.match(parsedTurn2.answer, /OK/);
+
+    const captured2 = JSON.parse(fs.readFileSync(captureTurn2, 'utf8'));
+    assert.equal(captured2.records[0]?.type, 'user');
+    assert.equal(captured2.argv[captured2.argv.indexOf('--resume') + 1], readyData.sessionId);
+    assert.ok(!captured2.argv.includes('--session-id'));
+
+    const afterTurn2 = getSession(handle);
+    assert.equal(afterTurn2.state, 'idle');
+    assert.equal(afterTurn2.activePid, null);
+    assert.equal(afterTurn2.turnToken, null);
+    assert.equal(afterTurn2.turnCount, 2);
+
+    // 8. Durable history records both the cancelled first turn and the completed second turn
+    const historyRes = await client2.callTool({
+      name: 'session',
+      arguments: { action: 'history', session_handle: handle, workspace_path: workspace, limit: 100 },
+    });
+    assert.equal(historyRes.isError, undefined);
+    const finishedEvents = historyRes.structuredContent.events.filter(e => e.type === 'turn_finished');
+    assert.deepEqual(finishedEvents.map(e => e.status), ['cancelled', 'completed']);
+  } finally {
+    const settleTurn1 = turn1Promise?.catch(() => {});
+    await terminateAllProcesses();
+    await settleTurn1;
+    await client1.close().catch(() => {});
+    await server1.close().catch(() => {});
+    await client2.close().catch(() => {});
+    await server2.close().catch(() => {});
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previousEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, previousEnv);
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
