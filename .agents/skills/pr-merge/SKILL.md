@@ -51,6 +51,9 @@ listed PRs' branches; it covers nothing else.
      review with verdict `READY` in the format of
      [rule 03](../../rules/03-author-reviewer.md#recording-pr-evidence). If its
      reviewed head differs from `headRefOid`, step 9 reviews the head again.
+   - Stop if the PR has an open review finding or unresolved conversation:
+     rebasing is allowed only after the review is complete (rule 02
+     section 3, "Review and merge").
    - Remember `title`, `body`, `headRefName` (the branch) and `headRefOid`
      (the observed head).
 2. `gh pr checks N`: stop if any job failed; never rerun jobs.
@@ -95,13 +98,19 @@ listed PRs' branches; it covers nothing else.
    when step 3 skipped the update. On a failure, stop and report the last 60
    lines of `gh run view <run id> --log-failed`; never rerun jobs.
 9. Independent review of the current head (rule 03). A rebase or new commit
-   supersedes earlier review evidence, so unless the PR body already records
-   `READY` for exactly `headRefOid`:
-   - with `<branch>` checked out, run the CoAgent8 `review` tool with scope
-     `origin/develop...<branch>` (backend and model as the owner named, else
-     the defaults);
+   supersedes earlier review evidence. Reuse the review recorded in the PR body
+   only if it names head `headRefOid`, scope `<base>...<head>` with base equal
+   to `git merge-base origin/develop <headRefOid>` (the whole PR, not one
+   commit), coverage `COMPLETE` and 0 unresolved P1/P2. Otherwise:
+   - `git fetch origin`, `git checkout <branch>`, `git pull --ff-only`;
+     `git rev-parse HEAD` must equal `headRefOid`;
+   - run the CoAgent8 `review` tool with scope `origin/develop...<branch>`
+     (backend and model as the owner named, else the defaults);
    - require `VERDICT: READY` and `COVERAGE: COMPLETE`; on `BLOCKED`, stop and
      report the findings (do not fix them: that is the Author's work);
+   - afterwards `git rev-parse HEAD` and `gh pr view N --json headRefOid`
+     must both still equal `headRefOid`, else the review covered another
+     snapshot: stop;
    - update the PR body's Verification section with `gh pr edit N --body-file
      <file>`: mark the old review line superseded and add the new one in the
      rule 03 format (verdict, head, base, scope, coverage, unresolved P1/P2,

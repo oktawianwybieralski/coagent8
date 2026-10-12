@@ -237,7 +237,10 @@ become the final commit, so they must meet this section.
 * The Author never approves their own PR. When GitHub approvals require a second
   account that does not exist, record the Reviewer's verdict in the PR instead.
 * Address findings with new commits; do not rewrite history during review unless
-  the Reviewer agrees.
+  the Reviewer agrees. Rebasing a branch whose review is complete (READY, no
+  open finding or conversation) onto its target is an update, not a rewrite
+  during review; it supersedes the review evidence, and the rebased head needs
+  a new independent review ([03-author-reviewer](03-author-reviewer.md#recording-pr-evidence)).
 * **Merge method:** Squash and Merge, then delete the topic branch:
   ```bash
   gh pr merge <number> --squash --delete-branch
