@@ -31,7 +31,7 @@ const SEPARATOR = -1;
  * @param extraInstallations - Installations besides the one in use, per client; one with
  * `requires` appears once that vendor extension is installed.
  */
-async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [] } = {}) {
+async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
   const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
@@ -49,7 +49,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     QuickInputButtons: { Back: { tooltip: 'Back' } },
     QuickPickItemKind: { Separator: SEPARATOR, Default: 0 },
     Uri: { file(file) { return { fsPath: file, toString() { return require('node:url').pathToFileURL(file).href; } }; } },
-    env: {},
+    env: remoteName ? { remoteName } : {},
     extensions: { getExtension(id) { return vendorExtensions.includes(id) ? { extensionPath: path.resolve('vendor', id), extensionUri: { scheme: 'file' } } : undefined; }, onDidChange(listener) { extensionListeners.push(listener); return { dispose }; } },
     ProgressLocation: { Notification: 15 },
     EventEmitter: class { event = () => {}; fire() { definitionChanges++; } dispose() {} },
@@ -1089,4 +1089,12 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');
   context.subscriptions.forEach(subscription => subscription.dispose());
   assert.equal(disposed, 16);
+});
+
+test('remote and multi-root windows guide the user without assuming a global coagent8 CLI', async () => {
+  const remote = await runExtension({ remoteName: 'ssh-remote' });
+  assert.deepEqual(remote.warnings, ['CoAgent8 commands are not available in a remote window. In a terminal on the remote machine, run npx -y coagent8@next status (or setup, repair, skills, cleanup).']);
+  assert.equal(remote.menus.length, 0);
+  const multiRoot = await runExtension({ workspaceFolders: [path.resolve('workspace-a'), path.resolve('workspace-b')] });
+  assert.deepEqual(multiRoot.errors, ['CoAgent8 setup: Open the intended workspace folder in its own window and run this command again.']);
 });

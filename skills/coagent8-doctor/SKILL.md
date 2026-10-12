@@ -23,6 +23,7 @@ description: Show which models, reasoning efforts and output prices each CoAgent
 
 Do not edit CoAgent8 or client configuration files to change defaults or
 approval: the running server may read a different configuration file than the
-default path. For installation or registration problems point the user to
-`coagent8 status` and `coagent8 repair`, or the VS Code command CoAgent8: Set Up
-Coding CLIs.
+default path. For CLI installation, sign-in, registration or skill problems
+point the user to the VS Code commands **CoAgent8: Manage Coding CLIs** and
+**CoAgent8: Manage Skills**, or to `npx -y coagent8@next status`, `repair` and
+`skills` (`coagent8 ...` when installed globally).

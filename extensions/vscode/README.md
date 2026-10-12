@@ -38,8 +38,8 @@ chats.
 Model access and billing follow your CLI account. For SSH or WSL, install the
 extension on the remote host, where Node.js and the CLIs must be available too.
 There the server works in chat, but the CoAgent8 commands are not available:
-run `npx -y coagent8@next status` (or `setup`, `cleanup`) in that machine's
-terminal and edit `~/.coagent8/config.json` there.
+run `npx -y coagent8@next status` (or `setup`, `repair`, `skills`, `cleanup`) in
+that machine's terminal and edit `~/.coagent8/config.json` there.
 
 ## Quick start
 
@@ -234,7 +234,7 @@ reinstall. To remove CoAgent8 from a CLI's chat without uninstalling, use
 | --- | --- |
 | CoAgent8 is missing from the server list | VS Code 1.101+, a trusted folder on disk, and the extension enabled on the right local or remote host |
 | The server cannot find Node.js | Run `node --version` on the extension host; set `coagent8.nodePath` to its absolute path |
-| `CLI_NOT_FOUND` or `AUTH_REQUIRED` | Install or sign in the reported CLI on the same machine as the server, then run `doctor` again |
+| `CLI_NOT_FOUND` or `AUTH_REQUIRED` | Run **CoAgent8: Manage Coding CLIs** to install or sign in the reported CLI on the same machine as the server (on a remote host, use the CLI's own installer or `npx -y coagent8@next status`), then run `doctor` again |
 | `POLICY_DENIED` for a model | Read the reason in the error: the model is denied by a rule, you declined it, or it needs approval your chat cannot show; allow it in **Manage Model Approvals** or choose another model |
 | `INPUT_LIMIT` from a review in a repository | Git refuses the folder, for example because another account owns it; the message names Git's reason |
 | Tools look outdated after an update | Restart CoAgent8 in **MCP: List Servers** and start a new chat |
@@ -259,8 +259,9 @@ check the generated report for private data before submitting it.
 - **Restart Extensions** restarts every extension: VS Code has no way to restart
   only the vendor chat extensions.
 - On a remote extension host (SSH, WSL) the CoAgent8 commands are not
-  available; use the `coagent8` command in that machine's terminal. Virtual and
-  untrusted workspaces are not supported.
+  available; run `npx -y coagent8@next status` (or `setup`, `repair`, `skills`,
+  `cleanup`, or `coagent8 ...` when installed globally) in that machine's
+  terminal. Virtual and untrusted workspaces are not supported.
 - Icons, tool grouping and refreshing existing chats depend on the chat host.
 
 ## Updates, support and license
