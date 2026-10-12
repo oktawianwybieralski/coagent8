@@ -490,7 +490,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           const existing = registration(entry);
           result.action = 'preserved';
           // Status reads the host files only; starting the runtime and the host is setup/repair work.
-          if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or coagent8 repair verifies the connection.'; return; }
+          if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.'; return; }
           const owned = entryOwnership(client, entry, saved, root).owned;
           // An owned entry whose runtime copy is gone starts nothing, so there is no working
           // connection to verify or keep; the candidate written above replaces it.
