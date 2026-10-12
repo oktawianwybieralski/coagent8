@@ -19,7 +19,7 @@ test('Claude /usage parser reads the recorded session and weekly limits and pick
 });
 
 test('Claude /usage parser ignores model-specific weekly limits, API billing text and malformed lines', () => {
-  const text = 'Current session: 10% used · resets 11:49pm (America/New_York)\nCurrent week (Opus): 100% used · resets Oct 9, 1:00am (America/New_York)\nCurrent week (all models): 140% used';
+  const text = 'Current session: 10% used · resets 9:30pm (America/New_York)\nCurrent week (Opus): 100% used · resets Oct 9, 1:00am (America/New_York)\nCurrent week (all models): 140% used';
   const quota = parseClaudeUsage(text, NOW);
   assert.deepEqual(quota.buckets.map(b => b.id), ['session']);
   assert.equal(quota.headroomPercent, 90);
@@ -28,7 +28,7 @@ test('Claude /usage parser ignores model-specific weekly limits, API billing tex
 });
 
 test('Claude /usage reset labels resolve across time zones, missing dates and year boundaries', () => {
-  assert.equal(resolveUsageReset('11:49pm', 'America/New_York', NOW), '2026-10-06T03:49:00.000Z');
+  assert.equal(resolveUsageReset('9:30pm', 'America/New_York', NOW), '2026-10-06T01:30:00.000Z');
   assert.equal(resolveUsageReset('8:00am', 'America/New_York', NOW), '2026-10-06T12:00:00.000Z', 'a past time without a date is tomorrow');
   assert.equal(resolveUsageReset('Jan 2, 12am', 'America/New_York', Date.UTC(2026, 11, 30)), '2027-01-02T05:00:00.000Z');
   assert.equal(resolveUsageReset('Oct 6, 2:15pm', 'Not/A_Zone', NOW), null);
