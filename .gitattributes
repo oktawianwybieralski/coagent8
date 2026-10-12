@@ -1,3 +1,3 @@
 # Text files are stored and checked out with LF on every platform, so builds
-# (including the source map's sourcesContent) do not depend on the checkout.
+# (bundles and third-party license notices) do not depend on the checkout.
 * text=auto eol=lf

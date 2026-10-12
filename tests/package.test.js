@@ -5,13 +5,20 @@ const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
+const { buildBundles } = require('../scripts/build.cjs');
 const { readTarball, extractPackage, verifyPlugin } = require('../scripts/package-artifacts.cjs');
 
-test('optional setup is a separate bundle and core startup excludes installation and JSONC modules', () => {
+test('optional setup is a separate bundle and core startup excludes installation and JSONC modules', async () => {
   const root = path.resolve(__dirname, '..');
+  assert.ok(fs.existsSync(path.join(root, 'dist/index.cjs')));
   assert.ok(fs.existsSync(path.join(root, 'dist/setup.cjs')));
-  const map = JSON.parse(fs.readFileSync(path.join(root, 'dist/index.cjs.map'), 'utf8'));
-  assert.ok(!map.sources.some(source => /integrations[\\/]|jsonc-parser/.test(source)), 'source map proves setup code is outside core');
+  assert.ok(!fs.existsSync(path.join(root, 'dist/index.cjs.map')), 'core bundle must not emit a source map');
+  assert.ok(!fs.existsSync(path.join(root, 'dist/setup.cjs.map')), 'setup bundle must not emit a source map');
+  const { modules } = await buildBundles({ write: false });
+  assert.ok(modules['index.cjs']?.length > 0, 'core bundle module list must be populated');
+  assert.ok(!modules['index.cjs'].some(source => /integrations[\\/]|jsonc-parser/.test(source)), 'build module graph proves setup code is outside core');
+  assert.ok(modules['setup.cjs']?.includes('src/integrations/setup-cli.ts'), 'setup bundle includes setup entrypoint');
+  assert.ok(modules['setup.cjs']?.some(source => /jsonc-parser/.test(source)), 'setup bundle includes jsonc-parser');
 });
 
 test('package.json has zero omniagent entry in bin and clean coagent8 release metadata', () => {
@@ -22,6 +29,9 @@ test('package.json has zero omniagent entry in bin and clean coagent8 release me
   assert.equal(typeof pkg.bin, 'object');
   assert.equal(pkg.bin.omniagent, undefined, 'omniagent entry must be completely purged from bin');
   assert.equal(pkg.bin.coagent8, './dist/index.cjs', 'coagent8 binary must point to dist/index.cjs');
+  assert.equal(pkg.dependencies, undefined, 'bundled packages belong in devDependencies, not dependencies');
+  assert.equal(pkg.peerDependencies, undefined, 'package.json must declare no peerDependencies');
+  assert.equal(pkg.optionalDependencies, undefined, 'package.json must declare no optionalDependencies');
 });
 
 test('package-lock.json has zero omniagent entry in bin', () => {
@@ -29,9 +39,11 @@ test('package-lock.json has zero omniagent entry in bin', () => {
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
 
   const rootPkg = lock.packages && lock.packages[''];
-  if (rootPkg && rootPkg.bin) {
+  assert.ok(rootPkg, 'package-lock.json must contain the root package entry');
+  if (rootPkg.bin) {
     assert.equal(rootPkg.bin.omniagent, undefined, 'omniagent entry must be purged from package-lock.json bin');
   }
+  assert.equal(rootPkg.dependencies, undefined, 'package-lock.json root entry must declare no runtime dependencies');
 });
 
 /** A gzipped ustar archive; `pax` entries carry their path in a PAX header, as npm writes long names. */

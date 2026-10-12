@@ -2,7 +2,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { isBuiltin } = require('node:module');
 const { prepareBranding } = require('./branding.cjs');
-const start = performance.now();
 const root = path.resolve(__dirname, '..');
 const dist = path.join(root, 'dist');
 
@@ -32,38 +31,66 @@ function writeNotices(packageDirs) {
     `dist/index.cjs and dist/setup.cjs bundle the following third-party packages. Their license notices follow.\n\n${body}`);
 }
 
-const externalPackages = [];
-const bundledPackages = new Set();
-const inspectBundle = {
-  name: 'coagent8:inspect-bundle',
-  generateBundle(_options, bundle) {
-    for (const output of Object.values(bundle)) {
-      if (output.type !== 'chunk') continue;
-      externalPackages.push(...[...output.imports, ...output.dynamicImports].filter(imported => !isBuiltin(imported)));
-      for (const [id, info] of Object.entries(output.modules)) {
-        const owner = info.renderedLength > 0 && packageRoot(id);
-        if (owner) bundledPackages.add(owner.dir);
+async function buildBundles({ write = true } = {}) {
+  const start = performance.now();
+  if (write) {
+    prepareBranding();
+    fs.rmSync(dist, { recursive: true, force: true });
+  }
+  const externalPackages = [];
+  const bundledPackages = new Set();
+  const modules = {};
+  const inspectBundle = {
+    name: 'coagent8:inspect-bundle',
+    generateBundle(_options, bundle) {
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'chunk') continue;
+        externalPackages.push(...[...output.imports, ...output.dynamicImports].filter(imported => !isBuiltin(imported)));
+        const rendered = [];
+        for (const [id, info] of Object.entries(output.modules)) {
+          if (info.renderedLength <= 0) continue;
+          rendered.push(id.startsWith('\0') ? id : path.relative(root, id).replace(/\\/g, '/'));
+          const owner = packageRoot(id);
+          if (owner) bundledPackages.add(owner.dir);
+        }
+        modules[output.fileName] = rendered.sort();
       }
-    }
-  },
-};
+    },
+  };
 
-prepareBranding();
-import('tsdown').then(async ({ build }) => { for (const entry of [{ index: 'src/index.ts' }, { setup: 'src/integrations/setup-cli.ts' }]) await build({
-  config: false, cwd: root, entry, outDir: dist, clean: false,
-  format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false,
-  sourcemap: true, minify: true, dts: false, report: false, logLevel: 'warn',
-  checks: { legacyCjs: false },
-  // tsdown externalizes package.json dependencies by default; the runtime bundle must inline them.
-  deps: { alwaysBundle: [/.*/], onlyBundle: false },
-  inputOptions: { resolve: { mainFields: ['module', 'main'] } },
-  outputOptions: { keepNames: true, comments: { legal: false, annotation: false, jsdoc: false } },
-  plugins: [inspectBundle],
-}); }).then(() => {
+  const { build } = await import('tsdown');
+  for (const entry of [{ index: 'src/index.ts' }, { setup: 'src/integrations/setup-cli.ts' }]) {
+    await build({
+      config: false, cwd: root, entry, outDir: dist, clean: false, write,
+      format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false,
+      sourcemap: false, minify: true, dts: false, report: false, logLevel: 'warn',
+      checks: { legacyCjs: false },
+      // tsdown externalizes package.json dependencies by default; the runtime bundle must inline them.
+      deps: { alwaysBundle: [/.*/], onlyBundle: false },
+      inputOptions: { resolve: { mainFields: ['module', 'main'] } },
+      outputOptions: { keepNames: true, comments: { legal: false, annotation: false, jsdoc: false } },
+      plugins: [inspectBundle],
+    });
+  }
   if (externalPackages.length) {
     throw new Error(`Bundle requires external packages: ${externalPackages.join(', ')}`);
   }
-  writeNotices(bundledPackages);
-  fs.chmodSync(path.join(dist, 'index.cjs'), 0o755);
-  console.error(`Build complete in ${Math.round(performance.now()-start)} ms (minified bundle includes SDK dependencies).`);
-}).catch(error => { console.error(error.message); process.exitCode = 1; });
+  if (modules['index.cjs']?.some(id => /integrations[\\/]|jsonc-parser/.test(id))) {
+    throw new Error('Core bundle dist/index.cjs must not include setup integrations or jsonc-parser.');
+  }
+  if (!modules['setup.cjs']?.includes('src/integrations/setup-cli.ts') || !modules['setup.cjs']?.some(id => /jsonc-parser/.test(id))) {
+    throw new Error('Setup bundle dist/setup.cjs must include setup-cli.ts and jsonc-parser.');
+  }
+  if (write) {
+    writeNotices(bundledPackages);
+    fs.chmodSync(path.join(dist, 'index.cjs'), 0o755);
+    console.error(`Build complete in ${Math.round(performance.now() - start)} ms (minified bundle includes SDK dependencies).`);
+  }
+  return { modules, externalPackages, bundledPackages };
+}
+
+if (require.main === module) {
+  buildBundles().catch(error => { console.error(error.message); process.exitCode = 1; });
+}
+
+module.exports = { buildBundles };

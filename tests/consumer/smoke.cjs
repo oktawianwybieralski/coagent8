@@ -24,7 +24,9 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/setup.cjs','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
+  assert.deepEqual(pack.files.filter(f=>f.path.startsWith('dist/')).map(f=>f.path).sort(),['dist/THIRD_PARTY_NOTICES.txt','dist/index.cjs','dist/setup.cjs'],'Packed dist/ must contain only the bundles and third-party notices');
+  assert.ok(!pack.files.some(f=>f.path.endsWith('.map')),'Source maps must not ship in runtime package');
   for(const name of ['logo-light.svg','logo-light.png','logo32-light.png','logo64-light.png','logo256-light.png'])assert.ok(pack.files.some(f=>f.path===`assets/${name}`),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
@@ -36,6 +38,9 @@ function npmRun(args,cwd=root) {
     npmRun(['install','--omit=dev','--no-audit','--no-fund',tarball],dir);
     const pkg=path.join(dir,'node_modules','coagent8');
     const installed=JSON.parse(await fsp.readFile(path.join(pkg,'package.json'),'utf8'));
+    assert.equal(installed.dependencies,undefined,'Packed package.json must declare no runtime dependencies');
+    assert.equal(installed.peerDependencies,undefined,'Packed package.json must declare no peer dependencies');
+    assert.equal(installed.optionalDependencies,undefined,'Packed package.json must declare no optional dependencies');
     const plugin=JSON.parse(await fsp.readFile(path.join(pkg,'plugin.json'),'utf8'));
     assert.equal(plugin.version,installed.version,'Plugin/runtime/package version');
     for(const key of ['composerIcon','composerIconDark','logo','logoDark']) {
@@ -50,7 +55,7 @@ function npmRun(args,cwd=root) {
     }
     const rebuild=spawnSync(process.execPath,[path.join(root,'scripts','build.cjs')],{cwd:root,encoding:'utf8',windowsHide:true});
     assert.equal(rebuild.status,0,`Rebuild failed: ${rebuild.stderr}`);
-    for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt']) {
+    for(const name of ['dist/index.cjs','dist/setup.cjs','dist/THIRD_PARTY_NOTICES.txt']) {
       assert.ok((await fsp.readFile(path.join(pkg,name))).equals(await fsp.readFile(path.join(root,name))),`Packed ${name} matches a fresh build of the packed source`);
     }
     // License notices ship beside the bundle; the bundle itself carries no license comments.
@@ -73,11 +78,7 @@ function npmRun(args,cwd=root) {
       const shim=path.join(dir,'node_modules','.bin',bin+(process.platform==='win32'?'.cmd':''));assert.ok(fs.existsSync(shim),bin);
       commands.push(resolveCliCommand(shim));
     }
-    const sdk=path.join(dir,'node_modules','@modelcontextprotocol','sdk');assert.ok(fs.existsSync(sdk));
-    // Prove the installed commands use the bundled SDK instead of resolving the npm dependency.
-    await fsp.rename(sdk,sdk+'-unused');
-    for(const dependency of ['jsonc-parser','smol-toml']) await fsp.rename(path.join(dir,'node_modules',dependency),path.join(dir,'node_modules',dependency+'-unused'));
-    assert.ok(!fs.existsSync(sdk),'SDK must be unavailable during runtime smoke');
+    assert.deepEqual(fs.readdirSync(path.join(dir,'node_modules')).filter(name=>!name.startsWith('.')),['coagent8'],'Consumer node_modules must contain only coagent8');
     const setupHome=path.join(dir,'setup-home');await fsp.mkdir(setupHome);
     const setupEnv={...process.env,HOME:setupHome,USERPROFILE:setupHome,CODEX_HOME:path.join(setupHome,'.codex'),CLAUDE_CONFIG_DIR:undefined,CODEX_CONFIG_PATH:undefined,GEMINI_CLI_HOME:undefined,
       CODEX_PATH:path.join(setupHome,'missing-codex'),CLAUDE_PATH:path.join(setupHome,'missing-claude'),AGY_PATH:path.join(setupHome,'missing-agy'),coagent8_EXTENSION_PATHS:'{}'};
@@ -91,7 +92,6 @@ function npmRun(args,cwd=root) {
     const plan=JSON.parse(preview.stdout);assert.ok(plan.results.every(item=>item.action==='absent'));
     const applied=dispatch(['cleanup',`--apply=${plan.token}`]);assert.equal(applied.status,0,applied.stderr);
     assert.match(dispatch(['--help']).stdout,/cleanup/);
-    assert.ok(!fs.existsSync(path.join(dir,'node_modules','tsx')));for(const tool of ['esbuild','tsdown','rolldown'])assert.ok(!fs.existsSync(path.join(dir,'node_modules',tool)),tool);
     for(const [binIndex,command] of commands.entries()) {
     const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),AGY_PATH:path.join(root,'tests','fixtures','agy-cli','agy.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
     const {proc,request}=connection;
@@ -131,7 +131,7 @@ function npmRun(args,cwd=root) {
     } finally {await connection.cleanup();}
     }
     const evidence={version:installed.version,tarball:pack.filename,sha256:hash,platform:process.platform,node:process.version,files:pack.files.length,
-      installation:'PASS (omit=dev)',bundledSdk:'PASS (installed SDK unavailable during runtime smoke)',binAliases:'PASS (two installed npm commands launched with shared resolver; initialize/list/EOF each)',setup:'PASS (separate bundled status/cleanup/help dispatch without installed dependencies)',mcp:'PASS (initialize/list, Codex and Gemini two fixture turns/history, EOF)',realCli:'NOT VERIFIED by consumer fixture smoke'};
+      installation:'PASS (omit=dev)',bundledSdk:'PASS (no runtime dependencies; consumer node_modules contains only coagent8)',binAliases:'PASS (two installed npm commands launched with shared resolver; initialize/list/EOF each)',setup:'PASS (separate bundled status/cleanup/help dispatch in isolated zero-dependency consumer tree)',mcp:'PASS (initialize/list, Codex and Gemini two fixture turns/history, EOF)',realCli:'NOT VERIFIED by consumer fixture smoke'};
     await fsp.writeFile(path.join(artifacts,'consumer-'+process.versions.node+'.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence,null,2));
   } finally {await fsp.rm(dir,{recursive:true,force:true});}
 })().catch(err=>{console.error(err.message);process.exitCode=1;});
