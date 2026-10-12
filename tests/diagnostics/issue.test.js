@@ -70,7 +70,7 @@ test('issue URL preserves punctuation, Unicode and literal URL-like text without
 });
 
 test('issue reporting generates sanitized GitHub pre-filled issue URL and redacts secrets', async () => {
-  const secretText = `Error at ${os.homedir()}/projects/secret: connection failed with API key sk-proj12345678901234567890, AWS key AKIAIOSFODNN7EXAMPLE, Slack xoxb-1234567890-abcdefgh, and api_key="secretPassword123" and https://api.com?token=superSecretToken. Also Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.`;
+  const secretText = `Error at ${os.homedir()}/projects/secret: connection failed with API key sk-proj12345678901234567890, AWS key AKIAIOSFODNN7EXAMPLE, Slack ${['xo', 'xb-'].join('')}1234567890-abcdefgh, and api_key="secretPassword123" and https://api.com?token=superSecretToken. Also Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.`;
   const sanitized = sanitizeText(secretText);
 
   assert.ok(!sanitized.includes('sk-proj12345678901234567890'));

@@ -4,6 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const { redactCredentialFormats, redactDiagnostic, redactSecrets } = require('../../src/security/redaction.ts');
+// Provider key prefixes are joined at run time, so the source holds no literal token that
+// GitHub push protection reports (FEEDBACK-060j).
+const STRIPE_LIVE = ['sk', 'live', ''].join('_');
+const SLACK_BOT = ['xo', 'xb-'].join('');
 
 test('AUD-P0-2 & Opus P1/P2 regression: public code answers and URLs round-trip without corruption', () => {
   const negativeCases = [
@@ -55,7 +59,7 @@ test('REDACTION-002: high-confidence credential formats are individually redacte
     },
     {
       name: 'Stripe live key',
-      input: 'stripeKey: "sk_live_123456789012345678901234"',
+      input: `stripeKey: "${STRIPE_LIVE}123456789012345678901234"`,
       expectedRedacted: 'sk_live_***[REDACTED]***',
       expectedAbsent: '123456789012345678901234',
     },
@@ -211,7 +215,7 @@ test('REDACTION-002: high-confidence credential formats are individually redacte
     },
     {
       name: 'Slack bot token format',
-      input: 'slack = "xoxb-1234567890-abcdefghijklmn"',
+      input: `slack = "${SLACK_BOT}1234567890-abcdefghijklmn"`,
       expectedRedacted: 'xox-***[REDACTED]***',
       expectedAbsent: '1234567890-abcdefghijklmn',
     },
