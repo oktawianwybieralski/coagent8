@@ -24,7 +24,9 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/setup.cjs','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
+  assert.deepEqual(pack.files.filter(f=>f.path.startsWith('dist/')).map(f=>f.path).sort(),['dist/THIRD_PARTY_NOTICES.txt','dist/index.cjs','dist/setup.cjs'],'Packed dist/ must contain only the bundles and third-party notices');
+  assert.ok(!pack.files.some(f=>f.path.endsWith('.map')),'Source maps must not ship in runtime package');
   for(const name of ['logo-light.svg','logo-light.png','logo32-light.png','logo64-light.png','logo256-light.png'])assert.ok(pack.files.some(f=>f.path===`assets/${name}`),name);
   assert.ok(!pack.files.some(f=>f.path.includes('windows-job.ps1')),'Retired wrapper must not ship in runtime package');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.af')),'Design source must not ship in runtime package');
@@ -50,7 +52,7 @@ function npmRun(args,cwd=root) {
     }
     const rebuild=spawnSync(process.execPath,[path.join(root,'scripts','build.cjs')],{cwd:root,encoding:'utf8',windowsHide:true});
     assert.equal(rebuild.status,0,`Rebuild failed: ${rebuild.stderr}`);
-    for(const name of ['dist/index.cjs','dist/index.cjs.map','dist/setup.cjs','dist/setup.cjs.map','dist/THIRD_PARTY_NOTICES.txt']) {
+    for(const name of ['dist/index.cjs','dist/setup.cjs','dist/THIRD_PARTY_NOTICES.txt']) {
       assert.ok((await fsp.readFile(path.join(pkg,name))).equals(await fsp.readFile(path.join(root,name))),`Packed ${name} matches a fresh build of the packed source`);
     }
     // License notices ship beside the bundle; the bundle itself carries no license comments.
