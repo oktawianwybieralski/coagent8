@@ -812,7 +812,7 @@ synthetic test inputs) and no unredacted home paths. The public-content updates
 below ship with `0.6.1`, grouped into PRs by PATCH-061. Squashed history stays
 as published.
 
-- [ ] **PUBLIC-001a - synthetic account data in Claude recordings.**
+- [ ] **PUBLIC-001a - synthetic account data in Claude, Codex and Antigravity fixtures.**
   `tests/fixtures/claude-cli/recordings/usage-subscription.json` and the
   `.jsonl` recordings contain recorded account usage values (limit percentages,
   time zone, request and session counts, context and subagent shares, and
@@ -820,15 +820,18 @@ as published.
   synthetic ones that keep the exact recorded format (line anchors, middle-dot
   separators, the `11:49pm`-style reset times the parser reads) and update the
   expectations in `tests/backends/claude/usage.test.js` and users of
-  `tests/fixtures/claude-cli/claude.cjs`. Check the Codex fixture (`planType`,
-  credits) the same way. Check: affected backend tests green, no recorded value
-  comes from a real account.
-  Execute as two subtasks in `test/synthetic-account-fixtures`:
+  `tests/fixtures/claude-cli/claude.cjs`. Check the Codex (`codex.cjs`) and
+  Antigravity (`agy.cjs`) fixtures and quota tests the same way. Check: affected
+  backend and doctor tests green, no recorded value comes from a real account.
+  Execute as three subtasks in `test/synthetic-account-fixtures`:
   PUBLIC-001a1 replaces Claude account values and updates
-  affected Claude fixture expectations; PUBLIC-001a2 audits Codex plan/credit
-  fixtures and replaces any real account values with synthetic data. Each
-  records the inspected files and runs the affected backend tests; an audit
-  finding no replacement needed is evidence, not a reason to fabricate changes.
+  affected Claude fixture expectations; PUBLIC-001a2 audits Codex rate-limit/plan/credit
+  fixtures and replaces any real account values with synthetic data; PUBLIC-001a3
+  replaces recorded Antigravity `/usage` fractions and reset timestamps in
+  `tests/fixtures/agy-cli/agy.cjs`, `tests/backends/agy/adapter.test.js` and
+  `tests/diagnostics/doctor.test.js`. Each records the inspected files and runs
+  the affected tests; an audit finding no replacement needed is evidence, not a
+  reason to fabricate changes.
 - [ ] **PUBLIC-001b - HANDOFF written for public readers.** With DOCS-002b,
   keep HANDOFF tracked as required by the active-document contract, reduce it in
   place to the current state and evidence, and preserve the rights inventory and
@@ -1002,7 +1005,7 @@ constraints remain in force.
 | Group | Branch / one PR | Ordered subtasks | Dependency / acceptance |
 | --- | --- | --- | --- |
 | 1 (done on branch) | `docs/roadmap-current-state` | DOCS-002a + PUBLIC-001c: inventory retained decisions/anchors; remove obsolete history; rephrase remaining work; synchronize PATCH-061 and completed MIT status | No technical dependency; establish the current plan before implementation. |
-| 2 | `test/synthetic-account-fixtures` | PUBLIC-001a1: synthetic Claude account values and expectations; PUBLIC-001a2: audit/synthesize Codex plan/credit fixtures | No technical dependency; affected backend tests and inspected-file inventory, or documented clean Codex audit. |
+| 2 | `test/synthetic-account-fixtures` | PUBLIC-001a1: synthetic Claude account values and expectations; PUBLIC-001a2: audit/synthesize Codex rate-limit/plan/credit fixtures; PUBLIC-001a3: synthetic Antigravity usage fixture and test values | No technical dependency; affected backend and doctor tests plus inspected-file inventory. |
 | 3 | `build/package-distribution` | SUPPLY-001a: omit source maps with meaningful bundle-separation checks; SUPPLY-001b: move bundled dependencies to development dependencies | b after a within this branch; fresh packages, isolated consumer tree, MIT metadata and unchanged dependency notices verified. |
 | 4 | `fix/session-feedback` | FEEDBACK-060f1: paging parameters; f2: sequence gaps; f3: server-owner PID; f4: handle on unchanged review | f2 after f1; f4 last with no-turn and workspace-isolation regressions. Preserve stored sequence/cursor/ownership contracts. |
 | 5 | `fix/issue-report-format` | FEEDBACK-060g: exact Codex version; nested CLI Markdown; accurate attachment wording | No technical dependency; issue regressions preserve redaction and URL bounds. |
