@@ -110,8 +110,8 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
           id, installed: true, version: `${id} 1.0.0`, executionSupported: true, authStatus: 'authenticated',
           config: { defaultModel: `${id}-model` }, availableModels: Array.from({ length: 14 }, (_, i) => `${id}-model-${i}`),
           capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
-          ...(id === 'agy' ? { quota: { measured: true, window: 'weekly', usedPercent: 19, headroomPercent: 81, resetsAt: '2026-10-12T17:31:49Z',
-            buckets: [{ id: 'gemini-weekly', name: 'Weekly', window: 'weekly', remainingFraction: 0.81, resetTime: '2026-10-12T17:31:49Z' }] } } : {}),
+          ...(id === 'agy' ? { quota: { measured: true, window: 'weekly', usedPercent: 25, headroomPercent: 75, resetsAt: '2026-10-12T18:00:00Z',
+            buckets: [{ id: 'gemini-weekly', name: 'Weekly', window: 'weekly', remainingFraction: 0.75, resetTime: '2026-10-12T18:00:00Z' }] } } : {}),
         }),
       };
     }
@@ -126,7 +126,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
     // The fixture models have no price, so the policy asks before each turn and doctor says so.
     assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
-    assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 81% left/);
+    assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 75% left/);
     assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, 'within the bound agy shows inline');
     // Summary and full report state the same rows (AX-001).
     assert.deepEqual(report.selection.map(row => [row.backend, row.model, row.price.outputUsdPerMTok, row.price.match, row.approval.required, row.defaultSource]), [

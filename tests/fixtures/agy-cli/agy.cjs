@@ -67,6 +67,7 @@ function run() {
       console.log(JSON.stringify({ status: 'ERROR', error: 'Authentication required' }));
       return;
     }
+    // Shape of agy 1.3.1 `/usage` (2026-10-05) with synthetic usage and reset values.
     console.log(JSON.stringify({
       status: 'SUCCESS',
       command: {
@@ -80,15 +81,15 @@ function run() {
                   id: 'gemini-weekly',
                   name: 'Weekly Limit Remaining',
                   window: 'weekly',
-                  remaining_fraction: 0.52,
-                  reset_time: '2026-10-05T17:31:49Z'
+                  remaining_fraction: 0.6,
+                  reset_time: '2026-10-05T18:00:00Z'
                 },
                 {
                   id: 'gemini-5h',
                   name: 'Five Hour Limit Remaining',
                   window: '5h',
-                  remaining_fraction: 0.75,
-                  reset_time: '2026-10-05T17:35:23Z'
+                  remaining_fraction: 0.8,
+                  reset_time: '2026-10-05T16:00:00Z'
                 }
               ]
             }
