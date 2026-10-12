@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { runCommand } from '../../execution/process.js';
+import { DEFAULT_TIMEOUT_MS, runCommand } from '../../execution/process.js';
 import { summarizeQuotaWindows } from '../quota.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
@@ -23,7 +23,7 @@ import {
   type TerminalExecutionResult,
   type CliAdapter,
 } from '../types.js';
-import { errorCodeOf, ToolError, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
+import { errorCodeOf, ToolError, type AdapterEvent, type ExecutionError, type MonotonicClock } from '../../contracts/index.js';
 
 export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';
@@ -39,9 +39,31 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export const SANDBOX_DENIAL_RECOVERY_PROMPT =
   'Your sandbox denied a shell command and your previous turn ended without an answer. Answer the previous request now, in the format it asks for. Run no shell command: read files only with your file tools, or answer from what you already know and say what you could not check.';
 
-function prefixRetryId(id: string): string {
-  const prefixed = `retry-${id}`;
-  return Buffer.byteLength(prefixed, 'utf8') <= 256 ? prefixed : prefixed.slice(0, 256);
+/**
+ * Creates a deterministic per-retry event identifier mapper that stays within the 256 UTF-8
+ * byte contract and never collapses distinct long or multibyte identifiers (#20).
+ */
+export function createRetryIdMapper(initialIds?: Iterable<string>): (id: string) => string {
+  const mapped = new Map<string, string>();
+  const used = new Set<string>(initialIds);
+  let nextOverflowSeq = 1;
+  return (rawId: string): string => {
+    const existing = mapped.get(rawId);
+    if (existing !== undefined) return existing;
+    const candidate = `retry-${rawId}`;
+    if (Buffer.byteLength(candidate, 'utf8') <= 256 && !used.has(candidate)) {
+      mapped.set(rawId, candidate);
+      used.add(candidate);
+      return candidate;
+    }
+    let fallback = `retry-id-${nextOverflowSeq++}`;
+    while (used.has(fallback)) {
+      fallback = `retry-id-${nextOverflowSeq++}`;
+    }
+    mapped.set(rawId, fallback);
+    used.add(fallback);
+    return fallback;
+  };
 }
 
 function mergeUsage(
@@ -263,7 +285,10 @@ function failed(error: ExecutionError): TerminalExecutionResult {
  * same native conversation at most once within the remaining `timeoutMs` and `abortSignal`
  * to ask for an answer without shell commands (#20).
  */
-export async function execute(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
+export async function execute(
+  prompt: string,
+  options: ExecutionOptions & { clock?: MonotonicClock } = {}
+): Promise<TerminalExecutionResult> {
   const model = options.model;
   if (model === undefined) {
     return failed({ code: 'INPUT_LIMIT', message: 'No agy model selected; the controller passes the configured model or the first one agy lists.', retryable: false });
@@ -316,7 +341,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const runTurn = async (
     turnPrompt: string,
     conversationId: string | null | undefined,
-    timeoutMs: number | undefined,
+    timeoutMs: number,
     onEvent: ((event: AdapterEvent) => void) | undefined
   ) => {
     const collector = createGeminiCollector(onEvent);
@@ -341,8 +366,21 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     return { processResult, snapshot: collector.snapshot() };
   };
 
-  const startedAtMs = performance.now();
-  const first = await runTurn(prompt, native, options.timeoutMs, options.onEvent);
+  const clock = options.clock ?? (() => performance.now());
+  const effectiveTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const startedAtMs = clock();
+  const initialEventIds = new Set<string>();
+  const initialOnEvent = options.onEvent
+    ? (event: AdapterEvent) => {
+        if (event.type === 'assistant_delta' || event.type === 'assistant_message') {
+          initialEventIds.add(event.messageId);
+        } else if (event.type === 'tool_started' || event.type === 'tool_finished') {
+          initialEventIds.add(event.toolId);
+        }
+        options.onEvent?.(event);
+      }
+    : undefined;
+  const first = await runTurn(prompt, native, effectiveTimeoutMs, initialOnEvent);
   let processResult = first.processResult;
   let s = first.snapshot;
   let retriedAfterDenial = false;
@@ -359,17 +397,18 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     !options.abortSignal?.aborted;
 
   if (canRetryEmptyDenial) {
-    const elapsedMs = Math.max(0, Math.round(performance.now() - startedAtMs));
-    const remainingTimeoutMs = options.timeoutMs !== undefined ? options.timeoutMs - elapsedMs : undefined;
-    if (remainingTimeoutMs === undefined || remainingTimeoutMs > 0) {
+    const elapsedMs = Math.max(0, Math.round(clock() - startedAtMs));
+    const remainingTimeoutMs = effectiveTimeoutMs - elapsedMs;
+    if (remainingTimeoutMs > 0) {
       retriedAfterDenial = true;
       const retrySessionId = s.nativeSessionId!;
+      const mapRetryId = createRetryIdMapper(initialEventIds);
       const retryOnEvent = options.onEvent
         ? (event: AdapterEvent) => {
             if ((event.type === 'assistant_delta' || event.type === 'assistant_message') && event.messageId !== 'final') {
-              options.onEvent?.({ ...event, messageId: prefixRetryId(event.messageId) });
+              options.onEvent?.({ ...event, messageId: mapRetryId(event.messageId) });
             } else if (event.type === 'tool_started' || event.type === 'tool_finished') {
-              options.onEvent?.({ ...event, toolId: prefixRetryId(event.toolId) });
+              options.onEvent?.({ ...event, toolId: mapRetryId(event.toolId) });
             } else {
               options.onEvent?.(event);
             }

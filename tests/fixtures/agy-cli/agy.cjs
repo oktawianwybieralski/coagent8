@@ -126,6 +126,10 @@ function run() {
   if (mode.startsWith('sandbox-denied')) {
     const isRecoveryTurn = args.includes('--conversation') && prompt.includes('Your sandbox denied a shell command');
     if (mode === 'sandbox-denied-recover' && isRecoveryTurn) {
+      if (process.env.coagent8_FIXTURE_RETRY_HANG === '1') {
+        setInterval(() => {}, 1000);
+        return;
+      }
       const recoveredText = process.env.coagent8_FIXTURE_RECOVER_RESPONSE || 'Recovered answer from read_file without shell commands.';
       send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' } });
       send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' } });
