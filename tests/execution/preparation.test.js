@@ -68,6 +68,20 @@ test('validateTaskContext: rejects pre-aborted caller signals', () => {
   );
 });
 
+test('a closed session is refused with its state and readable history; another workspace learns nothing (FEEDBACK-060e)', () => {
+  const cwd = tempDir, foreign = path.join(tempDir, 'foreign-closed');
+  fs.mkdirSync(foreign, { recursive: true });
+  for (const [handle, workspace] of [['syn_sess_closed_here', cwd], ['syn_sess_closed_foreign', foreign]]) {
+    createMockSession(handle, workspace);
+    const file = path.join(tempDir, 'sessions', `${handle}.json`);
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), state: 'closed', threadId: null }));
+  }
+  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_closed_here' }, cwd),
+    error => error.code === 'SESSION_INVALID' && /Session is closed/.test(error.message) && /history/.test(error.message));
+  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_closed_foreign' }, cwd),
+    error => error.code === 'SESSION_INVALID' && error.message === 'Session is expired, invalidated, closed or belongs to another workspace.');
+});
+
 test('validateTaskContext: validates session existence, workspace binding, and provider lock', () => {
   const cwd = tempDir;
   const foreignWorkspace = path.join(tempDir, 'foreign');

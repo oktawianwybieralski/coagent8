@@ -25,6 +25,7 @@ const {
   acquireSessionTurn,
   releaseSessionTurn,
   getSessionFilePath,
+  cancelSession,
 } = require('../../src/sessions/session.ts');
 const { withFileLock } = require('../../src/storage/lock.ts');
 const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
@@ -616,4 +617,12 @@ test('EXEC-001-T09c: acquireSessionTurn rejects with TIMEOUT when real budget re
   const s = getSession(handle);
   assert.equal(s.turnToken, null);
   assert.equal(s.state, 'idle');
+});
+
+test('cancel of a closed session says it is closed, not that no turn runs (FEEDBACK-060e)', async () => {
+  const session = createSession('codex', path.join(tempDir, 'closed-cancel'));
+  assert.equal(await closeSession(session.sessionHandle), true);
+  const outcome = await cancelSession(session.sessionHandle);
+  assert.equal(outcome.cancelled, false);
+  assert.match(outcome.message, /is closed; nothing to cancel/);
 });
