@@ -465,12 +465,13 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     const finishedEvents = historyRes.structuredContent.events.filter(e => e.type === 'turn_finished');
     assert.deepEqual(finishedEvents.map(e => e.status), ['cancelled', 'completed']);
   } finally {
+    const settleTurn1 = turn1Promise?.catch(() => {});
     await terminateAllProcesses();
+    await settleTurn1;
     await client1.close().catch(() => {});
     await server1.close().catch(() => {});
     await client2.close().catch(() => {});
     await server2.close().catch(() => {});
-    await turn1Promise?.catch(() => {});
     for (const key of Object.keys(process.env)) {
       if (!(key in previousEnv)) delete process.env[key];
     }
