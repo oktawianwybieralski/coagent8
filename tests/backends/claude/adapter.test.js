@@ -418,3 +418,83 @@ test('EXEC-001-T08d: probe, listModels, observeModel, and inspectQuota abort det
     delete process.env.CLAUDE_FIXTURE_MODE;
   }
 }));
+
+test('FEEDBACK-060h: deterministic running-turn handshake confirms live Claude turn before cancellation, releases process resources, and resumes on a subsequent turn', () => withFixture(async ({ dir, captured }) => {
+  const { activeProcesses, terminateAllProcesses } = require('../../../src/execution/process.ts');
+  const readyFile = path.join(dir, 'ready.json');
+  process.env.CLAUDE_FIXTURE_SCENARIO = 'interruptible';
+  process.env.CLAUDE_FIXTURE_READY = readyFile;
+
+  const controller = new AbortController();
+  let turn1Settled = false;
+  try {
+    const turn1Promise = executeClaude('Analyze while running', {
+      cwd: dir,
+      model: MODEL,
+      abortSignal: controller.signal,
+      timeoutMs: 30000,
+    }).finally(() => {
+      turn1Settled = true;
+    });
+
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(readyFile)) {
+      if (turn1Settled) {
+        const early = await turn1Promise;
+        assert.fail(`Turn 1 settled before ready handshake: ${JSON.stringify(early)}`);
+      }
+      if (Date.now() >= deadline) {
+        assert.fail('Timed out waiting for CLAUDE_FIXTURE_READY handshake');
+      }
+      await new Promise(r => setTimeout(r, 15));
+    }
+
+    const ready = JSON.parse(fs.readFileSync(readyFile, 'utf8'));
+    assert.equal(ready.state, 'running');
+    assert.equal(ready.scenario, 'interruptible');
+    assert.match(ready.sessionId, UUID);
+    assert.equal(turn1Settled, false, 'natural completion must not occur before cancellation');
+    assert.ok([...activeProcesses].some(proc => proc.pid === ready.pid), 'live Claude process must be tracked in activeProcesses');
+
+    controller.abort();
+    const cancelled = await turn1Promise;
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(cancelled.isError, true);
+    assert.equal(cancelled.error?.code, 'ABORTED');
+    assert.equal(cancelled.exitCode, 1);
+    assert.equal(cancelled.nativeSessionId, ready.sessionId);
+    assert.equal(cancelled.continuationAvailable, true, 'initialized turn with partial assistant output remains resumable');
+    assert.equal(activeProcesses.size, 0, 'all owned process handles released after cancellation');
+
+    const turn1Capture = captured();
+    assert.ok(turn1Capture, 'turn 1 capture recorded');
+    assert.deepEqual(turn1Capture.records.map(r => r.type), ['user', 'control_request']);
+    assert.equal(turn1Capture.records[1].request.subtype, 'interrupt');
+
+    fs.rmSync(readyFile, { force: true });
+    delete process.env.CLAUDE_FIXTURE_READY;
+    delete process.env.CLAUDE_FIXTURE_SCENARIO;
+
+    const resumed = await executeClaude('Follow up on the same session', {
+      cwd: dir,
+      model: MODEL,
+      nativeSessionId: cancelled.nativeSessionId,
+    });
+    assert.equal(resumed.status, 'completed');
+    assert.equal(resumed.isError, false);
+    assert.equal(resumed.nativeSessionId, ready.sessionId);
+    assert.match(resumed.output, /OK/);
+    assert.equal(activeProcesses.size, 0);
+
+    const turn2Capture = captured();
+    assert.ok(turn2Capture, 'turn 2 capture recorded');
+    assert.equal(turn2Capture.argv[turn2Capture.argv.indexOf('--resume') + 1], ready.sessionId);
+    assert.ok(!turn2Capture.argv.includes('--session-id'));
+  } finally {
+    controller.abort();
+    delete process.env.CLAUDE_FIXTURE_READY;
+    delete process.env.CLAUDE_FIXTURE_SCENARIO;
+    await terminateAllProcesses();
+  }
+}));
+

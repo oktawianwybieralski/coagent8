@@ -85,6 +85,11 @@ function answer() {
   if (scenario === 'interruptible' || scenario === 'ignore-interrupt') {
     // The turn keeps running until an interrupt arrives (2.1.289 output shapes, recorded live).
     interruptible = setInterval(() => {}, 1000);
+    if (env.CLAUDE_FIXTURE_READY) {
+      const tmp = `${env.CLAUDE_FIXTURE_READY}.tmp.${process.pid}`;
+      fs.writeFileSync(tmp, JSON.stringify({ pid: process.pid, sessionId, scenario, state: 'running' }));
+      fs.renameSync(tmp, env.CLAUDE_FIXTURE_READY);
+    }
   }
 }
 // `initialize` (shape of Claude Code 2.1.294, recorded 2026-10-08): the names the CLI accepts,
