@@ -1,13 +1,14 @@
-# git-cliff configuration for GitHub release notes (CHANGELOG-001), modeled on the
-# PrestaShop release pages: entries grouped by area (commit scope), then by type;
-# each entry is "#PR: description (by @author)"; contributors and a compare link
-# follow. Run `npm run release-notes -- --tag vX` in the release procedure and pass
-# the output to `gh release create --notes-file`. Known issues and security notes
-# are added by hand (Git governance section 6).
+# git-cliff configuration for GitHub release notes (CHANGELOG-001): a collapsed
+# "Full Changelog" list by area (commit scope), then type, then
+# "#PR: description (by @author)", like CHANGELOG.md;
+# contributors and a compare link follow. GitHub links "#N" and "@user" in release
+# notes itself. Run `npm run release-notes -- --tag vX` in the release procedure and
+# pass the output to `gh release create --notes-file`. Known issues and security
+# notes are added by hand (Git governance section 6).
 #
 # With GITHUB_TOKEN set, authors and PR numbers come from the GitHub API. Without
 # it, the PR number is read from the "(#N)" suffix of the squash-merge subject and
-# the author is the Git author name.
+# the author from GitHub's no-reply author address, else the Git author name.
 
 [remote.github]
 owner = "oktawianwybieralski"
@@ -17,43 +18,46 @@ repo = "coagent8"
 header = ""
 body = """
 {% set repo = "https://github.com/oktawianwybieralski/coagent8" -%}
-{% set breaking = commits | filter(attribute="breaking", value=true) -%}
-{% if breaking | length > 0 -%}
-## Breaking changes
+# Full Changelog
 
-{% for commit in breaking -%}
-{{ self::entry(commit=commit, repo=repo) }}
-{% endfor %}
-{% endif -%}
-{# A breaking commit is listed under Breaking changes only. #}
-{% set regular = commits | filter(attribute="breaking", value=false) -%}
-{% if regular | length > 0 -%}
-## Changes
-{% endif -%}
-{% for scope, area in regular | group_by(attribute="scope") %}
-### {{ scope | upper_first }}
-{% for group, items in area | group_by(attribute="group") %}
-#### {{ group | striptags | trim }}
+<details><summary>Click here to see</summary>
+<p>
+{# A breaking commit is listed under "Breaking change" of its area only, not
+   again under its type. #}
+{% for scope, area in commits | group_by(attribute="scope") %}
+- {{ scope | upper_first }}:
+{%- set breaking = area | filter(attribute="breaking", value=true) %}
+{%- if breaking | length > 0 %}
+  - Breaking change:
+{%- for commit in breaking %}
+    {{ self::entry(commit=commit) }}
+{%- endfor %}
+{%- endif %}
+{%- for group, items in area | filter(attribute="breaking", value=false) | group_by(attribute="group") %}
+  - {{ group | striptags | trim }}:
+{%- for commit in items %}
+    {{ self::entry(commit=commit) }}
+{%- endfor %}
+{%- endfor %}
+{%- endfor %}
 
-{% for commit in items -%}
-{{ self::entry(commit=commit, repo=repo) }}
-{% endfor -%}
-{% endfor -%}
-{% endfor %}
+</p>
+</details>
+
 {% if github.contributors | length > 0 -%}
 ## Contributors
 
 {% for contributor in github.contributors | filter(attribute="username") -%}
-- [@{{ contributor.username }}](https://github.com/{{ contributor.username }}){% if contributor.is_first_time %} made their first contribution in [#{{ contributor.pr_number }}]({{ repo }}/pull/{{ contributor.pr_number }}){% endif %}
+- @{{ contributor.username }}{% if contributor.is_first_time %} made their first contribution in #{{ contributor.pr_number }}{% endif %}
 {% endfor %}
 {% endif -%}
 {% if previous.version -%}
-**Full Changelog**: [{{ previous.version }}...{{ version }}]({{ repo }}/compare/{{ previous.version }}...{{ version }})
+**Compare**: [{{ previous.version }}...{{ version }}]({{ repo }}/compare/{{ previous.version }}...{{ version }})
 {% else -%}
-**Full Changelog**: [{{ version }}]({{ repo }}/commits/{{ version }})
+**Compare**: [{{ version }}]({{ repo }}/commits/{{ version }})
 {% endif -%}
 
-{% macro entry(commit, repo) -%}
+{% macro entry(commit) -%}
 {% if commit.remote.pr_number -%}
 {% set number = commit.remote.pr_number -%}
 {% elif commit.message is containing(" (#") -%}
@@ -62,10 +66,11 @@ body = """
 {% set number = "" -%}
 {% endif -%}
 {% set text = commit.message | split(pat=" (#") | first | upper_first -%}
-- {% if number %}[#{{ number }}]({{ repo }}/pull/{{ number }}){% else %}[`{{ commit.id | truncate(length=7, end="") }}`]({{ repo }}/commit/{{ commit.id }}){% endif %}: {{ text }} (by {% if commit.remote.username %}[@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}){% else %}{{ commit.author.name }}{% endif %})
+{% set email = commit.author.email | default(value="") -%}
+- {% if number %}#{{ number }}{% elif commit.id %}{{ commit.id | truncate(length=7, end="") }}{% else %}`pending`{% endif %}: {{ text }} (by {% if commit.remote.username %}@{{ commit.remote.username }}{% elif email is ending_with("@users.noreply.github.com") %}@{{ email | split(pat="@") | first | split(pat="+") | last }}{% else %}{{ commit.author.name }}{% endif %})
 {%- endmacro entry %}
 """
-trim = true
+trim = false
 postprocessors = [
   { pattern = '\n{3,}', replace = "\n\n" },
 ]
@@ -78,12 +83,16 @@ split_commits = false
 protect_breaking_commits = true
 filter_commits = false
 tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+.*"
-sort_commits = "oldest"
-# Same type mapping as cliff.toml; commits without a scope are listed under "General".
+# Newest first within each type, as merged.
+sort_commits = "newest"
+# Same type mapping as cliff.toml; commits without a scope are listed under
+# "General". A breaking commit of an omitted type is kept
+# (protect_breaking_commits) and listed under "Breaking change" of its area.
 commit_parsers = [
-  { message = "^feat", group = "<!-- 0 -->New features", default_scope = "general" },
-  { message = "^(perf|refactor)", group = "<!-- 1 -->Improvements", default_scope = "general" },
-  { message = "^revert", group = "<!-- 2 -->Removals", default_scope = "general" },
-  { message = "^fix", group = "<!-- 3 -->Bug fixes", default_scope = "general" },
-  { message = "^(docs|chore|test|ci|build|style)", skip = true },
+  { message = "^feat", group = "<!-- 0 -->New feature", default_scope = "general" },
+  { message = "^perf", group = "<!-- 1 -->Improvement", default_scope = "general" },
+  { message = "^fix", group = "<!-- 2 -->Bug fix", default_scope = "general" },
+  { message = "^refactor", group = "<!-- 3 -->Refactoring", default_scope = "general" },
+  { message = "^revert", group = "<!-- 4 -->Removal", default_scope = "general" },
+  { message = "^(docs|chore|test|ci|build|style)", skip = true, default_scope = "general" },
 ]
