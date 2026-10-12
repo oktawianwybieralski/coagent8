@@ -4,9 +4,38 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-11. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-12. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
+
+## 0.6.0 release evidence
+
+Release of 0.6.0 (REPO-002 owner steps 1-8), checked again on 2026-10-12 on
+Windows 11, Node v26.10.0, from downloads of the published release:
+
+- PASS: `v0.6.0` is an annotated tag on `9b78a0a` (`chore(release): v0.6.0 (#3)`,
+  the squash commit on `develop`); `git cat-file -t v0.6.0`, `git rev-parse v0.6.0^{commit}`.
+- PASS: `gh release download v0.6.0`; `sha256sum -c SHA256SUMS` OK for
+  `coagent8-0.6.0.tgz` (`4bf66c25fa1facf8b23320f3501475361ad7f69b52e15a3e7f99e7219f19500c`)
+  and `coagent8-mcp-0.6.0.vsix`
+  (`a2bb079f3b8cfa6bf60b3d6267007a0adc2ed50772b346fbe82eb92e072e14d7`). The
+  owner's rehearsal (step 5b) reported the same tarball hash; its repository is
+  deleted, so that comparison was not repeated.
+- PASS: `gh attestation verify <file> -R oktawianwybieralski/coagent8` for both
+  files: SLSA provenance v1 from `release.yml` at `refs/tags/v0.6.0`, commit `9b78a0a`.
+- PASS: `npm view coagent8`: versions `0.6.0` only, dist-tags `latest` and `next`
+  = `0.6.0`; `dist.integrity` (sha512) and `dist.shasum` equal those computed from
+  the release tarball. `1.0.0-beta.1` is unpublished, not deprecated.
+- PASS: the VS Code Marketplace VSIX `okidev.coagent8-mcp` 0.6.0 is byte-identical
+  to the release VSIX (same SHA-256); the owner installed it from the Marketplace.
+- PASS: `npx -y coagent8@next` started by an MCP SDK stdio client: server
+  `coagent8` 0.6.0, six tools (consult, review, doctor, session, cancel, issue),
+  `doctor` without error, `consult` on codex `gpt-6-luna` answered in 3.8 s.
+- NOTE: the GitHub Release `v0.6.0` (published 2026-10-11T22:57:25Z) is not
+  marked as a pre-release, while rule 02 keeps releases below 1.0.0 as
+  pre-releases; the owner decides whether to change it.
+- NOTE: the rehearsal repository `coagent8-release-test` no longer exists.
+- Open: REPO-002 owner step 9 (npm trusted publishing).
 
 ## FEEDBACK-060 native acceptance of 0.6.0
 
