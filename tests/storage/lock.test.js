@@ -218,6 +218,28 @@ test('a lock timeout is a typed LockTimeoutError, so callers can tell contention
   }
 });
 
+test('a wait the budget bounds ends as budget expiry even when the budget clock still shows time left', async () => {
+  // The wait is timed by the wall clock, the budget by its own monotonic clock. Here that clock
+  // stands 30 ms before the execution deadline and does not move, as when it lags the wall clock
+  // by a fraction of a millisecond on a busy runner: the wait must not end as plain contention.
+  const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
+  let now = 0;
+  const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 1000, clock: () => now });
+  now = 8970;
+  const resource = path.join(tempDir, 'budget-bound-wait');
+  fs.writeFileSync(`${resource}.lease`, JSON.stringify({ token: 'live-owner', pid: process.pid, createdAt: Date.now() }));
+  try {
+    assert.equal(budget.remainingExecutionMs(), 30);
+    await assert.rejects(withFileLock(resource, async () => {}, { timeoutMs: 5000, budget }),
+      err => err instanceof ToolError && err.code === 'TIMEOUT');
+    await assert.rejects(withFileLock(resource, async () => {}, { timeoutMs: 20, budget }),
+      err => err instanceof LockTimeoutError, 'a wait its own shorter timeout bounds is still contention');
+  } finally {
+    budget.dispose();
+    fs.rmSync(`${resource}.lease`, { force: true });
+  }
+});
+
 test('aborting the middle of three in-process waiters does not strand the third waiter and preserves FIFO progress (EXEC-001-T09b)', async () => {
   const resource = path.join(tempDir, 'lock-queue-abort-three-waiters');
   const executionOrder = [];

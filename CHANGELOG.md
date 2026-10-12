@@ -11,6 +11,9 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 ## [Unreleased]
 
+### Fixed
+- [`af71d8c`](https://github.com/oktawianwybieralski/coagent8/commit/af71d8c2c9bd3f78d5cc246cac4480607f5a5911) **locks:** Report a budget-bounded lock wait as budget expiry
+
 ## [0.6.0] - 2026-10-11 ([`v0.6.0`](https://github.com/oktawianwybieralski/coagent8/tree/v0.6.0))
 
 Entries link the commits of the 0.6.0 pull request (prepared as 1.0.0-beta.2),
