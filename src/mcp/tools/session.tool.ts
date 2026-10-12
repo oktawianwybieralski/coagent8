@@ -10,15 +10,15 @@ import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description: 'List sessions, read a session history or close a session.',
+  description: 'List, page history or close sessions.',
   inputSchema: {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['list', 'history', 'close'] },
-      session_handle: { type: 'string', description: 'Required for history and close.' },
-      cursor: { type: 'string' },
-      limit: { type: 'integer', minimum: 1, maximum: 100 },
-      delete_history: { type: 'boolean', description: 'close: also delete the history.' },
+      session_handle: { type: 'string', description: 'history/close.' },
+      cursor: { type: 'string', description: 'history only.' },
+      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history only.' },
+      delete_history: { type: 'boolean', description: 'close: delete history.' },
       ...WORKSPACE_PARAMETER,
     },
     required: ['action'],
@@ -27,7 +27,7 @@ export const sessionToolDefinition = {
 
 export const cancelToolDefinition = {
   name: CANONICAL_TOOL_NAMES.CANCEL,
-  description: 'Cancel the running turn of a session.',
+  description: 'Cancel a running turn.',
   inputSchema: {
     type: 'object',
     properties: {
