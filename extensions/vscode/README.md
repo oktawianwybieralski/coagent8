@@ -82,9 +82,8 @@ A review's verdict is derived by CoAgent8 from the other agent's findings: an
 incomplete review, a serious finding or a failed check makes it `BLOCKED`. It
 is still one agent's judgement, not a test run. Repeating a review of the same
 unchanged snapshot with the same scope, backend and model starts no new turn
-and returns the earlier verdict, retaining the review's or passed
-`session_handle` for the workspace; a workspace change during a review is
-reported only when the snapshot or its completeness changed.
+and returns the earlier verdict; a workspace change during a review is reported
+only when the snapshot or its completeness changed.
 
 ## Tools
 

@@ -203,8 +203,7 @@ supports stdio MCP in Agent mode through the same definition, following
   check makes it `BLOCKED (reason)`; a workspace change during the turn is
   reported only when the snapshot or its completeness changed.
 - A review of unchanged code with the same scope, backend and model starts no
-  new turn and returns the earlier verdict, retaining the review's or passed
-  `session_handle` for the workspace.
+  new turn and returns the earlier verdict.
 - Staged, commit and range scopes are reviewed only when their files match the
   current workspace; otherwise review the uncommitted changes.
 
@@ -214,9 +213,9 @@ supports stdio MCP in Agent mode through the same definition, following
   `session_handle` keeps the session's model and effort.
 - `session` with `action: "history"` pages events with `cursor` and `limit` (up
   to 100 events and 240 KiB per page). Each event's `sequence` is its position
-  in the stored log, so gaps after delta consolidation and lifecycle filtering
-  do not mean lost events, and `activePid` identifies the CoAgent8 server
-  process owning the active turn. MCP resources `coagent8://sessions` and
+  in the stored log, so gaps where streaming deltas were combined do not mean
+  lost events, and `activePid` identifies the CoAgent8 server process owning the
+  active turn. MCP resources `coagent8://sessions` and
   `coagent8://sessions/{id}/history` show the connection's workspace only.
 - A session handle expires after two hours without use; a closed session reports
   that it is closed on a follow-up or `cancel`, while its history stays readable
