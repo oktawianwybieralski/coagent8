@@ -29,6 +29,9 @@ test('package.json has zero omniagent entry in bin and clean coagent8 release me
   assert.equal(typeof pkg.bin, 'object');
   assert.equal(pkg.bin.omniagent, undefined, 'omniagent entry must be completely purged from bin');
   assert.equal(pkg.bin.coagent8, './dist/index.cjs', 'coagent8 binary must point to dist/index.cjs');
+  assert.equal(pkg.dependencies, undefined, 'bundled packages belong in devDependencies, not dependencies');
+  assert.equal(pkg.peerDependencies, undefined, 'package.json must declare no peerDependencies');
+  assert.equal(pkg.optionalDependencies, undefined, 'package.json must declare no optionalDependencies');
 });
 
 test('package-lock.json has zero omniagent entry in bin', () => {
@@ -36,9 +39,11 @@ test('package-lock.json has zero omniagent entry in bin', () => {
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
 
   const rootPkg = lock.packages && lock.packages[''];
-  if (rootPkg && rootPkg.bin) {
+  assert.ok(rootPkg, 'package-lock.json must contain the root package entry');
+  if (rootPkg.bin) {
     assert.equal(rootPkg.bin.omniagent, undefined, 'omniagent entry must be purged from package-lock.json bin');
   }
+  assert.equal(rootPkg.dependencies, undefined, 'package-lock.json root entry must declare no runtime dependencies');
 });
 
 /** A gzipped ustar archive; `pax` entries carry their path in a PAX header, as npm writes long names. */
