@@ -372,7 +372,7 @@ test('the first activation checks the CLIs once and shows one notice; later acti
 test('an activation with an outdated CLI chat registration offers to update the CLI chats once per runtime', async () => {
   const declined = await runExtension({ activationOnly: true, registrations: { codex: 'owned', claude: 'outdated', agy: 'outdated' }, awaitState: true, awaitWarnings: 1 });
   assert.equal(declined.warnings.length, 1);
-  assert.match(declined.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI, Antigravity CLI still start the previous version\./);
+  assert.match(declined.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI, Antigravity CLI still start the previous version\. Update them now; open chats keep the old runtime until restarted\./);
   assert.deepEqual(declined.events, ['registrations'], 'the check reads files and starts no CLI');
   assert.match(declined.state.updateOffered, /#[0-9a-f]{64}$/);
   const updated = await runExtension({ activationOnly: true, registrations: { claude: 'outdated' }, awaitWarnings: 1, awaitNotifications: 1, action: 'Update CLI Chats' });
@@ -383,7 +383,7 @@ test('an activation with an outdated CLI chat registration offers to update the 
   assert.deepEqual(again.events, [], 'and reads nothing again');
   const roots = await runExtension({ activationOnly: true, workspaceFolders: [path.resolve('one'), path.resolve('two')], registrations: { claude: 'outdated' }, awaitWarnings: 1 });
   assert.deepEqual(roots.errors, [], 'a multi-root window reads the registrations too');
-  assert.match(roots.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI still start the previous version./);
+  assert.match(roots.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI still start the previous version\. Update them now; open chats keep the old runtime until restarted\./);
 });
 
 test('the extension keeps no state in globalState, which VS Code keeps after uninstall', async () => {
