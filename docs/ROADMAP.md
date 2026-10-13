@@ -72,7 +72,8 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 ### 0.7.0 (beta.3) plan
 
 Implementing agents work from the [0.7.0 task queue](#tasks-070-070-task-queue),
-which splits these phases into one-PR tasks with a fixed procedure.
+which splits these phases into implementation and acceptance steps, grouped into
+coherent PR results with a fixed procedure.
 
 Owner direction 2026-10-13: the public CLI comes first and publication
 automation (`RELEASE-001`) comes last, before the `0.7.0` tag. Phases run in
@@ -1678,7 +1679,7 @@ checks and evidence collection do not create a PR unless they change files.
 
 Already merged PRs after `v0.6.1` (#33-#42) keep their commits, PR references and
 review/CI evidence. Do not rewrite `develop` or the generated changelog to
-combine them retrospectively; #33-#40 shipped one row each before this decision.
+combine them retrospectively; #34-#40 shipped one row each before this decision.
 Release notes may summarize the CLI result with links to its contributing PRs,
 while the generated full changelog retains individual entries.
 

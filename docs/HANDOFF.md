@@ -37,7 +37,7 @@ Do not append another session transcript or treat old test counts as fresh evide
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#42 keep their history;
-  #41, #42 and #43 already shipped the first three groups. Required review and
+  the first three groups are #41 and #42 (merged) and #43 (current PR). Required review and
   CI cover each complete result; a task ID or line count is not a PR boundary.
 
 ## 0.6.1 release evidence
