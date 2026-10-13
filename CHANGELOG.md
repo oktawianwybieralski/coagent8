@@ -25,6 +25,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [`a39011a`](https://github.com/oktawianwybieralski/coagent8/commit/a39011acf1da750743d0048b8339923bd4f1d211): Implement Windows PATH opt-in and uninstall cleanup
     - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
   - Bug fix:
+    - [`ca2531d`](https://github.com/oktawianwybieralski/coagent8/commit/ca2531d2cfc7f24fdfa84293db6ec81ebd7e34fd): Separate registration warning wait from tracked state and connect IO
     - [`be95c8e`](https://github.com/oktawianwybieralski/coagent8/commit/be95c8ef907f94a713e8a5baca6d0be30281f8ad): Separate notification waits from drained IO and guard command actions
     - [`c5614f5`](https://github.com/oktawianwybieralski/coagent8/commit/c5614f560c2156806d88b678b87008f491ac917c): Drain background lifecycle tasks on deactivate and highlight bat in docs
     - [`6b959b6`](https://github.com/oktawianwybieralski/coagent8/commit/6b959b6c69532814b2ae1f4d376cfa25252e90a1): Serialize PATH offer in-flight, write shims atomically, and guarantee cleanup restoration
