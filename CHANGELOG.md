@@ -9,6 +9,12 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
+## Unreleased
+
+- Cli:
+  - New feature:
+    - [`f9726be`](https://github.com/oktawianwybieralski/coagent8/commit/f9726be066f2228f21ec0efb27692bfc0c0bc228): Implement Option D mcp, help and version root dispatch
+
 ## v0.6.1 - (2026-10-13)
 
 - Agy:
