@@ -1640,30 +1640,62 @@ does not complete a native task.
 
 ## TASKS-070: 0.7.0 task queue
 
-The [0.7.0 plan](#070-beta3-plan) split into small tasks that an implementing
-agent can finish one at a time. Each row is one topic branch and one pull
-request, with two exceptions written in the row itself: a row whose `Done when`
-says "one PR each" or "one PR per card" (or names a group, as 2.29 does) is
-several PRs, one per named card or group in the listed order. Never combine
-two rows, or two cards of such a row, in one PR. The linked card holds the full
-acceptance; the row says where the task stops. A merged row is ticked `[x]`
-with its PR number in the PR that completes it. In Phase 1, rows 1.8 and 1.11,
-1.9 and 1.10, and 1.12 and 1.13 each shipped in one PR before this rule was
-written; do not repeat that. Tasks of later phases that depend on contracts not yet written
+The [0.7.0 plan](#070-beta3-plan) split into implementation and acceptance steps.
+Rows are checklist items, not automatic branch or PR boundaries. Group related
+steps into one coherent result per [rule 02](../.agents/rules/02-git-workflow.md#3-pull-requests).
+The linked card holds the full acceptance; the row says where the task stops.
+A completed row is ticked `[x]` with its PR number in the PR that completes it.
+Tasks of later phases that depend on contracts not yet written
 are listed as decomposition tasks: they add new rows here, they do not
 implement.
 
-### Procedure for each task
+### PR groups and existing history
 
-1. **Pick.** Take the first row whose `After` tasks are merged on `develop`.
-   Rows marked `par` may run in parallel with the previous row. Skip rows of
+Owner direction, 2026-10-13: reduce repeated PR preparation and review by
+grouping coherent results. Keep task IDs and acceptance criteria for tracking.
+Use the following groups for the next work; execute their rows in dependency
+order on one branch, with one final review of the combined scope. An intermediate
+review may resolve a risky contract, but does not require a separate PR.
+
+| Result / one PR | Ordered rows | Boundary |
+| --- | --- | --- |
+| CLI models and diagnostics (done, #41) | 1.8, 1.11 | Shared CLI doctor behavior and model output, with installed-bin and cancellation checks. |
+| CLI session inspection (done, #42) | 1.9, 1.10 | List and history with workspace isolation, paging and error checks. |
+| Windows PATH opt-in (done, #43) | 1.12, 1.13 | Review the design before implementation on the same branch; native owner acceptance remains distinct. |
+| Accurate runtime/update guidance | 2.1, 2.2 | Running-version diagnostics and the related extension notice. |
+| Shared registration policy | 2.3, 2.4 | Reproduction, accepted policy, implementation and regression tests together; an unresolved owner decision pauses implementation. |
+| Bug-report content and paste flow | 2.6, 2.7, 2.8 | Link, structured content, issue skill and doctor reminder form one reporting flow. |
+| Bug-report opening actions | 2.9, 2.10 | Explicit VS Code and CLI actions with browser-opening tests, after the reporting flow. |
+| Isolated acceptance runner foundation | 2.15, 2.16 | Owned home isolation and runner skeleton with preservation and dry-run checks. |
+| Delegated background lifecycle | 3.1, 3.2 | Start, cancellation and shutdown form one owned-process lifecycle, after the accepted contracts. |
+| Delegated result retrieval | 3.3, 3.4 | Bounded wait and result persistence with notification/cancellation ordering. |
+
+Rows not grouped above follow rule 02: combine related steps with one result,
+and document the chosen group and any split rationale before implementation.
+Later decomposition tasks must propose result groups, not one PR per subtask.
+Separate owner decisions, native evidence and release approval remain required;
+checks and evidence collection do not create a PR unless they change files.
+
+Already merged PRs after `v0.6.1` (#33-#42) keep their commits, PR references and
+review/CI evidence. Do not rewrite `develop` or the generated changelog to
+combine them retrospectively; #33-#40 shipped one row each before this decision.
+Release notes may summarize the CLI result with links to its contributing PRs,
+while the generated full changelog retains individual entries.
+
+### Procedure for each PR group
+
+1. **Pick.** Take the first unfinished group whose external `After` tasks are
+   merged on `develop`. Internal dependencies are completed in order on the
+   group's branch and do not require an intermediate merge. Rows marked `par`
+   allow independent work, not an automatic separate PR. Skip rows of
    kind `O` (owner) and `N` (native) unless the owner assigned them to you.
 2. **Start clean.** `git fetch origin`, check that `git status --short` is
-   empty, then `git switch -c <type>/<task-id-lowercase> origin/develop`
+   empty, then `git switch -c <type>/<result-name> origin/develop`
    (types: `feat`, `fix`, `test`, `docs`, `chore`, `build`). Never create a
    worktree, never stash someone else's changes.
-3. **Read narrowly.** Read the row, its card and the files the card names.
-   Do not redesign beyond the row.
+3. **Read narrowly.** Read the group's rows, their cards and the files they name.
+   Record included task IDs and acceptance checks. Do not redesign beyond the
+   group's result; implement each internal step as a commit or checklist item.
 4. **Kind `P` (design or prose).** Write the text where the card says
    (ARCHITECTURE for contracts, ROADMAP for cards, rules for rules). Check
    with `git diff --check` and a link check.
@@ -1676,10 +1708,13 @@ implement.
 6. **Commit.** Conventional Commits in English, no AI attribution lines.
    `npm run changelog`; if `CHANGELOG.md` changed, commit it alone as
    `chore(changelog): regenerate`.
-7. **Review.** With a clean tree, call the CoAgent8 `review` tool on the
-   committed range `develop...HEAD` with the backend and model the owner names
-   for the run (default: backend `codex`, model `gpt-6.1-sol`). The reviewer
-   must be another agent session than the author; a review in the author's own
+7. **Review.** Select checks for the union of affected scopes, then review the
+   complete group on its current head. Prose-only groups use content/link
+   review per rule 04 and do not require backend AI calls. For code, with a
+   clean tree, call the CoAgent8 `review` tool on the committed range
+   `develop...HEAD` with the backend and model the owner names for the run
+   (default: backend `codex`, model `gpt-6.1-sol`). The reviewer must be
+   another agent session than the author; a review in the author's own
    session never counts. Fix every P1 and P2 finding, commit, and call `review`
    again with the same `session_handle`. Fix P3 findings when cheap, otherwise
    list them in the PR. Stop after three rounds without `READY` and report.
@@ -1689,12 +1724,13 @@ implement.
    the owner may give it once for the whole queue. Without it, stop with the
    local branch, checks and review evidence. The PR uses the template with
    the checks and the review verdict, handle and snapshot. Tick the card in
-   ROADMAP in the same PR only when the PR completes it. Never merge.
+   ROADMAP in the same PR only when the PR completes it; account for every
+   included row without claiming incomplete native acceptance. Never merge.
 9. **Stop and ask the owner** when a decision is not recorded in the card,
    a step needs a chat UI or another person, a public MCP schema changes
-   beyond an accepted contract, the diff grows past about 400 changed lines
-   (split the task), tests fail for reasons outside the task, or a review
-   finds a P1 outside the task's files.
+   beyond an accepted contract, tests fail for reasons outside the group, or a
+   review finds a P1 outside the group's files. Evaluate a diff around 400 lines
+   for reviewability; split only at a coherent boundary and explain why.
 
 Kinds: `P` design or prose, `R` code, `N` native test (owner, or the
 `ACCEPT-001` runner once it exists), `O` owner action, `S` needs a strong
@@ -1745,15 +1781,15 @@ agent (owner assigns).
 | 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
 | 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
 | 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | ARCHITECTURE (unimplemented) defines `delegate`, `wait`, states and ordering; reviewed READY. |
-| 2.23 | `AX-005a`, then `AX-005b` | P, R | - | As the cards say, one PR each. |
-| 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say, one PR each; `AX-004c` is kind N. |
-| 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | One PR per card in that order. |
-| 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R) in its own PR. |
+| 2.23 | `AX-005a`, then `AX-005b` | P, R | - | As the cards say; group design and implementation when the contract is accepted. |
+| 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
+| 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | In that order, with PR groups chosen by coherent result and risk. |
+| 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R). |
 | 2.27 | `AX-003a` | R | - | Elicitation outcome fixtures per the card (`Check: R`). |
-| 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | `AX-003b` design, then `AX-003c` adds the implementation rows here; one PR each. |
-| 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | `AX-006a` acceptance script in one PR; the `b`/`c`/`d` fresh-client runs are native, one per client, with evidence recorded in HANDOFF (no PR per run). |
+| 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | Form-less consent design, then implementation cards added here. |
+| 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | `AX-006a` acceptance script; the `b`/`c`/`d` fresh-client runs are native, one per client, with evidence recorded in HANDOFF (no PR per run). |
 | 2.29 | `AUDIT-001-A08` to `A21` | R | - | In card order and grouping (A08-A09, A10-A12, A13-A15, A16-A18, A19-A20, A21); a reproduction that finds no defect skips its fix. |
-| 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R); one PR each. |
+| 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R). |
 | 2.31 | `WINDOWS-001b` launcher contract | P S | - | Card done; reviewed READY. |
 | 2.32 | `WINDOWS-001c` helper | R S | 2.31 | Rust helper and measured overhead per the card. |
 | 2.33 | `WINDOWS-001d1` signing route | O | 2.32 | Owner applies to SignPath Foundation or accepts unsigned binaries with SHA-256. |
@@ -1780,27 +1816,27 @@ agent (owner assigns).
 | 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
 | 3.13 | `PROPOSALS-001g` rule text | P | - par | Rule and AGENTS.md updated. |
-| 3.13b | `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items, one PR per card. |
+| 3.13b | `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
 | 3.14 | `PROPOSALS-001e` signed-commit ruleset | O | - | Owner adds `required_signatures`; 3.13 aligns the text. |
 | 3.15 | `DOCS-003a` site purpose | P | - | Page list and published documents recorded; reviewed READY. |
 | 3.16 | `DOCS-003b` TypeDoc configuration | R | 3.15 | `npm run docs` passes with the new configuration. |
 | 3.17 | `DOCS-003c1` to `c5` categories and module comments | R | 3.16 | One PR per layer (MCP; execution; backends; sessions and storage; integrations and diagnostics); `npm run lint:docs`. |
 | 3.18 | `DOCS-003d` human pages | P | 3.15 | Quick start, Tools, Configuration pages and home introduction. |
-| 3.19 | `DOCS-002c`, `DOCS-002e` | P | - par | As the cards say, one PR each. |
-| 3.20 | `SUPPLY-001c`, `001d`, `001e` | R | - | One PR each, with first-launch measurements. |
+| 3.19 | `DOCS-002c`, `DOCS-002e` | P | - par | As the cards say. |
+| 3.20 | `SUPPLY-001c`, `001d`, `001e` | R | - | Group by coherent packaging result, with first-launch measurements. |
 
 ### Phase 4 - host-led coagent profiles
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
-| 4.1 | `COAGENT-001a`, `001b` | P S | 2.20 | Contract cards done, one PR per card; reviewed READY. |
-| 4.2 | `COAGENT-002a`, `002b` | P S | 4.1 | Profile evidence and writer ownership designs, one PR per card. |
-| 4.3 | `COAGENT-003a`, `003b` | P S | 4.1 | Routing precedence and root reservations, one PR per card. |
-| 4.4 | `COAGENT-004a2`, `004b`, `005a`, `005b`, `007a` | P S | 4.1, 4.2 | Remaining contract cards, one PR per card. |
+| 4.1 | `COAGENT-001a`, `001b` | P S | 2.20 | Contract cards done; reviewed READY. |
+| 4.2 | `COAGENT-002a`, `002b` | P S | 4.1 | Profile evidence and writer ownership designs. |
+| 4.3 | `COAGENT-003a`, `003b` | P S | 4.1 | Routing precedence and root reservations. |
+| 4.4 | `COAGENT-004a2`, `004b`, `005a`, `005b`, `007a` | P S | 4.1, 4.2 | Remaining contract cards. |
 | 4.5 | Decompose implementation | P S | 4.1-4.4, 2.35 | A strong agent or the owner adds implementation rows here for write/check/review/fix profiles, roles, multi-file skills, `DELEGATE-001f` and `CLI-FIRST-001f`. |
 | 4.6 | `FAILOVER-001a` | R | - par | As the card says. |
 | 4.7 | `PLUGIN-001a` | N | - | Loader evidence per client. |
-| 4.8 | `PLUGIN-001b` to `001e` | P, R | 4.7 | One PR per card. |
+| 4.8 | `PLUGIN-001b` to `001e` | P, R | 4.7 | Group related cards by coherent plugin result after loader evidence. |
 | 4.9 | `PLUGIN-001g` | N | 4.8 | Native acceptance with the candidate artifacts. |
 
 ### Phase 5 - publication automation and 0.7.0 acceptance

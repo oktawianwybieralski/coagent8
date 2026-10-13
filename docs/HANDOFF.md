@@ -33,7 +33,12 @@ Do not append another session transcript or treat old test counts as fresh evide
   extension's PATH prompt, shim and uninstall removal on Windows. The
   readability gaps found in that run are the unscheduled card
   `CLI-FIRST-001j`. Row 1.14 (`DELEGATE-001a`) is a native owner task; the
-  next agent row is 2.1 (`FEEDBACK-061a1`).
+  next agent work is the result group 2.1-2.2 (`FEEDBACK-061a1/a2`).
+- **PR scope (owner direction, 2026-10-13):** use the
+  [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
+  commits/checklist items on one branch. Merged #33-#42 keep their history;
+  #41, #42 and #43 already shipped the first three groups. Required review and
+  CI cover each complete result; a task ID or line count is not a PR boundary.
 
 ## 0.6.1 release evidence
 
