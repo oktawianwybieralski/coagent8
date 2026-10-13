@@ -41,12 +41,22 @@ const SENSITIVE_FLAG = /^--?(password|passwd|token|api[-_]?key|secret|auth|acces
  */
 function redactCliArguments(args: string[]): string[] {
   const redacted: string[] = [];
+  let expectSensitiveValue = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    redacted.push(redactDiagnostic(arg));
-    if (SENSITIVE_FLAG.test(arg) && i + 1 < args.length) {
-      redacted.push('***[REDACTED]***');
-      i++;
+    if (expectSensitiveValue) {
+      if (SENSITIVE_FLAG.test(arg)) {
+        redacted.push(redactDiagnostic(arg));
+        expectSensitiveValue = true;
+      } else {
+        redacted.push('***[REDACTED]***');
+        expectSensitiveValue = false;
+      }
+    } else if (SENSITIVE_FLAG.test(arg)) {
+      redacted.push(redactDiagnostic(arg));
+      expectSensitiveValue = true;
+    } else {
+      redacted.push(redactDiagnostic(arg));
     }
   }
   return redacted;
