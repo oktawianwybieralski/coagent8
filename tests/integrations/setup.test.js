@@ -546,4 +546,12 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   const [preservedResult] = await setupClients({ ...options, clients: ['claude'] });
   assert.equal(preservedResult.action, 'preserved');
   assert.equal(preservedResult.runtimeCallable, true);
+
+  // Fingerprint-owned registration with a different launcher prefix is probed and verified
+  const prefixedEntry = { command: process.execPath, args: ['--title=coagent8', liveRuntime, 'mcp'] };
+  write(file, JSON.stringify({ mcpServers: { coagent8: prefixedEntry } }));
+  write(stateFile, JSON.stringify({ clients: ['claude'], owned: { claude: hashEntry(JSON.stringify(prefixedEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
+  const [prefixedResult] = await setupClients({ ...options, clients: ['claude'] });
+  assert.equal(prefixedResult.action, 'updated');
+  assert.equal(prefixedResult.runtimeCallable, true);
 });

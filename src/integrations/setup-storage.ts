@@ -221,6 +221,9 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix?: s
   if (last === 'mcp') {
     if (argsPrefix !== undefined) {
       if (args.length !== argsPrefix.length + 2) return null;
+      for (let i = 0; i < argsPrefix.length; i++) {
+        if (args[i] !== argsPrefix[i]) return null;
+      }
     } else {
       if (args.length !== 2) return null;
     }
@@ -228,6 +231,9 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix?: s
   } else if (typeof last === 'string' && path.isAbsolute(last) && last.endsWith('index.cjs')) {
     if (argsPrefix !== undefined) {
       if (args.length !== argsPrefix.length + 1) return null;
+      for (let i = 0; i < argsPrefix.length; i++) {
+        if (args[i] !== argsPrefix[i]) return null;
+      }
     } else {
       if (args.length !== 1) return null;
     }
@@ -237,12 +243,6 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix?: s
   }
 
   if (!candidate || typeof candidate !== 'string' || !path.isAbsolute(candidate)) return null;
-
-  if (argsPrefix !== undefined) {
-    for (let i = 0; i < argsPrefix.length; i++) {
-      if (args[i] !== argsPrefix[i]) return null;
-    }
-  }
 
   const normalizedCandidate = path.resolve(candidate);
   if (path.basename(normalizedCandidate) !== 'index.cjs') return null;

@@ -494,10 +494,12 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           // Status reads the host files only; starting the runtime and the host is setup/repair work.
           if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.'; return; }
           const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
-          const owned = entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned;
+          const ownership = entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix);
+          const owned = ownership.owned;
           // An owned entry whose runtime copy is gone starts nothing, so there is no working
           // connection to verify or keep; the candidate written above replaces it.
-          const existingRuntime = extractRuntimePath(existing, root, node.argsPrefix);
+          // For fingerprint-owned entries, validate using the entry's own args without enforcing candidate prefix.
+          const existingRuntime = extractRuntimePath(existing, root, saved.owned[client] ? undefined : node.argsPrefix);
           const broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
           if (!broken) {
             result.tools = await probeRuntime(existing, env, cwd);
