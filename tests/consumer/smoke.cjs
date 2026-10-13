@@ -100,6 +100,10 @@ function npmRun(args,cwd=root) {
     assert.match(doctorOut.stdout,/^CoAgent8 models · /);
     const doctorJson=dispatch(['doctor','--json']);assert.equal(doctorJson.status,0,doctorJson.stderr);
     assert.equal(JSON.parse(doctorJson.stdout).scope,'models');
+    const sessionListOut=dispatch(['session','list']);assert.equal(sessionListOut.status,0,sessionListOut.stderr);
+    assert.match(sessionListOut.stdout,/> CoAgent8: No active sessions found\./);
+    const sessionListJson=dispatch(['session','list','--json']);assert.equal(sessionListJson.status,0,sessionListJson.stderr);
+    assert.deepEqual(JSON.parse(sessionListJson.stdout),[]);
     for(const [binIndex,command] of commands.entries()) {
     const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),AGY_PATH:path.join(root,'tests','fixtures','agy-cli','agy.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
     const {proc,request}=connection;
@@ -133,6 +137,9 @@ function npmRun(args,cwd=root) {
       const codexHistory=await request('tools/call',{name:'session',arguments:{action:'history',session_handle:codexHandle,workspace_path:dir}});
       assert.equal(codexHistory.result.structuredContent.events.filter(e=>e.type==='assistant_message').length,2);
       for(const forbidden of ['PRIVATE_REASONING','PRIVATE_RAW_COMMAND','PRIVATE_TOOL_OUTPUT','fixtureSecret'])assert.ok(!JSON.stringify(codexHistory).includes(forbidden),forbidden);
+      const cliHist=spawnSync(setupCommand.command,[...setupCommand.argsPrefix,'session','history',codexHandle,'--json'],{cwd:dir,env:{...process.env,coagent8_DIR:path.join(dir,'data')},encoding:'utf8',windowsHide:true,timeout:15000});
+      assert.equal(cliHist.status,0,cliHist.stderr);
+      assert.equal(JSON.parse(cliHist.stdout).sessionHandle,codexHandle);
       }
       proc.stdin.end();await connection.waitForExit(5000);
       assert.ok(connection.getStderr().includes('running on stdio'));

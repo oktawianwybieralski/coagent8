@@ -29,6 +29,7 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
   let setupLoaded = false;
   let modelsRan = false;
   let doctorRan = false;
+  let sessionRan = false;
 
   const deps = {
     serveStdio: async () => {
@@ -40,6 +41,10 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
     },
     runDoctorCli: async () => {
       doctorRan = true;
+      return 0;
+    },
+    runSessionCli: async () => {
+      sessionRan = true;
       return 0;
     },
     loadSetupCli: async () => {
@@ -57,6 +62,7 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
     get setupLoaded() { return setupLoaded; },
     get modelsRan() { return modelsRan; },
     get doctorRan() { return doctorRan; },
+    get sessionRan() { return sessionRan; },
     stdout,
     stderr,
   };
@@ -348,7 +354,16 @@ test('CLI-FIRST-001b1: sensitive flag-value pairs are redacted in fallback warni
   assert.match(adjacentHarness.stderr.output, /Warning: unrecognized arguments \[--password, --token, \*\*\*\[REDACTED\]\*\*\*\] ignored/);
 });
 
-test('CLI-FIRST-001b1/001c/001e: none of --help, --version, bare TTY, mcp, models, or doctor loads setup.cjs eagerly', async () => {
+test('CLI-FIRST-001d: coagent8 session dispatches to runSessionCli without loading setup or starting MCP', async () => {
+  const harness = createHarness({ stdinTTY: true, stdoutTTY: true });
+  const code = await runCli(['session', 'list'], harness.streams, harness.deps);
+  assert.equal(code, 0);
+  assert.equal(harness.sessionRan, true);
+  assert.equal(harness.servedStdio, false);
+  assert.equal(harness.setupLoaded, false);
+});
+
+test('CLI-FIRST-001b1/001c/001d/001e: none of --help, --version, bare TTY, mcp, models, doctor, or session loads setup.cjs eagerly', async () => {
   const root = path.resolve(__dirname, '../..');
 
   // Verify in separate node executions that setup.cjs is never in module cache
@@ -359,7 +374,7 @@ test('CLI-FIRST-001b1/001c/001e: none of --help, --version, bare TTY, mcp, model
       const mode = process.argv[1];
       const stdinTTY = mode === 'bare-tty' || mode === 'help' || mode === 'version';
       const stdoutTTY = stdinTTY;
-      const args = mode === 'help' ? ['--help'] : mode === 'version' ? ['--version'] : mode === 'mcp' ? ['mcp'] : mode === 'models' ? ['models', '--help'] : mode === 'doctor' ? ['doctor', '--help'] : [];
+      const args = mode === 'help' ? ['--help'] : mode === 'version' ? ['--version'] : mode === 'mcp' ? ['mcp'] : mode === 'models' ? ['models', '--help'] : mode === 'doctor' ? ['doctor', '--help'] : mode === 'session' ? ['session', '--help'] : [];
       let serveCalled = false;
       let stdout = '';
       await runCli(args, { stdin: { isTTY: stdinTTY }, stdout: { isTTY: stdoutTTY, write(c) { stdout += c; } }, stderr: { write() {} } }, {
@@ -385,7 +400,7 @@ test('CLI-FIRST-001b1/001c/001e: none of --help, --version, bare TTY, mcp, model
         process.stderr.write('version failed');
         process.exit(2);
       }
-      if ((mode === 'models' || mode === 'doctor') && !stdout.includes('Usage: coagent8')) {
+      if ((mode === 'models' || mode === 'doctor' || mode === 'session') && !stdout.includes('Usage: coagent8')) {
         process.stderr.write(mode + ' failed');
         process.exit(2);
       }
@@ -398,7 +413,7 @@ test('CLI-FIRST-001b1/001c/001e: none of --help, --version, bare TTY, mcp, model
     })();
   `;
 
-  for (const mode of ['help', 'version', 'bare-tty', 'bare-nontty', 'mcp', 'models', 'doctor']) {
+  for (const mode of ['help', 'version', 'bare-tty', 'bare-nontty', 'mcp', 'models', 'doctor', 'session']) {
     const res = spawnSync(process.execPath, ['--require', 'tsx/cjs', '-e', script, mode], {
       cwd: root,
       encoding: 'utf8',
