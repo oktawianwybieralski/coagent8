@@ -100,10 +100,18 @@ if ($null -eq $key) {
   async writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ', timeoutMs = 5000): Promise<void> {
     if (!this.isWindows()) return;
     const script = `
+$ErrorActionPreference = 'Stop'
 $targetKind = if ($env:COAGENT8_REG_KIND -eq 'REG_EXPAND_SZ') { [Microsoft.Win32.RegistryValueKind]::ExpandString } else { [Microsoft.Win32.RegistryValueKind]::String }
 $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
 try {
   $key.SetValue('Path', $env:COAGENT8_REG_VAL, $targetKind)
+  $written = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+  if ([string]$written -ne [string]$env:COAGENT8_REG_VAL) {
+    throw 'Registry write verification failed: readback did not match written value'
+  }
+} catch {
+  [Console]::Error.WriteLine($_)
+  exit 1
 } finally {
   $key.Close()
 }

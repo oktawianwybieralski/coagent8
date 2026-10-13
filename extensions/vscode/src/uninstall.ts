@@ -38,9 +38,6 @@ async function main(): Promise<void> {
   // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
   try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), checkRemainingBudget()); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
-  let pathResult: PathRemovalResult | undefined, pathError: string | undefined;
-  try { pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), checkRemainingBudget(), undefined, DEADLINE); }
-  catch (error) { pathError = redactDiagnostic(error instanceof Error ? error.message : 'PATH cleanup failed.'); }
   let applied: CleanupPreview | undefined, cleanupError: string | undefined;
   try {
     checkRemainingBudget();
@@ -48,6 +45,12 @@ async function main(): Promise<void> {
     applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token, leaseTimeoutMs: checkRemainingBudget() });
   }
   catch (error) { cleanupError = redactDiagnostic(error instanceof Error ? error.message : 'CoAgent8 registration cleanup failed.'); }
+  let pathResult: PathRemovalResult | undefined, pathError: string | undefined;
+  try {
+    const pathBudget = Math.max(100, DEADLINE - Date.now() - 300);
+    pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), Math.min(LEASE_TIMEOUT_MS, pathBudget), undefined, DEADLINE - 300);
+  }
+  catch (error) { pathError = redactDiagnostic(error instanceof Error ? error.message : 'PATH cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.
   console.log(JSON.stringify({ ...applied, profiles, ...(pathResult ? { path: pathResult } : {}), ...(profileError ? { profileError } : {}), ...(cleanupError ? { cleanupError } : {}), ...(pathError ? { pathError } : {}) }));
   if (profileError || pathError || pathResult?.action === 'blocked' || profiles.some(profile => profile.action === 'blocked') || !applied || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;

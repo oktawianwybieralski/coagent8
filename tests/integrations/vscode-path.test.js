@@ -21,6 +21,7 @@ class MockPathAdapter {
     this.readTimeouts = [];
     this.writeTimeouts = [];
     this.readError = null;
+    this.writeError = null;
   }
   isWindows() {
     return this.win;
@@ -33,6 +34,7 @@ class MockPathAdapter {
   }
   async writeUserPath(value, kind, timeoutMs) {
     this.writeTimeouts.push(timeoutMs);
+    if (this.writeError) throw this.writeError;
     this.writes.push({ value, kind, timeoutMs });
     this.pathValue = value;
     this.pathKind = kind;
@@ -436,4 +438,25 @@ test('removePathIntegration allocates remaining deadline budget to registry oper
   assert.ok(readTimeout > 2000, `readTimeout should be > 2000ms, got ${readTimeout}`);
   assert.ok(writeTimeout > 2000, `writeTimeout should be > 2000ms, got ${writeTimeout}`);
   assert.equal(adapter.broadcasts[adapter.broadcasts.length - 1], 1000, 'broadcast timeout is 1000ms');
+});
+
+test('enablePathIntegration rolls back shim and record when writeUserPath fails', async t => {
+  const f = fixture(t);
+  const initialPath = 'C:\\Important\\Bin';
+  const adapter = new MockPathAdapter(initialPath, 'REG_SZ');
+  adapter.writeError = new Error('Simulated registry write failure');
+
+  await assert.rejects(
+    () => enablePathIntegration(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+      adapter
+    ),
+    /Simulated registry write failure/
+  );
+
+  const shimPath = path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd');
+  assert.equal(fs.existsSync(shimPath), false, 'shim rolled back on write failure');
+  const record = readPathRecord(f.home);
+  assert.equal(record, undefined, 'ownership record rolled back on write failure');
+  assert.equal(adapter.pathValue, initialPath, 'user PATH unchanged');
 });
