@@ -15,6 +15,7 @@ import { redactDiagnostic } from './security/redaction.js';
 import { BRAND } from './brand.js';
 import { serveStdio } from './mcp/stdio-server.js';
 import { runModelsCli } from './diagnostics/models-cli.js';
+import { runDoctorCli } from './diagnostics/doctor-cli.js';
 
 /** Standard stream interfaces for CLI execution. */
 export interface CliStreams {
@@ -26,7 +27,8 @@ export interface CliStreams {
 /** Dependencies that can be injected for hermetic testing. */
 export interface CliDependencies {
   serveStdio?: () => Promise<void>;
-  runModelsCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream) => Promise<number>;
+  runModelsCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
+  runDoctorCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
   loadSetupCli?: () => Promise<{ runSetupCli(args: string[]): Promise<boolean> }>;
 }
 
@@ -79,6 +81,8 @@ export function formatRootHelp(): string {
     '  mcp                              Start the standard MCP JSON-RPC server over stdio',
     '  models [--backend <name>] [--json]',
     '                                   List models, output prices and governance approvals',
+    '  doctor [--scope models|health] [--backend <name>] [--json]',
+    '                                   Run diagnostics (cached model view or full health checks)',
     '  setup [--clients=...]            Register CoAgent8 with native CLI hosts',
     '  repair [--clients=...]           Restore missing or corrupted host registrations',
     '  status [--clients=...]           Check CLI readiness across supported hosts',
@@ -171,6 +175,12 @@ export async function runCli(
   if (cmd === 'models') {
     const runModels = deps.runModelsCli ?? runModelsCli;
     return await runModels(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
+  }
+
+  // 6. Doctor command
+  if (cmd === 'doctor') {
+    const runDoctor = deps.runDoctorCli ?? runDoctorCli;
+    return await runDoctor(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
   }
 
   // 6. Management commands (lazily loaded setup bundle)

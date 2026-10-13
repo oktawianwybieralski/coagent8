@@ -36,3 +36,27 @@ test('coagent8 models refuses unknown arguments and an unknown backend with the 
   assert.equal(await runModelsCli(['--help'], help.stream), 0);
   assert.match(help.text(), /^Usage: coagent8 models/);
 });
+
+test('coagent8 models supports --backend=value syntax and scalar flag precedence', async () => {
+  const json = sink(), err = sink();
+  assert.equal(await runModelsCli(['--backend=claude', '--backend=codex', '--json'], json.stream, err.stream), 0);
+  const report = JSON.parse(json.text());
+  assert.deepEqual(Object.keys(report.backends), ['codex'], 'last scalar flag takes precedence');
+  assert.equal(err.text(), '');
+
+  const invalidEquals = sink(), invalidErr = sink();
+  assert.equal(await runModelsCli(['--backend=unknown-cli'], invalidEquals.stream, invalidErr.stream), 2);
+  assert.match(invalidErr.text(), /Usage: coagent8 models/);
+
+  const dashDash = sink(), dashDashErr = sink();
+  assert.equal(await runModelsCli(['--', 'unexpected-arg'], dashDash.stream, dashDashErr.stream), 2);
+  assert.match(dashDashErr.text(), /Usage: coagent8 models/);
+});
+
+test('coagent8 models aborts with exit code 130 on aborted signal', async () => {
+  const out = sink(), err = sink();
+  const ac = new AbortController();
+  ac.abort();
+  const code = await runModelsCli([], out.stream, err.stream, ac.signal);
+  assert.equal(code, 130);
+});

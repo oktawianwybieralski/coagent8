@@ -180,3 +180,22 @@ export function redactDiagnostic(value: unknown, budget = 4096): string {
   return truncateToByteLength(text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''), budget);
 }
 
+/**
+ * Recursively redacts strings in an object, array, or primitive for diagnostic output.
+ * Replaces credentials, tokens, sensitive keywords, and user home directory paths.
+ *
+ * @param value - Value to recursively redact.
+ * @param budget - Max byte length per string (default 2048).
+ * @returns Redacted value of the same structure.
+ */
+export function redactDiagnosticData<T>(value: T, budget = 2048): T {
+  if (typeof value === 'string') return redactDiagnostic(value, budget) as unknown as T;
+  if (Array.isArray(value)) return value.map(v => redactDiagnosticData(v, budget)) as unknown as T;
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, redactDiagnosticData(v, budget)])
+    ) as unknown as T;
+  }
+  return value;
+}
+

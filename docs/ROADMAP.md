@@ -777,7 +777,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   existing root dispatch and lazy setup boundary. Done: explicit MCP startup
   and accepted help/version routes work without eager provider/setup loading;
   old invocations still work. Check: R, MCP/E2E and package consumer smoke.
-- [ ] **CLI-FIRST-001c - expose models.** After 001b, consume
+- [x] **CLI-FIRST-001c - expose models.** After 001b, consume
   `src/diagnostics/doctor.ts:runModelReport` using the accepted CLI output format.
   Done: model/price/approval data agree with MCP and output stays bounded.
   Check: R, DOCTOR/MCP and an installed-bin models fixture.
@@ -786,7 +786,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   Done: workspace isolation, invalid handles and pagination match existing
   behavior. Check: R, SESSION plus installed-bin fixtures. Plan close/delete
   as a separate mutation card with the accepted ownership/authority contract.
-- [ ] **CLI-FIRST-001e - expose diagnostics.** After 001d, consume `runDoctor`
+- [x] **CLI-FIRST-001e - expose diagnostics.** After 001d, consume `runDoctor`
   and its T11b context. Done: diagnostics create no sessions, preserve redaction,
   report errors with accepted exit codes and remain cancellable. Check: R,
   DOCTOR/REDACT and an installed-bin diagnostics fixture.

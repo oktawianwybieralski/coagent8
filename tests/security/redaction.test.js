@@ -3,7 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
-const { redactCredentialFormats, redactDiagnostic, redactSecrets } = require('../../src/security/redaction.ts');
+const path = require('node:path');
+const { redactCredentialFormats, redactDiagnostic, redactDiagnosticData, redactSecrets } = require('../../src/security/redaction.ts');
 // Provider key prefixes are joined at run time, so the source holds no literal token that
 // GitHub push protection reports (FEEDBACK-060j).
 const STRIPE_LIVE = ['sk', 'live', ''].join('_');
@@ -401,6 +402,33 @@ test('AUD-P0-2: user_message stored in history preserves user code and token key
       if (file && fs.existsSync(file)) fs.unlinkSync(file);
     }
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('redactDiagnosticData recursively redacts home directory paths and credentials in nested data structures', () => {
+  const original = os.homedir;
+  const home = process.platform === 'win32' ? 'C:\\Users\\SyntheticUser' : '/home/SyntheticUser';
+  os.homedir = () => home;
+  try {
+    const data = {
+      nested: {
+        configPath: path.join(home, 'config.json'),
+        secret: 'api_key: secret-value-1234',
+        count: 42,
+        active: true,
+      },
+      list: [path.join(home, 'file.txt'), 'sk-ant-api03-abcdef1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890'],
+      nullable: null,
+    };
+    const redacted = redactDiagnosticData(data);
+    assert.equal(redacted.nested.configPath, `~${path.sep}config.json`);
+    assert.ok(!JSON.stringify(redacted).includes('SyntheticUser'));
+    assert.ok(!JSON.stringify(redacted).includes('secret-value-1234'));
+    assert.equal(redacted.nested.count, 42);
+    assert.equal(redacted.nested.active, true);
+    assert.equal(redacted.nullable, null);
+  } finally {
+    os.homedir = original;
   }
 });
 
