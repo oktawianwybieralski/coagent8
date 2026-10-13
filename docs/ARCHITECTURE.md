@@ -1069,6 +1069,21 @@ The native `vscode:uninstall` hook (`dist/uninstall.cjs`) performs automatic cle
 4. **Failure isolation**:
    - Registry or file access errors during PATH cleanup do not abort uninstallation of MCP profile registrations or client skills. All errors are caught, sanitized via `redactDiagnostic`, and recorded in the uninstall JSON envelope.
 
+#### Coexistence with global npm installations (`npm install -g coagent8`)
+
+Both `npm install -g coagent8` (installed into npm's global prefix, e.g. `%APPDATA%\npm` or a Scoop/Homebrew prefix) and the VS Code extension's shim (`%USERPROFILE%\.coagent8\bin\coagent8.cmd` on Windows, or `~/.local/bin/coagent8` on POSIX) can exist simultaneously on the system `PATH`:
+
+1. **Resolution order**:
+   - The operating system shell searches directories in the exact sequence they appear in the merged `PATH` variable (system PATH followed by user PATH, or user profile shell config).
+   - Whichever directory appears earlier in the active `PATH` wins when running `coagent8` without an absolute path.
+2. **Version divergence**:
+   - The npm registry version and the VS Code extension version may differ (for example, a stable release like `0.6.1` installed globally via npm while a preview version like `0.7.0` is installed via VSIX).
+   - `where.exe coagent8` on Windows or `which -a coagent8` on POSIX lists all available binaries in precedence order.
+   - Diagnostics in `coagent8 doctor` and `--version` report the active executable, allowing users to verify which binary runs in their current shell.
+3. **Independent lifecycles and uninstallation separation**:
+   - Uninstalling the VS Code extension removes only its owned shim (`~/.coagent8/bin`) and its owned user PATH entry; it never modifies npm's global prefix or deletes the npm-installed binary.
+   - Conversely, running `npm uninstall -g coagent8` removes the global npm package but leaves the VS Code extension shim and its ownership records in `~/.coagent8/installs.json` intact.
+
 ## Target orchestration design (not implemented)
 
 MCP will adapt to the matching packaged execution CLI under CLI-FIRST-001.
