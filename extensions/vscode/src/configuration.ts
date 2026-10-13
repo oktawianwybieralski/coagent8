@@ -125,7 +125,11 @@ export async function updateInstallList(location: StateLocation, list: SetupInst
   await withFileLock(file, async () => {
     const raw = readObject(file);
     const legacy = readObject(setupStateFile(location.storage));
-    const items = [...new Set([...strings(raw[list]) ?? [], ...strings(legacy[list]) ?? [], ...add])].filter(item => !remove.includes(item));
+    for (const name of INSTALL_LISTS) {
+      const merged = [...new Set([...strings(raw[name]) ?? [], ...strings(legacy[name]) ?? []])];
+      if (merged.length) raw[name] = merged;
+    }
+    const items = [...new Set([...strings(raw[list]) ?? [], ...add])].filter(item => !remove.includes(item));
     if (items.length) raw[list] = items;
     else delete raw[list];
     if (Object.keys(raw).length) replaceFile(file, JSON.stringify(raw, null, 2) + '\n');

@@ -217,7 +217,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
   // Onboarding state lives in the extension's global storage, which VS Code deletes on uninstall.
   const storage = path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp');
   const stateFile = path.join(storage, 'setup-state.json');
-  const seeded = storedState ?? (welcomed ? { welcomed: true } : undefined);
+  const seeded = storedState ?? (welcomed ? { welcomed: true, pathPrompt: 'accepted' } : undefined);
   if (seeded) { fs.mkdirSync(storage, { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(seeded)); }
   const readState = () => fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined;
   const initialState = readState();
@@ -842,11 +842,11 @@ test('Uninstall VS Code Extension opens the extension page, where VS Code remove
   assert.deepEqual(shown.requests, [['extension.open', 'openai.chatgpt']], 'the native Uninstall and Restart Extensions apply the removal to every running extension');
   assert.deepEqual([shown.warnings, shown.notifications], [[], []], 'no dialog or notice of its own');
   assert.equal(shown.menus.length, 2, 'the menu closes on the Extensions view');
-  assert.deepEqual(shown.state, { welcomed: true, removingExtensions: ['openai.chatgpt'] });
+  assert.deepEqual(shown.state, { welcomed: true, pathPrompt: 'accepted', removingExtensions: ['openai.chatgpt'] });
   assert.deepEqual(shown.installs, { installedExtensions: ['openai.chatgpt'] }, 'nothing is recorded as removed before VS Code removes it');
   const finished = await runExtension({ ...options, steps: steps(), nativeRemoval: ['openai.chatgpt'] });
   assert.equal(finished.installs, undefined, 'the removed extension leaves the record');
-  assert.deepEqual(finished.state, { welcomed: true });
+  assert.deepEqual(finished.state, { welcomed: true, pathPrompt: 'accepted' });
   assert.deepEqual(finished.cleanupCalls, [], 'the chat entry stays; it works again with another installation');
 });
 test('a removal finished while VS Code restarts its extensions moves a selection of the removed copy to the other installation', async t => {

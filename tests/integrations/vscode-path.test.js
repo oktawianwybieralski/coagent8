@@ -292,7 +292,7 @@ test('enablePathIntegration refuses to overwrite unowned file or modified shim',
   assert.equal(fs.readFileSync(shimPath, 'utf8'), 'echo unowned');
 });
 
-test('removePathIntegration reports blocked and preserves metadata if registry removal fails', async t => {
+test('removePathIntegration reports blocked, retains installation and restores shim if registry removal fails, then succeeds on retry', async t => {
   const f = fixture(t);
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   await enablePathIntegration(
@@ -300,9 +300,62 @@ test('removePathIntegration reports blocked and preserves metadata if registry r
     adapter
   );
 
+  const initialRecord = readPathRecord(f.home);
+  assert.ok(initialRecord);
+  const shimPath = initialRecord.shimPath;
+  assert.ok(fs.existsSync(shimPath), 'shim exists before removal attempt');
+
+  // Simulate registry failure
   adapter.writeUserPath = async () => { throw new Error('Registry access denied'); };
   const res = await removePathIntegration(f.home, f.installation, 1500, adapter);
   assert.equal(res.action, 'blocked');
   assert.match(res.message, /Registry access denied/);
-  assert.ok(readPathRecord(f.home), 'ownership record preserved for recovery');
+
+  // Ownership record and installation list preserved for retry
+  const preservedRecord = readPathRecord(f.home);
+  assert.ok(preservedRecord, 'ownership record preserved for recovery');
+  assert.deepEqual(preservedRecord.installations, [f.installation], 'installation retained so subsequent uninstall can retry');
+  assert.ok(fs.existsSync(shimPath), 'shim restored on registry failure');
+
+  // Fix adapter and retry removal
+  adapter.writeUserPath = async (val, kind) => {
+    adapter.writes.push({ value: val, kind });
+    adapter.pathValue = val;
+    adapter.pathKind = kind;
+  };
+
+  const retryRes = await removePathIntegration(f.home, f.installation, 1500, adapter);
+  assert.equal(retryRes.action, 'removed', 'retry succeeds once registry write works');
+  assert.equal(readPathRecord(f.home), undefined, 'record removed after successful retry');
+  assert.equal(fs.existsSync(shimPath), false, 'shim deleted after successful retry');
+});
+
+test('syncPathShim restores previous shim content if record write fails', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    adapter
+  );
+
+  const initialRecord = readPathRecord(f.home);
+  const originalShimContent = fs.readFileSync(initialRecord.shimPath, 'utf8');
+
+  const newBundle = path.join(f.root, 'extension-v2/dist/index.cjs');
+  fs.mkdirSync(path.dirname(newBundle), { recursive: true });
+  fs.writeFileSync(newBundle, '/* new runtime bundle */');
+
+  // Make record file directory read-only / make rename fail by creating a directory where record file is expected or breaking writeRecordFile
+  const installsFile = path.join(f.home, '.coagent8', 'installs.json');
+  // In node, we can mock fs.writeFileSync throwing on the tmp record file or make installs.json a read-only directory
+  fs.rmSync(installsFile);
+  fs.mkdirSync(installsFile); // A directory with the same name will cause writeRecordFile (renameSync or writeFileSync) to fail!
+
+  await assert.rejects(
+    () => syncPathShim(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
+      adapter
+    )
+  );
+  assert.equal(fs.readFileSync(initialRecord.shimPath, 'utf8'), originalShimContent, 'previous shim content restored');
 });

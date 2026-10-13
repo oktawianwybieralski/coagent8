@@ -88,19 +88,20 @@ export class DefaultWindowsPathAdapter implements PathSystemAdapter {
     }
   }
 
-  async broadcastEnvironmentChange(timeoutMs = 1000): Promise<void> {
+  async broadcastEnvironmentChange(timeoutMs = 500): Promise<void> {
     if (!this.isWindows()) return;
+    const boundedTimeout = Math.min(Math.max(timeoutMs, 100), 500);
     const script = `
 Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @'
 [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
 public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 '@ -ErrorAction SilentlyContinue;
-[Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, ${timeoutMs}, [ref][UIntPtr]::Zero)
+[Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, ${boundedTimeout}, [ref][UIntPtr]::Zero)
 `;
     try {
       cp.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
         windowsHide: true,
-        timeout: Math.max(timeoutMs + 1000, 2000),
+        timeout: boundedTimeout + 500,
       });
     } catch {
       // Broadcast is advisory; do not fail operation if broadcast times out
@@ -194,6 +195,10 @@ function writeRecordFile(home: string, record: Record<string, unknown>): void {
   }
 }
 
+function setupLockTarget(home: string): string {
+  return path.join(home, '.coagent8', 'setup');
+}
+
 export function readPathRecord(home: string): PathOwnershipRecord | undefined {
   const record = readRecordFile(home);
   const p = record.path;
@@ -246,7 +251,7 @@ export async function enablePathIntegration(
   if (!adapter.isWindows()) {
     return { action: 'unsupported', addedToPath: false, shimPath: '' };
   }
-  return withFileLock(installRecordFile(options.home), async () => {
+  return withFileLock(setupLockTarget(options.home), async () => {
     const binDir = path.join(options.home, '.coagent8', 'bin');
     const shimPath = path.join(binDir, 'coagent8.cmd');
 
@@ -254,9 +259,11 @@ export async function enablePathIntegration(
     const existingPath = readPathRecord(options.home);
 
     let shimExistedBefore = false;
+    let previousShimContent: string | null = null;
     if (fs.existsSync(shimPath)) {
       shimExistedBefore = true;
-      const onDiskHash = hash(fs.readFileSync(shimPath));
+      previousShimContent = fs.readFileSync(shimPath, 'utf8');
+      const onDiskHash = hash(previousShimContent);
       if (!existingPath) {
         throw new Error(`Cannot overwrite unowned file at ${shimPath}`);
       }
@@ -281,6 +288,16 @@ export async function enablePathIntegration(
     fs.mkdirSync(binDir, { recursive: true });
     fs.writeFileSync(shimPath, shimContent, 'utf8');
 
+    const rollbackShim = () => {
+      try {
+        if (!shimExistedBefore) {
+          fs.rmSync(shimPath, { force: true });
+        } else if (previousShimContent !== null) {
+          fs.writeFileSync(shimPath, previousShimContent, 'utf8');
+        }
+      } catch {}
+    };
+
     const normalizedBin = normalizePathEntry(binDir);
     const alreadyExists = parts.some(p => normalizePathEntry(p) === normalizedBin);
 
@@ -290,12 +307,10 @@ export async function enablePathIntegration(
       try {
         await adapter.writeUserPath(parts.join(';'), kind);
       } catch (err) {
-        if (!shimExistedBefore) {
-          try { fs.rmSync(shimPath, { force: true }); } catch {}
-        }
+        rollbackShim();
         throw err;
       }
-      await adapter.broadcastEnvironmentChange(1000);
+      await adapter.broadcastEnvironmentChange(500);
       addedToPath = true;
     }
 
@@ -321,9 +336,7 @@ export async function enablePathIntegration(
         const rollbackParts = parts.filter(p => normalizePathEntry(p) !== normalizedBin);
         try { await adapter.writeUserPath(rollbackParts.join(';'), kind); } catch {}
       }
-      if (!shimExistedBefore) {
-        try { fs.rmSync(shimPath, { force: true }); } catch {}
-      }
+      rollbackShim();
       throw err;
     }
 
@@ -344,7 +357,7 @@ export async function syncPathShim(
 ): Promise<PathSyncResult> {
   if (!adapter.isWindows()) return { action: 'noop' };
   if (!readPathRecord(options.home)) return { action: 'missing' };
-  return withFileLock(installRecordFile(options.home), async () => {
+  return withFileLock(setupLockTarget(options.home), async () => {
     const records = readRecordFile(options.home);
     const record = readPathRecord(options.home);
     if (!record) return { action: 'missing' };
@@ -355,8 +368,8 @@ export async function syncPathShim(
 
     if (!fs.existsSync(record.shimPath)) return { action: 'missing' };
 
-    const onDiskContent = fs.readFileSync(record.shimPath);
-    if (hash(onDiskContent) !== record.shimHash) {
+    const previousShimContent = fs.readFileSync(record.shimPath, 'utf8');
+    if (hash(previousShimContent) !== record.shimHash) {
       return { action: 'preserved' };
     }
 
@@ -369,7 +382,12 @@ export async function syncPathShim(
     record.runtime = runtimeTarget;
     record.shimHash = newShimHash;
     records.path = record;
-    writeRecordFile(options.home, records);
+    try {
+      writeRecordFile(options.home, records);
+    } catch (err) {
+      try { fs.writeFileSync(record.shimPath, previousShimContent, 'utf8'); } catch {}
+      throw err;
+    }
 
     return { action: 'updated' };
   });
@@ -383,7 +401,7 @@ export async function removePathIntegration(
 ): Promise<PathRemovalResult> {
   if (!readPathRecord(home)) return { action: 'missing' };
   const res = await withFileLock<PathRemovalResult>(
-    installRecordFile(home),
+    setupLockTarget(home),
     async (): Promise<PathRemovalResult> => {
       const records = readRecordFile(home);
       const record = readPathRecord(home);
@@ -393,16 +411,18 @@ export async function removePathIntegration(
       if (!isOwner) return { action: 'preserved', message: 'Not an owner of PATH integration' };
 
       const remaining = record.installations.filter(i => !sameInstallation(i, installation));
-      record.installations = remaining;
-
       if (remaining.length > 0) {
+        record.installations = remaining;
         records.path = record;
         writeRecordFile(home, records);
         return { action: 'preserved', message: 'Remaining installations active' };
       }
 
+      let previousShimContent: string | null = null;
+      let shimRemoved = false;
       if (fs.existsSync(record.shimPath)) {
-        const onDiskHash = hash(fs.readFileSync(record.shimPath));
+        const onDiskContent = fs.readFileSync(record.shimPath, 'utf8');
+        const onDiskHash = hash(onDiskContent);
         if (onDiskHash !== record.shimHash) {
           record.userRetained = true;
           records.path = record;
@@ -410,7 +430,9 @@ export async function removePathIntegration(
           return { action: 'preserved', message: 'User-modified shim preserved' };
         }
 
+        previousShimContent = onDiskContent;
         fs.rmSync(record.shimPath, { force: true });
+        shimRemoved = true;
         const dir = path.dirname(record.shimPath);
         try {
           if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
@@ -432,8 +454,14 @@ export async function removePathIntegration(
             }
           }
         } catch (error) {
+          if (shimRemoved && previousShimContent !== null) {
+            try {
+              fs.mkdirSync(path.dirname(record.shimPath), { recursive: true });
+              fs.writeFileSync(record.shimPath, previousShimContent, 'utf8');
+            } catch {}
+          }
           records.path = record;
-          writeRecordFile(home, records);
+          try { writeRecordFile(home, records); } catch {}
           return { action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Registry removal failed.') };
         }
       }

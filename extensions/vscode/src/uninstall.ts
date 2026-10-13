@@ -23,19 +23,26 @@ import { redactDiagnostic } from '../../../src/security/redaction.js';
  * the cleanup itself. What a lease still held protects stays and is reported.
  */
 const LEASE_TIMEOUT_MS = 1500;
+const START_TIME = Date.now();
+const MAX_HOOK_DURATION_MS = 4000;
+
+function remainingBudget(): number {
+  const elapsed = Date.now() - START_TIME;
+  return Math.max(300, Math.min(LEASE_TIMEOUT_MS, MAX_HOOK_DURATION_MS - elapsed));
+}
 
 async function main(): Promise<void> {
   let profiles: VscodeRemoval[] = [], profileError: string | undefined;
   // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
-  try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), LEASE_TIMEOUT_MS); }
+  try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), remainingBudget()); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
   let pathResult: PathRemovalResult | undefined, pathError: string | undefined;
-  try { pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), LEASE_TIMEOUT_MS); }
+  try { pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), remainingBudget()); }
   catch (error) { pathError = redactDiagnostic(error instanceof Error ? error.message : 'PATH cleanup failed.'); }
   let applied: CleanupPreview | undefined, cleanupError: string | undefined;
   try {
     const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
-    applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token, leaseTimeoutMs: LEASE_TIMEOUT_MS });
+    applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token, leaseTimeoutMs: remainingBudget() });
   }
   catch (error) { cleanupError = redactDiagnostic(error instanceof Error ? error.message : 'CoAgent8 registration cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.

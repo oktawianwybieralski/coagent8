@@ -92,15 +92,17 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
   }
   const installsPath = path.join(root, 'installs.json');
   if (fs.existsSync(installsPath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(installsPath, 'utf8'));
-      if (parsed?.path?.runtime && typeof parsed.path.runtime === 'string') {
-        const pRuntime = path.resolve(parsed.path.runtime);
-        if (pRuntime.startsWith(runtimes + path.sep)) {
-          referenced.add(path.relative(runtimes, pRuntime).split(path.sep)[0]!);
-        }
+    const raw = read(installsPath);
+    if (raw === null) throw new Error('Unreadable installs.json');
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { throw new Error('Malformed installs.json'); }
+    const pRuntime = (parsed as { path?: { runtime?: unknown } })?.path?.runtime;
+    if (typeof pRuntime === 'string') {
+      const resolved = path.resolve(pRuntime);
+      if (resolved.startsWith(runtimes + path.sep)) {
+        referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);
       }
-    } catch {}
+    }
   }
   if (fs.existsSync(runtimes)) {
     for (const name of fs.readdirSync(runtimes)) {
