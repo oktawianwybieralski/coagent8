@@ -17,6 +17,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - Integrations:
   - New feature:
     - [`0c0226f`](https://github.com/oktawianwybieralski/coagent8/commit/0c0226f571948f5c25fb26340d71603e047e82b6): Recognize legacy and mcp registration shapes
+  - Bug fix:
+    - [`5d2af22`](https://github.com/oktawianwybieralski/coagent8/commit/5d2af221d6042ddeeb502d11085594f02afeb23f): Harden setup-storage containment and honor launcher prefix
 
 ## v0.6.1 - (2026-10-13)
 
