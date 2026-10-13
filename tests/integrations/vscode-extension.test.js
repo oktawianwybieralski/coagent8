@@ -56,7 +56,7 @@ class MockPathAdapter {
  * @param extraInstallations - Installations besides the one in use, per client; one with
  * `requires` appears once that vendor extension is installed.
  */
-async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName, pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ') } = {}) {
+async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName, deactivateOn, pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ') } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
   const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
@@ -152,7 +152,12 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
         };
       },
       async showOpenDialog() { events.push('open-dialog'); return openDialog === undefined ? undefined : [{ fsPath: openDialog }]; },
-      async showInformationMessage(message, ...actions) { notifications.push({ message, actions }); return answer(actions); },
+      async showInformationMessage(message, ...actions) {
+        notifications.push({ message, actions });
+        // VS Code deactivates while the notice is open; the command resumes afterwards.
+        if (deactivateOn?.test(message)) void module.exports.deactivate();
+        return answer(actions);
+      },
       async showTextDocument(document) { openedFiles.push(document); },
       async showWarningMessage(message, ...rest) {
         warnings.push(message);
@@ -634,6 +639,13 @@ test('an extension copy installed beside a standalone CLI is selected only when 
   assert.deepEqual(used.installs, { installedExtensions: ['openai.chatgpt'] });
   const kept = await runExtension({ ...options, steps: [{ client: 'codex' }, { action: 'installExtension' }], action: 'Keep Current' });
   assert.equal(kept.config, undefined, 'the CLI in use stays');
+});
+test('a command that resumes after deactivation starts no new write and shows no error', async () => {
+  const extraInstallations = { codex: [{ kind: 'vscode-extension', executable: 'vscode-extension', file: path.resolve('vendor', 'openai.chatgpt', 'bin', 'codex.exe'), requires: 'openai.chatgpt' }] };
+  const stopped = await runExtension({ extraInstallations, steps: [{ client: 'codex' }, { action: 'installExtension' }], action: 'Use It', deactivateOn: /still uses/ });
+  assert.ok(stopped.notifications.some(item => /still uses/.test(item.message)), 'the question was asked');
+  assert.equal(stopped.config, undefined, 'the executable choice is not written after deactivation');
+  assert.deepEqual(stopped.errors, []);
 });
 test('Install Standalone CLI inserts the official installer for review and counts it once a check finds the CLI', async () => {
   const opened = await runExtension({ installed: ['claude'], discoverable: ['claude'], steps: [{ client: 'agy' }, { action: 'installStandalone' }] });
