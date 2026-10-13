@@ -9,6 +9,12 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
+## Unreleased
+
+- Ci:
+  - Bug fix:
+    - [`f7c17c7`](https://github.com/oktawianwybieralski/coagent8/commit/f7c17c7c9318ab56b33fb737a4f0eb138c73f74e): Check out repository in publish workflow and resolve npm cli portably
+
 ## v0.6.1 - (2026-10-13)
 
 - Agy:
