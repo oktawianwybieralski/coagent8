@@ -981,7 +981,7 @@ CoAgent8 never changes the user's `PATH` environment variable or creates a binar
    - **Shim directory**: `%USERPROFILE%\.coagent8\bin` (added to user `PATH`).
    - **Shim executable**: `%USERPROFILE%\.coagent8\bin\coagent8.cmd`.
    - **Invocation contract**: The shim invokes Node.js with the immutable, content-addressed runtime copy:
-     ```cmd
+     ```bat
      @echo off
      "node" "<storage>/runtime/<sha256>/index.cjs" %*
      ```

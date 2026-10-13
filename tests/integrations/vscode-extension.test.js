@@ -256,6 +256,9 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
       assert.ok(Date.now() < deadline, 'the onboarding state or notification did not arrive');
       await new Promise(resolve => setTimeout(resolve, 10));
     }
+    if (typeof module.exports.whenIdle === 'function') {
+      await module.exports.whenIdle();
+    }
     assert.deepEqual(steps, [], 'every scripted picker step was used');
     const finalState = readState();
     const state = finalState === undefined ? undefined : JSON.parse(finalState);
@@ -270,7 +273,15 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
   } finally {
     for (const [key, value] of Object.entries(savedHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-    fs.rmSync(extensionRoot, { recursive: true, force: true });
+    for (const sub of context.subscriptions) {
+      if (typeof sub?.dispose === 'function') {
+        try { sub.dispose(); } catch {}
+      }
+    }
+    if (typeof module.exports.deactivate === 'function') {
+      try { await module.exports.deactivate(); } catch {}
+    }
+    fs.rmSync(extensionRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 }
 /**
@@ -652,7 +663,7 @@ test('the Google Antigravity extension without its download yet offers no second
 });
 test('another installation is selected in config.json from its line; automatic discovery removes the choice', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-executable-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const file = path.join(directory, 'config.json');
   const extraInstallations = { claude: [{ kind: 'vscode-extension', executable: 'vscode-extension', file: path.resolve('vendor', 'anthropic.claude-code', 'claude.exe') }] };
   const used = await runExtension({ configPath: file, extraInstallations, steps: [{ client: 'claude' }, { label: /Claude Code \(Anthropic\) VS Code extension$/ }] });
@@ -737,7 +748,7 @@ test('Back in Manage Skills returns one step: packages to actions, actions to th
 });
 test('Manage Skills from a CLI menu manages that CLI without asking for it again; Back returns to the CLI menu', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-menu-skills-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const back = await runExtension({ home, skillProfile: true, steps: [{ client: 'agy' }, { action: 'skills' }, { button: 'Back' }] });
   assert.deepEqual(back.menus.map(menu => menu.title.replace(/:.*/, '')), ['Manage Coding CLIs', 'Antigravity CLI', 'Antigravity CLI Skills', 'Antigravity CLI']);
   assert.equal(back.menus[2].step, '1/2', 'from a CLI menu the CLI is already chosen');
@@ -749,7 +760,7 @@ test('Manage Skills from a CLI menu manages that CLI without asking for it again
 
 test('Manage Model Approvals lists price rules and backends, then models by price, and writes one rule per model to config.json', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const command = 'coagent8.manageModelApprovals';
   const allowed = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(pass-filled) Allow' }] });
   assert.deepEqual(allowed.errors, []);
