@@ -83,9 +83,9 @@ set the pace.
 
 ```mermaid
 flowchart TD
-  P0["Phase 0: owner decisions"] --> P1["Phase 1: public CLI"]
+  P0["Phase 0: owner decisions"] --> P1["Phase 1: public CLI and delegation tests"]
   P1 --> P2["Phase 2: stability, feedback, containment"]
-  P2 --> P3["Phase 3: accepted proposals and package hygiene"]
+  P2 --> P3["Phase 3: read-only delegation, proposals, docs"]
   P3 --> P4["Phase 4: host-led coagent profiles"]
   P4 --> P5["Phase 5: publication automation and 0.7.0 acceptance"]
 ```
@@ -94,6 +94,10 @@ flowchart TD
 recorded in the card it changes:
 
 - `0.7.0` keeps host-led writes (`COAGENT-002` to `005`).
+- Asynchronous delegation with caller wake-up is a headline of `0.7.0`
+  ([`DELEGATE-001`](#delegate-001-asynchronous-delegation-and-caller-wake-up)):
+  read-only delegation lands early, delegation with writes follows the write
+  profiles.
 - npm publishes through staged publishing with approval on npmjs.com
   (`RELEASE-001b`); GitHub releases and the Marketplace use normal, not
   pre-release, channels for `0.x` (`RELEASE-001c`).
@@ -111,9 +115,11 @@ recorded in the card it changes:
 - No paid code-signing certificate: `WINDOWS-001d` uses a free option.
 - `PROPOSALS-001`: recommendations accepted (a, b, d to i); c and j deferred.
 
-**Phase 1 - public CLI ([`CLI-FIRST-001a-e`](#cli-first-001-public-cli-and-mcp-adapter)).**
-Specify the syntax first (`001a`), then dispatch, help and version (`001b`),
-`models` (`001c`), session inspection (`001d`) and `doctor` (`001e`).
+**Phase 1 - public CLI ([`CLI-FIRST-001a-e`](#cli-first-001-public-cli-and-mcp-adapter))
+and delegation tests.** Specify the syntax first (`001a`), then dispatch, help
+and version (`001b`), `models` (`001c`), session inspection (`001d`) and
+`doctor` (`001e`). In parallel, `DELEGATE-001a` tests the wake-up mechanisms
+natively (no product code), so the contract in Phase 2 rests on evidence.
 `coagent8 --help` and `coagent8 models` already exist in `src/index.ts`;
 `001a` keeps or replaces them explicitly. Design inputs for `001a`:
 
@@ -145,11 +151,15 @@ limit), `AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`AUDIT-001-A08` to `A21`](#audit-001-corrected-analysis-follow-up),
 `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`,
 [`ACCEPT-001`](#accept-001-automated-native-acceptance) (automated native
-acceptance and a WSL lane), and
+acceptance and a WSL lane), `DELEGATE-001b/c` (caller identity and the
+delegation contract, with early handles from `SESSION-001`), and
 [`WINDOWS-001b-e`](#windows-001-per-call-process-containment) per-call process
 containment, which must land before any write or command profile.
 
-**Phase 3 - accepted proposals, documentation and package hygiene.** The
+**Phase 3 - read-only delegation, accepted proposals, documentation and
+package hygiene.** `DELEGATE-001e` (working `delegate` for consult and
+review turns) and `DELEGATE-001d` (wake-up adapters for the clients whose
+`001a` tests passed); the
 `PROPOSALS-001` items accepted in Phase 0,
 [`DOCS-003`](#docs-003-documentation-site) (the GitHub Pages site and the
 human-facing documentation), `DOCS-002c/e`, and
@@ -161,8 +171,7 @@ implementation cards created from the accepted contracts for host-led
 write/check/review/fix profiles, role configuration and multi-file skills;
 `CLI-FIRST-001f` (one execution path through the CLI) after the profiles;
 `FAILOVER-001a`; [`PLUGIN-001a-g`](#plugin-001-native-plugin-in-every-supported-client);
-the native tests and contracts of
-[`DELEGATE-001a-c`](#delegate-001-asynchronous-delegation-and-caller-wake-up).
+`DELEGATE-001f` (delegation of write tasks through the accepted profiles).
 
 **Phase 5 - publication automation and 0.7.0 acceptance.**
 [`RELEASE-001a-g`](#release-001-automated-publication), then the release PR
@@ -175,8 +184,9 @@ and may land earlier without changing this order.
 
 ### After 0.7.0
 
-1. Add delegated coordination and parallel work (`COAGENT-006`,
-   `DELEGATE-001d`), with root limits, writer ownership and recoverable task
+1. Add delegated coordination and parallel work (`COAGENT-006`: a
+   task-scoped gateway, fan-out and depth limits, tree cancellation), building
+   on `DELEGATE-001`, with root limits, writer ownership and recoverable task
    state.
 2. Accept CLI execution, supported clients/platforms and benchmarks
    (`CLI-FIRST-001g-i`, `COAGENT-008`, `FAILOVER-001b/c`, `REPO-002f`), then
@@ -425,7 +435,11 @@ consultations) found per-client mechanisms to test: Claude Code channels
 in Codex CLI 0.162), and agy background `run_command` re-invocation
 (claimed). No client lets a plugin subagent run on another vendor's CLI, so a
 plugin is packaging, not the integration; a cheap-model proxy subagent that
-only calls CoAgent8 is the fallback. Status: blocked on native tests.
+only calls CoAgent8 is the fallback. Owner decision 2026-10-13: a headline of
+`0.7.0`. Read-only delegation does not depend on write profiles or
+`WINDOWS-001`, so it lands early (Phases 1-3 of the
+[0.7.0 plan](#070-beta3-plan)); delegation of write tasks follows the
+profiles (Phase 4).
 
 - [ ] **DELEGATE-001a - native tests of the wake-up mechanisms.** In the
   Claude Code VS Code extension: plugin monitors and channels; Codex:
@@ -444,11 +458,24 @@ only calls CoAgent8 is the fallback. Status: blocked on native tests.
   completion, notification sent and result fetched are separate, deduplicated
   states, with no wake-up after cancel. Record in ARCHITECTURE as
   unimplemented. Check: P.
-- [ ] **DELEGATE-001d - wake-up adapters.** After `001a-c` and with
-  `COAGENT-006`: optional per-client adapters (Claude Code monitor
-  `coagent8 watch`, later a channel; Codex `codex queue`; agy background
-  `coagent8 wait`), or the proxy subagent in each client's plugin if the
-  adapters prove fragile. Check: R, native per client.
+- [ ] **DELEGATE-001d - wake-up adapters.** After `001a-c` and the CLI
+  (`CLI-FIRST-001b`): per-client adapters for the clients whose `001a` tests
+  passed (Claude Code monitor `coagent8 watch`, later a channel; Codex
+  `codex queue`; agy background `coagent8 wait`), or the proxy subagent in
+  each client's plugin where adapters prove fragile. A client without a
+  working adapter still gets the result through `session` and `wait`.
+  Check: R, native per client.
+- [ ] **DELEGATE-001e - read-only delegate.** After `001c`: `delegate` starts
+  a consult or review turn in the background and returns its handle at once
+  (early handle publication, `SESSION-001`); the turn runs under owned
+  supervision independent of the calling MCP request (`COAGENT-004`), keeps
+  price limits, model approval and the read-only profiles, writes its result
+  before any wake-up, and is stopped by `cancel` or server shutdown without
+  survivors. Check: R, LIFE/PROCESS/SESSION, MCP/E2E, native per backend.
+- [ ] **DELEGATE-001f - delegation of write tasks.** After `COAGENT-002` to
+  `005` and `WINDOWS-001b-e`: the same `delegate` runs host-led write, check
+  and fix tasks through the accepted profiles and task records. Check: R,
+  native.
 
 ## Remaining foundation work
 
@@ -1581,7 +1608,7 @@ previews are `0.7.0`, `0.8.0` and `0.9.0`.
 | --- | --- |
 | BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](HANDOFF.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
 | PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
-| BETA-001: beta.3 (0.7.0) | Phases 0-5 of the [0.7.0 plan](#070-beta3-plan): public CLI (CLI-FIRST-001a-e), FEEDBACK-061, accepted PROPOSALS-001 items and RELEASE-001; host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e and SUPPLY-001c-e may ship. |
+| BETA-001: beta.3 (0.7.0) | Phases 0-5 of the [0.7.0 plan](#070-beta3-plan): public CLI (CLI-FIRST-001a-e), asynchronous delegation with caller wake-up (DELEGATE-001), FEEDBACK-061, accepted PROPOSALS-001 items and RELEASE-001; host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e and SUPPLY-001c-e may ship. |
 | RC-001: rc.1 (next preview, first on `1.0.x`) | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
