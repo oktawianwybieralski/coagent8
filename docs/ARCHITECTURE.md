@@ -577,6 +577,217 @@ initialize/tools-list, native host calls, UI/skill discovery and install/update/
 uninstall are separate acceptance claims. Preliminary owner evidence does not
 establish support for every host/version. The roadmap owns outstanding checks.
 
+## Public CLI and dispatch specification (target design)
+
+> Target specification pending implementation across Phase 1 (CLI-FIRST-001b through 001e). Current baseline runtime dispatch is defined in `src/index.ts`.
+
+CoAgent8 exposes a command-line interface via npm package executable `coagent8`
+([CLI-FIRST-001](ROADMAP.md#cli-first-001-public-cli-and-mcp-adapter)). The CLI
+shares engine, diagnostic, session and integration services with the MCP server
+while providing deterministic command routing, lazy bundle loading, structured
+JSON output and explicit process exit codes.
+
+### Execution entry point and binary aliases
+
+The package declares binary entry points in `package.json`:
+- `coagent8`: primary command (`dist/index.cjs`).
+- `coagent8-mcp`: backward-compatible alias pointing to `dist/index.cjs`.
+
+All invocations enter `src/index.ts`. Root argument parsing and command routing
+execute synchronously before loading optional subsystem bundles or initializing
+backend adapters.
+
+### Bare invocation, explicit MCP and legacy fallback (Option D)
+
+Bare invocation and transport routing follow owner decision Option D
+(2026-10-13, Codex consultation `syn_sess_dbbaad3b7fd79cadbb8e15dc`):
+
+1. **Recognized commands and root flags** (`--help`, `--version`, `models`,
+   `doctor`, `session`, `setup`, `repair`, `status`, `cleanup`, `skills`, `mcp`):
+   Dispatched immediately, independent of stream or TTY state.
+2. **Zero arguments (bare `coagent8`)**:
+   - When both `process.stdin.isTTY === true` and `process.stdout.isTTY === true`:
+     prints root help text to stdout and exits with code 0 (future: opens an
+     interactive terminal UI once accepted).
+   - When either `stdin` or `stdout` is non-TTY (redirected, piped or spawned by an
+     MCP host): starts the legacy MCP stdio server.
+3. **Explicit `coagent8 mcp`**:
+   - Always starts the MCP stdio server regardless of TTY status. New client
+     registrations (setup, the VS Code extension, sample configurations) use
+     this explicit command.
+   - Any unrecognized arguments passed to `coagent8 mcp` are rejected with exit
+     code 2 and an error message to stderr.
+4. **Legacy fallback (unrecognized root invocation)**:
+   - When both `stdin` and `stdout` are TTYs: rejected as an unknown command with
+     exit code 2 and a usage hint written to stderr.
+   - When either stream is non-TTY: to preserve compatibility with legacy MCP
+     hosts that pass unexpected arguments, the arguments are ignored, a single
+     bounded, redacted diagnostic warning is emitted to stderr, and the legacy
+     MCP stdio server starts.
+
+| Invocation | Stdin TTY | Stdout TTY | Dispatched action | Exit code |
+| --- | --- | --- | --- | --- |
+| `coagent8` (bare) | Yes | Yes | Print root help (future: open TUI) | 0 |
+| `coagent8` (bare) | No | Yes | Start legacy MCP stdio server | 0 (clean shutdown) |
+| `coagent8` (bare) | Yes | No | Start legacy MCP stdio server | 0 (clean shutdown) |
+| `coagent8` (bare) | No | No | Start legacy MCP stdio server | 0 (clean shutdown) |
+| `coagent8 mcp` | Any | Any | Start MCP stdio server | 0 (clean shutdown) |
+| `coagent8 <known-cmd>` | Any | Any | Dispatch subcommand | Per command |
+| `coagent8 <unknown>` | Yes | Yes | Print usage error to stderr | 2 |
+| `coagent8 <unknown>` | No (either) | Any | Stderr warning, start legacy MCP stdio | 0 (clean shutdown) |
+
+### Dispatch and lazy loading boundaries
+
+Root dispatch enforces strict isolation to prevent unnecessary initialization overhead:
+- `--help` / `-h` and `--version` / `-v` load neither the setup bundle (`setup.cjs`),
+  nor the MCP server (`stdio-server.ts`), nor backend CLI adapters (`src/backends/`).
+- `coagent8 mcp` loads the MCP transport and execution pipeline, but never loads the
+  optional setup bundle.
+- Information commands (`models`, `doctor`, `session`) load only their respective
+  diagnostic or session owners; they never load `setup.cjs` or start the MCP server.
+- Management commands (`setup`, `repair`, `status`, `cleanup`, `skills`) lazily load
+  `setup.cjs` on first dispatch.
+
+### Global flags and argument parsing
+
+The root parser recognizes the following global flags:
+- `--help`, `-h`: displays command usage and exits with code 0. When passed alongside
+  a recognized subcommand, displays that command's help.
+- `--version`, `-v`: displays the current package version and exits with code 0.
+- `--json`: requests machine-readable JSON output on stdout for commands that support
+  structured reporting (`models`, `doctor`, `session`, `setup`, `status`, `cleanup`,
+  `skills`).
+
+Argument parsing rules:
+- Options accepting values support both space-separated (`--flag value`) and
+  equals-separated (`--flag=value`) syntax.
+- Flags are case-sensitive.
+- For scalar flags repeated on the command line, the last occurrence takes precedence.
+- The double dash (`--`) terminates option parsing; subsequent arguments are treated
+  as positional arguments.
+
+### Command inventory
+
+#### Information and inspection commands
+
+- `coagent8 --help` / `-h`: root help text listing available commands and options.
+- `coagent8 --version` / `-v`: prints version string (e.g. `0.7.0`).
+- `coagent8 models [--backend codex|claude|agy] [--json]`:
+  Queries cached model catalog data (`src/diagnostics/models-cli.ts`, `AX-001`).
+  Lists offered models, supported reasoning efforts, output token prices, and
+  governance approval tags (`allow`, `ask`, `deny`). Default output is human-readable
+  text summary; `--json` emits the model report JSON preserving the shape consumed
+  by VS Code Manage Model Approvals.
+- `coagent8 doctor [--scope models|health] [--backend codex|claude|agy] [--json]`:
+  Runs diagnostics (`src/diagnostics/doctor.ts`). Default scope is `models` (cached
+  catalog view); scope `health` verifies CLI discovery, authentication status, and
+  quota headroom. Creates no execution sessions, preserves diagnostic redaction, and
+  exits cleanly on SIGINT. Default output is human text; `--json` emits the full
+  diagnostic report.
+- `coagent8 session list [--json]`:
+  Lists known active and historical sessions for the current workspace
+  (defaults to `process.cwd()`, aligning with MCP workspace resolution). Default output
+  is a human-readable table/summary; `--json` emits an array of session metadata.
+- `coagent8 session history <handle> [--cursor <cursor>] [--limit <n>] [--json]`:
+  Inspects paginated turn history for a session handle (`src/sessions/`). Bounded by
+  `--limit` (1 to 100, default 20). Rejects invalid handles or unknown cursors with
+  errors matching MCP `session`. Default output is human text; `--json` emits paginated
+  turn records.
+
+#### Management and integration commands
+
+Loaded lazily from `setup.cjs` (`src/integrations/setup-cli.ts`):
+- `coagent8 setup [--clients=codex,claude,agy]`:
+  Registers CoAgent8 with the specified native hosts and reconciles client skills.
+- `coagent8 repair [--clients=codex,claude,agy]`:
+  Verifies and restores missing or corrupted owned host registrations and skills.
+- `coagent8 status [--clients=codex,claude,agy]`:
+  Inspects installation and registration status across hosts without running full doctor.
+- `coagent8 cleanup [--clients=codex,claude,agy] [--apply=<token>]`:
+  Previews owned registration and skill removals; applies removals only when passed
+  a valid preview token via `--apply=<token>`.
+- `coagent8 skills status|install|uninstall|enable|disable [--clients=codex,claude,agy] [--skills=...] [--apply=<token>]`:
+  Manages client skills. Status takes only `--clients`. Mutations produce preview tokens
+  that must be applied with `--apply=<token>`. Applying a mutation preview requires
+  targeting exactly one client.
+
+#### Server command
+
+- `coagent8 mcp`:
+  Starts the standard MCP JSON-RPC server over stdio. Protocol traffic uses stdout;
+  diagnostics and operational logging use stderr.
+
+### Exit codes
+
+| Exit code | Meaning | Conditions |
+| --- | --- | --- |
+| `0` | Success | Command completed successfully; `--help` or `--version` executed; clean MCP shutdown. |
+| `1` | Operational failure / domain refusal | Business logic refusal or unfulfilled prerequisite: `status` reports no ready clients; `cleanup` has blocked/conflicting items; skill action encounters conflicts; review evaluates to BLOCKED. |
+| `2` | Syntax or usage error | Invalid arguments, unknown command or option, missing required argument (e.g. missing `<handle>` for `session history`), malformed flag syntax. |
+| `130` | Interrupted by user | Received SIGINT (Ctrl+C). Guaranteed process teardown and file lock cleanup complete before exit. |
+
+### Output streams, redaction and buffer bounds
+
+- **Standard output (stdout)**:
+  Reserved exclusively for command results (human-readable text or JSON) or MCP
+  protocol messages. Total buffered stdout for CLI commands is bounded by
+  `maxBufferBytes` (512 KB) to prevent unbounded memory allocation. Output lines are
+  strictly newline-terminated.
+- **Standard error (stderr)**:
+  Reserved for error messages, warnings, and diagnostic telemetry. All output written
+  to stderr passes through `redactDiagnostic` to strip API keys, auth tokens, and
+  user home directory paths.
+- **JSON contract**:
+  When `--json` is specified, stdout contains strictly valid JSON followed by a
+  trailing newline. Errors encountered during `--json` execution format structured
+  error representations or emit diagnostic errors to stderr with exit code 2 or 1.
+
+### Invocation examples
+
+```bash
+# Display root help (TTY terminal)
+coagent8
+coagent8 --help
+
+# Query version
+coagent8 --version
+
+# Run explicit MCP server over stdio
+coagent8 mcp
+
+# Inspect available models and prices as human text
+coagent8 models
+
+# Query models in JSON format for scripting or editor integration
+coagent8 models --backend codex --json
+
+# Run doctor health checks in JSON
+coagent8 doctor --scope health --json
+
+# List active sessions in current repository
+coagent8 session list
+
+# View paginated session turn history
+coagent8 session history syn_sess_5aaa080be2d8f37fb564ca08 --limit 10
+
+# Check client registration status (JSON output)
+coagent8 status --clients=codex,claude,agy --json
+
+# Preview cleanup of owned registrations and skills
+coagent8 cleanup --clients=codex
+
+# Apply previewed cleanup with token
+coagent8 cleanup --clients=codex --apply=3f7b2a9e...
+
+# Syntax error example (exits with code 2)
+coagent8 models --invalid-opt
+# stderr: Unknown argument '--invalid-opt'. Usage: coagent8 models [--backend codex|claude|agy] [--json]
+
+# Domain failure example (exits with code 1)
+coagent8 status --clients=codex
+# stdout: [...] (no ready clients found) -> exit code 1
+```
+
 ## Target orchestration design (not implemented)
 
 MCP will adapt to the matching packaged execution CLI under CLI-FIRST-001.
@@ -665,6 +876,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-11 | One numeric version without pre-release suffixes for npm, the VSIX and the Git tag (`vX.Y.Z`), because VS Code accepts only numeric extension versions and offers Restart Extensions only when the number changes. Every version below 1.0.0 is a preview (VS Code and GitHub pre-release, npm `next`); each preview raises the minor. 0.5.0 is skipped: the npm name placeholder 1.0.0-beta.1 held it and is withdrawn, with no tag, GitHub Release or changelog entry. The candidate prepared as beta.2 becomes 0.6.0 and the final release is 1.0.0 (REPO-003). |
 | 2026-10-11 | The user's model rules follow the allow/ask/deny convention (governance.models): deny refuses a model with the reason, ask asks every turn and states the price, allow is standing approval; deny wins over ask, ask over allow. They replace alwaysAsk/neverAsk without aliases: nothing was published with them. Approval stays the server's MCP form only: an answer the calling agent relays from chat is not consent. The model-visible tool-definition budget rises to 5,900 bytes so the model parameter tells the caller to ask the user before a model doctor tags ask. |
 | 2026-10-11 | Approval rules live only in config.json, which every client's server reads; their VS Code settings are removed. The VS Code command Manage Model Approvals lists price rules and each backend's models with prices and tags from `coagent8 models --json` (the doctor model view) and writes one rule per model. Clients without MCP form elicitation (Antigravity, Codex 0.160.1, headless) fail closed; the user allows a model there instead. |
+| 2026-10-13 | Bare `coagent8` follows Option D: when stdin and stdout are both terminals it prints help; otherwise it starts the legacy MCP server over stdio; `coagent8 mcp` always starts the server. Unknown arguments in terminals exit 2; non-TTY fallback emits a stderr warning and starts MCP. |
 
 ## Known limitations
 
