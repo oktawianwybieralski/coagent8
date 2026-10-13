@@ -1210,7 +1210,22 @@ behavior or a test-procedure lesson.
   selection shows "Selected CLI not found" in a profile without the vendor
   extension. Also check that the update offer never proposes a downgrade when a
   registration points to a newer runtime, and whether "Update CoAgent8 in all
-  CLI chats" rewrites clients the menu did not list. Check: R, VS Code scope.
+  CLI chats" rewrites clients the menu did not list.
+  Policy (2026-10-14, FEEDBACK-061b1/b2):
+  1. External CLI chat registrations (`~/.claude.json`, `~/.codex/config.toml`,
+     agy `mcp_config.json`) omit `coagent8_DIR` from environment settings,
+     allowing CLI chats to use the shared user directory `~/.coagent8`. Only
+     VS Code profile `mcp.json` sets `coagent8_DIR: storage`. Setup for CLI
+     clients migrates legacy profile-directed registrations by stripping
+     `coagent8_DIR`.
+  2. Downgrade prevention: Runtimes co-locate version metadata (`version.json`
+     beside runtime bundle or extracted `SERVER_VERSION`). When a registered
+     runtime is newer than the candidate runtime, `readRegistrations` flags
+     `isNewer: true` and never marks it as outdated. Setup preserves newer
+     registrations without overwriting. The VS Code extension never offers
+     updates or downgrades for clients with newer runtimes, and "Update
+     CoAgent8 in All CLI Chats" updates only genuinely outdated registrations.
+  Check: R, VS Code scope.
 - [ ] **FEEDBACK-061c - issue reports that reach GitHub.** The agy chat
   renderer decodes `%26` to `&` (cutting `body` after "Description ") and
   re-encodes `%23` as `%2523`; the server URL and the copyable block are
@@ -1764,8 +1779,8 @@ agent (owner assigns).
 | --- | --- | --- | --- | --- |
 | 2.1 | [x] `FEEDBACK-061a1` server version in `doctor` (#45) | R | - | `doctor` health shows the running server version and runtime path; tests. |
 | 2.2 | [x] `FEEDBACK-061a2` update notice (#45) | R | - par | The extension's update notice says open chats keep the old runtime until restarted; test. |
-| 2.3 | `FEEDBACK-061b1` shared registration reproduction | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
-| 2.4 | `FEEDBACK-061b2` registration policy | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
+| 2.3 | [x] `FEEDBACK-061b1` shared registration reproduction (#46) | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
+| 2.4 | [x] `FEEDBACK-061b2` registration policy (#46) | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
 | 2.5 | `FEEDBACK-061b3` selection outside the vendor profile | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |
 | 2.6 | `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
 | 2.7 | `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |

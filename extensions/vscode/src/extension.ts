@@ -83,6 +83,19 @@ function discoveryEnvironment(storage: string): NodeJS.ProcessEnv {
   return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_DIR: storage, coagent8_CONFIG: configurationFile(), [EDITOR_SETTINGS_ENV]: editorSettings() };
 }
 /**
+ * Environment for shared setup and skill management across external CLI chats.
+ * Does not set `coagent8_DIR`, allowing external chats to share `~/.coagent8` instead of
+ * being redirected to an individual VS Code profile's globalStorage.
+ */
+function setupEnvironment(): NodeJS.ProcessEnv {
+  const locations: Record<string, string> = {};
+  for (const [client, id] of Object.entries(EXTENSIONS)) {
+    const extension = vscode.extensions.getExtension(id);
+    if (extension?.extensionUri.scheme === 'file') locations[client] = extension.extensionPath;
+  }
+  return { ...process.env, coagent8_EXTENSION_PATHS: JSON.stringify(locations), coagent8_CONFIG: configurationFile(), [EDITOR_SETTINGS_ENV]: editorSettings() };
+}
+/**
  * Serializes the backend, model and approval settings the user set explicitly. Only the user
  * value counts: defaults leave config.json in effect, and a workspace cannot change approval.
  */
@@ -116,7 +129,8 @@ function describe(result: SetupStatus, registration: RegistrationStatus): string
     : result.installed ? (result.compatibility === 'supported' ? `Sign-in needed (${result.authentication})` : `Update needed - ${result.diagnostic}`)
       : antigravityDownloadPending(result) ? 'Downloading - the Google Antigravity extension installs this CLI when its backend starts'
         : result.action === 'blocked' ? `Blocked - ${result.message}` : 'Not installed';
-  const chat = registration.state === 'owned' ? (registration.current ? 'in its chat' : 'in its chat for another version')
+  const chat = registration.state === 'owned'
+    ? (registration.current ? 'in its chat' : registration.isNewer ? 'in its chat (newer version)' : 'in its chat for another version')
     : registration.state === 'manual' ? 'in its chat (manual entry, kept)'
       : registration.state === 'blocked' ? `chat configuration unreadable - ${registration.message}` : 'not in its chat';
   return `${cli} · ${chat}`;
@@ -388,7 +402,16 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (!nodePath) throw new Error('Configure coagent8.nodePath with a Node.js 24+ executable.');
     const folders = vscode.workspace.workspaceFolders ?? [];
     clearCliResolverCache();
-    return { runtimeSource: context.asAbsolutePath('dist/index.cjs'), skillsSource: context.asAbsolutePath('skills'), nodePath, home: os.homedir(), cwd: folders.length === 1 ? folders[0].uri.fsPath : os.homedir(), env: discoveryEnvironment(storage), origin: EXTENSION_ORIGIN, dataDirectory: storage };
+    return {
+      runtimeSource: context.asAbsolutePath('dist/index.cjs'),
+      skillsSource: context.asAbsolutePath('skills'),
+      nodePath,
+      home: os.homedir(),
+      cwd: folders.length === 1 ? folders[0].uri.fsPath : os.homedir(),
+      env: setupEnvironment(),
+      origin: EXTENSION_ORIGIN,
+      version,
+    };
   }
   /** {@link localOptions} for setup, which checks the CLIs and project-level entries in the one workspace folder. */
   function options() {
@@ -844,7 +867,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
    */
   async function manageSkillsOf(client: SetupClient, chosenClient = false): Promise<'back' | void> {
     const first = chosenClient ? 2 : 1, total = first + 1;
-    const skillOptions = { client, home: os.homedir(), env: discoveryEnvironment(storage), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN };
+    const skillOptions = { client, home: os.homedir(), env: setupEnvironment(), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN };
     for (;;) {
       const current = await startTracked(() => manageSkills(skillOptions));
       const actions = SKILL_ACTIONS.filter(entry => current.skills.some(entry.applies));
@@ -873,7 +896,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   register('coagent8.manageSkills', async () => {
     for (;;) {
       const items = await Promise.all(SETUP_CLIENTS.map(async client => {
-        const { skills } = await startTracked(() => manageSkills({ client, home: os.homedir(), env: discoveryEnvironment(storage), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN }));
+        const { skills } = await startTracked(() => manageSkills({ client, home: os.homedir(), env: setupEnvironment(), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN }));
         return { label: `${skills.some(item => item.state === 'enabled') ? '$(pass-filled)' : '$(circle-large-outline)'} ${LABELS[client]}`, client, description: skillSummary(skills) };
       }));
       const chosen = await choose({ title: 'Manage Skills', placeholder: 'Choose a CLI', items, step: [1, 3] });
@@ -1033,7 +1056,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     });
     // Registration needs a compatible CLI, not a sign-in; manual entries stay as they are.
     const addable = results.filter(result => result.installed && result.compatibility === 'supported' && registrationOf(result.client).state === 'absent').map(result => result.client);
-    const outdated = registrations.filter(item => item.state === 'owned' && !item.current).map(item => item.client);
+    const outdated = registrations.filter(item => item.state === 'owned' && !item.current && !item.isNewer).map(item => item.client);
     const bulk: ListItem[] = [
       ...(addable.length ? [{ label: '$(plug) Add CoAgent8 to All CLI Chats', description: labels(addable), clients: addable }] : []),
       ...(outdated.length ? [{ label: '$(sync) Update CoAgent8 in All CLI Chats', description: labels(outdated), clients: outdated }] : []),
@@ -1069,7 +1092,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const chat: MenuItem[] = [];
     if (compatible && result.authentication !== 'authenticated') chat.push({ label: '$(sign-in) Sign In', description: `sign-in ${result.authentication}`, action: 'signIn' });
     if (compatible && registration.state === 'absent') chat.push({ label: '$(plug) Add CoAgent8 to Its Chat', action: 'connect' });
-    if (registration.state === 'owned' && !registration.current) chat.push({ label: '$(sync) Update CoAgent8 in Its Chat', description: 'another CoAgent8 version', action: 'connect' });
+    if (registration.state === 'owned' && !registration.current && !registration.isNewer) chat.push({ label: '$(sync) Update CoAgent8 in Its Chat', description: 'another CoAgent8 version', action: 'connect' });
     const removals: MenuItem[] = [];
     if (registration.state === 'owned') removals.push({ label: '$(debug-disconnect) Remove CoAgent8 from Its Chat', description: 'the CLI stays', action: 'disconnect' });
     if (record.installedExtensions?.includes(vendor.id) && extensionInstalled) removals.push({ label: '$(trash) Uninstall VS Code Extension', description: 'on its page', action: 'uninstallExtension' });
@@ -1329,7 +1352,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (vscode.env.remoteName || isDeactivating || !readSetupState(storage).welcomed) return;
     const runtime = `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`;
     if (readSetupState(storage).updateOffered === runtime) return;
-    const outdated = readRegistrations(localOptions()).filter(item => item.state === 'owned' && !item.current).map(item => item.client);
+    const outdated = readRegistrations(localOptions()).filter(item => item.state === 'owned' && !item.current && !item.isNewer).map(item => item.client);
     if (!outdated.length || isDeactivating) return;
     await startTracked(() => updateSetupState(storage, { updateOffered: runtime }));
     if (isDeactivating) return;

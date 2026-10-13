@@ -34,14 +34,17 @@ Do not append another session transcript or treat old test counts as fresh evide
   readability gaps found in that run are the unscheduled card
   `CLI-FIRST-001j`. Row 1.14 (`DELEGATE-001a`) is a native owner task.
 - **Phase 2 progress (2026-10-14):** rows 2.1-2.2 (`FEEDBACK-061a1/a2`, "Accurate
-  runtime/update guidance") are implemented in PR #45: `doctor` health reports
-  `server_version` and normalized/bounded `runtime_path`, and the VS Code
-  extension update notice warns that open chats keep the old runtime until restarted.
-  The next agent work is result group 2.3-2.4 (`FEEDBACK-061b1/b2`, "Shared registration policy").
+  runtime/update guidance") are merged in PR #45. Rows 2.3-2.4 (`FEEDBACK-061b1/b2`,
+  "Shared registration policy") are implemented in PR #46: external CLI chats omit
+  `coagent8_DIR` to use shared user directory `~/.coagent8` and migrate legacy
+  profile-directed registrations, while downgrade prevention preserves newer
+  runtime registrations and suppresses update/downgrade offers in VS Code.
+  The next agent work is result group 2.6-2.8 (`FEEDBACK-061c1`, `FEEDBACK-061d`,
+  `FEEDBACK-061f`, "Bug-report content and paste flow").
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
-  commits/checklist items on one branch. Merged #33-#44 keep their history;
-  PR #45 implements result group 2.1-2.2. Required review and
+  commits/checklist items on one branch. Merged #33-#45 keep their history;
+  PR #46 implements result group 2.3-2.4. Required review and
   CI cover each complete result; a task ID or line count is not a PR boundary.
 
 ## 0.6.1 release evidence

@@ -386,6 +386,28 @@ test('an activation with an outdated CLI chat registration offers to update the 
   assert.match(roots.warnings[0], /^CoAgent8 was updated, but the chats of Claude Code CLI still start the previous version\. Update them now; open chats keep the old runtime until restarted\./);
 });
 
+test('an activation with a newer CLI chat registration offers no update or downgrade (FEEDBACK-061b2)', async () => {
+  const result = await runExtension({ activationOnly: true, registrations: { codex: 'owned', claude: 'newer', agy: 'owned' } });
+  assert.equal(result.warnings.length, 0, 'no update warning or downgrade offer shown for newer registration');
+  assert.equal(result.state?.updateOffered, undefined);
+
+  // Manage Coding CLIs describes newer version and does not offer bulk or single update for it
+  const manage = await runExtension({ registrations: { codex: 'owned', claude: 'newer', agy: 'owned' }, command: 'coagent8.manageClis' });
+  const claudeItem = manage.pickers[0].items.find(item => item.client === 'claude');
+  assert.ok(claudeItem, 'Claude item listed');
+  assert.match(claudeItem.description, /newer version/);
+  assert.ok(!manage.pickers[0].items.some(item => item.label && item.label.includes('Update CoAgent8 in All CLI Chats')), 'no bulk update offered');
+});
+
+test('Update CoAgent8 in All CLI Chats updates only outdated clients leaving others untouched (FEEDBACK-061b)', async () => {
+  const updated = await runExtension({
+    registrations: { codex: 'owned', claude: 'outdated', agy: 'owned' },
+    command: 'coagent8.manageClis',
+    steps: [{ label: /\$\(sync\) Update CoAgent8 in All CLI Chats/ }],
+  });
+  assert.deepEqual(updated.registrations, [['claude']], 'only outdated client claude was passed to setupClients');
+});
+
 test('the extension keeps no state in globalState, which VS Code keeps after uninstall', async () => {
   const result = await runExtension({ installed: ['codex'], welcomed: false, activationOnly: true, awaitNotifications: 1, legacyState: { unrelated: 'kept' } });
   assert.deepEqual(result.legacyUpdates, []);

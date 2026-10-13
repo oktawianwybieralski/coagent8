@@ -44,7 +44,14 @@ export function readRegistrations(options) {
   if (!options.runtimeSource) throw new Error('missing runtime');
   return SETUP_CLIENTS.map(client => {
     const state = scripted().registrationStates[client];
-    return { client, state: state === 'outdated' ? 'owned' : state ?? 'absent', current: state !== 'outdated', message: state === 'blocked' ? 'Malformed fixture configuration.' : 'fixture' };
+    const isNewer = state === 'newer';
+    return {
+      client,
+      state: state === 'outdated' || isNewer ? 'owned' : state ?? 'absent',
+      current: state !== 'outdated' && !isNewer,
+      message: state === 'blocked' ? 'Malformed fixture configuration.' : isNewer ? 'Registered by setup for a newer CoAgent8 version (9.9.9); preserved.' : 'fixture',
+      ...(isNewer ? { isNewer: true, version: '9.9.9' } : {}),
+    };
   });
 }
 export async function setupClients(options) {
@@ -52,5 +59,8 @@ export async function setupClients(options) {
   if (options.origin !== 'vscode-extension') throw new Error('missing extension origin');
   if (options.statusOnly) return options.clients.map(client => scripted().statusOf(client));
   scripted().recordClients(options.clients);
-  return options.clients.map(client => ({ ...scripted().statusOf(client), action: scripted().registrationStates[client] === 'outdated' ? 'updated' : 'installed' }));
+  return options.clients.map(client => ({
+    ...scripted().statusOf(client),
+    action: scripted().registrationStates[client] === 'newer' ? 'preserved' : scripted().registrationStates[client] === 'outdated' ? 'updated' : 'installed',
+  }));
 }
