@@ -1333,7 +1333,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (!outdated.length || isDeactivating) return;
     await startTracked(() => updateSetupState(storage, { updateOffered: runtime }));
     if (isDeactivating) return;
-    const next = await vscode.window.showWarningMessage(`CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Update them now, then restart those chats.`, 'Update CLI Chats');
+    const next = await vscode.window.showWarningMessage(`CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Update them now; open chats keep the old runtime until restarted.`, 'Update CLI Chats');
     if (isDeactivating) return;
     if (next === 'Update CLI Chats') await trackTask(connect(outdated));
   }

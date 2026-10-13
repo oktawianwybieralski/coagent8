@@ -11,7 +11,10 @@ import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools, Qu
 import { adapterRegistry } from '../backends/registry.js';
 import { createPhaseTracker, type PhaseTracker } from '../execution/runtime/timing.js';
 import { createExecutionBudget } from '../execution/runtime/budget.js';
+import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
+import { BRAND } from '../brand.js';
+import { getRuntimePath } from '../paths.js';
 import {
   DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
   type TimingObserver,
@@ -96,6 +99,10 @@ export interface DoctorReport {
   recommendations: string[];
   installed_backends: ProviderId[];
   ready_backends: ProviderId[];
+  /** Running server version (`FEEDBACK-061a1`). */
+  server_version: string;
+  /** Active runtime path executing CoAgent8 (`FEEDBACK-061a1`). */
+  runtime_path: string;
   /** Why the configuration file is unusable; the report then shows the defaults and execution is refused. */
   configError?: string;
   /** Provenance and change identity of the configuration snapshot used for diagnostics. */
@@ -362,6 +369,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     active_backends: active,
     installed_backends: selected.filter(id => probes[id]!.installed),
     ready_backends: ready,
+    server_version: BRAND.SERVER_VERSION,
+    runtime_path: redactDiagnostic(getRuntimePath()),
     configuredDefault: config.defaultBackend,
     effectiveDefault: effective,
     default_backend: effective || 'auto',
@@ -478,6 +487,9 @@ function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId)
   return text;
 }
 
+/** Maximum byte budget allocated to the displayed runtime path in the summary header. */
+export const DOCTOR_RUNTIME_PATH_MAX_BYTES = 256;
+
 /**
  * Renders a health report as a few lines: overall status and price list, one line per
  * backend with its readiness and quota, its models with their prices, and the recommendations.
@@ -485,8 +497,11 @@ function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId)
  */
 export function formatDoctorSummary(report: DoctorReport): string {
   const ids = Object.keys(report.backends) as ProviderId[];
+  const versionPart = report.server_version ? ` · v${report.server_version}` : '';
+  const boundedRuntime = report.runtime_path ? truncateToByteLength(report.runtime_path, DOCTOR_RUNTIME_PATH_MAX_BYTES, '...[truncated]') : '';
+  const runtimePart = boundedRuntime ? ` · runtime: ${boundedRuntime}` : '';
   return fitSummary(report.selection, (rows, limits) => {
-    const lines = [`CoAgent8 doctor: ${report.status} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
+    const lines = [`CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
     for (const id of ids) {
       const probe = report.backends[id]!;
       if (!probe.installed) { lines.push(`${id}: not installed`); continue; }

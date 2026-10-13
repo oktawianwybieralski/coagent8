@@ -24,6 +24,21 @@ export function getDataDir(): string {
   return path.resolve(process.env.coagent8_DIR || path.join(os.homedir(), '.coagent8'));
 }
 
+/**
+ * Resolves the active runtime script or bundle path executing CoAgent8.
+ *
+ * @returns Absolute normalized path to the running entrypoint file.
+ */
+export function getRuntimePath(): string {
+  if (require.main?.filename) {
+    return path.resolve(require.main.filename);
+  }
+  if (process.argv[1]) {
+    return path.resolve(process.argv[1]);
+  }
+  return path.resolve(__filename);
+}
+
 // Compatibility re-exports for workspace functions and types
 export {
   resolveWorkspacePath,

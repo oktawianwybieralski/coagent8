@@ -1665,7 +1665,7 @@ review may resolve a risky contract, but does not require a separate PR.
 | CLI models and diagnostics (done, #41) | 1.8, 1.11 | Shared CLI doctor behavior and model output, with installed-bin and cancellation checks. |
 | CLI session inspection (done, #42) | 1.9, 1.10 | List and history with workspace isolation, paging and error checks. |
 | Windows PATH opt-in (done, #43) | 1.12, 1.13 | Review the design before implementation on the same branch; native owner acceptance remains distinct. |
-| Accurate runtime/update guidance | 2.1, 2.2 | Running-version diagnostics and the related extension notice. |
+| Accurate runtime/update guidance (#45) | 2.1, 2.2 | Running-version diagnostics and the related extension notice. |
 | Shared registration policy | 2.3, 2.4 | Reproduction, accepted policy, implementation and regression tests together; an unresolved owner decision pauses implementation. |
 | Bug-report content and paste flow | 2.6, 2.7, 2.8 | Link, structured content, issue skill and doctor reminder form one reporting flow. |
 | Bug-report opening actions | 2.9, 2.10 | Explicit VS Code and CLI actions with browser-opening tests, after the reporting flow. |
@@ -1762,8 +1762,8 @@ agent (owner assigns).
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
-| 2.1 | `FEEDBACK-061a1` server version in `doctor` | R | - | `doctor` health shows the running server version and runtime path; tests. |
-| 2.2 | `FEEDBACK-061a2` update notice | R | - par | The extension's update notice says open chats keep the old runtime until restarted; test. |
+| 2.1 | [x] `FEEDBACK-061a1` server version in `doctor` (#45) | R | - | `doctor` health shows the running server version and runtime path; tests. |
+| 2.2 | [x] `FEEDBACK-061a2` update notice (#45) | R | - par | The extension's update notice says open chats keep the old runtime until restarted; test. |
 | 2.3 | `FEEDBACK-061b1` shared registration reproduction | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
 | 2.4 | `FEEDBACK-061b2` registration policy | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
 | 2.5 | `FEEDBACK-061b3` selection outside the vendor profile | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |

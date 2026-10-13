@@ -111,7 +111,7 @@ The retired src/constants.ts forwarding module has no compatibility exemption.
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
 | review | Bounded Git review, State Envelope and server-derived READY/BLOCKED |
-| doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, defaults, quotas |
+| doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, server version, runtime path, defaults, quotas |
 | session | Workspace-scoped list/history/close; continuation uses session_handle |
 | cancel | Stops a known active/abandoned session turn; idle returns false |
 | issue | Sanitized report and prefilled GitHub issue link; does not submit it |

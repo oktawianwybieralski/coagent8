@@ -35,6 +35,12 @@ test('runDoctor returns structured diagnostic report for all three CLIs', async 
   assert.equal(report.backends.claude.id, 'claude');
   assert.equal(report.backends.agy.id, 'agy');
 
+  // FEEDBACK-061a1: server_version and runtime_path
+  assert.equal(typeof report.server_version, 'string');
+  assert.ok(report.server_version.length > 0);
+  assert.equal(typeof report.runtime_path, 'string');
+  assert.ok(report.runtime_path.length > 0);
+
   // Verify recommendations exist if any backend is missing
   if (!report.backends.codex.installed || !report.backends.claude.installed || !report.backends.agy.installed) {
     assert.ok(report.recommendations.length > 0);
@@ -118,12 +124,14 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] }, backends: { codex: {}, claude: {}, agy: {} } });
 
     const report = await runDoctor();
+    assert.equal(typeof report.server_version, 'string');
+    assert.equal(typeof report.runtime_path, 'string');
     const summary = formatDoctorSummary(report);
     assert.equal(summary.split('\n').length, 9, summary);
     assert.match(summary, /\nagy: ready[^\n]*\n {2}models, USD per million output tokens: agy-model \? \[default, ask: no price\], gemini-3\.8-flash \(high\|low required\) 3\.75(\n|$)/,
       'the default and the catalog the CLI lists, with prices and the efforts a model needs');
     assert.match(summary, /\n {2}also accepted: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
-    assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
+    assert.match(summary, /^CoAgent8 doctor: operational · v\d+\.\d+\.\d+.* · runtime: .* · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
     // The fixture models have no price, so the policy asks before each turn and doctor says so.
     assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
     assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 75% left/);
@@ -228,6 +236,31 @@ test('the doctor summary drops whole model rows to stay within the inline bound 
     assert.equal(text, `codex-catalog-model-${i} ${expected}`, 'a shown row is whole and states the full report\'s price');
   });
   assert.match(summary, /agy-catalog-model-19 1; reasoning_effort low\|high(\n|$)/, 'the shorter list stays complete while the longest is cut');
+});
+
+test('formatDoctorSummary bounds long runtime path to prevent summary overflow (FEEDBACK-061a1)', () => {
+  const { formatDoctorSummary, DOCTOR_SUMMARY_MAX_BYTES, DOCTOR_RUNTIME_PATH_MAX_BYTES } = require('../../src/diagnostics/doctor.ts');
+  const longPath = 'C:\\very\\deep\\nested\\directory\\structure\\'.repeat(30) + 'dist\\index.cjs';
+  const report = {
+    status: 'operational',
+    server_version: '0.6.1',
+    runtime_path: longPath,
+    default_backend: 'auto',
+    active_backends: ['codex'],
+    ready_backends: ['codex'],
+    backends: { codex: { id: 'codex', installed: true, version: '1.0.0' } },
+    quotas: {},
+    defaultModels: {},
+    recommendations: [],
+    prices: null,
+    selection: [],
+  };
+  const summary = formatDoctorSummary(report);
+  assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, 'summary fits within DOCTOR_SUMMARY_MAX_BYTES');
+  assert.match(summary, /\.\.\.\[truncated\]/);
+  const runtimeMatch = summary.match(/ · runtime: (.*?) · default backend:/);
+  assert.ok(runtimeMatch, 'runtime path is included in header');
+  assert.ok(Buffer.byteLength(runtimeMatch[1]) <= DOCTOR_RUNTIME_PATH_MAX_BYTES);
 });
 
 test('doctor defaults to the model view: cached catalogs, defaults and prices, no quota read and nothing recorded (AX-001)', async () => {
