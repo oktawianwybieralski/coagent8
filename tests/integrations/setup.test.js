@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { setupClients, readRegistrations, resolveSetupClient, clientSource, listInstallations, configuredExecutable, checkExecutable } = require('../../src/integrations/setup.ts');
-const { extractRuntimePath, setupShapedEntry, entryOwnership } = require('../../src/integrations/setup-storage.ts');
+const { extractRuntimePath, setupShapedEntry, entryOwnership, readSelection } = require('../../src/integrations/setup-storage.ts');
 const { parse } = require('jsonc-parser');
 const { parse: toml } = require('smol-toml');
 const { hasManualVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
@@ -556,16 +556,29 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   assert.equal(prefixedResult.runtimeCallable, true);
   assert.ok(prefixedResult.tools.includes('doctor'));
 
-  // On Codex, existing registration with custom launcher prefix is probed for runtime and host callability
+  // On Codex, fingerprint-owned registration with custom launcher prefix is recognized as owned
   const codexFile = path.join(options.home, '.codex/config.toml');
   const codexEntry = `[mcp_servers.coagent8]\ntool_timeout_sec = 1800\ncommand = "${process.execPath.replace(/\\/g, '\\\\')}"\nargs = ["--title=coagent8", "${liveRuntime.replace(/\\/g, '\\\\')}", "mcp"]\n`;
   write(codexFile, codexEntry);
+  const parsedFromToml = toml(codexEntry).mcp_servers.coagent8;
+  const stateData = { clients: ['codex'], owned: { codex: hashEntry(JSON.stringify(parsedFromToml)) }, origin: {}, skills: {}, skillOrigin: {} };
+  write(stateFile, JSON.stringify(stateData));
+  const savedState = readSelection(stateFile);
+  assert.equal(entryOwnership('codex', parsedFromToml, savedState, options.home + '/.coagent8').owned, true);
+
+  // When existing host check fails, managed runtime update is deferred
   const baseline = path.join(options.home, 'baseline-config');
+  write(baseline, '# different baseline\n');
+  const envFailingHost = { ...options.env, SETUP_FIXTURE_FAIL_CANDIDATE: '1' };
+  const [deferredResult] = await setupClients({ ...options, clients: ['codex'], env: envFailingHost });
+  assert.equal(deferredResult.action, 'preserved');
+  assert.equal(deferredResult.hostCallable, false);
+  assert.ok(deferredResult.message.includes('deferred'));
+
+  // When existing host check passes, owned entry is migrated / updated to standard candidate
   if (fs.existsSync(baseline)) fs.rmSync(baseline);
-  const parsedCodexEntry = { command: process.execPath, args: ['--title=coagent8', liveRuntime, 'mcp'], tool_timeout_sec: 1800 };
-  write(stateFile, JSON.stringify({ clients: ['codex'], owned: { codex: hashEntry(JSON.stringify(parsedCodexEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
-  const [codexResult] = await setupClients({ ...options, clients: ['codex'] });
-  assert.equal(codexResult.action, 'preserved');
-  assert.equal(codexResult.runtimeCallable, true);
-  assert.equal(codexResult.hostCallable, true);
+  const [updatedCodexResult] = await setupClients({ ...options, clients: ['codex'] });
+  assert.equal(updatedCodexResult.action, 'updated');
+  assert.equal(updatedCodexResult.runtimeCallable, true);
+  assert.equal(updatedCodexResult.hostCallable, true);
 });
