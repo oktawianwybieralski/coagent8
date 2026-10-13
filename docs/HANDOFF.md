@@ -15,18 +15,15 @@ Do not append another session transcript or treat old test counts as fresh evide
   `next`) and the VS Code Marketplace ([release evidence](#061-release-evidence)).
   It is the first release under the MIT License. Its changes are listed in
   `CHANGELOG.md` and the [PATCH-061 queue](ROADMAP.md#patch-061-061-task-queue).
-- **Next work, in order ([execution order](ROADMAP.md#execution-order)):**
-  1. [`RELEASE-001`](ROADMAP.md#release-001-automated-publication): the
-     publication path broke twice during `0.6.1` (environment policy, npm
-     command path) and npm and the Marketplace were published by hand. The next
-     tag must publish everything through workflows with owner approvals only.
-  2. [`FEEDBACK-061`](ROADMAP.md#feedback-061-findings-of-the-061-native-acceptance):
-     findings of the `0.6.1` native acceptance.
-  3. [`PROPOSALS-001`](ROADMAP.md#proposals-001-proposals-awaiting-an-owner-decision):
-     earlier proposals that were never recorded; each needs an owner decision.
-  4. The `0.7.0` (beta.3) scope in the [release acceptance](ROADMAP.md#release-acceptance)
-     table, including the `PATCH-061` native acceptance tasks that did not run
-     before `0.6.1`.
+- **Next work: the [0.7.0 plan](ROADMAP.md#070-beta3-plan)** (owner direction
+  2026-10-13). Phase 0 is owner decisions on
+  [`PROPOSALS-001`](ROADMAP.md#proposals-001-proposals-awaiting-an-owner-decision),
+  the npm publisher mode and release channel and the `0.7.0` write scope;
+  Phase 1 is the public CLI (`CLI-FIRST-001a-e`). Publication automation
+  ([`RELEASE-001`](ROADMAP.md#release-001-automated-publication)) is Phase 5,
+  before the tag: the `0.6.1` publication path broke twice and npm and the
+  Marketplace were published by hand. The `PATCH-061` native tasks that did
+  not run before `0.6.1` are part of the `0.7.0` acceptance.
 
 ## 0.6.1 release evidence
 
