@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
-const { redactCredentialFormats, redactDiagnostic, redactDiagnosticData, redactSecrets } = require('../../src/security/redaction.ts');
+const { redactCredentialFormats, redactDiagnostic, redactDiagnosticData, redactHomePath, redactPublicContent, redactPublicData, redactSecrets } = require('../../src/security/redaction.ts');
 // Provider key prefixes are joined at run time, so the source holds no literal token that
 // GitHub push protection reports (FEEDBACK-060j).
 const STRIPE_LIVE = ['sk', 'live', ''].join('_');
@@ -432,3 +432,33 @@ test('redactDiagnosticData recursively redacts home directory paths and credenti
   }
 });
 
+test('redactPublicContent and redactPublicData preserve ordinary code, redact credentials and home dir without truncation', () => {
+  const original = os.homedir;
+  const home = process.platform === 'win32' ? 'C:\\Users\\SyntheticPublic' : '/home/SyntheticPublic';
+  os.homedir = () => home;
+  try {
+    const rawCode = `const token = 42;\nconst auth = true;\nconst p = "${path.join(home, 'my-repo')}";\n// ${'long'.repeat(1000)}`;
+    const sanitized = redactPublicContent(rawCode);
+    assert.ok(sanitized.includes('const token = 42;'), 'keyword token assignment must not be rewritten in public content');
+    assert.ok(sanitized.includes('const auth = true;'), 'keyword auth assignment must not be rewritten in public content');
+    assert.ok(!sanitized.includes('SyntheticPublic'), 'home path must be redacted');
+    assert.ok(sanitized.includes(`~${path.sep}my-repo`) || sanitized.includes('~/my-repo'), 'home path replaced with ~');
+    assert.ok(sanitized.length > 4000, 'public content must not be truncated to 2048 or 4096 bytes');
+
+    // redactPublicData on nested structure
+    const data = {
+      code: rawCode,
+      cred: 'sk-proj-1234567890abcdef1234567890abcdef',
+      items: [rawCode, 123],
+    };
+    const publicData = redactPublicData(data);
+    assert.ok(publicData.code.includes('const token = 42;'));
+    assert.ok(publicData.code.length > 4000);
+    assert.ok(!publicData.code.includes('SyntheticPublic'));
+    assert.equal(publicData.cred, 'sk-***[REDACTED]***');
+    assert.ok(publicData.items[0].includes('const token = 42;'));
+    assert.equal(publicData.items[1], 123);
+  } finally {
+    os.homedir = original;
+  }
+});

@@ -97,6 +97,15 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     writer2.accept({ type: 'turn_finished', status: 'completed' });
     await writer2.flush();
 
+    const writer3 = createHistoryWriter(handle, tempDir, 'codex', randomUUID());
+    const codeSnippet = 'const token = 42; const password = "secret-pass";';
+    const longContent = 'BODY_' + 'x'.repeat(3000);
+    writer3.accept({ type: 'turn_started' });
+    writer3.accept({ type: 'user_message', text: `${codeSnippet}\n${longContent}` });
+    writer3.accept({ type: 'assistant_message', messageId: 'm3', text: 'Code received.' });
+    writer3.accept({ type: 'turn_finished', status: 'completed' });
+    await writer3.flush();
+
     // 1. Text history format
     const textOut = sink(), textErr = sink();
     assert.equal(await runSessionCli(['history', handle], textOut.stream, textErr.stream, undefined, tempDir), 0);
@@ -108,6 +117,10 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     assert.match(textOut.text(), /Calculate 2 \+ 2/);
     assert.match(textOut.text(), /\*Tool `calc` finished \(success\)\*/);
     assert.match(textOut.text(), /Result is 4\./);
+    assert.match(textOut.text(), /### Turn 3/);
+    assert.ok(textOut.text().includes('const token = 42;'), 'Code with token keyword must not be rewritten');
+    assert.ok(textOut.text().includes('const password = "secret-pass";'), 'Code with password keyword must not be rewritten');
+    assert.ok(textOut.text().includes(longContent), 'Long content > 2048 bytes must not be truncated in text history');
     assert.equal(textErr.text(), '');
 
     // 2. JSON history format
@@ -118,6 +131,11 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     assert.equal(hist.schemaVersion, 1);
     assert.ok(Array.isArray(hist.events));
     assert.ok(hist.events.some(e => e.type === 'user_message' && e.text.includes('Hello')));
+    const turn3UserMsg = hist.events.find(e => e.type === 'user_message' && e.text.includes('const token = 42;'));
+    assert.ok(turn3UserMsg, 'Turn 3 user message must exist in JSON history');
+    assert.ok(turn3UserMsg.text.includes('const token = 42;'), 'Code token must round-trip in JSON history without keyword rewriting');
+    assert.ok(turn3UserMsg.text.includes(longContent), 'Long content > 2048 bytes must not be truncated in JSON history');
+    assert.ok(turn3UserMsg.text.length > 3000, 'JSON history string must retain full length without 2048-byte cap');
     assert.equal(jsonErr.text(), '');
 
     // 3. Pagination with --limit and --cursor
@@ -209,4 +227,12 @@ test('coagent8 session aborts with exit code 130 on signal abort', async () => {
   ac.abort();
   const code = await runSessionCli(['list'], out.stream, err.stream, ac.signal);
   assert.equal(code, 130);
+  assert.equal(out.text(), '');
+
+  const histOut = sink(), histErr = sink();
+  const acHist = new AbortController();
+  acHist.abort();
+  const histCode = await runSessionCli(['history', 'syn_sess_any'], histOut.stream, histErr.stream, acHist.signal);
+  assert.equal(histCode, 130);
+  assert.equal(histOut.text(), '');
 });

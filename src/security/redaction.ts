@@ -165,19 +165,65 @@ export function redactDiagnostic(value: unknown, budget = 4096): string {
   text = text.replace(/([?&](?:token|key|secret|apiKey)=)[^&\s]+/gi, '$1***[REDACTED]***');
 
   // 3. User home directory redaction
+  text = redactHomePath(text);
+
+  return truncateToByteLength(text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''), budget);
+}
+
+/**
+ * Redacts occurrences of the user's home directory path to `~`
+ * across different casing and path separator variations, without
+ * truncating or rewriting keyword assignments.
+ *
+ * @param text - Text potentially containing local home directory paths.
+ * @returns Text with home directory paths replaced by `~`.
+ */
+export function redactHomePath(text: string): string {
+  if (!text) return text;
   const variants = new Set(homeSpellings(os.homedir()).flatMap(home => [home, home.replace(/\\/g, '/')]));
   // Serialized diagnostics can contain JSON inside JSON, doubling backslashes
   // at each boundary. Replace longer encodings first so no private prefix survives.
   for (let level = 0; level < 4; level++) {
     for (const variant of [...variants]) variants.add(JSON.stringify(variant).slice(1, -1));
   }
+  let result = text;
   for (const variant of [...variants].sort((a, b) => b.length - a.length)) {
     if (!variant) continue;
     const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    text = text.replace(new RegExp(escaped + '(?=$|[\\\\/\\s"\'`,;:}\\]])', process.platform === 'win32' ? 'gi' : 'g'), '~');
+    result = result.replace(new RegExp(escaped + '(?=$|[\\\\/\\s"\'`,;:}\\]])', process.platform === 'win32' ? 'gi' : 'g'), '~');
   }
+  return result;
+}
 
-  return truncateToByteLength(text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''), budget);
+/**
+ * Redacts high-confidence credential formats and user home directory paths
+ * for public conversation content, model answers, and session records,
+ * preserving ordinary code and keyword assignments without truncation.
+ *
+ * @param text - Public text or Markdown to sanitize.
+ * @returns Sanitized public text.
+ */
+export function redactPublicContent(text: string): string {
+  return redactHomePath(redactCredentialFormats(text));
+}
+
+/**
+ * Recursively sanitizes strings in an object, array, or primitive for public output.
+ * Redacts high-confidence credential formats and user home paths without keyword
+ * rewriting or byte truncation.
+ *
+ * @param value - Value to recursively sanitize.
+ * @returns Sanitized value of the same structure.
+ */
+export function redactPublicData<T>(value: T): T {
+  if (typeof value === 'string') return redactPublicContent(value) as unknown as T;
+  if (Array.isArray(value)) return value.map(v => redactPublicData(v)) as unknown as T;
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, redactPublicData(v)])
+    ) as unknown as T;
+  }
+  return value;
 }
 
 /**
@@ -198,4 +244,3 @@ export function redactDiagnosticData<T>(value: T, budget = 2048): T {
   }
   return value;
 }
-

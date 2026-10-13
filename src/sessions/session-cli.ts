@@ -6,7 +6,8 @@
  * @packageDocumentation
  */
 
-import { redactDiagnostic, redactDiagnosticData } from '../security/redaction.js';
+import { redactDiagnostic, redactHomePath, redactPublicContent, redactPublicData } from '../security/redaction.js';
+import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { resolveWorkspacePath } from '../workspace/workspace.js';
 import { listSessions } from './session.js';
 import { getTurnMapping, sessionHistory } from './history/index.js';
@@ -29,7 +30,7 @@ const HISTORY_USAGE = 'Usage: coagent8 session history <handle> [--cursor <curso
  * @returns Public record with redacted workspace path.
  */
 export function publicSessionRecord(record: SessionRecord): SessionRecord {
-  return { ...record, workspace: redactDiagnostic(record.workspace, 1024) };
+  return { ...record, workspace: redactHomePath(record.workspace) };
 }
 
 /**
@@ -176,10 +177,15 @@ export async function runSessionCli(
       const resolvedWorkspace = workspace ? resolveWorkspacePath(workspace) : resolveWorkspacePath();
       const sessions = listSessions(resolvedWorkspace).map(publicSessionRecord);
 
+      if (effectiveSignal.aborted) {
+        return 130;
+      }
+
       if (json) {
-        out.write(`${JSON.stringify(redactDiagnosticData(sessions))}\n`);
+        out.write(`${JSON.stringify(redactPublicData(sessions))}\n`);
       } else {
-        out.write(`${redactDiagnostic(formatSessionListText(sessions), SESSION_OUTPUT_MAX_BYTES)}\n`);
+        const text = formatSessionListText(sessions);
+        out.write(`${truncateToByteLength(redactHomePath(text), SESSION_OUTPUT_MAX_BYTES)}\n`);
       }
       return 0;
     } catch (error: unknown) {
@@ -289,12 +295,19 @@ export async function runSessionCli(
       const resolvedWorkspace = workspace ? resolveWorkspacePath(workspace) : resolveWorkspacePath();
       const history = await sessionHistory(handle, resolvedWorkspace, cursor, limit);
 
+      if (effectiveSignal.aborted) {
+        return 130;
+      }
+
       if (json) {
-        out.write(`${JSON.stringify(redactDiagnosticData(history))}\n`);
+        out.write(`${JSON.stringify(redactPublicData(history))}\n`);
       } else {
         const turnMap = await getTurnMapping(handle, resolvedWorkspace);
+        if (effectiveSignal.aborted) {
+          return 130;
+        }
         const text = formatSessionHistoryText(handle, history, turnMap);
-        out.write(`${redactDiagnostic(text, SESSION_OUTPUT_MAX_BYTES)}\n`);
+        out.write(`${truncateToByteLength(redactPublicContent(text), SESSION_OUTPUT_MAX_BYTES)}\n`);
       }
       return 0;
     } catch (error: unknown) {
