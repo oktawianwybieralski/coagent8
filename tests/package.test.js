@@ -132,7 +132,16 @@ test('npm, plugin and VS Code manifests share one numeric version', () => {
 });
 
 test('RELEASE-001a: npm publish script targets ./release/... tarball, validates channel and prerelease flag', () => {
-  const { resolvePublishPlan, runPublishNpm } = require('../scripts/publish-npm.cjs');
+  const { resolvePublishPlan, runPublishNpm, resolveNpmCommand } = require('../scripts/publish-npm.cjs');
+
+  const customNpm = resolveNpmCommand({ npm_execpath: process.execPath });
+  assert.equal(customNpm.command, process.execPath);
+  assert.deepEqual(customNpm.argsPrefix, [process.execPath]);
+
+  const defaultNpm = resolveNpmCommand({});
+  assert.ok(defaultNpm.command);
+  assert.ok(Array.isArray(defaultNpm.argsPrefix));
+
   const previewPlan = resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'true' });
   assert.equal(previewPlan.version, '0.7.0');
   assert.equal(previewPlan.channel, 'next');

@@ -7,7 +7,26 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+
+/** Resolves the npm execution command across Windows, macOS, and Linux Node distributions. */
+function resolveNpmCommand(env = process.env) {
+  if (env.npm_execpath && fs.existsSync(env.npm_execpath)) {
+    return { command: process.execPath, argsPrefix: [env.npm_execpath] };
+  }
+  const execDir = path.dirname(process.execPath);
+  const candidates = [
+    path.join(execDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(execDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(execDir, '..', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return { command: process.execPath, argsPrefix: [candidate] };
+    }
+  }
+  const bin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  return { command: bin, argsPrefix: [] };
+}
 
 function resolvePublishPlan(options = {}) {
   const cwd = options.cwd || root;
@@ -64,8 +83,9 @@ function runPublishNpm(options = {}) {
     }
   }
 
+  const npmCmd = options.npmCommand || resolveNpmCommand();
   const publishTarget = plan.tarballPath.startsWith('./') ? plan.tarballPath : `./${plan.tarballPath.replace(/^\/+/, '')}`;
-  const args = ['publish', publishTarget, '--tag', plan.channel, '--access', 'public'];
+  const args = [...npmCmd.argsPrefix, 'publish', publishTarget, '--tag', plan.channel, '--access', 'public'];
 
   if (dryRun) {
     args.push('--dry-run');
@@ -73,7 +93,7 @@ function runPublishNpm(options = {}) {
     args.push('--provenance');
   }
 
-  const proc = spawnSync(process.execPath, [npm, ...args], {
+  const proc = spawnSync(npmCmd.command, args, {
     cwd,
     encoding: 'utf8',
     windowsHide: true,
@@ -104,6 +124,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  resolveNpmCommand,
   resolvePublishPlan,
   runPublishNpm,
 };

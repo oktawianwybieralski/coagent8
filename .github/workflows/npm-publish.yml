@@ -27,6 +27,11 @@ jobs:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Checkout tagged repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       # Trusted publishing needs npm 11.5.1 or later.
       - name: Check npm version
         shell: bash
