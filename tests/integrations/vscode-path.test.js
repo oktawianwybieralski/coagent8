@@ -42,9 +42,16 @@ class MockPathAdapter {
     this.writes.push({ value, kind, timeoutMs });
     this.pathValue = value;
     this.pathKind = kind;
+    // A write that reached the registry but reported failure, e.g. a timed-out readback.
+    if (this.failAfterWrite) {
+      const error = this.failAfterWrite;
+      this.failAfterWrite = this.failAfterWriteAgain ? error : null;
+      throw error;
+    }
   }
   async broadcastEnvironmentChange(timeoutMs) {
     this.broadcasts.push(timeoutMs);
+    return this.broadcastResult ?? true;
   }
 }
 
@@ -466,7 +473,7 @@ test('removePathIntegration allocates remaining deadline budget to registry oper
   const writeTimeout = adapter.writeTimeouts[adapter.writeTimeouts.length - 1];
   assert.ok(readTimeout > 2000, `readTimeout should be > 2000ms, got ${readTimeout}`);
   assert.ok(writeTimeout > 2000, `writeTimeout should be > 2000ms, got ${writeTimeout}`);
-  assert.equal(adapter.broadcasts[adapter.broadcasts.length - 1], 1000, 'broadcast timeout is 1000ms');
+  assert.equal(adapter.broadcasts[adapter.broadcasts.length - 1], 1500, 'the uninstall broadcast is bounded to 1500 ms');
 });
 
 test('enablePathIntegration rolls back shim and record when writeUserPath fails', async t => {
@@ -488,6 +495,59 @@ test('enablePathIntegration rolls back shim and record when writeUserPath fails'
   const record = readPathRecord(f.home);
   assert.equal(record, undefined, 'ownership record rolled back on write failure');
   assert.equal(adapter.pathValue, initialPath, 'user PATH unchanged');
+});
+
+test('a write that reached the registry before failing is taken out again and rolled back', async t => {
+  const f = fixture(t);
+  const initialPath = 'C:\\Important\\Bin';
+  const adapter = new MockPathAdapter(initialPath, 'REG_SZ');
+  adapter.failAfterWrite = new Error('Simulated readback timeout');
+  await assert.rejects(
+    enablePathIntegration({ home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' }, adapter),
+    /Simulated readback timeout/
+  );
+  assert.equal(adapter.pathValue, initialPath, 'the entry that reached the registry is removed');
+  assert.equal(fs.existsSync(path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd')), false);
+  assert.equal(readPathRecord(f.home), undefined);
+});
+
+test('an entry that may remain after a failed write stays recorded so it can be removed later', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\Important\\Bin', 'REG_SZ');
+  adapter.failAfterWrite = new Error('Simulated readback timeout');
+  adapter.failAfterWriteAgain = true;
+  await assert.rejects(
+    enablePathIntegration({ home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' }, adapter),
+    /may remain and is still recorded for removal/
+  );
+  const record = readPathRecord(f.home);
+  assert.ok(record, 'the ownership record stays');
+  assert.equal(record.addedToPath, true);
+  assert.ok(fs.existsSync(record.shimPath), 'the shim stays');
+
+  adapter.failAfterWrite = null;
+  const removed = await removePathIntegration(f.home, f.installation, 1500, adapter);
+  assert.equal(removed.action, 'removed');
+  assert.equal(adapter.pathValue, 'C:\\Important\\Bin', 'a later removal takes the entry out');
+});
+
+test('a broadcast that is not delivered is reported, not treated as a failure', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  adapter.broadcastResult = false;
+  const enabled = await enablePathIntegration({ home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' }, adapter);
+  assert.equal(enabled.action, 'enabled');
+  assert.equal(enabled.environmentNotified, false);
+  assert.equal(adapter.broadcasts[0], 5000, 'enable allows five seconds for PowerShell to start and broadcast');
+  const removed = await removePathIntegration(f.home, f.installation, 1500, adapter);
+  assert.equal(removed.action, 'removed');
+  assert.equal(removed.environmentNotified, false);
+});
+
+test('the real broadcast reports a PowerShell that cannot start instead of throwing', { skip: process.platform !== 'win32' }, async t => {
+  const f = fixture(t);
+  const adapter = new DefaultWindowsPathAdapter(path.join(f.root, 'missing-powershell.exe'));
+  assert.equal(await adapter.broadcastEnvironmentChange(500), false);
 });
 
 test('removePathIntegration prunes unreferenced runtime copies on removal', async t => {
@@ -531,4 +591,18 @@ test('pruneUnreferencedRuntimes throws on corrupt installs.json and deletes no r
   );
 
   assert.equal(fs.existsSync(dummyRuntimeDir), true, 'runtime preserved when installs.json is corrupt');
+});
+
+test('pruneUnreferencedRuntimes keeps every runtime when the PATH record has no readable runtime', async t => {
+  const f = fixture(t);
+  const root = path.join(f.home, '.coagent8');
+  const dummyRuntimeDir = path.join(root, 'runtime', 'b'.repeat(64));
+  fs.mkdirSync(dummyRuntimeDir, { recursive: true });
+  fs.writeFileSync(path.join(dummyRuntimeDir, 'index.cjs'), 'dummy runtime');
+  const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
+  for (const record of [{ path: { shimPath: 'x', shimHash: 'y', installations: [] } }, { path: { runtime: 7 } }, { path: null }, []]) {
+    fs.writeFileSync(path.join(root, 'installs.json'), JSON.stringify(record));
+    assert.throws(() => pruneUnreferencedRuntimes(root, f.home), /Malformed/);
+    assert.equal(fs.existsSync(dummyRuntimeDir), true, `runtime kept for ${JSON.stringify(record)}`);
+  }
 });

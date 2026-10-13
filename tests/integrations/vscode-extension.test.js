@@ -35,6 +35,7 @@ class MockPathAdapter {
   }
   async broadcastEnvironmentChange(timeoutMs) {
     this.broadcasts.push(timeoutMs);
+    return true;
   }
 }
 
@@ -1203,6 +1204,19 @@ test('VS Code extension PATH opt-in prompt lifecycle and explicit commands', asy
     });
     assert.equal(manualAdd.state.pathPrompt, 'accepted');
     assert.ok(manualAdd.pathAdapter.writes.length > 0, 'manualAdd wrote to PATH');
+
+    const failing = new MockPathAdapter('C:\\Tools', 'REG_SZ');
+    failing.readUserPath = async () => { throw new Error('Simulated registry read failure'); };
+    const blockedRemove = await runExtension({
+      home: manualHome,
+      command: 'coagent8.removePath',
+      storedState: { welcomed: true, pathPrompt: 'accepted' },
+      action: 'Remove',
+      pathAdapter: failing,
+      awaitWarnings: 1,
+    });
+    assert.match(blockedRemove.warnings[0], /^CoAgent8 could not remove its PATH entry and kept it: .*Simulated registry read failure/);
+    assert.equal(blockedRemove.notifications.length, 1, 'a blocked removal is not reported as removed or missing');
 
     const manualRemove = await runExtension({
       home: manualHome,

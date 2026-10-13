@@ -398,7 +398,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
    * @param trigger - The action that ran the check, shown in the log.
    */
   async function status(trigger: string, clients: SetupClient[] = [...SETUP_CLIENTS]): Promise<SetupStatus[]> {
-    const results = await setupClients({ ...options(), clients, statusOnly: true });
+    const results = await trackTask(setupClients({ ...options(), clients, statusOnly: true }));
     if (!output) { output = vscode.window.createOutputChannel('CoAgent8 Setup'); context.subscriptions.push(output); }
     output.appendLine(`[${new Date().toTimeString().slice(0, 8)}] ${trigger} - ${results.map(describeState).join('; ')}`);
     lastStatus = results;
@@ -484,6 +484,12 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     return { status: result, registration, installations, inUse, configured };
   }
+  /** The notice after Yes; without the environment broadcast, Explorer and its terminals see the change after a sign-out. */
+  function pathAddedMessage(environmentNotified: boolean): string {
+    return environmentNotified
+      ? "CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'."
+      : "CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'; if it is not found, sign out of Windows and back in.";
+  }
   let pathOfferInFlight: Promise<void> | undefined;
   async function offerPathIntegration(): Promise<void> {
     if (vscode.env.remoteName || isDeactivating) return;
@@ -522,11 +528,11 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
             if (isDeactivating) return;
             if (res.action === 'enabled') {
               await updateSetupState(storage, { pathPrompt: 'accepted' });
-              if (!isDeactivating) void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
+              if (!isDeactivating) void vscode.window.showInformationMessage(pathAddedMessage(res.environmentNotified));
             }
           } catch (err) {
             if (!isDeactivating) {
-              const msg = err instanceof Error ? err.message : String(err);
+              const msg = redactDiagnostic(err instanceof Error ? err.message : String(err));
               void vscode.window.showErrorMessage(`Failed to add CoAgent8 to PATH: ${msg}`);
             }
           }
@@ -573,7 +579,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
    * without waiting for it: a notice moved to the notification center never answers.
    */
   async function connect(clients: SetupClient[]): Promise<void> {
-    const added = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Updating CoAgent8 in CLI chats...' }, () => setupClients({ ...options(), clients }));
+    const added = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Updating CoAgent8 in CLI chats...' }, () => trackTask(setupClients({ ...options(), clients })));
     report({ added });
     void announce(added, [], { added }).catch(showLifecycleError);
     if (added.some(r => r.action === 'installed' || r.action === 'updated')) {
@@ -584,8 +590,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   async function disconnect(clients: SetupClient[]): Promise<{ client: SetupClient; action: string; message: string }[]> {
     const opts = options();
     // The preview is applied at once: choosing the action was the confirmation.
-    const preview = await cleanupClients({ home: opts.home, env: opts.env, clients, actor: EXTENSION_ORIGIN });
-    const removed = (await cleanupClients({ home: opts.home, env: opts.env, clients, actor: EXTENSION_ORIGIN, apply: preview.token })).results;
+    const preview = await trackTask(cleanupClients({ home: opts.home, env: opts.env, clients, actor: EXTENSION_ORIGIN }));
+    const removed = (await trackTask(cleanupClients({ home: opts.home, env: opts.env, clients, actor: EXTENSION_ORIGIN, apply: preview.token }))).results;
     report({ removed });
     return removed;
   }
@@ -688,7 +694,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (choice !== 'Use It') return;
     }
     // The runtime, VS Code chat and the CLI chats read this file on their next turn.
-    await setBackendExecutable(SETUP_PROVIDERS[client], added.executable, configurationFile());
+    await trackTask(setBackendExecutable(SETUP_PROVIDERS[client], added.executable, configurationFile()));
     clearCliResolverCache();
   }
   function register(name: string, action: () => Promise<void>): void {
@@ -731,13 +737,13 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (isDeactivating) return;
       if (res.action === 'enabled') {
         await trackTask(updateSetupState(storage, { pathPrompt: 'accepted' }));
-        if (!isDeactivating) void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
+        if (!isDeactivating) void vscode.window.showInformationMessage(pathAddedMessage(res.environmentNotified));
       } else {
         if (!isDeactivating) void vscode.window.showInformationMessage('PATH integration is currently supported on Windows.');
       }
     } catch (err) {
       if (!isDeactivating) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = redactDiagnostic(err instanceof Error ? err.message : String(err));
         void vscode.window.showErrorMessage(`Failed to add CoAgent8 to PATH: ${msg}`);
       }
     }
@@ -756,9 +762,13 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }, activePathAdapter()));
     if (isDeactivating) return;
     if (res.action === 'removed') {
-      void vscode.window.showInformationMessage('CoAgent8 has been removed from your user PATH.');
+      void vscode.window.showInformationMessage(res.environmentNotified === false
+        ? 'CoAgent8 has been removed from your user PATH. Terminals opened before signing out of Windows may still list it.'
+        : 'CoAgent8 has been removed from your user PATH.');
     } else if (res.action === 'preserved') {
       void vscode.window.showInformationMessage(res.message ? `CoAgent8 PATH integration: ${res.message}` : 'PATH integration preserved.');
+    } else if (res.action === 'blocked') {
+      void vscode.window.showWarningMessage(`CoAgent8 could not remove its PATH entry and kept it: ${redactDiagnostic(res.message ?? 'removal failed').replace(/\.$/, '')}. Run CoAgent8: Remove from PATH again.`);
     } else {
       void vscode.window.showInformationMessage('No active CoAgent8 PATH integration was found.');
     }
@@ -826,7 +836,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const first = chosenClient ? 2 : 1, total = first + 1;
     const skillOptions = { client, home: os.homedir(), env: discoveryEnvironment(storage), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN };
     for (;;) {
-      const current = await manageSkills(skillOptions);
+      const current = await trackTask(manageSkills(skillOptions));
       const actions = SKILL_ACTIONS.filter(entry => current.skills.some(entry.applies));
       const chosen = await choose({ title: `${LABELS[client]} Skills`, placeholder: skillSummary(current.skills), back: true, step: [first, total],
         items: actions.map(entry => ({ label: entry.label, action: entry.action, description: `${current.skills.filter(entry.applies).length} ${entry.count}` })) });
@@ -840,8 +850,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       if (packages === 'back') continue;
       if (!packages?.length) return;
       const selection = skillSelectionForAction(current.selection, packages.map(item => item.name), action.action);
-      const preview = await manageSkills({ ...skillOptions, selection });
-      const result = await manageSkills({ ...skillOptions, selection, apply: preview.token });
+      const preview = await trackTask(manageSkills({ ...skillOptions, selection }));
+      const result = await trackTask(manageSkills({ ...skillOptions, selection, apply: preview.token }));
       report(result);
       const conflicts = result.skills.filter(item => item.state === 'conflict').length;
       const message = `${LABELS[client]} skill selection applied.${conflicts ? ` ${conflicts} conflicting packages were preserved; see details.` : ''} Start a new chat to refresh its skills. Native client visibility settings and other discovered copies still apply.`;
@@ -853,7 +863,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   register('coagent8.manageSkills', async () => {
     for (;;) {
       const items = await Promise.all(SETUP_CLIENTS.map(async client => {
-        const { skills } = await manageSkills({ client, home: os.homedir(), env: discoveryEnvironment(storage), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN });
+        const { skills } = await trackTask(manageSkills({ client, home: os.homedir(), env: discoveryEnvironment(storage), skillsSource: context.asAbsolutePath('skills'), origin: EXTENSION_ORIGIN }));
         return { label: `${skills.some(item => item.state === 'enabled') ? '$(pass-filled)' : '$(circle-large-outline)'} ${LABELS[client]}`, client, description: skillSummary(skills) };
       }));
       const chosen = await choose({ title: 'Manage Skills', placeholder: 'Choose a CLI', items, step: [1, 3] });
@@ -1076,12 +1086,12 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     switch (item.action) {
       case 'use':
         // The runtime, VS Code chat and the CLI chats read this file on their next turn.
-        await setBackendExecutable(id, item.installation!.executable, configurationFile());
+        await trackTask(setBackendExecutable(id, item.installation!.executable, configurationFile()));
         clearCliResolverCache();
         report({ client, executable: item.installation!.executable });
         return;
       case 'discovery':
-        await setBackendExecutable(id, undefined, configurationFile());
+        await trackTask(setBackendExecutable(id, undefined, configurationFile()));
         clearCliResolverCache();
         report({ client, executable: null });
         return;
@@ -1095,7 +1105,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       case 'installStandalone': {
         // Choosing a standalone installation replaces an unavailable extension preference.
         if (view.configured?.value === VSCODE_EXTENSION_EXECUTABLE && !view.configured.found) {
-          await setBackendExecutable(id, undefined, configurationFile());
+          await trackTask(setBackendExecutable(id, undefined, configurationFile()));
           clearCliResolverCache();
         }
         // The CLI is absent here, so a later check that finds it identifies this installation.
@@ -1124,7 +1134,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         const file = picked[0].fsPath;
         const checked = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Checking ${path.basename(file)}...` },
           () => checkExecutable(client, file, opts.home, opts.env, opts.nodePath, opts.cwd));
-        await setBackendExecutable(id, checked.source.executable, configurationFile());
+        await trackTask(setBackendExecutable(id, checked.source.executable, configurationFile()));
         clearCliResolverCache();
         report({ client, executable: checked.source.executable, readiness: checked.readiness });
         void vscode.window.showInformationMessage(`${LABELS[client]} now uses ${describeSource(client, checked.source, opts.home)}${checked.readiness.version ? ` ${checked.readiness.version}` : ''}.`);
@@ -1155,7 +1165,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         // extension, the chat included; no command offers that restart. The user removes the
         // extension there, and CoAgent8 finishes its part once the extension is gone. Its page
         // carries Uninstall; a search by ID would only list it.
-        await updateSetupState(storage, { removingExtensions: [...new Set([...readSetupState(storage).removingExtensions ?? [], vendor.id])] });
+        await trackTask(updateSetupState(storage, { removingExtensions: [...new Set([...readSetupState(storage).removingExtensions ?? [], vendor.id])] }));
         await vscode.commands.executeCommand('extension.open', vendor.id);
         return 'close';
       }
@@ -1181,7 +1191,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         await updateInstallList(location(), 'installedClis', [], [client]);
         // A configured path to the removed files must not stay selected.
         if (configuredExecutable(client, opts.home, opts.env, opts.nodePath)?.found === false) {
-          await setBackendExecutable(id, remaining[0]?.executable, configurationFile());
+          await trackTask(setBackendExecutable(id, remaining[0]?.executable, configurationFile()));
           clearCliResolverCache();
         }
         return;
@@ -1234,7 +1244,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const results = await trackTask((async () => {
       if (isDeactivating) return [];
       const res = await status('Welcome CLI Check');
-      if (!isDeactivating) await updateSetupState(storage, { welcomed: true });
+      if (!isDeactivating) await trackTask(updateSetupState(storage, { welcomed: true }));
       return res;
     })());
     if (isDeactivating || !results.length) return;
@@ -1285,13 +1295,13 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       // A selection of the removed copy moves to the remaining installation or is cleared.
       const opts = localOptions();
       if (configuredExecutable(client, opts.home, opts.env, opts.nodePath)?.found === false) {
-        await setBackendExecutable(SETUP_PROVIDERS[client], inventory(client)[0]?.executable, configurationFile());
+        await trackTask(setBackendExecutable(SETUP_PROVIDERS[client], inventory(client)[0]?.executable, configurationFile()));
         clearCliResolverCache();
       }
     }
     if (isDeactivating) return;
     const rest = pending.filter(id => !gone.includes(id) && !kept.includes(id));
-    await updateSetupState(storage, { removingExtensions: rest.length ? rest : undefined });
+    await trackTask(updateSetupState(storage, { removingExtensions: rest.length ? rest : undefined }));
   }
   const removalFailed = (error: unknown) => {
     if (!isDeactivating) void vscode.window.showErrorMessage(`CoAgent8: ${redactDiagnostic(error instanceof Error ? error.message : 'Finishing an extension removal failed.')}`);

@@ -28,7 +28,12 @@ export interface WindowsRegistryPath {
 export interface PathSystemAdapter {
   readUserPath(timeoutMs?: number): Promise<WindowsRegistryPath | null>;
   writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ', timeoutMs?: number): Promise<void>;
-  broadcastEnvironmentChange(timeoutMs?: number): Promise<void>;
+  /**
+   * Tells open windows that the environment changed. Advisory and bounded by `timeoutMs`,
+   * including process start; never rejects.
+   * @returns Whether the change was delivered.
+   */
+  broadcastEnvironmentChange(timeoutMs?: number): Promise<boolean>;
   isWindows(): boolean;
   /** Whether this adapter's user `PATH` belongs to `home`; enable and remove refuse any other home. */
   ownsHome(home: string): boolean;
@@ -43,6 +48,9 @@ function resolvePowerShellExecutable(): string {
 }
 
 export class DefaultWindowsPathAdapter implements PathSystemAdapter {
+  /** @param powershell - Windows PowerShell executable; the system copy unless a test names another. */
+  constructor(private readonly powershell = resolvePowerShellExecutable()) {}
+
   isWindows(): boolean {
     return process.platform === 'win32';
   }
@@ -81,7 +89,7 @@ if ($null -eq $key) {
 }
 `;
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const ps = resolvePowerShellExecutable();
+    const ps = this.powershell;
     let res: cp.SpawnSyncReturns<string>;
     try {
       res = cp.spawnSync(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
@@ -119,7 +127,10 @@ $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
 try {
   $val = if ($null -eq $env:COAGENT8_REG_VAL) { '' } else { [string]$env:COAGENT8_REG_VAL }
   if ($val -eq '') {
-    try { $key.DeleteValue('Path', $false) } catch {}
+    $key.DeleteValue('Path', $false)
+    if ($key.GetValueNames() -contains 'Path') {
+      throw 'Registry delete verification failed: Path is still present'
+    }
   } else {
     $key.SetValue('Path', $val, $targetKind)
     $written = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
@@ -135,7 +146,7 @@ try {
 }
 `;
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const ps = resolvePowerShellExecutable();
+    const ps = this.powershell;
     let res: cp.SpawnSyncReturns<string>;
     try {
       res = cp.spawnSync(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
@@ -159,28 +170,38 @@ try {
     }
   }
 
-  async broadcastEnvironmentChange(timeoutMs = 1000): Promise<void> {
-    if (!this.isWindows()) return;
-    const boundedTimeout = Math.min(Math.max(timeoutMs, 50), 3000);
+  async broadcastEnvironmentChange(timeoutMs = 1000): Promise<boolean> {
+    if (!this.isWindows()) return true;
+    const budget = Math.max(timeoutMs, 50);
+    const perWindow = Math.min(budget, 3000);
     const script = `
+$ErrorActionPreference = 'Stop'
 Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @'
 [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
 public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
-'@ -ErrorAction SilentlyContinue;
-[Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, ${boundedTimeout}, [ref][UIntPtr]::Zero)
+'@
+$result = [UIntPtr]::Zero
+$sent = [Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, ${perWindow}, [ref]$result)
+if ($sent -eq [IntPtr]::Zero) { exit 1 }
 `;
     const encoded = Buffer.from(script, 'utf16le').toString('base64');
-    const ps = resolvePowerShellExecutable();
-    try {
-      const child = cp.spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
-        windowsHide: true,
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.unref();
-    } catch {
-      // Broadcast is advisory; do not fail operation if spawn fails
-    }
+    // Not detached: a detached child gets no CREATE_NO_WINDOW and can show a console window.
+    // The child is owned and awaited, and the timeout kills it when the budget runs out.
+    return new Promise<boolean>(resolve => {
+      let child: cp.ChildProcess;
+      try {
+        child = cp.spawn(this.powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+          windowsHide: true,
+          stdio: 'ignore',
+          timeout: budget,
+        });
+      } catch {
+        resolve(false);
+        return;
+      }
+      child.once('error', () => resolve(false));
+      child.once('exit', code => resolve(code === 0));
+    });
   }
 }
 
@@ -206,11 +227,15 @@ export interface PathEnableResult {
   action: 'enabled' | 'unsupported';
   addedToPath: boolean;
   shimPath: string;
+  /** False when open windows were not told about a changed `PATH`; a sign-out applies it. */
+  environmentNotified: boolean;
 }
 
 export interface PathRemovalResult {
   action: 'removed' | 'preserved' | 'missing' | 'blocked';
   message?: string;
+  /** False when the `PATH` entry was removed but open windows were not told. */
+  environmentNotified?: boolean;
 }
 
 export interface PathSyncResult {
@@ -334,12 +359,30 @@ function atomicWriteShim(shimPath: string, content: string): void {
   }
 }
 
+/**
+ * Removes `normalizedEntry` from the user `PATH` after a write whose outcome is unknown.
+ * @returns Whether the entry may still be present.
+ */
+async function entryMayRemain(adapter: PathSystemAdapter, normalizedEntry: string): Promise<boolean> {
+  try {
+    const current = await adapter.readUserPath();
+    if (!current) return true;
+    const entries = current.value.split(';').map(p => p.trim()).filter(Boolean);
+    const kept = entries.filter(p => normalizePathEntry(p) !== normalizedEntry);
+    if (kept.length === entries.length) return false;
+    await adapter.writeUserPath(kept.join(';'), current.kind);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export async function enablePathIntegration(
   options: PathOptInOptions,
   adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
 ): Promise<PathEnableResult> {
   if (!adapter.isWindows()) {
-    return { action: 'unsupported', addedToPath: false, shimPath: '' };
+    return { action: 'unsupported', addedToPath: false, shimPath: '', environmentNotified: true };
   }
   if (!adapter.ownsHome(options.home)) {
     throw new Error(`The user PATH does not belong to ${options.home}`);
@@ -416,11 +459,18 @@ export async function enablePathIntegration(
     }
 
     let addedToPath = false;
+    let environmentNotified = true;
     if (!alreadyExists) {
       parts.push(binDir);
       try {
         await adapter.writeUserPath(parts.join(';'), kind);
       } catch (err) {
+        // A failed or timed-out write may still have reached the registry. Take the entry out
+        // again; while it may remain, the shim and the record stay so Remove from PATH or the
+        // uninstall hook can clean it up later.
+        if (await entryMayRemain(adapter, normalizedBin)) {
+          throw new Error(`${err instanceof Error ? err.message : String(err)}; the PATH entry may remain and is still recorded for removal`);
+        }
         rollbackShim();
         if (existingPath) {
           records.path = existingPath;
@@ -430,11 +480,11 @@ export async function enablePathIntegration(
         try { writeRecordFile(options.home, records); } catch {}
         throw err;
       }
-      await adapter.broadcastEnvironmentChange(1000);
+      environmentNotified = await adapter.broadcastEnvironmentChange(5000);
       addedToPath = true;
     }
 
-    return { action: 'enabled', addedToPath, shimPath };
+    return { action: 'enabled', addedToPath, shimPath, environmentNotified };
   });
 }
 
@@ -527,6 +577,7 @@ export async function removePathIntegration(
         return { action: 'blocked', message: 'Uninstall deadline exceeded before registry operation' };
       }
 
+      let environmentNotified = true;
       let previousShimContent: string | null = null;
       let shimRemoved = false;
       const restoreShimIfNeeded = () => {
@@ -583,16 +634,15 @@ export async function removePathIntegration(
               const writeBudget = Math.max(100, remainingWrite - 100);
               await adapter.writeUserPath(kept.join(';'), current.kind, writeBudget);
               const remainingBroadcast = timeRemaining();
-              if (remainingBroadcast > 100) {
-                await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 1000));
-              }
+              environmentNotified = remainingBroadcast > 100
+                && await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 1500));
             }
           }
         } catch (error) {
           restoreShimIfNeeded();
           records.path = record;
           try { writeRecordFile(home, records); } catch {}
-          return { action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Registry removal failed.') };
+          return { action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : String(error)) };
         }
       }
 
@@ -602,7 +652,7 @@ export async function removePathIntegration(
       try {
         pruneUnreferencedRuntimes(root, home);
       } catch {}
-      return { action: 'removed' };
+      return { action: 'removed', environmentNotified };
     },
     Math.min(leaseTimeoutMs, Math.max(100, timeRemaining()))
   );

@@ -94,8 +94,12 @@ export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJ
     if (raw === null) throw new Error('Unreadable installs.json');
     let parsed: unknown;
     try { parsed = JSON.parse(raw); } catch { throw new Error('Malformed installs.json'); }
-    const pRuntime = (parsed as { path?: { runtime?: unknown } })?.path?.runtime;
-    if (typeof pRuntime === 'string') {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
+    // A PATH record whose runtime cannot be read may still guard a shim: prune nothing.
+    const pathRecord = (parsed as { path?: unknown }).path;
+    if (pathRecord !== undefined) {
+      const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
+      if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
       const resolved = path.resolve(pRuntime);
       if (resolved.startsWith(runtimes + path.sep)) {
         referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);

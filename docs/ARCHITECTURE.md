@@ -1025,6 +1025,7 @@ To survive extension uninstalls and prevent orphaned artifacts, PATH ownership i
 - **Integrity invariant**:
   - Only recorded, unmodified artifacts are ever removed. If the shim file has been modified or replaced by the user (`hash(file) !== shimHash`), it is strictly preserved.
   - An existing user `PATH` entry that CoAgent8 did not insert (`addedToPath === false`) is never deleted.
+  - Runtime pruning reads `installs.json` first: when it is unreadable, not a JSON object, or holds a `path` record without a readable `runtime`, nothing is pruned, since that record may still guard a shim's runtime.
 
 #### Windows registry write and environment broadcast
 
@@ -1039,12 +1040,14 @@ To survive extension uninstalls and prevent orphaned artifacts, PATH ownership i
    - All existing entries are preserved in their original sequence.
    - Deduplication uses case-insensitive, trailing-slash-normalized comparison (e.g. `C:\Users\User\.coagent8\bin` matches `c:\users\user\.coagent8\bin\`).
    - If the directory already exists in `Path`, no redundant entry is appended and `addedToPath` is recorded as `false`. If appended, `addedToPath` is recorded as `true`.
+   - Every write is read back. A write that fails or times out may still have reached the registry, so enable reads `Path` again and takes its entry out; when that cannot be confirmed, the shim and the ownership record stay, enable reports the failure, and Remove from PATH or the uninstall hook removes the entry later. Writing an empty value deletes `Path`, and the deletion is verified.
 4. **Prohibition of `setx`**:
    - The legacy `setx` utility is strictly forbidden because it silently truncates variables longer than 1024 characters, corrupting user environments.
 5. **Change broadcast**:
-   - Upon updating `HKCU\Environment`, the extension broadcasts `WM_SETTINGCHANGE` with `lParam = "Environment"` (`HWND_BROADCAST`, `SMTO_ABORTIFHUNG`, 1000 ms timeout in regular execution) so active shells and Windows Explorer update their environment without requiring a system sign-out.
+   - Upon updating `HKCU\Environment`, the extension broadcasts `WM_SETTINGCHANGE` with `lParam = "Environment"` (`HWND_BROADCAST`, `SMTO_ABORTIFHUNG`) so active shells and Windows Explorer update their environment without requiring a system sign-out.
+   - The broadcast runs in an owned, awaited child process (never detached) whose whole lifetime, including PowerShell start, is bounded: 5000 ms after enable, at most 1500 ms of the remaining budget during uninstall. A broadcast that cannot start or finish in time does not fail the operation; the result reports `environmentNotified: false` and the notice tells the user that a sign-out applies the change.
 6. **No visible console window**:
-   - All registry manipulation and broadcast calls run quietly without showing a console or terminal window (using Node process options with hidden window flags).
+   - All registry manipulation and broadcast calls run quietly without showing a console or terminal window (Node `windowsHide`, which gives a non-detached child `CREATE_NO_WINDOW`; a detached child would not get it).
 
 #### Uninstallation lifecycle cleanup
 
@@ -1054,7 +1057,7 @@ The native `vscode:uninstall` hook (`dist/uninstall.cjs`) performs automatic cle
    - Runs in Node.js after extension uninstall and VS Code restart, without the VS Code API.
    - Enforces VS Code's 5-second termination deadline.
    - Acquires the shared file lock (`withFileLock`) in `~/.coagent8` with a maximum wait of 1.5 seconds (`LEASE_TIMEOUT_MS = 1500`).
-   - Any environment broadcast during uninstall is bounded to at most 500 ms (or run non-blocking), ensuring ample time remains within the 5-second limit for state persistence and other cleanup steps (profile `mcp.json` and client skills).
+   - Any environment broadcast during uninstall is awaited and bounded to at most 1500 ms of the remaining budget, ensuring ample time remains within the 5-second limit for state persistence and other cleanup steps (profile `mcp.json` and client skills).
 2. **Installation isolation and reference counting**:
    - Reads `~/.coagent8/installs.json`.
    - Matches the current uninstall against `path.installations`. If this installation is not in the list, PATH artifacts are left untouched.
@@ -1065,7 +1068,7 @@ The native `vscode:uninstall` hook (`dist/uninstall.cjs`) performs automatic cle
      - Verifies the shim file at `shimPath`:
        - If the shim was modified by the user (`hash(file) !== shimHash`), the shim is left on disk, the `PATH` entry is preserved (even if `addedToPath === true`), and the recorded runtime copy at `path.runtime` is explicitly protected from deletion and future pruning so the user command remains functional. The ownership record is updated to record persistent user retention (`userRetained: true`, `installations: []`), and this retention is reported in the uninstall log.
        - If the shim is unmodified and matches `shimHash`, the shim file is deleted. If empty, the parent directory (`~/.coagent8/bin`) is removed.
-       - If and only if the shim was successfully removed and `addedToPath === true`, reads `HKCU\Environment` `Path`, removes the exact recorded `pathEntry` (normalized), writes back the updated value preserving its `REG_EXPAND_SZ` type, and broadcasts the environment update with a bounded 500 ms timeout. If `addedToPath === false`, the registry `Path` is left untouched.
+       - If and only if the shim was successfully removed and `addedToPath === true`, reads `HKCU\Environment` `Path`, removes the exact recorded `pathEntry` (normalized), writes back the updated value preserving its `REG_EXPAND_SZ` type, and broadcasts the environment update within the remaining budget (at most 1500 ms). A removal that cannot finish keeps the shim and the record and reports `blocked`; Remove from PATH shows that reason instead of reporting success or a missing integration. If `addedToPath === false`, the registry `Path` is left untouched.
        - When the shim is removed, the unreferenced runtime copy at `path.runtime` may be pruned if no other registration references it, and the `path` property is removed from `~/.coagent8/installs.json`.
 4. **Failure isolation**:
    - Registry or file access errors during PATH cleanup do not abort uninstallation of MCP profile registrations or client skills. All errors are caught, sanitized via `redactDiagnostic`, and recorded in the uninstall JSON envelope.
