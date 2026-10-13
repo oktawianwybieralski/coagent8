@@ -71,6 +71,9 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 
 ### 0.7.0 (beta.3) plan
 
+Implementing agents work from the [0.7.0 task queue](#tasks-070-070-task-queue),
+which splits these phases into one-PR tasks with a fixed procedure.
+
 Owner direction 2026-10-13: the public CLI comes first and publication
 automation (`RELEASE-001`) comes last, before the `0.7.0` tag. Phases run in
 order; cards inside a phase follow their own `After` dependencies. Each card
@@ -1611,6 +1614,173 @@ does not complete a native task.
   Marketplace artifact and installed MCP startup. Complete the 0.6.1 portion
   of SUPPLY-001f with measured Socket scores/alerts; keep its 0.7.0 portion open.
   Complete LIC-001d's published-license checks and record the first MIT release.
+
+## TASKS-070: 0.7.0 task queue
+
+The [0.7.0 plan](#070-beta3-plan) split into small tasks that an implementing
+agent can finish one at a time. Each row is one topic branch and one pull
+request. The linked card holds the full acceptance; the row says where the
+task stops. Tasks of later phases that depend on contracts not yet written
+are listed as decomposition tasks: they add new rows here, they do not
+implement.
+
+### Procedure for each task
+
+1. **Pick.** Take the first row whose `After` tasks are merged on `develop`.
+   Rows marked `par` may run in parallel with the previous row. Skip rows of
+   kind `O` (owner) and `N` (native) unless the owner assigned them to you.
+2. **Start clean.** `git fetch origin`, check that `git status --short` is
+   empty, then `git switch -c <type>/<task-id-lowercase> origin/develop`
+   (types: `feat`, `fix`, `test`, `docs`, `chore`, `build`). Never create a
+   worktree, never stash someone else's changes.
+3. **Read narrowly.** Read the row, its card and the files the card names.
+   Do not redesign beyond the row.
+4. **Kind `P` (design or prose).** Write the text where the card says
+   (ARCHITECTURE for contracts, ROADMAP for cards, rules for rules). Check
+   with `git diff --check` and a link check.
+5. **Kind `R` (code).** Write the regression or behavior test first and run
+   it to see it fail, then implement. Run the checks of the change's scope
+   from [rule 04](../.agents/rules/04-quality-gate.md): typecheck and the
+   focused tests; the full suite for shared contracts; `npm run build` and
+   `npm run test:consumer` for entry points or packaging; `npm run lint:docs`
+   for TSDoc. Record each command with PASS, FAIL or NOT_RUN.
+6. **Commit.** Conventional Commits in English, no AI attribution lines.
+   `npm run changelog`; if `CHANGELOG.md` changed, commit it alone as
+   `chore(changelog): regenerate`.
+7. **Review.** With a clean tree, call the CoAgent8 `review` tool on the
+   committed range `develop...HEAD`, backend `codex`, model `gpt-6.1-sol`
+   (owner preference). Fix every P1 and P2 finding, commit, and call `review`
+   again with the same `session_handle`. Fix P3 findings when cheap, otherwise
+   list them in the PR. Stop after three rounds without `READY` and report.
+8. **Open the PR.** `npm run changelog:check -- --with-commit "<title>"`, push
+   the branch and open a PR into `develop` with the template, including the
+   checks and the review verdict, handle and snapshot. Tick the card in
+   ROADMAP in the same PR only when the PR completes it. Never merge.
+9. **Stop and ask the owner** when a decision is not recorded in the card,
+   a step needs a chat UI or another person, a public MCP schema changes
+   beyond an accepted contract, the diff grows past about 400 changed lines
+   (split the task), tests fail for reasons outside the task, or a review
+   finds a P1 outside the task's files.
+
+Kinds: `P` design or prose, `R` code, `N` native test (owner, or the
+`ACCEPT-001` runner once it exists), `O` owner action, `S` needs a strong
+agent (owner assigns).
+
+### Phase 1 - public CLI and delegation tests
+
+| # | Task | Kind | After | Done when |
+| --- | --- | --- | --- | --- |
+| 1.1 | `CLI-FIRST-001a1` CLI syntax spec | P | - | ARCHITECTURE lists commands, global flags (`--help`, `--version`, `--json`), exit codes, bare and `mcp` behavior (option D) and the unknown-argument policy, with examples; reviewed READY. |
+| 1.2 | `CLI-FIRST-001a2` registration migration spec | P | 1.1 | ARCHITECTURE describes both registration shapes, owned-entry migration on setup, repair and extension update, manual-entry guidance, pinned copies and `npx -y coagent8@x mcp`; reviewed READY. |
+| 1.3 | `RELEASE-001a` npm publish command and dry run | R | - par | `npm-publish.yml` uses `./release/...` through a script that CI runs with `npm publish --dry-run` on a packed tarball. |
+| 1.4 | `CLI-FIRST-001b1` `mcp`, help and version dispatch | R | 1.1 | `coagent8 mcp` always serves MCP; bare with both TTYs prints help; piped bare serves MCP; `--version` works; none loads the setup bundle eagerly; tests for each stream combination. |
+| 1.5 | `CLI-FIRST-001b2` read both registration shapes | R | 1.2 | Runtime-path extraction in `setup-storage.ts` and `setup.ts` recognizes legacy and `mcp` entries without widening ownership; tests. |
+| 1.6 | `CLI-FIRST-001b3` setup writes and migrates `mcp` entries | R | 1.4, 1.5 | New and repaired owned registrations use `mcp`; migration is rolled back on failure; manual entries untouched; tests. |
+| 1.7 | `CLI-FIRST-001b4` VS Code registrations use `mcp` | R | 1.6 | Extension profile entries, `McpStdioServerDefinition` and shipped `mcp.json` pass `mcp`; extension tests. |
+| 1.8 | `CLI-FIRST-001c` `models` per the spec | R | 1.4 | `coagent8 models` matches the spec (`--json`, exit codes) and agrees with MCP `doctor` models; installed-bin fixture. |
+| 1.9 | `CLI-FIRST-001d1` `session list` | R | 1.4 | Lists the workspace's sessions (`--json`), workspace isolation as in MCP; fixture. |
+| 1.10 | `CLI-FIRST-001d2` `session history` | R | 1.9 | `session history <handle> [--cursor] [--limit]` matches MCP paging and invalid-handle errors; fixture. |
+| 1.11 | `CLI-FIRST-001e` `doctor` | R | 1.4 | `coagent8 doctor` (`--scope models` or `--scope health`, `--json`) creates no sessions, keeps redaction, maps errors to exit codes, cancels on Ctrl+C; fixture. |
+| 1.12 | `CLI-FIRST-001h1` PATH prompt design | P | 1.1 | ARCHITECTURE specifies the extension's opt-in prompt, the shim location per OS, ownership record and removal on uninstall; reviewed READY. |
+| 1.13 | `CLI-FIRST-001h2` Windows PATH opt-in | R | 1.12 | The extension asks once, adds an owned shim to the user PATH on yes, never on no or dismiss, and removes it on uninstall; tests; native check on Windows by the owner. |
+| 1.14 | `DELEGATE-001a` wake-up tests | N | - par | Each client tried in the card's order with a stand-in background script; results recorded in HANDOFF per client. |
+
+### Phase 2 - stability, feedback, containment, delegation contract
+
+| # | Task | Kind | After | Done when |
+| --- | --- | --- | --- | --- |
+| 2.1 | `FEEDBACK-061a1` server version in `doctor` | R | - | `doctor` health shows the running server version and runtime path; tests. |
+| 2.2 | `FEEDBACK-061a2` update notice | R | - par | The extension's update notice says open chats keep the old runtime until restarted; test. |
+| 2.3 | `FEEDBACK-061b1` shared registration reproduction | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
+| 2.4 | `FEEDBACK-061b2` registration policy | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
+| 2.5 | `FEEDBACK-061b3` selection outside the vendor profile | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |
+| 2.6 | `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
+| 2.7 | `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
+| 2.8 | `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
+| 2.9 | `FEEDBACK-061c2` VS Code "Open bug report" | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
+| 2.10 | `FEEDBACK-061c3` `coagent8 issue --open` | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
+| 2.11 | `FEEDBACK-061e` server-owned turn number | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
+| 2.12 | `FEEDBACK-061g` large Codex prompts | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
+| 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
+| 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
+| 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
+| 2.16 | `ACCEPT-001a1` runner skeleton | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
+| 2.17 | `ACCEPT-001a2` scenarios N2-N4 | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
+| 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios; results recorded. |
+| 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
+| 2.20 | `COAGENT-004a` durable state and early handles | P S | 2.19 | Contract card done; reviewed READY. |
+| 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
+| 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | ARCHITECTURE (unimplemented) defines `delegate`, `wait`, states and ordering; reviewed READY. |
+| 2.23 | `AX-005a`, then `AX-005b` | P, R | - | As the cards say, one PR each. |
+| 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say, one PR each; `AX-004c` is kind N. |
+| 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | One PR per card in that order. |
+| 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R). |
+| 2.27 | `AX-003a`, `AX-003b`, `AX-003c` | P | - | Classification, form-less consent design, then implementation cards added here. |
+| 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | Acceptance script, then one fresh-client run per client. |
+| 2.29 | `AUDIT-001-A08` to `A21` | R | - | In card order and grouping (A08-A09, A10-A12, A13-A15, A16-A18, A19-A20, A21); a reproduction that finds no defect skips its fix. |
+| 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R). |
+| 2.31 | `WINDOWS-001b` launcher contract | P S | - | Card done; reviewed READY. |
+| 2.32 | `WINDOWS-001c` helper | R S | 2.31 | Rust helper and measured overhead per the card. |
+| 2.33 | `WINDOWS-001d1` signing route | O | 2.32 | Owner applies to SignPath Foundation or accepts unsigned binaries with SHA-256. |
+| 2.34 | `WINDOWS-001d2` package and verify | R | 2.33 | Card done. |
+| 2.35 | `WINDOWS-001e` | N | 2.34 | Native no-survivor evidence per backend. |
+| 2.36 | `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e` | N | 2.17 | Native acceptance as the cards say, through the runner where possible. |
+
+### Phase 3 - read-only delegation, proposals, documentation, packaging
+
+| # | Task | Kind | After | Done when |
+| --- | --- | --- | --- | --- |
+| 3.1 | `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (consult) returns a handle at once and the turn runs under owned supervision independent of the request; tests. |
+| 3.2 | `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown stop delegated turns without survivors; tests. |
+| 3.3 | `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `coagent8 wait <handle>` in the CLI; tests. |
+| 3.4 | `DELEGATE-001e4` result before wake-up | R | 3.3 | Result persisted before any notification; completion, notified and fetched states; no wake-up after cancel; tests. |
+| 3.5 | `DELEGATE-001e5` review through `delegate` | R | 3.4 | Review turns delegate with the same gate and snapshot rules; tests. |
+| 3.6 | `DELEGATE-001d1` Claude Code adapter | R | 3.3, 1.14 | The skill tells the agent to run `coagent8 wait` in the background; native check. |
+| 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
+| 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
+| 3.9 | `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
+| 3.10 | `PROPOSALS-001d` and `001l` | R | - par | Tool descriptions and skills ask for paths; session resources use compact JSON; tool-definition budget test passes. |
+| 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
+| 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
+| 3.13 | `PROPOSALS-001g`, `001k`, `001n` rule texts | P | - par | Rules and AGENTS.md updated. |
+| 3.14 | `PROPOSALS-001e` signed-commit ruleset | O | - | Owner adds `required_signatures`; 3.13 aligns the text. |
+| 3.15 | `DOCS-003a` site purpose | P | - | Page list and published documents recorded; reviewed READY. |
+| 3.16 | `DOCS-003b` TypeDoc configuration | R | 3.15 | `npm run docs` passes with the new configuration. |
+| 3.17 | `DOCS-003c1` to `c5` categories and module comments | R | 3.16 | One PR per layer (MCP; execution; backends; sessions and storage; integrations and diagnostics); `npm run lint:docs`. |
+| 3.18 | `DOCS-003d` human pages | P | 3.15 | Quick start, Tools, Configuration pages and home introduction. |
+| 3.19 | `DOCS-002c`, `DOCS-002e` | P | - par | As the cards say. |
+| 3.20 | `SUPPLY-001c`, `001d`, `001e` | R | - | One PR each, with first-launch measurements. |
+
+### Phase 4 - host-led coagent profiles
+
+| # | Task | Kind | After | Done when |
+| --- | --- | --- | --- | --- |
+| 4.1 | `COAGENT-001a`, `001b` | P S | 2.20 | Contract cards done; reviewed READY. |
+| 4.2 | `COAGENT-002a`, `002b` | P S | 4.1 | Profile evidence and writer ownership designs. |
+| 4.3 | `COAGENT-003a`, `003b` | P S | 4.1 | Routing precedence and root reservations. |
+| 4.4 | `COAGENT-004b`, `005a`, `005b`, `007a` | P S | 4.1 | Remaining contract cards. |
+| 4.5 | Decompose implementation | P S | 4.1-4.4, 2.35 | A strong agent or the owner adds implementation rows here for write/check/review/fix profiles, roles, multi-file skills, `DELEGATE-001f` and `CLI-FIRST-001f`. |
+| 4.6 | `FAILOVER-001a` | R | - par | As the card says. |
+| 4.7 | `PLUGIN-001a` | N | - | Loader evidence per client. |
+| 4.8 | `PLUGIN-001b` to `001e` | P, R | 4.7 | One PR per card. |
+| 4.9 | `PLUGIN-001f`, `001g` | N | 4.8 | Native acceptance. |
+
+### Phase 5 - publication automation and 0.7.0 acceptance
+
+| # | Task | Kind | After | Done when |
+| --- | --- | --- | --- | --- |
+| 5.1 | `RELEASE-001b1` staged publishing workflow | R | 1.3 | Workflow runs `npm stage publish` with provenance; dry-run check in CI. |
+| 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | Owner recreates the trusted publisher for staged publishing and removes the GitHub `npm` environment approval. |
+| 5.3 | `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases, npm publishes to `latest` and moves `next`, Marketplace without `--pre-release`. |
+| 5.4 | `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; needs the owner's token secret (O). |
+| 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
+| 5.6 | `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
+| 5.7 | `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
+| 5.8 | `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
+| 5.9 | Release PR `0.7.0` | R | all above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
+| 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure. |
+| 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
+| 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
 
 ## Release acceptance
 
