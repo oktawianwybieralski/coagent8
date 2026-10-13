@@ -16,6 +16,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [`8949539`](https://github.com/oktawianwybieralski/coagent8/commit/8949539432ed82e8518729fcaab67a1b93278041): Expose doctor CLI diagnostics and root dispatch
     - [`5b633d3`](https://github.com/oktawianwybieralski/coagent8/commit/5b633d3389b3afcabae9f87b4a36043c9533a859): Implement models CLI command and options parser
     - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Bug fix:
+    - [`fca7c2d`](https://github.com/oktawianwybieralski/coagent8/commit/fca7c2d8bf6d25a53f0ea71b9d63ab6574f8cdb2): Redact home paths and credentials in doctor and models output
 - Integrations:
   - New feature:
     - [#39](https://github.com/oktawianwybieralski/coagent8/pull/39): Write and migrate explicit mcp registrations (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
