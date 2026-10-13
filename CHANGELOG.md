@@ -25,6 +25,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [`a39011a`](https://github.com/oktawianwybieralski/coagent8/commit/a39011acf1da750743d0048b8339923bd4f1d211): Implement Windows PATH opt-in and uninstall cleanup
     - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
   - Bug fix:
+    - [`72ffaf3`](https://github.com/oktawianwybieralski/coagent8/commit/72ffaf33ea820d07742ce9aeb6a98de6df81e2ba): Track configuration reset for deactivation
     - [`8b6d5da`](https://github.com/oktawianwybieralski/coagent8/commit/8b6d5dac3aecdc4cbfc7546ab476f49855dcf1d8): Refuse command work that resumes after deactivation
     - [`e681b2c`](https://github.com/oktawianwybieralski/coagent8/commit/e681b2ca259cb795c6bbf978f12e939c1c64f997): Own the environment broadcast, recover uncertain PATH writes and report blocked removal
     - [`36c8fb6`](https://github.com/oktawianwybieralski/coagent8/commit/36c8fb6debb38ec5ae01c9850a68b39673aeb88d): Bind PATH changes to the account profile and record native verification
