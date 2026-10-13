@@ -9,6 +9,7 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -29,6 +30,8 @@ export interface PathSystemAdapter {
   writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ', timeoutMs?: number): Promise<void>;
   broadcastEnvironmentChange(timeoutMs?: number): Promise<void>;
   isWindows(): boolean;
+  /** Whether this adapter's user `PATH` belongs to `home`; enable and remove refuse any other home. */
+  ownsHome(home: string): boolean;
 }
 
 function resolvePowerShellExecutable(): string {
@@ -42,6 +45,15 @@ function resolvePowerShellExecutable(): string {
 export class DefaultWindowsPathAdapter implements PathSystemAdapter {
   isWindows(): boolean {
     return process.platform === 'win32';
+  }
+
+  /**
+   * `HKCU\Environment` belongs to the signed-in account. On Windows `os.userInfo().homedir`
+   * comes from the process token, not from `HOME` or `USERPROFILE`, so a redirected home
+   * (a test fixture or a tool run with another home) never edits the account's real `PATH`.
+   */
+  ownsHome(home: string): boolean {
+    return sameFolder(home, os.userInfo().homedir);
   }
 
   async readUserPath(timeoutMs = 5000): Promise<WindowsRegistryPath | null> {
@@ -218,10 +230,13 @@ function canonicalFolder(value: string): string {
   }
 }
 
-function sameInstallation(a: string | undefined, b: string): boolean {
-  if (a === undefined) return false;
+function sameFolder(a: string, b: string): boolean {
   const normal = (val: string) => process.platform === 'win32' ? canonicalFolder(val).toLowerCase() : canonicalFolder(val);
   return normal(a) === normal(b);
+}
+
+function sameInstallation(a: string | undefined, b: string): boolean {
+  return a !== undefined && sameFolder(a, b);
 }
 
 function normalizePathEntry(entry: string): string {
@@ -325,6 +340,9 @@ export async function enablePathIntegration(
 ): Promise<PathEnableResult> {
   if (!adapter.isWindows()) {
     return { action: 'unsupported', addedToPath: false, shimPath: '' };
+  }
+  if (!adapter.ownsHome(options.home)) {
+    throw new Error(`The user PATH does not belong to ${options.home}`);
   }
   return withFileLock(setupLockTarget(options.home), async () => {
     const binDir = path.join(options.home, '.coagent8', 'bin');
@@ -477,6 +495,9 @@ export async function removePathIntegration(
   deadline = Date.now() + leaseTimeoutMs
 ): Promise<PathRemovalResult> {
   if (!readPathRecord(home)) return { action: 'missing' };
+  if (!adapter.ownsHome(home)) {
+    return { action: 'blocked', message: 'The user PATH does not belong to this home' };
+  }
   const timeRemaining = () => deadline - Date.now();
   if (timeRemaining() <= 0) {
     return { action: 'blocked', message: 'Uninstall deadline exceeded before PATH removal' };

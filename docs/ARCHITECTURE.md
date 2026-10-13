@@ -1030,6 +1030,7 @@ To survive extension uninstalls and prevent orphaned artifacts, PATH ownership i
 
 1. **Registry target**:
    - `HKCU\Environment`, value `Path`.
+   - `HKCU\Environment` belongs to the signed-in account, so enable and uninstall cleanup act on it only for that account's profile directory, taken from the process token (`os.userInfo().homedir`), never from `HOME` or `USERPROFILE`. A redirected home, such as a test fixture, is refused before any file or registry change.
 2. **Value type preservation (`REG_EXPAND_SZ` vs `REG_SZ`)**:
    - The existing value kind is inspected (`GetValueKind('Path')`).
    - If the value is `REG_EXPAND_SZ` (containing unexpanded environment variables such as `%USERPROFILE%` or `%SystemRoot%`), it must be read without expansion (`DoNotExpandEnvironmentNames`) and written back strictly as `REG_EXPAND_SZ`.
@@ -1079,7 +1080,7 @@ Both `npm install -g coagent8` (installed into npm's global prefix, e.g. `%APPDA
 2. **Version divergence**:
    - The npm registry version and the VS Code extension version may differ (for example, a stable release like `0.6.1` installed globally via npm while a preview version like `0.7.0` is installed via VSIX).
    - `where.exe coagent8` on Windows or `which -a coagent8` on POSIX lists all available binaries in precedence order.
-   - Diagnostics in `coagent8 doctor` and `--version` report the active executable, allowing users to verify which binary runs in their current shell.
+   - `coagent8 --version` prints only the package version and `coagent8 doctor` does not report the executable path, so `where.exe` or `which -a` is the way to tell which binary a shell runs.
 3. **Independent lifecycles and uninstallation separation**:
    - Uninstalling the VS Code extension removes only its owned shim (`~/.coagent8/bin`) and its owned user PATH entry; it never modifies npm's global prefix or deletes the npm-installed binary.
    - Conversely, running `npm uninstall -g coagent8` removes the global npm package but leaves the VS Code extension shim and its ownership records in `~/.coagent8/installs.json` intact.

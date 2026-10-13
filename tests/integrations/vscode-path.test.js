@@ -9,6 +9,7 @@ const {
   syncPathShim,
   removePathIntegration,
   readPathRecord,
+  DefaultWindowsPathAdapter,
 } = require('../../src/integrations/vscode-path.ts');
 
 class MockPathAdapter {
@@ -25,6 +26,9 @@ class MockPathAdapter {
   }
   isWindows() {
     return this.win;
+  }
+  ownsHome() {
+    return true;
   }
   async readUserPath(timeoutMs) {
     this.readTimeouts.push(timeoutMs);
@@ -91,6 +95,31 @@ test('Yes adds one entry and the shim and records them', async t => {
   assert.equal(record.addedToPath, true);
   assert.ok(record.shimHash);
   assert.deepEqual(record.installations, [f.installation]);
+});
+
+test('the real adapter owns only the account profile, whatever HOME or USERPROFILE say', t => {
+  const f = fixture(t);
+  const adapter = new DefaultWindowsPathAdapter();
+  assert.equal(adapter.ownsHome(os.userInfo().homedir), true);
+  assert.equal(adapter.ownsHome(f.home), false, 'a fixture home never reaches HKCU\\Environment');
+});
+
+test('enable and remove refuse a home the adapter does not own and change nothing', async t => {
+  const f = fixture(t);
+  const options = { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' };
+  const owned = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(options, owned);
+  const shimPath = path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd');
+  const record = readPathRecord(f.home);
+
+  const foreign = new MockPathAdapter('C:\\System', 'REG_SZ');
+  foreign.ownsHome = () => false;
+  await assert.rejects(enablePathIntegration(options, foreign), /does not belong/);
+  const removed = await removePathIntegration(f.home, f.installation, 1500, foreign);
+  assert.equal(removed.action, 'blocked');
+  assert.deepEqual(foreign.writes, [], 'the foreign PATH is never written');
+  assert.ok(fs.existsSync(shimPath), 'the shim stays');
+  assert.deepEqual(readPathRecord(f.home), record, 'the record stays');
 });
 
 test('No and dismissal change nothing and are not asked again', async t => {

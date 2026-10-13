@@ -23,6 +23,7 @@ class MockPathAdapter {
     this.broadcasts = [];
   }
   isWindows() { return this.win; }
+  ownsHome() { return true; }
   async readUserPath() {
     if (this.pathValue === null) return null;
     return { value: this.pathValue, kind: this.pathKind };
