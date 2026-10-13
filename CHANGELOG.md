@@ -13,6 +13,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 - Cli:
   - New feature:
+    - [`8949539`](https://github.com/oktawianwybieralski/coagent8/commit/8949539432ed82e8518729fcaab67a1b93278041): Expose doctor CLI diagnostics and root dispatch
+    - [`5b633d3`](https://github.com/oktawianwybieralski/coagent8/commit/5b633d3389b3afcabae9f87b4a36043c9533a859): Implement models CLI command and options parser
     - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 - Integrations:
   - New feature:
@@ -20,7 +22,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [#38](https://github.com/oktawianwybieralski/coagent8/pull/38): Recognize legacy and mcp registration shapes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 - Vscode:
   - New feature:
-    - [`f637efc`](https://github.com/oktawianwybieralski/coagent8/commit/f637efc04219af3e3c2ba90d43f5bc4dca88f737): Use explicit mcp in profile and server definitions
+    - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 
 ## v0.6.1 - (2026-10-13)
 
