@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { hash, writeChecked } from './setup-storage.js';
+import { hash } from './setup-storage.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
@@ -20,11 +20,12 @@ import { redactDiagnostic } from '../security/redaction.js';
 export interface WindowsRegistryPath {
   value: string;
   kind: 'REG_SZ' | 'REG_EXPAND_SZ';
+  exists?: boolean;
 }
 
 export interface PathSystemAdapter {
-  readUserPath(): Promise<WindowsRegistryPath | null>;
-  writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ'): Promise<void>;
+  readUserPath(timeoutMs?: number): Promise<WindowsRegistryPath | null>;
+  writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ', timeoutMs?: number): Promise<void>;
   broadcastEnvironmentChange(timeoutMs?: number): Promise<void>;
   isWindows(): boolean;
 }
@@ -34,33 +35,54 @@ export class DefaultWindowsPathAdapter implements PathSystemAdapter {
     return process.platform === 'win32';
   }
 
-  async readUserPath(): Promise<WindowsRegistryPath | null> {
+  async readUserPath(timeoutMs = 5000): Promise<WindowsRegistryPath | null> {
     if (!this.isWindows()) return null;
+    let res: cp.SpawnSyncReturns<string>;
     try {
-      const res = cp.spawnSync('reg.exe', ['query', 'HKCU\\Environment', '/v', 'Path'], {
+      res = cp.spawnSync('reg.exe', ['query', 'HKCU\\Environment', '/v', 'Path'], {
         windowsHide: true,
         encoding: 'utf8',
-        timeout: 5000,
+        timeout: timeoutMs,
       });
-      if (res.status !== 0 || !res.stdout) return null;
-      const match = /^\s*Path\s+(REG_SZ|REG_EXPAND_SZ)\s*(.*)$/im.exec(res.stdout);
-      if (!match) return null;
-      return {
-        kind: match[1] as 'REG_SZ' | 'REG_EXPAND_SZ',
-        value: match[2]?.trim() ?? '',
-      };
-    } catch {
-      return null;
+    } catch (err) {
+      throw new Error(`Failed to execute reg.exe: ${(err as Error).message}`);
     }
+    if (res.error) {
+      throw new Error(`Registry query error: ${res.error.message}`);
+    }
+    if (res.status !== 0) {
+      const output = `${res.stderr || ''} ${res.stdout || ''}`;
+      if (/unable to find|cannot find|ERROR:\s*The system was unable to find/i.test(output)) {
+        return { exists: false, kind: 'REG_SZ', value: '' };
+      }
+      throw new Error(`Failed to query HKCU\\Environment Path (exit ${res.status}): ${output.trim()}`);
+    }
+    const match = /^\s*Path\s+(REG_SZ|REG_EXPAND_SZ)\s*(.*)$/im.exec(res.stdout);
+    if (!match) {
+      throw new Error(`Unexpected registry query output format: ${res.stdout.trim()}`);
+    }
+    return {
+      exists: true,
+      kind: match[1] as 'REG_SZ' | 'REG_EXPAND_SZ',
+      value: match[2]?.trim() ?? '',
+    };
   }
 
-  async writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ'): Promise<void> {
+  async writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ', timeoutMs = 5000): Promise<void> {
     if (!this.isWindows()) return;
-    const res = cp.spawnSync('reg.exe', ['add', 'HKCU\\Environment', '/v', 'Path', '/t', kind, '/d', value, '/f'], {
-      windowsHide: true,
-      encoding: 'utf8',
-      timeout: 5000,
-    });
+    let res: cp.SpawnSyncReturns<string>;
+    try {
+      res = cp.spawnSync('reg.exe', ['add', 'HKCU\\Environment', '/v', 'Path', '/t', kind, '/d', value, '/f'], {
+        windowsHide: true,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+      });
+    } catch (err) {
+      throw new Error(`Failed to execute reg.exe: ${(err as Error).message}`);
+    }
+    if (res.error) {
+      throw new Error(`Registry add error: ${res.error.message}`);
+    }
     if (res.status !== 0) {
       throw new Error(`Failed to write HKCU\\Environment Path: ${res.stderr || res.stdout || 'unknown error'}`);
     }
@@ -78,7 +100,7 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
     try {
       cp.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
         windowsHide: true,
-        timeout: Math.max(timeoutMs + 2000, 3000),
+        timeout: Math.max(timeoutMs + 1000, 2000),
       });
     } catch {
       // Broadcast is advisory; do not fail operation if broadcast times out
@@ -121,10 +143,6 @@ export interface PathSyncResult {
 
 function installRecordFile(home: string): string {
   return path.join(home, '.coagent8', 'installs.json');
-}
-
-function leaseResource(home: string): string {
-  return path.join(home, '.coagent8', 'vscode-path');
 }
 
 function canonicalFolder(value: string): string {
@@ -200,10 +218,10 @@ export function readPathRecord(home: string): PathOwnershipRecord | undefined {
   return undefined;
 }
 
-function ensureRuntimeCopy(storage: string, bundle: string): string {
+function ensureRuntimeCopy(home: string, bundle: string): string {
   const content = fs.readFileSync(bundle);
   const digest = hash(content);
-  const runtimeDir = path.join(storage, 'runtime', digest);
+  const runtimeDir = path.join(home, '.coagent8', 'runtime', digest);
   const target = path.join(runtimeDir, 'index.cjs');
   if (fs.existsSync(target) && hash(fs.readFileSync(target)) === digest) return target;
   fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
@@ -228,22 +246,40 @@ export async function enablePathIntegration(
   if (!adapter.isWindows()) {
     return { action: 'unsupported', addedToPath: false, shimPath: '' };
   }
-  return withFileLock(leaseResource(options.home), async () => {
-    const runtimeTarget = ensureRuntimeCopy(options.storage, options.bundle);
+  return withFileLock(installRecordFile(options.home), async () => {
     const binDir = path.join(options.home, '.coagent8', 'bin');
-    fs.mkdirSync(binDir, { recursive: true });
     const shimPath = path.join(binDir, 'coagent8.cmd');
 
+    const records = readRecordFile(options.home);
+    const existingPath = readPathRecord(options.home);
+
+    let shimExistedBefore = false;
+    if (fs.existsSync(shimPath)) {
+      shimExistedBefore = true;
+      const onDiskHash = hash(fs.readFileSync(shimPath));
+      if (!existingPath) {
+        throw new Error(`Cannot overwrite unowned file at ${shimPath}`);
+      }
+      if (onDiskHash !== existingPath.shimHash) {
+        throw new Error(`Cannot overwrite user-modified shim at ${shimPath}`);
+      }
+    }
+
+    const currentPath = await adapter.readUserPath();
+    if (currentPath === null && adapter.isWindows()) {
+      throw new Error('Failed to read HKCU\\Environment Path');
+    }
+    const kind = currentPath?.kind ?? 'REG_SZ';
+    const rawVal = currentPath?.value ?? '';
+    const parts = rawVal.split(';').map(p => p.trim()).filter(Boolean);
+
+    const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
     const nodeExec = options.nodePath?.trim() || 'node';
     const shimContent = generateShimContent(nodeExec, runtimeTarget);
     const shimDigest = hash(shimContent);
 
+    fs.mkdirSync(binDir, { recursive: true });
     fs.writeFileSync(shimPath, shimContent, 'utf8');
-
-    const currentPath = await adapter.readUserPath();
-    const kind = currentPath?.kind ?? 'REG_SZ';
-    const rawVal = currentPath?.value ?? '';
-    const parts = rawVal.split(';').map(p => p.trim()).filter(Boolean);
 
     const normalizedBin = normalizePathEntry(binDir);
     const alreadyExists = parts.some(p => normalizePathEntry(p) === normalizedBin);
@@ -251,13 +287,18 @@ export async function enablePathIntegration(
     let addedToPath = false;
     if (!alreadyExists) {
       parts.push(binDir);
-      await adapter.writeUserPath(parts.join(';'), kind);
+      try {
+        await adapter.writeUserPath(parts.join(';'), kind);
+      } catch (err) {
+        if (!shimExistedBefore) {
+          try { fs.rmSync(shimPath, { force: true }); } catch {}
+        }
+        throw err;
+      }
       await adapter.broadcastEnvironmentChange(1000);
       addedToPath = true;
     }
 
-    const records = readRecordFile(options.home);
-    const existingPath = readPathRecord(options.home);
     const installations = existingPath?.installations ? [...existingPath.installations] : [];
     if (!installations.some(i => sameInstallation(i, options.installation))) {
       installations.push(options.installation);
@@ -273,7 +314,18 @@ export async function enablePathIntegration(
     };
 
     records.path = updatedRecord;
-    writeRecordFile(options.home, records);
+    try {
+      writeRecordFile(options.home, records);
+    } catch (err) {
+      if (addedToPath) {
+        const rollbackParts = parts.filter(p => normalizePathEntry(p) !== normalizedBin);
+        try { await adapter.writeUserPath(rollbackParts.join(';'), kind); } catch {}
+      }
+      if (!shimExistedBefore) {
+        try { fs.rmSync(shimPath, { force: true }); } catch {}
+      }
+      throw err;
+    }
 
     return { action: 'enabled', addedToPath, shimPath };
   });
@@ -283,41 +335,7 @@ export async function disablePathIntegration(
   options: PathOptInOptions,
   adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
 ): Promise<PathRemovalResult> {
-  return withFileLock(leaseResource(options.home), async () => {
-    const records = readRecordFile(options.home);
-    const record = readPathRecord(options.home);
-    if (!record) return { action: 'missing' };
-
-    if (fs.existsSync(record.shimPath)) {
-      const onDiskHash = hash(fs.readFileSync(record.shimPath));
-      if (onDiskHash === record.shimHash) {
-        fs.rmSync(record.shimPath, { force: true });
-        const dir = path.dirname(record.shimPath);
-        try {
-          if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir);
-        } catch {}
-      }
-    }
-
-    if (record.addedToPath) {
-      const current = await adapter.readUserPath();
-      if (current) {
-        const normalizedTarget = normalizePathEntry(record.pathEntry);
-        const kept = current.value
-          .split(';')
-          .map(p => p.trim())
-          .filter(p => p && normalizePathEntry(p) !== normalizedTarget);
-        if (kept.length !== current.value.split(';').filter(Boolean).length) {
-          await adapter.writeUserPath(kept.join(';'), current.kind);
-          await adapter.broadcastEnvironmentChange(500);
-        }
-      }
-    }
-
-    delete records.path;
-    writeRecordFile(options.home, records);
-    return { action: 'removed' };
-  });
+  return removePathIntegration(options.home, options.installation, 1500, adapter);
 }
 
 export async function syncPathShim(
@@ -326,7 +344,7 @@ export async function syncPathShim(
 ): Promise<PathSyncResult> {
   if (!adapter.isWindows()) return { action: 'noop' };
   if (!readPathRecord(options.home)) return { action: 'missing' };
-  return withFileLock(leaseResource(options.home), async () => {
+  return withFileLock(installRecordFile(options.home), async () => {
     const records = readRecordFile(options.home);
     const record = readPathRecord(options.home);
     if (!record) return { action: 'missing' };
@@ -342,7 +360,7 @@ export async function syncPathShim(
       return { action: 'preserved' };
     }
 
-    const runtimeTarget = ensureRuntimeCopy(options.storage, options.bundle);
+    const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
     const nodeExec = options.nodePath?.trim() || 'node';
     const newShimContent = generateShimContent(nodeExec, runtimeTarget);
     const newShimHash = hash(newShimContent);
@@ -365,7 +383,7 @@ export async function removePathIntegration(
 ): Promise<PathRemovalResult> {
   if (!readPathRecord(home)) return { action: 'missing' };
   const res = await withFileLock<PathRemovalResult>(
-    leaseResource(home),
+    installRecordFile(home),
     async (): Promise<PathRemovalResult> => {
       const records = readRecordFile(home);
       const record = readPathRecord(home);
@@ -401,7 +419,7 @@ export async function removePathIntegration(
 
       if (record.addedToPath) {
         try {
-          const current = await adapter.readUserPath();
+          const current = await adapter.readUserPath(Math.min(leaseTimeoutMs, 1000));
           if (current) {
             const normalizedTarget = normalizePathEntry(record.pathEntry);
             const kept = current.value
@@ -409,12 +427,14 @@ export async function removePathIntegration(
               .map(p => p.trim())
               .filter(p => p && normalizePathEntry(p) !== normalizedTarget);
             if (kept.length !== current.value.split(';').filter(Boolean).length) {
-              await adapter.writeUserPath(kept.join(';'), current.kind);
-              await adapter.broadcastEnvironmentChange(500);
+              await adapter.writeUserPath(kept.join(';'), current.kind, Math.min(leaseTimeoutMs, 1000));
+              await adapter.broadcastEnvironmentChange(300);
             }
           }
-        } catch {
-          // Bounded tolerance for environment broadcast/registry during uninstall
+        } catch (error) {
+          records.path = record;
+          writeRecordFile(home, records);
+          return { action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Registry removal failed.') };
         }
       }
 
@@ -432,4 +452,3 @@ export async function removePathIntegration(
   } catch {}
   return res;
 }
-

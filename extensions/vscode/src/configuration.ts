@@ -123,11 +123,12 @@ export async function updateInstallList(location: StateLocation, list: SetupInst
   const file = installRecordFile(location.home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   await withFileLock(file, async () => {
-    const record = readInstallRecord(location);
-    const items = [...new Set([...record[list] ?? [], ...add])].filter(item => !remove.includes(item));
-    if (items.length) record[list] = items;
-    else delete record[list];
-    if (Object.keys(record).length) replaceFile(file, JSON.stringify(record, null, 2) + '\n');
+    const raw = readObject(file);
+    const legacy = readObject(setupStateFile(location.storage));
+    const items = [...new Set([...strings(raw[list]) ?? [], ...strings(legacy[list]) ?? [], ...add])].filter(item => !remove.includes(item));
+    if (items.length) raw[list] = items;
+    else delete raw[list];
+    if (Object.keys(raw).length) replaceFile(file, JSON.stringify(raw, null, 2) + '\n');
     else fs.rmSync(file, { force: true });
   });
   const legacy = readObject(setupStateFile(location.storage));

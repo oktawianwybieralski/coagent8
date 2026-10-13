@@ -440,6 +440,22 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     return { status: result, registration, installations, inUse, configured };
   }
+  async function offerPathIntegration(): Promise<void> {
+    if (vscode.env.remoteName || readSetupState(storage).pathPrompt !== undefined) return;
+    const pathChoice = await vscode.window.showInformationMessage(
+      "Add 'coagent8' to your user PATH so you can run it from any terminal?",
+      'Yes', 'No'
+    );
+    if (pathChoice === 'Yes') {
+      await updateSetupState(storage, { pathPrompt: 'accepted' });
+      const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+      await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+    } else if (pathChoice === 'No') {
+      await updateSetupState(storage, { pathPrompt: 'declined' });
+    } else {
+      await updateSetupState(storage, { pathPrompt: 'dismissed' });
+    }
+  }
   /**
    * Shows the one closing notice for registration changes.
    * @param added - Setup results of the CLIs that should have CoAgent8 in their chat.
@@ -602,6 +618,14 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     await vscode.commands.executeCommand('workbench.mcp.listServer');
   });
   register('coagent8.addPath', async () => {
+    const choice = await vscode.window.showInformationMessage(
+      "Add 'coagent8' to your user PATH so you can run it from any terminal?",
+      'Yes', 'No'
+    );
+    if (choice !== 'Yes') {
+      if (choice === 'No') await updateSetupState(storage, { pathPrompt: 'declined' });
+      return;
+    }
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
     const res = await enablePathIntegration({
       home: os.homedir(),
@@ -618,6 +642,11 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
   });
   register('coagent8.removePath', async () => {
+    const choice = await vscode.window.showInformationMessage(
+      "Remove 'coagent8' from your user PATH?",
+      'Remove', 'Cancel'
+    );
+    if (choice !== 'Remove') return;
     const res = await disablePathIntegration({
       home: os.homedir(),
       storage,
@@ -626,6 +655,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     });
     if (res.action === 'removed') {
       void vscode.window.showInformationMessage('CoAgent8 has been removed from your user PATH.');
+    } else if (res.action === 'preserved') {
+      void vscode.window.showInformationMessage(res.message ? `CoAgent8 PATH integration: ${res.message}` : 'PATH integration preserved.');
     } else {
       void vscode.window.showInformationMessage('No active CoAgent8 PATH integration was found.');
     }
@@ -1109,25 +1140,15 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         ...(offer ? ['Manage CLIs'] : []), 'Show MCP Servers');
       if (next === 'Manage CLIs') await vscode.commands.executeCommand('coagent8.manageClis');
       else if (next === 'Show MCP Servers') await vscode.commands.executeCommand('coagent8.manageMcpServers');
-      if (!vscode.env.remoteName && readSetupState(storage).pathPrompt === undefined) {
-        const pathChoice = await vscode.window.showInformationMessage(
-          "Add 'coagent8' to your user PATH so you can run it from any terminal?",
-          'Yes', 'No'
-        );
-        if (pathChoice === 'Yes') {
-          await updateSetupState(storage, { pathPrompt: 'accepted' });
-          const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-          await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
-        } else if (pathChoice === 'No') {
-          await updateSetupState(storage, { pathPrompt: 'declined' });
-        } else {
-          await updateSetupState(storage, { pathPrompt: 'dismissed' });
-        }
-      }
+      await offerPathIntegration();
       return;
     }
     const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible, signed-in coding CLI: Codex CLI, Claude Code CLI or Antigravity CLI.', 'Manage CLIs');
-    if (choice === 'Manage CLIs') await vscode.commands.executeCommand('coagent8.manageClis');
+    if (choice === 'Manage CLIs') {
+      await vscode.commands.executeCommand('coagent8.manageClis');
+      const after = await status('Post-setup CLI Check');
+      if (after.some(r => r.ready)) await offerPathIntegration();
+    }
   }
   void showWelcome().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`); });
   /**

@@ -273,3 +273,36 @@ test('extension update keeps the shim working', async t => {
   assert.match(fs.readFileSync(shimPath, 'utf8'), /:: user edit/);
 });
 
+test('enablePathIntegration refuses to overwrite unowned file or modified shim', async t => {
+  const f = fixture(t);
+  const binDir = path.join(f.home, '.coagent8', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const shimPath = path.join(binDir, 'coagent8.cmd');
+  fs.writeFileSync(shimPath, 'echo unowned');
+
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await assert.rejects(
+    () => enablePathIntegration(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+      adapter
+    ),
+    /Cannot overwrite unowned file/
+  );
+  assert.equal(adapter.writes.length, 0);
+  assert.equal(fs.readFileSync(shimPath, 'utf8'), 'echo unowned');
+});
+
+test('removePathIntegration reports blocked and preserves metadata if registry removal fails', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    adapter
+  );
+
+  adapter.writeUserPath = async () => { throw new Error('Registry access denied'); };
+  const res = await removePathIntegration(f.home, f.installation, 1500, adapter);
+  assert.equal(res.action, 'blocked');
+  assert.match(res.message, /Registry access denied/);
+  assert.ok(readPathRecord(f.home), 'ownership record preserved for recovery');
+});

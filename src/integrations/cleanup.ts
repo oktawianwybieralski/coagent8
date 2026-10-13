@@ -90,6 +90,18 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
       }
     }
   }
+  const installsPath = path.join(root, 'installs.json');
+  if (fs.existsSync(installsPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(installsPath, 'utf8'));
+      if (parsed?.path?.runtime && typeof parsed.path.runtime === 'string') {
+        const pRuntime = path.resolve(parsed.path.runtime);
+        if (pRuntime.startsWith(runtimes + path.sep)) {
+          referenced.add(path.relative(runtimes, pRuntime).split(path.sep)[0]!);
+        }
+      }
+    } catch {}
+  }
   if (fs.existsSync(runtimes)) {
     for (const name of fs.readdirSync(runtimes)) {
       if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) fs.rmSync(path.join(runtimes, name), { recursive: true, force: true });
