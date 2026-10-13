@@ -781,7 +781,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   `src/diagnostics/doctor.ts:runModelReport` using the accepted CLI output format.
   Done: model/price/approval data agree with MCP and output stays bounded.
   Check: R, DOCTOR/MCP and an installed-bin models fixture.
-- [ ] **CLI-FIRST-001d - expose session inspection.** After 001c, consume
+- [x] **CLI-FIRST-001d - expose session inspection.** After 001c, consume
   session/history owners for list and history using the accepted parser.
   Done: workspace isolation, invalid handles and pagination match existing
   behavior. Check: R, SESSION plus installed-bin fixtures. Plan close/delete

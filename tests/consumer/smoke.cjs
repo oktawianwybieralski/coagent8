@@ -137,6 +137,9 @@ function npmRun(args,cwd=root) {
       const codexHistory=await request('tools/call',{name:'session',arguments:{action:'history',session_handle:codexHandle,workspace_path:dir}});
       assert.equal(codexHistory.result.structuredContent.events.filter(e=>e.type==='assistant_message').length,2);
       for(const forbidden of ['PRIVATE_REASONING','PRIVATE_RAW_COMMAND','PRIVATE_TOOL_OUTPUT','fixtureSecret'])assert.ok(!JSON.stringify(codexHistory).includes(forbidden),forbidden);
+      const cliHist=spawnSync(setupCommand.command,[...setupCommand.argsPrefix,'session','history',codexHandle,'--json'],{cwd:dir,env:{...process.env,coagent8_DIR:path.join(dir,'data')},encoding:'utf8',windowsHide:true,timeout:15000});
+      assert.equal(cliHist.status,0,cliHist.stderr);
+      assert.equal(JSON.parse(cliHist.stdout).sessionHandle,codexHandle);
       }
       proc.stdin.end();await connection.waitForExit(5000);
       assert.ok(connection.getStderr().includes('running on stdio'));
