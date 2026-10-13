@@ -490,6 +490,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const added = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Updating CoAgent8 in CLI chats...' }, () => setupClients({ ...options(), clients }));
     report({ added });
     void announce(added, [], { added }).catch(showLifecycleError);
+    if (added.some(r => r.action === 'installed' || r.action === 'updated')) {
+      void offerPathIntegration().catch(showLifecycleError);
+    }
   }
   /** Removes the entries CoAgent8 wrote from the chats of the given CLIs; manual entries stay. */
   async function disconnect(clients: SetupClient[]): Promise<{ client: SetupClient; action: string; message: string }[]> {
@@ -1026,6 +1029,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         clearCliResolverCache();
         report({ client, executable: checked.source.executable, readiness: checked.readiness });
         void vscode.window.showInformationMessage(`${LABELS[client]} now uses ${describeSource(client, checked.source, opts.home)}${checked.readiness.version ? ` ${checked.readiness.version}` : ''}.`);
+        if (checked.readiness.ready) void offerPathIntegration().catch(showLifecycleError);
         return;
       }
       case 'signIn': {
@@ -1096,6 +1100,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       const chosen = await pick<MenuItem>(LABELS[client], async trigger => {
         const [result] = first ? first.results.filter(item => item.client === client) : await status(trigger, [client]);
         const registration = (first?.registrations ?? readRegistrations(options())).find(item => item.client === client)!;
+        if (!first && result?.ready) void offerPathIntegration().catch(showLifecycleError);
         first = undefined;
         view = clientView(result, registration);
         return { title: `${LABELS[client]}: ${describe(result, registration)}`, items: menuItems(view), placeholder: menuPlaceholder(view) };
@@ -1146,8 +1151,6 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible, signed-in coding CLI: Codex CLI, Claude Code CLI or Antigravity CLI.', 'Manage CLIs');
     if (choice === 'Manage CLIs') {
       await vscode.commands.executeCommand('coagent8.manageClis');
-      const after = await status('Post-setup CLI Check');
-      if (after.some(r => r.ready)) await offerPathIntegration();
     }
   }
   void showWelcome().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`); });

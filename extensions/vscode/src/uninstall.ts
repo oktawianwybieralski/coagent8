@@ -25,24 +25,27 @@ import { redactDiagnostic } from '../../../src/security/redaction.js';
 const LEASE_TIMEOUT_MS = 1500;
 const START_TIME = Date.now();
 const MAX_HOOK_DURATION_MS = 4000;
+const DEADLINE = START_TIME + MAX_HOOK_DURATION_MS;
 
-function remainingBudget(): number {
-  const elapsed = Date.now() - START_TIME;
-  return Math.max(300, Math.min(LEASE_TIMEOUT_MS, MAX_HOOK_DURATION_MS - elapsed));
+function checkRemainingBudget(): number {
+  const left = DEADLINE - Date.now();
+  if (left <= 0) throw new Error('Uninstall deadline exceeded');
+  return Math.min(LEASE_TIMEOUT_MS, left);
 }
 
 async function main(): Promise<void> {
   let profiles: VscodeRemoval[] = [], profileError: string | undefined;
   // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
-  try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), remainingBudget()); }
+  try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), checkRemainingBudget()); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
   let pathResult: PathRemovalResult | undefined, pathError: string | undefined;
-  try { pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), remainingBudget()); }
+  try { pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), checkRemainingBudget(), undefined, DEADLINE); }
   catch (error) { pathError = redactDiagnostic(error instanceof Error ? error.message : 'PATH cleanup failed.'); }
   let applied: CleanupPreview | undefined, cleanupError: string | undefined;
   try {
+    checkRemainingBudget();
     const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
-    applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token, leaseTimeoutMs: remainingBudget() });
+    applied = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true, apply: preview.token, leaseTimeoutMs: checkRemainingBudget() });
   }
   catch (error) { cleanupError = redactDiagnostic(error instanceof Error ? error.message : 'CoAgent8 registration cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.

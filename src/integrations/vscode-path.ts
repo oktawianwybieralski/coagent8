@@ -88,9 +88,9 @@ export class DefaultWindowsPathAdapter implements PathSystemAdapter {
     }
   }
 
-  async broadcastEnvironmentChange(timeoutMs = 500): Promise<void> {
+  async broadcastEnvironmentChange(timeoutMs = 300): Promise<void> {
     if (!this.isWindows()) return;
-    const boundedTimeout = Math.min(Math.max(timeoutMs, 100), 500);
+    const boundedTimeout = Math.min(Math.max(timeoutMs, 50), 300);
     const script = `
 Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @'
 [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
@@ -101,7 +101,7 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
     try {
       cp.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
         windowsHide: true,
-        timeout: boundedTimeout + 500,
+        timeout: boundedTimeout + 200,
       });
     } catch {
       // Broadcast is advisory; do not fail operation if broadcast times out
@@ -301,19 +301,6 @@ export async function enablePathIntegration(
     const normalizedBin = normalizePathEntry(binDir);
     const alreadyExists = parts.some(p => normalizePathEntry(p) === normalizedBin);
 
-    let addedToPath = false;
-    if (!alreadyExists) {
-      parts.push(binDir);
-      try {
-        await adapter.writeUserPath(parts.join(';'), kind);
-      } catch (err) {
-        rollbackShim();
-        throw err;
-      }
-      await adapter.broadcastEnvironmentChange(500);
-      addedToPath = true;
-    }
-
     const installations = existingPath?.installations ? [...existingPath.installations] : [];
     if (!installations.some(i => sameInstallation(i, options.installation))) {
       installations.push(options.installation);
@@ -323,7 +310,7 @@ export async function enablePathIntegration(
       shimPath,
       pathEntry: binDir,
       runtime: runtimeTarget,
-      addedToPath: existingPath ? existingPath.addedToPath || addedToPath : addedToPath,
+      addedToPath: existingPath ? existingPath.addedToPath || !alreadyExists : !alreadyExists,
       shimHash: shimDigest,
       installations,
     };
@@ -332,12 +319,27 @@ export async function enablePathIntegration(
     try {
       writeRecordFile(options.home, records);
     } catch (err) {
-      if (addedToPath) {
-        const rollbackParts = parts.filter(p => normalizePathEntry(p) !== normalizedBin);
-        try { await adapter.writeUserPath(rollbackParts.join(';'), kind); } catch {}
-      }
       rollbackShim();
       throw err;
+    }
+
+    let addedToPath = false;
+    if (!alreadyExists) {
+      parts.push(binDir);
+      try {
+        await adapter.writeUserPath(parts.join(';'), kind);
+      } catch (err) {
+        rollbackShim();
+        if (existingPath) {
+          records.path = existingPath;
+        } else {
+          delete records.path;
+        }
+        try { writeRecordFile(options.home, records); } catch {}
+        throw err;
+      }
+      await adapter.broadcastEnvironmentChange(300);
+      addedToPath = true;
     }
 
     return { action: 'enabled', addedToPath, shimPath };
@@ -397,9 +399,14 @@ export async function removePathIntegration(
   home: string,
   installation: string,
   leaseTimeoutMs = 1500,
-  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
+  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter(),
+  deadline = Date.now() + leaseTimeoutMs
 ): Promise<PathRemovalResult> {
   if (!readPathRecord(home)) return { action: 'missing' };
+  const timeRemaining = () => deadline - Date.now();
+  if (timeRemaining() <= 0) {
+    return { action: 'blocked', message: 'Uninstall deadline exceeded before PATH removal' };
+  }
   const res = await withFileLock<PathRemovalResult>(
     setupLockTarget(home),
     async (): Promise<PathRemovalResult> => {
@@ -440,8 +447,14 @@ export async function removePathIntegration(
       }
 
       if (record.addedToPath) {
+        const remainingRead = timeRemaining();
+        if (remainingRead <= 0) {
+          records.path = record;
+          try { writeRecordFile(home, records); } catch {}
+          return { action: 'blocked', message: 'Uninstall deadline exceeded before registry read' };
+        }
         try {
-          const current = await adapter.readUserPath(Math.min(leaseTimeoutMs, 1000));
+          const current = await adapter.readUserPath(Math.min(remainingRead, 1000));
           if (current) {
             const normalizedTarget = normalizePathEntry(record.pathEntry);
             const kept = current.value
@@ -449,8 +462,15 @@ export async function removePathIntegration(
               .map(p => p.trim())
               .filter(p => p && normalizePathEntry(p) !== normalizedTarget);
             if (kept.length !== current.value.split(';').filter(Boolean).length) {
-              await adapter.writeUserPath(kept.join(';'), current.kind, Math.min(leaseTimeoutMs, 1000));
-              await adapter.broadcastEnvironmentChange(300);
+              const remainingWrite = timeRemaining();
+              if (remainingWrite <= 0) {
+                throw new Error('Uninstall deadline exceeded before registry write');
+              }
+              await adapter.writeUserPath(kept.join(';'), current.kind, Math.min(remainingWrite, 1000));
+              const remainingBroadcast = timeRemaining();
+              if (remainingBroadcast > 100) {
+                await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 300));
+              }
             }
           }
         } catch (error) {
@@ -470,7 +490,7 @@ export async function removePathIntegration(
       writeRecordFile(home, records);
       return { action: 'removed' };
     },
-    leaseTimeoutMs
+    Math.min(leaseTimeoutMs, Math.max(100, timeRemaining()))
   );
   const root = path.join(home, '.coagent8');
   try {

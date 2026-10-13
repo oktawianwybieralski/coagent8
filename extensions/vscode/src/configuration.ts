@@ -122,7 +122,7 @@ export function readInstallRecord(location: StateLocation): InstallRecord {
 export async function updateInstallList(location: StateLocation, list: SetupInstallList, add: string[], remove: string[] = []): Promise<void> {
   const file = installRecordFile(location.home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  await withFileLock(file, async () => {
+  await withFileLock(path.join(location.home, '.coagent8', 'setup'), async () => {
     const raw = readObject(file);
     const legacy = readObject(setupStateFile(location.storage));
     for (const name of INSTALL_LISTS) {

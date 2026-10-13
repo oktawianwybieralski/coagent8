@@ -345,17 +345,26 @@ test('syncPathShim restores previous shim content if record write fails', async 
   fs.mkdirSync(path.dirname(newBundle), { recursive: true });
   fs.writeFileSync(newBundle, '/* new runtime bundle */');
 
-  // Make record file directory read-only / make rename fail by creating a directory where record file is expected or breaking writeRecordFile
-  const installsFile = path.join(f.home, '.coagent8', 'installs.json');
-  // In node, we can mock fs.writeFileSync throwing on the tmp record file or make installs.json a read-only directory
-  fs.rmSync(installsFile);
-  fs.mkdirSync(installsFile); // A directory with the same name will cause writeRecordFile (renameSync or writeFileSync) to fail!
+  // Intercept renameSync targeting installs.json to test record write failure rollback
+  const origRename = fs.renameSync;
+  fs.renameSync = (oldPath, newPath) => {
+    if (String(newPath).endsWith('installs.json')) {
+      throw new Error('Disk write failed');
+    }
+    return origRename(oldPath, newPath);
+  };
 
-  await assert.rejects(
-    () => syncPathShim(
-      { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
-      adapter
-    )
-  );
+  try {
+    await assert.rejects(
+      () => syncPathShim(
+        { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
+        adapter
+      ),
+      /Disk write failed/
+    );
+  } finally {
+    fs.renameSync = origRename;
+  }
+
   assert.equal(fs.readFileSync(initialRecord.shimPath, 'utf8'), originalShimContent, 'previous shim content restored');
 });
