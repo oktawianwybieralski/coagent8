@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { setupClients, readRegistrations, resolveSetupClient, clientSource, listInstallations, configuredExecutable, checkExecutable } = require('../../src/integrations/setup.ts');
+const { extractRuntimePath, setupShapedEntry, entryOwnership, readSelection } = require('../../src/integrations/setup-storage.ts');
 const { parse } = require('jsonc-parser');
 const { parse: toml } = require('smol-toml');
 const { hasManualVscodeRegistration } = require('../../src/integrations/vscode-profile.ts');
@@ -393,4 +394,191 @@ test('a chosen executable is accepted only as a compatible CLI of its client', a
   await assert.rejects(checkExecutable('codex', cli, options.home, { ...env, SETUP_FIXTURE_HELP: 'usage: other-tool' }, process.execPath, options.cwd),
     /^Error: client\.cjs is not a compatible codex CLI: Required CLI controls are missing/);
   await assert.rejects(checkExecutable('codex', path.join(options.home, 'missing.exe'), options.home, env, process.execPath, options.cwd), /^Error: missing\.exe cannot be started: /);
+});
+
+test('extractRuntimePath recognizes both registration shapes under strict containment and bounds', t => {
+  const { home } = profile(t);
+  const root = path.join(home, '.coagent8');
+  const sha = 'a'.repeat(64);
+  const runtime = path.join(root, 'runtime', sha, 'index.cjs');
+
+  // Modern shape: [...node.argsPrefix, runtime, 'mcp']
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp'] }, root), runtime);
+
+  // Legacy shape: [...node.argsPrefix, runtime]
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime] }, root), runtime);
+
+  // Global storage runtime path
+  const extDir = path.join(home, 'User', 'globalStorage', 'okidev.coagent8-mcp');
+  const extRuntime = path.join(extDir, 'runtime', sha, 'index.cjs');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [extRuntime, 'mcp'], env: { coagent8_DIR: extDir } }, root), extRuntime);
+
+  // Invalid argument order
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['mcp', runtime] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['mcp'] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp', runtime] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [] }, root), null);
+
+  // Foreign tokens and extra flags
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--foreign', runtime] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, '--foreign'] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--foreign', runtime, 'mcp'] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp', '--foreign'] }, root), null);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'foreign', 'mcp'] }, root), null);
+
+  // Manual and npx entries
+  assert.equal(extractRuntimePath({ command: 'coagent8', args: ['mcp'] }, root), null);
+  assert.equal(extractRuntimePath({ command: 'npx', args: ['-y', 'coagent8@next', 'mcp'] }, root), null);
+
+  // Containment and shape validation violations
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['runtime/' + sha + '/index.cjs', 'mcp'] }, root), null, 'relative path');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', sha, 'server.js'), 'mcp'] }, root), null, 'non-index.cjs basename');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', 'g'.repeat(64), 'index.cjs'), 'mcp'] }, root), null, 'non-hex subdirectory');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', 'a'.repeat(32), 'index.cjs'), 'mcp'] }, root), null, 'short hex subdirectory');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(home, 'other', 'runtime', sha, 'index.cjs'), 'mcp'] }, root), null, 'outside root');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', sha, '..', '..', 'index.cjs'), 'mcp'] }, root), null, 'traversal');
+
+  // Outside-root entry cannot authorize itself via coagent8_DIR
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(home, 'other', 'runtime', sha, 'index.cjs'), 'mcp'], env: { coagent8_DIR: path.join(home, 'other') } }, root), null, 'outside-root coagent8_DIR rejected');
+
+  // Malformed env.coagent8_DIR yields null instead of throwing
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp'], env: { coagent8_DIR: 123 } }, root), null, 'numeric coagent8_DIR');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp'], env: { coagent8_DIR: {} } }, root), null, 'object coagent8_DIR');
+
+  // Permitted launcher argsPrefix support
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--launcher-flag', runtime, 'mcp'] }, root, ['--launcher-flag']), runtime);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--launcher-flag', runtime] }, root, ['--launcher-flag']), runtime);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--wrong-flag', runtime, 'mcp'] }, root, ['--launcher-flag']), null);
+});
+
+test('setupShapedEntry and entryOwnership detect both shapes and enforce anti-widening invariants', t => {
+  const { home } = profile(t);
+  const root = path.join(home, '.coagent8');
+  const sha = 'b'.repeat(64);
+  const runtime = path.join(root, 'runtime', sha, 'index.cjs');
+  const saved = { clients: [], owned: {}, origin: {}, skills: {}, skillOrigin: {} };
+
+  // Valid legacy and modern shapes
+  assert.deepEqual(setupShapedEntry('claude', { command: process.execPath, args: [runtime] }, root), {});
+  assert.deepEqual(setupShapedEntry('claude', { command: process.execPath, args: [runtime, 'mcp'] }, root), {});
+  assert.equal(entryOwnership('claude', { command: process.execPath, args: [runtime] }, saved, root).owned, true);
+  assert.equal(entryOwnership('claude', { command: process.execPath, args: [runtime, 'mcp'] }, saved, root).owned, true);
+
+  // Command anti-widening: binary, npx, arbitrary shell and utilities
+  for (const command of ['coagent8', 'npx', 'sh', 'bash', 'cmd.exe', 'powershell.exe', 'python']) {
+    assert.equal(setupShapedEntry('claude', { command, args: [runtime, 'mcp'] }, root), null, `${command} must not be owned`);
+    assert.equal(entryOwnership('claude', { command, args: [runtime, 'mcp'] }, saved, root).owned, false, `${command} must be manual`);
+  }
+
+  // Outside-root entry with matching coagent8_DIR must not be owned
+  const outsideEntry = { command: process.execPath, args: [path.join(home, 'other', 'runtime', sha, 'index.cjs'), 'mcp'], env: { coagent8_DIR: path.join(home, 'other') } };
+  assert.equal(setupShapedEntry('claude', outsideEntry, root), null);
+  assert.equal(entryOwnership('claude', outsideEntry, saved, root).owned, false);
+
+  // Malformed env.coagent8_DIR
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: [runtime, 'mcp'], env: { coagent8_DIR: 123 } }, root), null);
+
+  // Invalid argument orders and foreign tokens
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: ['mcp', runtime] }, root), null);
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: ['--flag', runtime, 'mcp'] }, root), null);
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: [runtime, 'mcp', '--flag'] }, root), null);
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: [runtime, '--flag'] }, root), null);
+
+  // Unknown environment or extra fields
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: [runtime, 'mcp'], env: { UNKNOWN: '1' } }, root), null);
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: [runtime, 'mcp'], extraField: true }, root), null);
+
+  // Extension globalStorage origin detection
+  const extDir = path.join(home, 'User', 'globalStorage', 'okidev.coagent8-mcp');
+  const extRuntime = path.join(extDir, 'runtime', sha, 'index.cjs');
+  const extEntry = { command: process.execPath, args: [extRuntime, 'mcp'], env: { coagent8_DIR: extDir } };
+  assert.deepEqual(setupShapedEntry('claude', extEntry, root), { origin: 'vscode-extension' });
+  assert.deepEqual(entryOwnership('claude', extEntry, saved, root), { owned: true, origin: 'vscode-extension' });
+
+  // Candidate nodePath
+  const candidateNode = path.join(home, 'custom-node.exe');
+  assert.deepEqual(setupShapedEntry('claude', { command: candidateNode, args: [runtime, 'mcp'] }, root, candidateNode), {});
+
+  // Permitted launcher argsPrefix
+  assert.deepEqual(setupShapedEntry('claude', { command: process.execPath, args: ['--flag', runtime, 'mcp'] }, root, undefined, ['--flag']), {});
+});
+
+test('readRegistrations and active runtime inspection recognize both legacy and modern mcp shapes', async t => {
+  const options = profile(t);
+  const file = path.join(options.home, '.claude.json');
+  const sha = 'd'.repeat(64);
+  const runtime = path.join(options.home, '.coagent8', 'runtime', sha, 'index.cjs');
+
+  // Modern shaped entry without setup.json is recognized as owned
+  write(file, JSON.stringify({ mcpServers: { coagent8: { command: process.execPath, args: [runtime, 'mcp'] } } }));
+  assert.deepEqual(readRegistrations(options)[1], {
+    client: 'claude',
+    state: 'owned',
+    current: false,
+    message: 'Registered by setup for another CoAgent8 version, configuration file or data directory.',
+  });
+
+  // Manual command: "coagent8" is recognized as manual
+  write(file, JSON.stringify({ mcpServers: { coagent8: { command: 'coagent8', args: ['mcp'] } } }));
+  assert.deepEqual(readRegistrations(options)[1], {
+    client: 'claude',
+    state: 'manual',
+    current: false,
+    message: 'Manual or independently edited entry; setup preserves it.',
+  });
+
+  // Broken modern entry (runtime missing) is replaced by setupClients
+  write(file, JSON.stringify({ mcpServers: { coagent8: { command: process.execPath, args: [runtime, 'mcp'] } } }));
+  const [result] = await setupClients({ ...options, clients: ['claude'] });
+  assert.equal(result.action, 'updated');
+  assert.equal(result.runtimeCallable, true);
+
+  // Fingerprint-owned modern registration matching candidate is preserved
+  const { hash: hashEntry } = require('../../src/integrations/setup-storage.ts');
+  const bundle = fs.readFileSync(source);
+  const bundleSha = hashEntry(bundle);
+  const liveRuntime = path.join(options.home, '.coagent8', 'runtime', bundleSha, 'index.cjs');
+  write(liveRuntime, bundle);
+  const liveEntry = { command: process.execPath, args: [liveRuntime] };
+  write(file, JSON.stringify({ mcpServers: { coagent8: liveEntry } }));
+  const stateFile = path.join(options.home, '.coagent8', 'setup.json');
+  write(stateFile, JSON.stringify({ clients: ['claude'], owned: { claude: hashEntry(JSON.stringify(liveEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
+  const [preservedResult] = await setupClients({ ...options, clients: ['claude'] });
+  assert.equal(preservedResult.action, 'preserved');
+  assert.equal(preservedResult.runtimeCallable, true);
+
+  // Fingerprint-owned registration with a different launcher prefix is probed and verified
+  const prefixedEntry = { command: process.execPath, args: ['--title=coagent8', liveRuntime, 'mcp'] };
+  write(file, JSON.stringify({ mcpServers: { coagent8: prefixedEntry } }));
+  write(stateFile, JSON.stringify({ clients: ['claude'], owned: { claude: hashEntry(JSON.stringify(prefixedEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
+  const [prefixedResult] = await setupClients({ ...options, clients: ['claude'] });
+  assert.equal(prefixedResult.action, 'updated');
+  assert.equal(prefixedResult.runtimeCallable, true);
+  assert.ok(prefixedResult.tools.includes('doctor'));
+
+  // On Codex, fingerprint-owned registration with custom launcher prefix is recognized as owned
+  const codexFile = path.join(options.home, '.codex/config.toml');
+  const codexEntry = `[mcp_servers.coagent8]\ntool_timeout_sec = 1800\ncommand = "${process.execPath.replace(/\\/g, '\\\\')}"\nargs = ["--title=coagent8", "${liveRuntime.replace(/\\/g, '\\\\')}", "mcp"]\n`;
+  write(codexFile, codexEntry);
+  const parsedFromToml = toml(codexEntry).mcp_servers.coagent8;
+  const stateData = { clients: ['codex'], owned: { codex: hashEntry(JSON.stringify(parsedFromToml)) }, origin: {}, skills: {}, skillOrigin: {} };
+  write(stateFile, JSON.stringify(stateData));
+  const savedState = readSelection(stateFile);
+  assert.equal(entryOwnership('codex', parsedFromToml, savedState, options.home + '/.coagent8').owned, true);
+
+  // When existing host check fails, managed runtime update is deferred
+  const baseline = path.join(options.home, 'baseline-config');
+  write(baseline, '# different baseline\n');
+  const envFailingHost = { ...options.env, SETUP_FIXTURE_FAIL_CANDIDATE: '1' };
+  const [deferredResult] = await setupClients({ ...options, clients: ['codex'], env: envFailingHost });
+  assert.equal(deferredResult.action, 'preserved');
+  assert.equal(deferredResult.hostCallable, false);
+  assert.ok(deferredResult.message.includes('deferred'));
+
+  // When existing host check passes, owned entry is migrated / updated to standard candidate
+  if (fs.existsSync(baseline)) fs.rmSync(baseline);
+  const [updatedCodexResult] = await setupClients({ ...options, clients: ['codex'] });
+  assert.equal(updatedCodexResult.action, 'updated');
+  assert.equal(updatedCodexResult.runtimeCallable, true);
+  assert.equal(updatedCodexResult.hostCallable, true);
 });

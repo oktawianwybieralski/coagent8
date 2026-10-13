@@ -25,7 +25,8 @@ import { errorCodeOf } from '../contracts/index.js';
 
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, CODEX_TOOL_TIMEOUT_SEC, setupConfigFile, type Registration, type RegistrationOrigin } from './setup-storage.js';
+import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, extractRuntimePath, CODEX_TOOL_TIMEOUT_SEC, setupConfigFile, type Registration, type RegistrationOrigin } from './setup-storage.js';
+export { extractRuntimePath } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
 import { assertSkillRoot, describeSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
 import { reconcileSkills, selectedSkills } from './skill-management.js';
@@ -390,6 +391,7 @@ export interface RegistrationStatus {
 export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env'>): RegistrationStatus[] {
   const { home, cwd, env, root, stateFile } = localProfile(options);
   const saved = readSelection(stateFile);
+  const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
   const candidate = candidateRegistration(readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024), root, options, env, cwd);
   return SETUP_CLIENTS.map(client => {
     try {
@@ -397,7 +399,7 @@ export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 
       const entry = text === null ? undefined : servers(client, document(client, text)).coagent8;
       if (entry === undefined) return { client, state: 'absent', current: false, message: 'No CoAgent8 entry.' };
       const current = isDeepStrictEqual(registration(entry), candidate);
-      if (!entryOwnership(client, entry, saved, root).owned) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
+      if (!entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
       return { client, state: 'owned', current, message: current ? 'Registered by setup.' : 'Registered by setup for another CoAgent8 version, configuration file or data directory.' };
     } catch (error) {
       return { client, state: 'blocked', current: false, message: redactDiagnostic(error instanceof Error ? error.message : 'Configuration is unreadable.') };
@@ -436,7 +438,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       if (options.skillsSource) catalog = readSkillCatalog(options.skillsSource);
       const bundle = readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024);
       candidate = candidateRegistration(bundle, root, options, env, cwd);
-      const runtime = candidate.args.at(-1)!;
+      const runtime = extractRuntimePath(candidate, root) ?? candidate.args.at(-1)!;
       fs.mkdirSync(path.dirname(runtime), { recursive: true, mode: 0o700 });
       if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
       if (hash(readBoundedFileSync(runtime, 8 * 1024 * 1024)) !== hash(bundle)) throw new Error('Owned runtime hash mismatch.');
@@ -491,10 +493,18 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.action = 'preserved';
           // Status reads the host files only; starting the runtime and the host is setup/repair work.
           if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.'; return; }
-          const owned = entryOwnership(client, entry, saved, root).owned;
+          const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
+          const ownership = entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix);
+          const owned = ownership.owned;
           // An owned entry whose runtime copy is gone starts nothing, so there is no working
           // connection to verify or keep; the candidate written above replaces it.
-          const broken = owned && !fs.existsSync(existing.args.at(-1)!);
+          // For fingerprint-owned entries, validate using the entry's own args layout.
+          const isFingerprintMatch = saved.owned[client] === hash(JSON.stringify(entry));
+          const existingPrefix = isFingerprintMatch
+            ? (existing.args.at(-1) === 'mcp' ? existing.args.slice(0, -2) : existing.args.slice(0, -1))
+            : node.argsPrefix;
+          const existingRuntime = extractRuntimePath(existing, root, existingPrefix);
+          const broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
           if (!broken) {
             result.tools = await probeRuntime(existing, env, cwd);
             result.runtimeCallable = true;
