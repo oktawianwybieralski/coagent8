@@ -1,7 +1,7 @@
 {
   "name": "coagent8",
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "High-integrity multi-agent orchestration bridge connecting orchestrators with local CLI coding agents (OpenAI Codex, Claude Code, Google Antigravity agy) via MCP.",
   "author": {
     "name": "Oktawian Wybieralski",
