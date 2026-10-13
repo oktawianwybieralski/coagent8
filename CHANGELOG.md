@@ -25,6 +25,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [`a39011a`](https://github.com/oktawianwybieralski/coagent8/commit/a39011acf1da750743d0048b8339923bd4f1d211): Implement Windows PATH opt-in and uninstall cleanup
     - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
   - Bug fix:
+    - [`b9c7570`](https://github.com/oktawianwybieralski/coagent8/commit/b9c757066ce6a475261222ca6e1687af2f47f9c9): Prune runtimes under setup lock and fail on corrupt installs record
     - [`ffb696c`](https://github.com/oktawianwybieralski/coagent8/commit/ffb696ccb0d121192149479475e072aaf273bcdb): Prune unreferenced runtimes on uninstall and delete empty registry path
     - [`9af51bc`](https://github.com/oktawianwybieralski/coagent8/commit/9af51bcfd318d7ae86b36ec70d77832ef90184fd): Verify registry write readback and prioritize client uninstall cleanup
     - [`46cbf96`](https://github.com/oktawianwybieralski/coagent8/commit/46cbf9609c1e33f078253e25ee1d3ba80973d50a): Fail closed on registry read error, uncap uninstall budget, and isolate test adapter
