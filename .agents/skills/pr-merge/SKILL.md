@@ -1,6 +1,6 @@
 ---
 name: pr-merge
-description: Merge pull requests that the owner lists explicitly into develop of this repository. Use when the owner says "merge #15, #16" or similar. Rebases each PR onto develop, regenerates the changelog, waits for the six CI jobs and squash-merges with a message that follows rule 02. Not for reviewing, fixing or creating pull requests, and not for release PRs.
+description: Merge pull requests that the owner lists explicitly into develop of this repository. Use when the owner says "merge #15, #16" or similar. Rebases each PR onto develop, checks the commits, waits for the six CI jobs and squash-merges with a message that follows rule 02. Not for reviewing, fixing or creating pull requests, and not for release PRs.
 ---
 
 # Merge pull requests into develop
@@ -24,7 +24,7 @@ listed PRs' branches; it covers nothing else.
   `git -c core.editor=true rebase --continue`.
 - Never use `git stash`, `git worktree`, `git merge`, `git reset`,
   `git rebase --skip` or `git rebase --abort`. Merge commits break
-  `npm run changelog`; branches are updated by rebase only.
+  `npm run changelog:check`; branches are updated by rebase only.
 - Never push to `develop`. Push only a listed PR's branch, with a lease bound to
   the commit you observed (step 7).
 - Never add AI attribution (Co-Authored-By, "Generated with") anywhere.
@@ -66,8 +66,8 @@ listed PRs' branches; it covers nothing else.
      else changed the branch, or the local copy has unpushed commits).
    - `git rebase origin/develop`
 5. Rebase conflicts. `git status --short` lists them; for each conflicted file:
-   - `CHANGELOG.md`: run `npm run changelog`, then `git add CHANGELOG.md`.
-     Never edit it by hand (rule 02 section 6).
+   - `CHANGELOG.md`: a topic branch must not change it (rule 02 section 6);
+     stop and report.
    - `docs/ROADMAP.md`: run `git show REBASE_HEAD -- docs/ROADMAP.md` to see
      the exact edit of the commit being replayed. Keep the `<<<<<<< HEAD` side
      whole and apply to it exactly that edit (typically one card changed from
@@ -79,10 +79,9 @@ listed PRs' branches; it covers nothing else.
      test conflicts: they need a new review.
    - Then `git -c core.editor=true rebase --continue`; repeat until the rebase
      finishes.
-6. Changelog and checks (each must exit 0):
-   - `npm run changelog`; if `git status --short` then lists `CHANGELOG.md`,
-     run `git add CHANGELOG.md` and
-     `git commit -m "chore(changelog): regenerate"`.
+6. Checks (each must exit 0):
+   - `git diff --name-only origin/develop -- CHANGELOG.md` must print nothing:
+     only a release PR changes the changelog; otherwise stop and report.
    - `npm run changelog:check -- --with-commit "<title>"`
    - `npm run typecheck`
    - For each test file the PR changes

@@ -37,7 +37,7 @@ must be disclosed with their effect on the earlier review.
 
 | Action | Agent | Owner |
 | --- | --- | --- |
-| Topic branch, commits, local checks, changelog regeneration | Yes | Yes |
+| Topic branch, commits, local checks, changelog check | Yes | Yes |
 | Push a topic branch, open or update a PR | Only after the owner's explicit go-ahead in the session | Yes |
 | Independent review ([03-author-reviewer](03-author-reviewer.md)) | Yes (Reviewer role) | Yes |
 | Merge a PR | Only on the owner's explicit instruction for that PR | Yes |
@@ -166,8 +166,8 @@ docs(rules): define release lines, tags and PR process
 ```
 
 Commits on topic branches disappear in the squash, but their headers must still
-be valid Conventional Commits: the changelog regeneration that runs before every
-push (section 6) rejects any other subject. The pull request title and description
+be valid Conventional Commits: the changelog check that runs before every push
+(section 6) rejects any other subject. The pull request title and description
 become the final commit, so they must meet this section.
 
 ---
@@ -189,12 +189,12 @@ become the final commit, so they must meet this section.
   Several roadmap rows may share a PR when they implement the same result.
 * Split when a part has independent value, risk or rollback, needs a separate
   owner decision, or the combined scope cannot be reviewed effectively. Do not
-  split solely by file, client, task ID or test count, and do not batch unrelated
-  fixes just to reduce the number of PRs. Release PRs and backports stay separate.
-* Around 400 changed lines excluding generated files and lockfiles is a review
-  signal, not a hard limit or an automatic reason to stop for permission. Keep
-  a larger coherent diff together when splitting would separate a fix from its
-  tests or leave an incomplete migration; explain the scope in the PR body.
+  split by line count, file, client, task ID or test count, and do not batch
+  unrelated fixes just to reduce the number of PRs. Never separate a fix from
+  its tests or leave an incomplete migration. Release PRs and backports stay
+  separate.
+* Changes to rules, AGENTS.md or the workflow are their own result and travel
+  in their own PR, so the history and the changelog show them.
 * For a grouped PR, record all included task IDs and acceptance checks. Internal
   dependencies are completed in order on the same branch; external dependencies
   must be satisfied before starting. Review and required CI cover the combined
@@ -226,7 +226,7 @@ become the final commit, so they must meet this section.
      Documentation can establish policy, so assess its accuracy and impact
      rather than assuming prose has no risk.
   6. **Checklist** - docs, runtime contract and roadmap status updated where
-     behavior changed; `CHANGELOG.md` regenerated, never edited by hand
+     behavior changed; `CHANGELOG.md` unchanged outside a release PR
      (section 6); the title preview passed;
      no secrets, local paths or personal data in the diff.
      Include only Author-controlled preparation items. Mark inapplicable items
@@ -333,7 +333,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
    concern per branch (section 1); a fix a line also needs lands on `develop`
    first and is backported.
 2. Before pushing: the local checks of the change's scope
-   ([04-quality-gate](04-quality-gate.md)), `npm run changelog` (section 6) and,
+   ([04-quality-gate](04-quality-gate.md)), `npm run changelog:check` (section 6) and,
    for code, an independent CoAgent8 review of the branch with `VERDICT: READY`
    ([03-author-reviewer](03-author-reviewer.md)).
 3. Open the PR into the target (section 3). It merges when the six CI jobs are
@@ -358,9 +358,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
      finds no other manifest still carrying the old number;
    * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`.
 
-   On this branch every later regeneration (section 6, before each push) also
-   passes `--tag vX.Y.Z`; plain `npm run changelog` would turn the version
-   heading back into Unreleased.
+   Every later regeneration on this branch also passes `--tag vX.Y.Z`; plain
+   `npm run changelog` would turn the version heading back into Unreleased.
 8. **Local checks on that commit:** the full local gate
    ([04-quality-gate](04-quality-gate.md#full-release-gate)) with platform, Node,
    commit, tree and tarball digest recorded.
@@ -503,17 +502,20 @@ head. A pushed tag is never moved, deleted or reused.
   Commits history by git-cliff (`cliff.toml`, `npm run changelog`), with one
   section per released version (`## vX.Y.Z - (YYYY-MM-DD)`), newest first.
   The layout below is an owner decision of 2026-10-13.
-* Nobody edits it by hand; the Reviewer rejects a manual edit. It is regenerated
-  before every push (below) and, with `--tag`, in each release PR (section 5).
+* Nobody edits it by hand; the Reviewer rejects a manual edit. It is
+  regenerated only in a release PR, with `--tag` (section 5, owner decision
+  2026-10-14). Between releases it lists the released versions only; topic
+  branches never run `npm run changelog` and never commit `CHANGELOG.md`.
 * Each section is a nested list: area (commit scope; "General" without one),
   then type, then entries, newest first. Each entry is
   `#PR: description (by @author)`, linked to the PR and the author's GitHub
   account. The PR number comes from the `(#N)` suffix of the squash subject and
   the account from GitHub's no-reply author address; another address gives no
   author.
-* On a topic branch the entries are the branch commits, named by their commit
-  instead of a PR number. After the squash merge they are replaced by the PR
-  title (one entry per PR) at the next regeneration on the target branch.
+* Why only at release: generated on a topic branch, the file lists that
+  branch's commits, which the squash removes, and cannot list the PR itself,
+  whose `(#N)` squash commit does not exist yet. On the release branch every
+  change since the previous tag is a squash commit, so each entry is a PR.
 * Each branch generates its own file: on `develop` the versions tagged on
   `develop` (betas), on a line the versions tagged on that line. Before the
   first line exists (the first release candidate), the owner decides how
@@ -544,23 +546,15 @@ head. A pushed tag is never moved, deleted or reused.
 * Give each PR a title describing its coherent result so that its entry is
   precise; implementation subtasks belong in the body and checklist.
 
-### Regeneration before every push and pull request
+### Checks before every push and pull request
 
 The agent does this itself, without being asked.
 
-1. **Before every `git push`** (any branch), after the last change is
-   committed:
-   * Run `npm run changelog` (on a release branch `npm run changelog -- --tag
-     vX.Y.Z`, section 5 step 7). It fails when any commit since `v0.6.0` is
-     not a Conventional Commit. A failure blocks the push: reword the offending
-     commit; never push past it.
-   * If `CHANGELOG.md` changed, commit it alone as `chore(changelog): regenerate`.
-     `chore` is omitted from the changelog, so this commit does not make the file
-     stale. Do not amend it into an earlier commit: that changes the SHA that
-     the file links.
-   * Confirm that no entry is duplicated, misgrouped or missing, then push.
-   * A file generated before the last commit is stale. A generated file cannot
-     list the commit that contains it, which is why the file gets its own commit.
+1. **Before every `git push` of a topic branch**, run `npm run changelog:check`.
+   It writes no file and fails when any commit since `v0.6.0` is not a
+   Conventional Commit. A failure blocks the push: reword the offending commit;
+   never push past it. Do not run `npm run changelog` and do not commit
+   `CHANGELOG.md` on a topic branch.
 2. **Before `gh pr create` and before every PR title change**, run
    `npm run changelog:check -- --with-commit "<PR title>"`. It writes no file.
    * The title appears as a `pending` entry. It must sit in the right group and
@@ -570,9 +564,10 @@ The agent does this itself, without being asked.
    * A breaking change needs `!` in the title or a `BREAKING CHANGE:` footer in
      the squash message. A `!` on a branch commit alone is lost in the squash.
    * Copy the `pending` entry into the PR description (section 3).
-3. **Merge conflict in `CHANGELOG.md`** (for example after rebasing on
-   `develop`): never resolve it by hand. Take either side, run
-   `npm run changelog` and commit the result as in step 1.
+3. **On a release branch** (section 5), regenerate with
+   `npm run changelog -- --tag vX.Y.Z` before every push and keep the file in
+   the release commit. A merge conflict in `CHANGELOG.md` there is never
+   resolved by hand: take either side and regenerate.
 4. Report the results in the PR **Verification** section as PASS or FAIL.
 
 ---

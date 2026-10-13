@@ -1306,8 +1306,10 @@ were found later in the same review and await the owner's confirmation.
   `required_signatures` rule (GitHub squash commits are Verified anyway). Add
   the rule or correct the text.
 - [ ] **PROPOSALS-001f - changelog pre-push hook.** A versioned hook
-  (`.githooks/`, `core.hooksPath`) that runs `npm run changelog` and blocks a
-  push when `CHANGELOG.md` changed, instead of relying on agents.
+  (`.githooks/`, `core.hooksPath`) that runs `npm run changelog:check` and
+  blocks a push of a topic branch that fails it or changes `CHANGELOG.md`
+  (regenerated only in release PRs, owner decision 2026-10-14), instead of
+  relying on agents.
 - [ ] **PROPOSALS-001g - agent output outside `.artifacts/`.** A rule that
   agents keep their scripts and logs in their scratch directories, not in
   `.artifacts/`, which holds build output only.
@@ -1707,8 +1709,8 @@ while the generated full changelog retains individual entries.
    `npm run test:consumer` for entry points or packaging; `npm run lint:docs`
    for TSDoc. Record each command with PASS, FAIL or NOT_RUN.
 6. **Commit.** Conventional Commits in English, no AI attribution lines.
-   `npm run changelog`; if `CHANGELOG.md` changed, commit it alone as
-   `chore(changelog): regenerate`.
+   Run `npm run changelog:check`; never regenerate or commit `CHANGELOG.md`
+   (only a release PR does, rule 02 section 6).
 7. **Review.** Select checks for the union of affected scopes, then review the
    complete group on its current head. Prose-only groups use content/link
    review per rule 04 and do not require backend AI calls. For code, with a
@@ -1730,8 +1732,8 @@ while the generated full changelog retains individual entries.
 9. **Stop and ask the owner** when a decision is not recorded in the card,
    a step needs a chat UI or another person, a public MCP schema changes
    beyond an accepted contract, tests fail for reasons outside the group, or a
-   review finds a P1 outside the group's files. Evaluate a diff around 400 lines
-   for reviewability; split only at a coherent boundary and explain why.
+   review finds a P1 outside the group's files. Split only at a coherent
+   boundary and explain why; line count is not a reason.
 
 Kinds: `P` design or prose, `R` code, `N` native test (owner, or the
 `ACCEPT-001` runner once it exists), `O` owner action, `S` needs a strong

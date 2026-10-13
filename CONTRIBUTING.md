@@ -48,8 +48,8 @@ Use isolated test profiles and preserve existing client registrations and data.
 3. Use Conventional Commits for commit subjects and the PR title. Do not add
    attribution to AI tools in commits or PR descriptions.
 4. Run the checks appropriate to the change, inspect the diff and verify links.
-5. Before pushing, run `npm run changelog`. If `CHANGELOG.md` changes, commit
-   only that file as `chore(changelog): regenerate`; never edit it manually.
+5. Before pushing, run `npm run changelog:check`. Do not regenerate or edit
+   `CHANGELOG.md`: it is regenerated only in release pull requests.
 6. Before opening a PR, run
    `npm run changelog:check -- --with-commit "<PR title>"`. A failure blocks
    submission. Documentation-only titles are omitted from the generated entries.

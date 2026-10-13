@@ -23,10 +23,11 @@ commit, branch operation or unchanged retry.
 | VS Code/setup integration | Relevant setup/provider tests and build/package checks; real host acceptance for changed installation/update/repair claims. Use isolated profiles and preserve working registrations. |
 | Test harness or CI | Discovery/selection/cleanup regressions and the affected suite; confirm required status checks remain valid. |
 
-Whatever the scope, regenerate `CHANGELOG.md` before every push and preview the
-PR title before opening a PR or changing its title
+Whatever the scope, run `npm run changelog:check` before every push and preview
+the PR title before opening a PR or changing its title
 ([02-git-workflow.md](02-git-workflow.md) section 6). Both only read the Git
-history, so they apply to prose-only changes too.
+history, so they apply to prose-only changes too. `CHANGELOG.md` itself is
+regenerated only in a release PR.
 
 `node tests/run.cjs <file>...` runs only the listed test files; with no file
 arguments it discovers the full inventory. Concurrency defaults to two test files

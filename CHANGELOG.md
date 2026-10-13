@@ -9,41 +9,7 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
-## Unreleased
-
-- Cli:
-  - New feature:
-    - [#42](https://github.com/oktawianwybieralski/coagent8/pull/42): Expose session list and history inspection (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-    - [#41](https://github.com/oktawianwybieralski/coagent8/pull/41): Expose models and doctor CLI diagnostics (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-    - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-- Integrations:
-  - New feature:
-    - [#39](https://github.com/oktawianwybieralski/coagent8/pull/39): Write and migrate explicit mcp registrations (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-    - [#38](https://github.com/oktawianwybieralski/coagent8/pull/38): Recognize legacy and mcp registration shapes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-- Vscode:
-  - New feature:
-    - [`a39011a`](https://github.com/oktawianwybieralski/coagent8/commit/a39011acf1da750743d0048b8339923bd4f1d211): Implement Windows PATH opt-in and uninstall cleanup
-    - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-  - Bug fix:
-    - [`72ffaf3`](https://github.com/oktawianwybieralski/coagent8/commit/72ffaf33ea820d07742ce9aeb6a98de6df81e2ba): Track configuration reset for deactivation
-    - [`8b6d5da`](https://github.com/oktawianwybieralski/coagent8/commit/8b6d5dac3aecdc4cbfc7546ab476f49855dcf1d8): Refuse command work that resumes after deactivation
-    - [`e681b2c`](https://github.com/oktawianwybieralski/coagent8/commit/e681b2ca259cb795c6bbf978f12e939c1c64f997): Own the environment broadcast, recover uncertain PATH writes and report blocked removal
-    - [`36c8fb6`](https://github.com/oktawianwybieralski/coagent8/commit/36c8fb6debb38ec5ae01c9850a68b39673aeb88d): Bind PATH changes to the account profile and record native verification
-    - [`b9c7570`](https://github.com/oktawianwybieralski/coagent8/commit/b9c757066ce6a475261222ca6e1687af2f47f9c9): Prune runtimes under setup lock and fail on corrupt installs record
-    - [`ffb696c`](https://github.com/oktawianwybieralski/coagent8/commit/ffb696ccb0d121192149479475e072aaf273bcdb): Prune unreferenced runtimes on uninstall and delete empty registry path
-    - [`9af51bc`](https://github.com/oktawianwybieralski/coagent8/commit/9af51bcfd318d7ae86b36ec70d77832ef90184fd): Verify registry write readback and prioritize client uninstall cleanup
-    - [`46cbf96`](https://github.com/oktawianwybieralski/coagent8/commit/46cbf9609c1e33f078253e25ee1d3ba80973d50a): Fail closed on registry read error, uncap uninstall budget, and isolate test adapter
-    - [`c4906a7`](https://github.com/oktawianwybieralski/coagent8/commit/c4906a73eea5be3965be90b0e17f1d426b322c90): Robust registry encoding, async broadcast, and test adapter injection
-    - [`a7040c7`](https://github.com/oktawianwybieralski/coagent8/commit/a7040c7395ef68b2f53b67cb49ce5cbc11f0d45b): Record accepted PATH state on success and show confirmation notice
-    - [`ca2531d`](https://github.com/oktawianwybieralski/coagent8/commit/ca2531d2cfc7f24fdfa84293db6ec81ebd7e34fd): Separate registration warning wait from tracked state and connect IO
-    - [`be95c8e`](https://github.com/oktawianwybieralski/coagent8/commit/be95c8ef907f94a713e8a5baca6d0be30281f8ad): Separate notification waits from drained IO and guard command actions
-    - [`c5614f5`](https://github.com/oktawianwybieralski/coagent8/commit/c5614f560c2156806d88b678b87008f491ac917c): Drain background lifecycle tasks on deactivate and highlight bat in docs
-    - [`6b959b6`](https://github.com/oktawianwybieralski/coagent8/commit/6b959b6c69532814b2ae1f4d376cfa25252e90a1): Serialize PATH offer in-flight, write shims atomically, and guarantee cleanup restoration
-    - [`0de6c81`](https://github.com/oktawianwybieralski/coagent8/commit/0de6c81ff036ef979168515166c977fb59dfc5c5): Coordinate installs lock, enforce uninstall deadlines, and persist transaction intent
-    - [`3d8be6b`](https://github.com/oktawianwybieralski/coagent8/commit/3d8be6b1a9c53ef9ecc40054d74f13e6cbf74d77): Unify setup lease, enforce uninstall deadline, and ensure rollback consistency
-    - [`4820aea`](https://github.com/oktawianwybieralski/coagent8/commit/4820aea7c2c8afb20661e3ea8f014c672b032e4b): Address review feedback on confirmation, error isolation, and runtime preservation
-
-## v0.6.1 - (2026-10-13)
+## v0.6.1 - (2026-10-12)
 
 - Agy:
   - Bug fix:
