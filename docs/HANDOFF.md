@@ -4,77 +4,78 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-12. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-13. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
-## Current state and 0.6.1 queue
+## Current state
 
-- **Released baseline (`0.6.0`):** `v0.6.0` (the `beta.2` preview stage, numbered
-  by [`REPO-003`](ROADMAP.md#repo-003-one-numeric-version-for-npm-vsix-and-tags))
-  is published on GitHub (`9b78a0a`), npm (`next` and `latest`) and the VS Code
-  Marketplace ([release evidence](#060-release-evidence)). Manifest versions stay
-  at `0.6.0` until the `release/v0.6.1` release PR (`PATCH-061-R2`).
-- **Merged on `develop` for `0.6.1` (through `5913321`):**
-  - `FEEDBACK-060c` (#4): `doctor` skips caching a `not installed` probe when
-    `backends.agy.executable` is `vscode-extension` and no CLI path is resolved yet.
-  - `FEEDBACK-060d`: post-turn review rechecks report a workspace change only
-    when the snapshot or input completeness changed.
-  - `FEEDBACK-060e`: same-workspace refused session handles report their actual
-    state (`closed` with readable history, `invalidated`, `expired`), and
-    `cancel` on a closed session reports that it is closed.
-  - `FEEDBACK-060j`: test files build synthetic Stripe and Slack token prefixes
-    at run time so tracked sources contain no literal push-protection tokens.
-  - `FEEDBACK-060s` (#2): `runCommand` preserves the call budget's `TIMEOUT`
-    abort reason instead of reporting budget expiry as `ABORTED`.
-  - `LIC-001a`, `LIC-001b`, `LIC-001c1` (#19, `fc76539`): standard MIT licensing
-    for project source, documentation and artwork (`LICENSE`, distribution
-    manifests, README license sections and contributor guidance;
-    [rights and material inventory](#lic-001-mit-candidate)).
-  - Group 1 (`docs/roadmap-current-state`, #21, `c00eeb2`): `DOCS-002a` and
-    `PUBLIC-001c` (`ROADMAP.md` reduced to open work, active decisions and
-    public-reader phrasing, with incoming `HANDOFF.md#...` links aligned to the
-    25 preserved evidence anchors).
-  - Group 2 (`test/synthetic-account-fixtures`, #22, `461ae75`): `PUBLIC-001a1`
-    through `PUBLIC-001a3` (synthetic account and quota values across Claude,
-    Codex and Antigravity fixtures and tests).
-  - Group 3 (`build/package-distribution`, #23, `e29aeaf`): `SUPPLY-001a` and
-    `SUPPLY-001b` (omit `.map` source maps from npm and VSIX packages; move
-    bundled runtime packages to `devDependencies`).
-  - Group 4 (`fix/session-feedback`, #24, `08082ba`): `FEEDBACK-060f1` through
-    `FEEDBACK-060f4` (history-only paging parameter scope, public history
-    sequence-gap documentation, `activePid` documented as the CoAgent8 server
-    PID, and `session_handle` retained on unchanged repeat-review refusals).
-  - Group 5 (`fix/issue-report-format`, #25, `5f5e645`): `FEEDBACK-060g` (exact
-    CLI versions without duplicate `v`, nested `Detected CLIs` Markdown list and
-    `include_doctor` versions-only attachment wording).
-  - Group 6 (`test/claude-cancel-fixture`, #26, `0a49fa7`): `FEEDBACK-060h`
-    (deterministic running-turn handshake and two-client
-    cancellation/continuation coverage for Claude fixtures).
-  - Group 7 (`fix/vsix-user-guidance`, #27, `5913321`): `FEEDBACK-060i`,
-    `DOCS-002d1`, `DOCS-002d2` and `PUBLIC-001d` (VS Code command-first guidance
-    for VSIX-only users, root and extension README alignment for `0.6.0`/`0.6.1`,
-    and trademark notice for the CoAgent8 name and logo).
-- **Prepared on topic branches from `develop` (awaiting squash-merge before
-  `PATCH-061-R1`):**
-  - Group 8 (`docs/handoff-current-state`): `DOCS-002b` and `PUBLIC-001b`
-    (this handoff reduction and public-reader update).
-  - Issue #20 fix (`fix/agy-sandbox-guidance`): recover from empty Antigravity
-    (`agy`) `--sandbox` command-denial turns with a single guided retry and
-    steer `consult`/`review` prompts toward direct file-read tools instead of
-    shell commands (`Fixes #20`).
-- **Remaining `0.6.1` release steps ([`PATCH-061`](ROADMAP.md#patch-061-061-task-queue)):**
-  1. Integrate Group 8 (`docs/handoff-current-state`) and the Issue #20 fix
-     (`fix/agy-sandbox-guidance`) into `develop` with green six-job CI and
-     freeze the `0.6.1` scope (`PATCH-061-R1`).
-  2. Prepare `release/v0.6.1` (`PATCH-061-R2`), run the clean-checkout full
-     release gate and `LIC-001d` artifact inspection (`PATCH-061-R3`), and build
-     CI release artifacts across all six OS/Node jobs (`PATCH-061-R4`).
-  3. Execute isolated native acceptance (`PATCH-061-N1` through `N7`), rehearse
-     the release workflow (`PATCH-061-R5`), obtain artifact-bound independent
-     release approval (`PATCH-061-R6`), complete owner tag/publication
-     (`PATCH-061-O1`), and verify published packages, attestations and Socket
-     scores (`PATCH-061-R7`, `LIC-001d`, `SUPPLY-001f`).
+- **Released baseline (`0.6.1`):** `v0.6.1` is an annotated tag on `55c7859`
+  (`chore(release): v0.6.1 (#32)`), published on GitHub, npm (`latest` and
+  `next`) and the VS Code Marketplace ([release evidence](#061-release-evidence)).
+  It is the first release under the MIT License. Its changes are listed in
+  `CHANGELOG.md` and the [PATCH-061 queue](ROADMAP.md#patch-061-061-task-queue).
+- **Next work, in order ([execution order](ROADMAP.md#execution-order)):**
+  1. [`RELEASE-001`](ROADMAP.md#release-001-automated-publication): the
+     publication path broke twice during `0.6.1` (environment policy, npm
+     command path) and npm and the Marketplace were published by hand. The next
+     tag must publish everything through workflows with owner approvals only.
+  2. [`FEEDBACK-061`](ROADMAP.md#feedback-061-findings-of-the-061-native-acceptance):
+     findings of the `0.6.1` native acceptance.
+  3. [`PROPOSALS-001`](ROADMAP.md#proposals-001-proposals-awaiting-an-owner-decision):
+     earlier proposals that were never recorded; each needs an owner decision.
+  4. The `0.7.0` (beta.3) scope in the [release acceptance](ROADMAP.md#release-acceptance)
+     table, including the `PATCH-061` native acceptance tasks that did not run
+     before `0.6.1`.
+
+## 0.6.1 release evidence
+
+Release of `0.6.1` on 2026-10-13, verified on Windows 11, Node v26.10.0, against
+the downloaded release artifacts:
+
+- PASS: release PR #32 (`60ec36d`, tree `263fb0f`) passed the six CI jobs and
+  the full local release gate; independent reviews of the release commit
+  (`codex`, `gpt-6.1-sol`) and of `v0.6.0...release/v0.6.1` (`claude`,
+  `claude-opus-5-5`) returned `READY` with no P1/P2 finding (details in the PR).
+- PASS: native acceptance of the PR's CI VSIX (`49fa279e...a78439`, run
+  38323428768) in VS Code: Codex, Claude Code and Antigravity, each in a new chat
+  on runtime `0.6.1`, passed `doctor`, `consult` with continuation, `review`
+  BLOCKED then READY on one `session_handle`, `session` list/history/close,
+  `cancel` on an idle session, the closed-session refusal and `issue`. Findings
+  are recorded as [`FEEDBACK-061`](ROADMAP.md#feedback-061-findings-of-the-061-native-acceptance).
+  A first round silently ran the previous `0.6.0` runtime in chats started
+  before the update (`FEEDBACK-061a`) and was discarded.
+- PASS: squash commit `55c7859` on `develop` has the release PR's tree, is
+  Verified and passed the six CI jobs; `v0.6.1` is annotated on it.
+- PASS: `release.yml` built the draft; `sha256sum -c SHA256SUMS` succeeded for
+  `coagent8-0.6.1.tgz`
+  (`67424664572fdae448ca704232f26ce0a02c8bb8d68cf6ab0f5af546bd37c03b`) and
+  `coagent8-mcp-0.6.1.vsix`
+  (`9a72f77243c7ce4d898d5ed8cc24f6e052007bdefd7b858929d9a2bd82085d7f`);
+  `gh attestation verify` with signer workflow `release.yml` passed for both.
+  Both contain version `0.6.1`, the VSIX has the pre-release flag, and both
+  carry the accepted runtime (`dist/index.cjs`
+  `d5521e10e55258609565284b1f5f70218af9cdab4b6ae27629f794e3285ce9ff`). The
+  VSIX contents equal the accepted CI VSIX file for file.
+- NOTE: owner decision 2026-10-13: no throwaway-repository rehearsal
+  (`PATCH-061-R5`); the tag's draft was verified before publication instead.
+- FAIL, then manual: `npm-publish.yml` first failed because the `npm`
+  environment allowed branch `v*` instead of tag `v*` (fixed in the environment
+  settings), then because `npm publish release/coagent8-0.6.1.tgz` is read as a
+  GitHub shorthand without `./` (`RELEASE-001a`). The workflow at the tag cannot
+  change, so the owner published the verified tarball by hand to `next` and
+  added `latest`. npm trusted publishing was not validated before its deadline
+  (2026-10-14 01:22 UTC) and npm shows no provenance for `0.6.1`.
+- PASS: `npm view coagent8` shows `latest` and `next` at `0.6.1`; `dist.shasum`
+  (`8c635ccccb95e22217cf2b8e8af5fdd61f3e4024`) equals the release tarball.
+- PASS: the Marketplace package `okidev.coagent8-mcp` `0.6.1`, uploaded by hand,
+  is byte-identical to the release VSIX (same SHA-256).
+- PASS: the GitHub Release is published and, after npm, was switched from
+  pre-release to latest (owner decision 2026-10-13); the API documentation
+  workflow deployed from the tag.
+- NOT_RUN at release: `PATCH-061-N1`, `N4`, `N6`, `N7`, the Claude backend
+  in `N2`, part of `N3`, the consent part of `N5`, and the Socket
+  scores in `R7`. They move to `0.7.0` acceptance.
 
 ## LIC-001 MIT candidate
 

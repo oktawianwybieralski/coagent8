@@ -4,7 +4,7 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-10-12. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-13. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -16,16 +16,14 @@ started; [AGENTS.md](../AGENTS.md) owns contributor rules.
 
 ## Current snapshot status
 
-`0.6.0` (the beta.2 stage, numbered by
-[REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)) is released:
-tag `v0.6.0` on `develop`, GitHub Release, npm and the VS Code Marketplace
-([evidence](HANDOFF.md#060-release-evidence)). The next version is the fix-only
-patch `0.6.1` ([FEEDBACK-060](#feedback-060-findings-of-the-060-native-acceptance));
-the checkout keeps `0.6.0` until its release PR. The owner handles merges, tags
-and publication.
-
-The [0.6.1 task queue](#patch-061-061-task-queue) orders the remaining `0.6.1`
-cards, their PR groups and release acceptance.
+`0.6.1`, the fix-only patch after the beta.2 stage `0.6.0` (numbered by
+[REPO-003](#repo-003-one-numeric-version-for-npm-vsix-and-tags)), is released:
+tag `v0.6.1` on `develop`, GitHub Release, npm and the VS Code Marketplace
+([evidence](HANDOFF.md#061-release-evidence)). Before the next tag, publication
+becomes fully automated ([RELEASE-001](#release-001-automated-publication));
+the `0.6.1` acceptance findings are
+[FEEDBACK-061](#feedback-061-findings-of-the-061-native-acceptance). The owner
+handles merges, tags and publication approvals.
 
 | Area | Present locally | Remaining |
 | --- | --- | --- |
@@ -38,7 +36,7 @@ cards, their PR groups and release acceptance.
 
 ### Beta.2 issue-link acceptance
 
-Single-line issue titles, encoded Markdown delimiters in URL parameters, angle-bracketed link destinations and copyable URLs with plain Markdown previews shipped in `0.6.0` (5,800-byte tool-definition budget). Native verification in the Antigravity chat UI is tracked under [`PATCH-061-N5`](#patch-061-061-task-queue).
+Single-line issue titles, encoded Markdown delimiters in URL parameters, angle-bracketed link destinations and copyable URLs with plain Markdown previews shipped in `0.6.0` (5,800-byte tool-definition budget). Native verification in the Antigravity chat UI in `0.6.1` found that its renderer rewrites the clickable link ([`FEEDBACK-061c`](#feedback-061-findings-of-the-061-native-acceptance)); the copyable URL stays correct.
 
 ## Agent usability gaps
 
@@ -71,8 +69,10 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 
 ## Execution order
 
-1. Complete the `0.6.1` preview patch queue ([`PATCH-061`](#patch-061-061-task-queue))
-   and its release acceptance tasks.
+1. Automate publication ([`RELEASE-001`](#release-001-automated-publication))
+   and triage [`FEEDBACK-061`](#feedback-061-findings-of-the-061-native-acceptance)
+   and [`PROPOSALS-001`](#proposals-001-proposals-awaiting-an-owner-decision)
+   before the next tag.
 2. Complete remaining audit and foundation items (`AUDIT-001-A08` through `A21`,
    `WINDOWS-001b-e`, `SUPPLY-001c-e`) and agent-facing acceptance (`AX-001`
    through `AX-007`, `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`, `PLUGIN-001`)
@@ -689,6 +689,59 @@ pre-release, npm `next`):
 Completed: `REPO-003a` synchronized manifests, VSIX packaging, workflows and
 changelog rules ([evidence](HANDOFF.md#repo-003a-one-numeric-version)).
 
+## RELEASE-001: automated publication
+
+Goal (owner decision 2026-10-13): after the owner pushes a release tag, workflows
+build, verify and publish every channel, so publication takes only owner
+approvals and no manual command. `0.6.1` needed two settings fixes and was
+published to npm and the Marketplace by hand
+([evidence](HANDOFF.md#061-release-evidence)). Lands before the next tag; a
+change to `npm-publish.yml` cannot be rehearsed, so every card below needs a
+check that runs the real publish commands without publishing.
+
+- [ ] **RELEASE-001a - fix the npm publish command.** `npm-publish.yml` passes
+  `release/coagent8-X.Y.Z.tgz`, which npm reads as a GitHub repository; use
+  `./release/...`. Move the publish commands into a script that CI runs against
+  a packed tarball in the same layout with `npm publish --dry-run`. Check: R,
+  CI on the PR.
+- [ ] **RELEASE-001b - npm trusted publisher.** The trusted publisher allows
+  only `npm stage publish` and its validation expired unused. Choose with the
+  owner: staged publishing (the workflow runs `npm stage publish`, the owner
+  approves on npmjs.com with 2FA; the GitHub `npm` environment approval can
+  then go) or direct `npm publish` and `npm dist-tag` permissions. Confirm the
+  `npm stage publish` syntax and dist-tag handling from npm documentation,
+  then recreate the trusted publisher. Check: first publication through the
+  workflow with provenance.
+- [ ] **RELEASE-001c - normal releases.** Owner decision 2026-10-13: GitHub
+  releases below `1.0.0` are not marked pre-release, because the flag hides the
+  release from the repository page. `release.yml` creates a normal draft,
+  `npm-publish.yml` drops the pre-release check and publishes to `latest` (and
+  moves `next` with it), so the manual `dist-tag add` step goes. Decide the
+  Marketplace channel separately (`--pre-release` or not). Update rule 02
+  sections 4 and 5, AGENTS.md and README install text. Check: R, P.
+- [ ] **RELEASE-001d - Marketplace workflow.** Add a job on `release:
+  published` with an owner-approved environment that downloads the release
+  VSIX, verifies `SHA256SUMS` and the `release.yml` attestation and runs
+  `vsce publish --packagePath` on that file. Authentication: a Marketplace
+  personal access token secret, or keyless federation if the Marketplace
+  supports it (verify first). Check: `vsce` in dry-run or package validation
+  mode in CI, then the first real release.
+- [ ] **RELEASE-001e - release notes from the repository.** The release PR adds
+  `docs/releases/vX.Y.Z.md` with the tester header (what CoAgent8 is, install,
+  changes, known limitations, upgrade notes), reviewed like code. `release.yml`
+  puts it above the generated sections and fails without it, which removes
+  rule 02 step 20. Show the generated changelog expanded instead of inside
+  `<details>`. Check: R, CI on the PR.
+- [ ] **RELEASE-001f - published-package verification.** After the publish
+  jobs, a job checks that the npm `dist.shasum`/`dist.integrity` and the
+  Marketplace VSIX SHA-256 equal the release files and that dist-tags point to
+  the version (done by hand for `0.6.1`). Check: R.
+- [ ] **RELEASE-001g - rule 02 and AGENTS.md.** Describe the automated phases:
+  the owner merges, tags and approves. Remove `--delete-branch` from the merge
+  commands (the repository deletes merged branches). Record whether the
+  throwaway-repository rehearsal (rule 02 step 12) stays, given the owner's
+  2026-10-13 decision to verify the tag's draft instead for `0.6.1`. Check: P.
+
 ## FEEDBACK-060: findings of the 0.6.0 native acceptance
 
 Native acceptance on 2026-10-11 verified the `0.6.0` VSIX and tarball in an
@@ -887,6 +940,101 @@ Remaining verification:
   has an investigated cause, and measured scores are recorded without a 100%
   guarantee. No extra implementation PR duplicates these release checks.
 
+## FEEDBACK-061: findings of the 0.6.1 native acceptance
+
+Native acceptance on 2026-10-13 ran Codex, Claude Code and Antigravity on the
+`0.6.1` CI VSIX ([evidence](HANDOFF.md#061-release-evidence)). No finding
+blocked the release; each card states whether it is a CoAgent8 defect, a host
+behavior or a test-procedure lesson.
+
+- [ ] **FEEDBACK-061a - show which runtime a chat uses.** A chat keeps the
+  MCP server it started with, so after an update chats started earlier still
+  run the previous version; the first acceptance round tested `0.6.0` without
+  noticing. Show the server version in `doctor` health (and consider the
+  result footer), and make the update notice say that open chats must be
+  restarted. Check: R, native.
+- [ ] **FEEDBACK-061b - shared client registrations across VS Code
+  instances.** Client registrations (`~/.claude.json`, `~/.codex/config.toml`,
+  agy `mcp_config.json`) and `~/.coagent8/config.json` are per user, but each
+  VS Code instance or profile writes its own `coagent8_DIR` into them: an
+  isolated test instance redirected the user's real chats to its temporary
+  storage, and the last writer wins. The shared `vscode-extension` executable
+  selection shows "Selected CLI not found" in a profile without the vendor
+  extension. Also check that the update offer never proposes a downgrade when a
+  registration points to a newer runtime, and whether "Update CoAgent8 in all
+  CLI chats" rewrites clients the menu did not list. Check: R, VS Code scope.
+- [ ] **FEEDBACK-061c - issue links in the agy chat.** The agy chat renderer
+  decodes `%26` to `&` (cutting `body` after "Description ") and re-encodes
+  `%23` as `%2523`; the server URL and the copyable block are correct. Remove
+  `&` and `#` from the fixed report template ("Description and context",
+  headings without `#`) so the template survives; user text with `&` still
+  depends on the copyable URL. Check: R, native agy.
+- [ ] **FEEDBACK-061d - issue result in Claude Code.** Claude Code passed the
+  model the `structuredContent` JSON (`title`, `body`, `issueUrl`) instead of
+  the text with the clickable link. Decide whether `issue` keeps
+  `structuredContent` or adds the link to it. Check: R, native Claude Code.
+- [ ] **FEEDBACK-061e - review envelope counter.** A turn-2 review returned
+  `REVIEW: 1` with a `turn 2` footer; the counter is written by the model.
+  Decide whether the gate checks it against the turn or the envelope drops it.
+  Check: R.
+- [ ] **FEEDBACK-061f - doctor reminder in issue reports.** No report tells
+  the reporter to attach full `doctor` health output (`include_doctor` adds
+  CLI versions only). Decide whether to add one line. Check: R.
+- [ ] **FEEDBACK-061g - large Codex reviews.** `review` on Codex fails with
+  `BUFFER_LIMIT` for prompts above 512 KB: the app server echoes the prompt in
+  one JSON-RPC line, `maxLineBytes` is 512 KB and the diff snapshot allows
+  3 MB (`src/backends/codex/adapter.ts`, `src/workspace/git.ts`). Align the
+  limits or bound the prompt per backend. Check: R.
+- [ ] **FEEDBACK-061h - acceptance procedure.** Start every client test in a
+  new chat and confirm the runtime version first (the `issue` report shows it);
+  run clients one after another when they edit the same file; check the
+  working tree after a client closes, because Antigravity re-applied a
+  temporary edit after its report claimed a verified restore. Record this in
+  [Native VS Code acceptance](#native-vs-code-acceptance). Check: P.
+- [ ] **FEEDBACK-061i - release review P3 findings.** Confirm that
+  `createRetryIdMapper` in `src/backends/agy/adapter.ts` skips `final` on
+  purpose and document it, or fix it. Check: R.
+
+## PROPOSALS-001: proposals awaiting an owner decision
+
+Proposals made in earlier sessions that were never recorded. Each needs an
+owner decision before it becomes a card with acceptance criteria.
+
+- [ ] **PROPOSALS-001a - MCP Registry entry.** Publish `server.json` (with
+  `mcpName` in `package.json`) as `io.github.oktawianwybieralski/coagent8`, so
+  VS Code can show details, README and icon in "MCP Servers - Installed"
+  (today only Configuration). Deferred until the GitHub MCP registry lists
+  the server; publication is an owner action.
+- [ ] **PROPOSALS-001b - Open VSX.** Reserve the `okidev` namespace on Open
+  VSX (used by Cursor, VSCodium and Windsurf) and publish the same VSIX there,
+  possibly from the `RELEASE-001d` job.
+- [ ] **PROPOSALS-001c - VS Code Remote and WSL.** Decide whether Remote-WSL
+  (and VS Code Remote in general) is a supported topology for `1.0`; the
+  extension declares no `extensionKind`. If yes, add cards for the topology
+  and for a native acceptance runner (separate Windows account, Windows
+  Sandbox or VM).
+- [ ] **PROPOSALS-001d - paths instead of pasted content.** Check that tool
+  descriptions and skills tell agents to pass file paths and short questions
+  instead of pasting code, since arguments travel as escaped JSON.
+- [ ] **PROPOSALS-001e - signed-commit rule.** Rule 02 lists signed commits
+  for `develop` and release lines, but the rulesets have no
+  `required_signatures` rule (GitHub squash commits are Verified anyway). Add
+  the rule or correct the text.
+- [ ] **PROPOSALS-001f - changelog pre-push hook.** A versioned hook
+  (`.githooks/`, `core.hooksPath`) that runs `npm run changelog` and blocks a
+  push when `CHANGELOG.md` changed, instead of relying on agents.
+- [ ] **PROPOSALS-001g - agent output outside `.artifacts/`.** A rule that
+  agents keep their scripts and logs in their scratch directories, not in
+  `.artifacts/`, which holds build output only.
+- [ ] **PROPOSALS-001h - cancel description.** Say in the `cancel` tool
+  description that it asks the backend to stop and then terminates its process
+  if it does not exit, without renaming the tool.
+- [ ] **PROPOSALS-001i - documentation site cleanup.** Fix the navigation,
+  empty module pages and the choice of published documents for `0.7.0`.
+- [ ] **PROPOSALS-001j - MIT for older copies.** Optionally also permit use
+  of `0.6.0` and `1.0.0-beta.1` under MIT, keeping their GPL-3.0-only
+  permissions, after extending the rights check to those packages.
+
 ## SUPPLY-001: Socket package scores
 
 Goal (owner decision 2026-10-12): Socket's supply-chain score of the published
@@ -1064,24 +1212,35 @@ Mark PASS/FAIL/NOT_RUN against the actual snapshot and exact artifact digest.
 Any defect gets its own fix PR into `develop`; a changed candidate invalidates
 approval and requires renewed checks of the replacement candidate.
 
-- [ ] **PATCH-061-R1 - freeze the scope.** After working PR groups 1-8 and any
+Status at the `0.6.1` release (2026-10-13,
+[evidence](HANDOFF.md#061-release-evidence)): R1-R4, R6 and O1 are done; O1
+published npm and the Marketplace by hand ([RELEASE-001](#release-001-automated-publication)).
+R5 was replaced by verifying the tag's draft (owner decision). Native evidence
+covers the three clients on the CI VSIX: N2 on the backends chosen by
+`auto` (`codex` and `agy`), N3 for continuation, history paging, closed
+sessions and idle `cancel`, and the agy issue link in N5. N1, N4, N6, N7, the
+Claude backend in N2, workspace isolation, repeat review and `delete_history` in N3,
+consent in N5 and the Socket scores in R7 did not run and move to `0.7.0`
+acceptance. R7's npm and Marketplace artifact checks passed.
+
+- [x] **PATCH-061-R1 - freeze the scope.** After working PR groups 1-8 and any
   necessary focused split/fix PRs, verify the linked cards are complete
   (including PUBLIC-001d or its explicit owner-approved deferral), required CI is green on `develop`,
   no P0/P1 issue is open and no P1/P2 finding remains unresolved. Record the
   previous tag/base SHA and agreed scope; unresolved work blocks preparation
   unless the owner explicitly changes the release scope in this roadmap.
-- [ ] **PATCH-061-R2 - prepare the version/changelog candidate.** After R1,
+- [x] **PATCH-061-R2 - prepare the version/changelog candidate.** After R1,
   create `release/v0.6.1` with only the four manifest version updates and the
   generated changelog, per rule 02. Acceptance: manifest agreement, valid
   generated changelog and recorded candidate/tree SHA; no implementation fix
   hidden in the release commit.
-- [ ] **PATCH-061-R3 - local package gate and notes.** After R2, run the full
+- [x] **PATCH-061-R3 - local package gate and notes.** After R2, run the full
   release gate in a clean checkout, including applicable dependency,
   documentation, coverage and VSIX checks. Inspect tarball/VSIX exclusions,
   notices and bundled startup; record platform/Node, candidate/tree and both
   SHA-256 digests. Prepare tester notes and upgrade/known-limit guidance.
   Include LIC-001d's license/artwork/third-party notice inspection.
-- [ ] **PATCH-061-R4 - release PR and CI artifacts.** After R3 and owner
+- [x] **PATCH-061-R4 - release PR and CI artifacts.** After R3 and owner
   authorization, push/open the release PR. Acceptance: all six OS/Node jobs
   pass on its current head; download that run's tarball/VSIX and record hashes
   and provenance separately from locally built files. N1-N7 use these artifacts.
@@ -1124,11 +1283,11 @@ does not complete a native task.
   this scope because SUPPLY-001a/b change build/package tooling and manifests.
   External repository creation/push/deletion requires owner authorization;
   verify the draft, hashes and attestations, and record npm publication mode.
-- [ ] **PATCH-061-R6 - independent release approval.** After N1-N7 and R5,
+- [x] **PATCH-061-R6 - independent release approval.** After N1-N7 and R5,
   obtain the independent review required by rule 03, bound to Base SHA,
   Candidate SHA, Tree SHA and artifact SHA-256. Acceptance: verified scope and
   checks, READY, no unresolved P1/P2. The author cannot provide this approval.
-- [ ] **PATCH-061-O1 - owner merge/tag/publication.** After R6, follow rule 02
+- [x] **PATCH-061-O1 - owner merge/tag/publication.** After R6, follow rule 02
   phases B-E: owner merge, equal-tree/Verified/green-target checks, immutable
   annotated tag, draft artifact verification and publication to GitHub,
   npm and Marketplace with preview channels. Packaging changes after tagging
@@ -1150,7 +1309,7 @@ previews are `0.7.0`, `0.8.0` and `0.9.0`.
 | Stage | Required scope |
 | --- | --- |
 | BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](HANDOFF.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
-| PATCH-061: 0.6.1 (fix-only preview) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
+| PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
 | BETA-001: beta.3 (0.7.0) | Host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e and SUPPLY-001c-e may ship. |
 | RC-001: rc.1 (next preview, first on `1.0.x`) | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
