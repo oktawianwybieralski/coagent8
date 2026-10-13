@@ -408,8 +408,9 @@ All milestones are pending. Start with the contract design cards below (`Check: 
 - [ ] **COAGENT-002b - writer ownership design.** After `001b`/`002a`, start from `src/workspace/identity.ts`, `src/storage/lock.ts`, `src/sessions/session.ts`. Specify dirty-baseline ownership, conflict detection, path-escape prevention, partial-work preservation and restart recovery, rejecting concurrent writers to one canonical workspace.
 - [ ] **COAGENT-003a - role/route precedence.** After `001a`, read config, routing and model selection. Specify request vs. role vs. configured defaults with examples for explicit models and optional preferences, keeping roles provider-independent and preserving explicit-model refusal.
 - [ ] **COAGENT-003b - root reservation protocol.** After `001b`, specify atomic reservation/release/recovery for calls, concurrency, time and depth across children and retries using existing storage/lease owners.
-- [ ] **COAGENT-004a - durable state and early handles.** After `001b`/`002b`, read session/history owners and `EXEC-001-T06` finalization. Specify a minimal task record, early handle publication, inspect/cancel and restart recovery independent of transcript archives.
-- [ ] **COAGENT-004b - observed evidence and compact handoff.** After `004a`, read `src/review/input.ts`, `gate.ts` and Git snapshot logic. Specify candidate-bound command/exit/log evidence and `HANDOFF-001` fields, distinguishing observed PASS from agent-reported PASS.
+- [ ] **COAGENT-004a1 - read-only lifecycle contract.** After `SESSION-001a`, read session/history owners and `EXEC-001-T06` finalization. Specify a minimal task record, early handle publication, inspect/cancel and restart recovery for read-only turns that outlive the calling request (needed by `DELEGATE-001`), independent of transcript archives.
+- [ ] **COAGENT-004a2 - writer lifecycle contract.** After `004a1`, `001b` and `002b`, extend the record and recovery to write tasks and writer ownership.
+- [ ] **COAGENT-004b - observed evidence and compact handoff.** After `004a2`, read `src/review/input.ts`, `gate.ts` and Git snapshot logic. Specify candidate-bound command/exit/log evidence and `HANDOFF-001` fields, distinguishing observed PASS from agent-reported PASS.
 - [ ] **COAGENT-005a - multi-file skill ownership.** Read `src/integrations/skills.ts`, `setup-storage.ts`, `cleanup.ts`. Specify manifests and digests for multi-file skill packages with references, conflict/traversal rejection and rollback, without executing bundled scripts.
 - [ ] **COAGENT-005b - remote and workspace loader scope.** After `005a`, extend `SKILLS-001`'s user-scope loader evidence per client to workspace and remote paths.
 - [ ] **COAGENT-006a - delegation failure protocol.** After accepted `001-005/007` host-led execution, read `src/execution/nested-turn.ts` and root reservations. Specify capability-bound parent/root requests, fan-out/depth bounds, replay/cycle refusal, partial launch recovery and tree cancellation while keeping the existing nested guard enabled until replacement acceptance.
@@ -423,7 +424,7 @@ All milestones are pending. Start with the contract design cards below (`Check: 
 When a subscription backend hits a usage window limit during a task, routing records a cooldown so `auto` avoids that backend, while existing session continuations stay bound to their original backend. `FAILOVER-001` adds explicit or configuration-authorized cross-backend handoff without automatic silent retries or seeding independent review sessions from author history:
 
 - [ ] **FAILOVER-001a - report the way forward.** Start: `RATE_LIMITED` in `src/contracts/error.ts`, cooldown recording in `src/execution/controller.ts` and error formatting in `src/mcp/server.ts`. Report the reset time when native quota evidence provides it (otherwise unknown) and state the explicit continuation choices (wait, or hand off with the session handle and another backend) without starting a fallback turn. Check: R, LIFE/CACHE/MCP.
-- [ ] **FAILOVER-001b - seeded fork contract.** After `COAGENT-001a` and `004a`; check: P. Specify creating a new session on another backend from a bounded quoted-data seed (task record or original objective, latest turns within a byte cap, and any interrupted partial answer labelled incomplete), linking the source handle while re-evaluating cross-provider history consent, model selection, price limits and expensive-model approval.
+- [ ] **FAILOVER-001b - seeded fork contract.** After `COAGENT-001a` and `004a1`; check: P. Specify creating a new session on another backend from a bounded quoted-data seed (task record or original objective, latest turns within a byte cap, and any interrupted partial answer labelled incomplete), linking the source handle while re-evaluating cross-provider history consent, model selection, price limits and expensive-model approval.
 - [ ] **FAILOVER-001c - configuration-authorized failover.** After `001b` and `COAGENT-003a`; check: P. Specify user configuration naming eligible backends and an output price limit for automatic handoff after quota exhaustion (configurable only by the user, never by a calling agent).
 
 ### DELEGATE-001: asynchronous delegation and caller wake-up
@@ -1652,9 +1653,12 @@ implement.
    (owner preference). Fix every P1 and P2 finding, commit, and call `review`
    again with the same `session_handle`. Fix P3 findings when cheap, otherwise
    list them in the PR. Stop after three rounds without `READY` and report.
-8. **Open the PR.** `npm run changelog:check -- --with-commit "<title>"`, push
-   the branch and open a PR into `develop` with the template, including the
-   checks and the review verdict, handle and snapshot. Tick the card in
+8. **Open the PR.** `npm run changelog:check -- --with-commit "<title>"`.
+   Push the branch and open a PR into `develop` only with the owner's
+   go-ahead in the session ([rule 02](../.agents/rules/02-git-workflow.md));
+   the owner may give it once for the whole queue. Without it, stop with the
+   local branch, checks and review evidence. The PR uses the template with
+   the checks and the review verdict, handle and snapshot. Tick the card in
    ROADMAP in the same PR only when the PR completes it. Never merge.
 9. **Stop and ask the owner** when a decision is not recorded in the card,
    a step needs a chat UI or another person, a public MCP schema changes
@@ -1708,14 +1712,15 @@ agent (owner assigns).
 | 2.17 | `ACCEPT-001a2` scenarios N2-N4 | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
 | 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios; results recorded. |
 | 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
-| 2.20 | `COAGENT-004a` durable state and early handles | P S | 2.19 | Contract card done; reviewed READY. |
+| 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
 | 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
 | 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | ARCHITECTURE (unimplemented) defines `delegate`, `wait`, states and ordering; reviewed READY. |
 | 2.23 | `AX-005a`, then `AX-005b` | P, R | - | As the cards say, one PR each. |
 | 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say, one PR each; `AX-004c` is kind N. |
 | 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | One PR per card in that order. |
 | 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R). |
-| 2.27 | `AX-003a`, `AX-003b`, `AX-003c` | P | - | Classification, form-less consent design, then implementation cards added here. |
+| 2.27 | `AX-003a` | R | - | Elicitation outcome fixtures per the card (`Check: R`). |
+| 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | Form-less consent design, then implementation cards added here. |
 | 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | Acceptance script, then one fresh-client run per client. |
 | 2.29 | `AUDIT-001-A08` to `A21` | R | - | In card order and grouping (A08-A09, A10-A12, A13-A15, A16-A18, A19-A20, A21); a reproduction that finds no defect skips its fix. |
 | 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R). |
@@ -1730,6 +1735,7 @@ agent (owner assigns).
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
+| 3.0 | Confirm `PROPOSALS-001k` to `n` | O | - | Owner accepts or rejects each; the proposal cards record it. |
 | 3.1 | `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (consult) returns a handle at once and the turn runs under owned supervision independent of the request; tests. |
 | 3.2 | `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown stop delegated turns without survivors; tests. |
 | 3.3 | `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `coagent8 wait <handle>` in the CLI; tests. |
@@ -1739,10 +1745,12 @@ agent (owner assigns).
 | 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.9 | `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
-| 3.10 | `PROPOSALS-001d` and `001l` | R | - par | Tool descriptions and skills ask for paths; session resources use compact JSON; tool-definition budget test passes. |
+| 3.10 | `PROPOSALS-001d` | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
+| 3.10b | `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON, if accepted. |
 | 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
-| 3.13 | `PROPOSALS-001g`, `001k`, `001n` rule texts | P | - par | Rules and AGENTS.md updated. |
+| 3.13 | `PROPOSALS-001g` rule text | P | - par | Rule and AGENTS.md updated. |
+| 3.13b | `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
 | 3.14 | `PROPOSALS-001e` signed-commit ruleset | O | - | Owner adds `required_signatures`; 3.13 aligns the text. |
 | 3.15 | `DOCS-003a` site purpose | P | - | Page list and published documents recorded; reviewed READY. |
 | 3.16 | `DOCS-003b` TypeDoc configuration | R | 3.15 | `npm run docs` passes with the new configuration. |
@@ -1758,12 +1766,12 @@ agent (owner assigns).
 | 4.1 | `COAGENT-001a`, `001b` | P S | 2.20 | Contract cards done; reviewed READY. |
 | 4.2 | `COAGENT-002a`, `002b` | P S | 4.1 | Profile evidence and writer ownership designs. |
 | 4.3 | `COAGENT-003a`, `003b` | P S | 4.1 | Routing precedence and root reservations. |
-| 4.4 | `COAGENT-004b`, `005a`, `005b`, `007a` | P S | 4.1 | Remaining contract cards. |
+| 4.4 | `COAGENT-004a2`, `004b`, `005a`, `005b`, `007a` | P S | 4.1, 4.2 | Remaining contract cards. |
 | 4.5 | Decompose implementation | P S | 4.1-4.4, 2.35 | A strong agent or the owner adds implementation rows here for write/check/review/fix profiles, roles, multi-file skills, `DELEGATE-001f` and `CLI-FIRST-001f`. |
 | 4.6 | `FAILOVER-001a` | R | - par | As the card says. |
 | 4.7 | `PLUGIN-001a` | N | - | Loader evidence per client. |
 | 4.8 | `PLUGIN-001b` to `001e` | P, R | 4.7 | One PR per card. |
-| 4.9 | `PLUGIN-001f`, `001g` | N | 4.8 | Native acceptance. |
+| 4.9 | `PLUGIN-001g` | N | 4.8 | Native acceptance with the candidate artifacts. |
 
 ### Phase 5 - publication automation and 0.7.0 acceptance
 
@@ -1781,6 +1789,7 @@ agent (owner assigns).
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure. |
 | 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
+| 5.13 | `PLUGIN-001f` | N | 5.12 | Plugin install, update and removal per client against the published `0.7.0` package; plugin paths documented only after it passes. |
 
 ## Release acceptance
 
