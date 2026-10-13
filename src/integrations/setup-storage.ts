@@ -210,18 +210,27 @@ function isNodeCommand(command: string, nodePath?: string): boolean {
  * inside the owned runtime root or extension global storage with a 64-character hex subdirectory
  * and `index.cjs` basename. Foreign tokens or extra flags yield null.
  */
-export function extractRuntimePath(entry: unknown, root?: string, argsPrefix: string[] = []): string | null {
+export function extractRuntimePath(entry: unknown, root?: string, argsPrefix?: string[]): string | null {
   if (!entry || typeof entry !== 'object') return null;
-  const args = (entry as { args?: unknown }).args;
-  if (!Array.isArray(args) || !args.every(arg => typeof arg === 'string') || args.length === 0) return null;
+  const rawArgs = (entry as { args?: unknown }).args;
+  if (!Array.isArray(rawArgs) || !rawArgs.every(arg => typeof arg === 'string') || rawArgs.length === 0) return null;
+  const args = rawArgs as string[];
 
   let candidate: string | undefined;
   const last = args.at(-1);
   if (last === 'mcp') {
-    if (args.length !== argsPrefix.length + 2) return null;
+    if (argsPrefix !== undefined) {
+      if (args.length !== argsPrefix.length + 2) return null;
+    } else {
+      if (args.length !== 2) return null;
+    }
     candidate = args.at(-2);
   } else if (typeof last === 'string' && path.isAbsolute(last) && last.endsWith('index.cjs')) {
-    if (args.length !== argsPrefix.length + 1) return null;
+    if (argsPrefix !== undefined) {
+      if (args.length !== argsPrefix.length + 1) return null;
+    } else {
+      if (args.length !== 1) return null;
+    }
     candidate = last;
   } else {
     return null;
@@ -229,8 +238,10 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix: st
 
   if (!candidate || typeof candidate !== 'string' || !path.isAbsolute(candidate)) return null;
 
-  for (let i = 0; i < argsPrefix.length; i++) {
-    if (args[i] !== argsPrefix[i]) return null;
+  if (argsPrefix !== undefined) {
+    for (let i = 0; i < argsPrefix.length; i++) {
+      if (args[i] !== argsPrefix[i]) return null;
+    }
   }
 
   const normalizedCandidate = path.resolve(candidate);
@@ -245,7 +256,17 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix: st
 
   const storageRoot = path.dirname(runtimeDir);
 
-  const envDir = (entry as { env?: Record<string, string> }).env?.coagent8_DIR;
+  // Validate env.coagent8_DIR type if present; reject malformed non-string values
+  let envDir: string | undefined;
+  if ('env' in entry && (entry as { env?: unknown }).env && typeof (entry as { env?: unknown }).env === 'object') {
+    const rawEnv = (entry as { env: Record<string, unknown> }).env;
+    if (typeof rawEnv.coagent8_DIR === 'string') {
+      envDir = rawEnv.coagent8_DIR;
+    } else if (rawEnv.coagent8_DIR !== undefined) {
+      return null;
+    }
+  }
+
   const isMatch = (target: string) => {
     const normTarget = path.resolve(target);
     return process.platform === 'win32'
@@ -256,11 +277,9 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix: st
   const isExtension = extensionStorage(storageRoot);
 
   if (root && isMatch(root)) {
-    // Matches provided root
-  } else if (envDir && isMatch(envDir)) {
-    // Matches entry.env.coagent8_DIR
-  } else if (isExtension) {
-    // Matches extension globalStorage
+    // Resolves inside the supplied runtime root (~/.coagent8)
+  } else if (isExtension && (!envDir || (extensionStorage(envDir) && isMatch(envDir)))) {
+    // Resolves inside verified extension globalStorage
   } else if (!root && !envDir && path.basename(storageRoot).toLowerCase() === '.coagent8') {
     // Default fallback when neither root nor envDir is provided
   } else {
@@ -279,10 +298,11 @@ export function extractRuntimePath(entry: unknown, root?: string, argsPrefix: st
  * @param entry - The candidate configuration entry.
  * @param root - The `~/.coagent8` directory.
  * @param nodePath - Optional Node executable path to recognize alongside process.execPath.
+ * @param argsPrefix - Optional permitted launcher argument prefix from resolved Node CLI.
  * @returns Null for any other entry; otherwise the VS Code extension as its origin when its
  * data directory is the extension's global storage, which VS Code deletes on uninstall.
  */
-export function setupShapedEntry(client: SetupClient, entry: unknown, root: string, nodePath?: string): { origin?: RegistrationOrigin } | null {
+export function setupShapedEntry(client: SetupClient, entry: unknown, root: string, nodePath?: string, argsPrefix?: string[]): { origin?: RegistrationOrigin } | null {
   let parsed: Registration;
   try { parsed = registration(entry); }
   catch { return null; }
@@ -291,7 +311,7 @@ export function setupShapedEntry(client: SetupClient, entry: unknown, root: stri
   if (!Object.keys(fields).every(key => ['command', 'args', 'env'].includes(key) || (Object.hasOwn(extra, key) && fields[key] === extra[key]))) return null;
   if (!Object.keys(parsed.env ?? {}).every(key => SETUP_ENTRY_ENV.includes(key))) return null;
   if (!isNodeCommand(parsed.command, nodePath)) return null;
-  const runtime = extractRuntimePath(parsed, root);
+  const runtime = extractRuntimePath(parsed, root, argsPrefix);
   if (runtime === null) return null;
   return extensionStorage(parsed.env?.coagent8_DIR) ? { origin: EXTENSION_ORIGIN } : {};
 }
@@ -304,10 +324,11 @@ export function setupShapedEntry(client: SetupClient, entry: unknown, root: stri
  * @param saved - Active selection and ownership fingerprints.
  * @param root - The `~/.coagent8` directory.
  * @param nodePath - Optional Node executable path to recognize alongside process.execPath.
+ * @param argsPrefix - Optional permitted launcher argument prefix from resolved Node CLI.
  * @returns Ownership state and optional registration origin.
  */
-export function entryOwnership(client: SetupClient, entry: unknown, saved: Selection, root: string, nodePath?: string): { owned: boolean; origin?: RegistrationOrigin } {
+export function entryOwnership(client: SetupClient, entry: unknown, saved: Selection, root: string, nodePath?: string, argsPrefix?: string[]): { owned: boolean; origin?: RegistrationOrigin } {
   if (saved.owned[client] === hash(JSON.stringify(entry))) return { owned: true, origin: saved.origin[client] };
-  const shaped = setupShapedEntry(client, entry, root, nodePath);
+  const shaped = setupShapedEntry(client, entry, root, nodePath, argsPrefix);
   return shaped ? { owned: true, ...shaped } : { owned: false };
 }

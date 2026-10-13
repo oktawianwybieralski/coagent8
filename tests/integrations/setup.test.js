@@ -437,6 +437,18 @@ test('extractRuntimePath recognizes both registration shapes under strict contai
   assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', 'a'.repeat(32), 'index.cjs'), 'mcp'] }, root), null, 'short hex subdirectory');
   assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(home, 'other', 'runtime', sha, 'index.cjs'), 'mcp'] }, root), null, 'outside root');
   assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(root, 'runtime', sha, '..', '..', 'index.cjs'), 'mcp'] }, root), null, 'traversal');
+
+  // Outside-root entry cannot authorize itself via coagent8_DIR
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [path.join(home, 'other', 'runtime', sha, 'index.cjs'), 'mcp'], env: { coagent8_DIR: path.join(home, 'other') } }, root), null, 'outside-root coagent8_DIR rejected');
+
+  // Malformed env.coagent8_DIR yields null instead of throwing
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp'], env: { coagent8_DIR: 123 } }, root), null, 'numeric coagent8_DIR');
+  assert.equal(extractRuntimePath({ command: process.execPath, args: [runtime, 'mcp'], env: { coagent8_DIR: {} } }, root), null, 'object coagent8_DIR');
+
+  // Permitted launcher argsPrefix support
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--launcher-flag', runtime, 'mcp'] }, root, ['--launcher-flag']), runtime);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--launcher-flag', runtime] }, root, ['--launcher-flag']), runtime);
+  assert.equal(extractRuntimePath({ command: process.execPath, args: ['--wrong-flag', runtime, 'mcp'] }, root, ['--launcher-flag']), null);
 });
 
 test('setupShapedEntry and entryOwnership detect both shapes and enforce anti-widening invariants', t => {
@@ -458,6 +470,14 @@ test('setupShapedEntry and entryOwnership detect both shapes and enforce anti-wi
     assert.equal(entryOwnership('claude', { command, args: [runtime, 'mcp'] }, saved, root).owned, false, `${command} must be manual`);
   }
 
+  // Outside-root entry with matching coagent8_DIR must not be owned
+  const outsideEntry = { command: process.execPath, args: [path.join(home, 'other', 'runtime', sha, 'index.cjs'), 'mcp'], env: { coagent8_DIR: path.join(home, 'other') } };
+  assert.equal(setupShapedEntry('claude', outsideEntry, root), null);
+  assert.equal(entryOwnership('claude', outsideEntry, saved, root).owned, false);
+
+  // Malformed env.coagent8_DIR
+  assert.equal(setupShapedEntry('claude', { command: process.execPath, args: [runtime, 'mcp'], env: { coagent8_DIR: 123 } }, root), null);
+
   // Invalid argument orders and foreign tokens
   assert.equal(setupShapedEntry('claude', { command: process.execPath, args: ['mcp', runtime] }, root), null);
   assert.equal(setupShapedEntry('claude', { command: process.execPath, args: ['--flag', runtime, 'mcp'] }, root), null);
@@ -478,6 +498,9 @@ test('setupShapedEntry and entryOwnership detect both shapes and enforce anti-wi
   // Candidate nodePath
   const candidateNode = path.join(home, 'custom-node.exe');
   assert.deepEqual(setupShapedEntry('claude', { command: candidateNode, args: [runtime, 'mcp'] }, root, candidateNode), {});
+
+  // Permitted launcher argsPrefix
+  assert.deepEqual(setupShapedEntry('claude', { command: process.execPath, args: ['--flag', runtime, 'mcp'] }, root, undefined, ['--flag']), {});
 });
 
 test('readRegistrations and active runtime inspection recognize both legacy and modern mcp shapes', async t => {
@@ -509,4 +532,18 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   const [result] = await setupClients({ ...options, clients: ['claude'] });
   assert.equal(result.action, 'updated');
   assert.equal(result.runtimeCallable, true);
+
+  // Fingerprint-owned modern registration matching candidate is preserved
+  const { hash: hashEntry } = require('../../src/integrations/setup-storage.ts');
+  const bundle = fs.readFileSync(source);
+  const bundleSha = hashEntry(bundle);
+  const liveRuntime = path.join(options.home, '.coagent8', 'runtime', bundleSha, 'index.cjs');
+  write(liveRuntime, bundle);
+  const liveEntry = { command: process.execPath, args: [liveRuntime] };
+  write(file, JSON.stringify({ mcpServers: { coagent8: liveEntry } }));
+  const stateFile = path.join(options.home, '.coagent8', 'setup.json');
+  write(stateFile, JSON.stringify({ clients: ['claude'], owned: { claude: hashEntry(JSON.stringify(liveEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
+  const [preservedResult] = await setupClients({ ...options, clients: ['claude'] });
+  assert.equal(preservedResult.action, 'preserved');
+  assert.equal(preservedResult.runtimeCallable, true);
 });

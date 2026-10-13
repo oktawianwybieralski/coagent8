@@ -391,6 +391,7 @@ export interface RegistrationStatus {
 export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env'>): RegistrationStatus[] {
   const { home, cwd, env, root, stateFile } = localProfile(options);
   const saved = readSelection(stateFile);
+  const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
   const candidate = candidateRegistration(readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024), root, options, env, cwd);
   return SETUP_CLIENTS.map(client => {
     try {
@@ -398,7 +399,7 @@ export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 
       const entry = text === null ? undefined : servers(client, document(client, text)).coagent8;
       if (entry === undefined) return { client, state: 'absent', current: false, message: 'No CoAgent8 entry.' };
       const current = isDeepStrictEqual(registration(entry), candidate);
-      if (!entryOwnership(client, entry, saved, root, options.nodePath).owned) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
+      if (!entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
       return { client, state: 'owned', current, message: current ? 'Registered by setup.' : 'Registered by setup for another CoAgent8 version, configuration file or data directory.' };
     } catch (error) {
       return { client, state: 'blocked', current: false, message: redactDiagnostic(error instanceof Error ? error.message : 'Configuration is unreadable.') };
@@ -492,10 +493,11 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.action = 'preserved';
           // Status reads the host files only; starting the runtime and the host is setup/repair work.
           if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.'; return; }
-          const owned = entryOwnership(client, entry, saved, root, options.nodePath).owned;
+          const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
+          const owned = entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned;
           // An owned entry whose runtime copy is gone starts nothing, so there is no working
           // connection to verify or keep; the candidate written above replaces it.
-          const existingRuntime = extractRuntimePath(existing, root);
+          const existingRuntime = extractRuntimePath(existing, root, node.argsPrefix);
           const broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
           if (!broken) {
             result.tools = await probeRuntime(existing, env, cwd);
