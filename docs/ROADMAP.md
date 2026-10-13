@@ -918,7 +918,7 @@ published to npm and the Marketplace by hand
 change to `npm-publish.yml` cannot be rehearsed, so every card below needs a
 check that runs the real publish commands without publishing.
 
-- [ ] **RELEASE-001a - fix the npm publish command.** `npm-publish.yml` passes
+- [x] **RELEASE-001a - fix the npm publish command.** `npm-publish.yml` passes
   `release/coagent8-X.Y.Z.tgz`, which npm reads as a GitHub repository; use
   `./release/...`. Move the publish commands into a script that CI runs against
   a packed tarball in the same layout with `npm publish --dry-run`. Check: R,

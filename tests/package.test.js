@@ -130,3 +130,27 @@ test('npm, plugin and VS Code manifests share one numeric version', () => {
     assert.equal(actual, version, `${name} carries the package version`);
   }
 });
+
+test('RELEASE-001a: npm publish script targets ./release/... tarball, validates channel and prerelease flag', () => {
+  const { resolvePublishPlan, runPublishNpm } = require('../scripts/publish-npm.cjs');
+  const previewPlan = resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'true' });
+  assert.equal(previewPlan.version, '0.7.0');
+  assert.equal(previewPlan.channel, 'next');
+  assert.equal(previewPlan.tarballPath, './release/coagent8-0.7.0.tgz');
+  assert.equal(previewPlan.tarballPath.startsWith('./release/'), true, 'Tarball path must explicitly start with ./release/ to avoid git shorthand');
+
+  const releasePlan = resolvePublishPlan({ tag: 'v1.0.0', prerelease: 'false' });
+  assert.equal(releasePlan.version, '1.0.0');
+  assert.equal(releasePlan.channel, 'latest');
+  assert.equal(releasePlan.tarballPath, './release/coagent8-1.0.0.tgz');
+
+  assert.throws(() => resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'false' }), /pre-release flag false does not match/);
+  assert.throws(() => resolvePublishPlan({ tag: 'v1.0.0', prerelease: 'true' }), /pre-release flag true does not match/);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-pub-'));
+  try {
+    assert.throws(() => runPublishNpm({ cwd: dir, tag: 'v0.7.0', prerelease: 'true', dryRun: true }), /Release tarball not found/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
