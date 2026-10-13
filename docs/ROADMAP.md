@@ -173,7 +173,8 @@ human-facing documentation), `DOCS-002c/e`, and
 implementation cards created from the accepted contracts for host-led
 write/check/review/fix profiles, role configuration and multi-file skills;
 `CLI-FIRST-001f` (one execution path through the CLI) after the profiles;
-`FAILOVER-001a`; [`PLUGIN-001a-g`](#plugin-001-native-plugin-in-every-supported-client);
+`FAILOVER-001a`; [`PLUGIN-001a-e`, `001g`](#plugin-001-native-plugin-in-every-supported-client)
+(`PLUGIN-001f` follows publication in Phase 5);
 `DELEGATE-001f` (delegation of write tasks through the accepted profiles).
 
 **Phase 5 - publication automation and 0.7.0 acceptance.**
