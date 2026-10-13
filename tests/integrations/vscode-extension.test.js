@@ -161,6 +161,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
       async showTextDocument(document) { openedFiles.push(document); },
       async showWarningMessage(message, ...rest) {
         warnings.push(message);
+        if (deactivateOn?.test(message)) void module.exports.deactivate();
         warningDetails.push(rest.find(item => typeof item === 'object')?.detail);
         return answer(rest.filter(item => typeof item === 'string'));
       },
@@ -425,6 +426,10 @@ test('Reset Configuration needs confirmation, keeps one backup and refuses unsav
   assert.equal(fs.readFileSync(file, 'utf8'), first);
   assert.equal(fs.existsSync(file + '.backup'), false);
   assert.match(cancelled.warnings[0], /config\.json\.backup, replacing an earlier backup/);
+  const stopped = await runExtension({ ...options, action: 'Reset Configuration', deactivateOn: /^Reset / });
+  assert.deepEqual(stopped.errors, []);
+  assert.equal(fs.readFileSync(file, 'utf8'), first, 'a reset confirmed after deactivation began is not started');
+  assert.equal(fs.existsSync(file + '.backup'), false);
   const dirty = await runExtension({ ...options, action: 'Reset Configuration', dirtyFiles: [file] });
   assert.match(dirty.errors[0], /Save or revert/);
   assert.equal(fs.readFileSync(file, 'utf8'), first);
