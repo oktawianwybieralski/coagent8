@@ -240,7 +240,7 @@ function trackTask<T>(promise: Promise<T>): Promise<T> {
  */
 export async function whenIdle(): Promise<void> {
   while (inFlightTasks.size > 0) {
-    await Promise.all(Array.from(inFlightTasks));
+    await Promise.allSettled(Array.from(inFlightTasks));
   }
 }
 
@@ -481,7 +481,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const task = (async () => {
       let claimed = false;
       const statePath = path.join(storage, 'setup-state.json');
-      await withFileLock(statePath, async () => {
+      await trackTask(withFileLock(statePath, async () => {
         if (isDeactivating) return;
         const state = readSetupState(storage);
         if (state.pathPrompt !== undefined) return;
@@ -495,7 +495,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           fs.rmSync(tmp, { force: true });
         }
         claimed = true;
-      });
+      }));
       if (!claimed || isDeactivating) return;
 
       const pathChoice = await vscode.window.showInformationMessage(
@@ -503,18 +503,21 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         'Yes', 'No'
       );
       if (isDeactivating) return;
-      if (pathChoice === 'Yes') {
-        await updateSetupState(storage, { pathPrompt: 'accepted' });
+      await trackTask((async () => {
         if (isDeactivating) return;
-        const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-        await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
-      } else if (pathChoice === 'No') {
-        await updateSetupState(storage, { pathPrompt: 'declined' });
-      } else {
-        await updateSetupState(storage, { pathPrompt: 'dismissed' });
-      }
+        if (pathChoice === 'Yes') {
+          await updateSetupState(storage, { pathPrompt: 'accepted' });
+          if (isDeactivating) return;
+          const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+          await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+        } else if (pathChoice === 'No') {
+          await updateSetupState(storage, { pathPrompt: 'declined' });
+        } else {
+          await updateSetupState(storage, { pathPrompt: 'dismissed' });
+        }
+      })());
     })();
-    pathOfferInFlight = trackTask(task).finally(() => {
+    pathOfferInFlight = task.finally(() => {
       pathOfferInFlight = undefined;
     });
     return pathOfferInFlight;
@@ -671,8 +674,11 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   function register(name: string, action: () => Promise<void>): void {
     context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
       if (vscode.env.remoteName) { await vscode.window.showWarningMessage('CoAgent8 commands are not available in a remote window. In a terminal on the remote machine, run npx -y coagent8@next status (or setup, repair, skills, cleanup).'); return; }
+      if (isDeactivating) return;
       try { await action(); }
-      catch (error) { await vscode.window.showErrorMessage(`CoAgent8 setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Action failed or was cancelled; retry.')}`); }
+      catch (error) {
+        if (!isDeactivating) await vscode.window.showErrorMessage(`CoAgent8 setup: ${redactDiagnostic(error instanceof Error ? error.message : 'Action failed or was cancelled; retry.')}`);
+      }
     }));
   }
   register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`); });
@@ -688,23 +694,25 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       "Add 'coagent8' to your user PATH so you can run it from any terminal?",
       'Yes', 'No'
     );
+    if (isDeactivating) return;
     if (choice !== 'Yes') {
-      if (choice === 'No') await updateSetupState(storage, { pathPrompt: 'declined' });
+      if (choice === 'No') await trackTask(updateSetupState(storage, { pathPrompt: 'declined' }));
       return;
     }
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-    const res = await enablePathIntegration({
+    const res = await trackTask(enablePathIntegration({
       home: os.homedir(),
       storage,
       installation: path.dirname(context.extensionPath),
       bundle: context.asAbsolutePath('dist/index.cjs'),
       nodePath,
-    });
+    }));
+    if (isDeactivating) return;
     if (res.action === 'enabled') {
-      await updateSetupState(storage, { pathPrompt: 'accepted' });
-      void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
+      await trackTask(updateSetupState(storage, { pathPrompt: 'accepted' }));
+      if (!isDeactivating) void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
     } else {
-      void vscode.window.showInformationMessage('PATH integration is currently supported on Windows.');
+      if (!isDeactivating) void vscode.window.showInformationMessage('PATH integration is currently supported on Windows.');
     }
   });
   register('coagent8.removePath', async () => {
@@ -712,13 +720,14 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       "Remove 'coagent8' from your user PATH?",
       'Remove', 'Cancel'
     );
-    if (choice !== 'Remove') return;
-    const res = await disablePathIntegration({
+    if (isDeactivating || choice !== 'Remove') return;
+    const res = await trackTask(disablePathIntegration({
       home: os.homedir(),
       storage,
       installation: path.dirname(context.extensionPath),
       bundle: context.asAbsolutePath('dist/index.cjs'),
-    });
+    }));
+    if (isDeactivating) return;
     if (res.action === 'removed') {
       void vscode.window.showInformationMessage('CoAgent8 has been removed from your user PATH.');
     } else if (res.action === 'preserved') {
@@ -1195,11 +1204,13 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   /** Checks the CLIs once per installation; later activations start no process. */
   async function showWelcome(): Promise<void> {
     if (vscode.env.remoteName || isDeactivating || readSetupState(storage).welcomed) return;
-    const results = await status('Welcome CLI Check');
-    if (isDeactivating) return;
-    // Recorded before the notice, so a reload while it is open does not check again.
-    await updateSetupState(storage, { welcomed: true });
-    if (isDeactivating) return;
+    const results = await trackTask((async () => {
+      if (isDeactivating) return [];
+      const res = await status('Welcome CLI Check');
+      if (!isDeactivating) await updateSetupState(storage, { welcomed: true });
+      return res;
+    })());
+    if (isDeactivating || !results.length) return;
     const ready = results.filter(result => result.ready);
     if (ready.length) {
       // The other CLIs and the CLI chats are offered from the start, in the one menu.
@@ -1221,9 +1232,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       await vscode.commands.executeCommand('coagent8.manageClis');
     }
   }
-  trackTask(showWelcome().catch(error => {
+  void showWelcome().catch(error => {
     if (!isDeactivating) void vscode.window.showErrorMessage(`CoAgent8 onboarding: ${redactDiagnostic(error instanceof Error ? error.message : 'Onboarding failed.')}`);
-  }));
+  });
   /**
    * Finishes the removals started from a CLI menu once VS Code has removed the extension (after
    * Restart Extensions, or at the next start): the record of what CoAgent8 installed, a selection
