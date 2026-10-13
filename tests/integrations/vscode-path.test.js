@@ -481,3 +481,25 @@ test('removePathIntegration prunes unreferenced runtime copies on removal', asyn
   const root = path.join(f.home, '.coagent8');
   assert.equal(fs.existsSync(root), false, '~/.coagent8 completely removed when nothing remains');
 });
+
+test('pruneUnreferencedRuntimes throws on corrupt installs.json and deletes no runtime copies', async t => {
+  const f = fixture(t);
+  const root = path.join(f.home, '.coagent8');
+  const runtimes = path.join(root, 'runtime');
+  const dummySha = 'a'.repeat(64);
+  const dummyRuntimeDir = path.join(runtimes, dummySha);
+  fs.mkdirSync(dummyRuntimeDir, { recursive: true });
+  fs.writeFileSync(path.join(dummyRuntimeDir, 'index.cjs'), 'dummy runtime');
+
+  // Corrupt installs.json
+  const installsFile = path.join(root, 'installs.json');
+  fs.writeFileSync(installsFile, 'not valid json {{{');
+
+  const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
+  assert.throws(
+    () => pruneUnreferencedRuntimes(root, f.home),
+    /Malformed installs.json/
+  );
+
+  assert.equal(fs.existsSync(dummyRuntimeDir), true, 'runtime preserved when installs.json is corrupt');
+});

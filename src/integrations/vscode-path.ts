@@ -577,6 +577,10 @@ export async function removePathIntegration(
 
       delete records.path;
       writeRecordFile(home, records);
+      const root = path.join(home, '.coagent8');
+      try {
+        pruneUnreferencedRuntimes(root, home);
+      } catch {}
       return { action: 'removed' };
     },
     Math.min(leaseTimeoutMs, Math.max(100, timeRemaining()))
@@ -584,13 +588,10 @@ export async function removePathIntegration(
   const root = path.join(home, '.coagent8');
   if (res.action === 'removed') {
     try {
-      pruneUnreferencedRuntimes(root, home);
+      if (fs.existsSync(root) && fs.readdirSync(root).length === 0) {
+        fs.rmdirSync(root);
+      }
     } catch {}
   }
-  try {
-    if (fs.existsSync(root) && fs.readdirSync(root).length === 0) {
-      fs.rmdirSync(root);
-    }
-  } catch {}
   return res;
 }

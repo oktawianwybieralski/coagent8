@@ -73,11 +73,9 @@ function removeEntry(client: SetupClient, before: string): string {
 }
 
 /**
- * Deletes runtime copies that no host registration references, the private backups
- * written for the VS Code extension, and the setup state when it no longer records a
- * selection or an owned registration. Backups of `coagent8` CLI changes are kept.
- * @throws When a host configuration cannot be read; nothing is deleted then.
-/** Removes runtime copies that are no longer referenced by any client config or installs.json. */
+ * Removes runtime copies that are no longer referenced by any client config or installs.json.
+ * @throws When a host configuration or installs.json cannot be read; nothing is deleted then.
+ */
 export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJS.ProcessEnv = process.env): void {
   const runtimes = path.join(root, 'runtime');
   const referenced = new Set<string>();
@@ -93,17 +91,15 @@ export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJ
   const installsPath = path.join(root, 'installs.json');
   if (fs.existsSync(installsPath)) {
     const raw = read(installsPath);
-    if (raw !== null) {
-      try {
-        const parsed = JSON.parse(raw);
-        const pRuntime = (parsed as { path?: { runtime?: unknown } })?.path?.runtime;
-        if (typeof pRuntime === 'string') {
-          const resolved = path.resolve(pRuntime);
-          if (resolved.startsWith(runtimes + path.sep)) {
-            referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);
-          }
-        }
-      } catch {}
+    if (raw === null) throw new Error('Unreadable installs.json');
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { throw new Error('Malformed installs.json'); }
+    const pRuntime = (parsed as { path?: { runtime?: unknown } })?.path?.runtime;
+    if (typeof pRuntime === 'string') {
+      const resolved = path.resolve(pRuntime);
+      if (resolved.startsWith(runtimes + path.sep)) {
+        referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);
+      }
     }
   }
   if (fs.existsSync(runtimes)) {

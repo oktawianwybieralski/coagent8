@@ -10,7 +10,7 @@
  */
 import os from 'node:os';
 import path from 'node:path';
-import { cleanupClients, pruneUnreferencedRuntimes, type CleanupPreview } from '../../../src/integrations/cleanup.js';
+import { cleanupClients, type CleanupPreview } from '../../../src/integrations/cleanup.js';
 import { removeVscodeRegistrations, type VscodeRemoval } from '../../../src/integrations/vscode-profile.js';
 import { removePathIntegration, type PathRemovalResult } from '../../../src/integrations/vscode-path.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
@@ -49,9 +49,6 @@ async function main(): Promise<void> {
   try {
     const pathBudget = Math.max(100, DEADLINE - Date.now() - 300);
     pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), Math.min(LEASE_TIMEOUT_MS, pathBudget), undefined, DEADLINE - 300);
-    if (pathResult.action === 'removed') {
-      try { pruneUnreferencedRuntimes(path.join(os.homedir(), '.coagent8'), os.homedir()); } catch {}
-    }
   }
   catch (error) { pathError = redactDiagnostic(error instanceof Error ? error.message : 'PATH cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.
