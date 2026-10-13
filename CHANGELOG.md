@@ -13,8 +13,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 - Ci:
   - Bug fix:
-    - [`6e4cdc0`](https://github.com/oktawianwybieralski/coagent8/commit/6e4cdc0b9fbcf9edaf1f87dc147f2cf9377110ed): Support custom Node path and verify Windows interpreter fallback
-    - [`f7c17c7`](https://github.com/oktawianwybieralski/coagent8/commit/f7c17c7c9318ab56b33fb737a4f0eb138c73f74e): Check out repository in publish workflow and resolve npm cli portably
+    - [`2c5f7dc`](https://github.com/oktawianwybieralski/coagent8/commit/2c5f7dc431e12f56ee34b8ddcc6a44e882cb3f28): Support custom Node path and verify Windows interpreter fallback
+    - [`f9c37ed`](https://github.com/oktawianwybieralski/coagent8/commit/f9c37ed60f1663313d59c6780524cfdb46b4e17b): Check out repository in publish workflow and resolve npm cli portably
 
 ## v0.6.1 - (2026-10-13)
 
