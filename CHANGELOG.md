@@ -14,6 +14,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 - Cli:
   - New feature:
     - [`f9726be`](https://github.com/oktawianwybieralski/coagent8/commit/f9726be066f2228f21ec0efb27692bfc0c0bc228): Implement Option D mcp, help and version root dispatch
+  - Bug fix:
+    - [`681d2b3`](https://github.com/oktawianwybieralski/coagent8/commit/681d2b314b94143c90adf4b5b4d345b01de64d4e): Redact sensitive flag-value pairs and scope root help
 
 ## v0.6.1 - (2026-10-13)
 
