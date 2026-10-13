@@ -86,24 +86,41 @@ flowchart TD
   P4 --> P5["Phase 5: publication automation and 0.7.0 acceptance"]
 ```
 
-**Phase 0 - owner decisions (no code).** Decide each
-[`PROPOSALS-001`](#proposals-001-proposals-awaiting-an-owner-decision) item
-(accept, reject or defer), the npm publisher mode and release channel
-(`RELEASE-001b/c`), the open choices in `FEEDBACK-061d/e/f`, and whether
-`0.7.0` keeps host-led writes (`COAGENT-002` to `005`) or moves them to the
-next preview. `WINDOWS-001d` needs an Authenticode code-signing certificate;
-decide its source before Phase 2 reaches that card. Record each decision with
-its date in the card it changes.
+**Phase 0 - owner decisions (decided 2026-10-13).** Each decision is also
+recorded in the card it changes:
+
+- `0.7.0` keeps host-led writes (`COAGENT-002` to `005`).
+- npm publishes through staged publishing with approval on npmjs.com
+  (`RELEASE-001b`); GitHub releases and the Marketplace use normal, not
+  pre-release, channels for `0.x` (`RELEASE-001c`).
+- `RELEASE-001` stays in Phase 5, but `RELEASE-001a` (command fix and dry
+  run) lands early.
+- Bare `coagent8` follows option D from a Codex consultation
+  (`gpt-6.1-sol`, session `syn_sess_dbbaad3b7fd79cadbb8e15dc`): see
+  `CLI-FIRST-001a`.
+- The VS Code extension asks the user whether to add `coagent8` to PATH
+  (`CLI-FIRST-001h`).
+- `issue` follows the combination from a second Codex consultation (session
+  `syn_sess_f381a4e0ed3ad1dd51d32cea`): see `FEEDBACK-061c/d`. The server
+  owns the review turn number (`FEEDBACK-061e`); reports remind reporters to
+  attach `doctor` health output (`FEEDBACK-061f`).
+- No paid code-signing certificate: `WINDOWS-001d` uses a free option.
+- `PROPOSALS-001`: recommendations accepted (a, b, d to i); c and j deferred.
 
 **Phase 1 - public CLI ([`CLI-FIRST-001a-e`](#cli-first-001-public-cli-and-mcp-adapter)).**
 Specify the syntax first (`001a`), then dispatch, help and version (`001b`),
-`models` (`001c`), session inspection (`001d`) and `doctor` (`001e`). Design
-inputs for `001a`:
+`models` (`001c`), session inspection (`001d`) and `doctor` (`001e`).
+`coagent8 --help` and `coagent8 models` already exist in `src/index.ts`;
+`001a` keeps or replaces them explicitly. Design inputs for `001a`:
 
 - The command stays `coagent8` from the existing `bin` entry
   (`dist/index.cjs`), which already serves `setup`, `status`, `repair`,
-  `skills` and `cleanup`; no second entry file. With no arguments it keeps
-  starting the MCP server over stdio.
+  `skills` and `cleanup`; no second entry file.
+- Bare `coagent8` (option D): when stdin and stdout are both terminals it
+  prints help (later it may open an optional TUI); otherwise it starts the
+  MCP server over stdio as today, so existing registrations keep working.
+  `coagent8 mcp` always starts the server and new registrations use it. A
+  future `coagent8 tui` uses the shared engine in-process, not an MCP server.
 - Information commands (`--help`, `--version`, `models`, `doctor`, `session`)
   never start the MCP server, a backend turn or eager setup loading.
 - Human-readable output by default and `--json` for scripts and agents, both
@@ -112,10 +129,10 @@ inputs for `001a`:
   or refused operation, 2 environment or configuration error. Cancellation
   and timeouts get their own codes if `001a` needs them.
 - PATH: `npm install -g coagent8` provides the shim; inside a project,
-  `npx coagent8 <command>` works without PATH changes. CoAgent8 never edits
-  PATH silently; VSIX-only users keep the VS Code commands
-  (`FEEDBACK-060i`), and any offered PATH change belongs to `CLI-FIRST-001h`
-  with read-only diagnosis first and owned rollback.
+  `npx coagent8 <command>` works without PATH changes. The VS Code extension
+  asks VSIX-only users whether to add `coagent8` to their PATH and removes it
+  on uninstall; CoAgent8 never edits PATH without that answer
+  (`CLI-FIRST-001h`).
 
 **Phase 2 - stability, feedback and containment.**
 [`FEEDBACK-061a-i`](#feedback-061-findings-of-the-061-native-acceptance)
@@ -126,8 +143,10 @@ limit), `AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`WINDOWS-001b-e`](#windows-001-per-call-process-containment) per-call process
 containment, which must land before any write or command profile.
 
-**Phase 3 - accepted proposals and package hygiene.** The
-`PROPOSALS-001` items accepted in Phase 0, `DOCS-002c/e`, and
+**Phase 3 - accepted proposals, documentation and package hygiene.** The
+`PROPOSALS-001` items accepted in Phase 0,
+[`DOCS-003`](#docs-003-documentation-site) (the GitHub Pages site and the
+human-facing documentation), `DOCS-002c/e`, and
 [`SUPPLY-001c-e`](#supply-001-socket-package-scores).
 
 **Phase 4 - host-led coagent profiles.** Contract cards first
@@ -411,7 +430,7 @@ libuv places non-detached server children into one server-wide `KILL_ON_JOB_CLOS
 
 - [ ] **WINDOWS-001b - launcher contract.** Check: P. Specify a hidden launcher helper (**new**, `coagent8-job.exe`) that creates a per-call Job Object with `KILL_ON_JOB_CLOSE` (and optional memory/process limits), starts the CLI with `CREATE_SUSPENDED`, assigns and resumes it, inherits standard streams directly for protocol interrupts, and closes the job when stopped via its owned handle or when the server exits. `process.ts` remains the single owner with zero PID-based selection. Define `CREATE_BREAKAWAY_FROM_JOB` policy (tested with npm, Git and a browser), JSON launch specification over an extra descriptor, post-root-exit descendant handling (default: stopped; exceptions only by explicit task policy), missing-helper behavior (write/command profiles fail closed; read-only retains current behavior) and a platform-neutral interface reusable for `CUR-011`.
 - [ ] **WINDOWS-001c - implement the helper.** After `001b`. Implement the static Rust (`windows-sys`) helper binary and measure first-launch overhead. Acceptance: fixture trees, breakaway requests, root exit and helper teardown match the contract. Check: R, PROCESS/LIFE plus helper tests.
-- [ ] **WINDOWS-001d - package and verify the helper.** After `001c`. Build reproducible Authenticode-signed `x64` and `arm64` binaries in CI, ship them in the npm tarball and VSIX, and verify SHA-256 digests before launch. Acceptance: package inspection and consumer smoke verify the helper and refuse tampered binaries.
+- [ ] **WINDOWS-001d - package and verify the helper.** After `001c`. Build reproducible `x64` and `arm64` binaries in CI, ship them in the npm tarball and VSIX, and verify SHA-256 digests before launch. Owner decision 2026-10-13: no paid code-signing certificate. Apply to SignPath Foundation's free signing for open-source projects first; if it is not available, ship unsigned binaries verified by SHA-256 and measure whether SmartScreen or Defender react (files extracted by npm or VS Code normally carry no Mark-of-the-Web). An intermediate signed `node.exe` cannot replace the helper: libuv's job allows silent breakaway, so grandchildren escape (`WINDOWS-001a`). Acceptance: package inspection and consumer smoke verify the helper and refuse tampered binaries.
 - [ ] **WINDOWS-001e - native acceptance.** After `001d`. Verify per backend on Windows that cancel/expiry leaves no surviving descendants, preserves quiet desktop operation and keeps the cold agy updater disabled.
 
 ## AUDIT-001: corrected analysis follow-up
@@ -650,8 +669,16 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   `src/mcp/schema.ts`, neutral execution contracts and COAGENT-001. Define
   commands, backend/model aliases, bounded stdin/JSON/JSONL, help/version,
   error/exit mapping and consent transport. Done: invocation examples cover
-  success, invalid input and cancel while preserving no-argument stdio/setup/
-  cleanup. Check: P; final syntax requires review before code cards.
+  success, invalid input and cancel while preserving setup/cleanup. Owner
+  decision 2026-10-13 (option D): bare `coagent8` prints help when stdin and
+  stdout are both terminals and otherwise starts MCP stdio; `coagent8 mcp`
+  always starts MCP and new registrations (setup, the VS Code extension,
+  shipped `mcp.json`, `npx -y coagent8@x mcp`) use it. Migration: runtime-path
+  extraction in `setup-storage.ts`/`setup.ts` assumes the runtime is the last
+  argument and must accept both shapes; owned entries migrate on setup/repair
+  and extension update, manual entries get guidance; pinned runtime copies stay
+  unchanged. Define the policy for unknown arguments, which fall through to
+  MCP today. Check: P; final syntax requires review before code cards.
 - [ ] **CLI-FIRST-001b - add dispatch/help/version.** After 001a, change the
   existing root dispatch and lazy setup boundary. Done: explicit MCP startup
   and accepted help/version routes work without eager provider/setup loading;
@@ -691,7 +718,10 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   rollback scenarios. Start from `src/execution/cli-resolver.ts` and its tests.
   Done: native shims/links/permissions and Bash/Zsh startup are observed; shared
   PATH entries are preserved and no machine-wide/execution-policy edit is
-  silently made. Fixtures cannot approve a native platform cell.
+  silently made. Fixtures cannot approve a native platform cell. Owner
+  decision 2026-10-13: the VS Code extension asks the user whether to add
+  `coagent8` to the user PATH (a shim to its runtime copy), never adds it
+  without that answer, and removes it on uninstall.
 - [ ] **CLI-FIRST-001i - measure and accept the CLI topology.** Compare cold/warm
   process count, memory and latency with identical tasks. Use T12's package,
   native six-job and independent evidence format. Done: sibling versions match,
@@ -775,19 +805,20 @@ check that runs the real publish commands without publishing.
   a packed tarball in the same layout with `npm publish --dry-run`. Check: R,
   CI on the PR.
 - [ ] **RELEASE-001b - npm trusted publisher.** The trusted publisher allows
-  only `npm stage publish` and its validation expired unused. Choose with the
-  owner: staged publishing (the workflow runs `npm stage publish`, the owner
-  approves on npmjs.com with 2FA; the GitHub `npm` environment approval can
-  then go) or direct `npm publish` and `npm dist-tag` permissions. Confirm the
-  `npm stage publish` syntax and dist-tag handling from npm documentation,
-  then recreate the trusted publisher. Check: first publication through the
+  only `npm stage publish` and its validation expired unused. Owner decision
+  2026-10-13: staged publishing; the workflow runs `npm stage publish`, the
+  owner approves the version on npmjs.com with 2FA, and the GitHub `npm`
+  environment approval goes. Confirm the `npm stage publish` syntax and
+  dist-tag handling from npm documentation, then recreate the trusted
+  publisher. Check: first publication through the
   workflow with provenance.
 - [ ] **RELEASE-001c - normal releases.** Owner decision 2026-10-13: GitHub
   releases below `1.0.0` are not marked pre-release, because the flag hides the
   release from the repository page. `release.yml` creates a normal draft,
   `npm-publish.yml` drops the pre-release check and publishes to `latest` (and
-  moves `next` with it), so the manual `dist-tag add` step goes. Decide the
-  Marketplace channel separately (`--pre-release` or not). Update rule 02
+  moves `next` with it), so the manual `dist-tag add` step goes. The
+  Marketplace also uses the normal channel (no `--pre-release`, owner
+  decision 2026-10-13). Update rule 02
   sections 4 and 5, AGENTS.md and README install text. Check: R, P.
 - [ ] **RELEASE-001d - Marketplace workflow.** Add a job on `release:
   published` with an owner-approved environment that downloads the release
@@ -1036,23 +1067,37 @@ behavior or a test-procedure lesson.
   extension. Also check that the update offer never proposes a downgrade when a
   registration points to a newer runtime, and whether "Update CoAgent8 in all
   CLI chats" rewrites clients the menu did not list. Check: R, VS Code scope.
-- [ ] **FEEDBACK-061c - issue links in the agy chat.** The agy chat renderer
-  decodes `%26` to `&` (cutting `body` after "Description ") and re-encodes
-  `%23` as `%2523`; the server URL and the copyable block are correct. Remove
-  `&` and `#` from the fixed report template ("Description and context",
-  headings without `#`) so the template survives; user text with `&` still
-  depends on the copyable URL. Check: R, native agy.
+- [ ] **FEEDBACK-061c - issue reports that reach GitHub.** The agy chat
+  renderer decodes `%26` to `&` (cutting `body` after "Description ") and
+  re-encodes `%23` as `%2523`; the server URL and the copyable block are
+  correct, and `src/diagnostics/issue.ts` has no final encoded-URL length
+  check. Owner decision 2026-10-13 (Codex consultation): `issueUrl` becomes a
+  short link to the existing form (`?template=bug_report.yml`); every client
+  gets that link clickable and in a code block plus the full sanitized report
+  in a separate copy block, with instructions to review it, paste it into the
+  form's CoAgent8 output field, complete the required fields and submit. Keep
+  dynamic data out of the URL, measure the encoded URL against a conservative
+  ceiling and switch to paste mode instead of discarding content. Opening the
+  browser happens only on explicit user action: a VS Code "Open bug report"
+  action (`vscode.env.openExternal`) or `coagent8 issue --open`, never from
+  the MCP server; `gh issue create --web` is optional. Check: R, native agy,
+  Claude Code, Codex and VS Code.
 - [ ] **FEEDBACK-061d - issue result in Claude Code.** Claude Code passed the
   model the `structuredContent` JSON (`title`, `body`, `issueUrl`) instead of
-  the text with the clickable link. Decide whether `issue` keeps
-  `structuredContent` or adds the link to it. Check: R, native Claude Code.
+  the text with the clickable link. Owner decision 2026-10-13: keep
+  `structuredContent` (Codex uses it) and add `prompt` (exactly the text in
+  `content[0].text`) and `pasteRequired`; update the output schema in
+  `src/mcp/tools/issue.tool.ts` and the issue skill to show `prompt` and the
+  copy block. Check: R, native Claude Code.
 - [ ] **FEEDBACK-061e - review envelope counter.** A turn-2 review returned
   `REVIEW: 1` with a `turn 2` footer; the counter is written by the model.
-  Decide whether the gate checks it against the turn or the envelope drops it.
-  Check: R.
+  Owner decision 2026-10-13: the server sets the turn number in the returned
+  envelope and ignores the model's value. Check: R.
 - [ ] **FEEDBACK-061f - doctor reminder in issue reports.** No report tells
   the reporter to attach full `doctor` health output (`include_doctor` adds
-  CLI versions only). Decide whether to add one line. Check: R.
+  CLI versions only), although the issue form requires it. Owner decision
+  2026-10-13: add one line, for example "For setup, sign-in or quota
+  problems, paste the output of doctor (scope: health)." Check: R.
 - [ ] **FEEDBACK-061g - large Codex reviews.** `review` on Codex fails with
   `BUFFER_LIMIT` for prompts above 512 KB: the app server echoes the prompt in
   one JSON-RPC line, `maxLineBytes` is 512 KB and the diff snapshot allows
@@ -1064,16 +1109,19 @@ behavior or a test-procedure lesson.
   working tree after a client closes, because Antigravity re-applied a
   temporary edit after its report claimed a verified restore. Record this in
   [Native VS Code acceptance](#native-vs-code-acceptance). Check: P.
-- [ ] **FEEDBACK-061i - release review P3 findings.** Confirm that
-  `createRetryIdMapper` in `src/backends/agy/adapter.ts` skips `final` on
-  purpose and document it, or fix it. Check: R.
+- [ ] **FEEDBACK-061i - release review P3 findings.** In
+  `src/backends/agy/adapter.ts`: confirm that `createRetryIdMapper` skips
+  `final` on purpose (a recovery turn's `final` message may reuse the empty
+  first turn's identifier in history) and document or fix it; add a fixture
+  case for a resumed turn without a conversation id, which now keeps the
+  requested id instead of failing as `SESSION_INVALID`. Check: R.
 
 ## PROPOSALS-001: proposals awaiting an owner decision
 
 Proposals made in earlier sessions that were never recorded. Each needs an
-owner decision before it becomes a card with acceptance criteria. Phase 0 of
-the [0.7.0 plan](#070-beta3-plan) decides them; recommendations for that
-decision:
+owner decision before it becomes a card with acceptance criteria. Owner
+decision 2026-10-13 (Phase 0 of the [0.7.0 plan](#070-beta3-plan)): the
+recommendations below are accepted; c and j are deferred.
 
 | Item | Recommendation |
 | --- | --- |
@@ -1117,11 +1165,50 @@ decision:
 - [ ] **PROPOSALS-001h - cancel description.** Say in the `cancel` tool
   description that it asks the backend to stop and then terminates its process
   if it does not exit, without renaming the tool.
-- [ ] **PROPOSALS-001i - documentation site cleanup.** Fix the navigation,
-  empty module pages and the choice of published documents for `0.7.0`.
+- [ ] **PROPOSALS-001i - documentation site cleanup.** Accepted; planned as
+  [`DOCS-003`](#docs-003-documentation-site).
 - [ ] **PROPOSALS-001j - MIT for older copies.** Optionally also permit use
   of `0.6.0` and `1.0.0-beta.1` under MIT, keeping their GPL-3.0-only
   permissions, after extending the rights check to those packages.
+
+## DOCS-003: documentation site
+
+The GitHub Pages site (https://oktawianwybieralski.github.io/coagent8/) is
+generated by TypeDoc and works technically, but reads as a dump of internal
+modules. Findings of 2026-10-12, measured on a local build:
+`entryPointStrategy: "expand"` over all of `src/` produces 110 modules and 683
+pages with a flat sidebar (`brand`, `paths`, `generated/server-icon`, `index`,
+`default` references) and no `@category`/`@group`; 23 of 110 files have no
+module comment, including `mcp/server.ts`, every `*.tool.ts`, the backend
+adapters, `config.ts` and `index.ts`; the home page is the README with a link
+to itself; HANDOFF and the Git workflow rule are published to readers; there
+is no version, no GitHub/npm/Marketplace links and no favicon. The `0.6.1`
+deployment fixed the mermaid diagrams and the site name. Accepted as
+`PROPOSALS-001i`, Phase 3 of the [0.7.0 plan](#070-beta3-plan).
+
+- [ ] **DOCS-003a - decide what the site is for.** The site serves users
+  first: Quick start, Tools, Configuration, Architecture, then a smaller code
+  reference. Record the page list and which documents are published (proposal:
+  HANDOFF and the rules stay in the repository only; decide whether ROADMAP
+  and CHANGELOG stay on the site). Check: P.
+- [ ] **DOCS-003b - configuration.** In
+  `tooling/documentation/typedoc.json`: `includeVersion`, `navigationLinks`
+  (GitHub, npm, Marketplace), `favicon`, `hideGenerator`,
+  `excludeReferences`; remove HANDOFF and the Git workflow rule from
+  `projectDocuments`; exclude `generated/` and the entry file from the API
+  reference. Check: `npm run docs` with warnings as errors, local preview.
+- [ ] **DOCS-003c - code reference structure.** Group the reference with
+  `@category` by the ARCHITECTURE layers (MCP, Execution, Backends, Sessions,
+  Integrations and so on) and add the missing module comments, starting with
+  the files listed above. Check: `npm run lint:docs`, `npm run docs`.
+- [ ] **DOCS-003d - human documentation pages.** Write the Quick start, Tools
+  and Configuration pages from the README and ARCHITECTURE without duplicating
+  them (one owner per topic), and give the home page its own introduction.
+  Check: P, link check.
+- [ ] **DOCS-003e - publish and verify.** The site deploys from the `0.7.0`
+  release (`docs.yml`); check the live pages, navigation, diagrams and links.
+  A theme or a different generator is considered only after a-d. Check:
+  native browser review of the published site.
 
 ## SUPPLY-001: Socket package scores
 
