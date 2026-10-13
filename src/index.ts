@@ -30,6 +30,28 @@ export interface CliDependencies {
   loadSetupCli?: () => Promise<{ runSetupCli(args: string[]): Promise<boolean> }>;
 }
 
+/** Matches flag names commonly used for passing credentials or sensitive values. */
+const SENSITIVE_FLAG = /^--?(password|passwd|token|api[-_]?key|secret|auth|access[-_]?key)$/i;
+
+/**
+ * Redacts diagnostic tokens and sensitive flag/value pairs from CLI arguments.
+ *
+ * @param args - Raw CLI arguments.
+ * @returns Array of sanitized strings.
+ */
+function redactCliArguments(args: string[]): string[] {
+  const redacted: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    redacted.push(redactDiagnostic(arg));
+    if (SENSITIVE_FLAG.test(arg) && i + 1 < args.length && !args[i + 1]!.startsWith('-')) {
+      redacted.push('***[REDACTED]***');
+      i++;
+    }
+  }
+  return redacted;
+}
+
 /**
  * Formats the root CLI help text.
  * @returns Human-readable usage text.
@@ -47,9 +69,6 @@ export function formatRootHelp(): string {
     '  mcp                              Start the standard MCP JSON-RPC server over stdio',
     '  models [--backend <name>] [--json]',
     '                                   List models, output prices and governance approvals',
-    '  doctor [--scope <scope>] [--backend <name>] [--json]',
-    '                                   Run diagnostics (models or health)',
-    '  session list|history [...]       Inspect workspace session history',
     '  setup [--clients=...]            Register CoAgent8 with native CLI hosts',
     '  repair [--clients=...]           Restore missing or corrupted host registrations',
     '  status [--clients=...]           Check CLI readiness across supported hosts',
@@ -164,7 +183,7 @@ export async function runCli(
 
   // Non-TTY fallback: warn to stderr and start legacy MCP stdio server
   streams.stderr.write(
-    `Warning: unrecognized arguments [${args.map(a => redactDiagnostic(a)).join(', ')}] ignored; starting legacy MCP stdio server.\n`
+    `Warning: unrecognized arguments [${redactCliArguments(args).join(', ')}] ignored; starting legacy MCP stdio server.\n`
   );
   const serve = deps.serveStdio ?? serveStdio;
   await serve();

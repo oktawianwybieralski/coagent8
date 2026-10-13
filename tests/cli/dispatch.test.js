@@ -240,22 +240,53 @@ test('CLI-FIRST-001b1: subprocess execution verifies clean exits and streams', (
   assert.match(mcpInvalidRes.stderr, /Unknown argument '--unknown-flag'/);
 });
 
+test('CLI-FIRST-001b1: sensitive flag-value pairs are redacted in fallback warning', async () => {
+  const harness = createHarness({ stdinTTY: false, stdoutTTY: false });
+  const code = await runCli(['--password', 'super-secret-val', '--token', 'secret-tok-123'], harness.streams, harness.deps);
+  assert.equal(code, 0);
+  assert.equal(harness.servedStdio, true);
+  assert.ok(!harness.stderr.output.includes('super-secret-val'));
+  assert.ok(!harness.stderr.output.includes('secret-tok-123'));
+  assert.match(harness.stderr.output, /Warning: unrecognized arguments \[--password, \*\*\*\[REDACTED\]\*\*\*, --token, \*\*\*\[REDACTED\]\*\*\*\] ignored/);
+});
+
 test('CLI-FIRST-001b1: none of --help, --version, bare TTY, or mcp loads setup.cjs eagerly', async () => {
   const root = path.resolve(__dirname, '../..');
-  const indexPath = path.join(root, 'src/index.ts');
 
   // Verify in separate node executions that setup.cjs is never in module cache
   const script = `
-    const { runCli } = require('./src/index.ts');
+    const { runCli, formatRootHelp } = require('./src/index.ts');
+    const { BRAND } = require('./src/brand.ts');
     (async () => {
-      const mode = process.argv[2];
+      const mode = process.argv[1];
       const stdinTTY = mode === 'bare-tty' || mode === 'help' || mode === 'version';
       const stdoutTTY = stdinTTY;
       const args = mode === 'help' ? ['--help'] : mode === 'version' ? ['--version'] : mode === 'mcp' ? ['mcp'] : [];
       let serveCalled = false;
-      await runCli(args, { stdin: { isTTY: stdinTTY }, stdout: { isTTY: stdoutTTY, write() {} }, stderr: { write() {} } }, {
+      let stdout = '';
+      await runCli(args, { stdin: { isTTY: stdinTTY }, stdout: { isTTY: stdoutTTY, write(c) { stdout += c; } }, stderr: { write() {} } }, {
         serveStdio: async () => { serveCalled = true; }
       });
+      if (mode === 'bare-tty' && (serveCalled || !stdout.includes('CoAgent8'))) {
+        process.stderr.write('bare-tty failed: serveCalled=' + serveCalled + ' stdout=' + stdout);
+        process.exit(2);
+      }
+      if (mode === 'bare-nontty' && !serveCalled) {
+        process.stderr.write('bare-nontty failed: serveCalled must be true');
+        process.exit(2);
+      }
+      if (mode === 'mcp' && !serveCalled) {
+        process.stderr.write('mcp failed: serveCalled must be true');
+        process.exit(2);
+      }
+      if (mode === 'help' && (serveCalled || stdout !== formatRootHelp())) {
+        process.stderr.write('help failed');
+        process.exit(2);
+      }
+      if (mode === 'version' && (serveCalled || stdout.trim() !== BRAND.SERVER_VERSION)) {
+        process.stderr.write('version failed');
+        process.exit(2);
+      }
       const loaded = Object.keys(require.cache).filter(k => k.includes('setup.cjs'));
       if (loaded.length > 0) {
         process.stderr.write('setup.cjs was eagerly loaded: ' + loaded.join(', '));
