@@ -6,8 +6,8 @@
  * @packageDocumentation
  */
 import { PROVIDERS, type ProviderId } from '../contracts/index.js';
-import { redactDiagnostic } from '../security/redaction.js';
-import { formatModelSummary, runModelReport } from './doctor.js';
+import { redactDiagnostic, redactDiagnosticData } from '../security/redaction.js';
+import { DOCTOR_SUMMARY_MAX_BYTES, formatModelSummary, runModelReport } from './doctor.js';
 
 const USAGE = 'Usage: coagent8 models [--backend codex|claude|agy] [--json]';
 
@@ -79,7 +79,9 @@ export async function runModelsCli(
       ...(backend ? { backend } : {}),
       signal: effectiveSignal,
     });
-    out.write(`${json ? JSON.stringify(report) : formatModelSummary({ ...report })}\n`);
+    out.write(
+      `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatModelSummary({ ...report }), DOCTOR_SUMMARY_MAX_BYTES)}\n`
+    );
     return 0;
   } catch (error: unknown) {
     const isAbort =

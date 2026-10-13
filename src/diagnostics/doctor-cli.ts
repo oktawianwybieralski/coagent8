@@ -7,8 +7,8 @@
  * @packageDocumentation
  */
 import { PROVIDERS, type ProviderId } from '../contracts/index.js';
-import { redactDiagnostic } from '../security/redaction.js';
-import { formatDoctorSummary, formatModelSummary, runDoctor, runModelReport } from './doctor.js';
+import { redactDiagnostic, redactDiagnosticData } from '../security/redaction.js';
+import { DOCTOR_SUMMARY_MAX_BYTES, formatDoctorSummary, formatModelSummary, runDoctor, runModelReport } from './doctor.js';
 
 const USAGE = 'Usage: coagent8 doctor [--scope models|health] [--backend codex|claude|agy] [--json]';
 
@@ -99,13 +99,17 @@ export async function runDoctorCli(
         ...(backend ? { backend } : {}),
         signal: effectiveSignal,
       });
-      out.write(`${json ? JSON.stringify(report) : formatDoctorSummary(report)}\n`);
+      out.write(
+        `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatDoctorSummary(report), DOCTOR_SUMMARY_MAX_BYTES)}\n`
+      );
     } else {
       const { trace: _trace, ...report } = await runModelReport({
         ...(backend ? { backend } : {}),
         signal: effectiveSignal,
       });
-      out.write(`${json ? JSON.stringify(report) : formatModelSummary({ ...report })}\n`);
+      out.write(
+        `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatModelSummary({ ...report }), DOCTOR_SUMMARY_MAX_BYTES)}\n`
+      );
     }
     return 0;
   } catch (error: unknown) {

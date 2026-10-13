@@ -103,3 +103,19 @@ test('coagent8 doctor creates no execution sessions', async () => {
   const filesAfter = fs.existsSync(sessionsDir) ? fs.readdirSync(sessionsDir) : [];
   assert.deepEqual(filesAfter, filesBefore, 'no session file created during doctor');
 });
+
+test('coagent8 doctor redacts home directory paths in text and JSON output', async () => {
+  const original = os.homedir;
+  const home = process.platform === 'win32' ? 'C:\\Users\\DoctorSyntheticUser' : '/home/DoctorSyntheticUser';
+  os.homedir = () => home;
+  try {
+    const textSink = sink(), jsonSink = sink();
+    assert.equal(await runDoctorCli(['--scope=health'], textSink.stream), 0);
+    assert.ok(!textSink.text().includes('DoctorSyntheticUser'));
+
+    assert.equal(await runDoctorCli(['--scope=health', '--json'], jsonSink.stream), 0);
+    assert.ok(!jsonSink.text().includes('DoctorSyntheticUser'));
+  } finally {
+    os.homedir = original;
+  }
+});
