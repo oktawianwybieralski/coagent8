@@ -172,16 +172,117 @@ export const CODEX_TOOL_TIMEOUT_SEC = 1800;
 export const EXTENSION_STORAGE_NAME = 'okidev.coagent8-mcp';
 const SETUP_ENTRY_ENV = ['coagent8_CONFIG', 'coagent8_DIR'];
 
+/** Whether a data directory is the VS Code extension's global storage, in any profile or VS Code variant. */
+function extensionStorage(directory: string | undefined): boolean {
+  return directory !== undefined && path.basename(directory).toLowerCase() === EXTENSION_STORAGE_NAME
+    && path.basename(path.dirname(directory)).toLowerCase() === 'globalstorage';
+}
+
+/** Whether a command resolves to Node (`process.execPath` or a candidate `nodePath`). */
+function isNodeCommand(command: string, nodePath?: string): boolean {
+  if (typeof command !== 'string' || !command) return false;
+  const base = path.basename(command).toLowerCase();
+  const name = base.endsWith('.exe') ? base.slice(0, -4) : base;
+  if (name === 'node') return true;
+  const same = (a: string, b: string) => {
+    try {
+      const realA = fs.realpathSync.native(a);
+      const realB = fs.realpathSync.native(b);
+      return process.platform === 'win32' ? realA.toLowerCase() === realB.toLowerCase() : realA === realB;
+    } catch {
+      return process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+    }
+  };
+  if (same(command, process.execPath)) return true;
+  if (nodePath && same(command, nodePath)) return true;
+  return false;
+}
+
+/**
+ * Extracts and strictly validates the runtime path from a CoAgent8 stdio registration entry.
+ * @param entry - The candidate registration entry or object containing `args`.
+ * @param root - The base runtime root (e.g. `~/.coagent8`), or omitted to resolve from environment/globalStorage.
+ * @param argsPrefix - Optional permitted launcher argument prefix from resolved Node CLI.
+ * @returns The validated absolute runtime path, or null if the layout, containment, or path shape is invalid.
+ * @remarks
+ * Recognizes modern `[...node.argsPrefix, runtimePath, 'mcp']` and legacy
+ * `[...node.argsPrefix, runtimePath]` argument layouts. The candidate path must resolve
+ * inside the owned runtime root or extension global storage with a 64-character hex subdirectory
+ * and `index.cjs` basename. Foreign tokens or extra flags yield null.
+ */
+export function extractRuntimePath(entry: unknown, root?: string, argsPrefix: string[] = []): string | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const args = (entry as { args?: unknown }).args;
+  if (!Array.isArray(args) || !args.every(arg => typeof arg === 'string') || args.length === 0) return null;
+
+  let candidate: string | undefined;
+  const last = args.at(-1);
+  if (last === 'mcp') {
+    if (args.length !== argsPrefix.length + 2) return null;
+    candidate = args.at(-2);
+  } else if (typeof last === 'string' && path.isAbsolute(last) && last.endsWith('index.cjs')) {
+    if (args.length !== argsPrefix.length + 1) return null;
+    candidate = last;
+  } else {
+    return null;
+  }
+
+  if (!candidate || typeof candidate !== 'string' || !path.isAbsolute(candidate)) return null;
+
+  for (let i = 0; i < argsPrefix.length; i++) {
+    if (args[i] !== argsPrefix[i]) return null;
+  }
+
+  const normalizedCandidate = path.resolve(candidate);
+  if (path.basename(normalizedCandidate) !== 'index.cjs') return null;
+
+  const shaDir = path.dirname(normalizedCandidate);
+  const sha = path.basename(shaDir);
+  if (!/^[a-f0-9]{64}$/.test(sha)) return null;
+
+  const runtimeDir = path.dirname(shaDir);
+  if (path.basename(runtimeDir) !== 'runtime') return null;
+
+  const storageRoot = path.dirname(runtimeDir);
+
+  const envDir = (entry as { env?: Record<string, string> }).env?.coagent8_DIR;
+  const isMatch = (target: string) => {
+    const normTarget = path.resolve(target);
+    return process.platform === 'win32'
+      ? storageRoot.toLowerCase() === normTarget.toLowerCase()
+      : storageRoot === normTarget;
+  };
+
+  const isExtension = extensionStorage(storageRoot);
+
+  if (root && isMatch(root)) {
+    // Matches provided root
+  } else if (envDir && isMatch(envDir)) {
+    // Matches entry.env.coagent8_DIR
+  } else if (isExtension) {
+    // Matches extension globalStorage
+  } else if (!root && !envDir && path.basename(storageRoot).toLowerCase() === '.coagent8') {
+    // Default fallback when neither root nor envDir is provided
+  } else {
+    return null;
+  }
+
+  return normalizedCandidate;
+}
+
 /**
  * Recognizes an entry setup wrote by its shape, for when its ownership record is missing,
  * as after `~/.coagent8/setup.json` was deleted: it starts a runtime copy setup keeps in
  * `<root>/runtime/<sha256>/index.cjs` and holds only the fields setup writes. Nothing else
- * writes there; an entry with any other field or variable stays the user's.
+ * writes there; an entry with any other field, command, foreign token or variable stays the user's.
+ * @param client - The setup client whose registration is inspected.
+ * @param entry - The candidate configuration entry.
  * @param root - The `~/.coagent8` directory.
+ * @param nodePath - Optional Node executable path to recognize alongside process.execPath.
  * @returns Null for any other entry; otherwise the VS Code extension as its origin when its
  * data directory is the extension's global storage, which VS Code deletes on uninstall.
  */
-export function setupShapedEntry(client: SetupClient, entry: unknown, root: string): { origin?: RegistrationOrigin } | null {
+export function setupShapedEntry(client: SetupClient, entry: unknown, root: string, nodePath?: string): { origin?: RegistrationOrigin } | null {
   let parsed: Registration;
   try { parsed = registration(entry); }
   catch { return null; }
@@ -189,23 +290,24 @@ export function setupShapedEntry(client: SetupClient, entry: unknown, root: stri
   const fields = object(entry);
   if (!Object.keys(fields).every(key => ['command', 'args', 'env'].includes(key) || (Object.hasOwn(extra, key) && fields[key] === extra[key]))) return null;
   if (!Object.keys(parsed.env ?? {}).every(key => SETUP_ENTRY_ENV.includes(key))) return null;
-  const runtime = parsed.args.at(-1);
-  if (runtime === undefined || !path.isAbsolute(runtime)) return null;
-  const relative = path.relative(path.join(root, 'runtime'), runtime).split(path.sep);
-  if (relative.length !== 2 || !/^[a-f0-9]{64}$/.test(relative[0]!) || relative[1] !== 'index.cjs') return null;
+  if (!isNodeCommand(parsed.command, nodePath)) return null;
+  const runtime = extractRuntimePath(parsed, root);
+  if (runtime === null) return null;
   return extensionStorage(parsed.env?.coagent8_DIR) ? { origin: EXTENSION_ORIGIN } : {};
 }
-/** Whether a data directory is the VS Code extension's global storage, in any profile or VS Code variant. */
-function extensionStorage(directory: string | undefined): boolean {
-  return directory !== undefined && path.basename(directory).toLowerCase() === EXTENSION_STORAGE_NAME
-    && path.basename(path.dirname(directory)).toLowerCase() === 'globalstorage';
-}
+
 /**
  * Whether setup owns a client's CoAgent8 entry and on whose behalf it wrote it: the recorded
  * fingerprint, else the shape only setup writes ({@link setupShapedEntry}).
+ * @param client - The setup client whose registration is inspected.
+ * @param entry - The candidate configuration entry.
+ * @param saved - Active selection and ownership fingerprints.
+ * @param root - The `~/.coagent8` directory.
+ * @param nodePath - Optional Node executable path to recognize alongside process.execPath.
+ * @returns Ownership state and optional registration origin.
  */
-export function entryOwnership(client: SetupClient, entry: unknown, saved: Selection, root: string): { owned: boolean; origin?: RegistrationOrigin } {
+export function entryOwnership(client: SetupClient, entry: unknown, saved: Selection, root: string, nodePath?: string): { owned: boolean; origin?: RegistrationOrigin } {
   if (saved.owned[client] === hash(JSON.stringify(entry))) return { owned: true, origin: saved.origin[client] };
-  const shaped = setupShapedEntry(client, entry, root);
+  const shaped = setupShapedEntry(client, entry, root, nodePath);
   return shaped ? { owned: true, ...shaped } : { owned: false };
 }
