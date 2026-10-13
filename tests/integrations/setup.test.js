@@ -96,7 +96,7 @@ test('a new runtime replaces owned Claude and agy entries, keeping the previous 
   const options = { ...profile(t), clients: ['claude', 'agy'] };
   assert.ok((await setupClients(options)).every(result => result.action === 'installed'));
   const files = ['.claude.json', '.gemini/config/mcp_config.json'].map(file => path.join(options.home, file));
-  const runtimeOf = file => parse(fs.readFileSync(file, 'utf8')).mcpServers.coagent8.args.at(-1);
+  const runtimeOf = file => extractRuntimePath(parse(fs.readFileSync(file, 'utf8')).mcpServers.coagent8, path.join(options.home, '.coagent8'));
   const previous = files.map(runtimeOf);
   const updatedSource = path.join(options.home, 'updated.cjs');
   fs.writeFileSync(updatedSource, fs.readFileSync(source, 'utf8') + '\n// synthetic update\n');
@@ -318,7 +318,8 @@ test('setup replaces an entry it wrote whose ownership record and runtime copy a
   assert.equal(result.action, 'updated', JSON.stringify(result));
   assert.equal(result.runtimeCallable, true, 'the replacement starts and lists its tools');
   const entry = parse(fs.readFileSync(file, 'utf8')).mcpServers.coagent8;
-  assert.ok(fs.existsSync(entry.args.at(-1)));
+  assert.equal(entry.args.at(-1), 'mcp');
+  assert.ok(fs.existsSync(extractRuntimePath(entry, path.join(options.home, '.coagent8'))));
   assert.deepEqual(readRegistrations(options)[1].state, 'owned');
   assert.equal(readRegistrations(options)[1].current, true);
 });
@@ -539,7 +540,7 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   const bundleSha = hashEntry(bundle);
   const liveRuntime = path.join(options.home, '.coagent8', 'runtime', bundleSha, 'index.cjs');
   write(liveRuntime, bundle);
-  const liveEntry = { command: process.execPath, args: [liveRuntime] };
+  const liveEntry = { command: process.execPath, args: [liveRuntime, 'mcp'] };
   write(file, JSON.stringify({ mcpServers: { coagent8: liveEntry } }));
   const stateFile = path.join(options.home, '.coagent8', 'setup.json');
   write(stateFile, JSON.stringify({ clients: ['claude'], owned: { claude: hashEntry(JSON.stringify(liveEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
@@ -581,4 +582,122 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   assert.equal(updatedCodexResult.action, 'updated');
   assert.equal(updatedCodexResult.runtimeCallable, true);
   assert.equal(updatedCodexResult.hostCallable, true);
+});
+
+test('setup writes modern mcp registrations and migrates legacy owned entries with rollback and manual preservation', async t => {
+  const options = profile(t);
+  const codex = path.join(options.home, '.codex/config.toml');
+  const claude = path.join(options.home, '.claude.json');
+  const agy = path.join(options.home, '.gemini/config/mcp_config.json');
+
+  // 1. New installations write modern 'mcp' registrations across hosts
+  const installed = await setupClients(options);
+  assert.ok(installed.every(result => result.action === 'installed'));
+  assert.ok(installed.every(result => result.runtimeCallable));
+
+  const codexEntry = toml(fs.readFileSync(codex, 'utf8')).mcp_servers.coagent8;
+  const claudeEntry = parse(fs.readFileSync(claude, 'utf8')).mcpServers.coagent8;
+  const agyEntry = parse(fs.readFileSync(agy, 'utf8')).mcpServers.coagent8;
+
+  for (const entry of [codexEntry, claudeEntry, agyEntry]) {
+    assert.equal(entry.args.at(-1), 'mcp', 'new registrations must end with explicit mcp subcommand');
+    assert.ok(entry.args.length >= 2);
+    const rt = entry.args.at(-2);
+    assert.ok(path.isAbsolute(rt) && rt.endsWith('index.cjs'));
+    assert.ok(fs.existsSync(rt));
+  }
+
+  // 2. Existing legacy owned registrations migrate to modern 'mcp' registrations
+  // Revert claude and agy to legacy owned entries (args without 'mcp')
+  const bundle = fs.readFileSync(source);
+  const { hash: hashEntry } = require('../../src/integrations/setup-storage.ts');
+  const bundleSha = hashEntry(bundle);
+  const legacyRuntime = path.join(options.home, '.coagent8', 'runtime', bundleSha, 'index.cjs');
+  const legacyEntry = { command: process.execPath, args: [legacyRuntime] };
+
+  // Write legacy entry to claude with fingerprint in setup.json
+  write(claude, JSON.stringify({ mcpServers: { coagent8: legacyEntry } }));
+  const stateFile = path.join(options.home, '.coagent8', 'setup.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  state.owned.claude = hashEntry(JSON.stringify(legacyEntry));
+  // For agy, remove its fingerprint from setup.json so it tests shape-based ownership fallback
+  write(agy, JSON.stringify({ mcpServers: { coagent8: legacyEntry } }));
+  delete state.owned.agy;
+  write(stateFile, JSON.stringify(state));
+
+  // Run repair / setup
+  const migrated = await setupClients(options);
+  const claudeResult = migrated.find(r => r.client === 'claude');
+  const agyResult = migrated.find(r => r.client === 'agy');
+  const codexResult = migrated.find(r => r.client === 'codex');
+
+  assert.equal(claudeResult.action, 'updated', 'fingerprint-owned legacy entry migrates to modern mcp');
+  assert.equal(agyResult.action, 'updated', 'shape-owned legacy entry migrates to modern mcp');
+  assert.equal(codexResult.action, 'preserved', 'already-modern entry is preserved');
+
+  const migratedClaude = parse(fs.readFileSync(claude, 'utf8')).mcpServers.coagent8;
+  const migratedAgy = parse(fs.readFileSync(agy, 'utf8')).mcpServers.coagent8;
+  assert.equal(migratedClaude.args.at(-1), 'mcp');
+  assert.equal(migratedAgy.args.at(-1), 'mcp');
+
+  // Verify setup.json recorded fingerprints for the modern registrations
+  const updatedState = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  assert.equal(updatedState.owned.claude, hashEntry(JSON.stringify(migratedClaude)));
+  assert.equal(updatedState.owned.agy, hashEntry(JSON.stringify(migratedAgy)));
+
+  // 3. Repair reconciles broken/missing entries to modern mcp shape
+  // Delete claude entry (missing)
+  write(claude, JSON.stringify({ mcpServers: {} }));
+  // Set agy to broken entry (pointing to missing runtime)
+  const missingRuntime = path.join(options.home, '.coagent8', 'runtime', 'f'.repeat(64), 'index.cjs');
+  write(agy, JSON.stringify({ mcpServers: { coagent8: { command: process.execPath, args: [missingRuntime, 'mcp'] } } }));
+  const repaired = await setupClients(options);
+  assert.equal(repaired.find(r => r.client === 'claude').action, 'installed');
+  assert.equal(repaired.find(r => r.client === 'agy').action, 'updated');
+  assert.equal(parse(fs.readFileSync(claude, 'utf8')).mcpServers.coagent8.args.at(-1), 'mcp');
+  assert.equal(parse(fs.readFileSync(agy, 'utf8')).mcpServers.coagent8.args.at(-1), 'mcp');
+
+  // 4. Migration failure rolls back cleanly to exact previous legacy entry
+  const codexLegacy = `[mcp_servers.coagent8]\ntool_timeout_sec = 1800\ncommand = "${process.execPath.replace(/\\/g, '\\\\')}"\nargs = ["${legacyRuntime.replace(/\\/g, '\\\\')}"]\n`;
+  write(codex, codexLegacy);
+  const baseline = path.join(options.home, 'baseline-config');
+  write(baseline, codexLegacy);
+  const parsedCodexLegacy = toml(codexLegacy).mcp_servers.coagent8;
+  const stateBeforeFail = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  stateBeforeFail.owned.codex = hashEntry(JSON.stringify(parsedCodexLegacy));
+  write(stateFile, JSON.stringify(stateBeforeFail));
+
+  const failEnv = { ...options.env, SETUP_FIXTURE_FAIL_CANDIDATE: '1' };
+  const failingSource = path.join(options.home, 'failing-runtime.cjs');
+  fs.writeFileSync(failingSource, fs.readFileSync(source, 'utf8') + '\n// fail update\n');
+  const failedResult = await setupClients({ ...options, clients: ['codex'], runtimeSource: failingSource, env: failEnv });
+  assert.equal(failedResult[0].action, 'blocked');
+  assert.equal(fs.readFileSync(codex, 'utf8'), codexLegacy, 'failed migration rolls back to exact previous legacy entry');
+  if (fs.existsSync(baseline)) fs.rmSync(baseline);
+
+  // 5. Manual entries are preserved and never migrated or overwritten
+  const manualBare = { command: 'coagent8', args: [] };
+  const manualNpx = { command: 'npx', args: ['-y', 'coagent8@0.6.1', 'mcp'] };
+  const manualCallable = { command: process.execPath, args: [source], env: { coagent8_DIR: path.join(options.home, '.coagent8') } };
+  write(codex, `[mcp_servers.coagent8]\ncommand = "coagent8"\nargs = []\n`);
+  write(claude, JSON.stringify({ mcpServers: { coagent8: manualNpx } }));
+  write(agy, JSON.stringify({ mcpServers: { coagent8: manualCallable } }));
+
+  // readRegistrations identifies all of them as state: 'manual'
+  const statuses = readRegistrations(options);
+  assert.ok(statuses.every(s => s.state === 'manual'));
+  assert.ok(statuses.every(s => !s.current));
+  assert.ok(statuses.every(s => s.message.includes('Manual or independently edited entry; setup preserves it.')));
+
+  // setupClients preserves callable manual entries with action: 'preserved'
+  const agySetup = await setupClients({ ...options, clients: ['agy'] });
+  assert.equal(agySetup[0].action, 'preserved');
+  assert.equal(agySetup[0].runtimeCallable, true);
+  assert.ok(agySetup[0].message.includes('Manual or independently changed registration preserved'));
+
+  // And setupClients never migrates or overwrites manual entries
+  await setupClients(options);
+  assert.deepEqual({ ...toml(fs.readFileSync(codex, 'utf8')).mcp_servers.coagent8 }, manualBare);
+  assert.deepEqual(parse(fs.readFileSync(claude, 'utf8')).mcpServers.coagent8, manualNpx);
+  assert.deepEqual(parse(fs.readFileSync(agy, 'utf8')).mcpServers.coagent8, manualCallable);
 });

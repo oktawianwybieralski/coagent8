@@ -16,11 +16,8 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 - Integrations:
   - New feature:
-    - [`0c0226f`](https://github.com/oktawianwybieralski/coagent8/commit/0c0226f571948f5c25fb26340d71603e047e82b6): Recognize legacy and mcp registration shapes
-  - Bug fix:
-    - [`724cb43`](https://github.com/oktawianwybieralski/coagent8/commit/724cb433700d17dad7aa199b7dc613d18a8a3cf9): Derive launcher prefix from entry when fingerprint matches
-    - [`edc26d6`](https://github.com/oktawianwybieralski/coagent8/commit/edc26d6ab7a344b381894a910a2ed5fa64980106): Preserve and probe existing registrations across launcher prefixes
-    - [`5d2af22`](https://github.com/oktawianwybieralski/coagent8/commit/5d2af221d6042ddeeb502d11085594f02afeb23f): Harden setup-storage containment and honor launcher prefix
+    - [`3de1a5b`](https://github.com/oktawianwybieralski/coagent8/commit/3de1a5ba34ee3ccd7630ec9655c437fd3c402c20): Write and migrate explicit mcp registrations
+    - [#38](https://github.com/oktawianwybieralski/coagent8/pull/38): Recognize legacy and mcp registration shapes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 
 ## v0.6.1 - (2026-10-13)
 

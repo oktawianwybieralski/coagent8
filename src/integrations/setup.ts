@@ -367,7 +367,7 @@ function candidateRegistration(bundle: string, root: string, options: Pick<Setup
     ...(env.coagent8_CONFIG ? { coagent8_CONFIG: env.coagent8_CONFIG } : {}),
     ...(options.dataDirectory ? { coagent8_DIR: path.resolve(options.dataDirectory) } : {}),
   };
-  return { command: node.command, args: [...node.argsPrefix, runtime], env: Object.keys(variables).length ? variables : undefined };
+  return { command: node.command, args: [...node.argsPrefix, runtime, 'mcp'], env: Object.keys(variables).length ? variables : undefined };
 }
 
 /** A CoAgent8 entry in one host configuration, read without starting a process. */
@@ -437,8 +437,9 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       // An invalid catalog is a package defect; it stops setup before any client changes.
       if (options.skillsSource) catalog = readSkillCatalog(options.skillsSource);
       const bundle = readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024);
+      const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
       candidate = candidateRegistration(bundle, root, options, env, cwd);
-      const runtime = extractRuntimePath(candidate, root) ?? candidate.args.at(-1)!;
+      const runtime = extractRuntimePath(candidate, root, node.argsPrefix) ?? (candidate.args.at(-1) === 'mcp' ? candidate.args.at(-2)! : candidate.args.at(-1)!);
       fs.mkdirSync(path.dirname(runtime), { recursive: true, mode: 0o700 });
       if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
       if (hash(readBoundedFileSync(runtime, 8 * 1024 * 1024)) !== hash(bundle)) throw new Error('Owned runtime hash mismatch.');
