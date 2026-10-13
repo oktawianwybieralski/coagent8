@@ -20,7 +20,11 @@ import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js
 import { readInstallRecord, readSetupState, resetConfigurationFile, updateInstallList, updateSetupState, type StateLocation } from './configuration.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { manageSkills, skillSelectionForAction, type ManagedSkill } from '../../../src/integrations/skill-management.js';
-import { enablePathIntegration, disablePathIntegration, syncPathShim } from '../../../src/integrations/vscode-path.js';
+import { enablePathIntegration, disablePathIntegration, syncPathShim, type PathSystemAdapter, DefaultWindowsPathAdapter } from '../../../src/integrations/vscode-path.js';
+
+function activePathAdapter(): PathSystemAdapter {
+  return (globalThis as unknown as { pathAdapter?: PathSystemAdapter }).pathAdapter ?? new DefaultWindowsPathAdapter();
+}
 
 /** This extension's identifier, as published. */
 const EXTENSION_ID = 'okidev.coagent8-mcp';
@@ -508,7 +512,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         if (pathChoice === 'Yes') {
           const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
           try {
-            const res = await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+            const res = await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath }, activePathAdapter());
             if (isDeactivating) return;
             if (res.action === 'enabled') {
               await updateSetupState(storage, { pathPrompt: 'accepted' });
@@ -717,7 +721,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         installation: path.dirname(context.extensionPath),
         bundle: context.asAbsolutePath('dist/index.cjs'),
         nodePath,
-      }));
+      }, activePathAdapter()));
       if (isDeactivating) return;
       if (res.action === 'enabled') {
         await trackTask(updateSetupState(storage, { pathPrompt: 'accepted' }));
@@ -743,7 +747,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       storage,
       installation: path.dirname(context.extensionPath),
       bundle: context.asAbsolutePath('dist/index.cjs'),
-    }));
+    }, activePathAdapter()));
     if (isDeactivating) return;
     if (res.action === 'removed') {
       void vscode.window.showInformationMessage('CoAgent8 has been removed from your user PATH.');
@@ -1315,7 +1319,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     installation: path.dirname(context.extensionPath),
     bundle: context.asAbsolutePath('dist/index.cjs'),
     nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
-  }).catch(error => {
+  }, activePathAdapter()).catch(error => {
     report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
   });
   trackTask(pathSync);

@@ -30,6 +30,14 @@ export interface PathSystemAdapter {
   isWindows(): boolean;
 }
 
+function resolvePowerShellExecutable(): string {
+  if (process.platform === 'win32' && process.env.SystemRoot) {
+    const candidate = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return 'powershell.exe';
+}
+
 export class DefaultWindowsPathAdapter implements PathSystemAdapter {
   isWindows(): boolean {
     return process.platform === 'win32';
@@ -37,60 +45,93 @@ export class DefaultWindowsPathAdapter implements PathSystemAdapter {
 
   async readUserPath(timeoutMs = 5000): Promise<WindowsRegistryPath | null> {
     if (!this.isWindows()) return null;
+    const script = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+if ($null -eq $key) {
+  Write-Output '{"exists":false,"kind":"REG_SZ","value":""}'
+} else {
+  try {
+    $kind = $key.GetValueKind('Path')
+    $val = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $kindStr = if ($kind.ToString() -eq 'ExpandString') { 'REG_EXPAND_SZ' } else { 'REG_SZ' }
+    Write-Output (@{ exists = $true; kind = $kindStr; value = [string]$val } | ConvertTo-Json -Compress)
+  } catch {
+    Write-Output '{"exists":false,"kind":"REG_SZ","value":""}'
+  } finally {
+    $key.Close()
+  }
+}
+`;
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const ps = resolvePowerShellExecutable();
     let res: cp.SpawnSyncReturns<string>;
     try {
-      res = cp.spawnSync('reg.exe', ['query', 'HKCU\\Environment', '/v', 'Path'], {
+      res = cp.spawnSync(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
         windowsHide: true,
         encoding: 'utf8',
         timeout: timeoutMs,
       });
     } catch (err) {
-      throw new Error(`Failed to execute reg.exe: ${(err as Error).message}`);
+      throw new Error(`Failed to execute powershell.exe: ${(err as Error).message}`);
     }
     if (res.error) {
       throw new Error(`Registry query error: ${res.error.message}`);
     }
     if (res.status !== 0) {
-      const output = `${res.stderr || ''} ${res.stdout || ''}`;
-      if (/unable to find|cannot find|ERROR:\s*The system was unable to find/i.test(output)) {
-        return { exists: false, kind: 'REG_SZ', value: '' };
-      }
-      throw new Error(`Failed to query HKCU\\Environment Path (exit ${res.status}): ${output.trim()}`);
+      throw new Error(`Failed to query HKCU\\Environment Path (exit ${res.status}): ${(res.stderr || res.stdout || '').trim()}`);
     }
-    const match = /^\s*Path\s+(REG_SZ|REG_EXPAND_SZ)\s*(.*)$/im.exec(res.stdout);
-    if (!match) {
+    try {
+      const parsed = JSON.parse(res.stdout.trim());
+      return {
+        exists: Boolean(parsed.exists),
+        kind: parsed.kind === 'REG_EXPAND_SZ' ? 'REG_EXPAND_SZ' : 'REG_SZ',
+        value: typeof parsed.value === 'string' ? parsed.value : '',
+      };
+    } catch (err) {
       throw new Error(`Unexpected registry query output format: ${res.stdout.trim()}`);
     }
-    return {
-      exists: true,
-      kind: match[1] as 'REG_SZ' | 'REG_EXPAND_SZ',
-      value: match[2]?.trim() ?? '',
-    };
   }
 
   async writeUserPath(value: string, kind: 'REG_SZ' | 'REG_EXPAND_SZ', timeoutMs = 5000): Promise<void> {
     if (!this.isWindows()) return;
+    const script = `
+$targetKind = if ($env:COAGENT8_REG_KIND -eq 'REG_EXPAND_SZ') { [Microsoft.Win32.RegistryValueKind]::ExpandString } else { [Microsoft.Win32.RegistryValueKind]::String }
+$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+try {
+  $key.SetValue('Path', $env:COAGENT8_REG_VAL, $targetKind)
+} finally {
+  $key.Close()
+}
+`;
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const ps = resolvePowerShellExecutable();
     let res: cp.SpawnSyncReturns<string>;
     try {
-      res = cp.spawnSync('reg.exe', ['add', 'HKCU\\Environment', '/v', 'Path', '/t', kind, '/d', value, '/f'], {
+      res = cp.spawnSync(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
         windowsHide: true,
         encoding: 'utf8',
+        env: {
+          ...process.env,
+          COAGENT8_REG_KIND: kind,
+          COAGENT8_REG_VAL: value,
+        },
         timeout: timeoutMs,
       });
     } catch (err) {
-      throw new Error(`Failed to execute reg.exe: ${(err as Error).message}`);
+      throw new Error(`Failed to execute powershell.exe: ${(err as Error).message}`);
     }
     if (res.error) {
-      throw new Error(`Registry add error: ${res.error.message}`);
+      throw new Error(`Registry write error: ${res.error.message}`);
     }
     if (res.status !== 0) {
       throw new Error(`Failed to write HKCU\\Environment Path: ${res.stderr || res.stdout || 'unknown error'}`);
     }
   }
 
-  async broadcastEnvironmentChange(timeoutMs = 300): Promise<void> {
+  async broadcastEnvironmentChange(timeoutMs = 1000): Promise<void> {
     if (!this.isWindows()) return;
-    const boundedTimeout = Math.min(Math.max(timeoutMs, 50), 300);
+    const boundedTimeout = Math.min(Math.max(timeoutMs, 50), 3000);
     const script = `
 Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @'
 [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
@@ -98,13 +139,17 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
 '@ -ErrorAction SilentlyContinue;
 [Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x001A, [UIntPtr]::Zero, "Environment", 2, ${boundedTimeout}, [ref][UIntPtr]::Zero)
 `;
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const ps = resolvePowerShellExecutable();
     try {
-      cp.spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      const child = cp.spawn(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
         windowsHide: true,
-        timeout: boundedTimeout + 200,
+        detached: true,
+        stdio: 'ignore',
       });
+      child.unref();
     } catch {
-      // Broadcast is advisory; do not fail operation if broadcast times out
+      // Broadcast is advisory; do not fail operation if spawn fails
     }
   }
 }
@@ -458,6 +503,7 @@ export async function removePathIntegration(
         const onDiskHash = hash(onDiskContent);
         if (onDiskHash !== record.shimHash) {
           record.userRetained = true;
+          record.installations = remaining;
           records.path = record;
           writeRecordFile(home, records);
           return { action: 'preserved', message: 'User-modified shim preserved' };
@@ -484,11 +530,12 @@ export async function removePathIntegration(
           const current = await adapter.readUserPath(Math.min(remainingRead, 1000));
           if (current) {
             const normalizedTarget = normalizePathEntry(record.pathEntry);
-            const kept = current.value
+            const originalEntries = current.value
               .split(';')
               .map(p => p.trim())
-              .filter(p => p && normalizePathEntry(p) !== normalizedTarget);
-            if (kept.length !== current.value.split(';').filter(Boolean).length) {
+              .filter(Boolean);
+            const kept = originalEntries.filter(p => normalizePathEntry(p) !== normalizedTarget);
+            if (kept.length !== originalEntries.length) {
               const remainingWrite = timeRemaining();
               if (remainingWrite <= 0) {
                 throw new Error('Uninstall deadline exceeded before registry write');

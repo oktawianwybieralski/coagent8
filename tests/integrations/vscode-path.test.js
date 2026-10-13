@@ -181,6 +181,7 @@ test('uninstall removes only recorded, unchanged artifacts', async t => {
     assert.equal(adapter.pathValue, `C:\\System;${expectedEntry}`, 'PATH entry preserved for user shim');
     const record = readPathRecord(f.home);
     assert.equal(record.userRetained, true);
+    assert.deepEqual(record.installations, [], 'installations cleared on user retention');
   }
 
   // Scenario C: Pre-existing PATH entry (addedToPath: false) is preserved on uninstall
@@ -367,4 +368,27 @@ test('syncPathShim restores previous shim content if record write fails', async 
   }
 
   assert.equal(fs.readFileSync(initialRecord.shimPath, 'utf8'), originalShimContent, 'previous shim content restored');
+});
+
+test('non-ASCII and unicode PATH entries are preserved without corruption', async t => {
+  const f = fixture(t);
+  const unicodePath = 'C:\\Narzędzia\\bin;C:\\Zażółć\\Gęślą\\Jaźń;%USERPROFILE%\\bin';
+  const adapter = new MockPathAdapter(unicodePath, 'REG_EXPAND_SZ');
+
+  const res = await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    adapter
+  );
+
+  assert.equal(res.action, 'enabled');
+  assert.equal(res.addedToPath, true);
+  const expectedEntry = path.join(f.home, '.coagent8', 'bin');
+  assert.equal(adapter.pathValue, `${unicodePath};${expectedEntry}`);
+  assert.equal(adapter.pathKind, 'REG_EXPAND_SZ');
+
+  // Uninstall removes only the added entry, keeping non-ASCII and expandable vars intact
+  const uninst = await removePathIntegration(f.home, f.installation, 1500, adapter);
+  assert.equal(uninst.action, 'removed');
+  assert.equal(adapter.pathValue, unicodePath);
+  assert.equal(adapter.pathKind, 'REG_EXPAND_SZ');
 });

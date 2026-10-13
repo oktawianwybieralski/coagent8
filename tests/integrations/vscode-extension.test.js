@@ -14,6 +14,29 @@ const LABELS = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravit
 const VENDORS = { codex: 'openai.chatgpt', claude: 'anthropic.claude-code', agy: 'google.google-antigravity' };
 const SEPARATOR = -1;
 
+class MockPathAdapter {
+  constructor(initialPath = 'C:\\Tools', initialKind = 'REG_SZ', isWin = true) {
+    this.pathValue = initialPath;
+    this.pathKind = initialKind;
+    this.win = isWin;
+    this.writes = [];
+    this.broadcasts = [];
+  }
+  isWindows() { return this.win; }
+  async readUserPath() {
+    if (this.pathValue === null) return null;
+    return { value: this.pathValue, kind: this.pathKind };
+  }
+  async writeUserPath(value, kind) {
+    this.writes.push({ value, kind });
+    this.pathValue = value;
+    this.pathKind = kind;
+  }
+  async broadcastEnvironmentChange(timeoutMs) {
+    this.broadcasts.push(timeoutMs);
+  }
+}
+
 /**
  * Activates the bundled extension against a scripted VS Code API and runs one command.
  * @param steps - Answers for the pickers in order: `{ client }`, `{ action }` or `{ label }` (a
@@ -31,7 +54,8 @@ const SEPARATOR = -1;
  * @param extraInstallations - Installations besides the one in use, per client; one with
  * `requires` appears once that vendor extension is installed.
  */
-async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName } = {}) {
+async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName, pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ') } = {}) {
+  globalThis.pathAdapter = pathAdapter;
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
   const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
@@ -199,6 +223,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
   };
   vm.runInNewContext(output.outputFiles[0].text, {
     module, exports: module.exports, process, Buffer, setupFixture: fixture, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate,
+    pathAdapter,
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
   const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-extension-'));
@@ -270,8 +295,9 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     let config = configText;
     try { if (configText !== undefined) config = JSON.parse(configText); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
     const menus = pickers;
-    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
+    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles, pathAdapter };
   } finally {
+    delete globalThis.pathAdapter;
     for (const [key, value] of Object.entries(savedHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     for (const sub of context.subscriptions) {
       if (typeof sub?.dispose === 'function') {
@@ -1111,4 +1137,71 @@ test('remote and multi-root windows guide the user without assuming a global coa
   assert.equal(remote.menus.length, 0);
   const multiRoot = await runExtension({ workspaceFolders: [path.resolve('workspace-a'), path.resolve('workspace-b')] });
   assert.deepEqual(multiRoot.errors, ['CoAgent8 setup: Open the intended workspace folder in its own window and run this command again.']);
+});
+
+test('VS Code extension PATH opt-in prompt lifecycle and explicit commands', async () => {
+  // Scenario 1: User accepts the PATH prompt after welcome onboarding
+  const accepted = await runExtension({
+    installed: ['codex'],
+    welcomed: false,
+    activationOnly: true,
+    action: ['Manage CLIs', 'Yes'],
+    awaitNotifications: 2,
+    awaitState: true,
+  });
+  const promptNotice = accepted.notifications.find(n => n.message.includes("Add 'coagent8' to your user PATH"));
+  assert.ok(promptNotice, 'PATH prompt offered');
+  assert.deepEqual(promptNotice.actions, ['Yes', 'No']);
+  assert.equal(accepted.state.pathPrompt, 'accepted', 'accepted state recorded');
+  assert.ok(accepted.pathAdapter.writes.length > 0, 'adapter writeUserPath called');
+  assert.ok(accepted.pathAdapter.broadcasts.length > 0, 'adapter broadcastEnvironmentChange called');
+  const confirmNotice = accepted.notifications.find(n => n.message.includes("CoAgent8 has been added to your user PATH"));
+  assert.ok(confirmNotice, 'confirmation notice shown on success');
+
+  // Second activation with accepted state never prompts again
+  const second = await runExtension({
+    activationOnly: true,
+    storedState: { welcomed: true, pathPrompt: 'accepted' },
+  });
+  assert.equal(second.notifications.length, 0, 'never prompts again after acceptance');
+
+  // Scenario 2: User chooses No on PATH prompt
+  const declined = await runExtension({
+    installed: ['codex'],
+    welcomed: false,
+    activationOnly: true,
+    action: ['Manage CLIs', 'No'],
+    awaitNotifications: 2,
+    awaitState: true,
+  });
+  assert.equal(declined.state.pathPrompt, 'declined');
+
+  // Scenario 3: User dismisses notification
+  const dismissed = await runExtension({
+    installed: ['codex'],
+    welcomed: false,
+    activationOnly: true,
+    action: ['Manage CLIs'],
+    awaitNotifications: 2,
+    awaitState: true,
+  });
+  assert.equal(dismissed.state.pathPrompt, 'dismissed');
+
+  // Scenario 4: Command coagent8.addPath manually enables and coagent8.removePath removes
+  const manualAdd = await runExtension({
+    command: 'coagent8.addPath',
+    storedState: { welcomed: true, pathPrompt: 'declined' },
+    action: 'Yes',
+    awaitNotifications: 2,
+  });
+  assert.equal(manualAdd.state.pathPrompt, 'accepted');
+
+  const manualRemove = await runExtension({
+    command: 'coagent8.removePath',
+    storedState: { welcomed: true, pathPrompt: 'accepted' },
+    action: 'Remove',
+  });
+  assert.equal(manualRemove.notifications.length, 2);
+  assert.match(manualRemove.notifications[0].message, /Remove 'coagent8' from your user PATH\?/);
+  assert.match(manualRemove.notifications[1].message, /CoAgent8 has been removed from your user PATH|No active CoAgent8 PATH integration/);
 });
