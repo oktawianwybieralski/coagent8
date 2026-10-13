@@ -506,10 +506,20 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       await trackTask((async () => {
         if (isDeactivating) return;
         if (pathChoice === 'Yes') {
-          await updateSetupState(storage, { pathPrompt: 'accepted' });
-          if (isDeactivating) return;
           const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-          await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+          try {
+            const res = await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+            if (isDeactivating) return;
+            if (res.action === 'enabled') {
+              await updateSetupState(storage, { pathPrompt: 'accepted' });
+              if (!isDeactivating) void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
+            }
+          } catch (err) {
+            if (!isDeactivating) {
+              const msg = err instanceof Error ? err.message : String(err);
+              void vscode.window.showErrorMessage(`Failed to add CoAgent8 to PATH: ${msg}`);
+            }
+          }
         } else if (pathChoice === 'No') {
           await updateSetupState(storage, { pathPrompt: 'declined' });
         } else {
@@ -700,19 +710,26 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       return;
     }
     const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-    const res = await trackTask(enablePathIntegration({
-      home: os.homedir(),
-      storage,
-      installation: path.dirname(context.extensionPath),
-      bundle: context.asAbsolutePath('dist/index.cjs'),
-      nodePath,
-    }));
-    if (isDeactivating) return;
-    if (res.action === 'enabled') {
-      await trackTask(updateSetupState(storage, { pathPrompt: 'accepted' }));
-      if (!isDeactivating) void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
-    } else {
-      if (!isDeactivating) void vscode.window.showInformationMessage('PATH integration is currently supported on Windows.');
+    try {
+      const res = await trackTask(enablePathIntegration({
+        home: os.homedir(),
+        storage,
+        installation: path.dirname(context.extensionPath),
+        bundle: context.asAbsolutePath('dist/index.cjs'),
+        nodePath,
+      }));
+      if (isDeactivating) return;
+      if (res.action === 'enabled') {
+        await trackTask(updateSetupState(storage, { pathPrompt: 'accepted' }));
+        if (!isDeactivating) void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
+      } else {
+        if (!isDeactivating) void vscode.window.showInformationMessage('PATH integration is currently supported on Windows.');
+      }
+    } catch (err) {
+      if (!isDeactivating) {
+        const msg = err instanceof Error ? err.message : String(err);
+        void vscode.window.showErrorMessage(`Failed to add CoAgent8 to PATH: ${msg}`);
+      }
     }
   });
   register('coagent8.removePath', async () => {
