@@ -6,7 +6,7 @@
  * @packageDocumentation
  */
 
-import { redactDiagnostic, redactHomePath, redactPublicContent, redactPublicData } from '../security/redaction.js';
+import { redactDiagnostic, redactHomePath, redactPublicContent, redactPublicData, stripTerminalSequences } from '../security/redaction.js';
 import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { resolveWorkspacePath } from '../workspace/workspace.js';
 import { listSessions } from './session.js';
@@ -185,7 +185,8 @@ export async function runSessionCli(
         out.write(`${JSON.stringify(redactPublicData(sessions))}\n`);
       } else {
         const text = formatSessionListText(sessions);
-        out.write(`${truncateToByteLength(redactHomePath(text), SESSION_OUTPUT_MAX_BYTES)}\n`);
+        const safeText = stripTerminalSequences(redactHomePath(text));
+        out.write(`${truncateToByteLength(safeText, SESSION_OUTPUT_MAX_BYTES)}\n`);
       }
       return 0;
     } catch (error: unknown) {
@@ -307,7 +308,8 @@ export async function runSessionCli(
           return 130;
         }
         const text = formatSessionHistoryText(handle, history, turnMap);
-        out.write(`${truncateToByteLength(redactPublicContent(text), SESSION_OUTPUT_MAX_BYTES)}\n`);
+        const safeText = stripTerminalSequences(redactPublicContent(text));
+        out.write(`${truncateToByteLength(safeText, SESSION_OUTPUT_MAX_BYTES)}\n`);
       }
       return 0;
     } catch (error: unknown) {

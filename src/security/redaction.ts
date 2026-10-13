@@ -167,7 +167,33 @@ export function redactDiagnostic(value: unknown, budget = 4096): string {
   // 3. User home directory redaction
   text = redactHomePath(text);
 
-  return truncateToByteLength(text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''), budget);
+  return truncateToByteLength(stripTerminalSequences(text), budget);
+}
+
+/**
+ * Strips ANSI escape codes and terminal control sequences (including CSI,
+ * OSC clipboard/title commands, and non-printable control characters) from
+ * text destined for human-readable terminal display, preserving standard formatting
+ * (newlines, carriage returns, tabs) and ordinary text/code.
+ *
+ * @param text - Untrusted input text to sanitize.
+ * @returns Clean text safe for direct terminal output.
+ */
+export function stripTerminalSequences(text: string): string {
+  if (!text) return text;
+  // 1. Operating System Command (OSC) sequences (e.g. OSC 52 clipboard commands)
+  let cleaned = text.replace(/(?:\x1b\]|\u009d)[\s\S]*?(?:\x07|\x1b\\|\u009c|$)/g, '');
+
+  // 2. Control Sequence Introducer (CSI) sequences (colors, cursor movements, screen clearing)
+  cleaned = cleaned.replace(/(?:\x1b\[|\u009b)[0-?]*[ -/]*[@-~]/g, '');
+
+  // 3. Other escape sequences (DCS, PM, APC, charset shifts, cursor save/restore)
+  cleaned = cleaned.replace(/\x1b(?:[PX^_][\s\S]*?(?:\x07|\x1b\\|\u009c|$)|[ -/]*[@-~])/g, '');
+
+  // 4. Any remaining dangerous C0 control codes (excluding \t, \n, \r)
+  cleaned = cleaned.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+
+  return cleaned;
 }
 
 /**

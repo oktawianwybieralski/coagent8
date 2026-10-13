@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
-const { redactCredentialFormats, redactDiagnostic, redactDiagnosticData, redactHomePath, redactPublicContent, redactPublicData, redactSecrets } = require('../../src/security/redaction.ts');
+const { redactCredentialFormats, redactDiagnostic, redactDiagnosticData, redactHomePath, redactPublicContent, redactPublicData, redactSecrets, stripTerminalSequences } = require('../../src/security/redaction.ts');
 // Provider key prefixes are joined at run time, so the source holds no literal token that
 // GitHub push protection reports (FEEDBACK-060j).
 const STRIPE_LIVE = ['sk', 'live', ''].join('_');
@@ -461,4 +461,20 @@ test('redactPublicContent and redactPublicData preserve ordinary code, redact cr
   } finally {
     os.homedir = original;
   }
+});
+
+test('stripTerminalSequences strips CSI, OSC 52, and control sequences while preserving text and formatting', () => {
+  const osc52Bel = '\x1b]52;c;ZXhhbXBsZQ==\x07';
+  const osc52St = '\x1b]52;c;ZXhhbXBsZQ==\x1b\\';
+  const csiClear = '\x1b[2J';
+  const csiCursor = '\x1b[10;20H';
+  const csiColor = '\x1b[31;1m';
+  const controlChars = '\x08\x07\x00\x1b';
+  const input = `Title${csiColor}\n\t${osc52Bel}Line 1${csiClear}\nLine 2${osc52St}${csiCursor}End${controlChars}!`;
+
+  const cleaned = stripTerminalSequences(input);
+  assert.equal(cleaned, 'Title\n\tLine 1\nLine 2End!');
+  assert.ok(!cleaned.includes('52;c;'));
+  assert.ok(!cleaned.includes('\x1b'));
+  assert.ok(cleaned.includes('\n\t'));
 });

@@ -100,8 +100,10 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     const writer3 = createHistoryWriter(handle, tempDir, 'codex', randomUUID());
     const codeSnippet = 'const token = 42; const password = "secret-pass";';
     const longContent = 'BODY_' + 'x'.repeat(3000);
+    const oscSequence = '\x1b]52;c;ZXhhbXBsZQ==\x07';
+    const csiSequence = '\x1b[2J';
     writer3.accept({ type: 'turn_started' });
-    writer3.accept({ type: 'user_message', text: `${codeSnippet}\n${longContent}` });
+    writer3.accept({ type: 'user_message', text: `${codeSnippet}\n${oscSequence}${csiSequence}${longContent}` });
     writer3.accept({ type: 'assistant_message', messageId: 'm3', text: 'Code received.' });
     writer3.accept({ type: 'turn_finished', status: 'completed' });
     await writer3.flush();
@@ -121,6 +123,8 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     assert.ok(textOut.text().includes('const token = 42;'), 'Code with token keyword must not be rewritten');
     assert.ok(textOut.text().includes('const password = "secret-pass";'), 'Code with password keyword must not be rewritten');
     assert.ok(textOut.text().includes(longContent), 'Long content > 2048 bytes must not be truncated in text history');
+    assert.ok(!textOut.text().includes('52;c;'), 'OSC 52 clipboard sequences must be stripped from human-readable text');
+    assert.ok(!textOut.text().includes('\x1b[2J'), 'CSI screen clear sequence must be stripped from human-readable text');
     assert.equal(textErr.text(), '');
 
     // 2. JSON history format
@@ -136,6 +140,7 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     assert.ok(turn3UserMsg.text.includes('const token = 42;'), 'Code token must round-trip in JSON history without keyword rewriting');
     assert.ok(turn3UserMsg.text.includes(longContent), 'Long content > 2048 bytes must not be truncated in JSON history');
     assert.ok(turn3UserMsg.text.length > 3000, 'JSON history string must retain full length without 2048-byte cap');
+    assert.ok(turn3UserMsg.text.includes('52;c;'), 'JSON history preserves raw event content without terminal sequence stripping');
     assert.equal(jsonErr.text(), '');
 
     // 3. Pagination with --limit and --cursor
