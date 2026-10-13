@@ -142,6 +142,20 @@ test('RELEASE-001a: npm publish script targets ./release/... tarball, validates 
   assert.ok(defaultNpm.command);
   assert.ok(Array.isArray(defaultNpm.argsPrefix));
 
+  const { spawnSync } = require('node:child_process');
+  const execution = spawnSync(defaultNpm.command, [...defaultNpm.argsPrefix, '--version'], { encoding: 'utf8', windowsHide: true });
+  assert.equal(execution.status, 0, 'Resolved npm command executes cleanly');
+  assert.match(execution.stdout.trim(), /^\d+\.\d+\.\d+/, 'npm --version returns valid version');
+
+  if (process.platform === 'win32') {
+    const forcedFallback = resolveNpmCommand({ PATH: '', Path: '', npm_execpath: '' }, 'C:\\isolated\\node.exe');
+    assert.match(forcedFallback.command, /cmd\.exe/i);
+    assert.deepEqual(forcedFallback.argsPrefix, ['/d', '/s', '/c', 'npm']);
+    const fallbackExec = spawnSync(forcedFallback.command, [...forcedFallback.argsPrefix, '--version'], { encoding: 'utf8', windowsHide: true });
+    assert.equal(fallbackExec.status, 0, 'Windows fallback interpreter executes npm cleanly');
+    assert.match(fallbackExec.stdout.trim(), /^\d+\.\d+\.\d+/);
+  }
+
   const previewPlan = resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'true' });
   assert.equal(previewPlan.version, '0.7.0');
   assert.equal(previewPlan.channel, 'next');

@@ -8,24 +8,51 @@ const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 
-/** Resolves the npm execution command across Windows, macOS, and Linux Node distributions. */
-function resolveNpmCommand(env = process.env) {
-  if (env.npm_execpath && fs.existsSync(env.npm_execpath)) {
-    return { command: process.execPath, argsPrefix: [env.npm_execpath] };
-  }
-  const execDir = path.dirname(process.execPath);
+/** Resolves npm-cli.js in a given directory or its standard sibling folders. */
+function findNpmCli(dir) {
   const candidates = [
-    path.join(execDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-    path.join(execDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
-    path.join(execDir, '..', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(dir, '..', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    path.join(dir, 'bin', 'npm-cli.js'),
+    path.join(dir, 'npm-cli.js'),
   ];
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return { command: process.execPath, argsPrefix: [candidate] };
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+/** Resolves the npm execution command across Windows, macOS, and Linux Node distributions. */
+function resolveNpmCommand(env = process.env, execPath = process.execPath) {
+  if (env.npm_execpath && fs.existsSync(env.npm_execpath)) {
+    return { command: execPath, argsPrefix: [env.npm_execpath] };
+  }
+
+  // 1. Check relative to current Node executable directory
+  const execDir = path.dirname(execPath);
+  const fromExec = findNpmCli(execDir);
+  if (fromExec) {
+    return { command: execPath, argsPrefix: [fromExec] };
+  }
+
+  // 2. Check each directory in PATH for npm installation or npm-cli.js
+  const pathDirs = (env.PATH || env.Path || '').split(path.delimiter).filter(Boolean);
+  for (const dir of pathDirs) {
+    const fromPath = findNpmCli(dir);
+    if (fromPath) {
+      return { command: execPath, argsPrefix: [fromPath] };
     }
   }
-  const bin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  return { command: bin, argsPrefix: [] };
+
+  // 3. Fallback: on Windows invoke through command interpreter to handle .cmd; on POSIX invoke npm binary
+  if (process.platform === 'win32') {
+    const comSpec = env.ComSpec || env.COMSPEC || 'cmd.exe';
+    return { command: comSpec, argsPrefix: ['/d', '/s', '/c', 'npm'] };
+  }
+  return { command: 'npm', argsPrefix: [] };
 }
 
 function resolvePublishPlan(options = {}) {
@@ -124,6 +151,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  findNpmCli,
   resolveNpmCommand,
   resolvePublishPlan,
   runPublishNpm,
