@@ -13,20 +13,22 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
 
 - Cli:
   - New feature:
-    - [`4456a6b`](https://github.com/oktawianwybieralski/coagent8/commit/4456a6b6c92f8d4cfdd55839619d62d0aff066cf): Implement session history CLI inspection and pagination
-    - [`1e59d50`](https://github.com/oktawianwybieralski/coagent8/commit/1e59d509bdd53c82dd12d1018245b95074a1b026): Implement session list CLI command and workspace isolation
+    - [#42](https://github.com/oktawianwybieralski/coagent8/pull/42): Expose session list and history inspection (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
     - [#41](https://github.com/oktawianwybieralski/coagent8/pull/41): Expose models and doctor CLI diagnostics (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
     - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-  - Bug fix:
-    - [`cc36923`](https://github.com/oktawianwybieralski/coagent8/commit/cc3692358c3a29f6232523f48a78fa145a9045a0): Strip terminal control sequences in human-readable session output
-    - [`d36858b`](https://github.com/oktawianwybieralski/coagent8/commit/d36858b007e50343e410d200c3014c9ebca043ae): Preserve public code and enforce cancellation in session history
 - Integrations:
   - New feature:
     - [#39](https://github.com/oktawianwybieralski/coagent8/pull/39): Write and migrate explicit mcp registrations (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
     - [#38](https://github.com/oktawianwybieralski/coagent8/pull/38): Recognize legacy and mcp registration shapes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 - Vscode:
   - New feature:
+    - [`a39011a`](https://github.com/oktawianwybieralski/coagent8/commit/a39011acf1da750743d0048b8339923bd4f1d211): Implement Windows PATH opt-in and uninstall cleanup
     - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Bug fix:
+    - [`6b959b6`](https://github.com/oktawianwybieralski/coagent8/commit/6b959b6c69532814b2ae1f4d376cfa25252e90a1): Serialize PATH offer in-flight, write shims atomically, and guarantee cleanup restoration
+    - [`0de6c81`](https://github.com/oktawianwybieralski/coagent8/commit/0de6c81ff036ef979168515166c977fb59dfc5c5): Coordinate installs lock, enforce uninstall deadlines, and persist transaction intent
+    - [`3d8be6b`](https://github.com/oktawianwybieralski/coagent8/commit/3d8be6b1a9c53ef9ecc40054d74f13e6cbf74d77): Unify setup lease, enforce uninstall deadline, and ensure rollback consistency
+    - [`4820aea`](https://github.com/oktawianwybieralski/coagent8/commit/4820aea7c2c8afb20661e3ea8f014c672b032e4b): Address review feedback on confirmation, error isolation, and runtime preservation
 
 ## v0.6.1 - (2026-10-13)
 
