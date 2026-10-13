@@ -25,6 +25,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [`a39011a`](https://github.com/oktawianwybieralski/coagent8/commit/a39011acf1da750743d0048b8339923bd4f1d211): Implement Windows PATH opt-in and uninstall cleanup
     - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
   - Bug fix:
+    - [`46cbf96`](https://github.com/oktawianwybieralski/coagent8/commit/46cbf9609c1e33f078253e25ee1d3ba80973d50a): Fail closed on registry read error, uncap uninstall budget, and isolate test adapter
     - [`c4906a7`](https://github.com/oktawianwybieralski/coagent8/commit/c4906a73eea5be3965be90b0e17f1d426b322c90): Robust registry encoding, async broadcast, and test adapter injection
     - [`a7040c7`](https://github.com/oktawianwybieralski/coagent8/commit/a7040c7395ef68b2f53b67cb49ce5cbc11f0d45b): Record accepted PATH state on success and show confirmation notice
     - [`ca2531d`](https://github.com/oktawianwybieralski/coagent8/commit/ca2531d2cfc7f24fdfa84293db6ec81ebd7e34fd): Separate registration warning wait from tracked state and connect IO
