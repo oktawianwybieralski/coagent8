@@ -130,3 +130,50 @@ test('npm, plugin and VS Code manifests share one numeric version', () => {
     assert.equal(actual, version, `${name} carries the package version`);
   }
 });
+
+test('RELEASE-001a: npm publish script targets ./release/... tarball, validates channel and prerelease flag', () => {
+  const { resolvePublishPlan, runPublishNpm, resolveNpmCommand } = require('../scripts/publish-npm.cjs');
+
+  const customNpm = resolveNpmCommand({ npm_execpath: process.execPath });
+  assert.equal(customNpm.command, process.execPath);
+  assert.deepEqual(customNpm.argsPrefix, [process.execPath]);
+
+  const defaultNpm = resolveNpmCommand({});
+  assert.ok(defaultNpm.command);
+  assert.ok(Array.isArray(defaultNpm.argsPrefix));
+
+  const { spawnSync } = require('node:child_process');
+  const execution = spawnSync(defaultNpm.command, [...defaultNpm.argsPrefix, '--version'], { encoding: 'utf8', windowsHide: true });
+  assert.equal(execution.status, 0, 'Resolved npm command executes cleanly');
+  assert.match(execution.stdout.trim(), /^\d+\.\d+\.\d+/, 'npm --version returns valid version');
+
+  if (process.platform === 'win32') {
+    const forcedFallback = resolveNpmCommand({ PATH: '', Path: '', npm_execpath: '' }, 'C:\\isolated\\node.exe');
+    assert.match(forcedFallback.command, /cmd\.exe/i);
+    assert.deepEqual(forcedFallback.argsPrefix, ['/d', '/s', '/c', 'npm']);
+    const fallbackExec = spawnSync(forcedFallback.command, [...forcedFallback.argsPrefix, '--version'], { encoding: 'utf8', windowsHide: true });
+    assert.equal(fallbackExec.status, 0, 'Windows fallback interpreter executes npm cleanly');
+    assert.match(fallbackExec.stdout.trim(), /^\d+\.\d+\.\d+/);
+  }
+
+  const previewPlan = resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'true' });
+  assert.equal(previewPlan.version, '0.7.0');
+  assert.equal(previewPlan.channel, 'next');
+  assert.equal(previewPlan.tarballPath, './release/coagent8-0.7.0.tgz');
+  assert.equal(previewPlan.tarballPath.startsWith('./release/'), true, 'Tarball path must explicitly start with ./release/ to avoid git shorthand');
+
+  const releasePlan = resolvePublishPlan({ tag: 'v1.0.0', prerelease: 'false' });
+  assert.equal(releasePlan.version, '1.0.0');
+  assert.equal(releasePlan.channel, 'latest');
+  assert.equal(releasePlan.tarballPath, './release/coagent8-1.0.0.tgz');
+
+  assert.throws(() => resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'false' }), /pre-release flag false does not match/);
+  assert.throws(() => resolvePublishPlan({ tag: 'v1.0.0', prerelease: 'true' }), /pre-release flag true does not match/);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-pub-'));
+  try {
+    assert.throws(() => runPublishNpm({ cwd: dir, tag: 'v0.7.0', prerelease: 'true', dryRun: true }), /Release tarball not found/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

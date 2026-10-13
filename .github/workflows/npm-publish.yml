@@ -27,6 +27,11 @@ jobs:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Checkout tagged repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       # Trusted publishing needs npm 11.5.1 or later.
       - name: Check npm version
         shell: bash
@@ -64,19 +69,11 @@ jobs:
 
       # A preview (every version below 1.0.0, rule 02 section 4) goes to `next`, a final
       # version to `latest`; the GitHub pre-release flag must agree.
+      # Delegates to scripts/publish-npm.cjs, ensuring ./release/... explicit pathing (RELEASE-001a).
       - name: Publish to npm
         shell: bash
         env:
           TAG: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          case "$version" in
-            0.*) channel=next; expected=true ;;
-            *) channel=latest; expected=false ;;
-          esac
-          if [ "$PRERELEASE" != "$expected" ]; then
-            echo "::error::GitHub pre-release flag $PRERELEASE does not match version $version"; exit 1
-          fi
-          npm publish "release/coagent8-$version.tgz" --tag "$channel" --provenance --access public
+          node scripts/publish-npm.cjs
