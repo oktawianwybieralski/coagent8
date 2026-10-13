@@ -16,8 +16,11 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
     - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 - Integrations:
   - New feature:
-    - [`3de1a5b`](https://github.com/oktawianwybieralski/coagent8/commit/3de1a5ba34ee3ccd7630ec9655c437fd3c402c20): Write and migrate explicit mcp registrations
+    - [#39](https://github.com/oktawianwybieralski/coagent8/pull/39): Write and migrate explicit mcp registrations (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
     - [#38](https://github.com/oktawianwybieralski/coagent8/pull/38): Recognize legacy and mcp registration shapes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Vscode:
+  - New feature:
+    - [`f637efc`](https://github.com/oktawianwybieralski/coagent8/commit/f637efc04219af3e3c2ba90d43f5bc4dca88f737): Use explicit mcp in profile and server definitions
 
 ## v0.6.1 - (2026-10-13)
 
