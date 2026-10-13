@@ -11,6 +11,7 @@ import type { AdapterProbeResult, BackendQuota, CatalogModel, InheritedTools, Qu
 import { adapterRegistry } from '../backends/registry.js';
 import { createPhaseTracker, type PhaseTracker } from '../execution/runtime/timing.js';
 import { createExecutionBudget } from '../execution/runtime/budget.js';
+import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
 import { BRAND } from '../brand.js';
 import { getRuntimePath } from '../paths.js';
@@ -486,6 +487,9 @@ function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId)
   return text;
 }
 
+/** Maximum byte budget allocated to the displayed runtime path in the summary header. */
+export const DOCTOR_RUNTIME_PATH_MAX_BYTES = 256;
+
 /**
  * Renders a health report as a few lines: overall status and price list, one line per
  * backend with its readiness and quota, its models with their prices, and the recommendations.
@@ -494,7 +498,8 @@ function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId)
 export function formatDoctorSummary(report: DoctorReport): string {
   const ids = Object.keys(report.backends) as ProviderId[];
   const versionPart = report.server_version ? ` · v${report.server_version}` : '';
-  const runtimePart = report.runtime_path ? ` · runtime: ${report.runtime_path}` : '';
+  const boundedRuntime = report.runtime_path ? truncateToByteLength(report.runtime_path, DOCTOR_RUNTIME_PATH_MAX_BYTES, '...[truncated]') : '';
+  const runtimePart = boundedRuntime ? ` · runtime: ${boundedRuntime}` : '';
   return fitSummary(report.selection, (rows, limits) => {
     const lines = [`CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
     for (const id of ids) {
