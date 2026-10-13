@@ -92,6 +92,14 @@ function npmRun(args,cwd=root) {
     const plan=JSON.parse(preview.stdout);assert.ok(plan.results.every(item=>item.action==='absent'));
     const applied=dispatch(['cleanup',`--apply=${plan.token}`]);assert.equal(applied.status,0,applied.stderr);
     assert.match(dispatch(['--help']).stdout,/cleanup/);
+    const modelsOut=dispatch(['models']);assert.equal(modelsOut.status,0,modelsOut.stderr);
+    assert.match(modelsOut.stdout,/^CoAgent8 models · /);
+    const modelsJson=dispatch(['models','--json']);assert.equal(modelsJson.status,0,modelsJson.stderr);
+    assert.equal(JSON.parse(modelsJson.stdout).scope,'models');
+    const doctorOut=dispatch(['doctor']);assert.equal(doctorOut.status,0,doctorOut.stderr);
+    assert.match(doctorOut.stdout,/^CoAgent8 models · /);
+    const doctorJson=dispatch(['doctor','--json']);assert.equal(doctorJson.status,0,doctorJson.stderr);
+    assert.equal(JSON.parse(doctorJson.stdout).scope,'models');
     for(const [binIndex,command] of commands.entries()) {
     const connection=connect(command.command,command.argsPrefix,{cwd:dir,env:{...process.env,NODE_PATH:'',coagent8_DIR:path.join(dir,'data'),GEMINI_CLI_HOME:path.join(dir,'original-home'),AGY_PATH:path.join(root,'tests','fixtures','agy-cli','agy.cjs'),CODEX_PATH:path.join(root,'tests','fixtures','codex-cli','codex.cjs'),CODEX_FIXTURE_MODE:'success',CODEX_FIXTURE_CAPTURE:'',coagent8_PRICES_URL:path.join(root,'tests','fixtures','prices','openrouter-models.json')}});
     const {proc,request}=connection;

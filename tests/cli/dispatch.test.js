@@ -28,6 +28,7 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
   let servedStdio = false;
   let setupLoaded = false;
   let modelsRan = false;
+  let doctorRan = false;
 
   const deps = {
     serveStdio: async () => {
@@ -35,6 +36,10 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
     },
     runModelsCli: async () => {
       modelsRan = true;
+      return 0;
+    },
+    runDoctorCli: async () => {
+      doctorRan = true;
       return 0;
     },
     loadSetupCli: async () => {
@@ -51,6 +56,7 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
     get servedStdio() { return servedStdio; },
     get setupLoaded() { return setupLoaded; },
     get modelsRan() { return modelsRan; },
+    get doctorRan() { return doctorRan; },
     stdout,
     stderr,
   };
@@ -196,7 +202,25 @@ test('CLI-FIRST-001b1: models command dispatches to runModelsCli without loading
   assert.equal(harness.servedStdio, false);
 });
 
-test('CLI-FIRST-001b1: subprocess execution verifies clean exits and streams', () => {
+test('CLI-FIRST-001c/001e: models and doctor subcommands route to their CLI runners', async () => {
+  const modelsHarness = createHarness({ stdinTTY: true, stdoutTTY: true });
+  const modelsCode = await runCli(['models', '--backend', 'codex'], modelsHarness.streams, modelsHarness.deps);
+  assert.equal(modelsCode, 0);
+  assert.equal(modelsHarness.modelsRan, true);
+  assert.equal(modelsHarness.doctorRan, false);
+  assert.equal(modelsHarness.setupLoaded, false);
+  assert.equal(modelsHarness.servedStdio, false);
+
+  const doctorHarness = createHarness({ stdinTTY: true, stdoutTTY: true });
+  const doctorCode = await runCli(['doctor', '--scope', 'health'], doctorHarness.streams, doctorHarness.deps);
+  assert.equal(doctorCode, 0);
+  assert.equal(doctorHarness.doctorRan, true);
+  assert.equal(doctorHarness.modelsRan, false);
+  assert.equal(doctorHarness.setupLoaded, false);
+  assert.equal(doctorHarness.servedStdio, false);
+});
+
+test('CLI-FIRST-001b1/001c/001e: subprocess execution verifies clean exits and streams', () => {
   const root = path.resolve(__dirname, '../..');
   const indexPath = path.join(root, 'src/index.ts');
   const childEnv = { ...process.env };
@@ -220,6 +244,7 @@ test('CLI-FIRST-001b1: subprocess execution verifies clean exits and streams', (
   assert.equal(helpRes.status, 0);
   assert.ok(helpRes.stdout.includes('CoAgent8 - Cross-Agent CLI Bridge'));
   assert.ok(helpRes.stdout.includes('cleanup'));
+  assert.ok(helpRes.stdout.includes('doctor'));
 
   // 3. mcp --help
   const mcpHelpRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'mcp', '--help'], {
@@ -238,6 +263,64 @@ test('CLI-FIRST-001b1: subprocess execution verifies clean exits and streams', (
   });
   assert.equal(mcpInvalidRes.status, 2);
   assert.match(mcpInvalidRes.stderr, /Unknown argument '--unknown-flag'/);
+
+  // 5. models command subprocess
+  const modelsRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'models'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(modelsRes.status, 0);
+  assert.match(modelsRes.stdout, /^CoAgent8 models · /);
+
+  // 6. models --json subprocess
+  const modelsJsonRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'models', '--backend', 'codex', '--json'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(modelsJsonRes.status, 0);
+  const modelsJson = JSON.parse(modelsJsonRes.stdout);
+  assert.equal(modelsJson.scope, 'models');
+  assert.deepEqual(Object.keys(modelsJson.backends), ['codex']);
+
+  // 7. doctor command subprocess (default scope models)
+  const doctorRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'doctor'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(doctorRes.status, 0);
+  assert.match(doctorRes.stdout, /^CoAgent8 models · /);
+
+  // 8. doctor --scope health --json subprocess
+  const doctorHealthJsonRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'doctor', '--scope=health', '--backend=codex', '--json'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(doctorHealthJsonRes.status, 0);
+  const doctorHealthJson = JSON.parse(doctorHealthJsonRes.stdout);
+  assert.ok(doctorHealthJson.status);
+  assert.deepEqual(Object.keys(doctorHealthJson.backends), ['codex']);
+
+  // 9. doctor invalid option
+  const doctorInvalidRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'doctor', '--invalid-opt'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(doctorInvalidRes.status, 2);
+  assert.match(doctorInvalidRes.stderr, /Usage: coagent8 doctor/);
+
+  // 10. models invalid option
+  const modelsInvalidRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'models', '--invalid-opt'], {
+    env: childEnv,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.equal(modelsInvalidRes.status, 2);
+  assert.match(modelsInvalidRes.stderr, /Usage: coagent8 models/);
 });
 
 test('CLI-FIRST-001b1: sensitive flag-value pairs are redacted in fallback warning', async () => {
@@ -265,7 +348,7 @@ test('CLI-FIRST-001b1: sensitive flag-value pairs are redacted in fallback warni
   assert.match(adjacentHarness.stderr.output, /Warning: unrecognized arguments \[--password, --token, \*\*\*\[REDACTED\]\*\*\*\] ignored/);
 });
 
-test('CLI-FIRST-001b1: none of --help, --version, bare TTY, or mcp loads setup.cjs eagerly', async () => {
+test('CLI-FIRST-001b1/001c/001e: none of --help, --version, bare TTY, mcp, models, or doctor loads setup.cjs eagerly', async () => {
   const root = path.resolve(__dirname, '../..');
 
   // Verify in separate node executions that setup.cjs is never in module cache
@@ -276,7 +359,7 @@ test('CLI-FIRST-001b1: none of --help, --version, bare TTY, or mcp loads setup.c
       const mode = process.argv[1];
       const stdinTTY = mode === 'bare-tty' || mode === 'help' || mode === 'version';
       const stdoutTTY = stdinTTY;
-      const args = mode === 'help' ? ['--help'] : mode === 'version' ? ['--version'] : mode === 'mcp' ? ['mcp'] : [];
+      const args = mode === 'help' ? ['--help'] : mode === 'version' ? ['--version'] : mode === 'mcp' ? ['mcp'] : mode === 'models' ? ['models', '--help'] : mode === 'doctor' ? ['doctor', '--help'] : [];
       let serveCalled = false;
       let stdout = '';
       await runCli(args, { stdin: { isTTY: stdinTTY }, stdout: { isTTY: stdoutTTY, write(c) { stdout += c; } }, stderr: { write() {} } }, {
@@ -302,6 +385,10 @@ test('CLI-FIRST-001b1: none of --help, --version, bare TTY, or mcp loads setup.c
         process.stderr.write('version failed');
         process.exit(2);
       }
+      if ((mode === 'models' || mode === 'doctor') && !stdout.includes('Usage: coagent8')) {
+        process.stderr.write(mode + ' failed');
+        process.exit(2);
+      }
       const loaded = Object.keys(require.cache).filter(k => k.includes('setup.cjs'));
       if (loaded.length > 0) {
         process.stderr.write('setup.cjs was eagerly loaded: ' + loaded.join(', '));
@@ -311,7 +398,7 @@ test('CLI-FIRST-001b1: none of --help, --version, bare TTY, or mcp loads setup.c
     })();
   `;
 
-  for (const mode of ['help', 'version', 'bare-tty', 'bare-nontty', 'mcp']) {
+  for (const mode of ['help', 'version', 'bare-tty', 'bare-nontty', 'mcp', 'models', 'doctor']) {
     const res = spawnSync(process.execPath, ['--require', 'tsx/cjs', '-e', script, mode], {
       cwd: root,
       encoding: 'utf8',
