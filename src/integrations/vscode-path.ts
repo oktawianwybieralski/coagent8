@@ -244,6 +244,18 @@ function generateShimContent(nodePath: string, runtimeTarget: string): string {
   return `@echo off\r\n"${nodePath}" "${runtimeTarget}" %*\r\n`;
 }
 
+function atomicWriteShim(shimPath: string, content: string): void {
+  const dir = path.dirname(shimPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${shimPath}.tmp.${randomUUID()}`;
+  try {
+    fs.writeFileSync(tmp, content, { flag: 'wx', mode: 0o755 });
+    fs.renameSync(tmp, shimPath);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
 export async function enablePathIntegration(
   options: PathOptInOptions,
   adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
@@ -285,15 +297,14 @@ export async function enablePathIntegration(
     const shimContent = generateShimContent(nodeExec, runtimeTarget);
     const shimDigest = hash(shimContent);
 
-    fs.mkdirSync(binDir, { recursive: true });
-    fs.writeFileSync(shimPath, shimContent, 'utf8');
+    atomicWriteShim(shimPath, shimContent);
 
     const rollbackShim = () => {
       try {
         if (!shimExistedBefore) {
           fs.rmSync(shimPath, { force: true });
         } else if (previousShimContent !== null) {
-          fs.writeFileSync(shimPath, previousShimContent, 'utf8');
+          atomicWriteShim(shimPath, previousShimContent);
         }
       } catch {}
     };
@@ -380,14 +391,14 @@ export async function syncPathShim(
     const newShimContent = generateShimContent(nodeExec, runtimeTarget);
     const newShimHash = hash(newShimContent);
 
-    fs.writeFileSync(record.shimPath, newShimContent, 'utf8');
+    atomicWriteShim(record.shimPath, newShimContent);
     record.runtime = runtimeTarget;
     record.shimHash = newShimHash;
     records.path = record;
     try {
       writeRecordFile(options.home, records);
     } catch (err) {
-      try { fs.writeFileSync(record.shimPath, previousShimContent, 'utf8'); } catch {}
+      try { atomicWriteShim(record.shimPath, previousShimContent); } catch {}
       throw err;
     }
 
@@ -425,8 +436,23 @@ export async function removePathIntegration(
         return { action: 'preserved', message: 'Remaining installations active' };
       }
 
+      // Check budget before performing any destructive file system changes
+      if (record.addedToPath && timeRemaining() <= 100) {
+        records.path = record;
+        try { writeRecordFile(home, records); } catch {}
+        return { action: 'blocked', message: 'Uninstall deadline exceeded before registry operation' };
+      }
+
       let previousShimContent: string | null = null;
       let shimRemoved = false;
+      const restoreShimIfNeeded = () => {
+        if (shimRemoved && previousShimContent !== null) {
+          try {
+            atomicWriteShim(record.shimPath, previousShimContent);
+          } catch {}
+        }
+      };
+
       if (fs.existsSync(record.shimPath)) {
         const onDiskContent = fs.readFileSync(record.shimPath, 'utf8');
         const onDiskHash = hash(onDiskContent);
@@ -449,6 +475,7 @@ export async function removePathIntegration(
       if (record.addedToPath) {
         const remainingRead = timeRemaining();
         if (remainingRead <= 0) {
+          restoreShimIfNeeded();
           records.path = record;
           try { writeRecordFile(home, records); } catch {}
           return { action: 'blocked', message: 'Uninstall deadline exceeded before registry read' };
@@ -474,12 +501,7 @@ export async function removePathIntegration(
             }
           }
         } catch (error) {
-          if (shimRemoved && previousShimContent !== null) {
-            try {
-              fs.mkdirSync(path.dirname(record.shimPath), { recursive: true });
-              fs.writeFileSync(record.shimPath, previousShimContent, 'utf8');
-            } catch {}
-          }
+          restoreShimIfNeeded();
           records.path = record;
           try { writeRecordFile(home, records); } catch {}
           return { action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Registry removal failed.') };

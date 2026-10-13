@@ -6,7 +6,8 @@ import { redactDiagnostic } from '../../../src/security/redaction.js';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { withFileLock } from '../../../src/storage/lock.js';
 import { readGovernance, setBackendExecutable, setModelRule, setPriceRules, validateConfig } from '../../../src/config.js';
 import { runCommand } from '../../../src/execution/process.js';
 import type { ModelReport } from '../../../src/diagnostics/doctor.js';
@@ -440,21 +441,46 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     return { status: result, registration, installations, inUse, configured };
   }
+  let pathOfferInFlight: Promise<void> | undefined;
   async function offerPathIntegration(): Promise<void> {
-    if (vscode.env.remoteName || readSetupState(storage).pathPrompt !== undefined) return;
-    const pathChoice = await vscode.window.showInformationMessage(
-      "Add 'coagent8' to your user PATH so you can run it from any terminal?",
-      'Yes', 'No'
-    );
-    if (pathChoice === 'Yes') {
-      await updateSetupState(storage, { pathPrompt: 'accepted' });
-      const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
-      await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
-    } else if (pathChoice === 'No') {
-      await updateSetupState(storage, { pathPrompt: 'declined' });
-    } else {
-      await updateSetupState(storage, { pathPrompt: 'dismissed' });
-    }
+    if (vscode.env.remoteName) return;
+    if (pathOfferInFlight) return pathOfferInFlight;
+    pathOfferInFlight = (async () => {
+      let claimed = false;
+      const statePath = path.join(storage, 'setup-state.json');
+      await withFileLock(statePath, async () => {
+        const state = readSetupState(storage);
+        if (state.pathPrompt !== undefined) return;
+        state.pathPrompt = 'dismissed';
+        fs.mkdirSync(path.dirname(statePath), { recursive: true });
+        const tmp = `${statePath}.tmp.${randomUUID()}`;
+        try {
+          fs.writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+          fs.renameSync(tmp, statePath);
+        } finally {
+          fs.rmSync(tmp, { force: true });
+        }
+        claimed = true;
+      });
+      if (!claimed) return;
+
+      const pathChoice = await vscode.window.showInformationMessage(
+        "Add 'coagent8' to your user PATH so you can run it from any terminal?",
+        'Yes', 'No'
+      );
+      if (pathChoice === 'Yes') {
+        await updateSetupState(storage, { pathPrompt: 'accepted' });
+        const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+        await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+      } else if (pathChoice === 'No') {
+        await updateSetupState(storage, { pathPrompt: 'declined' });
+      } else {
+        await updateSetupState(storage, { pathPrompt: 'dismissed' });
+      }
+    })().finally(() => {
+      pathOfferInFlight = undefined;
+    });
+    return pathOfferInFlight;
   }
   /**
    * Shows the one closing notice for registration changes.
