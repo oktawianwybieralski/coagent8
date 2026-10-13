@@ -499,7 +499,7 @@ under the [MIT License](LICENSE). See LICENSE for the terms and warranty
 disclaimer. Bundled dependencies retain their own licenses and notices in
 `dist/THIRD_PARTY_NOTICES.txt`.
 
-The planned MIT release is 0.6.1. Copies of published 0.6.0 and the withdrawn
+0.6.1 is the first release under the MIT License. Copies of published 0.6.0 and the withdrawn
 npm version 1.0.0-beta.1 retain their GPL-3.0-only permissions. This change
 does not revoke any license previously granted for a distributed copy.
 
