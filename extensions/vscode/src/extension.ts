@@ -1283,15 +1283,15 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (readSetupState(storage).updateOffered === runtime) return;
     const outdated = readRegistrations(localOptions()).filter(item => item.state === 'owned' && !item.current).map(item => item.client);
     if (!outdated.length || isDeactivating) return;
-    await updateSetupState(storage, { updateOffered: runtime });
+    await trackTask(updateSetupState(storage, { updateOffered: runtime }));
     if (isDeactivating) return;
     const next = await vscode.window.showWarningMessage(`CoAgent8 was updated, but the chats of ${labels(outdated)} still start the previous version. Update them now, then restart those chats.`, 'Update CLI Chats');
     if (isDeactivating) return;
-    if (next === 'Update CLI Chats') await connect(outdated);
+    if (next === 'Update CLI Chats') await trackTask(connect(outdated));
   }
-  trackTask(offerRegistrationUpdate().catch(error => {
+  void offerRegistrationUpdate().catch(error => {
     if (!isDeactivating) void vscode.window.showErrorMessage(`CoAgent8 update check: ${redactDiagnostic(error instanceof Error ? error.message : 'Update check failed.')}`);
-  }));
+  });
   const pathSync = vscode.env.remoteName ? Promise.resolve() : syncPathShim({
     home: os.homedir(),
     storage,
