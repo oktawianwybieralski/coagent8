@@ -44,7 +44,7 @@ function redactCliArguments(args: string[]): string[] {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     redacted.push(redactDiagnostic(arg));
-    if (SENSITIVE_FLAG.test(arg) && i + 1 < args.length && !args[i + 1]!.startsWith('-')) {
+    if (SENSITIVE_FLAG.test(arg) && i + 1 < args.length) {
       redacted.push('***[REDACTED]***');
       i++;
     }

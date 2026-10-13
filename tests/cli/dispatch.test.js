@@ -248,6 +248,15 @@ test('CLI-FIRST-001b1: sensitive flag-value pairs are redacted in fallback warni
   assert.ok(!harness.stderr.output.includes('super-secret-val'));
   assert.ok(!harness.stderr.output.includes('secret-tok-123'));
   assert.match(harness.stderr.output, /Warning: unrecognized arguments \[--password, \*\*\*\[REDACTED\]\*\*\*, --token, \*\*\*\[REDACTED\]\*\*\*\] ignored/);
+
+  // Hyphen-prefixed sensitive values must also be redacted
+  const hyphenHarness = createHarness({ stdinTTY: false, stdoutTTY: false });
+  const hyphenCode = await runCli(['--password', '-private-value', '--api-key', '--secret-flag-val'], hyphenHarness.streams, hyphenHarness.deps);
+  assert.equal(hyphenCode, 0);
+  assert.equal(hyphenHarness.servedStdio, true);
+  assert.ok(!hyphenHarness.stderr.output.includes('-private-value'));
+  assert.ok(!hyphenHarness.stderr.output.includes('--secret-flag-val'));
+  assert.match(hyphenHarness.stderr.output, /Warning: unrecognized arguments \[--password, \*\*\*\[REDACTED\]\*\*\*, --api-key, \*\*\*\[REDACTED\]\*\*\*\] ignored/);
 });
 
 test('CLI-FIRST-001b1: none of --help, --version, bare TTY, or mcp loads setup.cjs eagerly', async () => {
