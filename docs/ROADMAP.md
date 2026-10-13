@@ -75,7 +75,11 @@ Owner direction 2026-10-13: the public CLI comes first and publication
 automation (`RELEASE-001`) comes last, before the `0.7.0` tag. Phases run in
 order; cards inside a phase follow their own `After` dependencies. Each card
 still lands as one topic PR into `develop` (rule 02). A phase is complete when
-its cards are merged with green CI, not when code exists locally.
+its cards are merged with green CI, not when code exists locally. Writing code
+is not the bottleneck (several agent subscriptions are available): inside a
+phase, cards that touch disjoint files run as parallel streams, merged in the
+order of their dependencies; review, CI, native acceptance and owner decisions
+set the pace.
 
 ```mermaid
 flowchart TD
@@ -139,7 +143,9 @@ Specify the syntax first (`001a`), then dispatch, help and version (`001b`),
 (runtime version in `doctor`, shared registrations, issue links, Codex buffer
 limit), `AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`AUDIT-001-A08` to `A21`](#audit-001-corrected-analysis-follow-up),
-`SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`, and
+`SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`,
+[`ACCEPT-001`](#accept-001-automated-native-acceptance) (automated native
+acceptance and a WSL lane), and
 [`WINDOWS-001b-e`](#windows-001-per-call-process-containment) per-call process
 containment, which must land before any write or command profile.
 
@@ -154,7 +160,9 @@ human-facing documentation), `DOCS-002c/e`, and
 implementation cards created from the accepted contracts for host-led
 write/check/review/fix profiles, role configuration and multi-file skills;
 `CLI-FIRST-001f` (one execution path through the CLI) after the profiles;
-`FAILOVER-001a`; [`PLUGIN-001a-g`](#plugin-001-native-plugin-in-every-supported-client).
+`FAILOVER-001a`; [`PLUGIN-001a-g`](#plugin-001-native-plugin-in-every-supported-client);
+the native tests and contracts of
+[`DELEGATE-001a-c`](#delegate-001-asynchronous-delegation-and-caller-wake-up).
 
 **Phase 5 - publication automation and 0.7.0 acceptance.**
 [`RELEASE-001a-g`](#release-001-automated-publication), then the release PR
@@ -167,8 +175,9 @@ and may land earlier without changing this order.
 
 ### After 0.7.0
 
-1. Add delegated coordination and parallel work (`COAGENT-006`), with root
-   limits, writer ownership and recoverable task state.
+1. Add delegated coordination and parallel work (`COAGENT-006`,
+   `DELEGATE-001d`), with root limits, writer ownership and recoverable task
+   state.
 2. Accept CLI execution, supported clients/platforms and benchmarks
    (`CLI-FIRST-001g-i`, `COAGENT-008`, `FAILOVER-001b/c`, `REPO-002f`), then
    complete the release-candidate gates.
@@ -403,6 +412,43 @@ When a subscription backend hits a usage window limit during a task, routing rec
 - [ ] **FAILOVER-001a - report the way forward.** Start: `RATE_LIMITED` in `src/contracts/error.ts`, cooldown recording in `src/execution/controller.ts` and error formatting in `src/mcp/server.ts`. Report the reset time when native quota evidence provides it (otherwise unknown) and state the explicit continuation choices (wait, or hand off with the session handle and another backend) without starting a fallback turn. Check: R, LIFE/CACHE/MCP.
 - [ ] **FAILOVER-001b - seeded fork contract.** After `COAGENT-001a` and `004a`; check: P. Specify creating a new session on another backend from a bounded quoted-data seed (task record or original objective, latest turns within a byte cap, and any interrupted partial answer labelled incomplete), linking the source handle while re-evaluating cross-provider history consent, model selection, price limits and expensive-model approval.
 - [ ] **FAILOVER-001c - configuration-authorized failover.** After `001b` and `COAGENT-003a`; check: P. Specify user configuration naming eligible backends and an output price limit for automatic handoff after quota exhaustion (configurable only by the user, never by a calling agent).
+
+### DELEGATE-001: asynchronous delegation and caller wake-up
+
+Owner request 2026-10-12: a calling agent hands a task to another CLI and is
+woken when it finishes, without the user typing. Plain MCP cannot start a
+model turn (notifications, sampling, elicitation and MCP tasks do not), and
+resuming the caller's session from another process forks its history. A local
+research note (2026-10-12, docs from that date plus Codex and agy
+consultations) found per-client mechanisms to test: Claude Code channels
+(research preview) and plugin monitors, `codex queue --thread <id>` (present
+in Codex CLI 0.162), and agy background `run_command` re-invocation
+(claimed). No client lets a plugin subagent run on another vendor's CLI, so a
+plugin is packaging, not the integration; a cheap-model proxy subagent that
+only calls CoAgent8 is the fallback. Status: blocked on native tests.
+
+- [ ] **DELEGATE-001a - native tests of the wake-up mechanisms.** In the
+  Claude Code VS Code extension: plugin monitors and channels; Codex:
+  `codex queue` against an idle, busy and unloaded thread and whether the IDE
+  shows it; agy: whether a background `run_command` exit starts a turn; which
+  MCP protocol revision CoAgent8 negotiates. Check: native, per client.
+- [ ] **DELEGATE-001b - caller identity label.** Learn how the caller's own
+  session or thread id reaches CoAgent8 (for example an inherited
+  `CLAUDE_CODE_SESSION_ID`, or an explicit argument) and record it on
+  sessions, so `session list` can show "my sessions" and wake-ups reach the
+  right caller. The label filters only; it never authorizes cancel or close
+  (`turnToken` and `activePid` keep that role). Check: P, then R.
+- [ ] **DELEGATE-001c - portable core contract.** `delegate` returns a task
+  id at once; `session` reads status and result; `cancel` stops it; a bounded
+  `wait`. The result is written to the session store before any wake-up;
+  completion, notification sent and result fetched are separate, deduplicated
+  states, with no wake-up after cancel. Record in ARCHITECTURE as
+  unimplemented. Check: P.
+- [ ] **DELEGATE-001d - wake-up adapters.** After `001a-c` and with
+  `COAGENT-006`: optional per-client adapters (Claude Code monitor
+  `coagent8 watch`, later a channel; Codex `codex queue`; agy background
+  `coagent8 wait`), or the proxy subagent in each client's plugin if the
+  adapters prove fragile. Check: R, native per client.
 
 ## Remaining foundation work
 
@@ -789,6 +835,31 @@ pre-release, npm `next`):
 Completed: `REPO-003a` synchronized manifests, VSIX packaging, workflows and
 changelog rules ([evidence](HANDOFF.md#repo-003a-one-numeric-version)).
 
+## ACCEPT-001: automated native acceptance
+
+Owner request 2026-10-12: native acceptance should need as little human work
+as possible and include WSL. The `0.6.1` acceptance was manual, ran a stale
+runtime in its first round and let an isolated test instance rewrite the
+user's real client registrations (`FEEDBACK-061a/b`).
+
+- [ ] **ACCEPT-001a - native acceptance runner.** `npm run acceptance:native`
+  takes the CI tarball and VSIX, installs them in an isolated VS Code instance
+  and a clean npm folder, drives the scenarios that need no chat UI (start with
+  `PATCH-061-N2`, `N3` and `N4` through the real CLIs) and writes a JSON
+  evidence file bound to the artifacts' SHA-256, the CLI and host versions and
+  the runtime version actually started. People only do what cannot be
+  automated, such as clicking in a chat. Check: R, one native run.
+- [ ] **ACCEPT-001b - isolated user home.** The runner and any isolated
+  instance use their own `HOME`/`USERPROFILE` (or an equivalent override) so
+  they never write the user's real client registrations or
+  `~/.coagent8/config.json`. Check: R, native.
+- [ ] **ACCEPT-001c - WSL lane.** In a WSL2 Ubuntu distribution with the real
+  CLIs: POSIX process groups and parent-death cleanup (`CUR-011`), CLIs and
+  workspaces on either side (`\\wsl.localhost\...` and `/mnt/c`), and
+  redaction of `/home/<user>` and `/mnt/c/Users/<user>` paths. Hosted CI
+  offers only WSL1, so the lane runs locally. Supporting VS Code Remote-WSL as
+  a topology stays deferred (`PROPOSALS-001c`). Check: native.
+
 ## RELEASE-001: automated publication
 
 Goal (owner decision 2026-10-13): after the owner pushes a release tag, workflows
@@ -832,7 +903,10 @@ check that runs the real publish commands without publishing.
   changes, known limitations, upgrade notes), reviewed like code. `release.yml`
   puts it above the generated sections and fails without it, which removes
   rule 02 step 20. Show the generated changelog expanded instead of inside
-  `<details>`. Check: R, CI on the PR.
+  `<details>`, map scope names to product names ("Vscode" to "VS Code",
+  "Mcp" to "MCP", "Agy" to "Antigravity (agy)") in `cliff.toml` and
+  `cliff.release-notes.toml`, and give both the same layout. Check: R, CI on
+  the PR.
 - [ ] **RELEASE-001f - published-package verification.** After the publish
   jobs, a job checks that the npm `dist.shasum`/`dist.integrity` and the
   Marketplace VSIX SHA-256 equal the release files and that dist-tags point to
@@ -1121,7 +1195,8 @@ behavior or a test-procedure lesson.
 Proposals made in earlier sessions that were never recorded. Each needs an
 owner decision before it becomes a card with acceptance criteria. Owner
 decision 2026-10-13 (Phase 0 of the [0.7.0 plan](#070-beta3-plan)): the
-recommendations below are accepted; c and j are deferred.
+recommendations for a to j are accepted; c and j are deferred. Items k to n
+were found later in the same review and await the owner's confirmation.
 
 | Item | Recommendation |
 | --- | --- |
@@ -1135,6 +1210,10 @@ recommendations below are accepted; c and j are deferred.
 | h | Accept. |
 | i | Accept for `0.7.0`. |
 | j | Defer; it grants new rights for published copies and is a legal choice, not a formality. |
+| k | Accept. |
+| l | Accept with d. |
+| m | Defer; research only. |
+| n | Accept, before `0.7.0`. |
 
 - [ ] **PROPOSALS-001a - MCP Registry entry.** Publish `server.json` (with
   `mcpName` in `package.json`) as `io.github.oktawianwybieralski/coagent8`, so
@@ -1170,6 +1249,23 @@ recommendations below are accepted; c and j are deferred.
 - [ ] **PROPOSALS-001j - MIT for older copies.** Optionally also permit use
   of `0.6.0` and `1.0.0-beta.1` under MIT, keeping their GPL-3.0-only
   permissions, after extending the rights check to those packages.
+- [ ] **PROPOSALS-001k - explicit force-with-lease.** Rule 02 allows
+  `--force-with-lease` on the author's own topic branch; a bare lease is
+  silently refreshed by a background `git fetch` (editor autofetch, another
+  agent) and can overwrite unseen commits. Require
+  `--force-with-lease=<branch>:<sha> --force-if-includes`.
+- [ ] **PROPOSALS-001l - compact session resources.** The session and history
+  MCP resources use `JSON.stringify(..., null, 2)` (`src/mcp/server.ts`);
+  indentation costs tokens when a model reads them. Use compact JSON or
+  concise text.
+- [ ] **PROPOSALS-001m - connectome orchestration experiment.** An informal
+  research idea (2026-10-09): test whether a circuit from the published fruit
+  fly connectome could drive role, model or decomposition choices. No
+  validated mapping exists; research only, no commitment.
+- [ ] **PROPOSALS-001n - neutral branch-model wording.** Rule 02, AGENTS.md,
+  the ARCHITECTURE decision log and ROADMAP still name the external project
+  the branch model was modeled on; describe the model on its own (owner
+  decision 2026-10-12, before `0.7.0`).
 
 ## DOCS-003: documentation site
 
