@@ -9,6 +9,16 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
+## Unreleased
+
+- Cli:
+  - New feature:
+    - [`f9726be`](https://github.com/oktawianwybieralski/coagent8/commit/f9726be066f2228f21ec0efb27692bfc0c0bc228): Implement Option D mcp, help and version root dispatch
+  - Bug fix:
+    - [`e36fe67`](https://github.com/oktawianwybieralski/coagent8/commit/e36fe6742926d5c840343b956f37726d15822cc1): Preserve sensitive flag detection for adjacent flags
+    - [`0b47fc2`](https://github.com/oktawianwybieralski/coagent8/commit/0b47fc2c4f22003eca2e817c9edea469f248b05d): Redact hyphen-prefixed sensitive values in non-tty warning
+    - [`681d2b3`](https://github.com/oktawianwybieralski/coagent8/commit/681d2b314b94143c90adf4b5b4d345b01de64d4e): Redact sensitive flag-value pairs and scope root help
+
 ## v0.6.1 - (2026-10-13)
 
 - Agy:
