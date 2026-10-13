@@ -577,7 +577,9 @@ initialize/tools-list, native host calls, UI/skill discovery and install/update/
 uninstall are separate acceptance claims. Preliminary owner evidence does not
 establish support for every host/version. The roadmap owns outstanding checks.
 
-## Public CLI and dispatch specification
+## Public CLI and dispatch specification (target design)
+
+> Target specification pending implementation across Phase 1 (CLI-FIRST-001b through 001e). Current baseline runtime dispatch is defined in `src/index.ts`.
 
 CoAgent8 exposes a command-line interface via npm package executable `coagent8`
 ([CLI-FIRST-001](ROADMAP.md#cli-first-001-public-cli-and-mcp-adapter)). The CLI
@@ -769,7 +771,7 @@ coagent8 session list
 coagent8 session history syn_sess_5aaa080be2d8f37fb564ca08 --limit 10
 
 # Check client registration status (JSON output)
-coagent8 status --clients=codex,claude,agy
+coagent8 status --clients=codex,claude,agy --json
 
 # Preview cleanup of owned registrations and skills
 coagent8 cleanup --clients=codex
