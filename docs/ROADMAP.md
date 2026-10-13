@@ -759,7 +759,7 @@ MCP bridge until the CLI replacement is accepted. CLI-first precedes rc.1 (owner
 decision 2026-10-09). Cards 001a-001e do not depend on execution profiles and
 may proceed in the beta.3 window; 001f waits for accepted profiles.
 
-- [ ] **CLI-FIRST-001a - specify syntax and outcomes.** Start: `src/index.ts`,
+- [x] **CLI-FIRST-001a - specify syntax and outcomes.** Start: `src/index.ts`,
   `src/mcp/schema.ts`, neutral execution contracts and COAGENT-001. Define
   commands, backend/model aliases, bounded stdin/JSON/JSONL, help/version,
   error/exit mapping and consent transport. Done: invocation examples cover

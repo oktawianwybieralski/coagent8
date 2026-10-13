@@ -449,10 +449,12 @@ status is separate from a review conclusion.
 
 ## Optional integrations
 
-Setup/repair/status/cleanup live in the separate setup bundle. No-argument binaries
-start stdio; public task execution CLI remains planned. Setup owns selected-host
-registrations, immutable runtime copies, fingerprints, private backups, leases and
-preview-bound cleanup. Preserve manual/edited entries and unrelated settings.
+Setup/repair/status/cleanup live in the separate setup bundle. Legacy registrations
+invoke the runtime bundle directly without a subcommand; modern registrations
+pass the explicit `mcp` subcommand (see [Registration migration and coexistence](#registration-migration-and-coexistence)).
+Setup owns selected-host registrations, immutable runtime copies, fingerprints,
+private backups, leases and preview-bound cleanup. Preserve manual/edited entries
+and unrelated settings.
 Without a recorded fingerprint, as after `setup.json` was lost, an entry is setup's
 when it starts a runtime copy in `~/.coagent8/runtime/<sha256>/index.cjs` and holds
 only the fields setup writes; a data directory in VS Code global storage
@@ -788,6 +790,160 @@ coagent8 status --clients=codex
 # stdout: [...] (no ready clients found) -> exit code 1
 ```
 
+### Registration migration and coexistence
+
+CoAgent8 registrations across native hosts (Codex CLI, Claude Code, Antigravity,
+and VS Code) transition from legacy direct runtime bundle invocation to the
+explicit `mcp` subcommand (`CLI-FIRST-001a2`).
+
+#### Supported registration shapes
+
+1. **Legacy registration shape (direct invocation without subcommand)**:
+   - Node-invoked runtime bundle:
+     ```json
+     {
+       "command": "<nodePath>",
+       "args": ["<root>/runtime/<sha256>/index.cjs"],
+       "env": { "coagent8_CONFIG": "...", "coagent8_DIR": "..." }
+     }
+     ```
+   - Binary invocation (shim or global executable):
+     ```json
+     {
+       "command": "coagent8",
+       "args": []
+     }
+     ```
+   - Transport behavior: Connected hosts stream JSON-RPC over non-TTY stdio pipes.
+     Option D routes unadorned non-TTY invocations directly to the legacy MCP
+     server without human interaction.
+
+2. **Modern registration shape (explicit `mcp` subcommand)**:
+   - Node-invoked runtime bundle:
+     ```json
+     {
+       "command": "<nodePath>",
+       "args": ["<root>/runtime/<sha256>/index.cjs", "mcp"],
+       "env": { "coagent8_CONFIG": "...", "coagent8_DIR": "..." }
+     }
+     ```
+   - Binary invocation:
+     ```json
+     {
+       "command": "coagent8",
+       "args": ["mcp"]
+     }
+     ```
+   - Transport behavior: Always initializes and starts the MCP JSON-RPC server
+     over stdio regardless of terminal or pipe state.
+
+3. **Host configuration formats**:
+   - **Codex CLI**: `[mcp_servers.coagent8]` in `~/.codex/config.toml` (TOML
+     table; preserves `tool_timeout_sec = 1800`).
+   - **Claude Code**: `mcpServers.coagent8` in `~/.claude.json`.
+   - **Antigravity**: `mcpServers.coagent8` in `~/.gemini/config/mcp_config.json`.
+   - **VS Code editor profile**: `servers.CoAgent8` in profile `mcp.json`
+     (case-sensitive server key `CoAgent8`).
+   - **VS Code provider fallback**: `McpStdioServerDefinition("CoAgent8", nodePath, [runtime, "mcp"], env)`
+     in `extension.ts`.
+   - **Shipped template**: Root `mcp.json` packaged for distribution and workspace
+     reference.
+
+#### Runtime path extraction and validation contract
+
+Runtime path extraction in the integration layer (`src/integrations/setup-storage.ts`)
+is governed by a single validated helper (`extractRuntimePath`), eliminating ad-hoc
+indexing and preventing duplicated `.args.at(-1)` assumptions:
+
+1. **Argument layout inspection**:
+   - If `entry.args.at(-1) === "mcp"`: the runtime candidate is `entry.args.at(-2)`.
+   - If `entry.args.at(-1)` is a path ending with `index.cjs`: the runtime candidate
+     is `entry.args.at(-1)` (legacy shape).
+   - Any other argument layout yields `null`.
+2. **Strict containment and path validation**:
+   - The candidate path must be absolute and resolve inside the owned runtime root:
+     `~/.coagent8/runtime/<sha256>/index.cjs` for standalone clients, or
+     `<globalStorage>/okidev.coagent8-mcp/runtime/<sha256>/index.cjs` for VS Code.
+   - The subdirectory name must be exactly 64 hexadecimal characters (`/^[a-f0-9]{64}$/`),
+     and the file basename must be `index.cjs`.
+3. **Command and argument bounds (anti-widening invariant)**:
+   - The executable `entry.command` must resolve to Node (`process.execPath` or
+     the candidate `nodePath`), never an arbitrary shell, script or system utility.
+   - Permitted `args` are strictly `[...node.argsPrefix, runtimePath]` (legacy)
+     or `[...node.argsPrefix, runtimePath, "mcp"]` (modern). No additional flags,
+     trailing options, or foreign tokens are permitted.
+   - Binary (`command: "coagent8"`) and `npx` entries have no pinned runtime path
+     in `args`; `setupShapedEntry` and `extensionShaped` never claim ownership
+     over them. They are classified as manual entries.
+
+#### Owned-entry migration semantics
+
+Owned registrations migrate automatically to the explicit `mcp` shape:
+
+1. **Migration triggers**:
+   - `coagent8 setup`: when registering or updating clients.
+   - `coagent8 repair`: when restoring or reconciling owned registrations.
+   - **VS Code extension update / activation**: when synchronizing profile
+     `mcp.json` entries.
+2. **Ownership identification**:
+   - **Standalone clients**: Ownership requires matching the SHA-256 fingerprint
+     recorded in `~/.coagent8/setup.json` (`saved.owned[client]`), or matching
+     the strict `setupShapedEntry` fallback when `setup.json` is absent.
+   - **VS Code profile**: Ownership requires matching the entry digest recorded
+     in `~/.coagent8/vscode-mcp.json` (`recorded.entry` or `recorded.pending`),
+     or `extensionShaped` only when no record exists. Entries recorded by a
+     newer extension version are never replaced by an older version.
+3. **Pre-mutation verification**:
+   - The candidate bundle is written to its immutable runtime path and probed:
+     `probeRuntime` initializes the server over stdio and reads the tool list.
+   - Codex host-level call verification (`probeCodex`) executes where supported.
+     Claude Code and Antigravity update upon verified runtime probe
+     (owner decision 2026-10-09).
+4. **Checked atomic replacement and rollback**:
+   - Updates write through `writeChecked` under the integration lease (`~/.coagent8`
+     or `~/.coagent8/vscode-mcp`), writing to a temporary file (`.tmp`) and
+     renaming atomically while verifying expected before-content.
+   - Private tagged backups are written to `~/.coagent8/setup-backups/<origin>-<uuid>/`.
+   - On Codex, `tool_timeout_sec = 1800` is preserved on the CoAgent8 table.
+   - If candidate checks fail or concurrent modification occurs, rollback
+     restores only the unchanged previous entry, preserving external edits and
+     retaining backups if restoration conflicts.
+
+#### Manual entries and user guidance
+
+1. **Strict preservation of user-managed entries**:
+   - Manual entries (entries created by the user, pointing to custom wrappers,
+     or containing unrecorded environments/flags) are never overwritten,
+     mutated, or deleted by setup, repair, or the extension.
+   - `coagent8 status` reports them as `state: "manual"`.
+2. **Compatibility and transition guidance**:
+   - Legacy manual entries remain functional over non-TTY stdio through Option D.
+   - Documentation and `coagent8 status` provide actionable guidance:
+     ```text
+     Manual CoAgent8 entry detected in ~/.claude.json.
+     To update to modern syntax, change your entry to invoke 'mcp':
+       "args": [".../index.cjs", "mcp"]
+     ```
+
+#### Pinned copies and npx pattern
+
+1. **Pinned runtime copies**:
+   - CLI runtime copies in `~/.coagent8/runtime/<sha256>/index.cjs` are immutable
+     and content-addressed. They remain pinned and are not overwritten; older
+     copies are removed only during explicit `coagent8 cleanup`.
+   - The VS Code extension prunes unreferenced bundle copies in its global
+     storage (`pruneRuntimes`) during synchronization, keeping active copies intact.
+2. **The `npx` pattern for manual or ephemeral use**:
+   - For users, CI pipelines, or foreign environments invoking CoAgent8 via npx
+     without global installation, the supported invocation pattern is:
+     ```bash
+     npx -y coagent8@<version> mcp
+     ```
+   - Always specify the exact package version (e.g. `coagent8@0.7.0`) and the
+     explicit `mcp` subcommand.
+   - `npx` is user-facing documentation guidance; setup and the extension never
+     download packages or run `npx` dynamically.
+
 ## Target orchestration design (not implemented)
 
 MCP will adapt to the matching packaged execution CLI under CLI-FIRST-001.
@@ -877,6 +1033,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-11 | The user's model rules follow the allow/ask/deny convention (governance.models): deny refuses a model with the reason, ask asks every turn and states the price, allow is standing approval; deny wins over ask, ask over allow. They replace alwaysAsk/neverAsk without aliases: nothing was published with them. Approval stays the server's MCP form only: an answer the calling agent relays from chat is not consent. The model-visible tool-definition budget rises to 5,900 bytes so the model parameter tells the caller to ask the user before a model doctor tags ask. |
 | 2026-10-11 | Approval rules live only in config.json, which every client's server reads; their VS Code settings are removed. The VS Code command Manage Model Approvals lists price rules and each backend's models with prices and tags from `coagent8 models --json` (the doctor model view) and writes one rule per model. Clients without MCP form elicitation (Antigravity, Codex 0.160.1, headless) fail closed; the user allows a model there instead. |
 | 2026-10-13 | Bare `coagent8` follows Option D: when stdin and stdout are both terminals it prints help; otherwise it starts the legacy MCP server over stdio; `coagent8 mcp` always starts the server. Unknown arguments in terminals exit 2; non-TTY fallback emits a stderr warning and starts MCP. |
+| 2026-10-13 | Registration migration (CLI-FIRST-001a2): owned registrations migrate to the explicit 'mcp' subcommand on setup, repair, and extension update; runtime path extraction in the integration layer recognizes both legacy and 'mcp' shapes under strict argument and path bounds without widening ownership; manual entries remain untouched; pinned copies are preserved; npx guidance recommends 'npx -y coagent8@<version> mcp'. |
 
 ## Known limitations
 
