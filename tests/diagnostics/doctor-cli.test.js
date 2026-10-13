@@ -41,12 +41,14 @@ test('coagent8 doctor defaults to scope models and prints human summary or JSON'
 test('coagent8 doctor --scope health prints health diagnostics or JSON matching MCP doctor', async () => {
   const text = sink(), json = sink(), err = sink();
   assert.equal(await runDoctorCli(['--scope', 'health'], text.stream, err.stream), 0);
-  assert.match(text.text(), /^CoAgent8 doctor: /);
+  assert.match(text.text(), /^CoAgent8 doctor: \w+ · v\d+\.\d+\.\d+.* · runtime: .* · default backend:/);
   assert.equal(err.text(), '');
 
   assert.equal(await runDoctorCli(['--scope=health', '--backend=codex', '--json'], json.stream, err.stream), 0);
   const report = JSON.parse(json.text());
   assert.ok(report.status);
+  assert.equal(typeof report.server_version, 'string');
+  assert.equal(typeof report.runtime_path, 'string');
   assert.deepEqual(Object.keys(report.backends), ['codex']);
   assert.ok(report.ready_backends);
 
@@ -54,6 +56,8 @@ test('coagent8 doctor --scope health prints health diagnostics or JSON matching 
   const mcpRes = await handleDoctor({ scope: 'health', backend: 'codex', detail: 'full' });
   const mcpData = JSON.parse(mcpRes.content[0].text);
   assert.equal(report.status, mcpData.status);
+  assert.equal(report.server_version, mcpData.server_version);
+  assert.equal(report.runtime_path, mcpData.runtime_path);
   assert.deepEqual(report.ready_backends, mcpData.ready_backends);
 });
 

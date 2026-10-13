@@ -12,6 +12,8 @@ import { adapterRegistry } from '../backends/registry.js';
 import { createPhaseTracker, type PhaseTracker } from '../execution/runtime/timing.js';
 import { createExecutionBudget } from '../execution/runtime/budget.js';
 import { combineSignals } from '../storage/lock.js';
+import { BRAND } from '../brand.js';
+import { getRuntimePath } from '../paths.js';
 import {
   DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
   type TimingObserver,
@@ -96,6 +98,10 @@ export interface DoctorReport {
   recommendations: string[];
   installed_backends: ProviderId[];
   ready_backends: ProviderId[];
+  /** Running server version (`FEEDBACK-061a1`). */
+  server_version: string;
+  /** Active runtime path executing CoAgent8 (`FEEDBACK-061a1`). */
+  runtime_path: string;
   /** Why the configuration file is unusable; the report then shows the defaults and execution is refused. */
   configError?: string;
   /** Provenance and change identity of the configuration snapshot used for diagnostics. */
@@ -362,6 +368,8 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     active_backends: active,
     installed_backends: selected.filter(id => probes[id]!.installed),
     ready_backends: ready,
+    server_version: BRAND.SERVER_VERSION,
+    runtime_path: redactDiagnostic(getRuntimePath()),
     configuredDefault: config.defaultBackend,
     effectiveDefault: effective,
     default_backend: effective || 'auto',
@@ -485,8 +493,10 @@ function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId)
  */
 export function formatDoctorSummary(report: DoctorReport): string {
   const ids = Object.keys(report.backends) as ProviderId[];
+  const versionPart = report.server_version ? ` · v${report.server_version}` : '';
+  const runtimePart = report.runtime_path ? ` · runtime: ${report.runtime_path}` : '';
   return fitSummary(report.selection, (rows, limits) => {
-    const lines = [`CoAgent8 doctor: ${report.status} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
+    const lines = [`CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
     for (const id of ids) {
       const probe = report.backends[id]!;
       if (!probe.installed) { lines.push(`${id}: not installed`); continue; }
