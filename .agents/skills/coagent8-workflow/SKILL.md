@@ -63,7 +63,10 @@ does not establish independent checks or release approval.
 
 Prepare and maintain the PR description and checklist per
 [rule 02 section 3](../../rules/02-git-workflow.md#3-pull-requests), within the
-owner's authorization. Provide the owner with current check evidence, the
+owner's authorization. Group related roadmap subtasks into one coherent result
+on one branch and PR, with its tests and documentation. Follow the roadmap's PR
+groups; task IDs and line counts do not automatically create PR boundaries.
+Provide the owner with current check evidence, the
 reviewed snapshot, unresolved findings and architectural decisions to assess.
 The owner's code review normally precedes opening the PR: prepare the local
 candidate and evidence first, address feedback, then open the PR when authorized.

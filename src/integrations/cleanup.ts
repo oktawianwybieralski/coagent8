@@ -73,12 +73,10 @@ function removeEntry(client: SetupClient, before: string): string {
 }
 
 /**
- * Deletes runtime copies that no host registration references, the private backups
- * written for the VS Code extension, and the setup state when it no longer records a
- * selection or an owned registration. Backups of `coagent8` CLI changes are kept.
- * @throws When a host configuration cannot be read; nothing is deleted then.
+ * Removes runtime copies that are no longer referenced by any client config or installs.json.
+ * @throws When a host configuration or installs.json cannot be read; nothing is deleted then.
  */
-function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): void {
+export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJS.ProcessEnv = process.env): void {
   const runtimes = path.join(root, 'runtime');
   const referenced = new Set<string>();
   for (const client of SETUP_CLIENTS) {
@@ -90,12 +88,38 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
       }
     }
   }
+  const installsPath = path.join(root, 'installs.json');
+  if (fs.existsSync(installsPath)) {
+    const raw = read(installsPath);
+    if (raw === null) throw new Error('Unreadable installs.json');
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { throw new Error('Malformed installs.json'); }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
+    // A PATH record whose runtime cannot be read may still guard a shim: prune nothing.
+    const pathRecord = (parsed as { path?: unknown }).path;
+    if (pathRecord !== undefined) {
+      const pRuntime = pathRecord && typeof pathRecord === 'object' ? (pathRecord as { runtime?: unknown }).runtime : undefined;
+      if (typeof pRuntime !== 'string' || !pRuntime) throw new Error('Malformed PATH record in installs.json');
+      const resolved = path.resolve(pRuntime);
+      if (resolved.startsWith(runtimes + path.sep)) {
+        referenced.add(path.relative(runtimes, resolved).split(path.sep)[0]!);
+      }
+    }
+  }
   if (fs.existsSync(runtimes)) {
     for (const name of fs.readdirSync(runtimes)) {
       if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) fs.rmSync(path.join(runtimes, name), { recursive: true, force: true });
     }
     if (!fs.readdirSync(runtimes).length) fs.rmdirSync(runtimes);
   }
+}
+
+/**
+ * Removes unchanged setup state: runtime copies that are no longer referenced by any client,
+ * backup files with the extension prefix and, when no registrations or skills remain, the state file.
+ */
+function removeUnreferencedSetup(root: string, home: string, env: NodeJS.ProcessEnv, stateFile: string): void {
+  pruneUnreferencedRuntimes(root, home, env);
   const backups = path.join(root, 'setup-backups');
   if (fs.existsSync(backups)) {
     for (const name of fs.readdirSync(backups)) {

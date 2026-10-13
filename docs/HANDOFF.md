@@ -24,6 +24,21 @@ Do not append another session transcript or treat old test counts as fresh evide
   before the tag: the `0.6.1` publication path broke twice and npm and the
   Marketplace were published by hand. The `PATCH-061` native tasks that did
   not run before `0.6.1` are part of the `0.7.0` acceptance.
+- **Phase 1 status (2026-10-13):** rows 1.1-1.13 of the
+  [task queue](ROADMAP.md#tasks-070-070-task-queue) are merged or in review:
+  the public CLI (`CLI-FIRST-001a-e`, #34 and #36-#42), `RELEASE-001a` (#35)
+  and the Windows PATH opt-in (`CLI-FIRST-001h1/h2`, #43). On 2026-10-13 the
+  owner installed the packed CLI globally (`--help`, `models`, `doctor`,
+  `session list`, `status`, exit code 2 for an unknown command), and ran the
+  extension's PATH prompt, shim and uninstall removal on Windows. The
+  readability gaps found in that run are the unscheduled card
+  `CLI-FIRST-001j`. Row 1.14 (`DELEGATE-001a`) is a native owner task; the
+  next agent work is the result group 2.1-2.2 (`FEEDBACK-061a1/a2`).
+- **PR scope (owner direction, 2026-10-13):** use the
+  [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
+  commits/checklist items on one branch. Merged #33-#42 keep their history;
+  the first three groups are #41 and #42 (merged) and #43 (current PR). Required review and
+  CI cover each complete result; a task ID or line count is not a PR boundary.
 
 ## 0.6.1 release evidence
 

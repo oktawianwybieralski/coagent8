@@ -42,6 +42,8 @@ export interface SetupState {
   updateOffered?: string;
   /** Vendor extensions whose removal the user started from a CLI menu, finished once VS Code has removed them. */
   removingExtensions?: string[];
+  /** State of the PATH opt-in prompt. */
+  pathPrompt?: 'accepted' | 'declined' | 'dismissed';
 }
 /**
  * What CoAgent8 installed. It is kept in `~/.coagent8/installs.json`, outside the
@@ -92,6 +94,9 @@ export function readSetupState(storage: string): SetupState {
   if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
   const removing = strings(record.removingExtensions);
   if (removing?.length) state.removingExtensions = removing;
+  if (typeof record.pathPrompt === 'string' && (record.pathPrompt === 'accepted' || record.pathPrompt === 'declined' || record.pathPrompt === 'dismissed')) {
+    state.pathPrompt = record.pathPrompt;
+  }
   return state;
 }
 
@@ -117,12 +122,17 @@ export function readInstallRecord(location: StateLocation): InstallRecord {
 export async function updateInstallList(location: StateLocation, list: SetupInstallList, add: string[], remove: string[] = []): Promise<void> {
   const file = installRecordFile(location.home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  await withFileLock(file, async () => {
-    const record = readInstallRecord(location);
-    const items = [...new Set([...record[list] ?? [], ...add])].filter(item => !remove.includes(item));
-    if (items.length) record[list] = items;
-    else delete record[list];
-    if (Object.keys(record).length) replaceFile(file, JSON.stringify(record, null, 2) + '\n');
+  await withFileLock(path.join(location.home, '.coagent8', 'setup'), async () => {
+    const raw = readObject(file);
+    const legacy = readObject(setupStateFile(location.storage));
+    for (const name of INSTALL_LISTS) {
+      const merged = [...new Set([...strings(raw[name]) ?? [], ...strings(legacy[name]) ?? []])];
+      if (merged.length) raw[name] = merged;
+    }
+    const items = [...new Set([...strings(raw[list]) ?? [], ...add])].filter(item => !remove.includes(item));
+    if (items.length) raw[list] = items;
+    else delete raw[list];
+    if (Object.keys(raw).length) replaceFile(file, JSON.stringify(raw, null, 2) + '\n');
     else fs.rmSync(file, { force: true });
   });
   const legacy = readObject(setupStateFile(location.storage));

@@ -14,6 +14,31 @@ const LABELS = { codex: 'Codex CLI', claude: 'Claude Code CLI', agy: 'Antigravit
 const VENDORS = { codex: 'openai.chatgpt', claude: 'anthropic.claude-code', agy: 'google.google-antigravity' };
 const SEPARATOR = -1;
 
+class MockPathAdapter {
+  constructor(initialPath = 'C:\\Tools', initialKind = 'REG_SZ', isWin = true) {
+    this.pathValue = initialPath;
+    this.pathKind = initialKind;
+    this.win = isWin;
+    this.writes = [];
+    this.broadcasts = [];
+  }
+  isWindows() { return this.win; }
+  ownsHome() { return true; }
+  async readUserPath() {
+    if (this.pathValue === null) return null;
+    return { value: this.pathValue, kind: this.pathKind };
+  }
+  async writeUserPath(value, kind) {
+    this.writes.push({ value, kind });
+    this.pathValue = value;
+    this.pathKind = kind;
+  }
+  async broadcastEnvironmentChange(timeoutMs) {
+    this.broadcasts.push(timeoutMs);
+    return true;
+  }
+}
+
 /**
  * Activates the bundled extension against a scripted VS Code API and runs one command.
  * @param steps - Answers for the pickers in order: `{ client }`, `{ action }` or `{ label }` (a
@@ -31,7 +56,7 @@ const SEPARATOR = -1;
  * @param extraInstallations - Installations besides the one in use, per client; one with
  * `requires` appears once that vendor extension is installed.
  */
-async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName } = {}) {
+async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName, deactivateOn, pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ') } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
   const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
@@ -127,10 +152,16 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
         };
       },
       async showOpenDialog() { events.push('open-dialog'); return openDialog === undefined ? undefined : [{ fsPath: openDialog }]; },
-      async showInformationMessage(message, ...actions) { notifications.push({ message, actions }); return answer(actions); },
+      async showInformationMessage(message, ...actions) {
+        notifications.push({ message, actions });
+        // VS Code deactivates while the notice is open; the command resumes afterwards.
+        if (deactivateOn?.test(message)) void module.exports.deactivate();
+        return answer(actions);
+      },
       async showTextDocument(document) { openedFiles.push(document); },
       async showWarningMessage(message, ...rest) {
         warnings.push(message);
+        if (deactivateOn?.test(message)) void module.exports.deactivate();
         warningDetails.push(rest.find(item => typeof item === 'object')?.detail);
         return answer(rest.filter(item => typeof item === 'string'));
       },
@@ -164,7 +195,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     bundle: true, write: false, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
     plugins: [{ name: 'isolated-setup', setup(build) {
       build.onLoad({ filter: /[\\/]integrations[\\/]cleanup\.ts$/ }, () => ({
-        contents: "export async function cleanupClients(options) { globalThis.setupFixture.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; }", loader: 'js',
+        contents: "export async function cleanupClients(options) { globalThis.setupFixture.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; } export function pruneUnreferencedRuntimes() {}", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({ contents: fs.readFileSync(path.resolve(__dirname, '../fixtures/vscode-extension/setup.js'), 'utf8'), loader: 'js' }));
       // The extension's own subprocess runs the bundled runtime's `models --json`.
@@ -201,6 +232,9 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     module, exports: module.exports, process, Buffer, setupFixture: fixture, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate,
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
+  if (typeof module.exports.setPathAdapterForTest === 'function') {
+    module.exports.setPathAdapterForTest(pathAdapter);
+  }
   const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-extension-'));
   // os.homedir() follows these; the real profile's ~/.coagent8 must never be touched.
   const homeDir = home ?? path.join(extensionRoot, 'home');
@@ -217,7 +251,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
   // Onboarding state lives in the extension's global storage, which VS Code deletes on uninstall.
   const storage = path.join(extensionRoot, 'User/globalStorage/okidev.coagent8-mcp');
   const stateFile = path.join(storage, 'setup-state.json');
-  const seeded = storedState ?? (welcomed ? { welcomed: true } : undefined);
+  const seeded = storedState ?? (welcomed ? { welcomed: true, pathPrompt: 'accepted' } : undefined);
   if (seeded) { fs.mkdirSync(storage, { recursive: true }); fs.writeFileSync(stateFile, JSON.stringify(seeded)); }
   const readState = () => fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : undefined;
   const initialState = readState();
@@ -256,6 +290,9 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
       assert.ok(Date.now() < deadline, 'the onboarding state or notification did not arrive');
       await new Promise(resolve => setTimeout(resolve, 10));
     }
+    if (typeof module.exports.whenIdle === 'function') {
+      await module.exports.whenIdle();
+    }
     assert.deepEqual(steps, [], 'every scripted picker step was used');
     const finalState = readState();
     const state = finalState === undefined ? undefined : JSON.parse(finalState);
@@ -267,10 +304,21 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     let config = configText;
     try { if (configText !== undefined) config = JSON.parse(configText); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
     const menus = pickers;
-    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles };
+    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles, pathAdapter };
   } finally {
+    if (typeof module.exports.setPathAdapterForTest === 'function') {
+      module.exports.setPathAdapterForTest(undefined);
+    }
     for (const [key, value] of Object.entries(savedHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
-    fs.rmSync(extensionRoot, { recursive: true, force: true });
+    for (const sub of context.subscriptions) {
+      if (typeof sub?.dispose === 'function') {
+        try { sub.dispose(); } catch {}
+      }
+    }
+    if (typeof module.exports.deactivate === 'function') {
+      try { await module.exports.deactivate(); } catch {}
+    }
+    fs.rmSync(extensionRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 }
 /**
@@ -378,6 +426,10 @@ test('Reset Configuration needs confirmation, keeps one backup and refuses unsav
   assert.equal(fs.readFileSync(file, 'utf8'), first);
   assert.equal(fs.existsSync(file + '.backup'), false);
   assert.match(cancelled.warnings[0], /config\.json\.backup, replacing an earlier backup/);
+  const stopped = await runExtension({ ...options, action: 'Reset Configuration', deactivateOn: /^Reset / });
+  assert.deepEqual(stopped.errors, []);
+  assert.equal(fs.readFileSync(file, 'utf8'), first, 'a reset confirmed after deactivation began is not started');
+  assert.equal(fs.existsSync(file + '.backup'), false);
   const dirty = await runExtension({ ...options, action: 'Reset Configuration', dirtyFiles: [file] });
   assert.match(dirty.errors[0], /Save or revert/);
   assert.equal(fs.readFileSync(file, 'utf8'), first);
@@ -593,6 +645,13 @@ test('an extension copy installed beside a standalone CLI is selected only when 
   const kept = await runExtension({ ...options, steps: [{ client: 'codex' }, { action: 'installExtension' }], action: 'Keep Current' });
   assert.equal(kept.config, undefined, 'the CLI in use stays');
 });
+test('a command that resumes after deactivation starts no new write and shows no error', async () => {
+  const extraInstallations = { codex: [{ kind: 'vscode-extension', executable: 'vscode-extension', file: path.resolve('vendor', 'openai.chatgpt', 'bin', 'codex.exe'), requires: 'openai.chatgpt' }] };
+  const stopped = await runExtension({ extraInstallations, steps: [{ client: 'codex' }, { action: 'installExtension' }], action: 'Use It', deactivateOn: /still uses/ });
+  assert.ok(stopped.notifications.some(item => /still uses/.test(item.message)), 'the question was asked');
+  assert.equal(stopped.config, undefined, 'the executable choice is not written after deactivation');
+  assert.deepEqual(stopped.errors, []);
+});
 test('Install Standalone CLI inserts the official installer for review and counts it once a check finds the CLI', async () => {
   const opened = await runExtension({ installed: ['claude'], discoverable: ['claude'], steps: [{ client: 'agy' }, { action: 'installStandalone' }] });
   assert.equal(opened.terminals.length, 1);
@@ -652,7 +711,7 @@ test('the Google Antigravity extension without its download yet offers no second
 });
 test('another installation is selected in config.json from its line; automatic discovery removes the choice', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-executable-'));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const file = path.join(directory, 'config.json');
   const extraInstallations = { claude: [{ kind: 'vscode-extension', executable: 'vscode-extension', file: path.resolve('vendor', 'anthropic.claude-code', 'claude.exe') }] };
   const used = await runExtension({ configPath: file, extraInstallations, steps: [{ client: 'claude' }, { label: /Claude Code \(Anthropic\) VS Code extension$/ }] });
@@ -737,7 +796,7 @@ test('Back in Manage Skills returns one step: packages to actions, actions to th
 });
 test('Manage Skills from a CLI menu manages that CLI without asking for it again; Back returns to the CLI menu', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-menu-skills-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const back = await runExtension({ home, skillProfile: true, steps: [{ client: 'agy' }, { action: 'skills' }, { button: 'Back' }] });
   assert.deepEqual(back.menus.map(menu => menu.title.replace(/:.*/, '')), ['Manage Coding CLIs', 'Antigravity CLI', 'Antigravity CLI Skills', 'Antigravity CLI']);
   assert.equal(back.menus[2].step, '1/2', 'from a CLI menu the CLI is already chosen');
@@ -749,7 +808,7 @@ test('Manage Skills from a CLI menu manages that CLI without asking for it again
 
 test('Manage Model Approvals lists price rules and backends, then models by price, and writes one rule per model to config.json', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-'));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   const command = 'coagent8.manageModelApprovals';
   const allowed = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(pass-filled) Allow' }] });
   assert.deepEqual(allowed.errors, []);
@@ -842,11 +901,11 @@ test('Uninstall VS Code Extension opens the extension page, where VS Code remove
   assert.deepEqual(shown.requests, [['extension.open', 'openai.chatgpt']], 'the native Uninstall and Restart Extensions apply the removal to every running extension');
   assert.deepEqual([shown.warnings, shown.notifications], [[], []], 'no dialog or notice of its own');
   assert.equal(shown.menus.length, 2, 'the menu closes on the Extensions view');
-  assert.deepEqual(shown.state, { welcomed: true, removingExtensions: ['openai.chatgpt'] });
+  assert.deepEqual(shown.state, { welcomed: true, pathPrompt: 'accepted', removingExtensions: ['openai.chatgpt'] });
   assert.deepEqual(shown.installs, { installedExtensions: ['openai.chatgpt'] }, 'nothing is recorded as removed before VS Code removes it');
   const finished = await runExtension({ ...options, steps: steps(), nativeRemoval: ['openai.chatgpt'] });
   assert.equal(finished.installs, undefined, 'the removed extension leaves the record');
-  assert.deepEqual(finished.state, { welcomed: true });
+  assert.deepEqual(finished.state, { welcomed: true, pathPrompt: 'accepted' });
   assert.deepEqual(finished.cleanupCalls, [], 'the chat entry stays; it works again with another installation');
 });
 test('a removal finished while VS Code restarts its extensions moves a selection of the removed copy to the other installation', async t => {
@@ -1091,7 +1150,7 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'another bundle');
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 16);
+  assert.equal(disposed, 18);
 });
 
 test('remote and multi-root windows guide the user without assuming a global coagent8 CLI', async () => {
@@ -1100,4 +1159,92 @@ test('remote and multi-root windows guide the user without assuming a global coa
   assert.equal(remote.menus.length, 0);
   const multiRoot = await runExtension({ workspaceFolders: [path.resolve('workspace-a'), path.resolve('workspace-b')] });
   assert.deepEqual(multiRoot.errors, ['CoAgent8 setup: Open the intended workspace folder in its own window and run this command again.']);
+});
+
+test('VS Code extension PATH opt-in prompt lifecycle and explicit commands', async () => {
+  // Scenario 1: User accepts the PATH prompt after welcome onboarding
+  const accepted = await runExtension({
+    installed: ['codex'],
+    welcomed: false,
+    activationOnly: true,
+    action: ['Manage CLIs', 'Yes'],
+    awaitNotifications: 2,
+    awaitState: true,
+  });
+  const promptNotice = accepted.notifications.find(n => n.message.includes("Add 'coagent8' to your user PATH"));
+  assert.ok(promptNotice, 'PATH prompt offered');
+  assert.deepEqual(promptNotice.actions, ['Yes', 'No']);
+  assert.equal(accepted.state.pathPrompt, 'accepted', 'accepted state recorded');
+  assert.ok(accepted.pathAdapter.writes.length > 0, 'adapter writeUserPath called');
+  assert.ok(accepted.pathAdapter.broadcasts.length > 0, 'adapter broadcastEnvironmentChange called');
+  const confirmNotice = accepted.notifications.find(n => n.message.includes("CoAgent8 has been added to your user PATH"));
+  assert.ok(confirmNotice, 'confirmation notice shown on success');
+
+  // Second activation with accepted state never prompts again
+  const second = await runExtension({
+    activationOnly: true,
+    storedState: { welcomed: true, pathPrompt: 'accepted' },
+  });
+  assert.equal(second.notifications.length, 0, 'never prompts again after acceptance');
+
+  // Scenario 2: User chooses No on PATH prompt
+  const declined = await runExtension({
+    installed: ['codex'],
+    welcomed: false,
+    activationOnly: true,
+    action: ['Manage CLIs', 'No'],
+    awaitNotifications: 2,
+    awaitState: true,
+  });
+  assert.equal(declined.state.pathPrompt, 'declined');
+
+  // Scenario 3: User dismisses notification
+  const dismissed = await runExtension({
+    installed: ['codex'],
+    welcomed: false,
+    activationOnly: true,
+    action: ['Manage CLIs'],
+    awaitNotifications: 2,
+    awaitState: true,
+  });
+  assert.equal(dismissed.state.pathPrompt, 'dismissed');
+
+  // Scenario 4: Command coagent8.addPath manually enables and coagent8.removePath removes
+  const manualHome = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-manual-path-'));
+  try {
+    const manualAdd = await runExtension({
+      home: manualHome,
+      command: 'coagent8.addPath',
+      storedState: { welcomed: true, pathPrompt: 'declined' },
+      action: 'Yes',
+      awaitNotifications: 2,
+    });
+    assert.equal(manualAdd.state.pathPrompt, 'accepted');
+    assert.ok(manualAdd.pathAdapter.writes.length > 0, 'manualAdd wrote to PATH');
+
+    const failing = new MockPathAdapter('C:\\Tools', 'REG_SZ');
+    failing.readUserPath = async () => { throw new Error('Simulated registry read failure'); };
+    const blockedRemove = await runExtension({
+      home: manualHome,
+      command: 'coagent8.removePath',
+      storedState: { welcomed: true, pathPrompt: 'accepted' },
+      action: 'Remove',
+      pathAdapter: failing,
+      awaitWarnings: 1,
+    });
+    assert.match(blockedRemove.warnings[0], /^CoAgent8 could not remove its PATH entry and kept it: .*Simulated registry read failure/);
+    assert.equal(blockedRemove.notifications.length, 1, 'a blocked removal is not reported as removed or missing');
+
+    const manualRemove = await runExtension({
+      home: manualHome,
+      command: 'coagent8.removePath',
+      storedState: { welcomed: true, pathPrompt: 'accepted' },
+      action: 'Remove',
+    });
+    assert.equal(manualRemove.notifications.length, 2);
+    assert.match(manualRemove.notifications[0].message, /Remove 'coagent8' from your user PATH\?/);
+    assert.equal(manualRemove.notifications[1].message, 'CoAgent8 has been removed from your user PATH.');
+  } finally {
+    fs.rmSync(manualHome, { recursive: true, force: true });
+  }
 });

@@ -35,7 +35,9 @@
       { "command": "coagent8.manageMcpServers", "title": "Show MCP Servers", "category": "CoAgent8" },
       { "command": "coagent8.manageClis", "title": "Manage Coding CLIs", "category": "CoAgent8" },
       { "command": "coagent8.manageSkills", "title": "Manage Skills", "category": "CoAgent8" },
-      { "command": "coagent8.manageModelApprovals", "title": "Manage Model Approvals", "category": "CoAgent8" }
+      { "command": "coagent8.manageModelApprovals", "title": "Manage Model Approvals", "category": "CoAgent8" },
+      { "command": "coagent8.addPath", "title": "Add to PATH", "category": "CoAgent8" },
+      { "command": "coagent8.removePath", "title": "Remove from PATH", "category": "CoAgent8" }
     ],
     "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
     "jsonValidation": [{ "fileMatch": ["**/.coagent8/config.json"], "url": "./schemas/config.schema.json" }],

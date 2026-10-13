@@ -944,6 +944,150 @@ Owned registrations migrate automatically to the explicit `mcp` shape:
    - `npx` is user-facing documentation guidance; setup and the extension never
      download packages or run `npx` dynamically.
 
+### VS Code extension PATH opt-in and lifecycle specification
+
+#### Strict opt-in invariant
+
+CoAgent8 never changes the user's `PATH` environment variable or creates a binary shim without an explicit, interactive "Yes" confirmation from the human user in the VS Code extension.
+
+- **No programmatic granting**: No CLI flag, command argument, configuration setting, environment variable, or AI agent capability can grant permission to modify `PATH` or install shims.
+- **Fail-safe default**: In the absence of an explicit user affirmative action, no system or environment modifications occur.
+
+#### Opt-in prompt lifecycle
+
+1. **Triggering conditions**:
+   - The opt-in prompt is presented at most **once** per VS Code installation, immediately following a successful initial setup or CLI connection where at least one coding CLI is verified and ready.
+   - It is never shown when running in remote editor environments (e.g. `vscode.env.remoteName`).
+2. **Wording and choices**:
+   - **Notification message**:
+     ```text
+     Add 'coagent8' to your user PATH so you can run it from any terminal?
+     ```
+   - **Interactive actions**:
+     - `Yes`: Installs the owned shim, adds the directory to user `PATH` (on Windows), records ownership in `~/.coagent8/installs.json`, and records `pathPrompt: "accepted"` in `setup-state.json`.
+     - `No`: Dismisses the prompt and records `pathPrompt: "declined"` in `setup-state.json`.
+     - **Dismissal** (closing notification or timeout): Handled identically to refusal and recorded as `pathPrompt: "dismissed"` in `setup-state.json`.
+3. **No automatic re-prompting**:
+   - Both "No" and dismissal persist in the extension's onboarding state (`setup-state.json`). The extension will never automatically prompt the user again.
+4. **On-demand user commands**:
+   - Explicit VS Code commands are registered to allow users to inspect, enable, or disable PATH integration at any time:
+     - `CoAgent8: Add to PATH` (`coagent8.addPath`): Prompts the user, creates the shim, and updates `PATH`.
+     - `CoAgent8: Remove from PATH` (`coagent8.removePath`): Removes the owned shim and `PATH` entry, updating ownership records.
+   - The status is also displayed in the **Manage Coding CLIs** interface.
+
+#### Binary shim topology per operating system
+
+1. **Windows**:
+   - **Shim directory**: `%USERPROFILE%\.coagent8\bin` (added to user `PATH`).
+   - **Shim executable**: `%USERPROFILE%\.coagent8\bin\coagent8.cmd`.
+   - **Invocation contract**: The shim invokes Node.js with the immutable, content-addressed runtime copy:
+     ```bat
+     @echo off
+     "node" "<storage>/runtime/<sha256>/index.cjs" %*
+     ```
+     (or configured Node binary if explicit).
+2. **POSIX (macOS / Linux)**:
+   - **Shim location**: `~/.local/bin/coagent8` (a single executable shell script).
+   - **PATH behavior**: If `~/.local/bin` is already present on the user's `PATH`, no environment modification is made. If `~/.local/bin` is not on `PATH`, the extension does not edit user shell startup files (`.bashrc`, `.zshrc`, `.profile`); instead, it surfaces actionable guidance for the user to add `~/.local/bin` to their profile manually. POSIX implementation is deferred to subsequent platform acceptance cards.
+3. **Runtime copy targeting, extension updates and installation handoff**:
+   - The shim targets the shared, content-addressed runtime copy in `~/.coagent8/runtime/<sha256>/index.cjs` (or the active installation's runtime in `<globalStorage>/runtime/<sha256>/index.cjs`), **never** the versioned extension installation directory (e.g. `~/.vscode/extensions/okidev.coagent8-mcp-0.6.0/...`).
+   - Because VS Code deletes older version folders upon extension upgrade, pointing to versioned extension folders would immediately break the shim.
+   - Targeting content-addressed storage in `~/.coagent8/runtime` ensures the runtime copy is shared across editor installations (Stable, Insiders) and survives an individual editor's storage deletion.
+   - When an extension installation updates to a new version, activation verifies that the on-disk shim still exactly matches the recorded `shimHash` and belongs to this installation before updating it. If and only if the shim is unmodified, activation rewrites the shim to target the new runtime copy and updates `shimHash` in `~/.coagent8/installs.json`. If the user has edited or replaced the shim (`hash(file) !== shimHash`), the extension strictly preserves the user's shim and leaves it untouched.
+   - When multiple installations share the shim, the runtime copy referenced by `path` in `~/.coagent8/installs.json` is protected from pruning while `path.installations` is non-empty. If an uninstalled installation targeted its own global-storage runtime, the uninstall hook atomically retargets the unchanged shim to a remaining installation's verified runtime copy and updates `shimHash` before finishing cleanup.
+
+#### Ownership record in `~/.coagent8/installs.json`
+
+To survive extension uninstalls and prevent orphaned artifacts, PATH ownership is tracked in the shared state file `~/.coagent8/installs.json` alongside other setup installations. Multiple VS Code installations (such as Stable and Insiders) share this record safely via installation reference tracking.
+
+```json
+{
+  "path": {
+    "shimPath": "C:\\Users\\User\\.coagent8\\bin\\coagent8.cmd",
+    "pathEntry": "C:\\Users\\User\\.coagent8\\bin",
+    "runtime": "C:\\Users\\User\\.coagent8\\runtime\\<sha256>\\index.cjs",
+    "addedToPath": true,
+    "shimHash": "<sha256-hex-digest>",
+    "installations": [
+      "<extensions-folder-path>"
+    ]
+  }
+}
+```
+
+- **Recorded attributes**:
+  - `shimPath`: Absolute path to the generated shim file.
+  - `pathEntry`: Exact directory string configured for the user `PATH`.
+  - `runtime`: Path to the content-addressed runtime copy targeted by the shim.
+  - `addedToPath`: Boolean flag indicating whether CoAgent8 actually inserted `pathEntry` into `HKCU\Environment Path`. If `pathEntry` was already present on `PATH` before opt-in, `addedToPath` is `false`.
+  - `shimHash`: SHA-256 cryptographic digest of the shim file contents when generated.
+  - `installations`: List of canonical extensions directory paths of VS Code installations that have opted in. A second installation opting in appends its installation path to this list without overwriting the record or corrupting the shared shim.
+- **Integrity invariant**:
+  - Only recorded, unmodified artifacts are ever removed. If the shim file has been modified or replaced by the user (`hash(file) !== shimHash`), it is strictly preserved.
+  - An existing user `PATH` entry that CoAgent8 did not insert (`addedToPath === false`) is never deleted.
+  - Runtime pruning reads `installs.json` first: when it is unreadable, not a JSON object, or holds a `path` record without a readable `runtime`, nothing is pruned, since that record may still guard a shim's runtime.
+
+#### Windows registry write and environment broadcast
+
+1. **Registry target**:
+   - `HKCU\Environment`, value `Path`.
+   - `HKCU\Environment` belongs to the signed-in account, so enable and uninstall cleanup act on it only for that account's profile directory, taken from the process token (`os.userInfo().homedir`), never from `HOME` or `USERPROFILE`. A redirected home, such as a test fixture, is refused before any file or registry change.
+2. **Value type preservation (`REG_EXPAND_SZ` vs `REG_SZ`)**:
+   - The existing value kind is inspected (`GetValueKind('Path')`).
+   - If the value is `REG_EXPAND_SZ` (containing unexpanded environment variables such as `%USERPROFILE%` or `%SystemRoot%`), it must be read without expansion (`DoNotExpandEnvironmentNames`) and written back strictly as `REG_EXPAND_SZ`.
+   - `REG_SZ` is preserved as `REG_SZ`.
+3. **Preservation, deduplication and ownership recording**:
+   - All existing entries are preserved in their original sequence.
+   - Deduplication uses case-insensitive, trailing-slash-normalized comparison (e.g. `C:\Users\User\.coagent8\bin` matches `c:\users\user\.coagent8\bin\`).
+   - If the directory already exists in `Path`, no redundant entry is appended and `addedToPath` is recorded as `false`. If appended, `addedToPath` is recorded as `true`.
+   - Every write is read back. A write that fails or times out may still have reached the registry, so enable reads `Path` again and takes its entry out; when that cannot be confirmed, the shim and the ownership record stay, enable reports the failure, and Remove from PATH or the uninstall hook removes the entry later. Writing an empty value deletes `Path`, and the deletion is verified.
+4. **Prohibition of `setx`**:
+   - The legacy `setx` utility is strictly forbidden because it silently truncates variables longer than 1024 characters, corrupting user environments.
+5. **Change broadcast**:
+   - Upon updating `HKCU\Environment`, the extension broadcasts `WM_SETTINGCHANGE` with `lParam = "Environment"` (`HWND_BROADCAST`, `SMTO_ABORTIFHUNG`) so active shells and Windows Explorer update their environment without requiring a system sign-out.
+   - The broadcast runs in an owned, awaited child process (never detached) whose whole lifetime, including PowerShell start, is bounded: 5000 ms after enable, at most 1500 ms of the remaining budget during uninstall. A broadcast that cannot start or finish in time does not fail the operation; the result reports `environmentNotified: false` and the notice tells the user that a sign-out applies the change.
+6. **No visible console window**:
+   - All registry manipulation and broadcast calls run quietly without showing a console or terminal window (Node `windowsHide`, which gives a non-detached child `CREATE_NO_WINDOW`; a detached child would not get it).
+
+#### Uninstallation lifecycle cleanup
+
+The native `vscode:uninstall` hook (`dist/uninstall.cjs`) performs automatic cleanup:
+
+1. **Execution constraints and time bounding**:
+   - Runs in Node.js after extension uninstall and VS Code restart, without the VS Code API.
+   - Enforces VS Code's 5-second termination deadline.
+   - Acquires the shared file lock (`withFileLock`) in `~/.coagent8` with a maximum wait of 1.5 seconds (`LEASE_TIMEOUT_MS = 1500`).
+   - Any environment broadcast during uninstall is awaited and bounded to at most 1500 ms of the remaining budget, ensuring ample time remains within the 5-second limit for state persistence and other cleanup steps (profile `mcp.json` and client skills).
+2. **Installation isolation and reference counting**:
+   - Reads `~/.coagent8/installs.json`.
+   - Matches the current uninstall against `path.installations`. If this installation is not in the list, PATH artifacts are left untouched.
+   - Removes this installation from `path.installations`.
+   - If other installations remain in `path.installations`, the shim and `PATH` entry remain active for those installations and are preserved. If the uninstalled installation's local storage held the targeted runtime, the hook retargets the unchanged shim to a remaining installation's verified runtime and updates `shimHash`.
+3. **Artifact verification and removal (when no installations remain)**:
+   - When `path.installations` becomes empty:
+     - Verifies the shim file at `shimPath`:
+       - If the shim was modified by the user (`hash(file) !== shimHash`), the shim is left on disk, the `PATH` entry is preserved (even if `addedToPath === true`), and the recorded runtime copy at `path.runtime` is explicitly protected from deletion and future pruning so the user command remains functional. The ownership record is updated to record persistent user retention (`userRetained: true`, `installations: []`), and this retention is reported in the uninstall log.
+       - If the shim is unmodified and matches `shimHash`, the shim file is deleted. If empty, the parent directory (`~/.coagent8/bin`) is removed.
+       - If and only if the shim was successfully removed and `addedToPath === true`, reads `HKCU\Environment` `Path`, removes the exact recorded `pathEntry` (normalized), writes back the updated value preserving its `REG_EXPAND_SZ` type, and broadcasts the environment update within the remaining budget (at most 1500 ms). A removal that cannot finish keeps the shim and the record and reports `blocked`; Remove from PATH shows that reason instead of reporting success or a missing integration. If `addedToPath === false`, the registry `Path` is left untouched.
+       - When the shim is removed, the unreferenced runtime copy at `path.runtime` may be pruned if no other registration references it, and the `path` property is removed from `~/.coagent8/installs.json`.
+4. **Failure isolation**:
+   - Registry or file access errors during PATH cleanup do not abort uninstallation of MCP profile registrations or client skills. All errors are caught, sanitized via `redactDiagnostic`, and recorded in the uninstall JSON envelope.
+
+#### Coexistence with global npm installations (`npm install -g coagent8`)
+
+Both `npm install -g coagent8` (installed into npm's global prefix, e.g. `%APPDATA%\npm` or a Scoop/Homebrew prefix) and the VS Code extension's shim (`%USERPROFILE%\.coagent8\bin\coagent8.cmd` on Windows, or `~/.local/bin/coagent8` on POSIX) can exist simultaneously on the system `PATH`:
+
+1. **Resolution order**:
+   - The operating system shell searches directories in the exact sequence they appear in the merged `PATH` variable (system PATH followed by user PATH, or user profile shell config).
+   - Whichever directory appears earlier in the active `PATH` wins when running `coagent8` without an absolute path.
+2. **Version divergence**:
+   - The npm registry version and the VS Code extension version may differ (for example, a stable release like `0.6.1` installed globally via npm while a preview version like `0.7.0` is installed via VSIX).
+   - `where.exe coagent8` on Windows or `which -a coagent8` on POSIX lists all available binaries in precedence order.
+   - `coagent8 --version` prints only the package version and `coagent8 doctor` does not report the executable path, so `where.exe` or `which -a` is the way to tell which binary a shell runs.
+3. **Independent lifecycles and uninstallation separation**:
+   - Uninstalling the VS Code extension removes only its owned shim (`~/.coagent8/bin`) and its owned user PATH entry; it never modifies npm's global prefix or deletes the npm-installed binary.
+   - Conversely, running `npm uninstall -g coagent8` removes the global npm package but leaves the VS Code extension shim and its ownership records in `~/.coagent8/installs.json` intact.
+
 ## Target orchestration design (not implemented)
 
 MCP will adapt to the matching packaged execution CLI under CLI-FIRST-001.
@@ -1034,6 +1178,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-11 | Approval rules live only in config.json, which every client's server reads; their VS Code settings are removed. The VS Code command Manage Model Approvals lists price rules and each backend's models with prices and tags from `coagent8 models --json` (the doctor model view) and writes one rule per model. Clients without MCP form elicitation (Antigravity, Codex 0.160.1, headless) fail closed; the user allows a model there instead. |
 | 2026-10-13 | Bare `coagent8` follows Option D: when stdin and stdout are both terminals it prints help; otherwise it starts the legacy MCP server over stdio; `coagent8 mcp` always starts the server. Unknown arguments in terminals exit 2; non-TTY fallback emits a stderr warning and starts MCP. |
 | 2026-10-13 | Registration migration (CLI-FIRST-001a2): owned registrations migrate to the explicit 'mcp' subcommand on setup, repair, and extension update; runtime path extraction in the integration layer recognizes both legacy and 'mcp' shapes under strict argument and path bounds without widening ownership; manual entries remain untouched; pinned copies are preserved; npx guidance recommends 'npx -y coagent8@<version> mcp'. |
+| 2026-10-13 | VS Code extension PATH opt-in and lifecycle (CLI-FIRST-001h): CoAgent8 never changes PATH or creates a shim without an explicit 'Yes' from the user in the extension. No CLI flag, setting or agent can grant it. The prompt appears once after successful setup; 'No' and dismissal are stored in setup state and never asked again; a command allows adding or removing it later. On Windows, ~/.coagent8/bin is added to HKCU\Environment Path preserving value type (REG_EXPAND_SZ) without setx or visible console window; on POSIX, ~/.local/bin holds an owned shim without modifying PATH if already present. The shim targets the stable runtime copy, surviving extension updates. Ownership is recorded in ~/.coagent8/installs.json; the vscode:uninstall hook removes only recorded, unchanged artifacts and registry entries within the 5 s lease limit. |
 
 ## Known limitations
 

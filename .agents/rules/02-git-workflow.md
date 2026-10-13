@@ -18,8 +18,9 @@ tags on those branches, and squash-merged pull requests.
 
 Every commit on `develop` and on a line is a squash commit that GitHub created
 from one pull request: `<PR title> (#N)`, signed by GitHub and therefore shown as
-**Verified**. Nothing reaches these branches any other way. Every change -
-features, fixes, releases, backports - travels as its own pushed branch and PR.
+**Verified**. Nothing reaches these branches any other way. Each coherent
+result - feature, fix, release or backport - travels as one topic branch and PR.
+Implementation subtasks are not automatically separate pull requests.
 
 ## 0. Who does what
 
@@ -183,8 +184,21 @@ become the final commit, so they must meet this section.
   changelog check (section 6) before opening the PR and whenever the title
   changes.
 * Open as **draft** while work or verification is incomplete.
-* One concern per PR. Prefer under ~400 changed lines excluding generated files
-  and lockfiles; split larger work into reviewable steps.
+* One coherent result per PR. Keep its implementation, regression tests and
+  related documentation together; use commits and a checklist for subtasks.
+  Several roadmap rows may share a PR when they implement the same result.
+* Split when a part has independent value, risk or rollback, needs a separate
+  owner decision, or the combined scope cannot be reviewed effectively. Do not
+  split solely by file, client, task ID or test count, and do not batch unrelated
+  fixes just to reduce the number of PRs. Release PRs and backports stay separate.
+* Around 400 changed lines excluding generated files and lockfiles is a review
+  signal, not a hard limit or an automatic reason to stop for permission. Keep
+  a larger coherent diff together when splitting would separate a fix from its
+  tests or leave an incomplete migration; explain the scope in the PR body.
+* For a grouped PR, record all included task IDs and acceptance checks. Internal
+  dependencies are completed in order on the same branch; external dependencies
+  must be satisfied before starting. Review and required CI cover the combined
+  current head, using the union of affected verification scopes (rule 04).
 * **Description** (English) follows the
   [PR template](../../.github/pull_request_template.md) and has these sections.
   Scale detail to the change's risk; a small prose PR can use a sentence per
@@ -313,7 +327,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 `develop`. Every step below uses that target; `<repo>` is
 `oktawianwybieralski/coagent8` unless a step names another.
 
-### Between releases: every change is one pull request
+### Between releases: every coherent result is one pull request
 
 1. Branch from the target (`git switch -c fix/<topic> origin/<target>`), one
    concern per branch (section 1); a fix a line also needs lands on `develop`
@@ -527,7 +541,8 @@ head. A pushed tag is never moved, deleted or reused.
   - Contributors and a Compare link to the previous tag follow the list.
   - Known issues, security notes and artifact digests are added by hand; they do
     not derive from commits.
-* Keep each PR to one user-visible change so that its entry is precise.
+* Give each PR a title describing its coherent result so that its entry is
+  precise; implementation subtasks belong in the body and checklist.
 
 ### Regeneration before every push and pull request
 
