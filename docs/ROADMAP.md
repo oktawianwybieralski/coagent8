@@ -1751,7 +1751,7 @@ agent (owner assigns).
 | 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R) in its own PR. |
 | 2.27 | `AX-003a` | R | - | Elicitation outcome fixtures per the card (`Check: R`). |
 | 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | `AX-003b` design, then `AX-003c` adds the implementation rows here; one PR each. |
-| 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | Acceptance script, then one fresh-client run per client. |
+| 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | `AX-006a` acceptance script in one PR; the `b`/`c`/`d` fresh-client runs are native, one per client, with evidence recorded in HANDOFF (no PR per run). |
 | 2.29 | `AUDIT-001-A08` to `A21` | R | - | In card order and grouping (A08-A09, A10-A12, A13-A15, A16-A18, A19-A20, A21); a reproduction that finds no defect skips its fix. |
 | 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R); one PR each. |
 | 2.31 | `WINDOWS-001b` launcher contract | P S | - | Card done; reviewed READY. |
@@ -1759,7 +1759,7 @@ agent (owner assigns).
 | 2.33 | `WINDOWS-001d1` signing route | O | 2.32 | Owner applies to SignPath Foundation or accepts unsigned binaries with SHA-256. |
 | 2.34 | `WINDOWS-001d2` package and verify | R | 2.33 | Card done. |
 | 2.35 | `WINDOWS-001e` | N | 2.34 | Native no-survivor evidence per backend. |
-| 2.36 | `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e` | N | 2.17 | Native acceptance as the cards say, through the runner where possible. |
+| 2.36 | `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e` | N | 2.17 | Native acceptance as the cards say, through the runner where possible; evidence recorded in HANDOFF, with a PR only for fixes it finds. |
 
 ### Phase 3 - read-only delegation, proposals, documentation, packaging
 
@@ -1780,7 +1780,7 @@ agent (owner assigns).
 | 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
 | 3.13 | `PROPOSALS-001g` rule text | P | - par | Rule and AGENTS.md updated. |
-| 3.13b | `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
+| 3.13b | `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items, one PR per card. |
 | 3.14 | `PROPOSALS-001e` signed-commit ruleset | O | - | Owner adds `required_signatures`; 3.13 aligns the text. |
 | 3.15 | `DOCS-003a` site purpose | P | - | Page list and published documents recorded; reviewed READY. |
 | 3.16 | `DOCS-003b` TypeDoc configuration | R | 3.15 | `npm run docs` passes with the new configuration. |
