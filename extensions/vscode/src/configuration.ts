@@ -42,6 +42,8 @@ export interface SetupState {
   updateOffered?: string;
   /** Vendor extensions whose removal the user started from a CLI menu, finished once VS Code has removed them. */
   removingExtensions?: string[];
+  /** State of the PATH opt-in prompt. */
+  pathPrompt?: 'accepted' | 'declined' | 'dismissed';
 }
 /**
  * What CoAgent8 installed. It is kept in `~/.coagent8/installs.json`, outside the
@@ -92,6 +94,9 @@ export function readSetupState(storage: string): SetupState {
   if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
   const removing = strings(record.removingExtensions);
   if (removing?.length) state.removingExtensions = removing;
+  if (typeof record.pathPrompt === 'string' && (record.pathPrompt === 'accepted' || record.pathPrompt === 'declined' || record.pathPrompt === 'dismissed')) {
+    state.pathPrompt = record.pathPrompt;
+  }
   return state;
 }
 

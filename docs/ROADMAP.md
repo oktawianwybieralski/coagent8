@@ -815,7 +815,8 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   silently made. Fixtures cannot approve a native platform cell. Owner
   decision 2026-10-13: the VS Code extension asks the user whether to add
   `coagent8` to the user PATH (a shim to its runtime copy), never adds it
-  without that answer, and removes it on uninstall.
+  without that answer, and removes it on uninstall. Rows 1.12 (`CLI-FIRST-001h1`)
+  and 1.13 (`CLI-FIRST-001h2`) are complete on Windows; macOS and Linux remain open.
 - [ ] **CLI-FIRST-001i - measure and accept the CLI topology.** Compare cold/warm
   process count, memory and latency with identical tasks. Use T12's package,
   native six-job and independent evidence format. Done: sibling versions match,
@@ -1686,8 +1687,8 @@ agent (owner assigns).
 | 1.9 | `CLI-FIRST-001d1` `session list` | R | 1.4 | Lists the workspace's sessions (`--json`), workspace isolation as in MCP; fixture. |
 | 1.10 | `CLI-FIRST-001d2` `session history` | R | 1.9 | `session history <handle> [--cursor] [--limit]` matches MCP paging and invalid-handle errors; fixture. |
 | 1.11 | `CLI-FIRST-001e` `doctor` | R | 1.4 | `coagent8 doctor` (`--scope models` or `--scope health`, `--json`) creates no sessions, keeps redaction, maps errors to exit codes, cancels on Ctrl+C; fixture. |
-| 1.12 | `CLI-FIRST-001h1` PATH prompt design | P | 1.1 | ARCHITECTURE specifies the extension's opt-in prompt, the shim location per OS, ownership record and removal on uninstall; reviewed READY. |
-| 1.13 | `CLI-FIRST-001h2` Windows PATH opt-in | R | 1.12 | The extension asks once, adds an owned shim to the user PATH on yes, never on no or dismiss, and removes it on uninstall; tests; native check on Windows by the owner. |
+| 1.12 | [x] `CLI-FIRST-001h1` PATH prompt design | P | 1.1 | ARCHITECTURE specifies the extension's opt-in prompt, the shim location per OS, ownership record and removal on uninstall; reviewed READY. |
+| 1.13 | [x] `CLI-FIRST-001h2` Windows PATH opt-in | R | 1.12 | The extension asks once, adds an owned shim to the user PATH on yes, never on no or dismiss, and removes it on uninstall; tests; native check on Windows by the owner. |
 | 1.14 | `DELEGATE-001a` wake-up tests | N | - par | Each client tried in the card's order with a stand-in background script; results recorded in HANDOFF per client. |
 
 ### Phase 2 - stability, feedback, containment, delegation contract

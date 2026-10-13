@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { cleanupClients, type CleanupPreview } from '../../../src/integrations/cleanup.js';
 import { removeVscodeRegistrations, type VscodeRemoval } from '../../../src/integrations/vscode-profile.js';
+import { removePathIntegration, type PathRemovalResult } from '../../../src/integrations/vscode-path.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { redactDiagnostic } from '../../../src/security/redaction.js';
 
@@ -28,6 +29,9 @@ async function main(): Promise<void> {
   // This file is <extensions folder>/<extension>/dist/uninstall.cjs; other installations keep their entries.
   try { profiles = await removeVscodeRegistrations(os.homedir(), path.dirname(path.dirname(__dirname)), LEASE_TIMEOUT_MS); }
   catch (error) { profileError = redactDiagnostic(error instanceof Error ? error.message : 'VS Code MCP cleanup failed.'); }
+  let pathResult: PathRemovalResult | undefined, pathError: string | undefined;
+  try { pathResult = await removePathIntegration(os.homedir(), path.dirname(path.dirname(__dirname)), LEASE_TIMEOUT_MS); }
+  catch (error) { pathError = redactDiagnostic(error instanceof Error ? error.message : 'PATH cleanup failed.'); }
   let applied: CleanupPreview | undefined, cleanupError: string | undefined;
   try {
     const preview = await cleanupClients({ origin: EXTENSION_ORIGIN, uninstall: true });
@@ -35,8 +39,8 @@ async function main(): Promise<void> {
   }
   catch (error) { cleanupError = redactDiagnostic(error instanceof Error ? error.message : 'CoAgent8 registration cleanup failed.'); }
   // VS Code writes the hook's output to its shared-process log.
-  console.log(JSON.stringify({ ...applied, profiles, ...(profileError ? { profileError } : {}), ...(cleanupError ? { cleanupError } : {}) }));
-  if (profileError || profiles.some(profile => profile.action === 'blocked') || !applied || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;
+  console.log(JSON.stringify({ ...applied, profiles, ...(pathResult ? { path: pathResult } : {}), ...(profileError ? { profileError } : {}), ...(cleanupError ? { cleanupError } : {}), ...(pathError ? { pathError } : {}) }));
+  if (profileError || pathError || pathResult?.action === 'blocked' || profiles.some(profile => profile.action === 'blocked') || !applied || applied.stateError || applied.results.some(result => result.action === 'blocked' || result.skills?.some(skill => skill.action === 'blocked'))) process.exitCode = 1;
 }
 
 main().catch(error => {

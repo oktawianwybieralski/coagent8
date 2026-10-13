@@ -19,6 +19,7 @@ import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js
 import { readInstallRecord, readSetupState, resetConfigurationFile, updateInstallList, updateSetupState, type StateLocation } from './configuration.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { manageSkills, skillSelectionForAction, type ManagedSkill } from '../../../src/integrations/skill-management.js';
+import { enablePathIntegration, disablePathIntegration, syncPathShim } from '../../../src/integrations/vscode-path.js';
 
 /** This extension's identifier, as published. */
 const EXTENSION_ID = 'okidev.coagent8-mcp';
@@ -600,6 +601,35 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }
     await vscode.commands.executeCommand('workbench.mcp.listServer');
   });
+  register('coagent8.addPath', async () => {
+    const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+    const res = await enablePathIntegration({
+      home: os.homedir(),
+      storage,
+      installation: path.dirname(context.extensionPath),
+      bundle: context.asAbsolutePath('dist/index.cjs'),
+      nodePath,
+    });
+    if (res.action === 'enabled') {
+      await updateSetupState(storage, { pathPrompt: 'accepted' });
+      void vscode.window.showInformationMessage("CoAgent8 has been added to your user PATH. Open a new terminal to run 'coagent8'.");
+    } else {
+      void vscode.window.showInformationMessage('PATH integration is currently supported on Windows.');
+    }
+  });
+  register('coagent8.removePath', async () => {
+    const res = await disablePathIntegration({
+      home: os.homedir(),
+      storage,
+      installation: path.dirname(context.extensionPath),
+      bundle: context.asAbsolutePath('dist/index.cjs'),
+    });
+    if (res.action === 'removed') {
+      void vscode.window.showInformationMessage('CoAgent8 has been removed from your user PATH.');
+    } else {
+      void vscode.window.showInformationMessage('No active CoAgent8 PATH integration was found.');
+    }
+  });
   /**
    * Opens a picker whose items are known, with an optional Back button in its title bar.
    * @param many - Lets several items be selected; items marked `picked` start selected, which
@@ -1079,6 +1109,21 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
         ...(offer ? ['Manage CLIs'] : []), 'Show MCP Servers');
       if (next === 'Manage CLIs') await vscode.commands.executeCommand('coagent8.manageClis');
       else if (next === 'Show MCP Servers') await vscode.commands.executeCommand('coagent8.manageMcpServers');
+      if (!vscode.env.remoteName && readSetupState(storage).pathPrompt === undefined) {
+        const pathChoice = await vscode.window.showInformationMessage(
+          "Add 'coagent8' to your user PATH so you can run it from any terminal?",
+          'Yes', 'No'
+        );
+        if (pathChoice === 'Yes') {
+          await updateSetupState(storage, { pathPrompt: 'accepted' });
+          const nodePath = vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim();
+          await enablePathIntegration({ home: os.homedir(), storage, installation: path.dirname(context.extensionPath), bundle: context.asAbsolutePath('dist/index.cjs'), nodePath });
+        } else if (pathChoice === 'No') {
+          await updateSetupState(storage, { pathPrompt: 'declined' });
+        } else {
+          await updateSetupState(storage, { pathPrompt: 'dismissed' });
+        }
+      }
       return;
     }
     const choice = await vscode.window.showInformationMessage('CoAgent8 needs one compatible, signed-in coding CLI: Codex CLI, Claude Code CLI or Antigravity CLI.', 'Manage CLIs');
@@ -1132,5 +1177,14 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     if (next === 'Update CLI Chats') await connect(outdated);
   }
   void offerRegistrationUpdate().catch(error => { void vscode.window.showErrorMessage(`CoAgent8 update check: ${redactDiagnostic(error instanceof Error ? error.message : 'Update check failed.')}`); });
-  return activated;
+  const pathSync = vscode.env.remoteName ? Promise.resolve() : syncPathShim({
+    home: os.homedir(),
+    storage,
+    installation: path.dirname(context.extensionPath),
+    bundle: context.asAbsolutePath('dist/index.cjs'),
+    nodePath: vscode.workspace.getConfiguration('coagent8').get<string>('nodePath', 'node').trim(),
+  }).catch(error => {
+    report({ pathSyncError: redactDiagnostic(error instanceof Error ? error.message : 'PATH shim synchronization failed.') });
+  });
+  return Promise.all([activated, pathSync]).then(() => undefined);
 }

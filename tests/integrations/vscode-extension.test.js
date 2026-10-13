@@ -1091,7 +1091,7 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'another bundle');
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 16);
+  assert.equal(disposed, 18);
 });
 
 test('remote and multi-root windows guide the user without assuming a global coagent8 CLI', async () => {
