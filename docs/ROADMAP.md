@@ -441,11 +441,27 @@ only calls CoAgent8 is the fallback. Owner decision 2026-10-13: a headline of
 [0.7.0 plan](#070-beta3-plan)); delegation of write tasks follows the
 profiles (Phase 4).
 
-- [ ] **DELEGATE-001a - native tests of the wake-up mechanisms.** In the
-  Claude Code VS Code extension: plugin monitors and channels; Codex:
-  `codex queue` against an idle, busy and unloaded thread and whether the IDE
-  shows it; agy: whether a background `run_command` exit starts a turn; which
-  MCP protocol revision CoAgent8 negotiates. Check: native, per client.
+- [ ] **DELEGATE-001a - native tests of the wake-up mechanisms.** Owner
+  decision 2026-10-13: delegation must work in every client, so try the
+  mechanisms in this order and stop at the first that works:
+  1. The client's own background tasks: the agent starts
+     `coagent8 wait <id>` in the background and the client wakes it when the
+     process exits. Observed in Claude Code (VS Code extension) on
+     2026-10-13: background task and monitor completions started new turns
+     without user input. To test: agy `run_command` in the background.
+  2. Documented push or injection surfaces: Claude Code plugin monitors and
+     channels; Codex `codex queue --thread` against an idle, busy and
+     unloaded thread and whether the IDE shows it; client hooks.
+  3. Documented host protocols the client already exposes (for example
+     Codex `app-server` threads and turns, Claude Code SDK sessions).
+  4. Last resort, only as an owner-approved experiment for a client where 1-3
+     fail: attaching to the client's own process or its private protocol
+     (such as the extension-to-CLI stream or console input). It breaks with
+     client updates, resembles malware to security tools and conflicts with
+     the no-hacks invariant, so it never ships without a separate decision.
+
+  Also record which MCP protocol revision CoAgent8 negotiates. Check: native,
+  per client.
 - [ ] **DELEGATE-001b - caller identity label.** Learn how the caller's own
   session or thread id reaches CoAgent8 (for example an inherited
   `CLAUDE_CODE_SESSION_ID`, or an explicit argument) and record it on
