@@ -9,7 +9,7 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
-## v0.6.1 - (2026-10-12)
+## v0.6.1 - (2026-10-13)
 
 - Agy:
   - Bug fix:
