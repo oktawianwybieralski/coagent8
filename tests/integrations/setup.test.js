@@ -554,4 +554,18 @@ test('readRegistrations and active runtime inspection recognize both legacy and 
   const [prefixedResult] = await setupClients({ ...options, clients: ['claude'] });
   assert.equal(prefixedResult.action, 'updated');
   assert.equal(prefixedResult.runtimeCallable, true);
+  assert.ok(prefixedResult.tools.includes('doctor'));
+
+  // On Codex, existing registration with custom launcher prefix is probed for runtime and host callability
+  const codexFile = path.join(options.home, '.codex/config.toml');
+  const codexEntry = `[mcp_servers.coagent8]\ntool_timeout_sec = 1800\ncommand = "${process.execPath.replace(/\\/g, '\\\\')}"\nargs = ["--title=coagent8", "${liveRuntime.replace(/\\/g, '\\\\')}", "mcp"]\n`;
+  write(codexFile, codexEntry);
+  const baseline = path.join(options.home, 'baseline-config');
+  if (fs.existsSync(baseline)) fs.rmSync(baseline);
+  const parsedCodexEntry = { command: process.execPath, args: ['--title=coagent8', liveRuntime, 'mcp'], tool_timeout_sec: 1800 };
+  write(stateFile, JSON.stringify({ clients: ['codex'], owned: { codex: hashEntry(JSON.stringify(parsedCodexEntry)) }, origin: {}, skills: {}, skillOrigin: {} }));
+  const [codexResult] = await setupClients({ ...options, clients: ['codex'] });
+  assert.equal(codexResult.action, 'preserved');
+  assert.equal(codexResult.runtimeCallable, true);
+  assert.equal(codexResult.hostCallable, true);
 });

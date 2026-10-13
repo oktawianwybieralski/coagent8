@@ -498,8 +498,12 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           const owned = ownership.owned;
           // An owned entry whose runtime copy is gone starts nothing, so there is no working
           // connection to verify or keep; the candidate written above replaces it.
-          // For fingerprint-owned entries, validate using the entry's own args without enforcing candidate prefix.
-          const existingRuntime = extractRuntimePath(existing, root, saved.owned[client] ? undefined : node.argsPrefix);
+          // For fingerprint-owned entries, validate using the entry's own args layout.
+          const isFingerprintMatch = saved.owned[client] === hash(JSON.stringify(entry));
+          const existingPrefix = isFingerprintMatch
+            ? (existing.args.at(-1) === 'mcp' ? existing.args.slice(0, -2) : existing.args.slice(0, -1))
+            : node.argsPrefix;
+          const existingRuntime = extractRuntimePath(existing, root, existingPrefix);
           const broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
           if (!broken) {
             result.tools = await probeRuntime(existing, env, cwd);
