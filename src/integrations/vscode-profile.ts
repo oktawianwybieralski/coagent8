@@ -123,7 +123,8 @@ function sameInstallation(a: string | undefined, b: string): boolean {
 /** Whether an entry has the shape only this extension writes: its bundle copy in global storage. */
 function extensionShaped(entry: unknown): boolean {
   const args = object(entry).args;
-  return Array.isArray(args) && args.length === 1 && typeof args[0] === 'string' && RUNTIME_SHAPE.test(args[0]);
+  if (!Array.isArray(args) || typeof args[0] !== 'string' || !RUNTIME_SHAPE.test(args[0])) return false;
+  return args.length === 1 || (args.length === 2 && args[1] === 'mcp');
 }
 /**
  * Whether the extension owns a profile's entry: a recorded digest, written or pending, must
@@ -270,7 +271,7 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
   const writer = ours && recorded !== undefined ? recordedWriter(recorded, hash(JSON.stringify(current))) : undefined;
   if (writer && (adopt || newerVersion(writer.version, version))) return 'current';
   const runtime = runtimeCopy(storagePath, bundle);
-  const desired = { type: 'stdio', command: server.command, args: [runtime], env: server.env };
+  const desired = { type: 'stdio', command: server.command, args: [runtime, 'mcp'], env: server.env };
   if (ours && JSON.stringify(current) === JSON.stringify(desired)) {
     if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined || recorded.version !== version || !sameInstallation(recorded.installation, installation)) {
       writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), version, installation } });

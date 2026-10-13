@@ -1022,7 +1022,8 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   const definition = entry();
   assert.equal(definition.type, 'stdio');
   assert.equal(definition.command, 'node');
-  assert.equal(definition.args.length, 1);
+  assert.equal(definition.args.length, 2);
+  assert.deepEqual(definition.args, [definition.args[0], 'mcp'], 'the profile entry passes explicit mcp');
   assert.ok(definition.args[0].startsWith(path.join(storage, 'runtime')), 'a copy in global storage outlives the extension folder of an update');
   assert.equal(fs.readFileSync(definition.args[0], 'utf8'), 'fixture bundle');
   assert.deepEqual(JSON.parse(definition.env.coagent8_EXTENSION_PATHS), {});
@@ -1083,7 +1084,9 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   await configurationListener(affects('coagent8.nodePath'));
   assert.match(errors.at(-1), /Malformed/);
   const [fallback] = provider.provideMcpServerDefinitions();
+  assert.equal(fallback.args.length, 2);
   assert.equal(fallback.args[0], path.join(root, 'dist/index.cjs'));
+  assert.equal(fallback.args[1], 'mcp');
   assert.ok(fallback.version.startsWith(require('../../package.json').version + '#'));
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'another bundle');
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');

@@ -285,7 +285,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     provideMcpServerDefinitions() {
       if (profileRegistration === 'declined' || hasManualVscodeRegistration(storage, folders())) return [];
       const { command, env } = server();
-      return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs')], env,
+      return [new vscode.McpStdioServerDefinition('CoAgent8', command, [context.asAbsolutePath('dist/index.cjs'), 'mcp'], env,
         `${version}#${createHash('sha256').update(fs.readFileSync(context.asAbsolutePath('dist/index.cjs'))).digest('hex')}`)];
     },
   }));

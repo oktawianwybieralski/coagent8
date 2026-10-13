@@ -66,7 +66,7 @@ function npmRun(args,cwd=root) {
     const mcp=JSON.parse(await fsp.readFile(path.join(pkg,'mcp.json'),'utf8'));
     assert.equal(mcp.mcpServers.coagent8.type,'stdio');
     assert.equal(mcp.mcpServers.coagent8.command,'node');
-    assert.equal(mcp.mcpServers.coagent8.args[0],'${PLUGIN_ROOT}/dist/index.cjs');
+    assert.deepEqual(mcp.mcpServers.coagent8.args,['${PLUGIN_ROOT}/dist/index.cjs','mcp']);
     const expectedIcons={light:await fsp.readFile(path.join(pkg,'assets/logo64.png')),dark:await fsp.readFile(path.join(pkg,'assets/logo64-light.png'))};
     // The installed server must advertise both theme icons even without runtime PNG files.
     for(const name of fs.readdirSync(path.join(pkg,'assets')).filter(name=>name.endsWith('.png'))) {

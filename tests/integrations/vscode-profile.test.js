@@ -41,6 +41,7 @@ test('the extension keeps one CoAgent8 entry in the profile mcp.json beside the 
   assert.equal(entry.command, 'node');
   assert.deepEqual(entry.env, p.server.env);
   const runtime = entry.args[0];
+  assert.deepEqual(entry.args, [runtime, 'mcp'], 'the entry passes explicit mcp');
   assert.ok(runtime.startsWith(path.join(p.storagePath, 'runtime')), 'the bundle copy outlives the extension folder');
   assert.equal(fs.readFileSync(runtime, 'utf8'), 'bundle v1');
   assert.equal(hasManualVscodeRegistration(p.storagePath, []), true, 'the provider steps aside');
@@ -52,6 +53,7 @@ test('the extension keeps one CoAgent8 entry in the profile mcp.json beside the 
   const updated = p.entries()[VSCODE_SERVER_NAME];
   assert.equal(updated.command, 'C:\\Program Files\\nodejs\\node.exe');
   assert.equal(fs.readFileSync(updated.args[0], 'utf8'), 'bundle v2');
+  assert.deepEqual(updated.args, [updated.args[0], 'mcp'], 'the updated entry passes explicit mcp');
   assert.equal(fs.existsSync(runtime), false, 'the copy the entry no longer starts is removed');
 });
 
@@ -365,4 +367,70 @@ test('a synchronization waits while another window holds the lease, so no copy i
   release();
   await holder;
   assert.equal(await syncing, 'registered');
+});
+
+test('existing legacy extension-owned profile entry migrates to modern mcp shape', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const legacyDirectory = path.join(p.storagePath, 'runtime', hash('legacy bundle'));
+  const legacyTarget = path.join(legacyDirectory, 'index.cjs');
+  fs.mkdirSync(legacyDirectory, { recursive: true });
+  fs.writeFileSync(legacyTarget, 'legacy bundle');
+  const legacyEntry = { type: 'stdio', command: 'node', args: [legacyTarget], env: p.server.env };
+  fs.mkdirSync(path.dirname(p.file), { recursive: true });
+  fs.writeFileSync(p.file, JSON.stringify({ servers: { [VSCODE_SERVER_NAME]: legacyEntry } }, null, 2));
+
+  const recordFile = path.join(p.home, '.coagent8/vscode-mcp.json');
+  fs.mkdirSync(path.dirname(recordFile), { recursive: true });
+  const entryHash = hash(JSON.stringify(legacyEntry));
+  fs.writeFileSync(recordFile, JSON.stringify({ [p.file]: { entry: entryHash, version: '0.6.0', installation: p.installation } }, null, 2));
+
+  assert.equal(await p.sync({ version: '0.7.0' }), 'registered');
+  const migrated = p.entries()[VSCODE_SERVER_NAME];
+  assert.equal(migrated.args.length, 2);
+  assert.equal(migrated.args[1], 'mcp');
+  assert.equal(fs.readFileSync(migrated.args[0], 'utf8'), 'bundle v1');
+  assert.equal(fs.existsSync(legacyTarget), false, 'legacy bundle copy is pruned');
+  const updatedRecord = JSON.parse(fs.readFileSync(recordFile, 'utf8'))[p.file];
+  assert.equal(updatedRecord.version, '0.7.0');
+  assert.equal(updatedRecord.entry, hash(JSON.stringify(migrated)));
+});
+
+test('legacy extension-owned profile entry without record migrates to modern mcp shape via extensionShaped fallback', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const legacyDirectory = path.join(p.storagePath, 'runtime', hash('legacy unrecorded'));
+  const legacyTarget = path.join(legacyDirectory, 'index.cjs');
+  fs.mkdirSync(legacyDirectory, { recursive: true });
+  fs.writeFileSync(legacyTarget, 'legacy unrecorded');
+  const legacyEntry = { type: 'stdio', command: 'node', args: [legacyTarget], env: p.server.env };
+  fs.mkdirSync(path.dirname(p.file), { recursive: true });
+  fs.writeFileSync(p.file, JSON.stringify({ servers: { [VSCODE_SERVER_NAME]: legacyEntry } }, null, 2));
+
+  assert.equal(await p.sync({ version: '0.7.0' }), 'registered');
+  const migrated = p.entries()[VSCODE_SERVER_NAME];
+  assert.deepEqual(migrated.args, [migrated.args[0], 'mcp']);
+  assert.equal(fs.readFileSync(migrated.args[0], 'utf8'), 'bundle v1');
+  assert.equal(fs.existsSync(legacyTarget), false);
+});
+
+test('modern profile entry without record is recognized as current via extensionShaped fallback', async t => {
+  const { hash } = require('../../src/integrations/setup-storage.ts');
+  const p = profile(t);
+  const bundleContent = 'bundle v1';
+  const directory = path.join(p.storagePath, 'runtime', hash(bundleContent));
+  const target = path.join(directory, 'index.cjs');
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(target, bundleContent);
+  const modernEntry = { type: 'stdio', command: 'node', args: [target, 'mcp'], env: p.server.env };
+  fs.mkdirSync(path.dirname(p.file), { recursive: true });
+  fs.writeFileSync(p.file, JSON.stringify({ servers: { [VSCODE_SERVER_NAME]: modernEntry } }, null, 2));
+
+  assert.equal(await p.sync({ version: '0.7.0' }), 'current');
+  const entry = p.entries()[VSCODE_SERVER_NAME];
+  assert.deepEqual(entry.args, [target, 'mcp']);
+  const recordFile = path.join(p.home, '.coagent8/vscode-mcp.json');
+  assert.ok(fs.existsSync(recordFile));
+  const record = JSON.parse(fs.readFileSync(recordFile, 'utf8'))[p.file];
+  assert.equal(record.entry, hash(JSON.stringify(modernEntry)));
 });
