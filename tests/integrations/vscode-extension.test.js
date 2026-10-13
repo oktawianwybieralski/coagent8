@@ -187,7 +187,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     bundle: true, write: false, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
     plugins: [{ name: 'isolated-setup', setup(build) {
       build.onLoad({ filter: /[\\/]integrations[\\/]cleanup\.ts$/ }, () => ({
-        contents: "export async function cleanupClients(options) { globalThis.setupFixture.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; }", loader: 'js',
+        contents: "export async function cleanupClients(options) { globalThis.setupFixture.recordCleanup({ clients: options.clients, apply: options.apply, origin: options.origin, uninstall: options.uninstall, actor: options.actor }); return { token: 'fixture-preview', results: (options.clients ?? ['codex', 'claude', 'agy']).map(client => ({ client, action: options.apply ? 'removed' : 'remove', message: 'fixture' })) }; } export function pruneUnreferencedRuntimes() {}", loader: 'js',
       }));
       build.onLoad({ filter: /[\\/]integrations[\\/]setup\.ts$/ }, () => ({ contents: fs.readFileSync(path.resolve(__dirname, '../fixtures/vscode-extension/setup.js'), 'utf8'), loader: 'js' }));
       // The extension's own subprocess runs the bundled runtime's `models --json`.

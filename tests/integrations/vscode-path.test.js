@@ -460,3 +460,24 @@ test('enablePathIntegration rolls back shim and record when writeUserPath fails'
   assert.equal(record, undefined, 'ownership record rolled back on write failure');
   assert.equal(adapter.pathValue, initialPath, 'user PATH unchanged');
 });
+
+test('removePathIntegration prunes unreferenced runtime copies on removal', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  const enableRes = await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    adapter
+  );
+  assert.equal(enableRes.action, 'enabled');
+
+  const record = readPathRecord(f.home);
+  assert.ok(record.runtime, 'runtime copy established');
+  assert.equal(fs.existsSync(record.runtime), true, 'runtime exists on disk');
+  const runtimeDir = path.dirname(record.runtime);
+
+  const uninst = await removePathIntegration(f.home, f.installation, 1500, adapter);
+  assert.equal(uninst.action, 'removed');
+  assert.equal(fs.existsSync(runtimeDir), false, 'unreferenced runtime copy pruned on uninstall');
+  const root = path.join(f.home, '.coagent8');
+  assert.equal(fs.existsSync(root), false, '~/.coagent8 completely removed when nothing remains');
+});

@@ -13,6 +13,7 @@ import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { hash } from './setup-storage.js';
+import { pruneUnreferencedRuntimes } from './cleanup.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { redactDiagnostic } from '../security/redaction.js';
@@ -104,10 +105,15 @@ $ErrorActionPreference = 'Stop'
 $targetKind = if ($env:COAGENT8_REG_KIND -eq 'REG_EXPAND_SZ') { [Microsoft.Win32.RegistryValueKind]::ExpandString } else { [Microsoft.Win32.RegistryValueKind]::String }
 $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
 try {
-  $key.SetValue('Path', $env:COAGENT8_REG_VAL, $targetKind)
-  $written = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-  if ([string]$written -ne [string]$env:COAGENT8_REG_VAL) {
-    throw 'Registry write verification failed: readback did not match written value'
+  $val = if ($null -eq $env:COAGENT8_REG_VAL) { '' } else { [string]$env:COAGENT8_REG_VAL }
+  if ($val -eq '') {
+    try { $key.DeleteValue('Path', $false) } catch {}
+  } else {
+    $key.SetValue('Path', $val, $targetKind)
+    $written = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    if ([string]$written -ne $val) {
+      throw 'Registry write verification failed: readback did not match written value'
+    }
   }
 } catch {
   [Console]::Error.WriteLine($_)
@@ -576,6 +582,11 @@ export async function removePathIntegration(
     Math.min(leaseTimeoutMs, Math.max(100, timeRemaining()))
   );
   const root = path.join(home, '.coagent8');
+  if (res.action === 'removed') {
+    try {
+      pruneUnreferencedRuntimes(root, home);
+    } catch {}
+  }
   try {
     if (fs.existsSync(root) && fs.readdirSync(root).length === 0) {
       fs.rmdirSync(root);
