@@ -35,6 +35,6 @@ Consultation is advisory and does not satisfy independent review. -->
 ## Checklist
 
 - [ ] Documentation, contracts and roadmap updated where applicable.
-- [ ] CHANGELOG.md regenerated without manual edits.
+- [ ] CHANGELOG.md unchanged (it is regenerated only in release PRs).
 - [ ] Conventional Commit title preview passed.
 - [ ] Diff and PR body checked for secrets, local paths and private data.
