@@ -773,7 +773,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   and extension update, manual entries get guidance; pinned runtime copies stay
   unchanged. Define the policy for unknown arguments, which fall through to
   MCP today. Check: P; final syntax requires review before code cards.
-- [ ] **CLI-FIRST-001b - add dispatch/help/version.** After 001a, change the
+- [x] **CLI-FIRST-001b - add dispatch/help/version.** After 001a, change the
   existing root dispatch and lazy setup boundary. Done: explicit MCP startup
   and accepted help/version routes work without eager provider/setup loading;
   old invocations still work. Check: R, MCP/E2E and package consumer smoke.

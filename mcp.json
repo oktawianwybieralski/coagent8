@@ -4,7 +4,7 @@
     "coagent8": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/dist/index.cjs"]
+      "args": ["${PLUGIN_ROOT}/dist/index.cjs", "mcp"]
     }
   }
 }
