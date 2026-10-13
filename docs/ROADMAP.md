@@ -824,6 +824,24 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
   native six-job and independent evidence format. Done: sibling versions match,
   overhead is measured and limitations are explicit. A TUI/persistent worker
   remains deferred unless a separate bounded comparison justifies it.
+- [ ] **CLI-FIRST-001j - make terminal output readable for people.** Owner
+  installed the packed CLI globally on 2026-10-13: every 001b-e command
+  worked, and these readability gaps remain (owner decision: later, not in the
+  0.7.0 phases). `status` prints raw JSON without `--json`, while the other
+  commands print text. `doctor` without `--scope` repeats the `models` view
+  under a "CoAgent8 models" heading. `session list` prints a stray `> `
+  prefix and does not name the workspace it searched. `status` shows
+  `runtimeCallable`/`hostCallable: false` beside `ready: true` without
+  explaining them. Help calls bare stdio MCP "legacy", and how a person is
+  told apart from an MCP client needs a clear explanation. `--version` cannot
+  tell a development build from a release. Start: `src/index.ts`,
+  `src/sessions/session-cli.ts`, `src/diagnostics/doctor.ts`,
+  `src/integrations/setup-cli.ts` and the 001a syntax spec in ARCHITECTURE. Done:
+  each command prints readable text by default and stable JSON only with
+  `--json`; help explains how a person and an MCP client are told apart;
+  JSON shapes and exit codes are unchanged, and `status` keeps its JSON under
+  `--json` for scripts. Check: R, CLI fixtures
+  and an owner run of the packed CLI.
 
 ## REPO-002: branch model and release workflow
 
