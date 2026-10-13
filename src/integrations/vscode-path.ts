@@ -46,18 +46,22 @@ export class DefaultWindowsPathAdapter implements PathSystemAdapter {
   async readUserPath(timeoutMs = 5000): Promise<WindowsRegistryPath | null> {
     if (!this.isWindows()) return null;
     const script = `
+$ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
 if ($null -eq $key) {
   Write-Output '{"exists":false,"kind":"REG_SZ","value":""}'
 } else {
   try {
-    $kind = $key.GetValueKind('Path')
-    $val = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-    $kindStr = if ($kind.ToString() -eq 'ExpandString') { 'REG_EXPAND_SZ' } else { 'REG_SZ' }
-    Write-Output (@{ exists = $true; kind = $kindStr; value = [string]$val } | ConvertTo-Json -Compress)
-  } catch {
-    Write-Output '{"exists":false,"kind":"REG_SZ","value":""}'
+    $names = $key.GetValueNames()
+    if ($names -notcontains 'Path') {
+      Write-Output '{"exists":false,"kind":"REG_SZ","value":""}'
+    } else {
+      $kind = $key.GetValueKind('Path')
+      $val = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      $kindStr = if ($kind.ToString() -eq 'ExpandString') { 'REG_EXPAND_SZ' } else { 'REG_SZ' }
+      Write-Output (@{ exists = $true; kind = $kindStr; value = [string]$val } | ConvertTo-Json -Compress)
+    }
   } finally {
     $key.Close()
   }
@@ -394,7 +398,7 @@ export async function enablePathIntegration(
         try { writeRecordFile(options.home, records); } catch {}
         throw err;
       }
-      await adapter.broadcastEnvironmentChange(300);
+      await adapter.broadcastEnvironmentChange(1000);
       addedToPath = true;
     }
 
@@ -406,7 +410,7 @@ export async function disablePathIntegration(
   options: PathOptInOptions,
   adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
 ): Promise<PathRemovalResult> {
-  return removePathIntegration(options.home, options.installation, 1500, adapter);
+  return removePathIntegration(options.home, options.installation, 5000, adapter);
 }
 
 export async function syncPathShim(
@@ -527,7 +531,8 @@ export async function removePathIntegration(
           return { action: 'blocked', message: 'Uninstall deadline exceeded before registry read' };
         }
         try {
-          const current = await adapter.readUserPath(Math.min(remainingRead, 1000));
+          const readBudget = Math.max(100, remainingRead - 200);
+          const current = await adapter.readUserPath(readBudget);
           if (current) {
             const normalizedTarget = normalizePathEntry(record.pathEntry);
             const originalEntries = current.value
@@ -540,10 +545,11 @@ export async function removePathIntegration(
               if (remainingWrite <= 0) {
                 throw new Error('Uninstall deadline exceeded before registry write');
               }
-              await adapter.writeUserPath(kept.join(';'), current.kind, Math.min(remainingWrite, 1000));
+              const writeBudget = Math.max(100, remainingWrite - 100);
+              await adapter.writeUserPath(kept.join(';'), current.kind, writeBudget);
               const remainingBroadcast = timeRemaining();
               if (remainingBroadcast > 100) {
-                await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 300));
+                await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 1000));
               }
             }
           }

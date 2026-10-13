@@ -55,7 +55,6 @@ class MockPathAdapter {
  * `requires` appears once that vendor extension is installed.
  */
 async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName, pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ') } = {}) {
-  globalThis.pathAdapter = pathAdapter;
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
   const inputBoxes = [], statusMessages = [], modelRuns = [];
   // Each prompt answers with the first scripted action it offers.
@@ -223,9 +222,11 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
   };
   vm.runInNewContext(output.outputFiles[0].text, {
     module, exports: module.exports, process, Buffer, setupFixture: fixture, setTimeout, clearTimeout, setInterval, clearInterval, setImmediate,
-    pathAdapter,
     require(name) { return name === 'vscode' ? vscode : require(name); },
   });
+  if (typeof module.exports.setPathAdapterForTest === 'function') {
+    module.exports.setPathAdapterForTest(pathAdapter);
+  }
   const extensionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-extension-'));
   // os.homedir() follows these; the real profile's ~/.coagent8 must never be touched.
   const homeDir = home ?? path.join(extensionRoot, 'home');
@@ -297,7 +298,9 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     const menus = pickers;
     return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles, pathAdapter };
   } finally {
-    delete globalThis.pathAdapter;
+    if (typeof module.exports.setPathAdapterForTest === 'function') {
+      module.exports.setPathAdapterForTest(undefined);
+    }
     for (const [key, value] of Object.entries(savedHome)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     for (const sub of context.subscriptions) {
       if (typeof sub?.dispose === 'function') {
@@ -1188,20 +1191,28 @@ test('VS Code extension PATH opt-in prompt lifecycle and explicit commands', asy
   assert.equal(dismissed.state.pathPrompt, 'dismissed');
 
   // Scenario 4: Command coagent8.addPath manually enables and coagent8.removePath removes
-  const manualAdd = await runExtension({
-    command: 'coagent8.addPath',
-    storedState: { welcomed: true, pathPrompt: 'declined' },
-    action: 'Yes',
-    awaitNotifications: 2,
-  });
-  assert.equal(manualAdd.state.pathPrompt, 'accepted');
+  const manualHome = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-manual-path-'));
+  try {
+    const manualAdd = await runExtension({
+      home: manualHome,
+      command: 'coagent8.addPath',
+      storedState: { welcomed: true, pathPrompt: 'declined' },
+      action: 'Yes',
+      awaitNotifications: 2,
+    });
+    assert.equal(manualAdd.state.pathPrompt, 'accepted');
+    assert.ok(manualAdd.pathAdapter.writes.length > 0, 'manualAdd wrote to PATH');
 
-  const manualRemove = await runExtension({
-    command: 'coagent8.removePath',
-    storedState: { welcomed: true, pathPrompt: 'accepted' },
-    action: 'Remove',
-  });
-  assert.equal(manualRemove.notifications.length, 2);
-  assert.match(manualRemove.notifications[0].message, /Remove 'coagent8' from your user PATH\?/);
-  assert.match(manualRemove.notifications[1].message, /CoAgent8 has been removed from your user PATH|No active CoAgent8 PATH integration/);
+    const manualRemove = await runExtension({
+      home: manualHome,
+      command: 'coagent8.removePath',
+      storedState: { welcomed: true, pathPrompt: 'accepted' },
+      action: 'Remove',
+    });
+    assert.equal(manualRemove.notifications.length, 2);
+    assert.match(manualRemove.notifications[0].message, /Remove 'coagent8' from your user PATH\?/);
+    assert.equal(manualRemove.notifications[1].message, 'CoAgent8 has been removed from your user PATH.');
+  } finally {
+    fs.rmSync(manualHome, { recursive: true, force: true });
+  }
 });

@@ -22,8 +22,14 @@ import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { manageSkills, skillSelectionForAction, type ManagedSkill } from '../../../src/integrations/skill-management.js';
 import { enablePathIntegration, disablePathIntegration, syncPathShim, type PathSystemAdapter, DefaultWindowsPathAdapter } from '../../../src/integrations/vscode-path.js';
 
+let customPathAdapter: PathSystemAdapter | undefined;
+
+export function setPathAdapterForTest(adapter: PathSystemAdapter | undefined): void {
+  customPathAdapter = adapter;
+}
+
 function activePathAdapter(): PathSystemAdapter {
-  return (globalThis as unknown as { pathAdapter?: PathSystemAdapter }).pathAdapter ?? new DefaultWindowsPathAdapter();
+  return customPathAdapter ?? new DefaultWindowsPathAdapter();
 }
 
 /** This extension's identifier, as published. */

@@ -18,16 +18,22 @@ class MockPathAdapter {
     this.win = isWin;
     this.writes = [];
     this.broadcasts = [];
+    this.readTimeouts = [];
+    this.writeTimeouts = [];
+    this.readError = null;
   }
   isWindows() {
     return this.win;
   }
-  async readUserPath() {
+  async readUserPath(timeoutMs) {
+    this.readTimeouts.push(timeoutMs);
+    if (this.readError) throw this.readError;
     if (this.pathValue === null) return null;
     return { value: this.pathValue, kind: this.pathKind };
   }
-  async writeUserPath(value, kind) {
-    this.writes.push({ value, kind });
+  async writeUserPath(value, kind, timeoutMs) {
+    this.writeTimeouts.push(timeoutMs);
+    this.writes.push({ value, kind, timeoutMs });
     this.pathValue = value;
     this.pathKind = kind;
   }
@@ -391,4 +397,43 @@ test('non-ASCII and unicode PATH entries are preserved without corruption', asyn
   assert.equal(uninst.action, 'removed');
   assert.equal(adapter.pathValue, unicodePath);
   assert.equal(adapter.pathKind, 'REG_EXPAND_SZ');
+});
+
+test('enablePathIntegration fails closed and preserves user PATH when registry read fails', async t => {
+  const f = fixture(t);
+  const initialPath = 'C:\\Important\\Bin;C:\\System32';
+  const adapter = new MockPathAdapter(initialPath, 'REG_SZ');
+  adapter.readError = new Error('Simulated registry query failure');
+
+  await assert.rejects(
+    () => enablePathIntegration(
+      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+      adapter
+    ),
+    /Simulated registry query failure/
+  );
+
+  assert.equal(adapter.writes.length, 0, 'no registry writes attempted');
+  assert.equal(adapter.pathValue, initialPath, 'user PATH completely preserved');
+});
+
+test('removePathIntegration allocates remaining deadline budget to registry operations', async t => {
+  const f = fixture(t);
+  const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
+  const enableRes = await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    adapter
+  );
+  assert.equal(enableRes.action, 'enabled');
+
+  const deadline = Date.now() + 3800;
+  const uninst = await removePathIntegration(f.home, f.installation, 1500, adapter, deadline);
+  assert.equal(uninst.action, 'removed');
+
+  // Verify that timeouts passed to readUserPath and writeUserPath are NOT capped at 1000ms
+  const readTimeout = adapter.readTimeouts[adapter.readTimeouts.length - 1];
+  const writeTimeout = adapter.writeTimeouts[adapter.writeTimeouts.length - 1];
+  assert.ok(readTimeout > 2000, `readTimeout should be > 2000ms, got ${readTimeout}`);
+  assert.ok(writeTimeout > 2000, `writeTimeout should be > 2000ms, got ${writeTimeout}`);
+  assert.equal(adapter.broadcasts[adapter.broadcasts.length - 1], 1000, 'broadcast timeout is 1000ms');
 });
