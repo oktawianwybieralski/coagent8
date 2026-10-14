@@ -299,12 +299,15 @@ usage, quota or bill; request estimates remain open in AX-001.
   included. If it does not meet the limit the call fails with PRICE_LIMIT and the
   reason; it is never replaced. A continuation keeps its model.
 - Without a named model the backend default runs when it meets the limit;
-  otherwise the highest-priced catalog model below the limit, as a capability
-  proxy, accepting the call's reasoning_effort (an agy model needing an effort
-  gets its first). An explicit backend stays fixed; auto keeps the configured
-  default when it has a qualifying model and otherwise chooses among backends
-  that have one, then as usual. Claude's catalog lists its aliases, so they qualify
-  like other listed models.
+  otherwise the most recently released qualifying catalog model, then the higher
+  price, then catalog order, accepting the call's reasoning_effort (an agy model
+  needing an effort gets its first); a model without a release date ranks after
+  every dated one. The date is OpenRouter's `created` timestamp, the day the model
+  was listed there, labelled as such. Model descriptions from the list are not
+  stored or shown (third-party text that would reach caller context). An explicit
+  backend stays fixed; auto keeps the configured default when it has a qualifying
+  model and otherwise chooses among backends that have one, then as usual. Claude's
+  catalog lists its aliases, so they qualify like other listed models.
   No qualifying model is PRICE_LIMIT with each backend's reason.
 - The controller checks the concrete model before consent and again right before
   session acquisition, so a price list or configuration changed while the user
@@ -1200,6 +1203,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-13 | Registration migration (CLI-FIRST-001a2): owned registrations migrate to the explicit 'mcp' subcommand on setup, repair, and extension update; runtime path extraction in the integration layer recognizes both legacy and 'mcp' shapes under strict argument and path bounds without widening ownership; manual entries remain untouched; pinned copies are preserved; npx guidance recommends 'npx -y coagent8@<version> mcp'. |
 | 2026-10-13 | VS Code extension PATH opt-in and lifecycle (CLI-FIRST-001h): CoAgent8 never changes PATH or creates a shim without an explicit 'Yes' from the user in the extension. No CLI flag, setting or agent can grant it. The prompt appears once after successful setup; 'No' and dismissal are stored in setup state and never asked again; a command allows adding or removing it later. On Windows, ~/.coagent8/bin is added to HKCU\Environment Path preserving value type (REG_EXPAND_SZ) without setx or visible console window; on POSIX, ~/.local/bin holds an owned shim without modifying PATH if already present. The shim targets the stable runtime copy, surviving extension updates. Ownership is recorded in ~/.coagent8/installs.json; the vscode:uninstall hook removes only recorded, unchanged artifacts and registry entries within the 5 s lease limit. |
 | 2026-10-14 | `CHANGELOG.md` is regenerated only in release PRs (`npm run changelog -- --tag vX.Y.Z`), replacing the 2026-10-06 regeneration before every push: on a topic branch the file listed branch commits that the squash removes and could not list the PR itself. Topic branches run `npm run changelog:check` and the title preview only. PR scope follows coherent results; line count is no reason to split. |
+| 2026-10-14 | A price limit without a named model runs the qualifying default first; otherwise the most recently released qualifying catalog model, then the higher price, then catalog order; a model without a release date ranks after every dated one. The date is OpenRouter's `created` timestamp, the day the model was listed there, labelled as such. Model descriptions from the list are neither stored nor shown: they are third-party text that would reach caller context. Replaces the 2026-10-08 highest-price selection rule (AX-002d). |
 
 ## Known limitations
 
