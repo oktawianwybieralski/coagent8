@@ -7,6 +7,7 @@ description: Show which models, reasoning efforts and output prices each CoAgent
 
 1. For models call `doctor` with `scope: models` (the default). It reads cached
    catalogs and lists, per backend, models, reasoning efforts, output prices,
+   the day the price list added each model (not the vendor's release date),
    price freshness and each model's approval tag: `ask: <rule>`, `deny` or
    `allow`. Pass
    `backend` (`codex`, `claude` or `agy`) to narrow it and `detail: full` for the
