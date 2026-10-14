@@ -125,7 +125,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     { turn: 1, toolCount: 0, durationMs: 100, historyAvailable: false }
   );
   const textProcessErr = resProcessErr.content[0].text;
-  assert.ok(textProcessErr.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?'));
+  assert.ok(textProcessErr.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml (the issue tool prepares the sanitized report to paste)'));
   assert.ok(textProcessErr.includes('PROCESS_ERROR'));
 
   // 2. Fatal CLI_UNSUPPORTED

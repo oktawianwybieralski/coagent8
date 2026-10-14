@@ -70,7 +70,7 @@ function readResult(result) {
     else if (line === 'Notice: Output reached buffer limit.') parsed.truncated = true;
     else if ((match = /^Price: (.+)$/.exec(line))) parsed.price = match[1];
     else if ((match = /^Warning: (.*)$/.exec(line))) parsed.warnings.push(match[1]);
-    else if ((match = /^Report this issue: (https:\/\/\S+)$/.exec(line))) parsed.issueUrl = match[1];
+    else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool prepares the sanitized report to paste\)$/.exec(line))) parsed.issueUrl = match[1];
     else if ((match = /^Workspace: (.+) \(server directory\)$/.exec(line))) parsed.workspace = match[1];
     else throw new Error(`unexpected footer line: ${line}`);
   }

@@ -9,9 +9,9 @@
  * - **Credential & Path Masking**: Strips recognized API keys, Bearer/Basic tokens, private keys,
  *   passwords, and the local user's home directory (`~`) using `redactDiagnostic`.
  *   Redaction strictly precedes byte truncation to ensure credential prefixes cannot be exposed.
- * - **Pre-Filled GitHub URL Construction**: Builds URL-encoded issue links targeting the canonical
- *   GitHub repository issues page (`/issues/new?title=...&body=...`), including system architecture,
- *   Node runtime, OS version, and detected CLI versions only (no readiness or quota).
+ * - **Paste Flow**: Links to the repository's bug report form (`/issues/new?template=bug_report.yml`)
+ *   without report data in the URL; the report, with system architecture, Node runtime, OS version
+ *   and detected CLI versions only (no readiness or quota), goes in a copy block to paste.
  *
  * @packageDocumentation
  */
@@ -114,13 +114,13 @@ export function sanitizeText(text?: string | null): string {
 }
 
 /**
- * Builds a sanitized, pre-filled GitHub bug report URL and markdown preview.
+ * Builds a sanitized bug report, the link to the bug report form and the prompt that shows both.
  *
  * Collects runtime environment parameters (Node.js, OS architecture, detected CLI versions),
- * strips sensitive code blocks and credentials, and encodes parameters into a GitHub new issue URL.
+ * strips sensitive code blocks and credentials, and puts the report in a copy block to paste.
  *
  * @param options - Error message, context, and optional DoctorReport diagnostics.
- * @returns Object containing title, body, pre-filled issue URL, and markdown prompt.
+ * @returns Object containing title, body, the form URL, and markdown prompt.
  */
 export function generateBugReport(options: BugReportOptions): BugReportResult {
   const { errorMessage, context, doctorReport = null } = options;

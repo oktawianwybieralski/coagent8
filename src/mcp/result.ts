@@ -7,14 +7,14 @@
  * each in its own plaintext block. When the tool requires a State Envelope, the server verdict
  * with its causes goes to the footer. When an unrecoverable process/protocol failure occurs
  * (`PROCESS_ERROR`, `CLI_UNSUPPORTED`, `PROTOCOL_ERROR`), `formatExecutionResult` generates a
- * pre-filled GitHub issue URL in the response footer.
+ * link to the bug report form in the response footer and names the issue tool for the report.
  *
  * @packageDocumentation
  */
 
 import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult } from '../contracts/execution.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
-import { generateBugReport } from '../diagnostics/issue.js';
+import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
 import type { ResolvedWorkspace } from '../workspace/workspace.js';
@@ -85,7 +85,7 @@ export interface FormatExecutionOptions {
  * - Includes execution-owned cooldown warnings without writing persistent state.
  * - Appends blockquote footer lines: backend, model, duration, operations, session handle
  *   with its state, the review verdict, the price evidence of a price limit, notices and warnings.
- * - Appends pre-filled GitHub issue report link on unrecoverable fatal system errors.
+ * - Appends the bug report form link and the issue tool on unrecoverable fatal system errors.
  */
 export function formatExecutionResult(
   outcome: TaskExecutionResult,
@@ -196,11 +196,7 @@ export function formatExecutionResult(
     footerLines.push(`Warning: ${warning}`);
   }
   if (error && (['PROCESS_ERROR', 'CLI_UNSUPPORTED', 'PROTOCOL_ERROR'] as string[]).includes(error.code)) {
-    const bug = generateBugReport({
-      errorMessage: `[${error.code}]: ${error.message}`,
-      context: `Fatal unrecoverable error in ${provider || 'CLI'} during turn ${executionMeta.turn}`,
-    });
-    footerLines.push(`Report this issue: ${bug.issueUrl}`);
+    footerLines.push(`Report this issue: ${GITHUB_BUG_REPORT_TEMPLATE_URL} (the issue tool prepares the sanitized report to paste)`);
   }
   parts.push(present(footerLines.map(footerLine).join('\n')));
 

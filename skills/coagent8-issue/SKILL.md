@@ -1,6 +1,6 @@
 ---
 name: coagent8-issue
-description: Prepare a sanitized CoAgent8 bug report with a pre-filled GitHub issue link through the CoAgent8 issue tool. Use when CoAgent8 itself fails unexpectedly (an error, a wrong result or a setup problem) and the user wants to report it.
+description: Prepare a sanitized CoAgent8 bug report with a GitHub bug report form link through the CoAgent8 issue tool. Use when CoAgent8 itself fails unexpectedly (an error, a wrong result or a setup problem) and the user wants to report it.
 ---
 
 # CoAgent8 issue report
