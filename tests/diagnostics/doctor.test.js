@@ -128,7 +128,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.equal(typeof report.runtime_path, 'string');
     const summary = formatDoctorSummary(report);
     assert.equal(summary.split('\n').length, 9, summary);
-    assert.match(summary, /\nagy: ready[^\n]*\n {2}models, USD per million output tokens: agy-model \? \[default, ask: no price\], gemini-3\.8-flash \(high\|low required\) 3\.75(\n|$)/,
+    assert.match(summary, /\nagy: ready[^\n]*\n {2}models, USD per million output tokens: agy-model \? \? \[default, ask: no price\], gemini-3\.8-flash \(high\|low required\) 3\.75 2026-03-15(\n|$)/,
       'the default and the catalog the CLI lists, with prices and the efforts a model needs');
     assert.match(summary, /\n {2}also accepted: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
     assert.match(summary, /^CoAgent8 doctor: operational · v\d+\.\d+\.\d+.* · runtime: .* · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
@@ -144,7 +144,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
       ['claude', 'claude-model', null, 'unknown', true, 'cli-config'],
     ]);
     const flash = report.selection.find(row => row.model === 'gemini-3.8-flash');
-    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, inputUsdPerMTok: 0.75, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false });
+    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, inputUsdPerMTok: 0.75, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false, released: '2026-03-15' });
     assert.deepEqual(flash.approval, { required: false, denied: false, basis: 'priced', reason: 'Its output costs 3.75 USD per million tokens.', rememberable: false });
     assert.equal(report.prices.stale, false);
 
@@ -232,10 +232,10 @@ test('the doctor summary drops whole model rows to stay within the inline bound 
   assert.equal(shown.length + counted, 200, 'every row is shown or counted');
   shown.forEach((text, i) => {
     const price = report.selection[i].price;
-    const expected = price.outputUsdPerMTok === null ? '? [ask: no price]' : `${price.match === 'approximate' ? '~' : ''}${price.outputUsdPerMTok}`;
+    const expected = price.outputUsdPerMTok === null ? '? ? [ask: no price]' : `${price.match === 'approximate' ? '~' : ''}${price.outputUsdPerMTok} ?`;
     assert.equal(text, `codex-catalog-model-${i} ${expected}`, 'a shown row is whole and states the full report\'s price');
   });
-  assert.match(summary, /agy-catalog-model-19 1; reasoning_effort low\|high(\n|$)/, 'the shorter list stays complete while the longest is cut');
+  assert.match(summary, /agy-catalog-model-19 1 \?; reasoning_effort low\|high(\n|$)/, 'the shorter list stays complete while the longest is cut');
 });
 
 test('formatDoctorSummary bounds long runtime path to prevent summary overflow (FEEDBACK-061a1)', () => {
@@ -285,10 +285,10 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
     assert.deepEqual(summary.split('\n'), [
       summary.split('\n')[0],
       'codex · codex 2.0.0 · model gpt-6-luna (CLI default)',
-      '  models, USD per million output tokens: gpt-6-luna 0.5 [default], gpt-6-astra 50 [ask: askAbovePrice]; reasoning_effort low|high',
+      '  models, USD per million output tokens: gpt-6-luna 0.5 2026-02-01 [default], gpt-6-astra 50 2026-03-01 [ask: askAbovePrice]; reasoning_effort low|high',
       'agy: not installed',
       'claude · claude 2.0.0 · model claude-haiku-4-5-20251001 (CLI default)',
-      '  models, USD per million output tokens: claude-haiku-4-5-20251001 5 [default]',
+      '  models, USD per million output tokens: claude-haiku-4-5-20251001 5 2024-06-01 [default]',
       '  also accepted: unlisted names the CLI resolves itself',
     ]);
     assert.match(summary, /^CoAgent8 models · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\) · scope "health" diagnoses sign-in and quota\n/);
@@ -297,7 +297,7 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
     const full = (await handleDoctor({ detail: 'full', backend: 'claude' })).structuredContent;
     assert.equal(full.scope, 'models');
     assert.deepEqual(full.backends, { claude: { installed: true, allowed: true, version: 'claude 2.0.0', defaultModel: { model: 'claude-haiku-4-5-20251001', source: 'catalog' }, catalogSource: 'claude fixture', acceptsUnlisted: true } });
-    assert.deepEqual(full.selection.map(row => [row.model, row.price.outputUsdPerMTok, row.defaultSource]), [['claude-haiku-4-5-20251001', 5, 'catalog']]);
+    assert.deepEqual(full.selection.map(row => [row.model, row.price.outputUsdPerMTok, row.defaultSource, row.price.released]), [['claude-haiku-4-5-20251001', 5, 'catalog', '2024-06-01']]);
     const health = (await handleDoctor({ scope: 'health' })).content[0].text;
     assert.match(health, /^CoAgent8 doctor: /, 'scope health runs the full diagnosis');
     assert.ok(quotaReads.length > 0, 'with quota reads');
@@ -307,8 +307,8 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
       governance: { models: { allow: ['claude-haiku-4-5-20251001'], ask: ['gpt-6-luna'], deny: ['gpt-6-astra'] } } }));
     const ruled = (await handleDoctor({})).content[0].text.split('\n');
     assert.ok(ruled.includes('codex · codex 2.0.0 · model gpt-6-luna (CLI default, asks each turn)'), ruled.join('\n'));
-    assert.ok(ruled.includes('  models, USD per million output tokens: gpt-6-luna 0.5 [default, ask: user list], gpt-6-astra 50 [deny]; reasoning_effort low|high'), ruled.join('\n'));
-    assert.ok(ruled.includes('  models, USD per million output tokens: claude-haiku-4-5-20251001 5 [default, allow]'), ruled.join('\n'));
+    assert.ok(ruled.includes('  models, USD per million output tokens: gpt-6-luna 0.5 2026-02-01 [default, ask: user list], gpt-6-astra 50 2026-03-01 [deny]; reasoning_effort low|high'), ruled.join('\n'));
+    assert.ok(ruled.includes('  models, USD per million output tokens: claude-haiku-4-5-20251001 5 2024-06-01 [default, allow]'), ruled.join('\n'));
     await saveConfig({ governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: ['gpt-6-luna'] } } });
     assert.match((await handleDoctor({ backend: 'codex' })).content[0].text, /model gpt-6-luna \(CLI default, denied by the user\)/);
   } finally {
