@@ -1797,9 +1797,9 @@ agent (owner assigns).
 | 2.3 | [x] `FEEDBACK-061b1` shared registration reproduction (#46) | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
 | 2.4 | [x] `FEEDBACK-061b2` registration policy (#46) | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
 | 2.5 | `FEEDBACK-061b3` selection outside the vendor profile | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |
-| 2.6 | `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
-| 2.7 | `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
-| 2.8 | `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
+| 2.6 | [x] `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
+| 2.7 | [x] `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
+| 2.8 | [x] `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
 | 2.9 | `FEEDBACK-061c2` VS Code "Open bug report" | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
 | 2.10 | `FEEDBACK-061c3` `coagent8 issue --open` | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
 | 2.11 | `FEEDBACK-061e` server-owned turn number | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
