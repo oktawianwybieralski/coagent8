@@ -170,6 +170,11 @@ For setup, sign-in or quota problems, paste the output of doctor (scope: health)
       issueUrl = GITHUB_NEW_ISSUE_BASE;
     }
 
+    // Calculate outer CommonMark code fence to prevent internal ``` from closing the copy block prematurely
+    const backtickMatches = body.match(/`+/g) || [];
+    const maxBackticks = backtickMatches.reduce((max, m) => Math.max(max, m.length), 0);
+    const outerFence = '`'.repeat(Math.max(4, maxBackticks + 1));
+
     return {
       title,
       body,
@@ -180,7 +185,7 @@ For setup, sign-in or quota problems, paste the output of doctor (scope: health)
         `**[Submit Bug Report on GitHub](<${issueUrl}>)**\n\n` +
         `Link URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
         `Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n` +
-        `\`\`\`text\n${body}\n\`\`\`\n\n` +
+        `${outerFence}text\n${body}\n${outerFence}\n\n` +
         `Preview Sanitized Report\n\n${body}`,
     };
   } catch (_err) {

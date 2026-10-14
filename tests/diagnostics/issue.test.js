@@ -30,9 +30,10 @@ test('issue link points to bug_report.yml template and provides copyable report 
   assert.ok(!report.issueUrl.includes('body='));
   assert.ok(!/[\\()\s]/.test(link), 'URL must not contain Markdown escapes or delimiters');
 
-  const copyBlockMatch = report.prompt.match(/Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n```text\n([\s\S]*?)\n```\n\nPreview Sanitized Report/);
-  assert.ok(copyBlockMatch, 'prompt must contain separate copy block with instructions');
-  assert.equal(copyBlockMatch[1], report.body);
+  // Verify CommonMark rendering: outer code fence must be at least 4 backticks (longer than body's ```)
+  const copyBlockMatch = report.prompt.match(/Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1\n\nPreview Sanitized Report/);
+  assert.ok(copyBlockMatch, 'prompt must contain separate copy block enclosed in safe outer code fence');
+  assert.equal(copyBlockMatch[2], report.body, 'copy block content must strictly match the complete report body including nested code blocks and environment details');
 
   assert.ok(report.body.includes(context));
   assert.ok(report.body.includes(errorMessage));
