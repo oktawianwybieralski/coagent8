@@ -621,4 +621,6 @@ For subsequent tasks supply: objective/role/profile, allowed scope and acceptanc
 workspace/branch/target plus base/candidate or dirty-diff identity; changes;
 checks with commands, platform, PASS/FAIL/NOT_RUN and evidence; unresolved work and
 next action. Link to rules instead of copying them. A reviewer needs original
-requirements and the actual candidate, not just an implementation summary.
+requirements and the actual candidate, not just an implementation summary
+([review input](../.agents/rules/03-author-reviewer.md#review-input)). Name pull
+requests by number (`PR #51`), never "this PR": the text outlives the PR.

@@ -182,7 +182,8 @@ become the final commit, so they must meet this section.
 * **Title**: a valid Conventional Commit header (section 2). It becomes the
   squash-merge subject and the changelog entry. Preview that entry with the
   changelog check (section 6) before opening the PR and whenever the title
-  changes.
+  changes. Never put the PR number in the title: GitHub appends ` (#N)` on
+  squash, so a title ending in `(#N)` lands as `(#N) (#N)`.
 * Open as **draft** while work or verification is incomplete.
 * One coherent result per PR. Keep its implementation, regression tests and
   related documentation together; use commits and a checklist for subtasks.
