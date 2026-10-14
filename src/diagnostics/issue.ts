@@ -158,6 +158,8 @@ ${cleanError}
 - **OS**: ${os.type()} ${os.release()} (${os.arch()})
 ${detectedClis}
 
+For setup, sign-in or quota problems, paste the output of doctor (scope: health).
+
 ---
 *Note: Best-effort automated redaction was applied. Please review the details above before submitting to ensure no sensitive or proprietary data is included.*
 `;

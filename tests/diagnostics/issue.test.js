@@ -44,7 +44,9 @@ test('issue link points to bug_report.yml template and provides copyable report 
   ));
   assert.ok(!report.body.includes('vcodex-cli'));
   assert.ok(!report.body.includes('v1.3.2'));
-  assert.ok(!report.body.includes('v2.1.296'));
+  assert.ok(report.body.includes(
+    'For setup, sign-in or quota problems, paste the output of doctor (scope: health).'
+  ));
   assert.ok(!/[\r\n]/.test(report.title));
   assert.ok(!report.title.includes('[truncated]'));
   assert.ok(Array.from(report.title).length <= 120);
