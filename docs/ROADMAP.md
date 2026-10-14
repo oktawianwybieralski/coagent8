@@ -4,7 +4,7 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-10-13. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-15. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -153,9 +153,9 @@ natively (no product code), so the contract in Phase 2 rests on evidence.
   (`CLI-FIRST-001h`).
 
 **Phase 2 - stability, feedback and containment.**
-[`FEEDBACK-061a-i`](#feedback-061-findings-of-the-061-native-acceptance)
+[`FEEDBACK-061a-k`](#feedback-061-findings-of-the-061-native-acceptance)
 (runtime version in `doctor`, shared registrations, issue links, Codex buffer
-limit), `AX-002d-i` (recency under a price limit; retiring models ignored),
+limit, retry of unsuccessful reviews, Codex read denials), `AX-002d-i` (recency under a price limit; retiring models ignored),
 `AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`AUDIT-001-A08` to `A21`](#audit-001-corrected-analysis-follow-up),
 `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`,
@@ -386,7 +386,7 @@ Effective configuration provenance and bounded diagnostics are implemented in `E
 Implemented in `0.6.0` (`AX-007a` through `AX-007c`; [evidence](HANDOFF.md#ax-007a-state-when-another-review-cannot-help)):
 - `AX-007a`: read-only reviewer `NOT_RUN` checks do not block `READY`; the footer names unrun checks so the author and CI verify them.
 - `AX-007b`: result footers label `session_handle=<handle> (<state>)` and tool schemas explain continuation vs. fresh turns.
-- `AX-007c`: an unchanged repeat review in the same workspace returns the prior server verdict without starting a new model turn (retaining the handle in the refusal footer remains open under `FEEDBACK-060f4`).
+- `AX-007c`: an unchanged repeat review in the same workspace returns the prior server verdict without starting a new model turn (retaining the handle in the refusal footer remains open under `FEEDBACK-060f4`). `FEEDBACK-061j` limits reuse to complete reviews: a partial review must not block a retry.
 
 - [ ] **AX-007d - warn about an abandoned ready session.** After `SESSION-001` mode design: when the same connection and workspace start a new session while a recent session is `ready`, emit one `Warning:` naming that handle without continuing it implicitly. Check: R, SESSION/MCP.
 
@@ -1209,7 +1209,7 @@ Native acceptance on 2026-10-13 ran Codex, Claude Code and Antigravity on the
 blocked the release; each card states whether it is a CoAgent8 defect, a host
 behavior or a test-procedure lesson.
 
-- [ ] **FEEDBACK-061a - show which runtime a chat uses.** A chat keeps the
+- [x] **FEEDBACK-061a - show which runtime a chat uses.** Implemented in #45. A chat keeps the
   MCP server it started with, so after an update chats started earlier still
   run the previous version; the first acceptance round tested `0.6.0` without
   noticing. Show the server version in `doctor` health (and consider the
@@ -1255,7 +1255,7 @@ behavior or a test-procedure lesson.
   action (`vscode.env.openExternal`) or `coagent8 issue --open`, never from
   the MCP server; `gh issue create --web` is optional. Check: R, native agy,
   Claude Code, Codex and VS Code.
-- [ ] **FEEDBACK-061d - issue result in Claude Code.** Claude Code passed the
+- [x] **FEEDBACK-061d - issue result in Claude Code.** Implemented in #51. Claude Code passed the
   model the `structuredContent` JSON (`title`, `body`, `issueUrl`) instead of
   the text with the clickable link. Owner decision 2026-10-13: keep
   `structuredContent` (Codex uses it) and add `prompt` (exactly the text in
@@ -1266,7 +1266,7 @@ behavior or a test-procedure lesson.
   `REVIEW: 1` with a `turn 2` footer; the counter is written by the model.
   Owner decision 2026-10-13: the server sets the turn number in the returned
   envelope and ignores the model's value. Check: R.
-- [ ] **FEEDBACK-061f - doctor reminder in issue reports.** No report tells
+- [x] **FEEDBACK-061f - doctor reminder in issue reports.** Implemented in #51. No report tells
   the reporter to attach full `doctor` health output (`include_doctor` adds
   CLI versions only), although the issue form requires it. Owner decision
   2026-10-13: add one line, for example "For setup, sign-in or quota
@@ -1288,6 +1288,49 @@ behavior or a test-procedure lesson.
   first turn's identifier in history) and document or fix it; add a fixture
   case for a resumed turn without a conversation id, which now keeps the
   requested id instead of failing as `SESSION_INVALID`. Check: R.
+
+- [ ] **FEEDBACK-061j - retry unsuccessful reviews (#48).** A completed
+  Codex review turn reported `COVERAGE: PARTIAL` and `BLOCKED` because the
+  reviewer's file reads were denied; unchanged retries, with or without
+  `session_handle`, returned that verdict without a model turn until an
+  unrelated edit changed the snapshot. Cause (verified 2026-10-15):
+  `src/execution/controller.ts` records every judged verdict as `lastReview`,
+  and `findCompletedReview` in `src/sessions/session.ts` matches workspace,
+  backend, snapshot, scope and model across sessions without checking
+  coverage or verdict. Contract: only a judged review with `COVERAGE: COMPLETE`
+  and complete collected input suppresses an unchanged repeat; a complete
+  `BLOCKED` with findings still deduplicates, as `AX-007c` intends. The gate
+  result carries the coverage so recording does not parse reason text; lookup
+  ignores records without complete coverage, including records written by
+  older runtimes. Regression cases: PARTIAL/BLOCKED, incomplete collected
+  input, typed execution failure, retries with and without a handle, and
+  unchanged complete READY and BLOCKED still deduplicating. Update the repeat
+  guidance in the refusal text and the review skill. No public retry parameter;
+  adding one needs an owner schema decision. Check: R, REVIEW, SESSION, native
+  Codex.
+- [ ] **FEEDBACK-061k - Codex workspace read denials (#49).** On Windows
+  (codex-cli 0.162.0-alpha.17.2), the Codex reviewer was denied every tracked
+  file under `docs/` and later Git commands, while other paths stayed
+  readable and `doctor` reported ready; coverage stayed PARTIAL in every
+  round, so the review gate could not reach READY. Cause unconfirmed:
+  CoAgent8 passes only `sandbox_mode="read-only"`, `approval_policy="never"`
+  and inherited MCP servers disabled (`src/backends/codex/app-server.ts`), with
+  no path rules; the reporter's hypothesis is an ignored
+  `docs/http_dist/.env` created just before. Split:
+  `FEEDBACK-061k1` reproduces with tracked docs and sibling sources, an
+  untracked file and a synthetic ignored `.env`, before and after its
+  creation, in fresh and resumed threads, through CoAgent8 and plain
+  `codex exec --sandbox read-only`, with inherited and isolated Codex
+  configuration, on Windows and POSIX; HANDOFF records CLI versions, effective
+  policy, actual denial events and attribution, without secret contents.
+  `FEEDBACK-061k2` fixes a CoAgent8 defect if one is found, otherwise records
+  upstream evidence and a verified remedy or an owner-accepted limitation;
+  the review result reports denied paths and operations observed in tool
+  events, separate from the reviewer's claims, and denied required scope
+  keeps the review PARTIAL. `doctor` health keeps "ready" as backend readiness
+  and must not imply workspace access; any access probe that starts a model
+  turn or a new public parameter needs an owner decision. Check: R, CODEX,
+  DOCTOR, REVIEW, native Windows and POSIX.
 
 ## PROPOSALS-001: proposals awaiting an owner decision
 
@@ -1699,6 +1742,8 @@ review may resolve a risky contract, but does not require a separate PR.
 | Bug-report content and paste flow | 2.6, 2.7, 2.8 | Link, structured content, issue skill and doctor reminder form one reporting flow. |
 | Bug-report opening actions | 2.9, 2.10 | Explicit VS Code and CLI actions with browser-opening tests, after the reporting flow. |
 | Recency under a price limit | 2.26a, 2.26b, 2.26c | One PR: the planning cards, decision, stored dates, ranking, doctor dates and agent guidance form one selection change. No separate PR for the cards or for 2.26a alone; one final review of the combined scope. |
+| Retry unsuccessful reviews (#48) | 2.12a | Dedup eligibility, older-record handling, guidance and regression tests form one correction, independent of #49. |
+| Codex read denials (#49) | 2.12b, 2.12c | Native attribution precedes the correction; evidence alone creates no PR. The shared native check 2.12d follows both groups. |
 | Isolated acceptance runner foundation | 2.15, 2.16 | Owned home isolation and runner skeleton with preservation and dry-run checks. |
 | Delegated background lifecycle | 3.1, 3.2 | Start, cancellation and shutdown form one owned-process lifecycle, after the accepted contracts. |
 | Delegated result retrieval | 3.3, 3.4 | Bounded wait and result persistence with notification/cancellation ordering. |
@@ -1797,13 +1842,17 @@ agent (owner assigns).
 | 2.3 | [x] `FEEDBACK-061b1` shared registration reproduction (#46) | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
 | 2.4 | [x] `FEEDBACK-061b2` registration policy (#46) | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
 | 2.5 | [x] `FEEDBACK-061b3` selection outside the vendor profile (#54) | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |
-| 2.6 | [x] `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
-| 2.7 | [x] `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
-| 2.8 | [x] `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
+| 2.6 | [x] `FEEDBACK-061c1` short form link and paste mode (#51) | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
+| 2.7 | [x] `FEEDBACK-061d` `prompt` in structured content (#51) | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
+| 2.8 | [x] `FEEDBACK-061f` doctor reminder (#51) | R | 2.6 | One reminder line in the report; test. |
 | 2.9 | [x] `FEEDBACK-061c2` VS Code "Open bug report" (#55) | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
 | 2.10 | [x] `FEEDBACK-061c3` `coagent8 issue --open` (#55) | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
 | 2.11 | [x] `FEEDBACK-061e` server-owned turn number (#56) | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
 | 2.12 | [x] `FEEDBACK-061g` large Codex prompts (#57) | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
+| 2.12a | `FEEDBACK-061j` retry unsuccessful reviews (#48) | R | - par | Only complete-coverage reviews with complete input deduplicate, including lookup of older records; PARTIAL and failed reviews rerun with or without a handle; complete READY and BLOCKED still deduplicate; guidance updated; tests. |
+| 2.12b | `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
+| 2.12c | `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix, or a verified remedy or owner-accepted limitation; observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
+| 2.12d | `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable or the limitation is reported, denied required scope blocks READY, and an unchanged failed review can be retried. |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |

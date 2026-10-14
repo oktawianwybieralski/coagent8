@@ -67,8 +67,10 @@ Do not append another session transcript or treat old test counts as fresh evide
   (`CODEX_MAX_SERIALIZED_PROMPT_BYTES`) and raw prompt bound `CODEX_MAX_PROMPT_BYTES` (4 MiB)
   with an upfront `INPUT_LIMIT` error; large prompt (>512 KB), escaped newline expansion and
   oversized/serialized prompt rejection tests verified.
-  The next agent work is the remaining Phase 2 rows, continuing with the parallel
-  rows 2.13 (`FEEDBACK-061i`) or 2.14 (`FEEDBACK-061h`).
+  The next agent work is the remaining Phase 2 rows: 2.12a (`FEEDBACK-061j`,
+  issue #48) first, because a partial review blocks unchanged retries of the
+  review gate; then 2.12b (`FEEDBACK-061k1`, issue #49, native reproduction) and
+  the parallel rows 2.13 (`FEEDBACK-061i`) or 2.14 (`FEEDBACK-061h`).
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;
