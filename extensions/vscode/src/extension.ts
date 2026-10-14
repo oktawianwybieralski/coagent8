@@ -1078,7 +1078,8 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       ? { label: `$(pass-filled) ${sourceName(client, item)}`, description: [sourcePath(client, item, home), configured?.found ? 'in use, selected' : 'in use'].filter(Boolean).join(' · ') }
       : { label: `$(circle-large-outline) ${sourceName(client, item)}`, description: sourcePath(client, item, home), action: 'use', installation: item });
     if (configured && !configured.found) {
-      installed.push({ label: '$(warning) Selected CLI not found', description: configured.value === VSCODE_EXTENSION_EXECUTABLE ? `${vendor.name} VS Code extension` : shownPath(configured.value, home) });
+      const unavailableHere = configured.value === VSCODE_EXTENSION_EXECUTABLE && !extensionInstalled;
+      installed.push({ label: unavailableHere ? '$(warning) Selected CLI unavailable here' : '$(warning) Selected CLI not found', description: configured.value === VSCODE_EXTENSION_EXECUTABLE ? `${vendor.name} VS Code extension` : shownPath(configured.value, home) });
     }
     // Clearing the selection matters when its file is gone or another installation exists.
     if (configured && (!configured.found || installations.length > 1)) installed.push({ label: '$(discard) Use Automatic Discovery', description: 'clear the selection', action: 'discovery' });

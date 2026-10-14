@@ -49,9 +49,13 @@ Do not append another session transcript or treat old test counts as fresh evide
   block and the report once, in a copy block with paste instructions; `structuredContent`
   adds `prompt` and `pasteRequired`, the issue skill is updated, and reports include
   a doctor health output reminder line.
-  The next agent work is either row 2.5 (`FEEDBACK-061b3`, selection outside the
-  vendor profile) or result group 2.9–2.10 ("Bug-report opening actions", `FEEDBACK-061c2/c3`),
-  which builds on 2.7.
+  Row 2.5 (`FEEDBACK-061b3`, "selection outside the vendor profile") is completed
+  in PR #54: a `vscode-extension` selection in a profile without the vendor extension
+  is reported as unavailable here (`$(warning) Selected CLI unavailable here`),
+  not "Selected CLI not found", while preserving "Selected CLI not found" when the
+  vendor extension is installed or a custom path is missing.
+  The next agent work is result group 2.9–2.10 ("Bug-report opening actions",
+  `FEEDBACK-061c2/c3`), which builds on 2.7.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

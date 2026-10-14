@@ -713,7 +713,8 @@ test('an unavailable preference for the extension copy is shown and replaced onl
     fs.writeFileSync(config, content);
     const options = { configPath: config, installed: [], discoverable: [], missingConfigured: [client] };
     const shown = await runExtension({ ...options, steps: [{ client }] });
-    assert.match(shown.menus[1].items.find(item => item.label === '$(warning) Selected CLI not found').description, / VS Code extension$/);
+    assert.match(shown.menus[1].items.find(item => item.label === '$(warning) Selected CLI unavailable here').description, / VS Code extension$/);
+    assert.ok(!shown.menus[1].items.some(item => item.label === '$(warning) Selected CLI not found'), 'not reported as Selected CLI not found');
     assert.ok(actionsOf(shown.menus[1]).includes('discovery'));
     await runExtension({ ...options, steps: [{ client }, { action: 'installExtension' }] });
     assert.equal(fs.readFileSync(config, 'utf8'), content, 'extension installation keeps the preference');
@@ -722,6 +723,34 @@ test('an unavailable preference for the extension copy is shown and replaced onl
     assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).backends[client].executable, undefined, 'standalone choice restores discovery');
     assert.deepEqual(standalone.errors, []);
   }
+});
+test('a selection with the vendor extension installed or a custom path reports Selected CLI not found', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-missing-cli-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const extConfig = path.join(root, 'claude-ext.json');
+  fs.writeFileSync(extConfig, JSON.stringify({ backends: { claude: { executable: 'vscode-extension' } } }));
+  const extShown = await runExtension({
+    configPath: extConfig,
+    installed: [],
+    discoverable: [],
+    missingConfigured: ['claude'],
+    vendorExtensions: ['anthropic.claude-code'],
+    steps: [{ client: 'claude' }],
+  });
+  assert.ok(extShown.menus[1].items.some(item => item.label === '$(warning) Selected CLI not found'), 'vendor extension installed reports Selected CLI not found');
+  assert.ok(!extShown.menus[1].items.some(item => item.label === '$(warning) Selected CLI unavailable here'), 'vendor extension installed does not report unavailable here');
+
+  const pathConfig = path.join(root, 'claude-path.json');
+  fs.writeFileSync(pathConfig, JSON.stringify({ backends: { claude: { executable: path.join(root, 'missing-claude') } } }));
+  const pathShown = await runExtension({
+    configPath: pathConfig,
+    installed: [],
+    discoverable: [],
+    missingConfigured: ['claude'],
+    steps: [{ client: 'claude' }],
+  });
+  assert.ok(pathShown.menus[1].items.some(item => item.label === '$(warning) Selected CLI not found'), 'custom path reports Selected CLI not found');
+  assert.ok(!pathShown.menus[1].items.some(item => item.label === '$(warning) Selected CLI unavailable here'), 'custom path does not report unavailable here');
 });
 test('the Google Antigravity extension without its download yet offers no second installation', async () => {
   const result = await runExtension({ installed: [], discoverable: [], vendorExtensions: ['google.google-antigravity'], steps: [{ client: 'agy' }] });

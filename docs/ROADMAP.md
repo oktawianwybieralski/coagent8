@@ -1215,7 +1215,7 @@ behavior or a test-procedure lesson.
   noticing. Show the server version in `doctor` health (and consider the
   result footer), and make the update notice say that open chats must be
   restarted. Check: R, native.
-- [ ] **FEEDBACK-061b - shared client registrations across VS Code
+- [x] **FEEDBACK-061b - shared client registrations across VS Code
   instances.** Client registrations (`~/.claude.json`, `~/.codex/config.toml`,
   agy `mcp_config.json`) and `~/.coagent8/config.json` are per user, but each
   VS Code instance or profile writes its own `coagent8_DIR` into them: an
@@ -1796,7 +1796,7 @@ agent (owner assigns).
 | 2.2 | [x] `FEEDBACK-061a2` update notice (#45) | R | - par | The extension's update notice says open chats keep the old runtime until restarted; test. |
 | 2.3 | [x] `FEEDBACK-061b1` shared registration reproduction (#46) | R | - | A fixture reproduces two profiles writing different `coagent8_DIR` values; the card records the chosen policy (owner decision if needed). |
 | 2.4 | [x] `FEEDBACK-061b2` registration policy (#46) | R | 2.3 | The policy from 2.3 is implemented; no downgrade offer when a registration points to a newer runtime; tests. |
-| 2.5 | `FEEDBACK-061b3` selection outside the vendor profile | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |
+| 2.5 | [x] `FEEDBACK-061b3` selection outside the vendor profile (#54) | R | - par | A `vscode-extension` selection in a profile without the vendor extension is reported as unavailable here, not "Selected CLI not found"; tests. |
 | 2.6 | [x] `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
 | 2.7 | [x] `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
 | 2.8 | [x] `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
