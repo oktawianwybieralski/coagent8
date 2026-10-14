@@ -1271,7 +1271,7 @@ behavior or a test-procedure lesson.
   CLI versions only), although the issue form requires it. Owner decision
   2026-10-13: add one line, for example "For setup, sign-in or quota
   problems, paste the output of doctor (scope: health)." Check: R.
-- [ ] **FEEDBACK-061g - large Codex reviews.** `review` on Codex fails with
+- [x] **FEEDBACK-061g - large Codex reviews.** `review` on Codex fails with
   `BUFFER_LIMIT` for prompts above 512 KB: the app server echoes the prompt in
   one JSON-RPC line, `maxLineBytes` is 512 KB and the diff snapshot allows
   3 MB (`src/backends/codex/adapter.ts`, `src/workspace/git.ts`). Align the
@@ -1803,7 +1803,7 @@ agent (owner assigns).
 | 2.9 | [x] `FEEDBACK-061c2` VS Code "Open bug report" (#55) | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
 | 2.10 | [x] `FEEDBACK-061c3` `coagent8 issue --open` (#55) | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
 | 2.11 | [x] `FEEDBACK-061e` server-owned turn number (#56) | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
-| 2.12 | `FEEDBACK-061g` large Codex prompts | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
+| 2.12 | [x] `FEEDBACK-061g` large Codex prompts (#57) | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |

@@ -53,6 +53,11 @@ function runTurn() {
   notify('turn/started', { threadId, turn: { id: TURN, items: [], status: 'inProgress', error: null } });
   notify('thread/started', { thread: { id: '33333333-aaaa-bbbb-cccc-123456789012' } });
   notify('item/completed', { threadId: '33333333-aaaa-bbbb-cccc-123456789012', turnId: 'other', item: { type: 'agentMessage', id: 'subagent', text: 'SUBAGENT_TEXT_NOT_THE_ANSWER' } });
+  const turnRecord = records.find(record => record.method === 'turn/start');
+  const userPrompt = turnRecord?.params?.input?.[0]?.text;
+  if (userPrompt) {
+    item('item/completed', { type: 'userMessage', id: 'user-0', content: [{ type: 'text', text: userPrompt }] });
+  }
   item('item/started', { type: 'reasoning', id: 'private', summary: [], content: [] });
   item('item/completed', { type: 'reasoning', id: 'private', summary: ['PRIVATE_REASONING_NEVER_PERSIST'], content: [] });
   item('item/started', { type: 'commandExecution', id: 'read-1', command: 'PRIVATE_RAW_COMMAND', status: 'inProgress', exitCode: null });

@@ -30,6 +30,22 @@ export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(proc
 /** Upper bound for reading `config.toml`. */
 const CODEX_CONFIG_MAX_BYTES = 256 * 1024;
 
+/** Upper bound for a Codex prompt payload (4 MiB). */
+export const CODEX_MAX_PROMPT_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Upper bound for a single Codex app-server JSON-RPC line (16 MiB).
+ * Accommodates prompts up to 4 MiB even with heavy escaping (e.g. 2x for newlines
+ * or quotes plus framing headroom), while capping serialized JSON lines (FEEDBACK-061g).
+ */
+export const CODEX_MAX_LINE_BYTES = 16 * 1024 * 1024;
+
+/** RPC framing headroom reserved within a single line (64 KiB). */
+export const CODEX_LINE_FRAMING_BYTES = 64 * 1024;
+
+/** Maximum allowable serialized JSON string bytes for the prompt. */
+export const CODEX_MAX_SERIALIZED_PROMPT_BYTES = CODEX_MAX_LINE_BYTES - CODEX_LINE_FRAMING_BYTES;
+
 export const VALID_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export interface CodexConfig {
@@ -171,6 +187,14 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (model === undefined) return rejected('INPUT_LIMIT', 'No Codex model selected; the controller passes the config.toml model or the catalog default.');
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
+  const promptBytes = Buffer.byteLength(prompt, 'utf8');
+  if (promptBytes > CODEX_MAX_PROMPT_BYTES) {
+    return rejected('INPUT_LIMIT', `Prompt exceeds the UTF-8 byte limit (${promptBytes} > ${CODEX_MAX_PROMPT_BYTES} bytes).`);
+  }
+  const serializedPromptBytes = Buffer.byteLength(JSON.stringify(prompt), 'utf8');
+  if (serializedPromptBytes > CODEX_MAX_SERIALIZED_PROMPT_BYTES) {
+    return rejected('INPUT_LIMIT', `Serialized prompt exceeds the line record limit (${serializedPromptBytes} > ${CODEX_MAX_SERIALIZED_PROMPT_BYTES} bytes).`);
+  }
   // The app-server session requests read-only mode per thread and verifies the server's
   // answer; the config overrides pin the same policy for the server's defaults and turn off
   // the features that add tools beyond the read-only shell.
@@ -180,7 +204,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent });
   const result = await runCommand(configuredBackendCommand('codex'), args, {
     cwd: options.cwd, env: turnEnvironment(), stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
-    maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine: app.line,
+    maxBufferBytes: 512 * 1024, maxLineBytes: CODEX_MAX_LINE_BYTES, maxInputBytes: CODEX_MAX_PROMPT_BYTES, onStdoutLine: app.line,
   });
   const snapshot = collector.snapshot();
   const { initialized, terminal, threadId, usage } = snapshot;
