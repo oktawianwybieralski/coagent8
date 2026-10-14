@@ -20,7 +20,7 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 const now = Date.now();
 const listed = [['openai/gpt-6-sol', 10], ['openai/gpt-6-luna', 0.5], ['openai/gpt-5.6-luna', 1.2], ['openai/gpt-6-terra', 4.9999],
   ['google/gemini-3.8-flash', 3.75], ['google/gemini-3.1-pro-preview', 12], ['anthropic/claude-haiku-4.5', 5], ['other/gpt-6-luna', 0.7]]
-  .map(([id, output]) => ({ id, output, input: null, cachedInput: null }));
+  .map(([id, output]) => ({ id, output, input: null, cachedInput: null, released: null }));
 const offered = ['gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-terra', 'gpt-6-astra', 'mystery', 'gemini-3.1-pro-low', 'claude-haiku-4-5[1m]', 'claude-haiku-4-5',
   'gemini-3.8-flash', 'gemini-3.8-flash-high', 'gemini-3.8-flash-low', 'gemini-3.8-flash-max', 'claude-haiku-4-5-20251001'];
 const list = { fetchedAt: now, source: 'openrouter', models: matchPrices(listed, offered) };
@@ -53,7 +53,7 @@ test('unknown, approximate, missing and stale prices never meet a limit, however
 
 test('aliases match exactly through effort and date suffixes; the evidence names the list entry', () => {
   assert.deepEqual({ ...priceEvidence(list, 'gemini-3.8-flash-high', now), fetchedAt: undefined },
-    { outputUsdPerMTok: 3.75, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'openrouter', fetchedAt: undefined, stale: false });
+    { outputUsdPerMTok: 3.75, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'openrouter', fetchedAt: undefined, stale: false, released: null });
   assert.equal(priceEvidence(list, 'claude-haiku-4-5-20251001', now).match, 'exact');
   assert.equal(priceEvidence(list, 'claude-haiku-4-5-20251001', now).outputUsdPerMTok, 5);
 });
@@ -72,7 +72,7 @@ test('invalid price fields are left out of a list, never read as a price', () =>
   ] });
   assert.deepEqual(entries.map(entry => [entry.id, entry.output]), [['a/ok', 2], ['a/numeric', 0.1]], 'null or empty is no price, not a free model');
   assert.deepEqual(parsePriceList({ data: [{ id: 'a/x', pricing: { completion: '0.000004', prompt: '', input_cache_read: '0.0000001' } }] }),
-    [{ id: 'a/x', output: 4, input: null, cachedInput: 0.1 }], 'an empty input price is unknown, not free');
+    [{ id: 'a/x', output: 4, input: null, cachedInput: 0.1, released: null }], 'an empty input price is unknown, not free');
 });
 
 test('a turn with a limit reads a stale list again and keeps it stale when the source fails', async () => {
@@ -664,4 +664,79 @@ test('a price limit takes the first permitted variant of an effort-required mode
   const agy = { source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
   assert.deepEqual(choosePricedModel('agy', agy, undefined, { below: 5 }, list, ['gemini-3.8-flash-high'], true), { model: 'gemini-3.8-flash-low', source: 'price-limit' });
   assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5 }, list, ['gemini-3.8-flash-high', 'gemini-3.8-flash-low'], true), { code: 'PRICE_LIMIT' });
+});
+
+test('parsePriceList reads created Unix seconds as released YYYY-MM-DD (AX-002e)', () => {
+  const entries = parsePriceList({ data: [
+    { id: 'openai/gpt-6-sol', created: 1788912000, pricing: { completion: '0.00001' } },
+    { id: 'openai/gpt-6-luna', created: '1769904000', pricing: { completion: '0.0000005' } },
+    { id: 'openai/bad-date-1', created: null, pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-2', created: 'not-a-number', pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-3', created: -100, pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-4', created: 100, pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-5', created: 99999999999, pricing: { completion: '0.000001' } },
+  ] });
+  assert.equal(entries.find(e => e.id === 'openai/gpt-6-sol').released, '2026-09-09');
+  assert.equal(entries.find(e => e.id === 'openai/gpt-6-luna').released, '2026-02-01');
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-1').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-1').output, 1, 'bad date leaves price usable');
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-2').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-3').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-4').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-5').released, null);
+});
+
+test('matchPrices takes the release date from the entry whose price it keeps (AX-002e)', () => {
+  const entries = [
+    { id: 'other/model-a', output: 1.0, input: null, cachedInput: null, released: '2026-01-01' },
+    { id: 'openai/model-a', output: 2.0, input: null, cachedInput: null, released: '2026-05-01' },
+  ];
+  const matched = matchPrices(entries, ['model-a']);
+  assert.deepEqual(matched['model-a'], {
+    output: 2.0,
+    input: null,
+    cachedInput: null,
+    matched: 'openai/model-a',
+    exact: true,
+    released: '2026-05-01',
+  });
+});
+
+test('stored prices carry released date and round-trip through store, and version 2 store is replaced quietly (AX-002e)', async () => {
+  const storeFile = path.join(tempDir, 'models.json');
+  // 1. Version 2 store is replaced quietly without warnings
+  fs.writeFileSync(storeFile, JSON.stringify({
+    schemaVersion: 2,
+    backends: {},
+    prices: {
+      fetchedAt: now,
+      source: 'openrouter',
+      models: {
+        'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true },
+      },
+    },
+  }));
+  let stderrOutput = '';
+  const origStderrWrite = process.stderr.write;
+  process.stderr.write = chunk => { stderrOutput += chunk; return true; };
+  try {
+    const v2Prices = readStoredPrices();
+    assert.equal(v2Prices, undefined, 'v2 store discarded quietly without dates');
+    assert.equal(stderrOutput, '', 'no warning logged for v2 store replacement');
+  } finally {
+    process.stderr.write = origStderrWrite;
+  }
+
+  // 2. Version 3 store round-trips released dates
+  const newPrices = {
+    fetchedAt: now,
+    source: 'openrouter',
+    models: {
+      'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true, released: '2026-09-10' },
+      'undated-model': { output: 5, input: null, cachedInput: null, matched: 'openai/undated-model', exact: true, released: null },
+    },
+  };
+  await recordPrices(newPrices);
+  const roundTripped = readStoredPrices();
+  assert.deepEqual(roundTripped, newPrices);
 });

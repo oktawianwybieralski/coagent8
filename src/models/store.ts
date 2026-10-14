@@ -21,8 +21,8 @@ import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { isValidModelIdentifier } from './identifier.js';
 import type { CatalogModel, ModelCatalog } from '../contracts/models.js';
 
-/** Version 2 (2026-10-08) keeps per-model prices instead of the whole price list. */
-const STORE_VERSION = 2;
+/** Version 3 (2026-10-14) stores release dates with prices (AX-002e). */
+const STORE_VERSION = 3;
 /** Upper bound for reading the store; catalogs and a price list are a few dozen kilobytes. */
 const STORE_MAX_BYTES = 1024 * 1024;
 
@@ -59,6 +59,8 @@ export interface PriceRecord {
   matched: string;
   /** False when the entry was found only by a looser name comparison. */
   exact: boolean;
+  /** ISO date `YYYY-MM-DD` when the model was added to the price list, or null if unknown. */
+  released: string | null;
 }
 
 /**
@@ -126,7 +128,9 @@ function parsePriceRecord(value: unknown): PriceRecord | null | undefined {
   const price = record(value);
   if (!price || !isPrice(price.output) || !(price.input === null || isPrice(price.input)) || !(price.cachedInput === null || isPrice(price.cachedInput))
     || typeof price.matched !== 'string' || price.matched.length > 128 || typeof price.exact !== 'boolean') return undefined;
-  return { output: price.output, input: price.input, cachedInput: price.cachedInput, matched: price.matched, exact: price.exact };
+  const released = price.released;
+  if (released !== undefined && released !== null && (typeof released !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(released))) return undefined;
+  return { output: price.output, input: price.input, cachedInput: price.cachedInput, matched: price.matched, exact: price.exact, released: released ?? null };
 }
 
 /** Validates stored prices; any invalid model entry discards them all, so a damaged file is read again. */
