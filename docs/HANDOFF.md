@@ -40,13 +40,13 @@ Do not append another session transcript or treat old test counts as fresh evide
   profile-directed registrations, while downgrade prevention preserves newer
   runtime registrations and suppresses update/downgrade offers in VS Code.
   Rows 2.26a–d (`AX-002d–i`, "Recency under a price limit") are merged in PR #47:
-  selection ranks models under a price limit by release recency, doctor health lists
-  dates from the price list, and models without a known date sort last while
-  expiration dates are ignored.
+  selection ranks models under a price limit by release recency, the doctor models
+  view lists the day the price list added each model, models without a known date
+  sort last, and expiration dates are ignored.
   Rows 2.6–2.8 (`FEEDBACK-061c1`, `FEEDBACK-061d`, `FEEDBACK-061f`, "Bug-report
-  content and paste flow") are completed in this PR: `issueUrl` targets
-  `?template=bug_report.yml`, the prompt includes clickable links, link code blocks,
-  and separate copyable report blocks with paste instructions, `structuredContent`
+  content and paste flow") are completed in PR #51: `issueUrl` targets
+  `?template=bug_report.yml`; the prompt has the clickable link, the link in a code
+  block and the report once, in a copy block with paste instructions; `structuredContent`
   adds `prompt` and `pasteRequired`, the issue skill is updated, and reports include
   a doctor health output reminder line.
   The next agent work is either row 2.5 (`FEEDBACK-061b3`, selection outside the

@@ -38,6 +38,7 @@ const REPO_OWNER = BRAND.GITHUB_OWNER;
 const REPO_NAME = BRAND.GITHUB_REPO;
 export const GITHUB_NEW_ISSUE_BASE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
 export const GITHUB_BUG_REPORT_TEMPLATE_URL = `${GITHUB_NEW_ISSUE_BASE}?template=bug_report.yml`;
+/** Conservative ceiling for the issue link; the link carries no report data, and tests hold it below this. */
 export const MAX_ENCODED_ISSUE_URL_LENGTH = 2048;
 const MAX_RAW_INPUT_LENGTH = 4096;
 
@@ -164,11 +165,8 @@ For setup, sign-in or quota problems, paste the output of doctor (scope: health)
 *Note: Best-effort automated redaction was applied. Please review the details above before submitting to ensure no sensitive or proprietary data is included.*
 `;
 
-    // Build template URL pointing to the canonical bug_report.yml template
-    let issueUrl = GITHUB_BUG_REPORT_TEMPLATE_URL;
-    if (Buffer.byteLength(issueUrl) > MAX_ENCODED_ISSUE_URL_LENGTH) {
-      issueUrl = GITHUB_NEW_ISSUE_BASE;
-    }
+    // The link opens the form; the report travels in the copy block, never in the URL.
+    const issueUrl = GITHUB_BUG_REPORT_TEMPLATE_URL;
 
     // Calculate outer CommonMark code fence to prevent internal ``` from closing the copy block prematurely
     const backtickMatches = body.match(/`+/g) || [];
@@ -185,8 +183,7 @@ For setup, sign-in or quota problems, paste the output of doctor (scope: health)
         `**[Submit Bug Report on GitHub](<${issueUrl}>)**\n\n` +
         `Link URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
         `Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n` +
-        `${outerFence}text\n${body}\n${outerFence}\n\n` +
-        `Preview Sanitized Report\n\n${body}`,
+        `${outerFence}text\n${body}\n${outerFence}`,
     };
   } catch (_err) {
     return {

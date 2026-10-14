@@ -31,7 +31,7 @@ test('issue link points to bug_report.yml template and provides copyable report 
   assert.ok(!/[\\()\s]/.test(link), 'URL must not contain Markdown escapes or delimiters');
 
   // Verify CommonMark rendering: outer code fence must be at least 4 backticks (longer than body's ```)
-  const copyBlockMatch = report.prompt.match(/Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1\n\nPreview Sanitized Report/);
+  const copyBlockMatch = report.prompt.match(/Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1$/);
   assert.ok(copyBlockMatch, 'prompt must contain separate copy block enclosed in safe outer code fence');
   assert.equal(copyBlockMatch[2], report.body, 'copy block content must strictly match the complete report body including nested code blocks and environment details');
 
@@ -52,7 +52,7 @@ test('issue link points to bug_report.yml template and provides copyable report 
   assert.ok(!report.title.includes('[truncated]'));
   assert.ok(Array.from(report.title).length <= 120);
   assert.ok(!report.prompt.includes('<details>'));
-  assert.ok(report.prompt.endsWith(`Preview Sanitized Report\n\n${report.body}`));
+  assert.equal(report.prompt.split(report.body).length, 2, 'the report appears once, in the copy block');
 
   const emptyBackendsReport = generateBugReport({ errorMessage: 'Error', doctorReport: { backends: {} } });
   assert.ok(emptyBackendsReport.body.includes('- **Detected CLIs**: Not provided'));
@@ -76,7 +76,7 @@ test('issue link points to bug_report.yml template and provides copyable report 
   assert.ok(!unknownVersionReport.body.includes('vunknown'));
 });
 
-test('issue URL is checked against length ceiling and defaults to base if exceeded', () => {
+test('the issue URL carries no report data and stays below the length ceiling', () => {
   const errorMessage = "Failure (worker's task)! *retry* & body=injected #fragment %23 + / \\ \"quoted\" \u{1f680} \u0142";
   const context = 'Keep literal %26 and &#x20; and ?title=other&body=other in diagnostics.';
   const report = generateBugReport({ errorMessage, context });
