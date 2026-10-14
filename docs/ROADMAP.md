@@ -155,8 +155,8 @@ natively (no product code), so the contract in Phase 2 rests on evidence.
 **Phase 2 - stability, feedback and containment.**
 [`FEEDBACK-061a-i`](#feedback-061-findings-of-the-061-native-acceptance)
 (runtime version in `doctor`, shared registrations, issue links, Codex buffer
-limit), `AX-002d-h` (recency under a price limit; `AX-002i` follows its
-decision), `AX-007d` and the remaining `AX-001` to `AX-006` cards,
+limit), `AX-002d-i` (recency under a price limit; retiring models ignored),
+`AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`AUDIT-001-A08` to `A21`](#audit-001-corrected-analysis-follow-up),
 `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`,
 [`ACCEPT-001`](#accept-001-automated-native-acceptance) (automated native
@@ -353,7 +353,7 @@ Price is not a proxy for capability (2026-10-14): asked for a model at USD 10-15
 - [x] **AX-002f - rank qualifying models by recency.** After `AX-002e`, start: `src/models/selection.ts` (`choosePricedModel`). Implement the `AX-002d` order. Acceptance: with the default above the limit, a newer cheaper qualifying model beats an older dearer one; equal dates fall back to price, then catalog order; undated models lose to dated ones; denied models, effort filters and agy effort variants behave as before; a qualifying default is still kept. Check: R, SELECT/POLICY.
 - [x] **AX-002g - show release dates in doctor.** After `AX-002e`, start: `src/diagnostics/doctor.ts`. Each model row shows its date after the price (`?` when unknown), and `detail: full` carries `released` in the price evidence. Acceptance: the bounded row trimming still drops whole rows within its limit; the summary and JSON agree. Check: R, DOCTOR/MCP.
 - [x] **AX-002h - guide agents to the server's choice.** After `AX-002f`, start: `skills/coagent8-doctor`, `skills/coagent8-consult`, `skills/coagent8-review`, `src/mcp/schema.ts`. Skills state that a price range "X-Y" means `output_price_below: Y` and that the server, not the agent, picks the model; the `output_price_below` description names the recency order within the tool-definition byte budget. Update [README.md](../README.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the implemented summary above to match. Acceptance: surface and schema snapshot tests pass; no current model-routing guidance still describes highest-price selection, while dated decisions and the price matcher's highest-price rule for several matching entries stay as they are. Check: R, MCP, plus P for prose.
-- [ ] **AX-002i - decide on retiring models.** OpenRouter also lists `expiration_date`. Decide whether a model past or near that date is skipped under a price limit, only flagged in doctor, or ignored, and how a missing date reads. Check: P; implementation cards follow the decision.
+- [x] **AX-002i - decide on retiring models.** OpenRouter also lists `expiration_date`. Decided 2026-10-14: ignored. The backend's catalog alone states which models it serves; the field is neither stored nor shown, does not affect selection or doctor, and a missing date therefore means nothing. A model that leaves OpenRouter's list loses its price and is treated as unknown-priced. No implementation card follows. Check: P.
 
 ### AX-003: consent across clients
 
@@ -1821,7 +1821,7 @@ agent (owner assigns).
 | 2.26a | [x] `AX-002d` recency decision | P | - | ARCHITECTURE records the recency order replacing highest-price selection; reviewed READY. |
 | 2.26b | [x] `AX-002e`, then `AX-002f` and `AX-002g` (par) | R | 2.26a | Release dates stored with prices, recency ranking and doctor dates per the cards; tests. |
 | 2.26c | [x] `AX-002h` | R | 2.26b | Skills, schema description and docs describe the recency order; surface tests. |
-| 2.26d | `AX-002i` | O | 2.26b | Owner decides how expiring models are treated. A decision made before the 2.26a-c PR is ready joins that PR with its implementation; a later one joins the next selection or doctor change. It never ships alone. |
+| 2.26d | [x] `AX-002i` | O | 2.26b | Owner decides how expiring models are treated. A decision made before the 2.26a-c PR is ready joins that PR with its implementation; a later one joins the next selection or doctor change. It never ships alone. |
 | 2.27 | `AX-003a` | R | - | Elicitation outcome fixtures per the card (`Check: R`). |
 | 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | Form-less consent design, then implementation cards added here. |
 | 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | `AX-006a` acceptance script; the `b`/`c`/`d` fresh-client runs are native, one per client, with evidence recorded in HANDOFF (no PR per run). |
