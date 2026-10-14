@@ -17,6 +17,7 @@ import { hasManualVscodeRegistration, hasWorkspaceVscodeRegistration, syncVscode
 import { clearCliResolverCache } from '../../../src/execution/cli-resolver.js';
 import { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } from '../../../src/config-overrides.js';
 import { VSCODE_EXTENSION_EXECUTABLE } from '../../../src/backends/executable.js';
+import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../../../src/diagnostics/issue.js';
 import { readInstallRecord, readSetupState, resetConfigurationFile, updateInstallList, updateSetupState, type StateLocation } from './configuration.js';
 import { EXTENSION_ORIGIN } from '../../../src/integrations/setup-storage.js';
 import { manageSkills, skillSelectionForAction, type ManagedSkill } from '../../../src/integrations/skill-management.js';
@@ -730,9 +731,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     await startTracked(() => setBackendExecutable(SETUP_PROVIDERS[client], added.executable, configurationFile()));
     clearCliResolverCache();
   }
-  function register(name: string, action: () => Promise<void>): void {
+  function register(name: string, action: () => Promise<void>, allowRemote = false): void {
     context.subscriptions.push(vscode.commands.registerCommand(name, async () => {
-      if (vscode.env.remoteName) { await vscode.window.showWarningMessage('CoAgent8 commands are not available in a remote window. In a terminal on the remote machine, run npx -y coagent8@next status (or setup, repair, skills, cleanup).'); return; }
+      if (!allowRemote && vscode.env.remoteName) { await vscode.window.showWarningMessage('CoAgent8 commands are not available in a remote window. In a terminal on the remote machine, run npx -y coagent8@next status (or setup, repair, skills, cleanup).'); return; }
       if (isDeactivating) return;
       try { await action(); }
       catch (error) {
@@ -741,6 +742,9 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     }));
   }
   register('coagent8.openSettings', async () => { await vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${EXTENSION_ID}`); });
+  register('coagent8.openBugReport', async () => {
+    await vscode.env.openExternal(vscode.Uri.parse(GITHUB_BUG_REPORT_TEMPLATE_URL));
+  }, true);
   register('coagent8.manageMcpServers', async () => {
     if (profileRegistration === 'declined') {
       const choice = await vscode.window.showInformationMessage('CoAgent8 was removed from your MCP servers. Add it again?', 'Add CoAgent8');

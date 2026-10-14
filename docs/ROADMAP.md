@@ -1240,7 +1240,7 @@ behavior or a test-procedure lesson.
      updates or downgrades for clients with newer runtimes, and "Update
      CoAgent8 in All CLI Chats" updates only genuinely outdated registrations.
   Check: R, VS Code scope.
-- [ ] **FEEDBACK-061c - issue reports that reach GitHub.** The agy chat
+- [x] **FEEDBACK-061c - issue reports that reach GitHub.** The agy chat
   renderer decodes `%26` to `&` (cutting `body` after "Description ") and
   re-encodes `%23` as `%2523`; the server URL and the copyable block are
   correct, and `src/diagnostics/issue.ts` has no final encoded-URL length
@@ -1800,8 +1800,8 @@ agent (owner assigns).
 | 2.6 | [x] `FEEDBACK-061c1` short form link and paste mode | R | - | `issueUrl` points to `?template=bug_report.yml`; the prompt has the clickable link, a code block and a separate copy block with instructions; encoded URL length is checked; tests. |
 | 2.7 | [x] `FEEDBACK-061d` `prompt` in structured content | R | 2.6 | `structuredContent` adds `prompt` and `pasteRequired`; output schema and the issue skill updated; tests. |
 | 2.8 | [x] `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
-| 2.9 | `FEEDBACK-061c2` VS Code "Open bug report" | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
-| 2.10 | `FEEDBACK-061c3` `coagent8 issue --open` | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
+| 2.9 | [x] `FEEDBACK-061c2` VS Code "Open bug report" (#55) | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
+| 2.10 | [x] `FEEDBACK-061c3` `coagent8 issue --open` (#55) | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
 | 2.11 | `FEEDBACK-061e` server-owned turn number | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
 | 2.12 | `FEEDBACK-061g` large Codex prompts | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
