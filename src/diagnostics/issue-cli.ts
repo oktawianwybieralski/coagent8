@@ -12,8 +12,8 @@ import { generateBugReport, GITHUB_BUG_REPORT_TEMPLATE_URL, type BugReportResult
 
 const USAGE = 'Usage: coagent8 issue [--open] [--json]';
 
-const MAX_STDERR_CHARS = 512;
-const DEFAULT_OBSERVATION_TIMEOUT_MS = 250;
+/** Bounds how long `--open` waits for the opener to report a launch failure. */
+const OBSERVATION_TIMEOUT_MS = 2000;
 
 /** Options for openBrowser, allowing dependency injection for hermetic tests. */
 export interface OpenBrowserOptions {
@@ -22,131 +22,59 @@ export interface OpenBrowserOptions {
 }
 
 /**
- * Sanitizes partial or complete credential formats and authorization tokens
- * in truncated text before passing to redactDiagnostic.
- */
-export function sanitizePartialCredentials(text: string): string {
-  let sanitized = text.replace(
-    /(?<![A-Za-z0-9_])(?:sk-|sk_live_|AIza|ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|npm_|hf_|ya29\.|AKIA|ASIA|ABIA|ACCA|xox[baprs]-|eyJ)[a-zA-Z0-9_.-]*/g,
-    '***[REDACTED]***'
-  );
-  sanitized = sanitized.replace(
-    /\b(?:ghp|gho|ghu|ghs|github_pat|glpat|npm|hf|sk_live)(?=$|[^a-zA-Z0-9_])/g,
-    '***[REDACTED]***'
-  );
-  sanitized = sanitized.replace(
-    /(?<![A-Za-z0-9_])(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]*/gi,
-    '***[REDACTED]***'
-  );
-  return sanitized;
-}
-
-/**
  * Opens a URL in the user's default browser across platforms.
- * Observes launch errors and exit codes for a bounded duration,
- * reporting a sanitized warning via the optional warning callback
- * while isolating faults, capping stderr buffering, and cleaning up pipe handles.
+ * Waits a bounded time for the opener to exit and reports a launch error or a
+ * non-zero exit code through the warning callback. The opener's output is ignored.
  *
  * @param url - Destination web URL.
  * @param onWarning - Callback to receive sanitized launch warnings.
  * @param options - Optional overrides for timeout or spawn function.
- * @returns Promise resolving to true if launched cleanly, false if warning occurred.
+ * @returns Promise resolving to false if a warning was reported, true otherwise.
  */
 export async function openBrowser(
   url: string,
   onWarning?: (warning: string) => void,
   options?: OpenBrowserOptions
 ): Promise<boolean> {
+  const spawnFn = options?.spawnFn ?? spawn;
+  const [command, args] =
+    process.platform === 'win32' ? ['cmd.exe', ['/c', 'start', '', url]]
+    : process.platform === 'darwin' ? ['open', [url]]
+    : ['xdg-open', [url]];
+  const launchFailed = (error: unknown): void => {
+    const message = error instanceof Error ? error.message : String(error);
+    onWarning?.(`Warning: failed to launch browser: ${redactDiagnostic(message, 128)}`);
+  };
+
   return new Promise<boolean>((resolve) => {
-    let settled = false;
-    let timer: NodeJS.Timeout | undefined;
-    let childStderr: ReturnType<typeof spawn>['stderr'] | undefined;
-
-    const cleanup = () => {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-      if (childStderr && !childStderr.destroyed) {
-        childStderr.destroy();
-      }
-    };
-
-    const finish = (result: boolean) => {
-      if (!settled) {
-        settled = true;
-        cleanup();
-        resolve(result);
-      }
-    };
-
+    let child: ReturnType<typeof spawn>;
     try {
-      const spawnFn = options?.spawnFn ?? spawn;
-      let child: ReturnType<typeof spawn>;
-      if (process.platform === 'win32') {
-        child = spawnFn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
-      } else if (process.platform === 'darwin') {
-        child = spawnFn('open', [url], { detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
-      } else {
-        child = spawnFn('xdg-open', [url], { detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
-      }
-
-      childStderr = child.stderr;
-      let stderrChars = 0;
-      let stderrOutput = '';
-      let wasTruncated = false;
-      child.stderr?.on('data', (chunk: Buffer | string) => {
-        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-        if (stderrChars < MAX_STDERR_CHARS) {
-          const remaining = MAX_STDERR_CHARS - stderrChars;
-          stderrOutput += text.slice(0, remaining);
-          stderrChars += Math.min(text.length, remaining);
-          if (text.length > remaining) {
-            wasTruncated = true;
-          }
-        } else {
-          wasTruncated = true;
-        }
-      });
-
-      child.on('error', (err) => {
-        onWarning?.(`Warning: failed to launch browser: ${redactDiagnostic(err.message, 128)}`);
-        finish(false);
-      });
-
-      child.on('exit', (code) => {
-        if (code !== 0 && code !== null) {
-          let rawDetail = stderrOutput;
-          if (wasTruncated) {
-            // If raw stderr was truncated mid-word, drop the partial trailing word
-            // to prevent leaking credential fragments or truncated tokens.
-            const lastWhitespace = rawDetail.search(/\s\S+$/);
-            if (lastWhitespace !== -1) {
-              rawDetail = rawDetail.slice(0, lastWhitespace);
-            }
-          }
-          const sanitizedRaw = sanitizePartialCredentials(rawDetail.trim());
-          const detail = redactDiagnostic(sanitizedRaw, 128);
-          onWarning?.(`Warning: browser opener exited with code ${code}${detail ? `: ${detail}` : ''}`);
-          finish(false);
-        } else {
-          finish(true);
-        }
-      });
-
-      child.unref();
-
-      const timeoutMs = options?.timeoutMs ?? DEFAULT_OBSERVATION_TIMEOUT_MS;
-      timer = setTimeout(() => {
-        finish(true);
-      }, timeoutMs);
-      timer.unref?.();
+      // Not detached: a detached child gets no CREATE_NO_WINDOW and can show a console window.
+      child = spawnFn(command, args, { stdio: 'ignore', windowsHide: true });
     } catch (error: unknown) {
-      cleanup();
-      const message = error instanceof Error ? error.message : String(error);
-      onWarning?.(`Warning: failed to launch browser: ${redactDiagnostic(message, 128)}`);
-      finish(false);
+      launchFailed(error);
+      resolve(false);
+      return;
     }
+    const timer = setTimeout(() => {
+      // An opener that is still running has launched; leave it behind without holding the CLI.
+      child.unref();
+      resolve(true);
+    }, options?.timeoutMs ?? OBSERVATION_TIMEOUT_MS);
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      launchFailed(error);
+      resolve(false);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      if (code !== 0 && code !== null) {
+        onWarning?.(`Warning: browser opener exited with code ${code}`);
+        resolve(false);
+      } else {
+        resolve(true);
+      }
+    });
   });
 }
 

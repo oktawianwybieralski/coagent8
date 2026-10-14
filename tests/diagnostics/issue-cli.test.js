@@ -1,7 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { PassThrough } = require('node:stream');
 const { runIssueCli, openBrowser } = require('../../src/diagnostics/issue-cli.ts');
 const { GITHUB_BUG_REPORT_TEMPLATE_URL } = require('../../src/diagnostics/issue.ts');
 
@@ -191,103 +190,70 @@ test('coagent8 issue handles cancellation signal with exit code 130', async () =
   assert.equal(code, 130);
 });
 
-test('openBrowser bounds observation and destroys stderr pipe when opener retains stderr', async () => {
+function fakeOpener() {
   const child = new EventEmitter();
-  child.stderr = new PassThrough();
-  child.unref = () => {};
+  child.unrefCalls = 0;
+  child.unref = () => { child.unrefCalls += 1; };
+  const calls = [];
+  const spawnFn = (command, args, options) => {
+    calls.push({ command, args, options });
+    return child;
+  };
+  return { child, calls, spawnFn };
+}
 
-  const warnings = [];
-  const resultPromise = openBrowser(
-    'https://example.com',
-    (w) => warnings.push(w),
-    {
-      spawnFn: () => child,
-      timeoutMs: 40,
-    }
-  );
+test('openBrowser spawns a quiet, non-detached opener that ignores its output', async () => {
+  const { child, calls, spawnFn } = fakeOpener();
+  const resultPromise = openBrowser('https://example.com', undefined, { spawnFn, timeoutMs: 1000 });
+  child.emit('exit', 0);
 
-  const result = await resultPromise;
-  assert.equal(result, true);
-  assert.equal(warnings.length, 0);
-  assert.equal(child.stderr.destroyed, true, 'stderr pipe must be destroyed after observation to release event loop');
+  assert.equal(await resultPromise, true);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].args.includes('https://example.com'));
+  assert.equal(calls[0].options.detached, undefined, 'a detached child can show a console window on Windows');
+  assert.equal(calls[0].options.stdio, 'ignore');
+  assert.equal(calls[0].options.windowsHide, true);
 });
 
-test('openBrowser caps stderr buffering and formats exit warning on non-zero exit', async () => {
-  const child = new EventEmitter();
-  child.stderr = new PassThrough();
-  child.unref = () => {};
-
+test('openBrowser stops waiting for a long-running opener and releases it', async () => {
+  const { child, spawnFn } = fakeOpener();
   const warnings = [];
-  const resultPromise = openBrowser(
-    'https://example.com',
-    (w) => warnings.push(w),
-    {
-      spawnFn: () => child,
-      timeoutMs: 1000,
-    }
-  );
+  const result = await openBrowser('https://example.com', w => warnings.push(w), { spawnFn, timeoutMs: 20 });
 
-  // Emit 2000 bytes into stderr
-  child.stderr.write('A'.repeat(2000));
+  assert.equal(result, true);
+  assert.deepEqual(warnings, []);
+  assert.equal(child.unrefCalls, 1);
+});
+
+test('openBrowser reports a non-zero opener exit code without its output', async () => {
+  const { child, spawnFn } = fakeOpener();
+  const warnings = [];
+  const resultPromise = openBrowser('https://example.com', w => warnings.push(w), { spawnFn, timeoutMs: 1000 });
   child.emit('exit', 42);
 
-  const result = await resultPromise;
-  assert.equal(result, false);
-  assert.equal(warnings.length, 1);
-  assert.ok(warnings[0].includes('browser opener exited with code 42'));
-  // Ensure the warning detail is capped and does not contain all 2000 characters
-  assert.ok(warnings[0].length < 600, 'warning text must be bounded and redacted');
-  assert.equal(child.stderr.destroyed, true);
+  assert.equal(await resultPromise, false);
+  assert.deepEqual(warnings, ['Warning: browser opener exited with code 42']);
 });
 
-test('openBrowser handles child process error event and returns false', async () => {
-  const child = new EventEmitter();
-  child.stderr = new PassThrough();
-  child.unref = () => {};
-
+test('openBrowser reports child process error events', async () => {
+  const { child, spawnFn } = fakeOpener();
   const warnings = [];
-  const resultPromise = openBrowser(
-    'https://example.com',
-    (w) => warnings.push(w),
-    {
-      spawnFn: () => child,
-      timeoutMs: 1000,
-    }
-  );
-
+  const resultPromise = openBrowser('https://example.com', w => warnings.push(w), { spawnFn, timeoutMs: 1000 });
   child.emit('error', new Error('spawn ENOENT fake-browser'));
 
-  const result = await resultPromise;
-  assert.equal(result, false);
+  assert.equal(await resultPromise, false);
   assert.equal(warnings.length, 1);
   assert.ok(warnings[0].includes('failed to launch browser: spawn ENOENT fake-browser'));
-  assert.equal(child.stderr.destroyed, true);
 });
 
-test('openBrowser safely redacts credentials crossing the stderr cutoff boundary', async () => {
-  const child = new EventEmitter();
-  child.stderr = new PassThrough();
-  child.unref = () => {};
-
+test('openBrowser reports a synchronous spawn failure', async () => {
   const warnings = [];
-  const resultPromise = openBrowser(
-    'https://example.com',
-    (w) => warnings.push(w),
-    {
-      spawnFn: () => child,
-      timeoutMs: 1000,
-    }
-  );
+  const result = await openBrowser('https://example.com', w => warnings.push(w), {
+    spawnFn: () => { throw new Error('spawn EPERM'); },
+    timeoutMs: 1000,
+  });
 
-  // 490 spaces followed by ghp_ and 36 alphanumeric characters (total 530 chars, crossing 512 cutoff)
-  const fullToken = 'ghp_' + 'A'.repeat(36);
-  child.stderr.write(' '.repeat(490) + fullToken);
-  child.emit('exit', 1);
-
-  const result = await resultPromise;
   assert.equal(result, false);
   assert.equal(warnings.length, 1);
-  assert.ok(!warnings[0].includes('ghp_'), 'partial token prefix must never appear in the warning');
-  assert.ok(!warnings[0].includes('AAA'), 'token characters must never appear in the warning');
-  assert.equal(child.stderr.destroyed, true);
+  assert.ok(warnings[0].includes('failed to launch browser: spawn EPERM'));
 });
