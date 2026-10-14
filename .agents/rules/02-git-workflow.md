@@ -577,7 +577,7 @@ The agent does this itself, without being asked.
 ## 7. Issues and Tester Feedback
 
 * Bugs are reported as GitHub issues. Testers should include the output of the
-  `issue` tool (a sanitized, prefilled report) and of `doctor`, the OS, Node
+  `issue` tool (a sanitized report to paste into the form) and of `doctor`, the OS, Node
   version, CoAgent8 version and backend CLI versions.
 * Triage labels:
   * type: `bug`, `enhancement`, `question`, `docs`;
