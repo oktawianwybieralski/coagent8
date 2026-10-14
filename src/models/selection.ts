@@ -54,11 +54,29 @@ export function catalogNames(catalog: ModelCatalog | undefined): string[] {
   return (catalog?.models ?? []).flatMap(model => [model.id, ...(model.effortRequired ? model.efforts.map(effort => `${model.id}-${effort}`) : [])]);
 }
 
+interface CandidateQuality {
+  model: string;
+  price: number;
+  released: string | null;
+}
+
+function isBetter(candidate: CandidateQuality, currentBest: CandidateQuality): boolean {
+  if (candidate.released !== null && currentBest.released === null) return true;
+  if (candidate.released === null && currentBest.released !== null) return false;
+  if (candidate.released !== null && currentBest.released !== null) {
+    if (candidate.released !== currentBest.released) {
+      return candidate.released > currentBest.released;
+    }
+  }
+  return candidate.price > currentBest.price;
+}
+
 /**
- * Chooses the model of a turn under a price limit: the default when its verified price is
- * below the limit, else the highest-priced catalog model below it, catalog order breaking
- * ties. Approval is not considered here: the controller asks for it as for any model. A
- * model the user denies, the default included, is never chosen.
+ * Chooses the model of a turn under a price limit (`AX-002d`, `AX-002f`): the default when
+ * its verified price is below the limit, otherwise the most recently released qualifying
+ * catalog model, then the higher price, then catalog order; a model without a release date
+ * ranks after every dated one. Approval is not considered here: the controller asks for it as
+ * for any model. A model the user denies, the default included, is never chosen.
  * @param id - Backend, for messages.
  * @param catalog - Its catalog, or undefined; without one only the default can be chosen.
  * @param fallback - The model the backend runs when none is named, if known.
@@ -77,7 +95,7 @@ export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefi
   const defaultReason = fallback ? checkPriceLimit(fallback.model, priceEvidence(prices, fallback.model), below) : undefined;
   const defaultEntry = fallback && catalog ? findCatalogEntry(catalog, fallback.model)?.entry : undefined;
   if (fallback && !defaultReason && accepts(defaultEntry) && !isDenied(fallback.model)) return fallback;
-  let best: { model: string; price: number } | undefined;
+  let best: CandidateQuality | undefined;
   for (const entry of catalog?.models ?? []) {
     // The name the turn would run: agy's first permitted `<id>-<effort>` when an effort is required
     // and none is passed.
@@ -85,7 +103,16 @@ export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefi
     const model = names.find(name => !isDenied(name));
     if (!accepts(entry) || isDenied(entry.id) || model === undefined) continue;
     const evidence = priceEvidence(prices, entry.id);
-    if (checkPriceLimit(entry.id, evidence, below) === undefined && (!best || evidence.outputUsdPerMTok! > best.price)) best = { model, price: evidence.outputUsdPerMTok! };
+    if (checkPriceLimit(entry.id, evidence, below) === undefined) {
+      const candidate: CandidateQuality = {
+        model,
+        price: evidence.outputUsdPerMTok!,
+        released: evidence.released,
+      };
+      if (!best || isBetter(candidate, best)) {
+        best = candidate;
+      }
+    }
   }
   if (best) return { model: best.model, source: 'price-limit' };
   const reasons = [

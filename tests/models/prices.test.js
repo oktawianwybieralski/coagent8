@@ -20,7 +20,7 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 const now = Date.now();
 const listed = [['openai/gpt-6-sol', 10], ['openai/gpt-6-luna', 0.5], ['openai/gpt-5.6-luna', 1.2], ['openai/gpt-6-terra', 4.9999],
   ['google/gemini-3.8-flash', 3.75], ['google/gemini-3.1-pro-preview', 12], ['anthropic/claude-haiku-4.5', 5], ['other/gpt-6-luna', 0.7]]
-  .map(([id, output]) => ({ id, output, input: null, cachedInput: null }));
+  .map(([id, output]) => ({ id, output, input: null, cachedInput: null, released: null }));
 const offered = ['gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-terra', 'gpt-6-astra', 'mystery', 'gemini-3.1-pro-low', 'claude-haiku-4-5[1m]', 'claude-haiku-4-5',
   'gemini-3.8-flash', 'gemini-3.8-flash-high', 'gemini-3.8-flash-low', 'gemini-3.8-flash-max', 'claude-haiku-4-5-20251001'];
 const list = { fetchedAt: now, source: 'openrouter', models: matchPrices(listed, offered) };
@@ -53,7 +53,7 @@ test('unknown, approximate, missing and stale prices never meet a limit, however
 
 test('aliases match exactly through effort and date suffixes; the evidence names the list entry', () => {
   assert.deepEqual({ ...priceEvidence(list, 'gemini-3.8-flash-high', now), fetchedAt: undefined },
-    { outputUsdPerMTok: 3.75, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'openrouter', fetchedAt: undefined, stale: false });
+    { outputUsdPerMTok: 3.75, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'openrouter', fetchedAt: undefined, stale: false, released: null });
   assert.equal(priceEvidence(list, 'claude-haiku-4-5-20251001', now).match, 'exact');
   assert.equal(priceEvidence(list, 'claude-haiku-4-5-20251001', now).outputUsdPerMTok, 5);
 });
@@ -72,7 +72,7 @@ test('invalid price fields are left out of a list, never read as a price', () =>
   ] });
   assert.deepEqual(entries.map(entry => [entry.id, entry.output]), [['a/ok', 2], ['a/numeric', 0.1]], 'null or empty is no price, not a free model');
   assert.deepEqual(parsePriceList({ data: [{ id: 'a/x', pricing: { completion: '0.000004', prompt: '', input_cache_read: '0.0000001' } }] }),
-    [{ id: 'a/x', output: 4, input: null, cachedInput: 0.1 }], 'an empty input price is unknown, not free');
+    [{ id: 'a/x', output: 4, input: null, cachedInput: 0.1, released: null }], 'an empty input price is unknown, not free');
 });
 
 test('a turn with a limit reads a stale list again and keeps it stale when the source fails', async () => {
@@ -103,6 +103,85 @@ test('auto under a limit keeps a qualifying default, else takes the highest-pric
   assert.deepEqual(choosePricedModel('agy', agy, undefined, { below: 5 }, list), { model: 'gemini-3.8-flash-high', source: 'price-limit' }, 'a required effort as the CLI accepts it');
   assert.deepEqual(choosePricedModel('agy', agy, undefined, { below: 5, effort: 'LOW' }, list), { model: 'gemini-3.8-flash', source: 'price-limit' }, 'the call\'s effort is passed separately');
   assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5, effort: 'max' }, list), { code: 'PRICE_LIMIT', message: /accepting reasoning_effort 'max'/ });
+});
+
+test('AX-002f: choosePricedModel ranks qualifying models by recency (released date), then price, then catalog order; undated models rank last', () => {
+  const catalog = {
+    source: 'model/list',
+    models: [
+      { id: 'gpt-6-sol', efforts: ['low', 'high'], isDefault: true },
+      { id: 'gpt-old-dear', efforts: [] },
+      { id: 'gpt-new-cheap', efforts: [] },
+      { id: 'gpt-same-date-cheap', efforts: [] },
+      { id: 'gpt-same-date-dear', efforts: [] },
+      { id: 'gpt-tie-first', efforts: [] },
+      { id: 'gpt-tie-second', efforts: [] },
+      { id: 'gpt-undated-costly', efforts: [] },
+    ]
+  };
+
+  const recencyList = {
+    fetchedAt: now,
+    source: 'openrouter',
+    models: {
+      'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true, released: '2026-09-01' },
+      'gpt-old-dear': { output: 4.0, input: null, cachedInput: null, matched: 'test/gpt-old-dear', exact: true, released: '2025-01-01' },
+      'gpt-new-cheap': { output: 1.0, input: null, cachedInput: null, matched: 'test/gpt-new-cheap', exact: true, released: '2026-06-01' },
+      'gpt-same-date-cheap': { output: 2.0, input: null, cachedInput: null, matched: 'test/gpt-same-date-cheap', exact: true, released: '2026-03-01' },
+      'gpt-same-date-dear': { output: 3.5, input: null, cachedInput: null, matched: 'test/gpt-same-date-dear', exact: true, released: '2026-03-01' },
+      'gpt-tie-first': { output: 2.5, input: null, cachedInput: null, matched: 'test/gpt-tie-first', exact: true, released: '2026-01-15' },
+      'gpt-tie-second': { output: 2.5, input: null, cachedInput: null, matched: 'test/gpt-tie-second', exact: true, released: '2026-01-15' },
+      'gpt-undated-costly': { output: 4.8, input: null, cachedInput: null, matched: 'test/gpt-undated-costly', exact: true, released: null },
+    }
+  };
+
+  const sol = { model: 'gpt-6-sol', source: 'catalog' };
+
+  // 1. A qualifying default is still kept, even when older or cheaper/dearer models exist
+  assert.deepEqual(choosePricedModel('codex', catalog, sol, { below: 15 }, recencyList), sol);
+
+  // 2. Default above limit: newer cheaper beats older dearer (2026-06-01 $1.0 beats 2025-01-01 $4.0)
+  assert.deepEqual(choosePricedModel('codex', catalog, sol, { below: 5 }, recencyList), { model: 'gpt-new-cheap', source: 'price-limit' });
+
+  // 3. When newest model is denied: equal dates (2026-03-01) fall back to higher price (3.5 > 2.0)
+  assert.deepEqual(
+    choosePricedModel('codex', catalog, sol, { below: 5 }, recencyList, ['gpt-new-cheap']),
+    { model: 'gpt-same-date-dear', source: 'price-limit' },
+    'equal dates fall back to higher price'
+  );
+
+  // 4. Equal date and equal price fall back to catalog order
+  assert.deepEqual(
+    choosePricedModel('codex', catalog, sol, { below: 3 }, recencyList, ['gpt-new-cheap', 'gpt-same-date-cheap']),
+    { model: 'gpt-tie-first', source: 'price-limit' },
+    'catalog order breaks ties when date and price are identical'
+  );
+
+  // 5. Undated models lose to dated ones regardless of price
+  const subCatalog = {
+    source: 'model/list',
+    models: [
+      { id: 'gpt-old-dear', efforts: [] },
+      { id: 'gpt-undated-costly', efforts: [] },
+    ]
+  };
+  assert.deepEqual(
+    choosePricedModel('codex', subCatalog, undefined, { below: 5 }, recencyList),
+    { model: 'gpt-old-dear', source: 'price-limit' },
+    'dated model (2025-01-01, $4.0) beats undated model with higher price ($4.8)'
+  );
+
+  // 6. When only undated models qualify, the highest-priced undated model is chosen
+  const undatedOnlyCatalog = {
+    source: 'model/list',
+    models: [
+      { id: 'gpt-undated-costly', efforts: [] },
+    ]
+  };
+  assert.deepEqual(
+    choosePricedModel('codex', undatedOnlyCatalog, undefined, { below: 5 }, recencyList),
+    { model: 'gpt-undated-costly', source: 'price-limit' }
+  );
 });
 
 test('a denied effort variant is never chosen when the call passes that effort separately', () => {
@@ -664,4 +743,98 @@ test('a price limit takes the first permitted variant of an effort-required mode
   const agy = { source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true }] };
   assert.deepEqual(choosePricedModel('agy', agy, undefined, { below: 5 }, list, ['gemini-3.8-flash-high'], true), { model: 'gemini-3.8-flash-low', source: 'price-limit' });
   assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5 }, list, ['gemini-3.8-flash-high', 'gemini-3.8-flash-low'], true), { code: 'PRICE_LIMIT' });
+});
+
+test('parsePriceList reads created Unix seconds as released YYYY-MM-DD (AX-002e)', () => {
+  const entries = parsePriceList({ data: [
+    { id: 'openai/gpt-6-sol', created: 1788912000, pricing: { completion: '0.00001' } },
+    { id: 'openai/gpt-6-luna', created: '1769904000', pricing: { completion: '0.0000005' } },
+    { id: 'openai/bad-date-1', created: null, pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-2', created: 'not-a-number', pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-3', created: -100, pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-4', created: 100, pricing: { completion: '0.000001' } },
+    { id: 'openai/bad-date-5', created: 99999999999, pricing: { completion: '0.000001' } },
+  ] });
+  assert.equal(entries.find(e => e.id === 'openai/gpt-6-sol').released, '2026-09-09');
+  assert.equal(entries.find(e => e.id === 'openai/gpt-6-luna').released, '2026-02-01');
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-1').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-1').output, 1, 'bad date leaves price usable');
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-2').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-3').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-4').released, null);
+  assert.equal(entries.find(e => e.id === 'openai/bad-date-5').released, null);
+});
+
+test('matchPrices takes the release date from the entry whose price it keeps (AX-002e)', () => {
+  const entries = [
+    { id: 'other/model-a', output: 1.0, input: null, cachedInput: null, released: '2026-01-01' },
+    { id: 'openai/model-a', output: 2.0, input: null, cachedInput: null, released: '2026-05-01' },
+  ];
+  const matched = matchPrices(entries, ['model-a']);
+  assert.deepEqual(matched['model-a'], {
+    output: 2.0,
+    input: null,
+    cachedInput: null,
+    matched: 'openai/model-a',
+    exact: true,
+    released: '2026-05-01',
+  });
+});
+
+test('stored prices carry released date and round-trip through store, and version 2 store is replaced quietly (AX-002e)', async () => {
+  const storeFile = path.join(tempDir, 'models.json');
+  // 1. Version 2 store is replaced quietly without warnings
+  fs.writeFileSync(storeFile, JSON.stringify({
+    schemaVersion: 2,
+    backends: {},
+    prices: {
+      fetchedAt: now,
+      source: 'openrouter',
+      models: {
+        'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true },
+      },
+    },
+  }));
+  let stderrOutput = '';
+  const origStderrWrite = process.stderr.write;
+  process.stderr.write = chunk => { stderrOutput += chunk; return true; };
+  try {
+    const v2Prices = readStoredPrices();
+    assert.equal(v2Prices, undefined, 'v2 store discarded quietly without dates');
+    assert.equal(stderrOutput, '', 'no warning logged for v2 store replacement');
+  } finally {
+    process.stderr.write = origStderrWrite;
+  }
+
+  // 2. Version 3 store round-trips released dates
+  const newPrices = {
+    fetchedAt: now,
+    source: 'openrouter',
+    models: {
+      'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true, released: '2026-09-10' },
+      'undated-model': { output: 5, input: null, cachedInput: null, matched: 'openai/undated-model', exact: true, released: null },
+    },
+  };
+  await recordPrices(newPrices);
+  const roundTripped = readStoredPrices();
+  assert.deepEqual(roundTripped, newPrices);
+});
+
+test('stored prices reject invalid calendar dates or dates outside 2000..2100', () => {
+  const storeFile = path.join(tempDir, 'models.json');
+  const invalidDates = ['9999-99-99', '1999-12-31', '2101-01-01', '2026-02-30', '2026-13-01', '2026-00-10', '2026-04-31'];
+  for (const badDate of invalidDates) {
+    fs.writeFileSync(storeFile, JSON.stringify({
+      schemaVersion: 3,
+      backends: {},
+      prices: {
+        fetchedAt: now,
+        source: 'openrouter',
+        models: {
+          'bad-date-model': { output: 1, input: null, cachedInput: null, matched: 'openai/bad', exact: true, released: badDate },
+        },
+      },
+    }));
+    assert.equal(readStoredPrices(), undefined, `stored prices with date ${badDate} must be rejected as invalid`);
+  }
 });

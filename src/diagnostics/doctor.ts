@@ -423,14 +423,16 @@ function defaultApproval(model: string, prices: PriceList | undefined, governanc
 
 /**
  * One model as the summary lists it: name, efforts unless stated once for the backend,
- * price (`~` approximate, `?` unknown), and whether it is the default and its governance tag.
+ * price (`~` approximate, `?` unknown), the day the price list added it (`?` when unknown),
+ * and whether it is the default and its governance tag.
  */
 function formatCandidate(row: ModelCandidate, sharedEfforts: boolean): string {
   const efforts = !sharedEfforts && row.efforts.length ? ` (${row.efforts.join('|')}${row.effortRequired ? ' required' : ''})` : '';
   const { outputUsdPerMTok: output, match } = row.price;
   const price = output === null ? '?' : `${match === 'approximate' ? '~' : ''}${Number(output.toFixed(4))}`;
+  const date = row.price.released ?? '?';
   const tags = [row.defaultSource ? 'default' : '', approvalTag(row.approval)].filter(Boolean);
-  return `${row.model}${efforts} ${price}${tags.length ? ` [${tags.join(', ')}]` : ''}`;
+  return `${row.model}${efforts} ${price} ${date}${tags.length ? ` [${tags.join(', ')}]` : ''}`;
 }
 
 /**
@@ -442,7 +444,7 @@ function formatCandidates(rows: ModelCandidate[], limit: number): string {
   const shared = rows.length > 1 && efforts !== '' && rows.every(row => row.efforts.join('|') === efforts && !row.effortRequired);
   const shown = rows.slice(0, limit).map(row => formatCandidate(row, shared));
   const more = rows.length > limit ? `, +${rows.length - limit} more (detail: full)` : '';
-  return `  models, USD per million output tokens: ${shown.join(', ')}${more}${shared ? `; reasoning_effort ${efforts}` : ''}`;
+  return `  models, USD per million output tokens, date added to the price list: ${shown.join(', ')}${more}${shared ? `; reasoning_effort ${efforts}` : ''}`;
 }
 
 function formatQuota(quota: DoctorQuota | undefined): string {

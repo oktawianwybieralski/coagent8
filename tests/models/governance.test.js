@@ -93,7 +93,7 @@ test('a price is matched exactly, also without an effort or date suffix, and app
   assert.equal(findPrice(prices, 'claude-opus-5-5[1m]').exact, false, 'a context variant may cost more');
   assert.equal(findPrice(prices, 'gpt-7-nova'), undefined);
   assert.equal(findPrice(prices, 'gpt-6-sol'), undefined, 'a model the list did not check has no price yet');
-  assert.deepEqual(findPrice(prices, 'gpt-6-luna'), { output: 0.5, input: 0.1, cachedInput: null, matched: 'openai/gpt-6-luna', exact: true }, 'input prices are kept; a missing cache price stays unknown');
+  assert.deepEqual(findPrice(prices, 'gpt-6-luna'), { output: 0.5, input: 0.1, cachedInput: null, matched: 'openai/gpt-6-luna', exact: true, released: '2026-02-01' }, 'input prices are kept; a missing cache price stays unknown');
   assert.equal(parsePriceList({ data: [{ id: 'openrouter/auto', pricing: { completion: '-1' } }] }), undefined, 'no fixed price, no entry');
   assert.equal(parsePriceList('not a list'), undefined);
   assert.equal(parsePriceList({ data: [{ id: '--flag', pricing: { completion: '0.00001' } }] }), undefined);

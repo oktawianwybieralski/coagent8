@@ -229,7 +229,8 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
 
   const before = snapshotCounters(counters);
   const start = Date.now();
-  // gpt-6-sol is 10 USD, gpt-5.6-luna is 1.2 USD, gpt-6-luna is 0.5 USD. Ceiling = 5 USD -> gpt-5.6-luna
+  // gpt-6-sol is 10 USD (default, over limit). Qualifying models: gpt-6-luna (0.5 USD, 2026-02-01) and gpt-5.6-luna (1.2 USD, 2025-01-31).
+  // Ceiling = 5 USD -> recency ranking chooses the more recent gpt-6-luna (AX-002f)
   const outcome = await executeTask(
     'priced prompt',
     'priced input',
@@ -242,7 +243,7 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
   assert.equal(deltas.catalogReads, 0, 'priced auto must reuse catalog without re-reading');
   assert.equal(deltas.adapterLaunches, 1);
   const parsed = readResult(outcome);
-  assert.equal(parsed.model, 'gpt-5.6-luna');
+  assert.equal(parsed.model, 'gpt-6-luna');
   assert.match(outcome.price || '', /below the limit of 5 USD/);
 
   const observation = recordObservation('priced_auto', { ...deltas, durationMs, phases: outcome.meta.phases }, {

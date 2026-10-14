@@ -281,8 +281,9 @@ client that shows MCP forms.
 
 Pass the user's limit as `output_price_below`, in USD per million output
 tokens. It is strict: `5` means below 5. Without `model`, CoAgent8 chooses the
-backend's default if it qualifies, otherwise the highest-priced qualifying
-model:
+backend's default if it qualifies, otherwise the most recently released
+qualifying model (then higher price, then catalog order; undated models rank
+last):
 
 ```json
 {

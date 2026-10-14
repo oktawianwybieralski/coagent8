@@ -50,6 +50,7 @@ export interface ListedPrice {
   output: number;
   input: number | null;
   cachedInput: number | null;
+  released: string | null;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -67,7 +68,20 @@ function perMillion(raw: unknown): number | null {
 }
 
 /**
- * Reads an OpenRouter-shaped `{ data: [{ id, pricing: { completion, prompt, input_cache_read } }] }`.
+ * Reads an OpenRouter Unix timestamp in seconds as an ISO date `YYYY-MM-DD` (`AX-002e`).
+ * @returns `YYYY-MM-DD`, or null if missing, non-finite, or outside the plausible 2000..2100 range.
+ */
+function parseReleaseDate(raw: unknown): string | null {
+  const value = typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '') ? Number(raw) : NaN;
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (value < 946684800 || value > 4102444800) return null;
+  const date = new Date(value * 1000);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Reads an OpenRouter-shaped `{ data: [{ id, pricing: { completion, prompt, input_cache_read }, created }] }`.
  * @returns The entries with an output price, or undefined when the payload has none.
  * Variants (`:batch`, `:free`) are left out.
  */
@@ -80,7 +94,8 @@ export function parsePriceList(payload: unknown): ListedPrice[] | undefined {
     const id = entry?.id, pricing = record(entry?.pricing);
     const output = perMillion(pricing?.completion);
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(id) || output === null) continue;
-    entries.push({ id, output, input: perMillion(pricing?.prompt), cachedInput: perMillion(pricing?.input_cache_read) });
+    const released = parseReleaseDate(entry?.created);
+    entries.push({ id, output, input: perMillion(pricing?.prompt), cachedInput: perMillion(pricing?.input_cache_read), released });
   }
   return entries.length ? entries : undefined;
 }
@@ -109,7 +124,7 @@ export function matchPrices(entries: readonly ListedPrice[], models: Iterable<st
   }
   const highest = (found: ListedPrice[], exact: boolean): PriceRecord => {
     const top = found.reduce((best, entry) => entry.output > best.output ? entry : best);
-    return { output: top.output, input: top.input, cachedInput: top.cachedInput, matched: top.id, exact };
+    return { output: top.output, input: top.input, cachedInput: top.cachedInput, matched: top.id, exact, released: top.released };
   };
   const match = (model: string): PriceRecord | null => {
     const variant = /\[[^\]]*\]$/.test(model);
@@ -549,6 +564,8 @@ export interface PriceEvidence {
   fetchedAt: string | null;
   /** The list is older than {@link PRICE_STALE_MS}, so it cannot satisfy a price limit. */
   stale: boolean;
+  /** ISO date `YYYY-MM-DD` when the model was added to the price list, or null if unknown. */
+  released: string | null;
 }
 
 /**
@@ -558,7 +575,7 @@ export interface PriceEvidence {
  * @param now - Milliseconds since the epoch, for staleness.
  */
 export function priceEvidence(list: PriceList | undefined, model: string, now = Date.now()): PriceEvidence {
-  if (!list) return { outputUsdPerMTok: null, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: null, match: 'unknown', source: null, fetchedAt: null, stale: false };
+  if (!list) return { outputUsdPerMTok: null, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: null, match: 'unknown', source: null, fetchedAt: null, stale: false, released: null };
   const price = findPrice(list, model);
   return {
     outputUsdPerMTok: price?.output ?? null,
@@ -569,6 +586,7 @@ export function priceEvidence(list: PriceList | undefined, model: string, now = 
     source: list.source,
     fetchedAt: new Date(list.fetchedAt).toISOString(),
     stale: isPriceListStale(list, now),
+    released: price?.released ?? null,
   };
 }
 

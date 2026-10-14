@@ -13,7 +13,10 @@ Text the user typed with this command names the scope or the review focus.
    criteria and risky areas. Do not paste earlier review transcripts and do not
    ask the reviewer to answer READY.
 3. Leave `backend` and `model` unset unless the user named one; `auto` prefers a
-   different CLI than yours. The author of a change cannot supply its own
+   different CLI than yours. For a user's price limit or range (e.g. "X-Y" means
+   `output_price_below: Y`), pass `output_price_below` and leave `model` unset;
+   the server picks the qualifying default or the most recently released
+   qualifying model. The author of a change cannot supply its own
    independent approval. A model `coagent8-doctor` tags `ask` runs only after
    the user approves the server's form: tell the user before the call. Never
    call a model tagged `deny`.

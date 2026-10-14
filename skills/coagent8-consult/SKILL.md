@@ -17,9 +17,11 @@ the conversation.
    `implementation` when you want that kind of analysis; omit it for a plain
    question. Put required criteria in `specific_questions`.
 3. Leave `backend`, `model` and `reasoning_effort` unset unless the user named
-   one. For a user's price limit pass `output_price_below` (USD per million
-   output tokens, strict) and leave `model` unset; `coagent8-doctor` lists
-   models and prices.
+   one. For a user's price limit or range (e.g. "X-Y" means `output_price_below: Y`),
+   pass `output_price_below` (USD per million output tokens, strict) and leave
+   `model` unset; the server picks the qualifying default or the most recently
+   released qualifying model. `coagent8-doctor` lists models, prices and the day
+   the price list added each model.
 4. For a follow-up on the same topic pass the `session_handle` from the result
    footer. A call without it starts a fresh agent that rereads everything.
 5. Before calling a model that `coagent8-doctor` tags `ask` (expensive,
