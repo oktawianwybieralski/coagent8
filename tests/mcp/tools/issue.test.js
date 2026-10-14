@@ -67,7 +67,7 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.equal(quotaCalls, 0, 'include_doctor must not trigger native quota reads');
   assert.ok(resWithDoc.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(resWithDoc.content[0].text.includes(GITHUB_NEW_ISSUE_BASE));
-  assert.ok(resWithDoc.structuredContent.issueUrl.includes('title='));
+  assert.ok(resWithDoc.structuredContent.issueUrl.includes('?template=bug_report.yml'));
   assert.ok(resWithDoc.structuredContent.body.includes('Spawn failed with ENOENT'));
   assert.ok(resWithDoc.structuredContent.body.includes(
     '- **Detected CLIs**:\n' +
@@ -86,16 +86,14 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.ok(resNoDoc.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(resNoDoc.structuredContent.body.includes('- **Detected CLIs**: Not provided'));
   const renderedLink = resNoDoc.content[0].text.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
-  const prefilled = new URL(renderedLink);
-  assert.equal(prefilled.searchParams.get('title'), resNoDoc.structuredContent.title);
-  assert.equal(prefilled.searchParams.get('body'), resNoDoc.structuredContent.body);
   assert.equal(renderedLink, resNoDoc.structuredContent.issueUrl);
+  assert.ok(renderedLink.includes('?template=bug_report.yml'));
   const context = 'Reproduction and timing evidence. '.repeat(50) + 'CONTEXT_END';
   const diagnostic = 'Failure details. '.repeat(100) + 'DIAGNOSTIC_END';
   const completeReport = await handleIssue({ error_message: diagnostic, context, include_doctor: false });
   assert.ok(completeReport.structuredContent.body.includes(context));
   assert.ok(completeReport.structuredContent.body.includes(diagnostic));
-  assert.equal(new URL(completeReport.structuredContent.issueUrl).searchParams.get('body'), completeReport.structuredContent.body);
+  assert.equal(completeReport.structuredContent.issueUrl, renderedLink);
 
   // Output schema assertion
   assert.ok(issueToolDefinition.outputSchema);

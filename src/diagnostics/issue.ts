@@ -37,6 +37,8 @@ export interface BugReportResult {
 const REPO_OWNER = BRAND.GITHUB_OWNER;
 const REPO_NAME = BRAND.GITHUB_REPO;
 export const GITHUB_NEW_ISSUE_BASE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
+export const GITHUB_BUG_REPORT_TEMPLATE_URL = `${GITHUB_NEW_ISSUE_BASE}?template=bug_report.yml`;
+export const MAX_ENCODED_ISSUE_URL_LENGTH = 2048;
 const MAX_RAW_INPUT_LENGTH = 4096;
 
 /**
@@ -160,16 +162,9 @@ ${detectedClis}
 *Note: Best-effort automated redaction was applied. Please review the details above before submitting to ensure no sensitive or proprietary data is included.*
 `;
 
-    // Safely encode URL parameters
-    let issueUrl: string;
-    try {
-      // Encode Markdown delimiters too, so client renderers cannot split the URL.
-      const encodeParameter = (value: string) => encodeURIComponent(value)
-        .replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-      const encodedTitle = encodeParameter(title);
-      const encodedBody = encodeParameter(body);
-      issueUrl = `${GITHUB_NEW_ISSUE_BASE}?title=${encodedTitle}&body=${encodedBody}`;
-    } catch (_) {
+    // Build template URL pointing to the canonical bug_report.yml template
+    let issueUrl = GITHUB_BUG_REPORT_TEMPLATE_URL;
+    if (Buffer.byteLength(issueUrl) > MAX_ENCODED_ISSUE_URL_LENGTH) {
       issueUrl = GITHUB_NEW_ISSUE_BASE;
     }
 
@@ -179,9 +174,11 @@ ${detectedClis}
       issueUrl,
       prompt:
         `Would you like to report this issue to GitHub to help improve ${BRAND.NAME}?\n\n` +
-        `Click the link below to review and submit the pre-filled issue in your browser (GitHub sign-in required to submit):\n\n` +
+        `Click the link below to open the bug report template in your browser (GitHub sign-in required to submit):\n\n` +
         `**[Submit Bug Report on GitHub](<${issueUrl}>)**\n\n` +
-        `Copyable issue URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
+        `Link URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
+        `Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n` +
+        `\`\`\`text\n${body}\n\`\`\`\n\n` +
         `Preview Sanitized Report\n\n${body}`,
     };
   } catch (_err) {
