@@ -97,7 +97,9 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
 
   // Output schema assertion
   assert.ok(issueToolDefinition.outputSchema);
-  assert.deepEqual(issueToolDefinition.outputSchema.required, ['title', 'body', 'issueUrl']);
+  assert.deepEqual(issueToolDefinition.outputSchema.required, ['title', 'body', 'issueUrl', 'prompt', 'pasteRequired']);
+  assert.equal(resNoDoc.structuredContent.prompt, resNoDoc.content[0].text);
+  assert.equal(resNoDoc.structuredContent.pasteRequired, true);
 });
 
 test('server advertises issue tool and dispatches tools/call issue cleanly', async () => {
@@ -129,6 +131,8 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
   assert.equal(callRes.isError, undefined);
   assert.ok(callRes.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(callRes.structuredContent.body.includes('Test crash'));
+  assert.equal(callRes.structuredContent.prompt, callRes.content[0].text);
+  assert.equal(callRes.structuredContent.pasteRequired, true);
 });
 
 test('run gateway dispatches action: "issue" to handleIssue cleanly', async () => {
@@ -143,4 +147,6 @@ test('run gateway dispatches action: "issue" to handleIssue cleanly', async () =
   );
   assert.ok(result.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(result.structuredContent.body.includes('Command exited with 127'));
+  assert.equal(result.structuredContent.prompt, result.content[0].text);
+  assert.equal(result.structuredContent.pasteRequired, true);
 });

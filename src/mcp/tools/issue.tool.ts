@@ -20,11 +20,13 @@ export interface IssueToolArgs {
 
 export const issueOutputSchema = {
   type: 'object',
-  required: ['title', 'body', 'issueUrl'],
+  required: ['title', 'body', 'issueUrl', 'prompt', 'pasteRequired'],
   properties: {
     title: { type: 'string' },
     body: { type: 'string' },
     issueUrl: { type: 'string' },
+    prompt: { type: 'string' },
+    pasteRequired: { type: 'boolean' },
   },
 };
 
@@ -74,6 +76,8 @@ export async function handleIssue(args: IssueToolArgs = {}) {
       title: report.title,
       body: report.body,
       issueUrl: report.issueUrl,
+      prompt: report.prompt,
+      pasteRequired: true,
     },
   };
 }
