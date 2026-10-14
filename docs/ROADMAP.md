@@ -62,6 +62,10 @@ its limits are recorded in [HANDOFF.md](HANDOFF.md#what-the-trials-establish).
 - A plain `consult` through `auto` can run an expensive default model. A
   per-call `output_price_below` limit bounds a constrained call; a call without
   one still runs the default (`AX-002`).
+- Under a price limit the server takes the highest-priced qualifying model when
+  the default does not qualify, which can prefer an older model over a newer,
+  cheaper one; doctor shows no release dates, and an agent picked an older model
+  by hand instead of passing the limit (`AX-002d-i`).
 - Repeated `review` rounds without `session_handle` can start fresh, expensive
   reviewers. Labelled continuation handles and repeat-review refusal shipped in
   `0.6.0` (`AX-007a-c`); abandoned-session warnings (`AX-007d`) and handle
@@ -151,7 +155,8 @@ natively (no product code), so the contract in Phase 2 rests on evidence.
 **Phase 2 - stability, feedback and containment.**
 [`FEEDBACK-061a-i`](#feedback-061-findings-of-the-061-native-acceptance)
 (runtime version in `doctor`, shared registrations, issue links, Codex buffer
-limit), `AX-007d` and the remaining `AX-001` to `AX-006` cards,
+limit), `AX-002d-h` (recency under a price limit; `AX-002i` follows its
+decision), `AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`AUDIT-001-A08` to `A21`](#audit-001-corrected-analysis-follow-up),
 `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`,
 [`ACCEPT-001`](#accept-001-automated-native-acceptance) (automated native
@@ -341,6 +346,15 @@ Implemented in `0.6.0`: `output_price_below` enforces a strict USD per million o
 - [ ] **AX-002b - choose the plain-consult default policy.** Compare a configured default price ceiling with the current unconstrained default using existing config, selection and governance owners. Document precedence, unavailable-price behavior and migration for existing users. Check: P.
 - [ ] **AX-002c - implement the accepted default policy.** After `AX-002b`, update config validation, selection, schema and README together. Acceptance: explicit requests and consent remain binding, exact boundary behavior is tested, and no model is silently substituted. Check: R, CONFIG/SELECT/POLICY/MCP.
 
+Price is not a proxy for capability (2026-10-14): asked for a model at USD 10-15, a calling agent picked `gpt-5.6-terra` (12, July 2026) by hand from the doctor list instead of passing the limit, although the newer default `gpt-6.1-sol` (10, September 2026) qualified. The server repeats that choice whenever the default does not qualify, because it takes the highest-priced qualifying model. OpenRouter's model list, already read for prices, states when each model was added (`created`); cards `AX-002d` to `AX-002h` rank by that date and show it, `AX-002i` covers retiring models.
+
+- [ ] **AX-002d - record the recency decision.** Start: [ARCHITECTURE.md](ARCHITECTURE.md) price-limit selection and its 2026-10-08 decision entry. Add a dated decision that replaces "highest-priced qualifying model": the qualifying default still comes first; otherwise the most recently released qualifying model, then the higher price, then catalog order; a model without a release date ranks after every dated one. The date is OpenRouter's `created`, the day the model was listed there, labelled as such. Model descriptions from the list are not stored or shown: they are third-party text that would reach the calling agent's context. Check: P.
+- [ ] **AX-002e - store release dates with prices.** After `AX-002d`, start: `src/models/prices.ts`, `src/models/store.ts`. `parsePriceList` reads `created` (Unix seconds) as `released: 'YYYY-MM-DD' | null`; a missing, non-finite or implausible value yields null without dropping the entry. `matchPrices` takes the date from the entry whose price it keeps, `PriceRecord` and `PriceEvidence` carry it, and `STORE_VERSION` rises to 3 so a stored list without dates is read again. Acceptance: fixtures with `created` round-trip through the store; a version 2 store is replaced quietly; a bad date leaves the price usable. Check: R, CACHE.
+- [ ] **AX-002f - rank qualifying models by recency.** After `AX-002e`, start: `src/models/selection.ts` (`choosePricedModel`). Implement the `AX-002d` order. Acceptance: with the default above the limit, a newer cheaper qualifying model beats an older dearer one; equal dates fall back to price, then catalog order; undated models lose to dated ones; denied models, effort filters and agy effort variants behave as before; a qualifying default is still kept. Check: R, SELECT/POLICY.
+- [ ] **AX-002g - show release dates in doctor.** After `AX-002e`, start: `src/diagnostics/doctor.ts`. Each model row shows its date after the price (`?` when unknown), and `detail: full` carries `released` in the price evidence. Acceptance: the bounded row trimming still drops whole rows within its limit; the summary and JSON agree. Check: R, DOCTOR/MCP.
+- [ ] **AX-002h - guide agents to the server's choice.** After `AX-002f`, start: `skills/coagent8-doctor`, `skills/coagent8-consult`, `skills/coagent8-review`, `src/mcp/schema.ts`. Skills state that a price range "X-Y" means `output_price_below: Y` and that the server, not the agent, picks the model; the `output_price_below` description names the recency order within the tool-definition byte budget. Update [README.md](../README.md), [ARCHITECTURE.md](ARCHITECTURE.md) and the implemented summary above to match. Acceptance: surface and schema snapshot tests pass; no current model-routing guidance still describes highest-price selection, while dated decisions and the price matcher's highest-price rule for several matching entries stay as they are. Check: R, MCP, plus P for prose.
+- [ ] **AX-002i - decide on retiring models.** OpenRouter also lists `expiration_date`. Decide whether a model past or near that date is skipped under a price limit, only flagged in doctor, or ignored, and how a missing date reads. Check: P; implementation cards follow the decision.
+
 ### AX-003: consent across clients
 
 - [ ] **AX-003a - classify current elicitation outcomes.** Start: `src/mcp/server.ts`, `src/execution/consent.ts`, `src/models/governance.ts`. Separate unsupported, advertised, declined and unanswered outcomes, claiming displayed/verified consent only from native observation. Acceptance: absent capability, cancelled form and false/missing checkbox fixtures retain the concrete model and actionable policy reason. Check: R, MCP/POLICY.
@@ -395,7 +409,7 @@ All milestones are pending. Start with the contract design cards below (`Check: 
 | --- | --- |
 | `COAGENT-001` Task contract | Start/inspect/continue/cancel; stable task/root/parent IDs, role, objective, scope, acceptance, profile, context and optional model/effort. Validated status, actual identity, changes/evidence and usage availability. Test transitions, repeats, truncation and legacy calls. Worker success is not root acceptance. |
 | `COAGENT-002` Profiles | Verify read-only, workspace-write and bounded commands per backend/version/OS. One writer per canonical workspace; baseline dirty files, prevent path escapes/conflicts, preserve partial work. Parallel writers need authorized separate workspaces or verified disjoint ownership. No automatic worktree/reset/cleanup. Native containment/failure tests precede claims. |
-| `COAGENT-003` Routing/limits | Role/task defaults independent of provider/model/effort; explicit choices and opt-in cost/latency/quality/quota preferences. Atomic root reservations for calls/concurrency/time/depth shared by children/retries. No silent explicit-model fallback, fabricated monetary cap or self-approved escalation. Reconcile request identity before replaying writers; test contention/lost replies. |
+| `COAGENT-003` Routing/limits | Role/task defaults independent of provider/model/effort; explicit choices and opt-in cost/latency/quality/quota preferences. Open question: whether external benchmark scores may inform an opt-in quality preference; they lag new releases, measure models through APIs rather than CLI harnesses, and could enter only as validated numbers, never as text in tool descriptions. Atomic root reservations for calls/concurrency/time/depth shared by children/retries. No silent explicit-model fallback, fabricated monetary cap or self-approved escalation. Reconcile request identity before replaying writers; test contention/lost replies. |
 | `COAGENT-004` Lifecycle/evidence | Minimal durable state/leases independent of transcript archival or a daemon. Early handles, progress, inspect/cancel, recovery; disconnect cancels by default. Detached execution requires verified supervision. Preserve original requirements, bounded context/omissions. Capture checks in the actual candidate with commands/exits/logs; separate observed from reported evidence. Test interruption, stale evidence and root-incomplete results. |
 | `COAGENT-005` Skills | Builds on `SKILLS-001/002` ownership records. Composable coordination/planning/work/verification/review/recovery `SKILL.md` packages; catalog/install/update/uninstall through shared integration logic. Owned manifests/digests, atomic rollback, conflict/path-traversal checks; preserve custom instructions and execute no bundled scripts. Verify discovery/use per advertised client. |
 | `COAGENT-006` Delegation | After host-led execution, add a task-scoped gateway with verified root/parent identity, capabilities and shared limits. Keep nested refusal until accepted. Bound fan-out/depth, reject cycles/replay, propagate cancellation and recover partial launches. Account for or disable unobservable native subagents where limits require it. Test forged delegation/restarts/launch races. |
@@ -1684,6 +1698,7 @@ review may resolve a risky contract, but does not require a separate PR.
 | Shared registration policy | 2.3, 2.4 | Reproduction, accepted policy, implementation and regression tests together; an unresolved owner decision pauses implementation. |
 | Bug-report content and paste flow | 2.6, 2.7, 2.8 | Link, structured content, issue skill and doctor reminder form one reporting flow. |
 | Bug-report opening actions | 2.9, 2.10 | Explicit VS Code and CLI actions with browser-opening tests, after the reporting flow. |
+| Recency under a price limit | 2.26a, 2.26b, 2.26c | One PR: the planning cards, decision, stored dates, ranking, doctor dates and agent guidance form one selection change. No separate PR for the cards or for 2.26a alone; one final review of the combined scope. |
 | Isolated acceptance runner foundation | 2.15, 2.16 | Owned home isolation and runner skeleton with preservation and dry-run checks. |
 | Delegated background lifecycle | 3.1, 3.2 | Start, cancellation and shutdown form one owned-process lifecycle, after the accepted contracts. |
 | Delegated result retrieval | 3.3, 3.4 | Bounded wait and result persistence with notification/cancellation ordering. |
@@ -1803,6 +1818,10 @@ agent (owner assigns).
 | 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
 | 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | In that order, with PR groups chosen by coherent result and risk. |
 | 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R). |
+| 2.26a | `AX-002d` recency decision | P | - | ARCHITECTURE records the recency order replacing highest-price selection; reviewed READY. |
+| 2.26b | `AX-002e`, then `AX-002f` and `AX-002g` (par) | R | 2.26a | Release dates stored with prices, recency ranking and doctor dates per the cards; tests. |
+| 2.26c | `AX-002h` | R | 2.26b | Skills, schema description and docs describe the recency order; surface tests. |
+| 2.26d | `AX-002i` | O | 2.26b | Owner decides how expiring models are treated. A decision made before the 2.26a-c PR is ready joins that PR with its implementation; a later one joins the next selection or doctor change. It never ships alone. |
 | 2.27 | `AX-003a` | R | - | Elicitation outcome fixtures per the card (`Check: R`). |
 | 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | Form-less consent design, then implementation cards added here. |
 | 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | `AX-006a` acceptance script; the `b`/`c`/`d` fresh-client runs are native, one per client, with evidence recorded in HANDOFF (no PR per run). |
