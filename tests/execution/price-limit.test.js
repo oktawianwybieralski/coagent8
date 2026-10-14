@@ -72,11 +72,11 @@ test('the boundary is strict, and the footer states the price evidence', async (
   assert.equal(runs.length, 2);
 });
 
-test('without a model, auto takes the highest-priced qualifying model of the backend and keeps a qualifying default', async () => {
+test('without a model, auto takes the most recently released qualifying model of the backend and keeps a qualifying default', async () => {
   await config();
   runs.length = 0;
   const cheaper = readResult(await run({ backend: 'codex', output_price_below: 5 }));
-  assert.equal(cheaper.model, 'gpt-5.6-luna', '1.2 is the highest price below 5; the default costs 10');
+  assert.equal(cheaper.model, 'gpt-6-luna', 'gpt-6-luna (2026-02-01, 0.5 USD) is newer than gpt-5.6-luna (2025-02-01, 1.2 USD); the default costs 10');
   assert.equal(readResult(await run({ backend: 'codex', output_price_below: 1 })).model, 'gpt-6-luna');
   assert.equal(readResult(await run({ backend: 'codex', output_price_below: 20 })).model, 'gpt-6-sol', 'the default meets the limit');
   // A config change between discovery and execution is read again: the new default qualifies.

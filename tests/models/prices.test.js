@@ -105,6 +105,85 @@ test('auto under a limit keeps a qualifying default, else takes the highest-pric
   assert.throws(() => choosePricedModel('agy', agy, undefined, { below: 5, effort: 'max' }, list), { code: 'PRICE_LIMIT', message: /accepting reasoning_effort 'max'/ });
 });
 
+test('AX-002f: choosePricedModel ranks qualifying models by recency (released date), then price, then catalog order; undated models rank last', () => {
+  const catalog = {
+    source: 'model/list',
+    models: [
+      { id: 'gpt-6-sol', efforts: ['low', 'high'], isDefault: true },
+      { id: 'gpt-old-dear', efforts: [] },
+      { id: 'gpt-new-cheap', efforts: [] },
+      { id: 'gpt-same-date-cheap', efforts: [] },
+      { id: 'gpt-same-date-dear', efforts: [] },
+      { id: 'gpt-tie-first', efforts: [] },
+      { id: 'gpt-tie-second', efforts: [] },
+      { id: 'gpt-undated-costly', efforts: [] },
+    ]
+  };
+
+  const recencyList = {
+    fetchedAt: now,
+    source: 'openrouter',
+    models: {
+      'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true, released: '2026-09-01' },
+      'gpt-old-dear': { output: 4.0, input: null, cachedInput: null, matched: 'test/gpt-old-dear', exact: true, released: '2025-01-01' },
+      'gpt-new-cheap': { output: 1.0, input: null, cachedInput: null, matched: 'test/gpt-new-cheap', exact: true, released: '2026-06-01' },
+      'gpt-same-date-cheap': { output: 2.0, input: null, cachedInput: null, matched: 'test/gpt-same-date-cheap', exact: true, released: '2026-03-01' },
+      'gpt-same-date-dear': { output: 3.5, input: null, cachedInput: null, matched: 'test/gpt-same-date-dear', exact: true, released: '2026-03-01' },
+      'gpt-tie-first': { output: 2.5, input: null, cachedInput: null, matched: 'test/gpt-tie-first', exact: true, released: '2026-01-15' },
+      'gpt-tie-second': { output: 2.5, input: null, cachedInput: null, matched: 'test/gpt-tie-second', exact: true, released: '2026-01-15' },
+      'gpt-undated-costly': { output: 4.8, input: null, cachedInput: null, matched: 'test/gpt-undated-costly', exact: true, released: null },
+    }
+  };
+
+  const sol = { model: 'gpt-6-sol', source: 'catalog' };
+
+  // 1. A qualifying default is still kept, even when older or cheaper/dearer models exist
+  assert.deepEqual(choosePricedModel('codex', catalog, sol, { below: 15 }, recencyList), sol);
+
+  // 2. Default above limit: newer cheaper beats older dearer (2026-06-01 $1.0 beats 2025-01-01 $4.0)
+  assert.deepEqual(choosePricedModel('codex', catalog, sol, { below: 5 }, recencyList), { model: 'gpt-new-cheap', source: 'price-limit' });
+
+  // 3. When newest model is denied: equal dates (2026-03-01) fall back to higher price (3.5 > 2.0)
+  assert.deepEqual(
+    choosePricedModel('codex', catalog, sol, { below: 5 }, recencyList, ['gpt-new-cheap']),
+    { model: 'gpt-same-date-dear', source: 'price-limit' },
+    'equal dates fall back to higher price'
+  );
+
+  // 4. Equal date and equal price fall back to catalog order
+  assert.deepEqual(
+    choosePricedModel('codex', catalog, sol, { below: 3 }, recencyList, ['gpt-new-cheap', 'gpt-same-date-cheap']),
+    { model: 'gpt-tie-first', source: 'price-limit' },
+    'catalog order breaks ties when date and price are identical'
+  );
+
+  // 5. Undated models lose to dated ones regardless of price
+  const subCatalog = {
+    source: 'model/list',
+    models: [
+      { id: 'gpt-old-dear', efforts: [] },
+      { id: 'gpt-undated-costly', efforts: [] },
+    ]
+  };
+  assert.deepEqual(
+    choosePricedModel('codex', subCatalog, undefined, { below: 5 }, recencyList),
+    { model: 'gpt-old-dear', source: 'price-limit' },
+    'dated model (2025-01-01, $4.0) beats undated model with higher price ($4.8)'
+  );
+
+  // 6. When only undated models qualify, the highest-priced undated model is chosen
+  const undatedOnlyCatalog = {
+    source: 'model/list',
+    models: [
+      { id: 'gpt-undated-costly', efforts: [] },
+    ]
+  };
+  assert.deepEqual(
+    choosePricedModel('codex', undatedOnlyCatalog, undefined, { below: 5 }, recencyList),
+    { model: 'gpt-undated-costly', source: 'price-limit' }
+  );
+});
+
 test('a denied effort variant is never chosen when the call passes that effort separately', () => {
   const sol = { model: 'gpt-6-sol', source: 'catalog' };
   assert.deepEqual(choosePricedModel('codex', codexCatalog, sol, { below: 20, effort: 'high' }, list, ['gpt-6-sol-high']), { model: 'gpt-5.6-luna', source: 'price-limit' }, 'the default runs as the denied variant');
