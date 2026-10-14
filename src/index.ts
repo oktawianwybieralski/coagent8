@@ -17,6 +17,7 @@ import { serveStdio } from './mcp/stdio-server.js';
 import { runModelsCli } from './diagnostics/models-cli.js';
 import { runDoctorCli } from './diagnostics/doctor-cli.js';
 import { runSessionCli } from './sessions/session-cli.js';
+import { runIssueCli } from './diagnostics/issue-cli.js';
 
 /** Standard stream interfaces for CLI execution. */
 export interface CliStreams {
@@ -31,6 +32,7 @@ export interface CliDependencies {
   runModelsCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
   runDoctorCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
   runSessionCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal, workspace?: string) => Promise<number>;
+  runIssueCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
   loadSetupCli?: () => Promise<{ runSetupCli(args: string[]): Promise<boolean> }>;
 }
 
@@ -88,6 +90,7 @@ export function formatRootHelp(): string {
     '  session list [--json]            List active sessions in current workspace',
     '  session history <handle> [--cursor <cursor>] [--limit <limit>] [--json]',
     '                                   Inspect paginated session turn history',
+    '  issue [--open] [--json]          Generate a sanitized bug report to paste into GitHub',
     '  setup [--clients=...]            Register CoAgent8 with native CLI hosts',
     '  repair [--clients=...]           Restore missing or corrupted host registrations',
     '  status [--clients=...]           Check CLI readiness across supported hosts',
@@ -194,7 +197,13 @@ export async function runCli(
     return await runSession(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
   }
 
-  // 8. Management commands (lazily loaded setup bundle)
+  // 8. Issue command
+  if (cmd === 'issue') {
+    const runIssue = deps.runIssueCli ?? runIssueCli;
+    return await runIssue(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
+  }
+
+  // 9. Management commands (lazily loaded setup bundle)
   if (['setup', 'repair', 'status', 'cleanup', 'skills'].includes(cmd)) {
     const loadSetup = deps.loadSetupCli ?? (async () => {
       // Optional installation code lives in a separate sibling bundle.

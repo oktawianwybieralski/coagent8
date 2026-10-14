@@ -58,7 +58,7 @@ class MockPathAdapter {
  */
 async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = [], action, command = 'coagent8.manageClis', failInstall = false, blocked = [], signedOut = [], vendorExtensions = [], discoverable = installed, welcomed = true, activationOnly = false, configPath = '', savedMcp = false, settingsChanged = false, dirtyFiles = [], legacyState = {}, storedState, installs, home, awaitState = false, awaitNotifications = 0, awaitWarnings = 0, registrations = {}, extensionApiLags = false, commands = {}, extraInstallations = {}, missingConfigured = [], openDialog, executableChecks = {}, removalRuns = true, skillProfile = false, nativeRemoval = [], inputs = [], workspaceFolders = [], remoteName, deactivateOn, pathAdapter = new MockPathAdapter('C:\\Tools', 'REG_SZ') } = {}) {
   const handlers = {}, registrationsWritten = [], requests = [], errors = [], terminals = [], reports = [], progress = [], warnings = [], warningDetails = [], events = [], reveals = [], pickers = [];
-  const inputBoxes = [], statusMessages = [], modelRuns = [];
+  const inputBoxes = [], statusMessages = [], modelRuns = [], openedUrls = [];
   // Each prompt answers with the first scripted action it offers.
   const answer = offered => [].concat(action ?? []).find(choice => offered.includes(choice));
   const cleanupCalls = [];
@@ -73,8 +73,17 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     ThemeIcon: class { constructor(id) { this.id = id; } },
     QuickInputButtons: { Back: { tooltip: 'Back' } },
     QuickPickItemKind: { Separator: SEPARATOR, Default: 0 },
-    Uri: { file(file) { return { fsPath: file, toString() { return require('node:url').pathToFileURL(file).href; } }; } },
-    env: remoteName ? { remoteName } : {},
+    Uri: {
+      file(file) { return { fsPath: file, toString() { return require('node:url').pathToFileURL(file).href; } }; },
+      parse(uri) { return { fsPath: uri, toString() { return uri; } }; },
+    },
+    env: {
+      ...(remoteName ? { remoteName } : {}),
+      openExternal: async uri => {
+        openedUrls.push(typeof uri === 'string' ? uri : uri.toString());
+        return true;
+      },
+    },
     extensions: { getExtension(id) { return vendorExtensions.includes(id) ? { extensionPath: path.resolve('vendor', id), extensionUri: { scheme: 'file' } } : undefined; }, onDidChange(listener) { extensionListeners.push(listener); return { dispose }; } },
     ProgressLocation: { Notification: 15 },
     EventEmitter: class { event = () => {}; fire() { definitionChanges++; } dispose() {} },
@@ -304,7 +313,7 @@ async function runExtension({ installed = ['codex', 'claude', 'agy'], steps = []
     let config = configText;
     try { if (configText !== undefined) config = JSON.parse(configText); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
     const menus = pickers;
-    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles, pathAdapter };
+    return { inputBoxes, statusMessages, modelRuns, installs: installRecord, config, registrations: registrationsWritten, terminals, requests, errors, reports, cleanupCalls, progress, warnings, warningDetails, events, reveals, notifications, pickers, menus, state, stateChanged: finalState !== initialState, legacyUpdates, legacy, openedFiles, definitionChanges, storageFiles, pathAdapter, openedUrls };
   } finally {
     if (typeof module.exports.setPathAdapterForTest === 'function') {
       module.exports.setPathAdapterForTest(undefined);
@@ -473,6 +482,23 @@ test('Reset Configuration needs confirmation, keeps one backup and refuses unsav
 test('settings and MCP server commands open the native VS Code views', async () => {
   assert.deepEqual((await runExtension({ command: 'coagent8.openSettings' })).requests, [['workbench.action.openSettings', '@ext:okidev.coagent8-mcp']]);
   assert.deepEqual((await runExtension({ command: 'coagent8.manageMcpServers' })).requests, [['workbench.mcp.listServer']]);
+});
+
+test('coagent8.openBugReport explicitly opens the GitHub bug report form URL and never opens automatically', async () => {
+  const result = await runExtension({ command: 'coagent8.openBugReport' });
+  assert.equal(result.openedUrls.length, 1);
+  assert.equal(result.openedUrls[0], 'https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml');
+
+  const remote = await runExtension({ command: 'coagent8.openBugReport', remoteName: 'ssh-remote' });
+  assert.equal(remote.openedUrls.length, 1, 'openBugReport works in remote windows');
+  assert.equal(remote.openedUrls[0], 'https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml');
+  assert.equal(remote.warnings.length, 0, 'openBugReport emits no remote-window warning');
+
+  const activationOnly = await runExtension({ activationOnly: true });
+  assert.equal(activationOnly.openedUrls.length, 0, 'activation never opens external URLs automatically');
+
+  const settings = await runExtension({ command: 'coagent8.openSettings' });
+  assert.equal(settings.openedUrls.length, 0, 'routine commands never open external URLs automatically');
 });
 
 test('every registered command is contributed with a title and every contributed command is registered', () => {
@@ -1201,7 +1227,7 @@ test('the profile mcp.json entry starts the bundled server, follows configuratio
   fs.writeFileSync(path.join(root, 'dist/index.cjs'), 'another bundle');
   assert.notEqual(provider.provideMcpServerDefinitions()[0].version, fallback.version, 'tool metadata follows the build identity');
   context.subscriptions.forEach(subscription => subscription.dispose());
-  assert.equal(disposed, 18);
+  assert.equal(disposed, 19);
 });
 
 test('remote and multi-root windows guide the user without assuming a global coagent8 CLI', async () => {

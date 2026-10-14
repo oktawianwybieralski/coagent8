@@ -54,8 +54,13 @@ Do not append another session transcript or treat old test counts as fresh evide
   is reported as unavailable here (`$(warning) Selected CLI unavailable here`),
   not "Selected CLI not found", while preserving "Selected CLI not found" when the
   vendor extension is installed or a custom path is missing.
-  The next agent work is result group 2.9–2.10 ("Bug-report opening actions",
-  `FEEDBACK-061c2/c3`), which builds on 2.7.
+  Result group 2.9–2.10 ("Bug-report opening actions", `FEEDBACK-061c2/c3`) is completed
+  in PR #55: an explicit VS Code command `coagent8.openBugReport` opens the form URL
+  with `vscode.env.openExternal` and never opens automatically; `coagent8 issue` prints
+  the report to stdout and opens the browser with the form link only when `--open`
+  is passed. The MCP server never opens a browser automatically.
+  The next agent work is the remaining Phase 2 rows, starting with the parallel
+  rows 2.11–2.14 (`FEEDBACK-061e/g/i/h`).
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

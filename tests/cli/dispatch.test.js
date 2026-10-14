@@ -30,6 +30,7 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
   let modelsRan = false;
   let doctorRan = false;
   let sessionRan = false;
+  let issueRan = false;
 
   const deps = {
     serveStdio: async () => {
@@ -45,6 +46,10 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
     },
     runSessionCli: async () => {
       sessionRan = true;
+      return 0;
+    },
+    runIssueCli: async () => {
+      issueRan = true;
       return 0;
     },
     loadSetupCli: async () => {
@@ -63,6 +68,7 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
     get modelsRan() { return modelsRan; },
     get doctorRan() { return doctorRan; },
     get sessionRan() { return sessionRan; },
+    get issueRan() { return issueRan; },
     stdout,
     stderr,
   };
@@ -224,6 +230,15 @@ test('CLI-FIRST-001c/001e: models and doctor subcommands route to their CLI runn
   assert.equal(doctorHarness.modelsRan, false);
   assert.equal(doctorHarness.setupLoaded, false);
   assert.equal(doctorHarness.servedStdio, false);
+
+  const issueHarness = createHarness({ stdinTTY: true, stdoutTTY: true });
+  const issueCode = await runCli(['issue', '--open'], issueHarness.streams, issueHarness.deps);
+  assert.equal(issueCode, 0);
+  assert.equal(issueHarness.issueRan, true);
+  assert.equal(issueHarness.doctorRan, false);
+  assert.equal(issueHarness.modelsRan, false);
+  assert.equal(issueHarness.setupLoaded, false);
+  assert.equal(issueHarness.servedStdio, false);
 });
 
 test('CLI-FIRST-001b1/001c/001e: subprocess execution verifies clean exits and streams', () => {
