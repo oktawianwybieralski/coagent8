@@ -39,8 +39,19 @@ Do not append another session transcript or treat old test counts as fresh evide
   `coagent8_DIR` to use shared user directory `~/.coagent8` and migrate legacy
   profile-directed registrations, while downgrade prevention preserves newer
   runtime registrations and suppresses update/downgrade offers in VS Code.
-  The next agent work is result group 2.6-2.8 (`FEEDBACK-061c1`, `FEEDBACK-061d`,
-  `FEEDBACK-061f`, "Bug-report content and paste flow").
+  Rows 2.26a–d (`AX-002d–i`, "Recency under a price limit") are merged in PR #47:
+  selection ranks models under a price limit by release recency, the doctor models
+  view lists the day the price list added each model, models without a known date
+  sort last, and expiration dates are ignored.
+  Rows 2.6–2.8 (`FEEDBACK-061c1`, `FEEDBACK-061d`, `FEEDBACK-061f`, "Bug-report
+  content and paste flow") are completed in PR #51: `issueUrl` targets
+  `?template=bug_report.yml`; the prompt has the clickable link, the link in a code
+  block and the report once, in a copy block with paste instructions; `structuredContent`
+  adds `prompt` and `pasteRequired`, the issue skill is updated, and reports include
+  a doctor health output reminder line.
+  The next agent work is either row 2.5 (`FEEDBACK-061b3`, selection outside the
+  vendor profile) or result group 2.9–2.10 ("Bug-report opening actions", `FEEDBACK-061c2/c3`),
+  which builds on 2.7.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

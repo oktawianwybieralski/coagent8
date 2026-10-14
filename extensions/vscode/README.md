@@ -94,7 +94,7 @@ only when the snapshot or its completeness changed.
 | `doctor` | Models, efforts, prices and approval per backend; installation, sign-in and quota with `scope: "health"` |
 | `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session; a closed session reports that it is closed on a follow-up or `cancel`, while its history stays readable |
 | `cancel` | Cancel the running turn of a session |
-| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a prefilled GitHub issue link; it never submits anything |
+| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a GitHub bug report form link to paste it into; it never submits anything |
 
 Answers come back as Markdown with the backend, model, duration and session
 handle; passing the handle continues the same conversation. Your chat host

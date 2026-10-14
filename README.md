@@ -247,7 +247,7 @@ supports stdio MCP in Agent mode through the same definition, following
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session |
 | `cancel` | Cancel the running turn of a session |
-| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a prefilled GitHub issue link |
+| `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a GitHub bug report form link to paste it into |
 
 A consultation can be as small as:
 

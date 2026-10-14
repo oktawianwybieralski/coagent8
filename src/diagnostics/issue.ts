@@ -9,9 +9,9 @@
  * - **Credential & Path Masking**: Strips recognized API keys, Bearer/Basic tokens, private keys,
  *   passwords, and the local user's home directory (`~`) using `redactDiagnostic`.
  *   Redaction strictly precedes byte truncation to ensure credential prefixes cannot be exposed.
- * - **Pre-Filled GitHub URL Construction**: Builds URL-encoded issue links targeting the canonical
- *   GitHub repository issues page (`/issues/new?title=...&body=...`), including system architecture,
- *   Node runtime, OS version, and detected CLI versions only (no readiness or quota).
+ * - **Paste Flow**: Links to the repository's bug report form (`/issues/new?template=bug_report.yml`)
+ *   without report data in the URL; the report, with system architecture, Node runtime, OS version
+ *   and detected CLI versions only (no readiness or quota), goes in a copy block to paste.
  *
  * @packageDocumentation
  */
@@ -37,6 +37,9 @@ export interface BugReportResult {
 const REPO_OWNER = BRAND.GITHUB_OWNER;
 const REPO_NAME = BRAND.GITHUB_REPO;
 export const GITHUB_NEW_ISSUE_BASE = `https://github.com/${REPO_OWNER}/${REPO_NAME}/issues/new`;
+export const GITHUB_BUG_REPORT_TEMPLATE_URL = `${GITHUB_NEW_ISSUE_BASE}?template=bug_report.yml`;
+/** Conservative ceiling for the issue link; the link carries no report data, and tests hold it below this. */
+export const MAX_ENCODED_ISSUE_URL_LENGTH = 2048;
 const MAX_RAW_INPUT_LENGTH = 4096;
 
 /**
@@ -111,13 +114,13 @@ export function sanitizeText(text?: string | null): string {
 }
 
 /**
- * Builds a sanitized, pre-filled GitHub bug report URL and markdown preview.
+ * Builds a sanitized bug report, the link to the bug report form and the prompt that shows both.
  *
  * Collects runtime environment parameters (Node.js, OS architecture, detected CLI versions),
- * strips sensitive code blocks and credentials, and encodes parameters into a GitHub new issue URL.
+ * strips sensitive code blocks and credentials, and puts the report in a copy block to paste.
  *
  * @param options - Error message, context, and optional DoctorReport diagnostics.
- * @returns Object containing title, body, pre-filled issue URL, and markdown prompt.
+ * @returns Object containing title, body, the form URL, and markdown prompt.
  */
 export function generateBugReport(options: BugReportOptions): BugReportResult {
   const { errorMessage, context, doctorReport = null } = options;
@@ -156,22 +159,19 @@ ${cleanError}
 - **OS**: ${os.type()} ${os.release()} (${os.arch()})
 ${detectedClis}
 
+For setup, sign-in or quota problems, paste the output of doctor (scope: health).
+
 ---
 *Note: Best-effort automated redaction was applied. Please review the details above before submitting to ensure no sensitive or proprietary data is included.*
 `;
 
-    // Safely encode URL parameters
-    let issueUrl: string;
-    try {
-      // Encode Markdown delimiters too, so client renderers cannot split the URL.
-      const encodeParameter = (value: string) => encodeURIComponent(value)
-        .replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-      const encodedTitle = encodeParameter(title);
-      const encodedBody = encodeParameter(body);
-      issueUrl = `${GITHUB_NEW_ISSUE_BASE}?title=${encodedTitle}&body=${encodedBody}`;
-    } catch (_) {
-      issueUrl = GITHUB_NEW_ISSUE_BASE;
-    }
+    // The link opens the form; the report travels in the copy block, never in the URL.
+    const issueUrl = GITHUB_BUG_REPORT_TEMPLATE_URL;
+
+    // Calculate outer CommonMark code fence to prevent internal ``` from closing the copy block prematurely
+    const backtickMatches = body.match(/`+/g) || [];
+    const maxBackticks = backtickMatches.reduce((max, m) => Math.max(max, m.length), 0);
+    const outerFence = '`'.repeat(Math.max(4, maxBackticks + 1));
 
     return {
       title,
@@ -179,10 +179,11 @@ ${detectedClis}
       issueUrl,
       prompt:
         `Would you like to report this issue to GitHub to help improve ${BRAND.NAME}?\n\n` +
-        `Click the link below to review and submit the pre-filled issue in your browser (GitHub sign-in required to submit):\n\n` +
+        `Click the link below to open the bug report template in your browser (GitHub sign-in required to submit):\n\n` +
         `**[Submit Bug Report on GitHub](<${issueUrl}>)**\n\n` +
-        `Copyable issue URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
-        `Preview Sanitized Report\n\n${body}`,
+        `Link URL:\n\n\`\`\`text\n${issueUrl}\n\`\`\`\n\n` +
+        `Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n` +
+        `${outerFence}text\n${body}\n${outerFence}`,
     };
   } catch (_err) {
     return {

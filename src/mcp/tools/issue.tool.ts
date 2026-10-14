@@ -2,7 +2,7 @@
  * Canonical issue and bug reporting MCP tool.
  *
  * @remarks
- * Provides a privacy-sanitized bug report generator, pre-filled GitHub issue URL,
+ * Provides a privacy-sanitized bug report generator, a GitHub bug report form link,
  * and optional detected CLI version attachment (no readiness or quota) via doctor service.
  *
  * @packageDocumentation
@@ -20,11 +20,13 @@ export interface IssueToolArgs {
 
 export const issueOutputSchema = {
   type: 'object',
-  required: ['title', 'body', 'issueUrl'],
+  required: ['title', 'body', 'issueUrl', 'prompt', 'pasteRequired'],
   properties: {
     title: { type: 'string' },
     body: { type: 'string' },
     issueUrl: { type: 'string' },
+    prompt: { type: 'string' },
+    pasteRequired: { type: 'boolean' },
   },
 };
 
@@ -46,7 +48,7 @@ export const issueToolDefinition = {
  * Handles the canonical issue tool execution.
  *
  * Sanitizes input to strip secrets, passwords, git diffs, and code blocks before
- * assembling a pre-filled GitHub issue URL and preview prompt. When `include_doctor`
+ * assembling the form link and a prompt with the report to paste. When `include_doctor`
  * is enabled (the default), attaches detected CLI versions only (no readiness or quota).
  *
  * @param args - Issue parameters including optional error message, context, and doctor flag.
@@ -74,6 +76,8 @@ export async function handleIssue(args: IssueToolArgs = {}) {
       title: report.title,
       body: report.body,
       issueUrl: report.issueUrl,
+      prompt: report.prompt,
+      pasteRequired: true,
     },
   };
 }

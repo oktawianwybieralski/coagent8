@@ -67,7 +67,7 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.equal(quotaCalls, 0, 'include_doctor must not trigger native quota reads');
   assert.ok(resWithDoc.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(resWithDoc.content[0].text.includes(GITHUB_NEW_ISSUE_BASE));
-  assert.ok(resWithDoc.structuredContent.issueUrl.includes('title='));
+  assert.ok(resWithDoc.structuredContent.issueUrl.includes('?template=bug_report.yml'));
   assert.ok(resWithDoc.structuredContent.body.includes('Spawn failed with ENOENT'));
   assert.ok(resWithDoc.structuredContent.body.includes(
     '- **Detected CLIs**:\n' +
@@ -86,20 +86,20 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.ok(resNoDoc.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(resNoDoc.structuredContent.body.includes('- **Detected CLIs**: Not provided'));
   const renderedLink = resNoDoc.content[0].text.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
-  const prefilled = new URL(renderedLink);
-  assert.equal(prefilled.searchParams.get('title'), resNoDoc.structuredContent.title);
-  assert.equal(prefilled.searchParams.get('body'), resNoDoc.structuredContent.body);
   assert.equal(renderedLink, resNoDoc.structuredContent.issueUrl);
+  assert.ok(renderedLink.includes('?template=bug_report.yml'));
   const context = 'Reproduction and timing evidence. '.repeat(50) + 'CONTEXT_END';
   const diagnostic = 'Failure details. '.repeat(100) + 'DIAGNOSTIC_END';
   const completeReport = await handleIssue({ error_message: diagnostic, context, include_doctor: false });
   assert.ok(completeReport.structuredContent.body.includes(context));
   assert.ok(completeReport.structuredContent.body.includes(diagnostic));
-  assert.equal(new URL(completeReport.structuredContent.issueUrl).searchParams.get('body'), completeReport.structuredContent.body);
+  assert.equal(completeReport.structuredContent.issueUrl, renderedLink);
 
   // Output schema assertion
   assert.ok(issueToolDefinition.outputSchema);
-  assert.deepEqual(issueToolDefinition.outputSchema.required, ['title', 'body', 'issueUrl']);
+  assert.deepEqual(issueToolDefinition.outputSchema.required, ['title', 'body', 'issueUrl', 'prompt', 'pasteRequired']);
+  assert.equal(resNoDoc.structuredContent.prompt, resNoDoc.content[0].text);
+  assert.equal(resNoDoc.structuredContent.pasteRequired, true);
 });
 
 test('server advertises issue tool and dispatches tools/call issue cleanly', async () => {
@@ -131,6 +131,8 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
   assert.equal(callRes.isError, undefined);
   assert.ok(callRes.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(callRes.structuredContent.body.includes('Test crash'));
+  assert.equal(callRes.structuredContent.prompt, callRes.content[0].text);
+  assert.equal(callRes.structuredContent.pasteRequired, true);
 });
 
 test('run gateway dispatches action: "issue" to handleIssue cleanly', async () => {
@@ -145,4 +147,6 @@ test('run gateway dispatches action: "issue" to handleIssue cleanly', async () =
   );
   assert.ok(result.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(result.structuredContent.body.includes('Command exited with 127'));
+  assert.equal(result.structuredContent.prompt, result.content[0].text);
+  assert.equal(result.structuredContent.pasteRequired, true);
 });

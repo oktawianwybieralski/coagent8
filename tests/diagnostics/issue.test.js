@@ -4,9 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 
-const { generateBugReport, sanitizeText, GITHUB_NEW_ISSUE_BASE } = require('../../src/diagnostics/issue.ts');
+const {
+  generateBugReport,
+  sanitizeText,
+  GITHUB_NEW_ISSUE_BASE,
+  GITHUB_BUG_REPORT_TEMPLATE_URL,
+  MAX_ENCODED_ISSUE_URL_LENGTH,
+} = require('../../src/diagnostics/issue.ts');
 
-test('issue link preserves the owner-reported diagnostic through one URL decode', () => {
+test('issue link points to bug_report.yml template and provides copyable report block', () => {
   const errorMessage = 'No file-reading tools or filesystem resources are available, so I could not verify the surrounding syncPage code or authorization call site to confirm rejection precedes every side effect; shell commands were prohibited.';
   const context = 'Review of card RC26-01-06a3 with backend codex and model gpt-6.1-sol returned BLOCKED with PARTIAL coverage because no file-reading tools or filesystem resources were available to read workspace files outside the diff.';
   const report = generateBugReport({ errorMessage, context, doctorReport: { backends: {
@@ -15,15 +21,20 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
     claude: { name: 'Claude Code CLI', installed: true, version: '2.1.296 (Claude Code)' },
   } } });
   const link = report.prompt.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
-  const copiedLink = report.prompt.match(/Copyable issue URL:\n\n```text\n([^\n]+)\n```/)[1];
+  const copiedLink = report.prompt.match(/Link URL:\n\n```text\n([^\n]+)\n```/)[1];
   assert.equal(link, report.issueUrl);
   assert.equal(copiedLink, link);
+  assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
+  assert.ok(report.issueUrl.includes('?template=bug_report.yml'));
+  assert.ok(!report.issueUrl.includes('title='));
+  assert.ok(!report.issueUrl.includes('body='));
   assert.ok(!/[\\()\s]/.test(link), 'URL must not contain Markdown escapes or delimiters');
-  const url = new URL(link);
-  assert.deepEqual([...url.searchParams.keys()], ['title', 'body']);
-  assert.equal(url.searchParams.get('title'), report.title);
-  assert.equal(url.searchParams.get('body'), report.body);
-  assert.ok(!/[!'()*]/.test(url.search));
+
+  // Verify CommonMark rendering: outer code fence must be at least 4 backticks (longer than body's ```)
+  const copyBlockMatch = report.prompt.match(/Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1$/);
+  assert.ok(copyBlockMatch, 'prompt must contain separate copy block enclosed in safe outer code fence');
+  assert.equal(copyBlockMatch[2], report.body, 'copy block content must strictly match the complete report body including nested code blocks and environment details');
+
   assert.ok(report.body.includes(context));
   assert.ok(report.body.includes(errorMessage));
   assert.ok(report.body.includes(
@@ -34,12 +45,14 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
   ));
   assert.ok(!report.body.includes('vcodex-cli'));
   assert.ok(!report.body.includes('v1.3.2'));
-  assert.ok(!report.body.includes('v2.1.296'));
+  assert.ok(report.body.includes(
+    'For setup, sign-in or quota problems, paste the output of doctor (scope: health).'
+  ));
   assert.ok(!/[\r\n]/.test(report.title));
   assert.ok(!report.title.includes('[truncated]'));
   assert.ok(Array.from(report.title).length <= 120);
   assert.ok(!report.prompt.includes('<details>'));
-  assert.ok(report.prompt.endsWith(`Preview Sanitized Report\n\n${report.body}`));
+  assert.equal(report.prompt.split(report.body).length, 2, 'the report appears once, in the copy block');
 
   const emptyBackendsReport = generateBugReport({ errorMessage: 'Error', doctorReport: { backends: {} } });
   assert.ok(emptyBackendsReport.body.includes('- **Detected CLIs**: Not provided'));
@@ -63,22 +76,19 @@ test('issue link preserves the owner-reported diagnostic through one URL decode'
   assert.ok(!unknownVersionReport.body.includes('vunknown'));
 });
 
-test('issue URL preserves punctuation, Unicode and literal URL-like text without extra parameters', () => {
+test('the issue URL carries no report data and stays below the length ceiling', () => {
   const errorMessage = "Failure (worker's task)! *retry* & body=injected #fragment %23 + / \\ \"quoted\" \u{1f680} \u0142";
   const context = 'Keep literal %26 and &#x20; and ?title=other&body=other in diagnostics.';
   const report = generateBugReport({ errorMessage, context });
-  const url = new URL(report.issueUrl);
-  assert.equal(url.hash, '');
-  assert.equal(url.searchParams.get('title'), report.title);
-  assert.equal(url.searchParams.get('body'), report.body);
+  assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
+  assert.ok(Buffer.byteLength(report.issueUrl) <= MAX_ENCODED_ISSUE_URL_LENGTH);
   assert.ok(report.body.includes(errorMessage));
   assert.ok(report.body.includes(context));
-  assert.deepEqual([...url.searchParams.keys()], ['title', 'body']);
+
   for (const error of ['Short error', 'x'.repeat(110), 'x'.repeat(111), 'x'.repeat(200), 'x'.repeat(109) + '\u{1f680}'.repeat(4), 'First\rSecond', 'First\u2028Second', 'First\u2029Second', 'First\nSecond', '  First\t  Second  ']) {
     const generated = generateBugReport({ errorMessage: error });
     assert.ok(Array.from(generated.title).length <= 120);
     assert.ok(!/[\r\n\u2028\u2029]/.test(generated.title));
-    assert.equal(new URL(generated.issueUrl).searchParams.get('title'), generated.title);
   }
   assert.equal(generateBugReport({ errorMessage: 'x'.repeat(111) }).title, `[Bug]: ${'x'.repeat(110)}...`);
   assert.equal(generateBugReport({ errorMessage: 'x'.repeat(110) }).title, `[Bug]: ${'x'.repeat(110)}`);
@@ -89,17 +99,15 @@ test('issue URL preserves punctuation, Unicode and literal URL-like text without
   assert.ok(completeReport.body.includes(longContext));
   assert.ok(completeReport.body.includes(longDiagnostic));
   assert.ok(!completeReport.body.includes('[truncated]'));
-  assert.equal(new URL(completeReport.issueUrl).searchParams.get('body'), completeReport.body);
   const boundedInput = '\u{1f680}'.repeat(1500);
   const sanitizedInput = sanitizeText(boundedInput);
   assert.ok(Buffer.byteLength(sanitizedInput) <= 4096);
   assert.ok(sanitizedInput.endsWith('...[truncated]'));
   const boundedReport = generateBugReport({ errorMessage: boundedInput, context: boundedInput });
   assert.ok(boundedReport.body.includes(sanitizedInput));
-  assert.equal(new URL(boundedReport.issueUrl).searchParams.get('body'), boundedReport.body);
 });
 
-test('issue reporting generates sanitized GitHub pre-filled issue URL and redacts secrets', async () => {
+test('issue reporting generates sanitized GitHub issue template URL and redacts secrets', async () => {
   const secretText = `Error at ${os.homedir()}/projects/secret: connection failed with API key sk-proj12345678901234567890, AWS key AKIAIOSFODNN7EXAMPLE, Slack ${['xo', 'xb-'].join('')}1234567890-abcdefgh, and api_key="secretPassword123" and https://api.com?token=superSecretToken. Also Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.`;
   const sanitized = sanitizeText(secretText);
 
@@ -142,11 +150,10 @@ test('issue reporting generates sanitized GitHub pre-filled issue URL and redact
     },
   });
 
-  assert.ok(report.issueUrl.startsWith(GITHUB_NEW_ISSUE_BASE));
-  assert.ok(report.issueUrl.includes('title='));
-  assert.ok(report.issueUrl.includes('body='));
+  assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
   assert.ok(report.prompt.includes('Would you like to report this issue to GitHub'));
-  assert.ok(report.prompt.includes(GITHUB_NEW_ISSUE_BASE));
+  assert.ok(report.prompt.includes(GITHUB_BUG_REPORT_TEMPLATE_URL));
+  assert.ok(report.prompt.includes('CoAgent8 issue output'));
 });
 
 test('diagnostic and issue truncation cannot expose recognized credential prefixes', () => {
