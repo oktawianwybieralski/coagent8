@@ -63,6 +63,9 @@ operation. Historical plans and RFCs do not override this direction.
    - Strict Author/Reviewer separation: roles are independent of model/provider;
      the implementation author cannot supply their own independent approval.
    - Independent verification via `review` in read-only sandbox before merging.
+   - The review request carries the requirements: card acceptance text, dated
+     decisions and the proposed PR title and body, with the checks listed in
+     [review input](./.agents/rules/03-author-reviewer.md#review-input).
    - Release approval strictly binds to Base SHA, Candidate SHA, Tree SHA, and Artifact SHA-256.
    - Zero P1 (critical) or P2 (robustness) issues allowed. State Envelope must
      evaluate to `VERDICT: READY` with independently verified scope/checks; the

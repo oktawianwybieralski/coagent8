@@ -29,6 +29,32 @@ tests merely to populate an envelope. Independent review requirements before
 merge remain applicable; record unexecuted checks honestly. The repository's
 release review format is separate from the implemented plain consult response.
 
+### Review input
+
+A reviewer checks what it is given. The Author's `instructions` carry the
+requirements, not an implementation summary or a list of touched files:
+
+* the acceptance text of every roadmap card and queue row the change closes,
+  and the dated [ARCHITECTURE](../../docs/ARCHITECTURE.md) decisions it
+  implements, quoted or linked by heading;
+* the proposed PR title and description, which the reviewer cannot read from Git.
+
+The Author asks the reviewer to check, beyond correctness:
+
+1. each acceptance criterion and decision against the code, including the
+   wording users and calling agents see;
+2. every claim in changed documentation (HANDOFF, ROADMAP, README, skills,
+   TSDoc) against the code and merged history;
+3. code that cannot run or has no effect, such as a check whose condition is
+   constant;
+4. the title and description against
+   [rule 02 section 3](02-git-workflow.md#3-pull-requests).
+
+A review whose instructions name only areas or files is narrowed; the Author
+owns what it misses.
+
+### Merge audit
+
 Before merging significant architectural changes, refactors, or creating Release Candidates:
 1. Invoke `review` against the complete relevant diff in read-only sandbox mode.
    A plain `consult` is advisory and does not request or enforce an envelope.
