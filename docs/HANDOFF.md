@@ -59,8 +59,11 @@ Do not append another session transcript or treat old test counts as fresh evide
   with `vscode.env.openExternal` and never opens automatically; `coagent8 issue` prints
   the report to stdout and opens the browser with the form link only when `--open`
   is passed. The MCP server never opens a browser automatically.
-  The next agent work is the remaining Phase 2 rows, starting with the parallel
-  rows 2.11–2.14 (`FEEDBACK-061e/g/i/h`).
+  Row 2.11 (`FEEDBACK-061e`, "server-owned review turn number") is completed in PR #56:
+  the returned review envelope carries the server's turn number, ignoring the
+  model's `REVIEW: n` value while preserving all other envelope fields.
+  The next agent work is the remaining Phase 2 rows, continuing with the parallel
+  rows 2.12–2.14 (`FEEDBACK-061g/i/h`).
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

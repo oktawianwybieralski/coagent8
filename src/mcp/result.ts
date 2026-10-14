@@ -16,7 +16,7 @@ import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult } from
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
-import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
+import { evaluateStateEnvelopeGate, alignEnvelopeReviewTurn, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
 import type { ResolvedWorkspace } from '../workspace/workspace.js';
 import { providerForClient } from '../execution/routing.js';
 
@@ -159,7 +159,10 @@ export function formatExecutionResult(
     verdict = 'NOT_APPLICABLE';
   }
 
-  const output = redactCredentialFormats(cleaned);
+  let output = redactCredentialFormats(cleaned);
+  if (verdict !== 'NOT_APPLICABLE' && executionMeta.turn > 0) {
+    output = alignEnvelopeReviewTurn(output, executionMeta.turn);
+  }
   const parts: string[] = [];
   if (error) {
     parts.push(`Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);

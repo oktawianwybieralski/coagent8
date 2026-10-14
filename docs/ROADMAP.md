@@ -1262,7 +1262,7 @@ behavior or a test-procedure lesson.
   `content[0].text`) and `pasteRequired`; update the output schema in
   `src/mcp/tools/issue.tool.ts` and the issue skill to show `prompt` and the
   copy block. Check: R, native Claude Code.
-- [ ] **FEEDBACK-061e - review envelope counter.** A turn-2 review returned
+- [x] **FEEDBACK-061e - review envelope counter.** A turn-2 review returned
   `REVIEW: 1` with a `turn 2` footer; the counter is written by the model.
   Owner decision 2026-10-13: the server sets the turn number in the returned
   envelope and ignores the model's value. Check: R.
@@ -1802,7 +1802,7 @@ agent (owner assigns).
 | 2.8 | [x] `FEEDBACK-061f` doctor reminder | R | 2.6 | One reminder line in the report; test. |
 | 2.9 | [x] `FEEDBACK-061c2` VS Code "Open bug report" (#55) | R | 2.7 | An explicit extension action opens the URL with `vscode.env.openExternal`; never automatic; test. |
 | 2.10 | [x] `FEEDBACK-061c3` `coagent8 issue --open` (#55) | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
-| 2.11 | `FEEDBACK-061e` server-owned turn number | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
+| 2.11 | [x] `FEEDBACK-061e` server-owned turn number (#56) | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
 | 2.12 | `FEEDBACK-061g` large Codex prompts | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |

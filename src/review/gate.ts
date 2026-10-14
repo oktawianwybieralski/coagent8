@@ -182,3 +182,20 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
   return { verdict: 'NOT_APPLICABLE' };
 }
 
+/**
+ * Replaces the model's `REVIEW: <turn>` counter in an envelope with the server's turn number.
+ *
+ * @remarks
+ * A reviewer model may guess or repeat a stale turn number (e.g. `REVIEW: 1` during turn 2).
+ * The server owns the conversation turn count (`FEEDBACK-061e`), so the returned envelope
+ * reflects the server's turn counter while keeping the rest of the envelope intact.
+ *
+ * @param output - Output containing a review envelope.
+ * @param turn - Server turn number.
+ * @returns Output with `REVIEW: <turn>` updated to the server's turn number.
+ */
+export function alignEnvelopeReviewTurn(output: string, turn: number): string {
+  if (turn <= 0 || !Number.isFinite(turn)) return output;
+  return output.replace(/^([^\S\r\n]*REVIEW:)[^\S\r\n]+\S.*$/im, `$1 ${Math.floor(turn)}`);
+}
+
