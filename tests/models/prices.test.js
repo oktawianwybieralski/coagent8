@@ -819,3 +819,22 @@ test('stored prices carry released date and round-trip through store, and versio
   const roundTripped = readStoredPrices();
   assert.deepEqual(roundTripped, newPrices);
 });
+
+test('stored prices reject invalid calendar dates or dates outside 2000..2100', () => {
+  const storeFile = path.join(tempDir, 'models.json');
+  const invalidDates = ['9999-99-99', '1999-12-31', '2101-01-01', '2026-02-30', '2026-13-01', '2026-00-10', '2026-04-31'];
+  for (const badDate of invalidDates) {
+    fs.writeFileSync(storeFile, JSON.stringify({
+      schemaVersion: 3,
+      backends: {},
+      prices: {
+        fetchedAt: now,
+        source: 'openrouter',
+        models: {
+          'bad-date-model': { output: 1, input: null, cachedInput: null, matched: 'openai/bad', exact: true, released: badDate },
+        },
+      },
+    }));
+    assert.equal(readStoredPrices(), undefined, `stored prices with date ${badDate} must be rejected as invalid`);
+  }
+});

@@ -123,13 +123,21 @@ function parseEntry(value: unknown): ObservedModels | null {
 
 const isPrice = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+function isValidReleaseDate(raw: unknown): raw is string {
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const [year, month, day] = raw.split('-').map(Number);
+  if (year < 2000 || year > 2100) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function parsePriceRecord(value: unknown): PriceRecord | null | undefined {
   if (value === null) return null;
   const price = record(value);
   if (!price || !isPrice(price.output) || !(price.input === null || isPrice(price.input)) || !(price.cachedInput === null || isPrice(price.cachedInput))
     || typeof price.matched !== 'string' || price.matched.length > 128 || typeof price.exact !== 'boolean') return undefined;
   const released = price.released;
-  if (released !== undefined && released !== null && (typeof released !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(released))) return undefined;
+  if (released !== undefined && released !== null && !isValidReleaseDate(released)) return undefined;
   return { output: price.output, input: price.input, cachedInput: price.cachedInput, matched: price.matched, exact: price.exact, released: released ?? null };
 }
 
