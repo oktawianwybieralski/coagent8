@@ -9,7 +9,7 @@ process.env.OMNIAGENT_DIR = path.join(directory,'legacy');
 process.env.CODEX_PATH = path.resolve(__dirname, '../../fixtures/codex-cli/codex.cjs');
 process.env.CODEX_FIXTURE_CAPTURE = path.join(directory,'capture.json');
 process.env.CODEX_CONFIG_PATH = path.join(directory,'config.toml');
-const {execute, probe, readCodexConfig, normalizeReasoningEffort, codexAdapter} = require('../../../src/backends/codex/adapter.ts');
+const {execute, probe, readCodexConfig, normalizeReasoningEffort, codexAdapter, CODEX_MAX_PROMPT_BYTES, CODEX_MAX_LINE_BYTES, CODEX_MAX_SERIALIZED_PROMPT_BYTES} = require('../../../src/backends/codex/adapter.ts');
 const {executeTask} = require('../../../src/execution/controller.ts');
 const {sessionHistory} = require('../../../src/sessions/history/index.ts');
 const {getSession} = require('../../../src/sessions/session.ts');
@@ -79,6 +79,51 @@ test('Codex tool output beyond the runner stdout copy does not mark a complete a
     assert.equal(result.truncated,false);
     assert.ok(result.output.includes('const answer = 42;'));
   } finally { delete process.env.CODEX_FIXTURE_MODE; }
+});
+
+test('Codex executes turns with prompts above 512 KB without BUFFER_LIMIT when the app-server echoes the prompt (FEEDBACK-061g)', async () => {
+  const largePrompt = 'a'.repeat(600 * 1024);
+  const result = await execute(largePrompt, options);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.isError, false);
+  assert.equal(result.error, undefined);
+  assert.equal(result.truncated, false);
+  assert.ok(result.output.includes('const answer = 42;'));
+});
+
+test('Codex executes turns with escaped newline prompts expanding beyond 512 KB and 8 MiB without BUFFER_LIMIT (FEEDBACK-061g)', async () => {
+  // 600 KiB of newlines expands 2x in JSON to >1.2 MiB line
+  const newlinePrompt = '\n'.repeat(600 * 1024);
+  const result1 = await execute(newlinePrompt, options);
+  assert.equal(result1.status, 'completed');
+  assert.equal(result1.isError, false);
+  assert.equal(result1.truncated, false);
+
+  // 4 MiB of newlines expands to >8 MiB line, accommodated within the 16 MiB ceiling
+  const fullNewlinePrompt = '\n'.repeat(CODEX_MAX_PROMPT_BYTES);
+  const result2 = await execute(fullNewlinePrompt, options);
+  assert.equal(result2.status, 'completed');
+  assert.equal(result2.isError, false);
+  assert.equal(result2.truncated, false);
+});
+
+test('Codex rejects prompts exceeding CODEX_MAX_PROMPT_BYTES with INPUT_LIMIT', async () => {
+  const oversizedPrompt = 'a'.repeat(CODEX_MAX_PROMPT_BYTES + 1);
+  const result = await execute(oversizedPrompt, options);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.isError, true);
+  assert.equal(result.error.code, 'INPUT_LIMIT');
+  assert.match(result.error.message, /Prompt exceeds the UTF-8 byte limit/);
+});
+
+test('Codex rejects prompts whose serialized JSON expands beyond CODEX_MAX_SERIALIZED_PROMPT_BYTES with INPUT_LIMIT', async () => {
+  // 3 MiB of \u0001 is within raw 4 MiB, but expands 6x in JSON to ~18 MiB (>15.93 MiB limit)
+  const expandingPrompt = '\u0001'.repeat(3 * 1024 * 1024);
+  const result = await execute(expandingPrompt, options);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.isError, true);
+  assert.equal(result.error.code, 'INPUT_LIMIT');
+  assert.match(result.error.message, /Serialized prompt exceeds the line record limit/);
 });
 
 test('Codex declines server requests, ignores sub-agent threads, sums turn usage and reports retries as warnings',async () => {
