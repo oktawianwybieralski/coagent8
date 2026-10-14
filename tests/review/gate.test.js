@@ -237,3 +237,34 @@ test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCK
   assert.equal(verdict, 'READY');
   assert.equal(reason, null);
 });
+
+test('FEEDBACK-061e: returned envelope carries server turn number, ignoring model-written value', async () => {
+  const { formatExecutionResult } = require('../../src/mcp/result.ts');
+  const reviewOutput = [
+    'REVIEW: 1',
+    'SNAPSHOT: sha1234567890',
+    'COVERAGE: COMPLETE',
+    'VERDICT: READY',
+    'CHECKS: typecheck=PASS; tests=PASS',
+    'END_REVIEW',
+  ].join('\n');
+
+  // Turn 2 execution where model returned REVIEW: 1
+  const formatted = await formatExecutionResult('codex', {
+    status: 'completed',
+    isError: false,
+    output: reviewOutput,
+    truncated: false,
+    continuationAvailable: false,
+  }, '', 'syn_sess_test', { turn: 2, toolCount: 0, durationMs: 10, historyAvailable: false }, { requireEnvelope: true });
+
+  const { answer } = readResult(formatted);
+  assert.match(answer, /^REVIEW: 2\r?\n/, 'envelope must carry server turn number 2');
+  assert.doesNotMatch(answer, /^REVIEW: 1\r?\n/, 'model-written turn 1 must be replaced');
+
+  // Also verify alignEnvelopeReviewTurn directly with case-insensitivity and whitespace
+  const { alignEnvelopeReviewTurn } = require('../../src/review/gate.ts');
+  assert.equal(alignEnvelopeReviewTurn('review: 999\nSNAPSHOT: x', 3), 'review: 3\nSNAPSHOT: x');
+  assert.equal(alignEnvelopeReviewTurn('  REVIEW:  old-counter  \nSNAPSHOT: x', 4), '  REVIEW: 4\nSNAPSHOT: x');
+  assert.equal(alignEnvelopeReviewTurn('plain output without envelope', 2), 'plain output without envelope');
+});
