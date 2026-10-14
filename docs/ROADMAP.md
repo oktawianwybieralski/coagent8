@@ -155,7 +155,8 @@ natively (no product code), so the contract in Phase 2 rests on evidence.
 **Phase 2 - stability, feedback and containment.**
 [`FEEDBACK-061a-k`](#feedback-061-findings-of-the-061-native-acceptance)
 (runtime version in `doctor`, shared registrations, issue links, Codex buffer
-limit, retry of unsuccessful reviews, Codex read denials), `AX-002d-i` (recency under a price limit; retiring models ignored),
+limit, retry of unsuccessful reviews, Codex read denials; `061j` and `061k`
+block the 0.7.0 release, owner decision 2026-10-15), `AX-002d-i` (recency under a price limit; retiring models ignored),
 `AX-007d` and the remaining `AX-001` to `AX-006` cards,
 [`AUDIT-001-A08` to `A21`](#audit-001-corrected-analysis-follow-up),
 `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e`,
@@ -188,7 +189,8 @@ write/check/review/fix profiles, role configuration and multi-file skills;
 per rule 02 with native acceptance that includes the `PATCH-061` tasks that
 did not run for `0.6.1` (N1, N4, N6, N7, the Claude backend in N2, the rest of
 N3, consent in N5), `EXEC-001-T12c/d`, the acceptance procedure from
-`FEEDBACK-061h`, and the Socket and license checks (`SUPPLY-001f`,
+`FEEDBACK-061h`, the fixed `FEEDBACK-061j` and `061k` with native check
+2.12d (release blockers), and the Socket and license checks (`SUPPLY-001f`,
 `LIC-001d`). `RELEASE-001a` (dry-run of the publish commands) is independent
 and may land earlier without changing this order.
 
@@ -1289,7 +1291,8 @@ behavior or a test-procedure lesson.
   case for a resumed turn without a conversation id, which now keeps the
   requested id instead of failing as `SESSION_INVALID`. Check: R.
 
-- [ ] **FEEDBACK-061j - retry unsuccessful reviews (#48).** A completed
+- [ ] **FEEDBACK-061j - retry unsuccessful reviews (#48).** Blocks the
+  0.7.0 release (owner decision 2026-10-15). A completed
   Codex review turn reported `COVERAGE: PARTIAL` and `BLOCKED` because the
   reviewer's file reads were denied; unchanged retries, with or without
   `session_handle`, returned that verdict without a model turn until an
@@ -1308,7 +1311,9 @@ behavior or a test-procedure lesson.
   guidance in the refusal text and the review skill. No public retry parameter;
   adding one needs an owner schema decision. Check: R, REVIEW, SESSION, native
   Codex.
-- [ ] **FEEDBACK-061k - Codex workspace read denials (#49).** On Windows
+- [ ] **FEEDBACK-061k - Codex workspace read denials (#49).** Blocks the
+  0.7.0 release (owner decision 2026-10-15): it must be fixed, not accepted
+  as a limitation. On Windows
   (codex-cli 0.162.0-alpha.17.2), the Codex reviewer was denied every tracked
   file under `docs/` and later Git commands, while other paths stayed
   readable and `doctor` reported ready; coverage stayed PARTIAL in every
@@ -1323,8 +1328,9 @@ behavior or a test-procedure lesson.
   `codex exec --sandbox read-only`, with inherited and isolated Codex
   configuration, on Windows and POSIX; HANDOFF records CLI versions, effective
   policy, actual denial events and attribution, without secret contents.
-  `FEEDBACK-061k2` fixes a CoAgent8 defect if one is found, otherwise records
-  upstream evidence and a verified remedy or an owner-accepted limitation;
+  `FEEDBACK-061k2` fixes a CoAgent8 defect if one is found; for an upstream
+  cause it records the evidence and applies a verified remedy in CoAgent8 or
+  its Codex launch configuration, and reports the upstream issue;
   the review result reports denied paths and operations observed in tool
   events, separate from the reviewer's claims, and denied required scope
   keeps the review PARTIAL. `doctor` health keeps "ready" as backend readiness
@@ -1851,8 +1857,8 @@ agent (owner assigns).
 | 2.12 | [x] `FEEDBACK-061g` large Codex prompts (#57) | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
 | 2.12a | `FEEDBACK-061j` retry unsuccessful reviews (#48) | R | - par | Only complete-coverage reviews with complete input deduplicate, including lookup of older records; PARTIAL and failed reviews rerun with or without a handle; complete READY and BLOCKED still deduplicate; guidance updated; tests. |
 | 2.12b | `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
-| 2.12c | `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix, or a verified remedy or owner-accepted limitation; observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
-| 2.12d | `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable or the limitation is reported, denied required scope blocks READY, and an unchanged failed review can be retried. |
+| 2.12c | `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (no accepted limitation: release blocker); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
+| 2.12d | `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
