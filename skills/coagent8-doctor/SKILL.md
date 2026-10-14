@@ -13,9 +13,11 @@ description: Show which models, reasoning efforts and output prices each CoAgent
    same report as JSON.
 2. For problems call `doctor` with `scope: health`. It checks installation,
    sign-in and quota and takes longer than the models view.
-3. To apply a user's price limit, pass `output_price_below` to consult or
-   review and leave `model` unset; the server picks a model whose verified price
-   is below the limit. Do not pick a model from the list to work around it.
+3. To apply a user's price limit or range (e.g. "X-Y" means `output_price_below: Y`),
+   pass `output_price_below` to consult or review and leave `model` unset; the
+   server, not the agent, picks the model (the qualifying default or the most
+   recently released qualifying model). Do not pick a model from the list to
+   work around it.
 4. A model tagged `ask` runs only after the user approves it in the form the
    server shows; tell the user its price and that the form will follow before
    you call it. You cannot approve it. A model tagged `deny` never runs: the user

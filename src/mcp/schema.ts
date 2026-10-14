@@ -24,7 +24,7 @@ import { REASONING_EFFORTS } from '../contracts/models.js';
 export { REASONING_EFFORTS };
 
 export const WORKSPACE_PARAMETER = {
-  workspace_path: { type: 'string', description: 'Repository path; omit for client workspace (fallback in footer).' },
+  workspace_path: { type: 'string', description: 'Repository path; omit for client workspace (footer fallback).' },
 };
 
 export const EXECUTION_PARAMETERS = {
@@ -35,13 +35,13 @@ export const EXECUTION_PARAMETERS = {
   reasoning_effort: { type: 'string', enum: [...REASONING_EFFORTS],
     description: 'Omit for the default; doctor lists per-model values. Required where listed, or as a model name suffix.' },
   output_price_below: { type: 'number', minimum: 0,
-    description: 'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; auto picks a model.' },
+    description: 'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; server picks default or newest.' },
   session_handle: { type: 'string', minLength: 1, description: 'Same-topic follow-up: footer handle; else a fresh agent rereads all.' },
   timeout_ms: {
     type: 'integer',
     minimum: 100,
     maximum: 1800000,
-    description: 'Total monotonic call budget, ms: Git, prep, consent, CLI turn, teardown.',
+    description: 'Monotonic call budget, ms: Git, prep, consent, CLI turn, teardown.',
   },
   ...WORKSPACE_PARAMETER,
 };
