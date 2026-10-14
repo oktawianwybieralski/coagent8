@@ -25,7 +25,7 @@ import { readBoundedFileSync } from '../storage/read.js';
 import { withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { object } from './rpc.js';
-import { EXTENSION_STORAGE_NAME, hash, json, read, writeChecked } from './setup-storage.js';
+import { EXTENSION_STORAGE_NAME, hash, json, newerVersion, read, writeChecked } from './setup-storage.js';
 
 /** The entry's name, which VS Code shows in its MCP server lists. */
 export const VSCODE_SERVER_NAME = 'CoAgent8';
@@ -80,15 +80,6 @@ function writeRecord(home: string, before: string | null, record: RegistrationRe
   const text = JSON.stringify(record, null, 2) + '\n';
   writeChecked(file, before, text);
   return text;
-}
-/** Whether extension version `a` is newer than `b` (numeric `X.Y.Z`, no pre-release suffix). */
-function newerVersion(a: string | undefined, b: string): boolean {
-  if (a === undefined) return false;
-  const [x, y] = [a, b].map(value => value.split('.').map(Number));
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
-  }
-  return false;
 }
 /**
  * The window that recorded the entry with `digest`: the written entry, or the pending one of an

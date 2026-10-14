@@ -908,6 +908,26 @@ Owned registrations migrate automatically to the explicit `mcp` shape:
    - If candidate checks fail or concurrent modification occurs, rollback
      restores only the unchanged previous entry, preserving external edits and
      retaining backups if restoration conflicts.
+5. **Shared registration environment policy across VS Code instances**:
+   - Standalone CLI client registrations (`~/.claude.json`, `~/.codex/config.toml`,
+     and `~/.gemini/config/mcp_config.json`) omit `coagent8_DIR` from environment
+     settings, ensuring standalone CLI chats default to shared user storage
+     `~/.coagent8` rather than instance- or profile-isolated directories.
+   - Only VS Code profile `mcp.json` registrations set `coagent8_DIR: storage`
+     pointing to the profile extension's global storage. When VS Code setups run
+     for external CLI chats, `coagent8_DIR` is omitted from `env`, migrating
+     legacy profile-directed CLI registrations.
+6. **Downgrade prevention across CLI registrations**:
+   - Runtime bundles co-locate version metadata (`version.json` adjacent to
+     `index.cjs` or extracted `SERVER_VERSION` string).
+   - `readRegistrations` inspects registered runtimes and compares candidate versus
+     registered versions using `newerVersion`. If a registration points to a
+     runtime strictly newer than the candidate version, it is flagged as
+     `isNewer: true` and is not marked `outdated: true`.
+   - Setup (`setupClients`) preserves `isNewer` registrations, skipping overwrites.
+   - The VS Code extension update notifications, status items, and "Update
+     CoAgent8 in All CLI Chats" commands never propose or perform a downgrade
+     on a client registered to a newer runtime.
 
 #### Manual entries and user guidance
 

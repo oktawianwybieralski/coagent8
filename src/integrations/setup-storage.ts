@@ -178,6 +178,42 @@ function extensionStorage(directory: string | undefined): boolean {
     && path.basename(path.dirname(directory)).toLowerCase() === 'globalstorage';
 }
 
+/** Whether semantic version `a` is strictly newer than `b` (numeric `X.Y.Z`, ignoring pre-release suffixes). */
+export function newerVersion(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return false;
+  const parseParts = (v: string) => v.replace(/-.*$/, '').split('.').map(Number);
+  const [x, y] = [parseParts(a), parseParts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  }
+  return false;
+}
+
+/**
+ * Reads or extracts the version of a CoAgent8 runtime bundle.
+ * Checks for a sibling `version.json` file first; otherwise scans for `SERVER_VERSION` in the bundle.
+ */
+export function extractRuntimeVersion(runtimePath: string): string | null {
+  try {
+    const dir = path.dirname(runtimePath);
+    const versionFile = path.join(dir, 'version.json');
+    if (fs.existsSync(versionFile)) {
+      const parsed = JSON.parse(readBoundedFileSync(versionFile, 64 * 1024));
+      if (typeof parsed?.version === 'string' && parsed.version.length > 0) return parsed.version;
+    }
+  } catch {
+    // Fall back to bundle content inspection
+  }
+  try {
+    const content = readBoundedFileSync(runtimePath, 4 * 1024 * 1024);
+    const match = /SERVER_VERSION:\s*[`'"]([^`'"]+)[`'"]/.exec(content);
+    if (match?.[1]) return match[1];
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 /** Whether a command resolves to Node (`process.execPath` or a candidate `nodePath`). */
 function isNodeCommand(command: string, nodePath?: string): boolean {
   if (typeof command !== 'string' || !command) return false;

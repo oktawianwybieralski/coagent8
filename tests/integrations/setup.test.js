@@ -176,6 +176,84 @@ test('extension registrations carry its data directory and leave tagged backups 
   const leftovers = backups.flatMap(name => fs.readdirSync(path.join(options.home, '.coagent8/setup-backups', name)));
   assert.deepEqual(leftovers.sort(), ['agy.config', 'claude.config', 'codex.config'], 'no codex-staging directory remains');
 });
+test('two profiles writing different coagent8_DIR values reproduce shared registration conflict (FEEDBACK-061b1)', async t => {
+  const options = profile(t);
+  const profile1Storage = path.join(options.home, 'profile1', 'globalStorage', 'okidev.coagent8-mcp');
+  const profile2Storage = path.join(options.home, 'profile2', 'globalStorage', 'okidev.coagent8-mcp');
+
+  // Profile 1 registers with profile1Storage
+  const res1 = await setupClients({ ...options, origin: 'vscode-extension', dataDirectory: profile1Storage });
+  assert.ok(res1.every(r => r.action === 'installed'));
+  const codex = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  const claude = parse(fs.readFileSync(path.join(options.home, '.claude.json'), 'utf8')).mcpServers.coagent8;
+  assert.equal(codex.env.coagent8_DIR, profile1Storage);
+  assert.equal(claude.env.coagent8_DIR, profile1Storage);
+
+  // Profile 2 checks registrations with its own profile2Storage and finds them NOT current
+  const p2Status = readRegistrations({ ...options, dataDirectory: profile2Storage });
+  assert.deepEqual(p2Status.map(s => s.current), [false, false, false], 'profile 2 sees profile 1 registrations as not current');
+
+  // Profile 2 updates with profile2Storage, overwriting coagent8_DIR
+  const res2 = await setupClients({ ...options, origin: 'vscode-extension', dataDirectory: profile2Storage });
+  assert.ok(res2.every(r => r.action === 'updated'));
+  const codex2 = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  assert.equal(codex2.env.coagent8_DIR, profile2Storage, 'profile 2 overwrote coagent8_DIR');
+
+  // Now Profile 1 checks registrations and finds them NOT current
+  const p1Status = readRegistrations({ ...options, dataDirectory: profile1Storage });
+  assert.deepEqual(p1Status.map(s => s.current), [false, false, false], 'profile 1 now sees registrations as not current');
+
+  // When profile2 is deleted, external CLI registrations point to a non-existent path
+  fs.rmSync(profile2Storage, { recursive: true, force: true });
+  assert.equal(fs.existsSync(profile2Storage), false);
+  assert.equal(fs.existsSync(codex2.env.coagent8_DIR), false, 'registrations pointed to temporary/deleted profile storage');
+});
+test('shared registration policy omits coagent8_DIR for CLI chats and migrates legacy profile storage (FEEDBACK-061b2)', async t => {
+  const options = profile(t);
+  const profileStorage = path.join(options.home, 'profile1', 'globalStorage', 'okidev.coagent8-mcp');
+
+  // Legacy registration with profile storage
+  await setupClients({ ...options, origin: 'vscode-extension', dataDirectory: profileStorage });
+  const legacyCodex = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  assert.equal(legacyCodex.env.coagent8_DIR, profileStorage);
+
+  // Modern setup without dataDirectory (policy for shared registrations)
+  // Both profiles run setup without dataDirectory
+  const res = await setupClients({ ...options, origin: 'vscode-extension' });
+  assert.ok(res.every(r => r.action === 'updated'));
+  const codex = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  const claude = parse(fs.readFileSync(path.join(options.home, '.claude.json'), 'utf8')).mcpServers.coagent8;
+  assert.equal(codex.env?.coagent8_DIR, undefined, 'coagent8_DIR omitted from shared Codex registration');
+  assert.equal(claude.env?.coagent8_DIR, undefined, 'coagent8_DIR omitted from shared Claude registration');
+
+  // Any VS Code profile inspecting shared registrations sees them as current
+  assert.deepEqual(readRegistrations(options).map(s => s.current), [true, true, true]);
+});
+test('downgrade prevention preserves newer runtime registration and prevents overwrite (FEEDBACK-061b2)', async t => {
+  const options = profile(t);
+  const crypto = require('node:crypto');
+  // Install with candidate version 0.7.0 (newer)
+  const newerBundle = fs.readFileSync(source, 'utf8') + '\n// v0.7.0';
+  const newerBundlePath = path.join(options.home, 'newer-bundle.cjs');
+  fs.writeFileSync(newerBundlePath, newerBundle);
+  await setupClients({ ...options, runtimeSource: newerBundlePath, version: '0.7.0' });
+
+  // Now an older candidate (0.6.1) reads registrations
+  const olderStatus = readRegistrations({ ...options, runtimeSource: source, version: '0.6.1' });
+  assert.deepEqual(olderStatus.map(s => s.isNewer), [true, true, true]);
+  assert.deepEqual(olderStatus.map(s => s.current), [false, false, false]);
+
+  // Older setupClients attempts to run, but preserves newer registrations without downgrading
+  const preserveRes = await setupClients({ ...options, runtimeSource: source, version: '0.6.1' });
+  assert.ok(preserveRes.every(r => r.action === 'preserved'));
+  assert.ok(preserveRes.every(r => r.message.includes('newer CoAgent8 version')));
+
+  // Configuration still points to newer runtime
+  const codex = toml(fs.readFileSync(path.join(options.home, '.codex/config.toml'), 'utf8')).mcp_servers.coagent8;
+  assert.ok(codex.args[0].includes('runtime'));
+  const olderHash = crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex');
+  assert.notEqual(codex.args[0], path.join(options.home, '.coagent8', 'runtime', olderHash, 'index.cjs'));
+});
 test('the first registration records the CLI in config.json, keeps a later user change, and a configured path is used', async t => {
   const options = profile(t);
   const config = path.join(options.home, 'config.json');

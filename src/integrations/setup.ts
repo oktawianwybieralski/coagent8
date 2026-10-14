@@ -23,9 +23,10 @@ import { withFileLock } from '../storage/lock.js';
 import { object, withStdioRpc } from './rpc.js';
 import { errorCodeOf } from '../contracts/index.js';
 
+import { BRAND } from '../brand.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, extractRuntimePath, CODEX_TOOL_TIMEOUT_SEC, setupConfigFile, type Registration, type RegistrationOrigin } from './setup-storage.js';
+import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, extractRuntimePath, extractRuntimeVersion, newerVersion, CODEX_TOOL_TIMEOUT_SEC, setupConfigFile, type Registration, type RegistrationOrigin } from './setup-storage.js';
 export { extractRuntimePath } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
 import { assertSkillRoot, describeSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
@@ -61,9 +62,8 @@ export interface SetupOptions {
   /** Records registrations as the VS Code extension's, which its uninstall hook removes. */
   origin?: RegistrationOrigin;
   /**
-   * Data directory (`coagent8_DIR`) recorded in new registrations. The VS Code extension
-   * passes its global storage, which VS Code deletes on uninstall; omitted, the runtime
-   * uses `~/.coagent8`.
+   * Data directory (`coagent8_DIR`) recorded in new registrations. Omitted, the runtime
+   * uses `~/.coagent8`. External CLI registrations omit it to share user storage.
    */
   dataDirectory?: string;
   /**
@@ -71,6 +71,11 @@ export interface SetupOptions {
    * registration works gets its packages; omitted, setup leaves skills unchanged.
    */
   skillsSource?: string;
+  /**
+   * Version of the running or candidate CoAgent8 installation.
+   * Used for downgrade prevention; omitted, extracted from runtime or defaults to BRAND.SERVER_VERSION.
+   */
+  version?: string;
 }
 /** The runtime backend each setup client runs as. */
 export const SETUP_PROVIDERS: Record<SetupClient, ProviderId> = { codex: 'codex', claude: 'claude', agy: 'agy' };
@@ -381,6 +386,10 @@ export interface RegistrationStatus {
   /** The entry is what setup writes now: same runtime bundle, Node executable and configuration file. */
   current: boolean;
   message: string;
+  /** Version of the registered runtime if extractable. */
+  version?: string;
+  /** Whether the registered runtime is strictly newer than the candidate version. */
+  isNewer?: boolean;
 }
 /**
  * Reads the CoAgent8 registration of every client from its configuration file.
@@ -388,19 +397,50 @@ export interface RegistrationStatus {
  * else the shape only setup writes.
  * @throws On a custom profile root or an unreadable setup state.
  */
-export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env'>): RegistrationStatus[] {
+export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env' | 'version'>): RegistrationStatus[] {
   const { home, cwd, env, root, stateFile } = localProfile(options);
   const saved = readSelection(stateFile);
   const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
   const candidate = candidateRegistration(readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024), root, options, env, cwd);
+  const candidateVersion = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
   return SETUP_CLIENTS.map(client => {
     try {
       const text = read(configPath(client, home, env));
       const entry = text === null ? undefined : servers(client, document(client, text)).coagent8;
       if (entry === undefined) return { client, state: 'absent', current: false, message: 'No CoAgent8 entry.' };
       const current = isDeepStrictEqual(registration(entry), candidate);
-      if (!entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned) return { client, state: 'manual', current, message: 'Manual or independently edited entry; setup preserves it.' };
-      return { client, state: 'owned', current, message: current ? 'Registered by setup.' : 'Registered by setup for another CoAgent8 version, configuration file or data directory.' };
+      const isFingerprintMatch = saved.owned[client] === hash(JSON.stringify(entry));
+      const entryObj = entry as { args?: unknown };
+      const existingPrefix = isFingerprintMatch
+        ? (Array.isArray(entryObj.args) && (entryObj.args as string[]).at(-1) === 'mcp'
+          ? (entryObj.args as string[]).slice(0, -2)
+          : (entryObj.args as string[])?.slice(0, -1))
+        : node.argsPrefix;
+      const registeredPath = extractRuntimePath(entry, root, existingPrefix);
+      const registeredVersion = registeredPath ? extractRuntimeVersion(registeredPath) ?? undefined : undefined;
+      const isNewer = registeredVersion ? newerVersion(registeredVersion, candidateVersion) : false;
+      if (!entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned) {
+        return {
+          client,
+          state: 'manual',
+          current,
+          message: 'Manual or independently edited entry; setup preserves it.',
+          ...(registeredVersion ? { version: registeredVersion } : {}),
+          ...(isNewer ? { isNewer: true } : {}),
+        };
+      }
+      return {
+        client,
+        state: 'owned',
+        current,
+        message: current
+          ? 'Registered by setup.'
+          : isNewer
+            ? `Registered by setup for a newer CoAgent8 version (${registeredVersion}); preserved.`
+            : 'Registered by setup for another CoAgent8 version, configuration file or data directory.',
+        ...(registeredVersion ? { version: registeredVersion } : {}),
+        ...(isNewer ? { isNewer: true } : {}),
+      };
     } catch (error) {
       return { client, state: 'blocked', current: false, message: redactDiagnostic(error instanceof Error ? error.message : 'Configuration is unreadable.') };
     }
@@ -442,6 +482,11 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       const runtime = extractRuntimePath(candidate, root, node.argsPrefix) ?? (candidate.args.at(-1) === 'mcp' ? candidate.args.at(-2)! : candidate.args.at(-1)!);
       fs.mkdirSync(path.dirname(runtime), { recursive: true, mode: 0o700 });
       if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
+      const versionFile = path.join(path.dirname(runtime), 'version.json');
+      if (!fs.existsSync(versionFile)) {
+        const versionToRecord = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
+        fs.writeFileSync(versionFile, JSON.stringify({ version: versionToRecord }) + '\n', { flag: 'wx', mode: 0o600 });
+      }
       if (hash(readBoundedFileSync(runtime, 8 * 1024 * 1024)) !== hash(bundle)) throw new Error('Owned runtime hash mismatch.');
       await probeRuntime(candidate, env, cwd);
     }
@@ -515,6 +560,13 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           if (isDeepStrictEqual(existing, candidate)) return;
           if (!owned) {
             result.message = 'Manual or independently changed registration preserved; migration requires native-host acceptance.';
+            return;
+          }
+          const candidateVersion = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;
+          const existingVersion = existingRuntime ? extractRuntimeVersion(existingRuntime) : null;
+          const isNewer = existingVersion ? newerVersion(existingVersion, candidateVersion) : false;
+          if (isNewer) {
+            result.message = `Existing registration points to a newer CoAgent8 version (${existingVersion}); preserved.`;
             return;
           }
           if (!broken && HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) {
