@@ -85,8 +85,8 @@ and its row numbers stay:
 - `0.7.0` (beta.3) is a stability release: the merged public CLI and
   `FEEDBACK-061` rows, 2.13 and 2.14, the acceptance runner and WSL lane
   2.15-2.18 (which also run the 2.12d POSIX checks), native acceptance of the
-  shipped skills and CLI management 2.36, the proposal rows 3.0, 3.9-3.11, 3.13
-  and 3.13b, publication automation 5.1-5.8 and the release rows 5.9-5.12.
+  shipped skills and CLI management 2.36, the proposal rows 3.0, 3.9, 3.10,
+  3.11, 3.13 and 3.13b, publication automation 5.1-5.8 and the release rows 5.9-5.12.
   Phase 5 follows these rows, not all of Phases 3 and 4.
 - `0.8.0` is the first release candidate (rc.1, the start of the `1.0.x` line
   at feature freeze) and carries delegation and orchestration: 1.14, the open
@@ -102,7 +102,10 @@ and its row numbers stay:
 
 Owner direction 2026-10-13: the public CLI comes first and publication
 automation (`RELEASE-001`) comes last, before the `0.7.0` tag. Phases run in
-order; cards inside a phase follow their own `After` dependencies. Each card
+order; cards inside a phase follow their own `After` dependencies. After the
+release split, Phase 5 needs only the `0.7.0` rows of Phases 1-3; the `0.8.0`
+rows of Phases 2-4 continue toward the `0.8.0` feature freeze and never block
+the `0.7.0` tag. Each card
 still lands as one topic PR into `develop` (rule 02). A phase is complete when
 its cards are merged with green CI, not when code exists locally. Writing code
 is not the bottleneck (several agent subscriptions are available): inside a
@@ -114,9 +117,11 @@ set the pace.
 flowchart TD
   P0["Phase 0: owner decisions"] --> P1["Phase 1: public CLI and delegation tests"]
   P1 --> P2["Phase 2: stability, feedback, containment"]
-  P2 --> P3["Phase 3: read-only delegation, proposals, docs"]
+  P2 -->|"0.7.0 rows"| P5["Phase 5: publication automation and 0.7.0 acceptance"]
+  P2 -->|"0.8.0 rows"| P3["Phase 3: read-only delegation, proposals, docs"]
   P3 --> P4["Phase 4: host-led coagent profiles"]
-  P4 --> P5["Phase 5: publication automation and 0.7.0 acceptance"]
+  P4 --> RC["0.8.0 (rc.1) feature freeze"]
+  P5 --> RC
 ```
 
 **Phase 0 - owner decisions (decided 2026-10-13).** Each decision is also
@@ -1983,7 +1988,7 @@ agent (owner assigns).
 | 5.7 | `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
 | 5.8 | `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
 | 5.9 | Release PR `0.7.0` | R | the `0.7.0` rows above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
-| 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure. |
+| 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
 | 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
 | 5.13 | `PLUGIN-001f` | N | 5.12 | Plugin install, update and removal per client against the published `0.8.0` package; plugin paths documented only after it passes. |
@@ -2000,7 +2005,7 @@ previews are `0.7.0`, `0.8.0` and `0.9.0`.
 | --- | --- |
 | BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](HANDOFF.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
 | PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
-| BETA-001: beta.3 (0.7.0) | The `0.7.0` rows of the [release split](#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner and WSL lane (ACCEPT-001), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items and RELEASE-001. No write claim. |
+| BETA-001: beta.3 (0.7.0) | The `0.7.0` rows of the [release split](#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner and WSL lane (ACCEPT-001), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items, RELEASE-001 and a native upgrade from the published `0.6.1` (row 5.10). No write claim. |
 | RC-001: rc.1 (0.8.0, first on `1.0.x`) | The `0.8.0` rows of the release split: asynchronous delegation with caller wake-up (DELEGATE-001), host-led COAGENT-001 through 005 and applicable 007 (verified writes/checks/review/skills), WINDOWS-001 containment before write profiles, the delegated/parallel slice, COAGENT-008, PLUGIN-001, DOCS-003, SUPPLY-001c-e, AX acceptance and AUDIT-001-A08 to A21, all complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
