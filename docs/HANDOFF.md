@@ -67,10 +67,15 @@ Do not append another session transcript or treat old test counts as fresh evide
   (`CODEX_MAX_SERIALIZED_PROMPT_BYTES`) and raw prompt bound `CODEX_MAX_PROMPT_BYTES` (4 MiB)
   with an upfront `INPUT_LIMIT` error; large prompt (>512 KB), escaped newline expansion and
   oversized/serialized prompt rejection tests verified.
-  The next agent work is the remaining Phase 2 rows: 2.12a (`FEEDBACK-061j`,
-  issue #48) first, because a partial review blocks unchanged retries of the
-  review gate; then 2.12b (`FEEDBACK-061k1`, issue #49, native reproduction) and
-  the parallel rows 2.13 (`FEEDBACK-061i`) or 2.14 (`FEEDBACK-061h`).
+  Row 2.12a (`FEEDBACK-061j`, "retry unsuccessful reviews", #48): only reviews
+  with `COVERAGE: COMPLETE` and complete collected input deduplicate unchanged
+  repeats; reviews ending in `COVERAGE: PARTIAL`, incomplete collected input, or
+  execution errors can be retried without changing code, with or without a handle.
+  Coverage is exposed on the gate evaluation, stored in `lastReview`, and lookup
+  ignores records without complete coverage (including legacy records). Refusal
+  and skill guidance updated.
+  The next agent work is the remaining Phase 2 rows: 2.12b (`FEEDBACK-061k1`,
+  issue #49, native reproduction) and 2.12c; then the shared native check 2.12d.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

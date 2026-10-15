@@ -1291,7 +1291,7 @@ behavior or a test-procedure lesson.
   case for a resumed turn without a conversation id, which now keeps the
   requested id instead of failing as `SESSION_INVALID`. Check: R.
 
-- [ ] **FEEDBACK-061j - retry unsuccessful reviews (#48).** Blocks the
+- [x] **FEEDBACK-061j - retry unsuccessful reviews (#48).** Blocks the
   0.7.0 release (owner decision 2026-10-15). A completed
   Codex review turn reported `COVERAGE: PARTIAL` and `BLOCKED` because the
   reviewer's file reads were denied; unchanged retries, with or without
@@ -1855,7 +1855,7 @@ agent (owner assigns).
 | 2.10 | [x] `FEEDBACK-061c3` `coagent8 issue --open` (#55) | R | 2.7, 1.4 | CLI prints the report and opens the browser only with `--open`; test. |
 | 2.11 | [x] `FEEDBACK-061e` server-owned turn number (#56) | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
 | 2.12 | [x] `FEEDBACK-061g` large Codex prompts (#57) | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
-| 2.12a | `FEEDBACK-061j` retry unsuccessful reviews (#48) | R | - par | Only complete-coverage reviews with complete input deduplicate, including lookup of older records; PARTIAL and failed reviews rerun with or without a handle; complete READY and BLOCKED still deduplicate; guidance updated; tests. |
+| 2.12a | [x] `FEEDBACK-061j` retry unsuccessful reviews (#48) | R | - par | Only complete-coverage reviews with complete input deduplicate, including lookup of older records; PARTIAL and failed reviews rerun with or without a handle; complete READY and BLOCKED still deduplicate; guidance updated; tests. |
 | 2.12b | `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
 | 2.12c | `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (no accepted limitation: release blocker); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
 | 2.12d | `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. |
