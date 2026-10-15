@@ -325,6 +325,48 @@ test('a typed execution failure is retried and starts a new model turn', async (
   assert.equal(second.verdict, 'READY');
 });
 
+test('a review that failed before a native thread existed is retried with its session_handle', async () => {
+  const { repo } = fixtureRepo('execution-failure-handle-retry');
+  let fail = true;
+  const resumed = [];
+  adapterRegistry.agy = {
+    id: 'agy', name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async (prompt, options) => {
+      resumed.push(options.nativeSessionId ?? null);
+      if (fail) {
+        fail = false;
+        throw new ToolError('EXECUTION_FAILED', 'Simulated execution error');
+      }
+      return {
+        status: 'completed', isError: false, truncated: false, continuationAvailable: true,
+        nativeSessionId: '11111111-2222-3333-4444-555555555552', model: options.model,
+        output: [
+          'REVIEW: 1',
+          `SNAPSHOT: ${prompt.match(/^SNAPSHOT: (.+)$/m)[1]}`,
+          'COVERAGE: COMPLETE',
+          'VERDICT: READY',
+          'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+          'END_REVIEW',
+        ].join('\n'),
+      };
+    },
+  };
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(first.error?.code, 'EXECUTION_FAILED');
+  assert.ok(first.sessionHandle, 'the failed review returns its session_handle');
+  assert.equal(getSession(first.sessionHandle).threadId, null);
+
+  const second = readResult(await handleReview('review', { session_handle: first.sessionHandle }, repo, null, null, approve));
+  assert.ok(!second.error, 'the retry is not refused');
+  assert.equal(second.verdict, 'READY');
+  assert.equal(second.sessionHandle, first.sessionHandle, 'the retry runs in the same session');
+  assert.deepEqual(resumed, [null, null], 'the retry starts a fresh native thread');
+  assert.equal(getSession(first.sessionHandle).threadId, '11111111-2222-3333-4444-555555555552');
+});
+
 test('a legacy session record without coverage is ignored and retried', async () => {
   const { repo } = fixtureRepo('legacy-record-retry');
   const turns = installReviewers();

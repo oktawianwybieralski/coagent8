@@ -259,6 +259,8 @@ async function executeTaskInternal(
       abortSignal,
       budget,
       context: executionContext,
+      // A review prompt is self-contained: a failed review with no native thread is retried in its session.
+      allowFreshNativeThread: Boolean(options.reviewIdentity),
     });
     prepHandle.end();
 
