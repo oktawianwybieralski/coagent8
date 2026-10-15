@@ -208,6 +208,7 @@ function getHomePreservationWatchlist(homeDir) {
     path.join(homeDir, '.codex', 'config.toml'),
     path.join(homeDir, '.gemini', 'config', 'mcp_config.json'),
     path.join(homeDir, '.coagent8', 'config.json'),
+    path.join(homeDir, '.coagent8', 'setup.json'),
   ];
 }
 
@@ -273,7 +274,7 @@ async function runAcceptance(options = {}) {
         name,
         status: 'FAIL',
         durationMs: Date.now() - stepStart,
-        error: redactHome(err.message || String(err), [os.homedir(), isolated ? isolated.root : null]),
+        error: redactHome(err.message || String(err), [os.homedir(), realHome, isolated ? isolated.root : null]),
       });
       throw err;
     }
@@ -307,11 +308,11 @@ async function runAcceptance(options = {}) {
         const rootArtifacts = path.join(repoRoot, '.artifacts');
 
         if (!tarballPath && fs.existsSync(pkgArtifacts)) {
-          const files = fs.readdirSync(pkgArtifacts).filter(f => f.endsWith('.tgz'));
+          const files = fs.readdirSync(pkgArtifacts).filter(f => f.endsWith('.tgz')).sort().reverse();
           if (files.length) tarballPath = path.join(pkgArtifacts, files[0]);
         }
         if (!vsixPath && fs.existsSync(rootArtifacts)) {
-          const files = fs.readdirSync(rootArtifacts).filter(f => f.endsWith('.vsix'));
+          const files = fs.readdirSync(rootArtifacts).filter(f => f.endsWith('.vsix')).sort().reverse();
           if (files.length) vsixPath = path.join(rootArtifacts, files[0]);
         }
       }
@@ -543,6 +544,7 @@ async function runAcceptance(options = {}) {
     // Redact real and isolated home paths from evidence text
     const serialized = redactHome(JSON.stringify(evidence, null, 2) + '\n', [
       os.homedir(),
+      realHome,
       isolated.root,
     ]);
 
@@ -560,6 +562,7 @@ async function runAcceptance(options = {}) {
     const rawErrorMessage = err && err.message ? err.message : String(err);
     const redactedErrorMessage = redactHome(rawErrorMessage, [
       os.homedir(),
+      realHome,
       isolated ? isolated.root : null,
     ]);
 
@@ -595,6 +598,7 @@ async function runAcceptance(options = {}) {
     let serializedFail = JSON.stringify(evidence, null, 2) + '\n';
     serializedFail = redactHome(serializedFail, [
       os.homedir(),
+      realHome,
       isolated ? isolated.root : null,
     ]);
 
