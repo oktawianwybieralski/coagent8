@@ -145,9 +145,46 @@ Do not append another session transcript or treat old test counts as fresh evide
   renders observed tool denials in the result footer distinctly from reviewer text,
   with paths sanitized by `redactDiagnostic`. `doctor` documentation clarifies that
   backend readiness checks installation, auth and quota without probing or implying
-  workspace filesystem permissions.
-  The next agent work is the remaining Phase 2 rows: 2.12d (the shared native check on
-  Windows and POSIX), with 2.13 (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) as parallel rows.
+  workspace filesystem permissions (merged in PR #60).
+  Row 2.12d (`FEEDBACK-061j`/`k`, "native recovery check"): verified on Windows 11
+  with Node v26.10.0 and `codex-cli 0.162.0-alpha.17.2`:
+  - Tracked docs readability: `docs/ARCHITECTURE.md` (90,514 characters) read
+    successfully by Codex sandbox (`windows.sandbox="elevated"` running under
+    `CodexSandboxUsers` / `codexsandboxoffline`) with exit code 0.
+  - Denied required scope enforcement: in a test subtree with stripped NTFS
+    inheritance (`/inheritance:r`), Codex sandbox execution fails closed with
+    exit code 1 (`UnauthorizedAccessException`). The review gate logic
+    (`evaluateStateEnvelopeGate` in `src/review/gate.ts:177-212`, verified by
+    code inspection) forces `COVERAGE: PARTIAL` and `VERDICT: BLOCKED`
+    with reasons identifying the denied scope.
+  - Verified remedy: running `icacls <dir> /reset /t` restores standard NTFS
+    inheritance from the workspace root (where `CodexSandboxUsers:(OI)(CI)RX` was
+    granted), immediately restoring file read access for `codexsandboxoffline`
+    (exit code 0, 0 denials).
+  - Unchanged repeat retryability in native Codex (`gpt-6.1-sol`): verified live
+    with native `codex app-server`:
+    * Turn 1: Codex review on diff in `docs/test.md` with stripped inheritance
+      ends with `COVERAGE: PARTIAL` and `VERDICT: BLOCKED` (16.6s,
+      `syn_sess_29d846176fd880da53dae17b`, denial: `read docs/test.md (Unauthorized access)`).
+    * Turn 2: Unchanged repeat without `session_handle` does not deduplicate
+      (`findCompletedReview` rejects partial coverage) and starts a new model
+      turn (15.5s, `syn_sess_5e5ccd622f7e538025c6d094`, deduplicated: false).
+    * Turn 3: Unchanged repeat with `session_handle` (`syn_sess_29d846176fd880da53dae17b`)
+      starts turn 2 in the same session without deduplication
+      (11.9s, deduplicated: false).
+    * Turn 4: After restoring inheritance via `icacls docs /reset /t`, native Codex
+      review completes with `COVERAGE: COMPLETE` and `VERDICT: READY`
+      (18.3s, `syn_sess_a947b48f0b41220bf342dc31`).
+    * Turn 5: Unchanged repeat after `COMPLETE` review deduplicates immediately
+      without a model turn (1.0s, deduplicated: true).
+    (Mock test coverage additionally retained in `tests/mcp/tools/review-repeat.test.js`).
+  - POSIX/WSL: `NOT_RUN` (no WSL lane yet, row 2.18). Row 2.12d remains open (`[ ]`)
+    pending POSIX verification or an explicit dated owner decision assigning POSIX
+    recovery checks to 2.18.
+  - Upstream issue status: FEEDBACK-061k remains open (`[ ]`) with the issue draft
+    recorded above, awaiting owner submission or confirmation.
+  The next agent work is completing row 2.12d (POSIX lane), alongside Phase 2 rows:
+  2.13 (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) as parallel rows.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;
