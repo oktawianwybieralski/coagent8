@@ -627,11 +627,15 @@ async function executeTaskInternal(
         }
       }
       // Only a completed turn whose input stayed unchanged identifies a review to refuse repeating.
+      // Only a judged review with COMPLETE coverage and complete collected input suppresses an unchanged repeat (FEEDBACK-061j).
+      const isInputComplete = !reviewContext || reviewContext.inputComplete;
+      const effectiveCoverage = isInputComplete ? review?.coverage : 'PARTIAL';
       if (reviewIdentity && review?.judged && review.verdict !== 'NOT_APPLICABLE' && !snapshotError && !result.isError && !result.error && result.status === 'completed') {
         try {
           await doUpdateSession(handle, { lastReview: {
             ...reviewIdentity,
             verdict: review.verdict,
+            ...(effectiveCoverage ? { coverage: effectiveCoverage } : {}),
             ...(review.reason ? { reason: review.reason.slice(0, MAX_REVIEW_REASON_CHARS) } : {}),
             completedAt: new Date().toISOString(),
           } }, token);

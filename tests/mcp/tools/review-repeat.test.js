@@ -14,7 +14,8 @@ const { adapterRegistry } = require('../../../src/backends/registry.ts');
 const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
 const { handleSession } = require('../../../src/mcp/tools/session.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
-const { createSession, updateSession, acquireSessionTurn, releaseSessionTurn, getSessionsDir } = require('../../../src/sessions/session.ts');
+const { createSession, updateSession, getSession, acquireSessionTurn, releaseSessionTurn, getSessionsDir } = require('../../../src/sessions/session.ts');
+const { ToolError } = require('../../../src/contracts/index.ts');
 const { readResult } = require('../../helpers/result.cjs');
 const original = { agy: adapterRegistry.agy, codex: adapterRegistry.codex };
 test.after(() => {
@@ -196,4 +197,183 @@ test('disabled history still refuses an unchanged repeat: the outcome lives in t
   const repeat = readResult(await handleReview('review', {}, repo, null, null, approve));
   assert.equal(turns.agy, 1);
   assert.match(repeat.answer, /^No model turn/);
+});
+
+test('a review ending with PARTIAL coverage and BLOCKED is retried without and with session_handle', async () => {
+  const { repo } = fixtureRepo('partial-blocked-retry');
+  let round = 0;
+  const turns = installReviewers(snapshot => {
+    round++;
+    if (round === 1) {
+      return [
+        'REVIEW: 1',
+        `SNAPSHOT: ${snapshot}`,
+        'COVERAGE: PARTIAL',
+        'VERDICT: BLOCKED',
+        'Blocked: Read-only filesystem access was denied',
+        'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+        'END_REVIEW',
+      ].join('\n');
+    }
+    return [
+      'REVIEW: 2',
+      `SNAPSHOT: ${snapshot}`,
+      'COVERAGE: COMPLETE',
+      'VERDICT: READY',
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\n');
+  });
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 1);
+  assert.equal(first.verdict, 'BLOCKED');
+  assert.match(first.reason, /Review coverage is partial/);
+  assert.ok(first.sessionHandle);
+
+  // Retry without session_handle on the exact same snapshot
+  const retryWithoutHandle = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 2, 'unchanged retry without session_handle starts a new model turn');
+  assert.equal(retryWithoutHandle.verdict, 'READY');
+
+  // Retry with session_handle on a separate partial review
+  const { repo: repo2 } = fixtureRepo('partial-blocked-handle');
+  round = 0;
+  const turns2 = installReviewers(snapshot => {
+    round++;
+    return [
+      `REVIEW: ${round}`,
+      `SNAPSHOT: ${snapshot}`,
+      round === 1 ? 'COVERAGE: PARTIAL' : 'COVERAGE: COMPLETE',
+      round === 1 ? 'VERDICT: BLOCKED' : 'VERDICT: READY',
+      ...(round === 1 ? ['Blocked: Read-only filesystem access was denied'] : []),
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\n');
+  });
+  const firstWithHandle = readResult(await handleReview('review', {}, repo2, null, null, approve));
+  assert.equal(turns2.agy, 1);
+  assert.equal(firstWithHandle.verdict, 'BLOCKED');
+
+  const retryWithHandle = readResult(await handleReview('review', { session_handle: firstWithHandle.sessionHandle }, repo2, null, null, approve));
+  assert.equal(turns2.agy, 2, 'unchanged retry with session_handle starts a new model turn');
+  assert.equal(retryWithHandle.sessionHandle, firstWithHandle.sessionHandle);
+  assert.equal(retryWithHandle.verdict, 'READY');
+});
+
+test('incomplete collected input is retried even if reviewer reported COVERAGE: COMPLETE', async () => {
+  const { repo } = fixtureRepo('incomplete-input-retry');
+  fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 1, 2, 3]));
+  const turns = installReviewers(snapshot => [
+    'REVIEW: 1',
+    `SNAPSHOT: ${snapshot}`,
+    'COVERAGE: COMPLETE',
+    'VERDICT: READY',
+    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+    'END_REVIEW',
+  ].join('\n'));
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 1);
+  assert.equal(first.verdict, 'BLOCKED');
+  assert.match(first.reason, /Review input is incomplete/);
+
+  // Retrying the unchanged workspace starts another model turn because collected input is incomplete
+  const second = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 2, 'incomplete collected input suppresses deduplication');
+});
+
+test('a typed execution failure is retried and starts a new model turn', async () => {
+  const { repo } = fixtureRepo('execution-failure-retry');
+  let fail = true;
+  adapterRegistry.agy = {
+    id: 'agy', name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async (prompt, options) => {
+      if (fail) {
+        fail = false;
+        throw new ToolError('EXECUTION_FAILED', 'Simulated execution error');
+      }
+      return {
+        status: 'completed', isError: false, truncated: false, continuationAvailable: true,
+        nativeSessionId: '11111111-2222-3333-4444-555555555551', model: options.model,
+        output: [
+          'REVIEW: 1',
+          `SNAPSHOT: ${prompt.match(/^SNAPSHOT: (.+)$/m)[1]}`,
+          'COVERAGE: COMPLETE',
+          'VERDICT: READY',
+          'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+          'END_REVIEW',
+        ].join('\n'),
+      };
+    },
+  };
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.ok(first.error);
+  assert.equal(first.error.code, 'EXECUTION_FAILED');
+
+  // Retry starts a new model turn and succeeds
+  const second = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(second.verdict, 'READY');
+});
+
+test('a legacy session record without coverage is ignored and retried', async () => {
+  const { repo } = fixtureRepo('legacy-record-retry');
+  const turns = installReviewers();
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 1);
+  const s = getSession(first.sessionHandle);
+  assert.ok(s && s.lastReview);
+  const snapshot = s.lastReview.snapshot;
+
+  // Clear first session's lastReview and create a legacy session record where lastReview has no coverage field
+  await updateSession(first.sessionHandle, { lastReview: undefined });
+  const legacySession = createSession('agy', repo, '11111111-2222-3333-4444-555555555588');
+  await updateSession(legacySession.sessionHandle, {
+    lastReview: {
+      snapshot,
+      scope: 'Uncommitted working changes (staged, unstaged, untracked)',
+      model: 'fixture-model',
+      verdict: 'READY',
+      completedAt: new Date().toISOString(),
+    },
+  });
+
+  // Repeating should ignore the legacy record lacking coverage and start a new model turn
+  const repeat = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 2, 'record without coverage is ignored so review runs again');
+  assert.equal(repeat.verdict, 'READY');
+});
+
+test('an unchanged complete BLOCKED review with findings still deduplicates (AX-007c)', async () => {
+  const { repo } = fixtureRepo('complete-blocked-dedup');
+  const turns = installReviewers(snapshot => [
+    'REVIEW: 1',
+    `SNAPSHOT: ${snapshot}`,
+    'COVERAGE: COMPLETE',
+    'VERDICT: BLOCKED',
+    '[P1] a.ts:1',
+    'Problem: Security flaw',
+    'Evidence: a.ts:1',
+    'Fix: Fix the flaw',
+    'CHECKS: typecheck=PASS; tests=PASS',
+    'END_REVIEW',
+  ].join('\n'));
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 1);
+  assert.equal(first.verdict, 'BLOCKED');
+  assert.match(first.reason, /Blocker issue \[P1\/P2\] reported/);
+
+  const repeat = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(turns.agy, 1, 'complete BLOCKED review still deduplicates without a model turn');
+  assert.match(repeat.answer, /^No model turn/);
+  assert.equal(repeat.verdict, 'BLOCKED');
 });

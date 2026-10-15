@@ -30,8 +30,9 @@ Text the user typed with this command names the scope or the review focus.
 6. Fix the findings you accept, then review again. Pass the `session_handle`
    from the footer so the reviewer compares with its previous round. Any code
    change invalidates the previous verdict; do not repeat a review of unchanged
-   code: the server then starts no turn and returns the earlier verdict. After
-   two further rounds without progress, stop and ask the user.
+   code that completed with full coverage: the server then starts no turn and
+   returns the earlier verdict (an incomplete or failed review can be retried).
+   After two further rounds without progress, stop and ask the user.
 
 Report the server verdict, each finding with its location and your disposition
 (fixed, rejected with the reason, or deferred), and the checks you ran.

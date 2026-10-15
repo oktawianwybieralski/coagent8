@@ -53,10 +53,10 @@ test('unrun checks of a read-only reviewer do not block READY; they are named, a
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
   const envelope = (verdict, checks, ...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, ...extra, `CHECKS: ${checks}`, 'END_REVIEW'].join('\n');
   assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, context),
-    { verdict: 'READY', judged: true, reason: 'typecheck and tests not run' });
+    { verdict: 'READY', judged: true, coverage: 'COMPLETE', reason: 'typecheck and tests not run' });
   assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=NOT_RUN'), false, true, context),
-    { verdict: 'READY', judged: true, reason: 'tests not run' });
-  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=PASS'), false, true, context), { verdict: 'READY', judged: true });
+    { verdict: 'READY', judged: true, coverage: 'COMPLETE', reason: 'tests not run' });
+  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=PASS'), false, true, context), { verdict: 'READY', judged: true, coverage: 'COMPLETE' });
   const withFinding = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN', '[P2] src/review/gate.ts:1'), false, true, context);
   assert.equal(withFinding.verdict, 'BLOCKED');
   assert.equal(withFinding.reason, 'Blocker issue [P1/P2] reported; the reviewer answered READY');

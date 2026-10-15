@@ -26,7 +26,8 @@ function parseCompletedReview(raw: unknown): CompletedReview | undefined {
   if (!boundedString(r.snapshot, 512) || !boundedString(r.scope, 512) || (r.model !== null && !boundedString(r.model, 256))) return undefined;
   if ((r.verdict !== 'READY' && r.verdict !== 'BLOCKED') || !Number.isFinite(Date.parse(r.completedAt))) return undefined;
   if (r.reason !== undefined && !boundedString(r.reason, MAX_REVIEW_REASON_CHARS)) return undefined;
-  return { snapshot: r.snapshot, scope: r.scope, model: r.model, verdict: r.verdict, ...(r.reason ? { reason: r.reason } : {}), completedAt: r.completedAt };
+  if (r.coverage !== undefined && r.coverage !== 'COMPLETE' && r.coverage !== 'PARTIAL') return undefined;
+  return { snapshot: r.snapshot, scope: r.scope, model: r.model, verdict: r.verdict, ...(r.coverage ? { coverage: r.coverage } : {}), ...(r.reason ? { reason: r.reason } : {}), completedAt: r.completedAt };
 }
 const ownedTurns = new Map<string, string>();
 function saveSessionFile(file: string, record: SessionRecord): void {
@@ -493,6 +494,8 @@ export function findCompletedReview(
   for (const s of listSessions(workspace)) {
     const r = s.lastReview;
     if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model) continue;
+    // Only a completed review with complete coverage suppresses an unchanged repeat (FEEDBACK-061j).
+    if (r.coverage !== 'COMPLETE') continue;
     if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) {
       found = { sessionHandle: s.sessionHandle, review: r, continuationAvailable: !active(s) && s.state === 'idle' && Boolean(s.threadId) };
     }
