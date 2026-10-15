@@ -259,6 +259,8 @@ async function executeTaskInternal(
       abortSignal,
       budget,
       context: executionContext,
+      // A review prompt is self-contained: a failed review with no native thread is retried in its session.
+      allowFreshNativeThread: Boolean(options.reviewIdentity),
     });
     prepHandle.end();
 
@@ -297,7 +299,7 @@ async function executeTaskInternal(
           result: {
             status: 'completed',
             isError: false,
-            output: `No model turn: this request matches a completed review (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again.`,
+            output: `No model turn: this request matches a completed review with complete coverage and input (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again (incomplete or failed reviews can be retried).`,
             ...(prepared.model ? { model: prepared.model } : {}),
             truncated: false,
             continuationAvailable,
@@ -627,11 +629,15 @@ async function executeTaskInternal(
         }
       }
       // Only a completed turn whose input stayed unchanged identifies a review to refuse repeating.
+      // Only a judged review with COMPLETE coverage and complete collected input suppresses an unchanged repeat (FEEDBACK-061j).
+      const isInputComplete = !reviewContext || reviewContext.inputComplete;
+      const effectiveCoverage = isInputComplete ? review?.coverage : 'PARTIAL';
       if (reviewIdentity && review?.judged && review.verdict !== 'NOT_APPLICABLE' && !snapshotError && !result.isError && !result.error && result.status === 'completed') {
         try {
           await doUpdateSession(handle, { lastReview: {
             ...reviewIdentity,
             verdict: review.verdict,
+            ...(effectiveCoverage ? { coverage: effectiveCoverage } : {}),
             ...(review.reason ? { reason: review.reason.slice(0, MAX_REVIEW_REASON_CHARS) } : {}),
             completedAt: new Date().toISOString(),
           } }, token);

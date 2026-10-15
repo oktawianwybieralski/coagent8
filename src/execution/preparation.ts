@@ -75,6 +75,11 @@ export interface PrepareTaskOptions {
   budget?: ExecutionBudget;
   /** Optional read context for observation reads (`EXEC-001-T08`). */
   context?: BackendReadContext;
+  /**
+   * A self-contained request, such as a review, that may start a fresh native thread in a session
+   * whose earlier turn left none (FEEDBACK-061j).
+   */
+  allowFreshNativeThread?: boolean;
 }
 
 /**
@@ -143,14 +148,14 @@ function asConfigSnapshot(config?: CoAgent8Config | ConfigSnapshot): ConfigSnaps
  *
  * @param args - Execution request parameters.
  * @param cwd - Canonical working directory.
- * @param options - Optional cancellation signal.
+ * @param options - Optional cancellation signal and whether a fresh native thread may replace a missing one.
  * @returns Validated session context if resuming an existing conversation.
  * @throws `ToolError` on invalid model identifier, invalid session, provider switch, or nested turn.
  */
 export function validateTaskContext(
   args: ExecutionRequest,
   cwd: string,
-  options: { abortSignal?: AbortSignal | null } = {}
+  options: { abortSignal?: AbortSignal | null; allowFreshNativeThread?: boolean } = {}
 ): ValidatedTaskContext {
   // A server started by a backend inside a turn never starts another one (CUR-002).
   assertNotNestedTurn();
@@ -173,7 +178,7 @@ export function validateTaskContext(
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) {
     throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
   }
-  if (previous && !previous.threadId) {
+  if (previous && !previous.threadId && !options.allowFreshNativeThread) {
     throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   }
 
@@ -194,7 +199,7 @@ export async function prepareTask(
   cwd: string,
   options: PrepareTaskOptions = {}
 ): Promise<PreparedTask> {
-  const { previousSession } = validateTaskContext(args, cwd, { abortSignal: options.abortSignal });
+  const { previousSession } = validateTaskContext(args, cwd, { abortSignal: options.abortSignal, allowFreshNativeThread: options.allowFreshNativeThread });
 
   const configSnapshot = asConfigSnapshot(options.config);
   const abortSignal = options.abortSignal;

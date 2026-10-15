@@ -32,6 +32,8 @@ export interface StateEnvelopeEvaluation {
    * snapshot: a judgement that repeating the same request would not change (`AX-007c`).
    */
   judged?: boolean;
+  /** Evaluated coverage reported in the state envelope. */
+  coverage?: 'COMPLETE' | 'PARTIAL';
 }
 
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
@@ -174,9 +176,16 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       }
       // The answer still reads READY; the caller must see that the server overrides it.
       if (verdictVal === 'READY' && verdictCount === 1 && !hasBogusVerdict) reasons.push('the reviewer answered READY');
-      return { verdict: 'BLOCKED', judged, reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied' };
+      return {
+        verdict: 'BLOCKED',
+        judged,
+        ...(coverageVal ? { coverage: coverageVal } : {}),
+        reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied',
+      };
     }
-    return notRunChecks.length ? { verdict: 'READY', judged, reason: `${notRunChecks.join(' and ')} not run` } : { verdict: 'READY', judged };
+    return notRunChecks.length
+      ? { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), reason: `${notRunChecks.join(' and ')} not run` }
+      : { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}) };
   }
 
   return { verdict: 'NOT_APPLICABLE' };

@@ -48,6 +48,8 @@ export interface ReviewIdentity {
 /** A completed review turn: its identity and the server verdict it received. */
 export interface CompletedReview extends ReviewIdentity {
   verdict: 'READY' | 'BLOCKED';
+  /** Review coverage evaluated from the state envelope (`FEEDBACK-061j`). */
+  coverage?: 'COMPLETE' | 'PARTIAL';
   /** Bounded server reason of a BLOCKED verdict. */
   reason?: string;
   /** ISO timestamp of completion. */
