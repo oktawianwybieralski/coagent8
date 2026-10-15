@@ -79,6 +79,27 @@ Implementing agents work from the [0.7.0 task queue](#tasks-070-070-task-queue),
 which splits these phases into implementation and acceptance steps, grouped into
 coherent PR results with a fixed procedure.
 
+**Release split (owner decision 2026-10-15).** The queue ships in two releases,
+and its row numbers stay:
+
+- `0.7.0` (beta.3) is a stability release: the merged public CLI and
+  `FEEDBACK-061` rows, 2.13 and 2.14, the acceptance runner and WSL lane
+  2.15-2.18 (which also run the 2.12d POSIX checks), native acceptance of the
+  shipped skills and CLI management 2.36, the proposal rows 3.0, 3.9-3.11, 3.13
+  and 3.13b, publication automation 5.1-5.8 and the release rows 5.9-5.12.
+  Phase 5 follows these rows, not all of Phases 3 and 4.
+- `0.8.0` is the first release candidate (rc.1, the start of the `1.0.x` line
+  at feature freeze) and carries delegation and orchestration: 1.14, the open
+  rows 2.19-2.35, 3.1-3.8, 3.10b, 3.12, 3.14-3.20, Phase 4, 5.13 and the
+  delegated coordination listed under [After 0.7.0](#after-070). Delegation
+  and the write profiles therefore reach testers first in a release
+  candidate; no beta between `0.7.0` and `0.8.0` is planned unless the owner
+  adds one.
+- Until `0.7.0` the owner registers the working-tree build
+  (`dist/index.cjs mcp`) as the MCP server in the local clients and uses it
+  daily to find defects. It is a development build and is never distributed
+  (rule 02 section 4).
+
 Owner direction 2026-10-13: the public CLI comes first and publication
 automation (`RELEASE-001`) comes last, before the `0.7.0` tag. Phases run in
 order; cards inside a phase follow their own `After` dependencies. Each card
@@ -101,8 +122,10 @@ flowchart TD
 **Phase 0 - owner decisions (decided 2026-10-13).** Each decision is also
 recorded in the card it changes:
 
-- `0.7.0` keeps host-led writes (`COAGENT-002` to `005`).
-- Asynchronous delegation with caller wake-up is a headline of `0.7.0`
+- Host-led writes (`COAGENT-002` to `005`) ship with `0.8.0` (decided for
+  `0.7.0`; moved by the release split of 2026-10-15).
+- Asynchronous delegation with caller wake-up is a headline of `0.8.0`
+  (decided for `0.7.0`; moved by the release split of 2026-10-15)
   ([`DELEGATE-001`](#delegate-001-asynchronous-delegation-and-caller-wake-up)):
   read-only delegation lands early, delegation with writes follows the write
   profiles.
@@ -196,6 +219,8 @@ and may land earlier without changing this order.
 
 ### After 0.7.0
 
+Both items complete before the `0.8.0` feature freeze (rc.1, `RC-001`).
+
 1. Add delegated coordination and parallel work (`COAGENT-006`: a
    task-scoped gateway, fan-out and depth limits, tree cancellation), building
    on `DELEGATE-001`, with root limits, writer ownership and recoverable task
@@ -286,7 +311,7 @@ Menu structure and rules (`CLIMGMT-001a-d`):
 
 ## PLUGIN-001: native plugin in every supported client
 
-Each supported client (Codex, Claude Code, Antigravity) will be able to load CoAgent8 as a native plugin managed by the client's own plugin commands, while the npm package and VS Code extension remain independent installers. Target stage: `0.7.0` (`beta.3`).
+Each supported client (Codex, Claude Code, Antigravity) will be able to load CoAgent8 as a native plugin managed by the client's own plugin commands, while the npm package and VS Code extension remain independent installers. Target stage: `0.8.0` (rc.1; moved from `0.7.0` by the release split of 2026-10-15).
 
 Installation paths:
 
@@ -458,7 +483,7 @@ in Codex CLI 0.162), and agy background `run_command` re-invocation
 (claimed). No client lets a plugin subagent run on another vendor's CLI, so a
 plugin is packaging, not the integration; a cheap-model proxy subagent that
 only calls CoAgent8 is the fallback. Owner decision 2026-10-13: a headline of
-`0.7.0`. Read-only delegation does not depend on write profiles or
+the next minor, `0.8.0` after the release split of 2026-10-15. Read-only delegation does not depend on write profiles or
 `WINDOWS-001`, so it lands early (Phases 1-3 of the
 [0.7.0 plan](#070-beta3-plan)); delegation of write tasks follows the
 profiles (Phase 4).
@@ -914,8 +939,8 @@ pre-release, npm `next`):
 | beta.1 (npm name placeholder) | 0.5.0, skipped | none; npm `1.0.0-beta.1` is withdrawn |
 | beta.2 | 0.6.0 (released) | `v0.6.0` |
 | Fix-only preview patch | 0.6.1 | `v0.6.1` |
-| beta.3 or rc.1 | 0.7.0 | `v0.7.0` |
-| rc.1 or rc.2 | 0.8.0 / 0.9.0 | `v0.8.0` / `v0.9.0` |
+| beta.3 | 0.7.0 | `v0.7.0` |
+| rc.1, rc.2 if needed | 0.8.0 / 0.9.0 | `v0.8.0` / `v0.9.0` |
 | release | 1.0.0 | `v1.0.0` |
 
 Completed: `REPO-003a` synchronized manifests, VSIX packaging, workflows and
@@ -1347,8 +1372,8 @@ behavior or a test-procedure lesson.
   Codex Windows sandbox setup and is a documented known limitation (`CUR-014`)
   with the verified `icacls <dir> /reset /t` remedy; denied required scope
   keeps the review PARTIAL. The upstream report is no longer required:
-  from 0.7.0 the backend sandbox becomes one execution option among the
-  task-scoped coagent profiles, not the only way CoAgent8 runs an agent.
+  with the task-scoped coagent profiles (planned for `0.8.0`) the backend
+  sandbox becomes one execution option, not the only way CoAgent8 runs an agent.
   The POSIX native check moves to 2.18.
 
 ## PROPOSALS-001: proposals awaiting an owner decision
@@ -1369,7 +1394,7 @@ were found later in the same review and await the owner's confirmation.
 | f | Accept. |
 | g | Accept. |
 | h | Accept. |
-| i | Accept for `0.7.0`. |
+| i | Accept for `0.8.0` (decided for `0.7.0`; moved by the release split of 2026-10-15). |
 | j | Defer; it grants new rights for published copies and is a legal choice, not a formality. |
 | k | Accept. |
 | l | Accept with d. |
@@ -1443,7 +1468,7 @@ adapters, `config.ts` and `index.ts`; the home page is the README with a link
 to itself; HANDOFF and the Git workflow rule are published to readers; there
 is no version, no GitHub/npm/Marketplace links and no favicon. The `0.6.1`
 deployment fixed the mermaid diagrams and the site name. Accepted as
-`PROPOSALS-001i`, Phase 3 of the [0.7.0 plan](#070-beta3-plan).
+`PROPOSALS-001i`, Phase 3 of the [0.7.0 plan](#070-beta3-plan), shipping with `0.8.0` after the release split.
 
 - [ ] **DOCS-003a - decide what the site is for.** The site serves users
   first: Quick start, Tools, Configuration, Architecture, then a smaller code
@@ -1464,7 +1489,7 @@ deployment fixed the mermaid diagrams and the site name. Accepted as
   and Configuration pages from the README and ARCHITECTURE without duplicating
   them (one owner per topic), and give the home page its own introduction.
   Check: P, link check.
-- [ ] **DOCS-003e - publish and verify.** The site deploys from the `0.7.0`
+- [ ] **DOCS-003e - publish and verify.** The site deploys from the `0.8.0`
   release (`docs.yml`); check the live pages, navigation, diagrams and links.
   A theme or a different generator is considered only after a-d. Check:
   native browser review of the published site.
@@ -1557,13 +1582,13 @@ BSD-3-Clause `fast-uri` and `smol-toml`, whose notices in
   warm start and the real VS Code host on Windows and Linux; the owner chooses
   with both numbers and the score after `0.6.1`.
 - [ ] **SUPPLY-001f - acceptance per publication.** After `0.6.1`: the
-  package page lists no dependency alerts; record the scores. After `0.7.0`:
+  package page lists no dependency alerts; record the scores. After `0.8.0`:
   supply chain >= 0.90, or every remaining alert has a stated reason (inherent,
   upstream request, owner choice in e). Notices stay complete. Record scores
   and remaining alerts in HANDOFF.
 
 Order: a and b are packaging fixes and ship with `0.6.1` (preview patch,
-rule 02). c, d and e change the runtime bundle and ship with `0.7.0`; each
+rule 02). c, d and e change the runtime bundle and ship with `0.8.0`; each
 remeasures first launch (ARCHITECTURE). Checks for a/b/d: typecheck, dependency
 check, fresh build, tarball and VSIX inspection, consumer smoke and affected
 regressions.
@@ -1634,7 +1659,7 @@ reviewed snapshot requires renewed review.
 DOCS-002c (whole ARCHITECTURE cleanup) and DOCS-002e (whole rules/skills
 cleanup) follow 0.6.1; corrections to contracts/instructions affected by this
 patch remain part of their implementation PRs. SUPPLY-001c/d/e and full
-coagent execution remain 0.7.0 work. No 90% Socket score is promised for 0.6.1;
+coagent execution remain 0.8.0 work (release split of 2026-10-15). No 90% Socket score is promised for 0.6.1;
 SUPPLY-001f measures the published result.
 
 ### Release preparation and acceptance tasks
@@ -1729,12 +1754,13 @@ does not complete a native task.
 - [ ] **PATCH-061-R7 - published-package verification.** After O1, verify
   published version/channels, download hashes, attestations, npm integrity,
   Marketplace artifact and installed MCP startup. Complete the 0.6.1 portion
-  of SUPPLY-001f with measured Socket scores/alerts; keep its 0.7.0 portion open.
+  of SUPPLY-001f with measured Socket scores/alerts; keep its next portion open (`0.8.0` after the release split).
   Complete LIC-001d's published-license checks and record the first MIT release.
 
 ## TASKS-070: 0.7.0 task queue
 
 The [0.7.0 plan](#070-beta3-plan) split into implementation and acceptance steps.
+Its [release split](#070-beta3-plan) assigns each open row to `0.7.0` or `0.8.0`.
 Rows are checklist items, not automatic branch or PR boundaries. Group related
 steps into one coherent result per [rule 02](../.agents/rules/02-git-workflow.md#3-pull-requests).
 The linked card holds the full acceptance; the row says where the task stops.
@@ -1956,11 +1982,11 @@ agent (owner assigns).
 | 5.6 | `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
 | 5.7 | `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
 | 5.8 | `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
-| 5.9 | Release PR `0.7.0` | R | all above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
+| 5.9 | Release PR `0.7.0` | R | the `0.7.0` rows above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure. |
 | 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
-| 5.13 | `PLUGIN-001f` | N | 5.12 | Plugin install, update and removal per client against the published `0.7.0` package; plugin paths documented only after it passes. |
+| 5.13 | `PLUGIN-001f` | N | 5.12 | Plugin install, update and removal per client against the published `0.8.0` package; plugin paths documented only after it passes. |
 
 ## Release acceptance
 
@@ -1974,8 +2000,8 @@ previews are `0.7.0`, `0.8.0` and `0.9.0`.
 | --- | --- |
 | BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](HANDOFF.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
 | PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
-| BETA-001: beta.3 (0.7.0) | Phases 0-5 of the [0.7.0 plan](#070-beta3-plan): public CLI (CLI-FIRST-001a-e), asynchronous delegation with caller wake-up (DELEGATE-001), FEEDBACK-061, accepted PROPOSALS-001 items and RELEASE-001; host-led COAGENT-001 through 005 and applicable 007: verified writes/checks/review/skills, WINDOWS-001 containment before write profiles, AX acceptance, triaged beta.2 feedback; no open P0/P1 defects. CLI-FIRST-001a-e and SUPPLY-001c-e may ship. |
-| RC-001: rc.1 (next preview, first on `1.0.x`) | Delegated/parallel slice, COAGENT-008, CLI-first and included foundation work complete or explicitly deferred before freeze, unsupported claims removed. |
+| BETA-001: beta.3 (0.7.0) | The `0.7.0` rows of the [release split](#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner and WSL lane (ACCEPT-001), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items and RELEASE-001. No write claim. |
+| RC-001: rc.1 (0.8.0, first on `1.0.x`) | The `0.8.0` rows of the release split: asynchronous delegation with caller wake-up (DELEGATE-001), host-led COAGENT-001 through 005 and applicable 007 (verified writes/checks/review/skills), WINDOWS-001 containment before write profiles, the delegated/parallel slice, COAGENT-008, PLUGIN-001, DOCS-003, SUPPLY-001c-e, AX acceptance and AUDIT-001-A08 to A21, all complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |
 

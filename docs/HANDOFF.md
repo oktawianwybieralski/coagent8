@@ -183,10 +183,16 @@ Do not append another session transcript or treat old test counts as fresh evide
   - Upstream issue: not filed and no longer required (owner decision 2026-10-15).
     `FEEDBACK-061k` is closed; the Codex Windows sandbox behavior is known
     limitation `CUR-014` in ARCHITECTURE and README with the `icacls` remedy,
-    because from 0.7.0 the backend sandbox becomes one execution option among
-    task-scoped coagent profiles.
-  The next agent work is the remaining Phase 2 rows: 2.13 (`FEEDBACK-061i`) and 2.14
-  (`FEEDBACK-061h`) as parallel rows; the POSIX recovery checks run with 2.18.
+    because with the task-scoped coagent profiles (planned for `0.8.0`) the
+    backend sandbox becomes one execution option.
+- **Release split (owner decision 2026-10-15):** `0.7.0` is a stability release and
+  `0.8.0` (rc.1) carries delegation and orchestration; the
+  [ROADMAP split](ROADMAP.md#070-beta3-plan) assigns each open row. The owner's
+  Claude Code, Codex and VS Code registrations run the working-tree build
+  (`dist/index.cjs mcp`); rebuild with `npm run build` and restart the client's
+  MCP server to pick up changes. The next agent work is the `0.7.0` rows: 2.13
+  (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) in parallel, then 2.15-2.18 (the
+  POSIX recovery checks run with 2.18).
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;
