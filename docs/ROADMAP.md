@@ -2025,13 +2025,6 @@ isolated VS Code profile, recording pre-state, action, observed post-state and
 preservation checks. A failed case produces a separate reproduction/fix card
 before rerunning that case.
 
-Client test execution rules (FEEDBACK-061h; applied in row 5.10 for the native upgrade from published 0.6.1):
-
-- **Start every client test in a new chat:** start each client scenario in a fresh chat session so that earlier in-memory server state, cached configuration or turn context from a prior run cannot leak into the test.
-- **Confirm the running runtime version first:** check the active server version before testing (`doctor` health check or the `issue` report shows the running runtime version and bundle path).
-- **Run clients sequentially on shared files:** run clients one after another rather than concurrently whenever they edit or inspect the same file to prevent overlapping edits and lock contention.
-- **Check the working tree after each client closes:** run `git status` and `git diff` immediately after each client session closes to verify that no stray edits remain, because Antigravity was observed re-applying a temporary edit after claiming a verified restore.
-
 - Install/update: native restart, one provider, six current tools, no persistent
   restart banner.
 - Configuration: custom path with spaces, shared default, editor precedence,
@@ -2053,6 +2046,17 @@ Client test execution rules (FEEDBACK-061h; applied in row 5.10 for the native u
   extension storage; preserve shared config/settings/credentials/histories.
 - Reinstall: verify first-install behavior and config migration with preserved
   user configuration.
+
+Every client run, including the upgrade from the published `0.6.1` (row 5.10),
+follows these rules (FEEDBACK-061h):
+
+- Start each client test in a new chat.
+- Confirm the running runtime version first; `doctor` and the `issue` report
+  show it.
+- Run clients one after another when they edit or inspect the same file.
+- After a client closes, check the working tree with `git status` and
+  `git diff`; Antigravity once re-applied a temporary edit after its report
+  claimed a verified restore.
 
 ## Documentation ownership
 
