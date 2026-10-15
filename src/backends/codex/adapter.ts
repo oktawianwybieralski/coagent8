@@ -223,7 +223,8 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   return { status, isError: status !== 'completed', output: snapshot.output, model: app.resolvedModel() ?? model,
     threadId, nativeSessionId: threadId, error, errorDetail: error?.message, exitCode: result.exitCode, signal: result.signal,
     usage, truncated: snapshot.truncated || error?.code === 'BUFFER_LIMIT',
-    continuationAvailable: initialized && !!threadId && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || '') };
+    continuationAvailable: initialized && !!threadId && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
+    denials: snapshot.denials };
 }
 
 export const codexAdapter: CliAdapter = {

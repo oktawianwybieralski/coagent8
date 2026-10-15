@@ -98,6 +98,10 @@ export interface DoctorReport {
   selection: ModelCandidate[];
   recommendations: string[];
   installed_backends: ProviderId[];
+  /**
+   * Backends whose CLI is installed, authenticated and has execution capability and quota headroom.
+   * Does not probe or imply workspace filesystem access permissions, which are scoped per workspace.
+   */
   ready_backends: ProviderId[];
   /** Running server version (`FEEDBACK-061a1`). */
   server_version: string;

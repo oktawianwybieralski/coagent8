@@ -74,6 +74,8 @@ export async function collectReviewInput(
       expectedSnapshot: `${identity}#${digest}`,
       inputComplete: info.inputComplete && working.inputComplete,
       requiredChecks: proseOnly(info) ? [] : ['typecheck', 'tests'],
+      requiredFiles: info.changedPaths,
+      workspaceRoot: cwd,
     };
     return { info, context: reviewGateContext };
   } finally {

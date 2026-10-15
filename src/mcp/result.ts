@@ -153,7 +153,10 @@ export function formatExecutionResult(
       verdict = 'BLOCKED';
       reason = error?.message || 'Execution error';
     } else {
-      ({ verdict, reason } = evaluateStateEnvelopeGate(cleaned, res.truncated, true, formatOpts.reviewContext));
+      const reviewCtx = res.denials?.length
+        ? { ...formatOpts.reviewContext, observedDenials: res.denials }
+        : formatOpts.reviewContext;
+      ({ verdict, reason } = evaluateStateEnvelopeGate(cleaned, res.truncated, true, reviewCtx));
     }
   } else {
     verdict = 'NOT_APPLICABLE';
@@ -190,6 +193,14 @@ export function formatExecutionResult(
     // A failed run states its reason in the error line already.
     // The reason may quote the reviewer's own Blocked line.
     footerLines.push(`Verdict: ${verdict}${reason && !error ? ` (${redactCredentialFormats(reason)})` : ''}`);
+  }
+  if (res.denials && res.denials.length > 0) {
+    for (const denial of res.denials) {
+      const op = denial.operation ? `${denial.operation} ` : '';
+      const target = denial.path ? `${redactDiagnostic(denial.path)} ` : '';
+      const why = denial.reason ? `(${denial.reason})` : '';
+      footerLines.push(`Denied (observed from tool events): ${op}${target}${why}`.trim());
+    }
   }
   if (priceNote) footerLines.push(`Price: ${priceNote}`);
   if (res.truncated) {

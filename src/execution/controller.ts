@@ -611,6 +611,12 @@ async function executeTaskInternal(
           reviewContext.invalidatedReason = snapshotError;
         }
       }
+      if (result.denials?.length) {
+        reviewContext = {
+          ...reviewContext,
+          observedDenials: result.denials,
+        };
+      }
 
       let review: StateEnvelopeEvaluation | undefined;
       if (options.requireEnvelope) {
@@ -630,7 +636,9 @@ async function executeTaskInternal(
       }
       // Only a completed turn whose input stayed unchanged identifies a review to refuse repeating.
       // Only a judged review with COMPLETE coverage and complete collected input suppresses an unchanged repeat (FEEDBACK-061j).
-      const isInputComplete = !reviewContext || reviewContext.inputComplete;
+      // When reviewContext is present, inputComplete must be explicitly true; a denial-only context without inputComplete
+      // defaults to incomplete input, recording effectiveCoverage: PARTIAL so retries are permitted.
+      const isInputComplete = Boolean(!reviewContext || reviewContext.inputComplete === true);
       const effectiveCoverage = isInputComplete ? review?.coverage : 'PARTIAL';
       if (reviewIdentity && review?.judged && review.verdict !== 'NOT_APPLICABLE' && !snapshotError && !result.isError && !result.error && result.status === 'completed') {
         try {

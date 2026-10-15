@@ -108,6 +108,8 @@ export interface ExecutionResult {
   truncated?: boolean;
   continuationAvailable?: boolean;
   usage?: { source: 'provider'; inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  /** Observed tool/filesystem permission denials or policy rejections during execution. */
+  denials?: Array<{ path?: string; operation?: string; reason?: string }>;
 }
 
 export interface TerminalExecutionResult extends ExecutionResult {

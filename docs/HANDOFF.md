@@ -73,9 +73,81 @@ Do not append another session transcript or treat old test counts as fresh evide
   execution errors can be retried without changing code, with or without a handle.
   Coverage is exposed on the gate evaluation, stored in `lastReview`, and lookup
   ignores records without complete coverage (including legacy records). Refusal
-  and skill guidance updated.
-  The next agent work is the remaining Phase 2 rows: 2.12b (`FEEDBACK-061k1`,
-  issue #49, native reproduction) and 2.12c; then the shared native check 2.12d.
+  and skill guidance updated (merged in PR #59).
+  Row 2.12b (`FEEDBACK-061k1`, "Codex read-denial reproduction", #49): reproduced
+  in a throwaway Git repository (`scratch/repro-codex`) on Windows 11 with Node v24/v26
+  and `codex-cli 0.162.0-alpha.17.2`. Matrix results:
+  - POSIX/WSL: `NOT_RUN` (no WSL lane yet, row 2.18).
+  - Windows reproduction lanes:
+    * Lane 1 (intact NTFS inheritance, before synthetic `.env`): fresh and resumed
+      threads, CoAgent8 consult/review (`codex`, `gpt-6.1-sol`) and plain
+      `codex exec --sandbox read-only` under inherited `CODEX_HOME` all read
+      tracked `docs/*.md`, sibling `src/*` files, and untracked files successfully
+      (effective policy: `sandbox_mode="read-only"`, `approval_policy="never"`,
+      effective config: `windows.sandbox="elevated"`, worker token: `codexsandboxoffline`).
+    * Lane 2 (intact NTFS inheritance, after synthetic ignored `docs/sub/.env`):
+      all file reads succeed; the synthetic `.env` does not trigger denials
+      (effective config: `windows.sandbox="elevated"`, worker token: `codexsandboxoffline`).
+    * Lane 3 (broken DACL inheritance on `docs/` via `AreAccessRulesProtected: True` / `D:PAI` under inherited `CODEX_HOME`):
+      tested with fresh and resumed threads across CoAgent8 consult/review and plain `codex exec --sandbox read-only`
+      (effective config: `windows.sandbox="elevated"`, worker token: `codexsandboxoffline`).
+      Worker runs under the restricted `CodexSandboxUsers` token (`codexsandboxoffline`); because
+      `codex-windows-sandbox-setup.exe` only sets `(OI)(CI)RX` ACE at workspace root `cwd` without recursing
+      into inheritance-protected subtrees, the worker is denied read/traversal on `docs/`. Observed denial events:
+      - `Get-Content -LiteralPath 'docs/ARCHITECTURE.md'` fails with exitCode 1,
+        `CategoryInfo: PermissionDenied: (docs\ARCHITECTURE.md:String) [Get-Content], UnauthorizedAccessException`
+        (Win32 error 5 / Access Denied).
+      - `git -C <repo> show HEAD:docs/HANDOFF.md` fails with exitCode 1, `fatal: failed to stat 'docs': Permission denied`.
+    * Lane 4 (isolated `CODEX_HOME` without elevated sandbox): running plain `codex app-server` or
+      `codex exec --sandbox read-only` without `[windows] sandbox = "elevated"` (defaulting to unelevated) fails
+      closed by policy: `exec_command failed: CreateProcess ... rejected: blocked by policy`.
+    * Lane 5 (elevated sandbox configuration in isolated `CODEX_HOME` via `-c windows.sandbox="elevated"`):
+      tested with fresh and resumed threads, under both inherited and isolated `CODEX_HOME`,
+      in CoAgent8 review and plain `codex exec`. Mechanism: on Windows, `windows.sandbox="elevated"`
+      configures Codex's provisioned sandbox backend (which isolates execution under `CodexSandboxUsers` /
+      `codexsandboxoffline` with network proxy rules). Codex CLI requires this backend for read-only
+      sandboxing on Windows; passing `-c windows.sandbox="elevated"` enables read-only commands to run
+      without failing closed by policy (`blocked by policy`). On repositories with intact inheritance,
+      file reads succeed; on subtrees where DACL inheritance was stripped (Lane 3), `codexsandboxoffline`
+      is denied and CoAgent8's denial reporting (2.12c) captures the tool denials, surfaces them in
+      `denials`, and forces `COVERAGE: PARTIAL` and `VERDICT: BLOCKED`.
+      The worker token remains restricted (`codexsandboxoffline` with `SeChangeNotifyPrivilege`), and does
+      not run with the developer's interactive token.
+      Non-admin / un-elevated user lane: `NOT_RUN` (requires non-administrative test account).
+      Existing `windows.sandbox` setting: overridden by CoAgent8 launch args to ensure elevated execution on Windows.
+  Root cause attribution: `codex-windows-sandbox-setup.exe` grants read ACE `(OI)(CI)RX`
+  to group `CodexSandboxUsers` only at the workspace root directory (`cwd`) and assumes
+  DACL inheritance propagates down the entire repository tree. If any subdirectory has
+  inheritance disabled (e.g., protected ACLs or copied trees), processes running under
+  the sandboxed user token fail with Win32 Error 5 (Access Denied / UnauthorizedAccessException)
+  on file reads and Git stats.
+  Verified remedy: for isolated `CODEX_HOME` configurations, passing `-c windows.sandbox="elevated"`
+  prevents failing closed by policy; for repository subtrees where DACL inheritance was broken,
+  running `icacls <dir> /reset /t` restores standard inheritance from the workspace root, propagating
+  `CodexSandboxUsers:(OI)(CI)RX` and allowing `codexsandboxoffline` to read the entire tree (natively
+  verified: exit 0, zero denials, complete file reads).
+  Drafted upstream issue text for OpenAI Codex CLI (draft only; not filed):
+  `[Windows] CodexSandboxUsers permission granted only to workspace root without ACL inheritance verification breaks reading subtrees`
+  "In Windows sandboxed mode, `codex-windows-sandbox-setup.exe` grants read permissions `(OI)(CI)RX`
+  for `CodexSandboxUsers` strictly at the workspace root directory (`cwd`) and relies on standard DACL
+  inheritance. When a repository subdirectory has inheritance blocked (`D:PAI`), the restricted sandbox
+  user token is denied traversal and read permissions, causing `Get-Content` to fail with
+  `UnauthorizedAccessException` and Git commands to fail with `Permission denied`. The setup tool
+  should recursively verify or grant read access across repository subtrees."
+  Row 2.12c (`FEEDBACK-061k2`, "correction and denial reporting", #49): CoAgent8
+  adds `-c windows.sandbox="elevated"` to Codex app-server launch args on Windows
+  (`src/backends/codex/app-server.ts`). Observed filesystem permission denials and
+  policy blocks in failed tool events are parsed by `createCodexStreamCollector` and
+  reported in `denials` on `TerminalExecutionResult`. The review gate
+  (`evaluateStateEnvelopeGate`) forces `COVERAGE: PARTIAL` and `VERDICT: BLOCKED`
+  when required review scope was denied (matching file paths, relative/absolute forms,
+  and directory prefixes), naming the denied files. `formatExecutionResult`
+  renders observed tool denials in the result footer distinctly from reviewer text,
+  with paths sanitized by `redactDiagnostic`. `doctor` documentation clarifies that
+  backend readiness checks installation, auth and quota without probing or implying
+  workspace filesystem permissions.
+  The next agent work is the remaining Phase 2 rows: 2.12d (the shared native check on
+  Windows and POSIX), with 2.13 (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) as parallel rows.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

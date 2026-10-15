@@ -41,10 +41,13 @@ const MAX_BLOCKED_REASON_CHARS = 300;
 
 /** Server-collected review input and scope-based requirements, never caller approval. */
 export interface ReviewGateContext {
-  expectedSnapshot: string;
-  inputComplete: boolean;
-  requiredChecks: readonly ('typecheck' | 'tests')[];
+  expectedSnapshot?: string;
+  inputComplete?: boolean;
+  requiredChecks?: readonly ('typecheck' | 'tests')[];
   invalidatedReason?: string;
+  requiredFiles?: readonly string[];
+  observedDenials?: readonly { path?: string; operation?: string; reason?: string }[];
+  workspaceRoot?: string;
 }
 
 /**
@@ -131,6 +134,51 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
   const isEnveloped = reviewCount > 0 || snapshotCount > 0 || coverageCount > 0 || verdictCount > 0 || checksCount > 0 || endReviewCount > 0;
   const isEndReviewLast = nonEmptyLines.length > 0 && /^END_REVIEW$/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
 
+  const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
+  const normWs = context?.workspaceRoot ? normalizePath(context.workspaceRoot) : undefined;
+  const deniedRequiredFiles: string[] = [];
+  const pathlessDenials: string[] = [];
+  let policyBlocked = false;
+
+  if (context?.observedDenials && context.observedDenials.length > 0) {
+    for (const denial of context.observedDenials) {
+      if (denial.reason === 'Blocked by policy' || (!denial.path && /blocked\s+by\s+policy/i.test(denial.operation || ''))) {
+        policyBlocked = true;
+      } else if (!denial.path) {
+        const op = denial.operation ? `${denial.operation}` : 'Filesystem access';
+        const reason = denial.reason ? ` (${denial.reason})` : '';
+        const desc = `${op}${reason}`;
+        if (!pathlessDenials.includes(desc)) pathlessDenials.push(desc);
+      }
+      if (!denial.path || !context.requiredFiles) continue;
+      let normDenial = normalizePath(denial.path);
+      if (normWs && (normDenial.includes(':') || normDenial.startsWith('/'))) {
+        if (normDenial.startsWith(normWs + '/')) {
+          normDenial = normDenial.slice(normWs.length + 1);
+        } else if (normDenial === normWs) {
+          normDenial = '';
+        } else {
+          continue;
+        }
+      }
+      for (const req of context.requiredFiles) {
+        const normReq = normalizePath(req);
+        const matches = normReq === normDenial
+          || normReq.endsWith('/' + normDenial)
+          || normDenial.endsWith('/' + normReq)
+          || (normDenial.length > 0 && normReq.startsWith(normDenial + '/'))
+          || (normDenial === '');
+        if (matches && !deniedRequiredFiles.includes(req)) {
+          deniedRequiredFiles.push(req);
+        }
+      }
+    }
+  }
+  const deniedRequiredScope = (deniedRequiredFiles.length > 0) || ((policyBlocked || pathlessDenials.length > 0) && (context?.requiredFiles?.length ?? 0) > 0);
+  if (deniedRequiredScope) {
+    coverageVal = 'PARTIAL';
+  }
+
   if (requireEnvelope || isEnveloped || hasBlockers) {
     const isCompleteEnvelope = isEnveloped
       && reviewCount === 1 && reviewVal.length > 0
@@ -145,11 +193,11 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     const failedChecks = checkValues && Object.values(checkValues).includes('FAIL');
     // Unrun required checks are named on READY; the author and CI run them.
     const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
-    const wrongSnapshot = context && snapshotVal !== context.expectedSnapshot;
-    const incompleteInput = context && !context.inputComplete;
-    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !wrongSnapshot);
+    const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
+    const incompleteInput = Boolean(context && context.inputComplete === false);
+    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !wrongSnapshot && !deniedRequiredScope);
     const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
-      || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY';
+      || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY' || deniedRequiredScope;
 
     if (shouldBlock) {
       // Every cause is reported: a blocked verdict without its causes gives the caller nothing to act on.
@@ -158,6 +206,11 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
         : '';
       const reasons: string[] = [];
       if (hasBlockers) reasons.push('Blocker issue [P1/P2] reported');
+      if (deniedRequiredScope) {
+        if (policyBlocked) reasons.push('Tool execution was blocked by policy');
+        if (pathlessDenials.length > 0) reasons.push(`Tool execution access was denied: ${pathlessDenials.join(', ')}`);
+        if (deniedRequiredFiles.length > 0) reasons.push(`Filesystem access to required review scope was denied: ${deniedRequiredFiles.join(', ')}`);
+      }
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
       if (truncated) reasons.push('Output was truncated');
       // Without an answer or an envelope, its field checks would only restate that absence.

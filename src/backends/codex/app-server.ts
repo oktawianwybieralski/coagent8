@@ -40,11 +40,18 @@ export const CODEX_DISABLED_FEATURES = [
 
 /**
  * Arguments of every `codex app-server` launch: read-only sandbox, no approvals and the
- * features in {@link CODEX_DISABLED_FEATURES} off.
+ * features in {@link CODEX_DISABLED_FEATURES} off. On Windows, forces `windows.sandbox="elevated"`
+ * to use the provisioned Windows sandbox backend (CodexSandboxUsers), enabling read-only sandboxed
+ * execution without failing closed by policy in isolated configurations.
  */
 export function codexAppServerArgs(): string[] {
-  return ['app-server', '-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="never"',
-    ...CODEX_DISABLED_FEATURES.flatMap(feature => ['-c', `features.${feature}=false`])];
+  return [
+    'app-server',
+    '-c', 'sandbox_mode="read-only"',
+    '-c', 'approval_policy="never"',
+    ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="elevated"'] : []),
+    ...CODEX_DISABLED_FEATURES.flatMap(feature => ['-c', `features.${feature}=false`]),
+  ];
 }
 
 /** Pages read at most from a paginated isolation check before it fails closed. */

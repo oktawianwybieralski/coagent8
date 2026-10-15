@@ -54,7 +54,7 @@ function readResult(result) {
     sessionHandle: status.groups.handle || null, turn: status.groups.turn ? Number(status.groups.turn) : (status.groups.handle ? 1 : null),
     state: status.groups.state || null, continuationAvailable: status.groups.state === 'ready', historyAvailable: !status.groups.noHistory,
     status: 'completed',
-    verdict: 'NOT_APPLICABLE', reason: null, truncated: false, warnings: [], issueUrl: null, workspace: null,
+    verdict: 'NOT_APPLICABLE', reason: null, truncated: false, warnings: [], issueUrl: null, workspace: null, denials: [],
     error: null, answer: placeholder || /^Error \[/.test(body) ? body : answerOf(body), price: null,
   };
   const error = /^Error \[/.test(body) ? ERROR.exec(body.split('\n\n')[0]) : null;
@@ -72,6 +72,7 @@ function readResult(result) {
     else if ((match = /^Warning: (.*)$/.exec(line))) parsed.warnings.push(match[1]);
     else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool prepares the sanitized report to paste\)$/.exec(line))) parsed.issueUrl = match[1];
     else if ((match = /^Workspace: (.+) \(server directory\)$/.exec(line))) parsed.workspace = match[1];
+    else if ((match = /^Denied \(observed from tool events\): (.*)$/.exec(line))) parsed.denials.push(match[1]);
     else throw new Error(`unexpected footer line: ${line}`);
   }
   return parsed;
