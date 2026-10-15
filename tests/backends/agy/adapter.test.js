@@ -961,6 +961,11 @@ test('FEEDBACK-061i: a resumed agy turn without a conversation id keeps the requ
     assert.equal(res.nativeSessionId, requestedId, 'must keep requested session id when agy omits conversation_id');
     assert.equal(res.threadId, requestedId);
     assert.equal(res.continuationAvailable, true);
+
+    const fresh = await execute('New analysis', { model: MODEL, cwd: tempDir });
+    assert.equal(fresh.status, 'failed', 'a new turn without a conversation id has no session to continue');
+    assert.equal(fresh.error.code, 'PROTOCOL_ERROR');
+    assert.equal(fresh.continuationAvailable, false);
   } finally {
     delete process.env.coagent8_FIXTURE_MODE;
   }

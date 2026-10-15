@@ -185,15 +185,13 @@ Do not append another session transcript or treat old test counts as fresh evide
     limitation `CUR-014` in ARCHITECTURE and README with the `icacls` remedy,
     because with the task-scoped coagent profiles (planned for `0.8.0`) the
     backend sandbox becomes one execution option.
-- **Row 2.13 (`FEEDBACK-061i`, "agy retry mapper and resumed turn"):**
-  documented in TSDoc that `createRetryIdMapper` skips `final` intentionally
-  so that a recovery turn's synthetic terminal answer reuses/updates the
-  initial turn's empty `final` identifier in history rather than generating
-  `retry-final`. Added support for resumed turns where agy output omits
-  `conversation_id` (`collector.ts` allowing optional session id in `init` and
-  `adapter.ts` checking `(!s.nativeSessionId && !expectedSessionId)`), keeping
-  the requested session identifier with `continuationAvailable: true`; verified
-  with a focused fixture test in `tests/backends/agy/adapter.test.js`.
+- **Row 2.13 (`FEEDBACK-061i`, agy retry mapper and resumed turn):** the
+  denial-recovery caller keeps `final` unmapped on purpose, so the recovery
+  answer becomes the turn's canonical `final` message; TSDoc on
+  `createRetryIdMapper` and the caller records it. A resumed turn whose agy
+  output omits `conversation_id` now keeps the requested session id with
+  `continuationAvailable: true`; a new turn without an id still fails with
+  `PROTOCOL_ERROR`. Fixture test in `tests/backends/agy/adapter.test.js`.
 - **Release split (owner decision 2026-10-15):** `0.7.0` is a stability release and
   `0.8.0` (rc.1) carries delegation and orchestration; the
   [ROADMAP split](ROADMAP.md#070-beta3-plan) assigns each open row. The owner's

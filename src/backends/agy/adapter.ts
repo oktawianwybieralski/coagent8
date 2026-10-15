@@ -43,11 +43,10 @@ export const SANDBOX_DENIAL_RECOVERY_PROMPT =
  * Creates a deterministic per-retry event identifier mapper that stays within the 256 UTF-8
  * byte contract and never collapses distinct long or multibyte identifiers (#20).
  *
- * @remarks `createRetryIdMapper` maps incremental delta/tool IDs (`msg-N`, `tool-N`) so repeated
- * steps in a denial-recovery turn do not collide with turn 1 events in session history. It deliberately
- * skips `final`: when an initial turn ends empty after sandbox denial, any synthesized terminal
- * `final` message emitted by the recovery turn reuses the canonical `final` identifier in history
- * (updating/replacing the empty first turn's entry) rather than creating an uncoordinated `retry-final`.
+ * @remarks The mapper renames every identifier it receives. The denial-recovery caller in
+ * {@link execute} passes it step message and tool identifiers only and keeps `final` unmapped on
+ * purpose (FEEDBACK-061i): the first turn ended without an answer, so the recovery turn's terminal
+ * answer takes the canonical `final` message instead of a separate `retry-final`.
  */
 export function createRetryIdMapper(initialIds?: Iterable<string>): (id: string) => string {
   const mapped = new Map<string, string>();
@@ -411,8 +410,7 @@ export async function execute(
       const mapRetryId = createRetryIdMapper(initialEventIds);
       const retryOnEvent = options.onEvent
         ? (event: AdapterEvent) => {
-            // 'final' is skipped on purpose so a recovery turn's terminal answer reuses/updates
-            // the initial turn's identifier in history rather than emitting an uncoordinated 'retry-final'.
+            // 'final' stays unmapped on purpose: the recovery answer is the turn's canonical final message.
             if ((event.type === 'assistant_delta' || event.type === 'assistant_message') && event.messageId !== 'final') {
               options.onEvent?.({ ...event, messageId: mapRetryId(event.messageId) });
             } else if (event.type === 'tool_started' || event.type === 'tool_finished') {
