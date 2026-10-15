@@ -1317,7 +1317,7 @@ behavior or a test-procedure lesson.
   working tree after a client closes, because Antigravity re-applied a
   temporary edit after its report claimed a verified restore. Record this in
   [Native VS Code acceptance](#native-vs-code-acceptance). Check: P.
-- [ ] **FEEDBACK-061i - release review P3 findings.** In
+- [x] **FEEDBACK-061i - release review P3 findings.** In
   `src/backends/agy/adapter.ts`: confirm that `createRetryIdMapper` skips
   `final` on purpose (a recovery turn's `final` message may reuse the empty
   first turn's identifier in history) and document or fix it; add a fixture
@@ -1903,7 +1903,7 @@ agent (owner assigns).
 | 2.12b | [x] `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
 | 2.12c | [x] `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (release blocker; the remaining Codex sandbox cause became known limitation `CUR-014`, owner decision 2026-10-15); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
 | 2.12d | [x] `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. Windows passed; the POSIX run moves to 2.18 (owner decision 2026-10-15). |
-| 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
+| 2.13 | [x] `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented; fixture for a resumed turn without a conversation id keeps requested id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
 | 2.16 | `ACCEPT-001a1` runner skeleton | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |

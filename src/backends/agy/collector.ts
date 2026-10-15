@@ -104,10 +104,10 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
     // 2. Init event
     if (eventType === 'init') {
       const sid = (e.conversation_id || e.session_id) as string | undefined;
-      if (typeof sid !== 'string' || !UUID.test(sid)) throw new Error('Invalid Gemini init metadata.');
+      if (sid != null && (typeof sid !== 'string' || !UUID.test(sid))) throw new Error('Invalid Gemini init metadata.');
       if (e.model != null && typeof e.model !== 'string') throw new Error('Invalid Gemini init metadata.');
-      if (nativeSessionId && nativeSessionId !== sid) throw new Error('Gemini changed session within a turn.');
-      nativeSessionId = sid;
+      if (sid && nativeSessionId && nativeSessionId !== sid) throw new Error('Gemini changed session within a turn.');
+      if (sid) nativeSessionId = sid;
       if (isValidModelIdentifier(e.model)) model = e.model;
       return;
     }

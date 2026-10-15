@@ -42,6 +42,11 @@ export const SANDBOX_DENIAL_RECOVERY_PROMPT =
 /**
  * Creates a deterministic per-retry event identifier mapper that stays within the 256 UTF-8
  * byte contract and never collapses distinct long or multibyte identifiers (#20).
+ *
+ * @remarks The mapper renames every identifier it receives. The denial-recovery caller in
+ * {@link execute} passes it step message and tool identifiers only and keeps `final` unmapped on
+ * purpose (FEEDBACK-061i): the first turn ended without an answer, so the recovery turn's terminal
+ * answer takes the canonical `final` message instead of a separate `retry-final`.
  */
 export function createRetryIdMapper(initialIds?: Iterable<string>): (id: string) => string {
   const mapped = new Map<string, string>();
@@ -405,6 +410,7 @@ export async function execute(
       const mapRetryId = createRetryIdMapper(initialEventIds);
       const retryOnEvent = options.onEvent
         ? (event: AdapterEvent) => {
+            // 'final' stays unmapped on purpose: the recovery answer is the turn's canonical final message.
             if ((event.type === 'assistant_delta' || event.type === 'assistant_message') && event.messageId !== 'final') {
               options.onEvent?.({ ...event, messageId: mapRetryId(event.messageId) });
             } else if (event.type === 'tool_started' || event.type === 'tool_finished') {
@@ -440,7 +446,7 @@ export async function execute(
       ? classifyGeminiError(fallbackStderr)
       : { code: 'PROCESS_ERROR', message: `Gemini process failed with status ${processResult.status} (exit code ${processResult.exitCode}).`, retryable: false };
   }
-  if (!error && (!s.terminal || !s.nativeSessionId)) {
+  if (!error && (!s.terminal || (!s.nativeSessionId && !expectedSessionId))) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }
   // A headless denial ends agy's turn before the model answers; an empty success is no answer.

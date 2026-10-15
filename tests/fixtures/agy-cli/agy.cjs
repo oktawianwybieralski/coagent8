@@ -115,13 +115,18 @@ function run() {
   }
 
   const isRecoveryTurn = args.includes('--conversation') && prompt.includes('Your sandbox denied a shell command');
+  const omitConversationId = mode === 'resume-without-conversation-id';
   const sid = mode === 'wrong-session' || (isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION === '1')
     ? '99999999-aaaa-bbbb-cccc-123456789012'
-    : native;
-  send(mode === 'init-without-model' ? { event: 'init', conversation_id: sid } : { event: 'init', conversation_id: sid, model });
+    : (omitConversationId ? undefined : native);
+  if (omitConversationId) {
+    send({ event: 'init', model });
+  } else {
+    send(mode === 'init-without-model' ? { event: 'init', conversation_id: sid } : { event: 'init', conversation_id: sid, model });
+  }
 
   if (mode === 'secret-hang') {
-    send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'sk-fixtureSecret1234567890abcdef' } });
+    send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'sk-fixtureSecret1234567890abcdef' } });
     setInterval(() => {}, 1000);
     return;
   }
@@ -178,11 +183,11 @@ function run() {
     return;
   }
 
-  send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 0, state: 'DONE', step_type: 'user_input' } });
-  send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' } });
-  send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' } });
-  send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Draft ' } });
-  send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Final **Markdown**\n```js\nconst value = 42;\n```' } });
+  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 0, state: 'DONE', step_type: 'user_input' } });
+  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' } });
+  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' } });
+  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Draft ' } });
+  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Final **Markdown**\n```js\nconst value = 42;\n```' } });
 
   if (mode === 'no-terminal') return;
   if (mode === 'hang') { setInterval(() => {}, 1000); return; }
@@ -219,14 +224,14 @@ function run() {
       'invalid-session': 'Session not found',
       'error-exit-zero': 'protocol failure',
     }[mode];
-    send({ event: 'result', result: { conversation_id: sid, status: 'ERROR', error: message } });
+    send({ event: 'result', result: { ...(sid ? { conversation_id: sid } : {}), status: 'ERROR', error: message } });
     return;
   }
 
   send({
     event: 'result',
     result: {
-      conversation_id: sid,
+      ...(sid ? { conversation_id: sid } : {}),
       status: 'SUCCESS',
       response: 'Final **Markdown**\n```js\nconst value = 42;\n```',
       duration_seconds: 1.2,
