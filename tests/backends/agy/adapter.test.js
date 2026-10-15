@@ -946,3 +946,22 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
     delete process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION;
   }
 });
+
+test('FEEDBACK-061i: a resumed agy turn without a conversation id keeps the requested id instead of failing', async () => {
+  const requestedId = '11111111-aaaa-bbbb-cccc-123456789012';
+  process.env.coagent8_FIXTURE_MODE = 'resume-without-conversation-id';
+  try {
+    const res = await execute('Continue previous analysis', {
+      model: MODEL,
+      cwd: tempDir,
+      nativeSessionId: requestedId,
+    });
+    assert.equal(res.status, 'completed', JSON.stringify(res.error));
+    assert.equal(res.isError, false);
+    assert.equal(res.nativeSessionId, requestedId, 'must keep requested session id when agy omits conversation_id');
+    assert.equal(res.threadId, requestedId);
+    assert.equal(res.continuationAvailable, true);
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
+});

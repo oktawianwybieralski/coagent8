@@ -42,6 +42,12 @@ export const SANDBOX_DENIAL_RECOVERY_PROMPT =
 /**
  * Creates a deterministic per-retry event identifier mapper that stays within the 256 UTF-8
  * byte contract and never collapses distinct long or multibyte identifiers (#20).
+ *
+ * @remarks `createRetryIdMapper` maps incremental delta/tool IDs (`msg-N`, `tool-N`) so repeated
+ * steps in a denial-recovery turn do not collide with turn 1 events in session history. It deliberately
+ * skips `final`: when an initial turn ends empty after sandbox denial, any synthesized terminal
+ * `final` message emitted by the recovery turn reuses the canonical `final` identifier in history
+ * (updating/replacing the empty first turn's entry) rather than creating an uncoordinated `retry-final`.
  */
 export function createRetryIdMapper(initialIds?: Iterable<string>): (id: string) => string {
   const mapped = new Map<string, string>();
@@ -405,6 +411,8 @@ export async function execute(
       const mapRetryId = createRetryIdMapper(initialEventIds);
       const retryOnEvent = options.onEvent
         ? (event: AdapterEvent) => {
+            // 'final' is skipped on purpose so a recovery turn's terminal answer reuses/updates
+            // the initial turn's identifier in history rather than emitting an uncoordinated 'retry-final'.
             if ((event.type === 'assistant_delta' || event.type === 'assistant_message') && event.messageId !== 'final') {
               options.onEvent?.({ ...event, messageId: mapRetryId(event.messageId) });
             } else if (event.type === 'tool_started' || event.type === 'tool_finished') {
@@ -440,7 +448,7 @@ export async function execute(
       ? classifyGeminiError(fallbackStderr)
       : { code: 'PROCESS_ERROR', message: `Gemini process failed with status ${processResult.status} (exit code ${processResult.exitCode}).`, retryable: false };
   }
-  if (!error && (!s.terminal || !s.nativeSessionId)) {
+  if (!error && (!s.terminal || (!s.nativeSessionId && !expectedSessionId))) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }
   // A headless denial ends agy's turn before the model answers; an empty success is no answer.
