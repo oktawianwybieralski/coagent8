@@ -11,7 +11,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { runAcceptance, SCHEMA_VERSION } = require('../../tooling/acceptance/runner.cjs');
+const { runAcceptance, resolveCodeCli, SCHEMA_VERSION } = require('../../tooling/acceptance/runner.cjs');
+const { createSyntheticArtifacts } = require('../../tooling/acceptance/artifacts.cjs');
 
 test('runner skeleton completes dry run and produces valid evidence JSON (ACCEPT-001a1)', async t => {
   const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-test-'));
@@ -104,5 +105,159 @@ test('runner skeleton cleans up temporary root on failure', async t => {
   assert.equal(result.status, 'FAIL');
   assert.ok(fs.existsSync(evidencePath), 'Evidence JSON must still be written on failure');
   assert.equal(fs.existsSync(tempInstanceRoot), false, 'Temporary instance root must be cleaned up on failure');
+});
+
+test('resolveCodeCli resolves JS scripts and parses code.cmd', async t => {
+  // Test direct JS resolution
+  const mockScript = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
+  const resScript = resolveCodeCli(mockScript);
+  assert.equal(resScript.command, process.execPath);
+  assert.deepEqual(resScript.prefixArgs, [mockScript]);
+  assert.deepEqual(resScript.extraEnv, {});
+
+  // Test Windows code.cmd structure parsing
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-codecli-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+
+  const binDir = path.join(testRoot, 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const codeCmd = path.join(binDir, 'code.cmd');
+  const codeExe = path.join(testRoot, 'Code.exe');
+  const cliJs = path.join(testRoot, 'resources', 'app', 'out', 'cli.js');
+  fs.mkdirSync(path.dirname(cliJs), { recursive: true });
+
+  fs.writeFileSync(codeExe, 'mock exe', 'utf8');
+  fs.writeFileSync(cliJs, 'mock cli js', 'utf8');
+  fs.writeFileSync(codeCmd, '@echo off\n"%~dp0..\\Code.exe" "%~dp0..\\resources\\app\\out\\cli.js" %*\n', 'utf8');
+
+  if (process.platform === 'win32') {
+    const resCmd = resolveCodeCli(codeCmd);
+    assert.equal(resCmd.command, codeExe);
+    assert.deepEqual(resCmd.prefixArgs, [cliJs]);
+    assert.equal(resCmd.extraEnv.ELECTRON_RUN_AS_NODE, '1');
+  }
+});
+
+test('runner executes native mode with mock code CLI and verifies args and home preservation', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-native-test-'));
+  const evidencePath = path.join(testRoot, 'evidence-native.json');
+  const tempInstanceRoot = path.join(testRoot, 'instance-native');
+  const synDir = path.join(testRoot, 'synthetic');
+
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+
+  const syn = createSyntheticArtifacts(synDir, '0.6.1');
+
+  // Mock code runner recording invocation args
+  const logFile = path.join(testRoot, 'code-invocations.log');
+  const mockCodeRunner = path.join(testRoot, 'mock-code.cjs');
+  const mockCodeContent = `
+    const fs = require('node:fs');
+    const args = process.argv.slice(2);
+    fs.appendFileSync(${JSON.stringify(logFile)}, JSON.stringify(args) + '\\n');
+    if (args.includes('--version')) {
+      console.log('1.90.0');
+      process.exit(0);
+    }
+    if (args.includes('--install-extension')) {
+      console.log('Extension installed successfully');
+      process.exit(0);
+    }
+    process.exit(0);
+  `;
+  fs.writeFileSync(mockCodeRunner, mockCodeContent, 'utf8');
+
+  const result = await runAcceptance({
+    dryRun: false,
+    tarball: syn.tarballPath,
+    vsix: syn.vsixPath,
+    codePath: mockCodeRunner,
+    evidencePath,
+    tempRoot: tempInstanceRoot,
+  });
+
+  assert.equal(result.status, 'INCOMPLETE', 'Status is INCOMPLETE because scenarios N2-N4 are deferred');
+  assert.ok(fs.existsSync(evidencePath), 'Evidence JSON must be written');
+
+  const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+  assert.equal(evidence.mode, 'native');
+  assert.equal(evidence.host.vscode, '1.90.0');
+  assert.equal(evidence.runtime.serverStatus, 'operational');
+
+  // Verify invocations of code
+  assert.ok(fs.existsSync(logFile), 'Mock code CLI must have been invoked');
+  const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.ok(lines.length >= 2, 'Must have at least 2 code invocations: version probe and install');
+
+  const probeCall = lines.find(args => args.includes('--version'));
+  assert.ok(probeCall, 'Probe call must exist');
+  assert.ok(probeCall.includes('--user-data-dir'));
+  assert.ok(probeCall.includes('--extensions-dir'));
+
+  const installCall = lines.find(args => args.includes('--install-extension'));
+  assert.ok(installCall, 'Install call must exist');
+  assert.ok(installCall.includes('--install-extension'));
+  assert.ok(installCall.includes('--user-data-dir'));
+  assert.ok(installCall.includes('--extensions-dir'));
+
+  // Verify step_home_preservation succeeded
+  const preservationStep = evidence.steps.find(s => s.id === 'step_home_preservation');
+  assert.ok(preservationStep);
+  assert.equal(preservationStep.status, 'PASS');
+});
+
+test('runner fails and reports violation when home preservation is broken', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-violation-test-'));
+  const fakeHome = path.join(testRoot, 'fake-home');
+  fs.mkdirSync(fakeHome, { recursive: true });
+  const fakeClaude = path.join(fakeHome, '.claude.json');
+  fs.writeFileSync(fakeClaude, 'original content', 'utf8');
+
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+
+  const synDir = path.join(testRoot, 'synthetic');
+  const syn = createSyntheticArtifacts(synDir, '0.6.1');
+  const evidencePath = path.join(testRoot, 'evidence-violation.json');
+
+  // Tamper with fake home during runtime probe by monkey-patching in synthetic stub
+  const hostileParentEnv = {
+    ...process.env,
+    HOME: fakeHome,
+    USERPROFILE: fakeHome,
+  };
+
+  // Modify fakeClaude right before run completes
+  const mockCodeRunner = path.join(testRoot, 'mock-tamper-code.cjs');
+  const mockCodeContent = `
+    const fs = require('node:fs');
+    const args = process.argv.slice(2);
+    if (args.includes('--version')) {
+      console.log('1.90.0');
+      process.exit(0);
+    }
+    if (args.includes('--install-extension')) {
+      // Tamper with the watched real home file
+      fs.writeFileSync(${JSON.stringify(fakeClaude)}, 'tampered content', 'utf8');
+      process.exit(0);
+    }
+    process.exit(0);
+  `;
+  fs.writeFileSync(mockCodeRunner, mockCodeContent, 'utf8');
+
+  const result = await runAcceptance({
+    dryRun: false,
+    tarball: syn.tarballPath,
+    vsix: syn.vsixPath,
+    codePath: mockCodeRunner,
+    parentEnv: hostileParentEnv,
+    evidencePath,
+  });
+
+  assert.equal(result.status, 'FAIL');
+  const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+  const failStep = evidence.steps.find(s => s.status === 'FAIL');
+  assert.ok(failStep);
+  assert.equal(failStep.id, 'step_home_preservation');
+  assert.match(failStep.error, /Home preservation violation/);
 });
 

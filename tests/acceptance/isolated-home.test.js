@@ -149,3 +149,79 @@ test('isolated instances and runner never touch real home registrations or confi
     assert.deepEqual(postRecord.content, preRecord.content, `File ${relPath} must be byte-identical`);
   }
 });
+
+test('isolated child process resolves isolated home from child environment without explicit home option', async t => {
+  const fakeRealHome = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-fake-real-home2-'));
+  const realHomeCanonical = fs.realpathSync.native(fakeRealHome);
+
+  t.after(() => {
+    fs.rmSync(fakeRealHome, { recursive: true, force: true, maxRetries: 5 });
+  });
+
+  const realClaudeConfig = path.join(realHomeCanonical, '.claude.json');
+  fs.writeFileSync(realClaudeConfig, '{\n  "mcpServers": {\n    "real-unrelated": {\n      "command": "node"\n    }\n  }\n}\n', 'utf8');
+  const preSnapshot = snapshotTree(realHomeCanonical);
+
+  const hostileParentEnv = {
+    ...process.env,
+    HOME: realHomeCanonical,
+    USERPROFILE: realHomeCanonical,
+  };
+
+  const isolated = createIsolatedAcceptanceEnvironment({
+    parentEnv: hostileParentEnv,
+  });
+
+  t.after(() => {
+    cleanupIsolatedEnvironment(isolated);
+  });
+
+  const cliFixture = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
+  const runtimeSource = path.resolve(__dirname, '../../dist/index.cjs');
+  const setupModule = path.resolve(__dirname, '../../src/integrations/setup.ts');
+
+  // Child script invokes setupClients without passing options.home
+  const childScript = `
+    const { setupClients } = require(${JSON.stringify(setupModule)});
+    async function main() {
+      const results = await setupClients({
+        cwd: process.cwd(),
+        runtimeSource: ${JSON.stringify(runtimeSource)},
+        clients: ['claude'],
+      });
+      if (!results || results.length === 0) process.exit(2);
+      process.exit(0);
+    }
+    main().catch(err => {
+      console.error(err);
+      process.exit(1);
+    });
+  `;
+
+  const childScriptPath = path.join(isolated.root, 'child-setup-runner.cjs');
+  fs.writeFileSync(childScriptPath, childScript, 'utf8');
+
+  const cp = require('node:child_process');
+  const res = cp.spawnSync(process.execPath, ['-r', require.resolve('tsx/cjs'), childScriptPath], {
+    cwd: isolated.home,
+    env: {
+      ...isolated.childEnv,
+      CLAUDE_PATH: cliFixture,
+      SETUP_FIXTURE_HOME: isolated.home,
+    },
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 30_000,
+  });
+
+  assert.equal(res.status, 0, `Child setup must exit 0: ${res.stderr || res.stdout}`);
+  assert.ok(fs.existsSync(path.join(isolated.home, '.claude.json')), 'Child must write registration in isolated home');
+
+  const postSnapshot = snapshotTree(realHomeCanonical);
+  assert.equal(postSnapshot.size, preSnapshot.size, 'Fake real home must remain untouched');
+  for (const [relPath, preRecord] of preSnapshot.entries()) {
+    const postRecord = postSnapshot.get(relPath);
+    assert.ok(postRecord);
+    assert.equal(postRecord.hash, preRecord.hash);
+  }
+});

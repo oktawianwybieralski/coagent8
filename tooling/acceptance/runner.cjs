@@ -10,6 +10,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
+const { createHash } = require('node:crypto');
 const {
   createIsolatedAcceptanceEnvironment,
   cleanupIsolatedEnvironment,
@@ -23,6 +24,13 @@ const {
 
 const SCHEMA_VERSION = '1.0.0';
 const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+
+/**
+ * Computes sha256 hash of a Buffer.
+ */
+function sha256Buffer(buf) {
+  return createHash('sha256').update(buf).digest('hex');
+}
 
 /**
  * Runs a command synchronously with process bounds, windowsHide, and timeout.
@@ -49,19 +57,178 @@ function runProcess(command, args, options = {}) {
 }
 
 /**
- * Sanitizes and redacts home paths from output strings.
+ * Computes variations of a home directory path for robust redaction across
+ * forward slashes, backslashes, JSON string escaping, and Windows drive casing.
+ */
+function getHomePathVariants(homePath) {
+  if (!homePath || typeof homePath !== 'string') return [];
+  const trimmed = homePath.replace(/[/\\]+$/, '');
+  const variants = new Set();
+  const forward = trimmed.replace(/\\/g, '/');
+  const backslash = trimmed.replace(/\//g, '\\');
+  const jsonEscaped = backslash.replace(/\\/g, '\\\\');
+
+  variants.add(forward);
+  variants.add(backslash);
+  variants.add(jsonEscaped);
+
+  if (/^[a-zA-Z]:/.test(trimmed)) {
+    const driveUpper = trimmed[0].toUpperCase() + trimmed.slice(1);
+    const driveLower = trimmed[0].toLowerCase() + trimmed.slice(1);
+
+    for (const d of [driveUpper, driveLower]) {
+      const f = d.replace(/\\/g, '/');
+      const b = d.replace(/\//g, '\\');
+      variants.add(f);
+      variants.add(b);
+      variants.add(b.replace(/\\/g, '\\\\'));
+    }
+  }
+
+  return Array.from(variants).sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Sanitizes and redacts home paths from output strings and serialized JSON.
  */
 function redactHome(text, homes = []) {
   if (typeof text !== 'string') return text;
   let redacted = text;
   for (const home of homes) {
     if (!home) continue;
-    const normalized = home.replace(/\\/g, '/');
-    const backslash = home.replace(/\//g, '\\');
-    redacted = redacted.split(normalized).join('~');
-    redacted = redacted.split(backslash).join('~');
+    const variants = getHomePathVariants(home);
+    for (const v of variants) {
+      if (v) {
+        redacted = redacted.split(v).join('~');
+      }
+    }
   }
   return redacted;
+}
+
+/**
+ * Resolves the VS Code CLI executable and launch arguments.
+ *
+ * @remarks
+ * On Windows, `code` in PATH is usually `code.cmd`, which cannot be spawned with
+ * `shell: false`. Resolves either the underlying `Code.exe` with `cli.js` and
+ * `ELECTRON_RUN_AS_NODE=1`, or safely wraps `code.cmd` via `cmd.exe`.
+ */
+function resolveCodeCli(customCodePath, env = process.env) {
+  let candidate = customCodePath || env.ACCEPTANCE_CODE_CLI || env.CODE_PATH;
+
+  if (!candidate) {
+    const searchDirs = (env.PATH || '').split(path.delimiter).filter(Boolean);
+    const names = process.platform === 'win32'
+      ? ['code.cmd', 'code.exe', 'code']
+      : ['code'];
+
+    for (const dir of searchDirs) {
+      for (const name of names) {
+        const full = path.join(dir, name);
+        if (fs.existsSync(full)) {
+          candidate = full;
+          break;
+        }
+      }
+      if (candidate) break;
+    }
+  }
+
+  if (!candidate) {
+    return {
+      command: 'code',
+      prefixArgs: [],
+      extraEnv: {},
+    };
+  }
+
+  if (candidate.endsWith('.js') || candidate.endsWith('.cjs')) {
+    return {
+      command: process.execPath,
+      prefixArgs: [candidate],
+      extraEnv: {},
+    };
+  }
+
+  if (process.platform === 'win32' && candidate.toLowerCase().endsWith('.cmd')) {
+    try {
+      const cmdContent = fs.readFileSync(candidate, 'utf8');
+      const binDir = path.dirname(candidate);
+      const parentDir = path.resolve(binDir, '..');
+      const codeExe = path.join(parentDir, 'Code.exe');
+
+      let cliJs = null;
+      const match = /"%~dp0([^"]*cli\.js)"/i.exec(cmdContent);
+      if (match) {
+        const candidateCli = path.resolve(binDir, match[1]);
+        if (fs.existsSync(candidateCli)) {
+          cliJs = candidateCli;
+        }
+      }
+      if (!cliJs) {
+        const standard1 = path.join(parentDir, 'resources', 'app', 'out', 'cli.js');
+        if (fs.existsSync(standard1)) {
+          cliJs = standard1;
+        }
+      }
+
+      if (fs.existsSync(codeExe) && cliJs) {
+        return {
+          command: codeExe,
+          prefixArgs: [cliJs],
+          extraEnv: { ELECTRON_RUN_AS_NODE: '1' },
+        };
+      }
+    } catch {
+      // Fallback
+    }
+
+    const comSpec = env.ComSpec || 'cmd.exe';
+    return {
+      command: comSpec,
+      prefixArgs: ['/d', '/s', '/c', candidate],
+      extraEnv: {},
+    };
+  }
+
+  return {
+    command: candidate,
+    prefixArgs: [],
+    extraEnv: {},
+  };
+}
+
+/**
+ * Returns the standard client registration file paths in a home directory.
+ */
+function getHomePreservationWatchlist(homeDir) {
+  return [
+    path.join(homeDir, '.claude.json'),
+    path.join(homeDir, '.codex', 'config.toml'),
+    path.join(homeDir, '.gemini', 'config', 'mcp_config.json'),
+    path.join(homeDir, '.coagent8', 'config.json'),
+  ];
+}
+
+/**
+ * Snapshots existence and SHA-256 digests of paths in a watchlist.
+ */
+function snapshotWatchlist(paths) {
+  const snapshot = new Map();
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p);
+      snapshot.set(p, {
+        exists: true,
+        hash: sha256Buffer(content),
+        size: content.length,
+      });
+    } else {
+      snapshot.set(p, { exists: false });
+    }
+  }
+  return snapshot;
 }
 
 /**
@@ -79,6 +246,11 @@ async function runAcceptance(options = {}) {
   const evidencePath = options.evidencePath
     ? path.resolve(options.evidencePath)
     : path.join(repoRoot, '.artifacts', 'acceptance', 'evidence.json');
+
+  // Pre-run snapshot of real user home registration files to prove preservation
+  const realHome = (options.parentEnv && (options.parentEnv.USERPROFILE || options.parentEnv.HOME)) || os.homedir();
+  const preservationWatchlist = getHomePreservationWatchlist(realHome);
+  const homePreSnapshot = snapshotWatchlist(preservationWatchlist);
 
   let isolated = null;
   const steps = [];
@@ -101,7 +273,7 @@ async function runAcceptance(options = {}) {
         name,
         status: 'FAIL',
         durationMs: Date.now() - stepStart,
-        error: err.message,
+        error: redactHome(err.message || String(err), [os.homedir(), isolated ? isolated.root : null]),
       });
       throw err;
     }
@@ -174,11 +346,16 @@ async function runAcceptance(options = {}) {
     const hostData = recordStep('step_host_probe', 'Probe Node, OS, and VS Code versions', () => {
       let vscodeVersion = null;
       if (!isDryRun) {
-        const codeProbe = runProcess('code', [
+        const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
+        const codeProbe = runProcess(codeCli.command, [
+          ...codeCli.prefixArgs,
           '--user-data-dir', isolated.vscodeUserData,
           '--extensions-dir', isolated.vscodeExtensions,
           '--version',
-        ], { env: isolated.childEnv, timeoutMs: 10_000 });
+        ], {
+          env: { ...isolated.childEnv, ...codeCli.extraEnv },
+          timeoutMs: 10_000,
+        });
         if (codeProbe.status === 0) {
           vscodeVersion = codeProbe.stdout.trim().split('\n')[0] || null;
         }
@@ -235,12 +412,14 @@ async function runAcceptance(options = {}) {
       }
 
       // Native mode: install extension using explicit directories
-      const installRes = runProcess('code', [
+      const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
+      const installRes = runProcess(codeCli.command, [
+        ...codeCli.prefixArgs,
         '--user-data-dir', isolated.vscodeUserData,
         '--extensions-dir', isolated.vscodeExtensions,
         '--install-extension', vsixPath,
       ], {
-        env: isolated.childEnv,
+        env: { ...isolated.childEnv, ...codeCli.extraEnv },
         timeoutMs: 60_000,
       });
       if (installRes.status !== 0) {
@@ -296,9 +475,13 @@ async function runAcceptance(options = {}) {
         );
       }
 
+      const serverStatus = typeof parsedDoctor.status === 'string'
+        ? parsedDoctor.status
+        : (parsedDoctor.configError ? 'degraded_config_error' : (parsedDoctor.operational ? 'operational' : 'unknown'));
+
       return {
         startedVersion,
-        serverStatus: parsedDoctor.operational ? 'operational' : 'degraded',
+        serverStatus,
         versionAgreement: versionsMatch,
         bundleSha256,
       };
@@ -315,7 +498,26 @@ async function runAcceptance(options = {}) {
 
     // 8. Home preservation verification
     recordStep('step_home_preservation', 'Verify user home preservation and isolation', () => {
-      return { details: 'Real user home directories untouched; all writes contained in temporary root' };
+      for (const [watchedPath, preState] of homePreSnapshot.entries()) {
+        const currentlyExists = fs.existsSync(watchedPath);
+        if (!preState.exists) {
+          if (currentlyExists) {
+            throw new Error(`Home preservation violation: ${watchedPath} was created during acceptance run!`);
+          }
+        } else {
+          if (!currentlyExists) {
+            throw new Error(`Home preservation violation: ${watchedPath} was deleted during acceptance run!`);
+          }
+          const currentContent = fs.readFileSync(watchedPath);
+          const currentHash = sha256Buffer(currentContent);
+          if (currentHash !== preState.hash) {
+            throw new Error(`Home preservation violation: ${watchedPath} was modified during acceptance run!`);
+          }
+        }
+      }
+      return {
+        details: `Verified ${preservationWatchlist.length} real home registration paths untouched: ${preservationWatchlist.map(p => path.basename(p)).join(', ')}`,
+      };
     });
 
     const completedAt = new Date().toISOString();
@@ -355,6 +557,11 @@ async function runAcceptance(options = {}) {
   } catch (err) {
     const completedAt = new Date().toISOString();
     const durationMs = Date.now() - startTime;
+    const rawErrorMessage = err && err.message ? err.message : String(err);
+    const redactedErrorMessage = redactHome(rawErrorMessage, [
+      os.homedir(),
+      isolated ? isolated.root : null,
+    ]);
 
     const evidence = {
       schemaVersion: SCHEMA_VERSION,
@@ -382,21 +589,27 @@ async function runAcceptance(options = {}) {
         bundleSha256: null,
       },
       steps,
-      error: err.message,
+      error: redactedErrorMessage,
     };
+
+    let serializedFail = JSON.stringify(evidence, null, 2) + '\n';
+    serializedFail = redactHome(serializedFail, [
+      os.homedir(),
+      isolated ? isolated.root : null,
+    ]);
 
     try {
       fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
-      fs.writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n');
+      fs.writeFileSync(evidencePath, serializedFail);
     } catch {
       // Ignore write failure on abort
     }
 
     return {
       status: 'FAIL',
-      evidence,
+      evidence: JSON.parse(serializedFail),
       evidencePath,
-      error: err,
+      error: new Error(redactedErrorMessage),
     };
   } finally {
     if (syntheticCleanup) {
@@ -411,5 +624,6 @@ async function runAcceptance(options = {}) {
 module.exports = {
   runAcceptance,
   redactHome,
+  resolveCodeCli,
   SCHEMA_VERSION,
 };

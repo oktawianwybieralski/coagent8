@@ -10,6 +10,7 @@ function parseArgs(argv) {
     tarball: null,
     vsix: null,
     evidencePath: null,
+    codePath: null,
     keepTemp: false,
   };
 
@@ -25,6 +26,13 @@ function parseArgs(argv) {
       options.vsix = argv[++i];
     } else if (arg === '--evidence' && i + 1 < argv.length) {
       options.evidencePath = argv[++i];
+    } else if (arg === '--code-path' && i + 1 < argv.length) {
+      options.codePath = argv[++i];
+    } else if (arg === '--help' || arg === '-h') {
+      console.log('Usage: node tooling/acceptance/cli.cjs [--dry-run] [--tarball <path>] [--vsix <path>] [--evidence <path>] [--code-path <path>] [--keep-temp]');
+      process.exit(0);
+    } else {
+      throw new Error(`Unknown or incomplete argument: ${arg}`);
     }
   }
 

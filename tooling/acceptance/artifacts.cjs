@@ -280,6 +280,7 @@ if (args.includes('--version')) {
 if (args[0] === 'doctor') {
   if (args.includes('--json')) {
     console.log(JSON.stringify({
+      status: 'operational',
       server_version: '${version}',
       operational: true,
       runtime_path: __filename,
