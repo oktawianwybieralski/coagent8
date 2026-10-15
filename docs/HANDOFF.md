@@ -200,6 +200,24 @@ Do not append another session transcript or treat old test counts as fresh evide
   MCP server to pick up changes. The next agent work is the `0.7.0` rows: 2.13
   (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) in parallel, then 2.15-2.18 (the
   POSIX recovery checks run with 2.18).
+- **Rows 2.15 + 2.16 (`ACCEPT-001b` isolated user home, `ACCEPT-001a1` runner skeleton, #67):**
+  implemented isolated acceptance runner foundation under `tooling/acceptance/`
+  with explicit child process environment (`HOME`, `USERPROFILE`, `APPDATA`,
+  `LOCALAPPDATA`, `XDG_CONFIG_HOME`, `TEMP`/`TMP`, `npm_config_prefix/cache/userconfig`,
+  `CODEX_HOME`, explicit VS Code directories) and case-insensitive stripping of parent
+  prefixes (`coagent8_*`, `codex_*`, `claude_*`, `gemini_*`, `npm_*`, `vscode_*`,
+  `electron_*`, API keys and tokens). The runner never mutates its own `process.env`.
+  - Row 2.15 (`ACCEPT-001b`): `tests/acceptance/isolated-home.test.js` seeds a fake
+    real home with client registrations and custom config, sets hostile parent
+    environment variables pointing to it, executes isolated installation and registration
+    flow via `setupClients`, and asserts that the fake real home remains 100% byte-identical
+    with zero new, modified, or removed files.
+  - Row 2.16 (`ACCEPT-001a1`): `npm run acceptance:native` installs candidate artifacts
+    in isolation, probes host and started runtime versions via `doctor --json`, verifies
+    package manifest and started version agreement, and writes schema-compliant evidence
+    to `.artifacts/acceptance/evidence.json` with redacted home paths. Works in CI without
+    external backend CLIs or GUI (`--dry-run`), discovered by `tests/run.cjs` via
+    `tests/acceptance/runner-skeleton.test.js`.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

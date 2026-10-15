@@ -1228,6 +1228,138 @@ explicit consent, quota-cache failure, commentary truncation, coalesced probes,
 call-wide budget/timing accounting, catalog/price governance and capacity reservation.
 Historical audits predate them; neither this list nor a READY string is a release approval.
 
+## ACCEPT-001: automated native acceptance
+
+The automated native acceptance runner (`npm run acceptance:native`, `tooling/acceptance/`)
+verifies packaged candidates (npm tarball and VS Code VSIX) in hermetic isolation
+without requiring chat UI interactions, producing verifiable JSON evidence.
+
+### Isolated home and environment containment (ACCEPT-001b)
+
+Every filesystem path the runner or an isolated instance writes lies strictly under a
+disposable temporary root directory it owns (`tempRoot`), canonicalized via native realpath
+to avoid short-path mismatches on Windows:
+
+- User home: `HOME` and `USERPROFILE` point to `tempRoot/home`.
+- Operating system application data: `APPDATA` points to `tempRoot/appdata`, `LOCALAPPDATA`
+  to `tempRoot/localappdata`, and `XDG_CONFIG_HOME` to `tempRoot/config`.
+- Temporary folders: `TEMP`, `TMP`, and `TMPDIR` point to `tempRoot/tmp`.
+- Package manager containment: `npm_config_prefix` points to `tempRoot/npm-prefix`,
+  `npm_config_cache` to `tempRoot/npm-cache`, and `npm_config_userconfig` to `tempRoot/.npmrc`.
+- Editor profiles: VS Code invocations pass explicit `--user-data-dir tempRoot/vscode-user-data`
+  and `--extensions-dir tempRoot/vscode-extensions`.
+- Backend roots: `CODEX_HOME` points into `tempRoot/home/.codex`.
+- Default runtime resolution: `coagent8_DIR` and `coagent8_CONFIG` are deliberately omitted
+  from child environments so that the runtime naturally resolves to `tempRoot/home/.coagent8`
+  and `tempRoot/home/.coagent8/config.json`, ensuring default registration shapes.
+- Stripping parent environment: all parent environment variables matching prefixes
+  `coagent8_*`, `codex_*`, `claude_*`, `gemini_*`, `npm_*`, `vscode_*`, `electron_*`,
+  or token/key patterns (`*_api_key`, `*_token`, `COAGENT8_NESTED_TURN`) are stripped
+  case-insensitively. The runner never mutates its own `process.env` globally.
+- Teardown: `tempRoot` is cleaned up recursively in a `finally` block on both success and
+  failure, with Windows retry backoff for transient file locks.
+
+### Backend sign-in inheritance policy for scenario execution (2.17)
+
+Real backend CLIs (Codex, Claude Code, Antigravity) store access and refresh tokens under the
+user home directory or system credential managers. For automated scenarios in 2.17:
+
+1. **Explicit read-only opt-in**: Real backend credentials reach an isolated acceptance home
+   only when an explicit flag (such as `--with-backend-auth`) is provided by the operator.
+2. **Token rotation and primary session safety**: Refresh tokens (such as in Codex `auth.json`)
+   rotate upon session refresh. If an isolated test instance refreshes tokens, the real desktop
+   session may be revoked.
+3. **OS-level credential vaults**: Windows Credential Manager and macOS Keychain are scoped to
+   the user logon session and are not isolated by `HOME` or `USERPROFILE`.
+4. **Current boundary (2.15/2.16)**: Credentials are never copied, accessed, or persisted.
+   Evidence generation strictly redacts home directory strings and credential tokens.
+
+### Native acceptance evidence contract (ACCEPT-001a1)
+
+The runner records execution evidence in JSON format at `.artifacts/acceptance/evidence.json`
+(or a caller-specified path), bound to candidate digests and host versions:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CoAgent8NativeAcceptanceEvidence",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "version": { "type": "string" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "number" },
+    "status": { "type": "string", "enum": ["PASS", "FAIL", "INCOMPLETE"] },
+    "mode": { "type": "string", "enum": ["dry-run", "native"] },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "tarball": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "sha256": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "required": ["path", "sha256", "version"]
+        },
+        "vsix": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "sha256": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "required": ["path", "sha256", "version"]
+        }
+      },
+      "required": ["tarball", "vsix"]
+    },
+    "host": {
+      "type": "object",
+      "properties": {
+        "node": { "type": "string" },
+        "platform": { "type": "string" },
+        "arch": { "type": "string" },
+        "osRelease": { "type": "string" },
+        "vscode": { "type": ["string", "null"] }
+      },
+      "required": ["node", "platform", "arch", "osRelease"]
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "startedVersion": { "type": ["string", "null"] },
+        "serverStatus": { "type": "string" },
+        "versionAgreement": { "type": "boolean" },
+        "bundleSha256": { "type": ["string", "null"] }
+      },
+      "required": ["startedVersion", "serverStatus", "versionAgreement"]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["PASS", "FAIL", "NOT_RUN"] },
+          "durationMs": { "type": "number" },
+          "details": { "type": "string" },
+          "error": { "type": "string" }
+        },
+        "required": ["id", "name", "status"]
+      }
+    }
+  },
+  "required": [
+    "schemaVersion", "version", "startedAt", "completedAt",
+    "durationMs", "status", "mode", "artifacts", "host", "runtime", "steps"
+  ]
+}
+```
+
 ## Code documentation and package evidence
 
 English TSDoc describes meaningful constraints, units, ownership, side effects,

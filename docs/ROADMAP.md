@@ -965,7 +965,7 @@ user's real client registrations (`FEEDBACK-061a/b`).
   evidence file bound to the artifacts' SHA-256, the CLI and host versions and
   the runtime version actually started. People only do what cannot be
   automated, such as clicking in a chat. Check: R, one native run.
-- [ ] **ACCEPT-001b - isolated user home.** The runner and any isolated
+- [x] **ACCEPT-001b - isolated user home (#67).** The runner and any isolated
   instance use their own `HOME`/`USERPROFILE` (or an equivalent override) so
   they never write the user's real client registrations or
   `~/.coagent8/config.json`. Check: R, native.
@@ -1905,8 +1905,8 @@ agent (owner assigns).
 | 2.12d | [x] `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. Windows passed; the POSIX run moves to 2.18 (owner decision 2026-10-15). |
 | 2.13 | [x] `FEEDBACK-061i` agy retry mapper and resumed turn (#65) | R | - par | `final` mapping documented; fixture for a resumed turn without a conversation id keeps requested id. |
 | 2.14 | [x] `FEEDBACK-061h` acceptance procedure (#66) | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
-| 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
-| 2.16 | `ACCEPT-001a1` runner skeleton | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
+| 2.15 | [x] `ACCEPT-001b` isolated user home (#67) | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
+| 2.16 | [x] `ACCEPT-001a1` runner skeleton (#67) | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
 | 2.17 | `ACCEPT-001a2` scenarios N2-N4 | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
 | 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios, including the 2.12d recovery checks; results recorded. |
 | 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
