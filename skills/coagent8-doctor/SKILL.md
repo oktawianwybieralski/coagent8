@@ -13,7 +13,9 @@ description: Show which models, reasoning efforts and output prices each CoAgent
    `backend` (`codex`, `claude` or `agy`) to narrow it and `detail: full` for the
    same report as JSON.
 2. For problems call `doctor` with `scope: health`. It checks installation,
-   sign-in and quota and takes longer than the models view.
+   sign-in and quota and takes longer than the models view (backend readiness
+   does not probe or verify workspace filesystem access permissions; on Windows,
+   Codex reviews configure `windows.sandbox="elevated"`).
 3. To apply a user's price limit or range (e.g. "X-Y" means `output_price_below: Y`),
    pass `output_price_below` to consult or review and leave `model` unset; the
    server, not the agent, picks the model (the qualifying default or the most

@@ -58,10 +58,80 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   let streamedBytes = 0;
   const commentaryIds = new Set<string>();
   let finalAnswerSeen = false;
+  const denials: Array<{ path?: string; operation?: string; reason?: string }> = [];
   const emit = (event: AdapterEvent) => {
     options.onEvent?.(event);
     if (event.type === 'status') options.onProgress?.(event.message);
   };
+
+  function extractToolDenial(item: Record<string, unknown>): { path?: string; operation?: string; reason?: string } | null {
+    const text = [
+      typeof item.aggregatedOutput === 'string' ? item.aggregatedOutput : '',
+      typeof item.aggregated_output === 'string' ? item.aggregated_output : '',
+      typeof item.output === 'string' ? item.output : '',
+      typeof item.error === 'string'
+        ? item.error
+        : (item.error && typeof (item.error as Record<string, unknown>).message === 'string'
+            ? (item.error as Record<string, unknown>).message
+            : ''),
+    ].filter(Boolean).join(' ');
+
+    const command = typeof item.command === 'string' ? item.command : '';
+    const isFailed = item.status === 'failed'
+      || (typeof item.exitCode === 'number' && item.exitCode !== 0)
+      || (typeof item.exit_code === 'number' && item.exit_code !== 0)
+      || Boolean(item.error);
+
+    if (!isFailed) return null;
+
+    const isDenied = /permission\s+denied|unauthorizedaccessexception|itemexistsunauthorizedaccesserror|access\s+is\s+denied|odmowa\s+dost[eę]pu|blocked\s+by\s+policy|operation\s+not\s+permitted/i.test(text);
+    if (!isDenied) return null;
+
+    let reason = 'Permission denied';
+    if (/blocked\s+by\s+policy/i.test(text)) reason = 'Blocked by policy';
+    else if (/unauthorizedaccessexception|unauthorized/i.test(text)) reason = 'Unauthorized access';
+    else if (/odmowa\s+dost[eę]pu|access\s+is\s+denied|permission\s+denied/i.test(text)) reason = 'Permission denied';
+
+    let operation = 'command';
+    if (/Get-Content|cat\s|type\s|head\s|tail\s/i.test(command)) operation = 'read';
+    else if (/git\s/i.test(command)) operation = 'git';
+
+    let path: string | undefined;
+    const explicitPathMatch = command.match(/(?:^|\s)-(?:LiteralPath|Path)\s+['"]?([^'"\s;,)]+)/i);
+    if (explicitPathMatch) {
+      path = explicitPathMatch[1];
+    } else {
+      const gitMatch = command.match(/git[^\r\n]+show[^\r\n]+:([^'"\s;,)]+)/i);
+      if (gitMatch) {
+        path = gitMatch[1];
+      } else {
+        const gcTokens = command.match(/Get-Content\s+([^|\r\n;]+)/i);
+        if (gcTokens) {
+          const parts = gcTokens[1].trim().split(/\s+/);
+          for (const part of parts) {
+            if (!part.startsWith('-') && !part.startsWith('$')) {
+              path = part.replace(/^['"]|['"]$/g, '');
+              break;
+            }
+          }
+        }
+        if (!path) {
+          const errPathMatch = text.match(/(?:PermissionDenied:\s*\(([^)]+)\)|failed\s+to\s+stat\s+'([^']+)')/i);
+          if (errPathMatch) {
+            let raw = errPathMatch[1] || errPathMatch[2];
+            if (raw.endsWith(':String')) raw = raw.slice(0, -':String'.length);
+            path = raw;
+          }
+        }
+      }
+    }
+
+    if (path) {
+      path = path.trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+    }
+
+    return { path, operation, reason };
+  }
   function acceptMessage(item: Record<string, unknown>) {
     if (!validEventIdentifier(item.id) || typeof item.text !== 'string') protocolError('Invalid public Codex message.');
     const id = item.id as string;
@@ -105,6 +175,13 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     } else {
       emit({ type: 'tool_finished', toolId: item.id as string, name: item.type,
         success: item.status === 'completed' && item.error == null && item.success !== false && (item.exitCode == null || item.exitCode === 0) });
+      const denial = extractToolDenial(item);
+      if (denial) {
+        const key = `${denial.operation}:${denial.path}:${denial.reason}`;
+        if (!denials.some(d => `${d.operation}:${d.path}:${d.reason}` === key) && denials.length < 20) {
+          denials.push(denial);
+        }
+      }
     }
   }
   function acceptUsage(params: Record<string, unknown>) {
@@ -183,6 +260,7 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     const usage: TerminalExecutionResult['usage'] = usageSeen
       ? { source: 'provider', inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } : undefined;
     return { threadId, turnId, initialized, terminal, interrupted, usage, truncated, output,
+      denials: [...denials],
       error: providerError || (truncated ? { code: 'BUFFER_LIMIT' as const, message: 'Codex public output exceeded the byte budget.', retryable: false } : undefined) };
   }
   return { notify, initialize, beginTurn, line, snapshot,

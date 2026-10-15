@@ -431,7 +431,7 @@ commentary without carrying discarded commentary truncation into the final resul
 
 | Backend | Current enforced profile |
 | --- | --- |
-| Codex | app-server read-only/never; disable tool features, read effective config, disable each inherited MCP server per thread, verify readOnly/never, features off and every MCP server disabled before turn/start. Empty MCP tables alone do not isolate merged config. |
+| Codex | app-server read-only/never; disable tool features, read effective config, disable each inherited MCP server per thread, verify readOnly/never, features off and every MCP server disabled before turn/start. Empty MCP tables alone do not isolate merged config. On Windows, app-server launch forces `windows.sandbox="elevated"` to use Codex's provisioned Windows sandbox backend (`CodexSandboxUsers`), ensuring read-only sandboxed commands execute without failing closed by policy in isolated configurations; on subtrees where broken DACL inheritance cuts off `CodexSandboxUsers` read access, the verified remedy is restoring standard inheritance (`icacls <dir> /reset /t`). |
 | Claude | restricted Read/Glob/Grep, dontAsk, no permission prompts, hooks disabled and strict empty MCP config; verify startup tools/no MCP/permission mode; stream-json, native resume and interrupt. Verified local /usage path requires 2.1.289+. |
 | agy | Native --sandbox, explicit model, stream-json/stdin and conversation resume. Unknown events warn; malformed known events fail. Every launch disables its auto-updater to prevent focus-stealing windows. Inherited MCP/plugins remain accessible. |
 

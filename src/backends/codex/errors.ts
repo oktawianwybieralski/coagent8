@@ -11,6 +11,7 @@ export function classifyCodexError(message: string): ExecutionError {
   const code = isRateLimitError(message) ? 'RATE_LIMITED'
     : isAuthError(message) ? 'AUTH_REQUIRED'
     : /model.*(?:not found|unavailable|unsupported|not supported|does not exist)/i.test(message) ? 'MODEL_UNAVAILABLE'
+    : /(?:^|\b)sandbox\s+(?:backend\s+)?(?:is\s+)?(?:unavailable|not\s+supported|setup\s+failed|provisioning\s+failed)|refusing\s+to\s+run\s+unsandboxed/i.test(message) ? 'SANDBOX_UNAVAILABLE'
     : /(?:session|thread).*(?:not found|invalid|does not exist)/i.test(message) ? 'SESSION_INVALID' : 'PROCESS_ERROR';
   return { code, message: redactDiagnostic(message), retryable: code === 'RATE_LIMITED' };
 }

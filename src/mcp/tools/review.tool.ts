@@ -133,7 +133,7 @@ export async function handleReview(
     throw new ToolError('ABORTED', 'Request cancelled after review Git work.');
   }
   const instructions = args.instructions || 'Review correctness, security, edge cases and architecture.';
-  const snapshot = context.expectedSnapshot;
+  const snapshot = context.expectedSnapshot ?? '';
   // The answer is read in the caller's context: findings only, each as short as its evidence allows.
   const prompt = [
     `Review this diff: ${scopeInfo.label}. Read other files only to check direct imports or call sites.`,
@@ -151,7 +151,7 @@ export async function handleReview(
     'Fix: <one sentence>',
     'Blocked: <one sentence, only when VERDICT is BLOCKED without a P1 or P2 finding>',
     'CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>',
-    `Required checks for this scope: ${context.requiredChecks.join(', ') || 'none (prose only)'}. Report NOT_RUN when no check was executed; never infer PASS from reading code. A check that cannot run here is NOT_RUN, not FAIL. The server applies the check outcomes; do not set BLOCKED for a check that did not run.`,
+    `Required checks for this scope: ${(context.requiredChecks ?? []).join(', ') || 'none (prose only)'}. Report NOT_RUN when no check was executed; never infer PASS from reading code. A check that cannot run here is NOT_RUN, not FAIL. The server applies the check outcomes; do not set BLOCKED for a check that did not run.`,
     `Collected input: ${context.inputComplete ? 'COMPLETE' : 'PARTIAL'}. Omitted input prevents READY regardless of reported coverage.`,
     'END_REVIEW',
     'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix. Any other BLOCKED states its cause on the Blocked line.',

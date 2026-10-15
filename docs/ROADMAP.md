@@ -1317,11 +1317,12 @@ behavior or a test-procedure lesson.
   (codex-cli 0.162.0-alpha.17.2), the Codex reviewer was denied every tracked
   file under `docs/` and later Git commands, while other paths stayed
   readable and `doctor` reported ready; coverage stayed PARTIAL in every
-  round, so the review gate could not reach READY. Cause unconfirmed:
-  CoAgent8 passes only `sandbox_mode="read-only"`, `approval_policy="never"`
-  and inherited MCP servers disabled (`src/backends/codex/app-server.ts`), with
-  no path rules; the reporter's hypothesis is an ignored
-  `docs/http_dist/.env` created just before. Split:
+  round, so the review gate could not reach READY. Attributed cause:
+  `codex-windows-sandbox-setup.exe` grants read ACE `(OI)(CI)RX` to group
+  `CodexSandboxUsers` only on the workspace root directory (`cwd`) and relies on
+  standard DACL inheritance; when inheritance is blocked on subdirectories (such as `docs/`),
+  sandbox users lose traversal/read permissions. In isolated `CODEX_HOME` configurations,
+  Codex also fails closed by policy unless `windows.sandbox="elevated"` is configured. Split:
   `FEEDBACK-061k1` reproduces with tracked docs and sibling sources, an
   untracked file and a synthetic ignored `.env`, before and after its
   creation, in fresh and resumed threads, through CoAgent8 and plain
@@ -1856,8 +1857,8 @@ agent (owner assigns).
 | 2.11 | [x] `FEEDBACK-061e` server-owned turn number (#56) | R | - par | The returned envelope carries the server's turn number; the model's value is ignored; tests. |
 | 2.12 | [x] `FEEDBACK-061g` large Codex prompts (#57) | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
 | 2.12a | [x] `FEEDBACK-061j` retry unsuccessful reviews (#48) | R | - par | Only complete-coverage reviews with complete input deduplicate, including lookup of older records; PARTIAL and failed reviews rerun with or without a handle; complete READY and BLOCKED still deduplicate; guidance updated; tests. |
-| 2.12b | `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
-| 2.12c | `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (no accepted limitation: release blocker); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
+| 2.12b | [x] `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
+| 2.12c | [x] `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (no accepted limitation: release blocker); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
 | 2.12d | `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |

@@ -423,3 +423,75 @@ test('an unchanged complete BLOCKED review with findings still deduplicates (AX-
   assert.match(repeat.answer, /^No model turn/);
   assert.equal(repeat.verdict, 'BLOCKED');
 });
+
+test('an unchanged repeat after a review blocked by filesystem denials starts a new model turn', async () => {
+  const { repo } = fixtureRepo('denial-blocked-retry');
+  let round = 0;
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async (prompt, options) => {
+      round++;
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      if (round === 1) {
+        return {
+          status: 'completed',
+          isError: false,
+          truncated: false,
+          continuationAvailable: true,
+          nativeSessionId: 'codex-thread-1',
+          model: options.model,
+          output: [
+            'REVIEW: 1',
+            `SNAPSHOT: ${snapshot}`,
+            'COVERAGE: COMPLETE',
+            'VERDICT: READY',
+            'CHECKS: typecheck=PASS; tests=PASS',
+            'END_REVIEW',
+          ].join('\n'),
+          denials: [{ path: 'a.ts', operation: 'read', reason: 'Permission denied' }],
+        };
+      }
+      return {
+        status: 'completed',
+        isError: false,
+        truncated: false,
+        continuationAvailable: true,
+        nativeSessionId: 'codex-thread-2',
+        model: options.model,
+        output: [
+          'REVIEW: 2',
+          `SNAPSHOT: ${snapshot}`,
+          'COVERAGE: COMPLETE',
+          'VERDICT: READY',
+          'CHECKS: typecheck=PASS; tests=PASS',
+          'END_REVIEW',
+        ].join('\n'),
+      };
+    },
+  };
+  await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(round, 1);
+  assert.equal(first.verdict, 'BLOCKED');
+  assert.match(first.reason, /Filesystem access to required review scope was denied: a\.ts/);
+  assert.match(first.reason, /Review coverage is partial/);
+
+  // Unchanged repeat: because round 1 was blocked by denials (forcing PARTIAL coverage and judged=false),
+  // it must not be suppressed by findCompletedReview; it must start a new model turn.
+  const second = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(round, 2, 'unchanged repeat after denial-blocked review starts a new model turn');
+  assert.equal(second.verdict, 'READY');
+
+  // Retry with explicit session_handle also starts a new model turn
+  const { repo: repo2 } = fixtureRepo('denial-blocked-handle');
+  round = 0;
+  const firstWithHandle = readResult(await handleReview('review', {}, repo2, null, null, approve));
+  assert.equal(round, 1);
+  assert.equal(firstWithHandle.verdict, 'BLOCKED');
+  const retryWithHandle = readResult(await handleReview('review', { session_handle: firstWithHandle.sessionHandle }, repo2, null, null, approve));
+  assert.equal(round, 2, 'unchanged repeat with session_handle starts a new model turn');
+  assert.equal(retryWithHandle.verdict, 'READY');
+});
