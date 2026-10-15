@@ -190,7 +190,7 @@ per rule 02 with native acceptance that includes the `PATCH-061` tasks that
 did not run for `0.6.1` (N1, N4, N6, N7, the Claude backend in N2, the rest of
 N3, consent in N5), `EXEC-001-T12c/d`, the acceptance procedure from
 `FEEDBACK-061h`, the fixed `FEEDBACK-061j` and `061k` with native check
-2.12d (release blockers), and the Socket and license checks (`SUPPLY-001f`,
+2.12d and its POSIX run in 2.18 (release blockers), and the Socket and license checks (`SUPPLY-001f`,
 `LIC-001d`). `RELEASE-001a` (dry-run of the publish commands) is independent
 and may land earlier without changing this order.
 
@@ -944,7 +944,10 @@ user's real client registrations (`FEEDBACK-061a/b`).
   workspaces on either side (`\\wsl.localhost\...` and `/mnt/c`), and
   redaction of `/home/<user>` and `/mnt/c/Users/<user>` paths. Hosted CI
   offers only WSL1, so the lane runs locally. Supporting VS Code Remote-WSL as
-  a topology stays deferred (`PROPOSALS-001c`). Check: native.
+  a topology stays deferred (`PROPOSALS-001c`). The lane also runs the
+  2.12d recovery checks with Codex (owner decision 2026-10-15): tracked docs
+  are readable, denied required scope blocks READY, and an unchanged failed
+  review is retried with and without `session_handle`. Check: native.
 
 ## RELEASE-001: automated publication
 
@@ -1311,9 +1314,10 @@ behavior or a test-procedure lesson.
   guidance in the refusal text and the review skill. No public retry parameter;
   adding one needs an owner schema decision. Check: R, REVIEW, SESSION, native
   Codex.
-- [ ] **FEEDBACK-061k - Codex workspace read denials (#49).** Blocks the
-  0.7.0 release (owner decision 2026-10-15): it must be fixed, not accepted
-  as a limitation. On Windows
+- [x] **FEEDBACK-061k - Codex workspace read denials (#49).** Blocked the
+  0.7.0 release (owner decision 2026-10-15). The original requirement to fix
+  the cause rather than accept a limitation, and to report the upstream issue,
+  is superseded by the closing decision at the end of this card. On Windows
   (codex-cli 0.162.0-alpha.17.2), the Codex reviewer was denied every tracked
   file under `docs/` and later Git commands, while other paths stayed
   readable and `doctor` reported ready; coverage stayed PARTIAL in every
@@ -1331,13 +1335,21 @@ behavior or a test-procedure lesson.
   policy, actual denial events and attribution, without secret contents.
   `FEEDBACK-061k2` fixes a CoAgent8 defect if one is found; for an upstream
   cause it records the evidence and applies a verified remedy in CoAgent8 or
-  its Codex launch configuration, and reports the upstream issue;
+  its Codex launch configuration (the upstream report is superseded below);
   the review result reports denied paths and operations observed in tool
   events, separate from the reviewer's claims, and denied required scope
   keeps the review PARTIAL. `doctor` health keeps "ready" as backend readiness
   and must not imply workspace access; any access probe that starts a model
   turn or a new public parameter needs an owner decision. Check: R, CODEX,
   DOCTOR, REVIEW, native Windows and POSIX.
+  Closed (owner decision 2026-10-15): the CoAgent8 part is fixed in 2.12c
+  and verified natively on Windows in 2.12d. The remaining cause lies in the
+  Codex Windows sandbox setup and is a documented known limitation (`CUR-014`)
+  with the verified `icacls <dir> /reset /t` remedy; denied required scope
+  keeps the review PARTIAL. The upstream report is no longer required:
+  from 0.7.0 the backend sandbox becomes one execution option among the
+  task-scoped coagent profiles, not the only way CoAgent8 runs an agent.
+  The POSIX native check moves to 2.18.
 
 ## PROPOSALS-001: proposals awaiting an owner decision
 
@@ -1858,14 +1870,14 @@ agent (owner assigns).
 | 2.12 | [x] `FEEDBACK-061g` large Codex prompts (#57) | R | - par | Prompt size and `maxLineBytes` agree, or the prompt is bounded per backend with a clear error; test with a prompt above 512 KB. |
 | 2.12a | [x] `FEEDBACK-061j` retry unsuccessful reviews (#48) | R | - par | Only complete-coverage reviews with complete input deduplicate, including lookup of older records; PARTIAL and failed reviews rerun with or without a handle; complete READY and BLOCKED still deduplicate; guidance updated; tests. |
 | 2.12b | [x] `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
-| 2.12c | [x] `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (no accepted limitation: release blocker); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
-| 2.12d | `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. |
+| 2.12c | [x] `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (release blocker; the remaining Codex sandbox cause became known limitation `CUR-014`, owner decision 2026-10-15); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
+| 2.12d | [x] `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. Windows passed; the POSIX run moves to 2.18 (owner decision 2026-10-15). |
 | 2.13 | `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented or fixed; fixture for a resumed turn without a conversation id. |
 | 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
 | 2.16 | `ACCEPT-001a1` runner skeleton | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
 | 2.17 | `ACCEPT-001a2` scenarios N2-N4 | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
-| 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios; results recorded. |
+| 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios, including the 2.12d recovery checks; results recorded. |
 | 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
 | 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
 | 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |

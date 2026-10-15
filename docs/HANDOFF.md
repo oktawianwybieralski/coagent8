@@ -178,13 +178,15 @@ Do not append another session transcript or treat old test counts as fresh evide
     * Turn 5: Unchanged repeat after `COMPLETE` review deduplicates immediately
       without a model turn (1.0s, deduplicated: true).
     (Mock test coverage additionally retained in `tests/mcp/tools/review-repeat.test.js`).
-  - POSIX/WSL: `NOT_RUN` (no WSL lane yet, row 2.18). Row 2.12d remains open (`[ ]`)
-    pending POSIX verification or an explicit dated owner decision assigning POSIX
-    recovery checks to 2.18.
-  - Upstream issue status: FEEDBACK-061k remains open (`[ ]`) with the issue draft
-    recorded above, awaiting owner submission or confirmation.
-  The next agent work is completing row 2.12d (POSIX lane), alongside Phase 2 rows:
-  2.13 (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) as parallel rows.
+  - POSIX/WSL: `NOT_RUN`. Owner decision 2026-10-15: the POSIX recovery checks
+    move to row 2.18 (`ACCEPT-001c`), and row 2.12d is closed on the Windows evidence.
+  - Upstream issue: not filed and no longer required (owner decision 2026-10-15).
+    `FEEDBACK-061k` is closed; the Codex Windows sandbox behavior is known
+    limitation `CUR-014` in ARCHITECTURE and README with the `icacls` remedy,
+    because from 0.7.0 the backend sandbox becomes one execution option among
+    task-scoped coagent profiles.
+  The next agent work is the remaining Phase 2 rows: 2.13 (`FEEDBACK-061i`) and 2.14
+  (`FEEDBACK-061h`) as parallel rows; the POSIX recovery checks run with 2.18.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;
