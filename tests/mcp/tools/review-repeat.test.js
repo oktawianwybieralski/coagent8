@@ -65,7 +65,7 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
   const second = await handleReview('review', {}, repo, null, null, approve);
   const repeat = readResult(second);
   assert.equal(turns.agy, 1, 'the second identical request costs no turn');
-  assert.match(repeat.answer, new RegExp(`^No model turn: this request matches a completed review \\(same snapshot, scope, backend and model\\) in session ${first.sessionHandle}, completed `));
+  assert.match(repeat.answer, new RegExp(`^No model turn: this request matches a completed review with complete coverage and input \\(same snapshot, scope, backend and model\\) in session ${first.sessionHandle}, completed `));
   assert.equal(repeat.verdict, first.verdict, 'the earlier server verdict is reported');
   assert.equal(repeat.reason, first.reason);
   assert.equal(repeat.sessionHandle, first.sessionHandle, 'retains the workspace session_handle in the refusal footer (FEEDBACK-060f4)');
@@ -288,10 +288,12 @@ test('incomplete collected input is retried even if reviewer reported COVERAGE: 
 test('a typed execution failure is retried and starts a new model turn', async () => {
   const { repo } = fixtureRepo('execution-failure-retry');
   let fail = true;
+  let attempts = 0;
   adapterRegistry.agy = {
     id: 'agy', name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async (prompt, options) => {
+      attempts++;
       if (fail) {
         fail = false;
         throw new ToolError('EXECUTION_FAILED', 'Simulated execution error');
@@ -313,11 +315,13 @@ test('a typed execution failure is retried and starts a new model turn', async (
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(attempts, 1);
   assert.ok(first.error);
   assert.equal(first.error.code, 'EXECUTION_FAILED');
 
   // Retry starts a new model turn and succeeds
   const second = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(attempts, 2, 'retry starts a new execution attempt');
   assert.equal(second.verdict, 'READY');
 });
 

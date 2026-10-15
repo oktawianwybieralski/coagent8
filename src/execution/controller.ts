@@ -297,7 +297,7 @@ async function executeTaskInternal(
           result: {
             status: 'completed',
             isError: false,
-            output: `No model turn: this request matches a completed review (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again.`,
+            output: `No model turn: this request matches a completed review with complete coverage and input (same snapshot, scope, backend and model) in session ${previous.sessionHandle}, completed ${previous.review.completedAt}. Its server verdict below still applies. Change the code or the scope, or choose another backend or model, to review again (incomplete or failed reviews can be retried).`,
             ...(prepared.model ? { model: prepared.model } : {}),
             truncated: false,
             continuationAvailable,
