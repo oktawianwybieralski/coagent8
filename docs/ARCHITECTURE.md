@@ -1219,7 +1219,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | CUR-009 | Auth/profile/UI evidence incomplete | DIAGNOSTICS-001, AX-003/005 |
 | CUR-011 | POSIX unexpected-parent-death cleanup absent | WINDOWS-001 |
 | CUR-013 | Other-tree review refused, not implemented | COAGENT-004, SURFACE-001 |
-| CUR-014 | Codex Windows sandbox cannot read subtrees with ACL inheritance disabled; remedy `icacls <dir> /reset /t` | COAGENT-001 profiles |
+| CUR-014 | Codex Windows sandbox cannot read subtrees with ACL inheritance disabled; remedy `icacls <dir> /reset /t` | COAGENT-002 |
 | AX-001, AX-003 through 006 | Request estimates, config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
 
 CUR-001/003/004/005/006/007/010/012 have local fixes for review identity/completeness,
