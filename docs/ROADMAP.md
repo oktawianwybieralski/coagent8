@@ -1311,7 +1311,7 @@ behavior or a test-procedure lesson.
   one JSON-RPC line, `maxLineBytes` is 512 KB and the diff snapshot allows
   3 MB (`src/backends/codex/adapter.ts`, `src/workspace/git.ts`). Align the
   limits or bound the prompt per backend. Check: R.
-- [ ] **FEEDBACK-061h - acceptance procedure.** Start every client test in a
+- [x] **FEEDBACK-061h - acceptance procedure.** Start every client test in a
   new chat and confirm the runtime version first (the `issue` report shows it);
   run clients one after another when they edit the same file; check the
   working tree after a client closes, because Antigravity re-applied a
@@ -1903,8 +1903,8 @@ agent (owner assigns).
 | 2.12b | [x] `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
 | 2.12c | [x] `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (release blocker; the remaining Codex sandbox cause became known limitation `CUR-014`, owner decision 2026-10-15); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
 | 2.12d | [x] `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. Windows passed; the POSIX run moves to 2.18 (owner decision 2026-10-15). |
-| 2.13 | [x] `FEEDBACK-061i` agy retry mapper and resumed turn | R | - par | `final` mapping documented; fixture for a resumed turn without a conversation id keeps requested id. |
-| 2.14 | `FEEDBACK-061h` acceptance procedure | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
+| 2.13 | [x] `FEEDBACK-061i` agy retry mapper and resumed turn (#65) | R | - par | `final` mapping documented; fixture for a resumed turn without a conversation id keeps requested id. |
+| 2.14 | [x] `FEEDBACK-061h` acceptance procedure (#66) | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | `ACCEPT-001b` isolated user home | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
 | 2.16 | `ACCEPT-001a1` runner skeleton | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
 | 2.17 | `ACCEPT-001a2` scenarios N2-N4 | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
@@ -2046,6 +2046,17 @@ before rerunning that case.
   extension storage; preserve shared config/settings/credentials/histories.
 - Reinstall: verify first-install behavior and config migration with preserved
   user configuration.
+
+Every client run, including the upgrade from the published `0.6.1` (row 5.10),
+follows these rules (FEEDBACK-061h):
+
+- Start each client test in a new chat.
+- Confirm the running runtime version first; `doctor` and the `issue` report
+  show it.
+- Run clients one after another when they edit or inspect the same file.
+- After a client closes, check the working tree with `git status` and
+  `git diff`; Antigravity once re-applied a temporary edit after its report
+  claimed a verified restore.
 
 ## Documentation ownership
 
