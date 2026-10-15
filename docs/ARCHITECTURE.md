@@ -1207,6 +1207,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-14 | `CHANGELOG.md` is regenerated only in release PRs (`npm run changelog -- --tag vX.Y.Z`), replacing the 2026-10-06 regeneration before every push: on a topic branch the file listed branch commits that the squash removes and could not list the PR itself. Topic branches run `npm run changelog:check` and the title preview only. PR scope follows coherent results; line count is no reason to split. |
 | 2026-10-14 | A price limit without a named model runs the qualifying default first; otherwise the most recently released qualifying catalog model, then the higher price, then catalog order; a model without a release date ranks after every dated one. The date is OpenRouter's `created` timestamp, the day the model was listed there, labelled as such. Model descriptions from the list are neither stored nor shown: they are third-party text that would reach caller context. Replaces the 2026-10-08 highest-price selection rule (AX-002d). |
 | 2026-10-14 | OpenRouter's `expiration_date` is ignored: it is neither stored nor shown and affects neither selection under a price limit nor doctor, because the backend's catalog alone states which models it serves. A model that leaves OpenRouter's list loses its price and is handled as unknown-priced under the existing rules (AX-002i). |
+| 2026-10-15 | Codex read denials caused by the Codex Windows sandbox setup (read access granted only on the workspace root, relying on ACL inheritance) are a documented known limitation (CUR-014) with the `icacls <dir> /reset /t` remedy, not an upstream report: from 0.7.0 the backend sandbox is one execution option among task-scoped coagent profiles. CoAgent8 still reports observed denials and keeps a review with denied required scope PARTIAL. |
 
 ## Known limitations
 
@@ -1218,6 +1219,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | CUR-009 | Auth/profile/UI evidence incomplete | DIAGNOSTICS-001, AX-003/005 |
 | CUR-011 | POSIX unexpected-parent-death cleanup absent | WINDOWS-001 |
 | CUR-013 | Other-tree review refused, not implemented | COAGENT-004, SURFACE-001 |
+| CUR-014 | Codex Windows sandbox cannot read subtrees with ACL inheritance disabled; remedy `icacls <dir> /reset /t` | COAGENT-001 profiles |
 | AX-001, AX-003 through 006 | Request estimates, config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
 
 CUR-001/003/004/005/006/007/010/012 have local fixes for review identity/completeness,

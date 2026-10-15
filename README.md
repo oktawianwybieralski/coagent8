@@ -445,6 +445,11 @@ error.
   a headless agy client stopped calls after 180 seconds.
 - **Sessions on disk.** Every call keeps a session record, even with archives
   turned off, and the session handle arrives with the result.
+- **Codex read denials on Windows.** Codex's Windows sandbox grants read
+  access only on the workspace folder and relies on inherited permissions, so
+  it cannot read a subfolder whose permission inheritance is turned off. The
+  review names the denied files and stays incomplete; run
+  `icacls <folder> /reset /t` on that folder to restore inheritance.
 - **Reviews of another tree.** A staged, commit or range review whose files do
   not match the current workspace is refused rather than reviewed.
 
