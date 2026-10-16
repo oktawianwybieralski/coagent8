@@ -270,4 +270,3 @@ module.exports = {
   buildTarGz,
   buildZip,
 };
-

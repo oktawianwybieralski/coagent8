@@ -72,4 +72,3 @@ main().catch(err => {
   console.error(`Fatal acceptance error: ${err.message}`);
   process.exitCode = 1;
 });
-
