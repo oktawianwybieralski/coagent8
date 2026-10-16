@@ -1273,7 +1273,9 @@ short-path mismatches on Windows:
   ZIP64 rejected), the same readers packaging uses.
 - Teardown: the runner removes `tempRoot` after writing the evidence, on success and
   failure, with Windows retry backoff for transient file locks; `--keep-temp` keeps it
-  and prints its location.
+  and prints its location. `SIGINT` or `SIGTERM` aborts the running step through the
+  supervisor's abort signal (owned teardown), after which the evidence is written, the
+  root removed and the CLI exits 130.
 
 ### Backend sign-in inheritance policy for scenario execution (2.17)
 
@@ -1379,7 +1381,9 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
 ```
 
 A digest, version or runtime field is `null` only when the run failed before observing
-it; a failed run keeps every observation made before the failure and records `error`.
+it; each field is recorded when observed, so a failed run keeps every observation made
+before the failure, including those of the failing step, and records `error`. Candidates
+above the 64 MiB archive bound are refused before they are read or hashed.
 The home preservation step runs after a failed step as well. A step that cannot obtain
 its observation fails: a VS Code version probe that does not exit 0 with a version fails
 the host step. A dry run installs synthetic candidates, does not probe or install VS Code

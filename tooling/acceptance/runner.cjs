@@ -49,6 +49,7 @@ async function runProcess(command, args, options = {}) {
     cwd: options.cwd || process.cwd(),
     env: options.env,
     timeoutMs: options.timeoutMs || 30_000,
+    abortSignal: options.abortSignal,
   });
   return { ...result, ok: result.status === 'completed' && result.exitCode === 0 && !result.error };
 }
@@ -234,6 +235,7 @@ async function runAcceptance(options = {}) {
 
   let isolated = null;
   const steps = [];
+  const run = (command, args, runOptions) => runProcess(command, args, { ...runOptions, abortSignal: options.signal });
   const redactPaths = text => redactHome(text, [os.homedir(), realHome, isolated ? isolated.root : null]);
   const persistedError = err => redactPaths(redactDiagnostic(err));
 
@@ -261,9 +263,20 @@ async function runAcceptance(options = {}) {
     }
   }
 
+  /** A run step; an interrupt stops the run before the next step starts. */
+  function runStep(id, name, fn) {
+    if (options.signal?.aborted) {
+      throw new Error('Acceptance run interrupted.');
+    }
+    return recordStep(id, name, fn);
+  }
+
   let tarballPath = options.tarball ? path.resolve(options.tarball) : null;
   let vsixPath = options.vsix ? path.resolve(options.vsix) : null;
-  let artifactData = null;
+  const artifacts = {
+    tarball: { path: tarballPath ? path.basename(tarballPath) : 'missing', sha256: null, version: null },
+    vsix: { path: vsixPath ? path.basename(vsixPath) : 'missing', sha256: null, version: null },
+  };
   const hostData = {
     node: process.version,
     platform: process.platform,
@@ -271,12 +284,17 @@ async function runAcceptance(options = {}) {
     osRelease: os.release(),
     vscode: null,
   };
-  let runtimeData = null;
+  const runtimeData = {
+    startedVersion: null,
+    serverStatus: 'not_started',
+    versionAgreement: false,
+    bundleSha256: null,
+  };
   let failure = null;
 
   try {
     // 1. Environment initialization
-    await recordStep('step_env_init', 'Initialize isolated temporary directory tree', () => {
+    await runStep('step_env_init', 'Initialize isolated temporary directory tree', () => {
       isolated = createIsolatedAcceptanceEnvironment({
         tempParent: options.tempParent,
         parentEnv: options.parentEnv || process.env,
@@ -285,7 +303,7 @@ async function runAcceptance(options = {}) {
     });
 
     // 2. Artifact validation & hash calculation
-    artifactData = await recordStep('step_artifacts', 'Locate and validate candidate artifacts', () => {
+    await runStep('step_artifacts', 'Locate and validate candidate artifacts', () => {
       if (isDryRun && (!tarballPath || !vsixPath)) {
         const syn = createSyntheticArtifacts(path.join(isolated.root, 'synthetic-artifacts'));
         tarballPath = syn.tarballPath;
@@ -312,27 +330,22 @@ async function runAcceptance(options = {}) {
         throw new Error(`VSIX artifact not found: ${vsixPath || 'unspecified'}`);
       }
 
-      return {
-        tarball: {
-          path: path.basename(tarballPath),
-          sha256: sha256File(tarballPath),
-          version: readTarballPackageJson(tarballPath).version,
-        },
-        vsix: {
-          path: path.basename(vsixPath),
-          sha256: sha256File(vsixPath),
-          version: readVsixPackageJson(vsixPath).version,
-        },
-      };
+      artifacts.tarball.path = path.basename(tarballPath);
+      artifacts.vsix.path = path.basename(vsixPath);
+      artifacts.tarball.sha256 = sha256File(tarballPath);
+      artifacts.tarball.version = readTarballPackageJson(tarballPath).version;
+      artifacts.vsix.sha256 = sha256File(vsixPath);
+      artifacts.vsix.version = readVsixPackageJson(vsixPath).version;
+      return { details: 'Digests and manifest versions recorded' };
     });
 
     // 3. Host probe
-    await recordStep('step_host_probe', 'Probe Node, OS, and VS Code versions', async () => {
+    await runStep('step_host_probe', 'Probe Node, OS, and VS Code versions', async () => {
       if (isDryRun) {
         return { details: 'VS Code version not probed in dry run' };
       }
       const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
-      const codeProbe = await runProcess(codeCli.command, [
+      const codeProbe = await run(codeCli.command, [
         ...codeCli.prefixArgs,
         '--user-data-dir', isolated.vscodeUserData,
         '--extensions-dir', isolated.vscodeExtensions,
@@ -353,9 +366,9 @@ async function runAcceptance(options = {}) {
     });
 
     // 4. Tarball isolated installation
-    await recordStep('step_tarball_install', 'Install tarball in clean isolated npm prefix', async () => {
+    await runStep('step_tarball_install', 'Install tarball in clean isolated npm prefix', async () => {
       const installCwd = isolated.npmPrefix;
-      const initRes = await runProcess(process.execPath, [npm, 'init', '--yes'], {
+      const initRes = await run(process.execPath, [npm, 'init', '--yes'], {
         cwd: installCwd,
         env: isolated.childEnv,
       });
@@ -363,7 +376,7 @@ async function runAcceptance(options = {}) {
         throw new Error(describeFailure('npm init in isolated prefix', initRes));
       }
 
-      const installRes = await runProcess(process.execPath, [
+      const installRes = await run(process.execPath, [
         npm,
         'install',
         '--no-audit',
@@ -387,7 +400,7 @@ async function runAcceptance(options = {}) {
     });
 
     // 5. VSIX installation / verification
-    await recordStep('step_vsix_install', 'Verify or install VSIX in isolated environment', async () => {
+    await runStep('step_vsix_install', 'Verify or install VSIX in isolated environment', async () => {
       if (isDryRun) {
         // In dry run, verify package manifest and integrity without launching GUI
         const vsixManifest = readVsixPackageJson(vsixPath);
@@ -396,7 +409,7 @@ async function runAcceptance(options = {}) {
 
       // Native mode: install extension using explicit directories
       const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
-      const installRes = await runProcess(codeCli.command, [
+      const installRes = await run(codeCli.command, [
         ...codeCli.prefixArgs,
         '--user-data-dir', isolated.vscodeUserData,
         '--extensions-dir', isolated.vscodeExtensions,
@@ -412,14 +425,14 @@ async function runAcceptance(options = {}) {
     });
 
     // 6. Runtime probe
-    runtimeData = await recordStep('step_runtime_probe', 'Start installed runtime and verify doctor server_version', async () => {
+    await runStep('step_runtime_probe', 'Start installed runtime and verify doctor server_version', async () => {
       const installedEntry = path.join(isolated.npmPrefix, 'node_modules', 'coagent8', 'dist', 'index.cjs');
       if (!fs.existsSync(installedEntry)) {
         throw new Error(`Runtime entrypoint not found at ${installedEntry}`);
       }
 
-      const bundleSha256 = sha256File(installedEntry);
-      const doctorRes = await runProcess(process.execPath, [
+      runtimeData.bundleSha256 = sha256File(installedEntry);
+      const doctorRes = await run(process.execPath, [
         installedEntry,
         'doctor',
         '--json',
@@ -442,32 +455,28 @@ async function runAcceptance(options = {}) {
         throw new Error(`Malformed doctor JSON output: ${redactDiagnostic(doctorRes.stdout, 200)}`);
       }
 
+      runtimeData.serverStatus = typeof parsedDoctor.status === 'string'
+        ? parsedDoctor.status
+        : (parsedDoctor.configError ? 'degraded_config_error' : (parsedDoctor.operational ? 'operational' : 'unknown'));
       const startedVersion = parsedDoctor.server_version || null;
+      runtimeData.startedVersion = startedVersion;
       if (!startedVersion) {
         throw new Error('doctor output missing server_version.');
       }
 
       const versionsMatch = (
-        startedVersion === artifactData.tarball.version &&
-        startedVersion === artifactData.vsix.version
+        startedVersion === artifacts.tarball.version &&
+        startedVersion === artifacts.vsix.version
       );
 
+      runtimeData.versionAgreement = versionsMatch;
       if (!versionsMatch) {
         throw new Error(
-          `Version mismatch: started=${startedVersion}, tarball=${artifactData.tarball.version}, vsix=${artifactData.vsix.version}`
+          `Version mismatch: started=${startedVersion}, tarball=${artifacts.tarball.version}, vsix=${artifacts.vsix.version}`
         );
       }
 
-      const serverStatus = typeof parsedDoctor.status === 'string'
-        ? parsedDoctor.status
-        : (parsedDoctor.configError ? 'degraded_config_error' : (parsedDoctor.operational ? 'operational' : 'unknown'));
-
-      return {
-        startedVersion,
-        serverStatus,
-        versionAgreement: versionsMatch,
-        bundleSha256,
-      };
+      return { details: `Runtime ${startedVersion} matches both manifests` };
     });
 
     // 7. Scenarios N2-N4 (deferred to 2.17)
@@ -512,24 +521,18 @@ async function runAcceptance(options = {}) {
   const hasFailures = steps.some(s => s.status === 'FAIL');
   const hasNotRun = steps.some(s => s.status === 'NOT_RUN');
   const status = failure || hasFailures ? 'FAIL' : (hasNotRun ? 'INCOMPLETE' : 'PASS');
-  const missingArtifact = file => ({ path: file ? path.basename(file) : 'missing', sha256: null, version: null });
 
   const evidence = {
     schemaVersion: SCHEMA_VERSION,
-    version: artifactData ? artifactData.tarball.version : null,
+    version: artifacts.tarball.version,
     startedAt,
     completedAt: new Date().toISOString(),
     durationMs: Date.now() - startTime,
     status,
     mode,
-    artifacts: artifactData || { tarball: missingArtifact(tarballPath), vsix: missingArtifact(vsixPath) },
+    artifacts,
     host: hostData,
-    runtime: runtimeData || {
-      startedVersion: null,
-      serverStatus: 'not_started',
-      versionAgreement: false,
-      bundleSha256: null,
-    },
+    runtime: runtimeData,
     steps,
     error: failure ? persistedError(failure) : undefined,
   };

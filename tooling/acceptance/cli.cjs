@@ -43,7 +43,19 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   console.log(`Starting CoAgent8 native acceptance (${options.dryRun ? 'dry-run' : 'native'})...`);
 
-  const result = await runAcceptance(options);
+  // An interrupt aborts the running step; the runner then stops its owned processes,
+  // writes the evidence and removes its temporary root before the CLI exits.
+  const controller = new AbortController();
+  const interrupt = () => controller.abort(new Error('Acceptance run interrupted.'));
+  process.once('SIGINT', interrupt);
+  process.once('SIGTERM', interrupt);
+  let result;
+  try {
+    result = await runAcceptance({ ...options, signal: controller.signal });
+  } finally {
+    process.removeListener('SIGINT', interrupt);
+    process.removeListener('SIGTERM', interrupt);
+  }
   console.log(`Acceptance status: ${result.status}`);
   console.log(`Evidence written to: ${result.evidencePath}`);
   if (result.tempRoot) console.log(`Isolated root kept at: ${result.tempRoot}`);
@@ -52,7 +64,7 @@ async function main() {
     if (result.error) {
       console.error(`Acceptance error: ${result.error.message}`);
     }
-    process.exitCode = 1;
+    process.exitCode = controller.signal.aborted ? 130 : 1;
   }
 }
 

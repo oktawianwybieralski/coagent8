@@ -337,3 +337,75 @@ if (args.includes('--install-extension')) { console.error('auth failed for https
   assert.doesNotMatch(text, /hunter2secret/);
   assert.doesNotMatch(text, new RegExp(token));
 });
+
+test('evidence keeps observations made inside a failing step', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-partial-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const older = createSyntheticArtifacts(path.join(testRoot, 'older'), '0.6.1');
+  const newer = createSyntheticArtifacts(path.join(testRoot, 'newer'), '0.6.2');
+
+  // A version disagreement fails the runtime step after the runtime started.
+  const mismatchPath = path.join(testRoot, 'mismatch.json');
+  const mismatch = await runAcceptance({ dryRun: true, tarball: older.tarballPath, vsix: newer.vsixPath, evidencePath: mismatchPath, tempParent: testRoot });
+  assert.equal(mismatch.status, 'FAIL');
+  const runtime = JSON.parse(fs.readFileSync(mismatchPath, 'utf8')).runtime;
+  assert.equal(runtime.startedVersion, '0.6.1');
+  assert.equal(runtime.versionAgreement, false);
+  assert.equal(runtime.serverStatus, 'operational');
+  assert.match(runtime.bundleSha256, /^[0-9a-f]{64}$/);
+
+  // An unreadable VSIX keeps the tarball observations already made.
+  const brokenVsix = path.join(testRoot, 'broken.vsix');
+  fs.writeFileSync(brokenVsix, 'not a zip', 'utf8');
+  const brokenPath = path.join(testRoot, 'broken.json');
+  const broken = await runAcceptance({ dryRun: true, tarball: older.tarballPath, vsix: brokenVsix, evidencePath: brokenPath, tempParent: testRoot });
+  assert.equal(broken.status, 'FAIL');
+  const artifacts = JSON.parse(fs.readFileSync(brokenPath, 'utf8')).artifacts;
+  assert.equal(artifacts.tarball.version, '0.6.1');
+  assert.match(artifacts.tarball.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(artifacts.vsix.version, null);
+});
+
+test('an oversized candidate is refused before it is read', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-oversize-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
+  const huge = path.join(testRoot, 'huge.tgz');
+  fs.closeSync(fs.openSync(huge, 'w'));
+  fs.truncateSync(huge, 64 * 1024 * 1024 + 1);
+  const evidencePath = path.join(testRoot, 'evidence.json');
+
+  const result = await runAcceptance({ dryRun: true, tarball: huge, vsix: syn.vsixPath, evidencePath, tempParent: testRoot });
+
+  assert.equal(result.status, 'FAIL');
+  const step = JSON.parse(fs.readFileSync(evidencePath, 'utf8')).steps.find(s => s.id === 'step_artifacts');
+  assert.equal(step.status, 'FAIL');
+  assert.match(step.error, /exceeds/);
+});
+
+test('an interrupt stops the running process, writes evidence and removes the isolated root', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-abort-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
+  const mockCode = path.join(testRoot, 'mock-code.cjs');
+  fs.writeFileSync(mockCode, "if (process.argv.includes('--version')) setInterval(() => {}, 1000);\n", 'utf8');
+  const parent = path.join(testRoot, 'parent');
+  const evidencePath = path.join(testRoot, 'evidence.json');
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 500);
+
+  const started = Date.now();
+  const result = await runAcceptance({
+    dryRun: false, tarball: syn.tarballPath, vsix: syn.vsixPath, codePath: mockCode, evidencePath, tempParent: parent, signal: controller.signal,
+  });
+
+  assert.ok(Date.now() - started < 9_000, 'the hanging probe is stopped before its own deadline');
+  assert.equal(result.status, 'FAIL');
+  const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+  const probe = evidence.steps.find(s => s.id === 'step_host_probe');
+  assert.equal(probe.status, 'FAIL');
+  assert.match(probe.error, /ABORTED/);
+  assert.ok(Date.now() - started >= 400, 'the probe ran until the interrupt');
+  assert.equal(evidence.steps.find(s => s.id === 'step_home_preservation').status, 'PASS');
+  assert.deepEqual(fs.readdirSync(parent), []);
+});

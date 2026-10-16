@@ -10,15 +10,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { createHash } = require('node:crypto');
-const { readTarball, readZipEntry } = require('../../scripts/archive.cjs');
+const { MAX_ARCHIVE_BYTES, readTarball, readZipEntry } = require('../../scripts/archive.cjs');
 
 /**
- * Computes the SHA-256 hash of a file.
+ * Computes the SHA-256 hash of a file no larger than the archive bound.
  *
  * @param filePath - Path to the file.
  * @returns Hex-encoded SHA-256 digest.
+ * @throws When the file exceeds {@link MAX_ARCHIVE_BYTES}; it is not read then.
  */
 function sha256File(filePath) {
+  if (fs.statSync(filePath).size > MAX_ARCHIVE_BYTES) {
+    throw new Error(`${path.basename(filePath)} exceeds ${MAX_ARCHIVE_BYTES} bytes.`);
+  }
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
