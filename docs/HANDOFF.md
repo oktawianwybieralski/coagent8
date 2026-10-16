@@ -201,23 +201,23 @@ Do not append another session transcript or treat old test counts as fresh evide
   (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) in parallel, then 2.15-2.18 (the
   POSIX recovery checks run with 2.18).
 - **Rows 2.15 + 2.16 (`ACCEPT-001b` isolated user home, `ACCEPT-001a1` runner skeleton, #67):**
-  implemented isolated acceptance runner foundation under `tooling/acceptance/`
-  with explicit child process environment (`HOME`, `USERPROFILE`, `APPDATA`,
-  `LOCALAPPDATA`, `XDG_CONFIG_HOME`, `TEMP`/`TMP`, `npm_config_prefix/cache/userconfig`,
-  `CODEX_HOME`, explicit VS Code directories) and case-insensitive stripping of parent
-  prefixes (`coagent8_*`, `codex_*`, `claude_*`, `gemini_*`, `npm_*`, `vscode_*`,
-  `electron_*`, API keys and tokens). The runner never mutates its own `process.env`.
-  - Row 2.15 (`ACCEPT-001b`): `tests/acceptance/isolated-home.test.js` seeds a fake
-    real home with client registrations and custom config, sets hostile parent
-    environment variables pointing to it, executes isolated installation and registration
-    flow via `setupClients`, and asserts that the fake real home remains 100% byte-identical
-    with zero new, modified, or removed files.
-  - Row 2.16 (`ACCEPT-001a1`): `npm run acceptance:native` installs candidate artifacts
-    in isolation, probes host and started runtime versions via `doctor --json`, verifies
-    package manifest and started version agreement, and writes schema-compliant evidence
-    to `.artifacts/acceptance/evidence.json` with redacted home paths. Works in CI without
-    external backend CLIs or GUI (`--dry-run`), discovered by `tests/run.cjs` via
-    `tests/acceptance/runner-skeleton.test.js`.
+  `tooling/acceptance/` creates its own temporary root, gives every child an explicit
+  isolated environment (contract in [ACCEPT-001](ARCHITECTURE.md#accept-001-automated-native-acceptance)),
+  runs children through `runCommand` and reads archives through the shared bounded
+  readers in `scripts/archive.cjs`.
+  - Row 2.15: `tests/acceptance/isolated-home.test.js` runs `setupClients` with a
+    hostile parent environment pointing at a seeded fake home; the fake home stays
+    byte-identical. A second test proves preload, coverage, credential and shadowing
+    parent variables never reach the child.
+  - Row 2.16: `npm run acceptance:native` (dry run in CI through
+    `tests/acceptance/runner-skeleton.test.js`). Native run on Windows 11, Node
+    v26.10.0, 2026-10-16, with candidates packed from the branch (`npm run
+    package:vscode`): status `INCOMPLETE` (only N2-N4 `NOT_RUN`), VS Code 1.142.0
+    installed the VSIX into the isolated profile, the installed runtime reported
+    0.6.1 matching both manifests, the five real home registration files were
+    unchanged and the evidence held no user name. The same run against the older
+    `.artifacts` 0.6.1 build failed correctly: that runtime's `doctor --json` has no
+    `server_version`.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

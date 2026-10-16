@@ -4,42 +4,14 @@
 // packed package, so the artifacts ship exactly what npm ships.
 const fs = require('node:fs');
 const path = require('node:path');
-const zlib = require('node:zlib');
 const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { buildExtension } = require('./build-vscode.cjs');
+const { readTarball } = require('./archive.cjs');
 
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.artifacts', 'package');
 const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-
-/** Reads a gzipped ustar archive into a map of entry path to file contents; PAX path records are honored. */
-function readTarball(file) {
-  const data = zlib.gunzipSync(fs.readFileSync(file));
-  const entries = new Map();
-  let offset = 0, paxPath = null;
-  const text = (start, length) => data.toString('utf8', start, start + length).replace(/\0.*$/s, '');
-  while (offset + 512 <= data.length) {
-    const header = data.subarray(offset, offset + 512);
-    if (header.every(byte => byte === 0)) break;
-    const size = Number.parseInt(text(offset + 124, 12).trim() || '0', 8);
-    const type = String.fromCharCode(header[156] || 48);
-    const prefix = text(offset + 345, 155);
-    const name = paxPath ?? (prefix ? `${prefix}/${text(offset, 100)}` : text(offset, 100));
-    const body = data.subarray(offset + 512, offset + 512 + size);
-    paxPath = null;
-    if (type === 'x') {
-      const record = /(?:^|\n)\d+ path=([^\n]*)\n/.exec(body.toString('utf8'));
-      paxPath = record ? record[1] : null;
-    } else if (type === '0' || type === '\0') {
-      entries.set(name, Buffer.from(body));
-    } else if (type !== '5' && type !== 'g') {
-      throw new Error(`Unsupported tar entry type '${type}' for ${name}.`);
-    }
-    offset += 512 + Math.ceil(size / 512) * 512;
-  }
-  return entries;
-}
 
 /** Writes the archive's `package/` entries below `target`, refusing paths that leave it. */
 function extractPackage(entries, target) {
@@ -96,4 +68,4 @@ if (require.main === module) {
   Promise.resolve().then(main).catch(error => { console.error(error.message); process.exitCode = 1; });
 }
 
-module.exports = { readTarball, extractPackage, verifyPlugin };
+module.exports = { extractPackage, verifyPlugin };

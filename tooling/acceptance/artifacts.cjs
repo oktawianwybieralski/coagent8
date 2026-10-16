@@ -2,13 +2,15 @@
  * Artifact hash computation, package inspection, and fixture synthesis (ACCEPT-001a1).
  *
  * @remarks
- * Inspects npm tarball and VS Code VSIX packages using built-in Node.js modules
- * (`node:crypto`, `node:zlib`) without introducing runtime or tooling dependencies.
+ * Candidate archives are read through the shared bounded readers in
+ * `scripts/archive.cjs`; this module adds package manifest checks and builds the
+ * synthetic candidates a dry run installs.
  */
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { createHash } = require('node:crypto');
+const { readTarball, readZipEntry } = require('../../scripts/archive.cjs');
 
 /**
  * Computes the SHA-256 hash of a file.
@@ -18,40 +20,6 @@ const { createHash } = require('node:crypto');
  */
 function sha256File(filePath) {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-}
-
-/**
- * Reads a gzipped ustar archive into a map of entry path to file contents.
- *
- * @param file - Tarball file path.
- * @returns Map of entry relative paths to Buffer contents.
- */
-function readTarball(file) {
-  const data = zlib.gunzipSync(fs.readFileSync(file));
-  const entries = new Map();
-  let offset = 0;
-  let paxPath = null;
-  const text = (start, length) => data.toString('utf8', start, start + length).replace(/\0.*$/s, '');
-
-  while (offset + 512 <= data.length) {
-    const header = data.subarray(offset, offset + 512);
-    if (header.every(byte => byte === 0)) break;
-    const size = Number.parseInt(text(offset + 124, 12).trim() || '0', 8);
-    const type = String.fromCharCode(header[156] || 48);
-    const prefix = text(offset + 345, 155);
-    const name = paxPath ?? (prefix ? `${prefix}/${text(offset, 100)}` : text(offset, 100));
-    const body = data.subarray(offset + 512, offset + 512 + size);
-    paxPath = null;
-
-    if (type === 'x') {
-      const record = /(?:^|\n)\d+ path=([^\n]*)\n/.exec(body.toString('utf8'));
-      paxPath = record ? record[1] : null;
-    } else if (type === '0' || type === '\0') {
-      entries.set(name, Buffer.from(body));
-    }
-    offset += 512 + Math.ceil(size / 512) * 512;
-  }
-  return entries;
 }
 
 /**
@@ -76,38 +44,11 @@ function readTarballPackageJson(tarballPath) {
  * @returns Parsed extension package.json object.
  */
 function readVsixPackageJson(vsixPath) {
-  const buf = fs.readFileSync(vsixPath);
-  const eocdMarker = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
-  const eocdIndex = buf.lastIndexOf(eocdMarker);
-  if (eocdIndex < 0) {
-    throw new Error(`Invalid VSIX archive (missing EOCD): ${vsixPath}`);
+  const content = readZipEntry(vsixPath, 'extension/package.json');
+  if (!content) {
+    throw new Error(`VSIX ${vsixPath} contains no extension/package.json entry.`);
   }
-
-  const cdCount = buf.readUInt16LE(eocdIndex + 10);
-  const cdOffset = buf.readUInt32LE(eocdIndex + 16);
-  let pos = cdOffset;
-
-  for (let i = 0; i < cdCount; i++) {
-    const compMethod = buf.readUInt16LE(pos + 10);
-    const compSize = buf.readUInt32LE(pos + 20);
-    const nameLen = buf.readUInt16LE(pos + 28);
-    const extraLen = buf.readUInt16LE(pos + 30);
-    const commentLen = buf.readUInt16LE(pos + 32);
-    const localOffset = buf.readUInt32LE(pos + 42);
-    const name = buf.toString('utf8', pos + 46, pos + 46 + nameLen);
-    pos += 46 + nameLen + extraLen + commentLen;
-
-    if (name === 'extension/package.json' || name === 'package.json') {
-      const localNameLen = buf.readUInt16LE(localOffset + 26);
-      const localExtraLen = buf.readUInt16LE(localOffset + 28);
-      const dataStart = localOffset + 30 + localNameLen + localExtraLen;
-      const rawData = buf.subarray(dataStart, dataStart + compSize);
-      const content = compMethod === 8 ? zlib.inflateRawSync(rawData) : rawData;
-      return JSON.parse(content.toString('utf8'));
-    }
-  }
-
-  throw new Error(`VSIX ${vsixPath} contains no extension/package.json entry.`);
+  return JSON.parse(content.toString('utf8'));
 }
 
 /**
@@ -180,7 +121,7 @@ function buildZip(files) {
     localHeader.writeUInt16LE(0, 10); // Time
     localHeader.writeUInt16LE(0, 12); // Date
     // CRC-32: compute crc
-    const crc = crc32(data);
+    const crc = zlib.crc32(data);
     localHeader.writeUInt32LE(crc, 14);
     localHeader.writeUInt32LE(data.length, 18); // Compressed size
     localHeader.writeUInt32LE(data.length, 22); // Uncompressed size
@@ -229,29 +170,6 @@ function buildZip(files) {
 
   return Buffer.concat([...localHeaders, cdData, eocd]);
 }
-
-/**
- * Computes standard CRC-32 checksum.
- */
-function crc32(buf) {
-  let crc = 0 ^ -1;
-  for (let i = 0; i < buf.length; i++) {
-    crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ buf[i]) & 0xff];
-  }
-  return (crc ^ -1) >>> 0;
-}
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) {
-      c = ((c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1));
-    }
-    table[i] = c >>> 0;
-  }
-  return table;
-})();
 
 /**
  * Creates synthetic tarball and VSIX files for dry-run or unit testing.
@@ -321,7 +239,6 @@ console.log('CoAgent8 synthetic CLI');
 
 module.exports = {
   sha256File,
-  readTarball,
   readTarballPackageJson,
   readVsixPackageJson,
   createSyntheticArtifacts,

@@ -46,10 +46,11 @@ async function main() {
   const result = await runAcceptance(options);
   console.log(`Acceptance status: ${result.status}`);
   console.log(`Evidence written to: ${result.evidencePath}`);
+  if (result.tempRoot) console.log(`Isolated root kept at: ${result.tempRoot}`);
 
   if (result.status === 'FAIL') {
     if (result.error) {
-      console.error(`Acceptance error: ${result.error.message || result.error}`);
+      console.error(`Acceptance error: ${result.error.message}`);
     }
     process.exitCode = 1;
   }

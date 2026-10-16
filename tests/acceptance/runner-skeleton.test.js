@@ -26,7 +26,7 @@ test('runner skeleton completes dry run and produces valid evidence JSON (ACCEPT
   const result = await runAcceptance({
     dryRun: true,
     evidencePath,
-    tempRoot: tempInstanceRoot,
+    tempParent: tempInstanceRoot,
   });
 
   // Verify result status
@@ -82,7 +82,7 @@ test('runner skeleton completes dry run and produces valid evidence JSON (ACCEPT
   assert.match(scenarioStep.details, /2\.17/);
 
   // 6. Validate cleanup of temp root
-  assert.equal(fs.existsSync(tempInstanceRoot), false, 'Temporary instance root must be cleaned up on success');
+  assert.deepEqual(fs.readdirSync(tempInstanceRoot), [], 'Temporary instance root must be cleaned up on success');
 });
 
 test('runner skeleton cleans up temporary root on failure', async t => {
@@ -99,12 +99,12 @@ test('runner skeleton cleans up temporary root on failure', async t => {
     tarball: path.join(testRoot, 'non-existent.tgz'),
     vsix: path.join(testRoot, 'non-existent.vsix'),
     evidencePath,
-    tempRoot: tempInstanceRoot,
+    tempParent: tempInstanceRoot,
   });
 
   assert.equal(result.status, 'FAIL');
   assert.ok(fs.existsSync(evidencePath), 'Evidence JSON must still be written on failure');
-  assert.equal(fs.existsSync(tempInstanceRoot), false, 'Temporary instance root must be cleaned up on failure');
+  assert.deepEqual(fs.readdirSync(tempInstanceRoot), [], 'Temporary instance root must be cleaned up on failure');
 });
 
 test('resolveCodeCli resolves JS scripts and parses code.cmd', async t => {
@@ -128,14 +128,25 @@ test('resolveCodeCli resolves JS scripts and parses code.cmd', async t => {
 
   fs.writeFileSync(codeExe, 'mock exe', 'utf8');
   fs.writeFileSync(cliJs, 'mock cli js', 'utf8');
-  fs.writeFileSync(codeCmd, '@echo off\n"%~dp0..\\Code.exe" "%~dp0..\\resources\\app\\out\\cli.js" %*\n', 'utf8');
+  const shim = '@echo off\nsetlocal\nset ELECTRON_RUN_AS_NODE=1\n"%~dp0..\\Code.exe" "%~dp0..\\resources\\app\\out\\cli.js" %*\n';
+  fs.writeFileSync(codeCmd, shim, 'utf8');
 
   if (process.platform === 'win32') {
     const resCmd = resolveCodeCli(codeCmd);
     assert.equal(resCmd.command, codeExe);
     assert.deepEqual(resCmd.prefixArgs, [cliJs]);
     assert.equal(resCmd.extraEnv.ELECTRON_RUN_AS_NODE, '1');
+
+    // Discovery reads the search path whatever the key's spelling (Windows uses Path).
+    const discovered = resolveCodeCli(null, { Path: binDir });
+    assert.equal(discovered.command, codeExe);
+
+    // A shim of another shape is refused instead of running through cmd.exe.
+    fs.writeFileSync(codeCmd, '@echo off\n"%~dp0..\\Code.exe" "%~dp0..\\resources\\app\\out\\cli.js" %*\n', 'utf8');
+    assert.throws(() => resolveCodeCli(codeCmd), /Unsupported VS Code shim/);
   }
+
+  assert.throws(() => resolveCodeCli(null, { PATH: path.join(testRoot, 'empty') }), /VS Code CLI not found/);
 });
 
 test('runner executes native mode with mock code CLI and verifies args and home preservation', async t => {
@@ -173,7 +184,7 @@ test('runner executes native mode with mock code CLI and verifies args and home 
     vsix: syn.vsixPath,
     codePath: mockCodeRunner,
     evidencePath,
-    tempRoot: tempInstanceRoot,
+    tempParent: tempInstanceRoot,
   });
 
   assert.equal(result.status, 'INCOMPLETE', 'Status is INCOMPLETE because scenarios N2-N4 are deferred');
@@ -261,3 +272,68 @@ test('runner fails and reports violation when home preservation is broken', asyn
   assert.match(failStep.error, /Home preservation violation/);
 });
 
+
+function writeMockCode(file, body) {
+  fs.writeFileSync(file, `const args = process.argv.slice(2);\n${body}\nprocess.exit(0);\n`, 'utf8');
+}
+
+test('runner keeps a caller directory and only removes the root it created', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-owned-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const parent = path.join(testRoot, 'parent');
+  fs.mkdirSync(parent);
+  const unrelated = path.join(parent, 'unrelated.txt');
+  fs.writeFileSync(unrelated, 'keep', 'utf8');
+
+  const result = await runAcceptance({ dryRun: true, evidencePath: path.join(testRoot, 'evidence.json'), tempParent: parent });
+
+  assert.equal(result.status, 'INCOMPLETE');
+  assert.deepEqual(fs.readdirSync(parent), ['unrelated.txt']);
+  assert.equal(fs.readFileSync(unrelated, 'utf8'), 'keep');
+});
+
+test('a failed VS Code version probe fails the host step and evidence keeps artifact digests', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-probe-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
+  const mockCode = path.join(testRoot, 'mock-code.cjs');
+  writeMockCode(mockCode, "if (args.includes('--version')) { console.error('probe broke'); process.exit(3); }");
+  const evidencePath = path.join(testRoot, 'evidence.json');
+
+  const result = await runAcceptance({
+    dryRun: false, tarball: syn.tarballPath, vsix: syn.vsixPath, codePath: mockCode, evidencePath, tempParent: testRoot,
+  });
+
+  assert.equal(result.status, 'FAIL');
+  const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+  const probe = evidence.steps.find(s => s.id === 'step_host_probe');
+  assert.equal(probe.status, 'FAIL');
+  assert.match(probe.error, /exit code 3/);
+  assert.equal(evidence.host.vscode, null);
+  assert.match(evidence.artifacts.tarball.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(evidence.artifacts.vsix.version, '0.6.1');
+  assert.equal(evidence.version, '0.6.1');
+  // The home check still runs after the failure.
+  assert.equal(evidence.steps.find(s => s.id === 'step_home_preservation').status, 'PASS');
+});
+
+test('credentials in subprocess output never reach the evidence file', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-secret-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
+  const token = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
+  const mockCode = path.join(testRoot, 'mock-code.cjs');
+  writeMockCode(mockCode, `if (args.includes('--version')) { console.log('1.90.0'); process.exit(0); }
+if (args.includes('--install-extension')) { console.error('auth failed for https://user:hunter2secret@example.com token ${token}'); process.exit(1); }`);
+  const evidencePath = path.join(testRoot, 'evidence.json');
+
+  const result = await runAcceptance({
+    dryRun: false, tarball: syn.tarballPath, vsix: syn.vsixPath, codePath: mockCode, evidencePath, tempParent: testRoot,
+  });
+
+  assert.equal(result.status, 'FAIL');
+  const text = fs.readFileSync(evidencePath, 'utf8');
+  assert.match(text, /VS Code extension installation failed/);
+  assert.doesNotMatch(text, /hunter2secret/);
+  assert.doesNotMatch(text, new RegExp(token));
+});

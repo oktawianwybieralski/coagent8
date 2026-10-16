@@ -4,16 +4,21 @@
  * @remarks
  * Installs given artifacts (tarball and VSIX) in isolation and produces
  * verifiable evidence JSON bound to artifact digests, host versions, and the
- * runtime version actually started.
+ * runtime version actually started. Processes run through the runtime's
+ * supervisor (`runCommand`): shell-free, bounded output, owned teardown.
+ * Persisted diagnostics go through the runtime's diagnostic redaction.
  */
+require('tsx/cjs');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const cp = require('node:child_process');
 const { createHash } = require('node:crypto');
+const { runCommand } = require('../../src/execution/process.ts');
+const { redactDiagnostic } = require('../../src/security/redaction.ts');
 const {
   createIsolatedAcceptanceEnvironment,
   cleanupIsolatedEnvironment,
+  searchPathOf,
 } = require('./environment.cjs');
 const {
   sha256File,
@@ -24,6 +29,8 @@ const {
 
 const SCHEMA_VERSION = '1.0.0';
 const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+/** Budget for subprocess output quoted in evidence, in bytes. */
+const DIAGNOSTIC_BYTES = 1024;
 
 /**
  * Computes sha256 hash of a Buffer.
@@ -33,27 +40,28 @@ function sha256Buffer(buf) {
 }
 
 /**
- * Runs a command synchronously with process bounds, windowsHide, and timeout.
+ * Runs a command through the runtime supervisor.
+ *
+ * @returns The supervisor result; `ok` is true only for a completed run with exit code 0.
  */
-function runProcess(command, args, options = {}) {
-  const timeoutMs = options.timeoutMs || 30_000;
-  const result = cp.spawnSync(command, args, {
+async function runProcess(command, args, options = {}) {
+  const result = await runCommand(command, args, {
     cwd: options.cwd || process.cwd(),
-    env: options.env || process.env,
-    encoding: 'utf8',
-    windowsHide: true,
-    shell: false,
-    maxBuffer: 4 * 1024 * 1024,
-    timeout: timeoutMs,
+    env: options.env,
+    timeoutMs: options.timeoutMs || 30_000,
   });
+  return { ...result, ok: result.status === 'completed' && result.exitCode === 0 && !result.error };
+}
 
-  return {
-    status: result.status,
-    signal: result.signal,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    error: result.error,
-  };
+/**
+ * Describes a failed run for evidence: outcome plus redacted, bounded output.
+ */
+function describeFailure(label, result) {
+  const outcome = result.error
+    ? `${result.error.code}: ${result.error.message}`
+    : `exit code ${result.exitCode}${result.signal ? `, signal ${result.signal}` : ''}`;
+  const output = (result.stderr || result.stdout || '').trim();
+  return `${label} failed (${outcome})${output ? `: ${redactDiagnostic(output, DIAGNOSTIC_BYTES)}` : ''}`;
 }
 
 /**
@@ -106,41 +114,32 @@ function redactHome(text, homes = []) {
   return redacted;
 }
 
+function findOnSearchPath(env, names) {
+  for (const dir of searchPathOf(env).split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const full = path.join(dir.replace(/^"|"$/g, ''), name);
+      if (fs.statSync(full, { throwIfNoEntry: false })?.isFile()) return full;
+    }
+  }
+  return null;
+}
+
 /**
  * Resolves the VS Code CLI executable and launch arguments.
  *
  * @remarks
- * On Windows, `code` in PATH is usually `code.cmd`, which cannot be spawned with
- * `shell: false`. Resolves either the underlying `Code.exe` with `cli.js` and
- * `ELECTRON_RUN_AS_NODE=1`, or safely wraps `code.cmd` via `cmd.exe`.
+ * On Windows, `code` in PATH is `code.cmd`, which cannot be spawned with
+ * `shell: false`. The shim is resolved to the `Code.exe` and `cli.js` it starts,
+ * with the `ELECTRON_RUN_AS_NODE=1` it sets; a shim that does not match that shape
+ * is refused rather than run through a command shell.
+ * @throws When no VS Code CLI is found or a Windows shim cannot be resolved.
  */
 function resolveCodeCli(customCodePath, env = process.env) {
-  let candidate = customCodePath || env.ACCEPTANCE_CODE_CLI || env.CODE_PATH;
+  const candidate = customCodePath || env.ACCEPTANCE_CODE_CLI || env.CODE_PATH
+    || findOnSearchPath(env, process.platform === 'win32' ? ['code.cmd', 'code.exe'] : ['code']);
 
   if (!candidate) {
-    const searchDirs = (env.PATH || '').split(path.delimiter).filter(Boolean);
-    const names = process.platform === 'win32'
-      ? ['code.cmd', 'code.exe', 'code']
-      : ['code'];
-
-    for (const dir of searchDirs) {
-      for (const name of names) {
-        const full = path.join(dir, name);
-        if (fs.existsSync(full)) {
-          candidate = full;
-          break;
-        }
-      }
-      if (candidate) break;
-    }
-  }
-
-  if (!candidate) {
-    return {
-      command: 'code',
-      prefixArgs: [],
-      extraEnv: {},
-    };
+    throw new Error('VS Code CLI not found on PATH; pass --code-path.');
   }
 
   if (candidate.endsWith('.js') || candidate.endsWith('.cjs')) {
@@ -152,44 +151,22 @@ function resolveCodeCli(customCodePath, env = process.env) {
   }
 
   if (process.platform === 'win32' && candidate.toLowerCase().endsWith('.cmd')) {
-    try {
-      const cmdContent = fs.readFileSync(candidate, 'utf8');
-      const binDir = path.dirname(candidate);
-      const parentDir = path.resolve(binDir, '..');
-      const codeExe = path.join(parentDir, 'Code.exe');
+    const cmdContent = fs.readFileSync(candidate, 'utf8');
+    const binDir = path.dirname(candidate);
+    const codeExe = path.join(binDir, '..', 'Code.exe');
+    const match = /"%~dp0([^"]*cli\.js)"/i.exec(cmdContent);
+    const cliJs = match ? path.resolve(binDir, match[1]) : null;
 
-      let cliJs = null;
-      const match = /"%~dp0([^"]*cli\.js)"/i.exec(cmdContent);
-      if (match) {
-        const candidateCli = path.resolve(binDir, match[1]);
-        if (fs.existsSync(candidateCli)) {
-          cliJs = candidateCli;
-        }
-      }
-      if (!cliJs) {
-        const standard1 = path.join(parentDir, 'resources', 'app', 'out', 'cli.js');
-        if (fs.existsSync(standard1)) {
-          cliJs = standard1;
-        }
-      }
-
-      if (fs.existsSync(codeExe) && cliJs) {
-        return {
-          command: codeExe,
-          prefixArgs: [cliJs],
-          extraEnv: { ELECTRON_RUN_AS_NODE: '1' },
-        };
-      }
-    } catch {
-      // Fallback
+    if (/^\s*set\s+ELECTRON_RUN_AS_NODE=1\s*$/im.test(cmdContent)
+        && fs.statSync(path.resolve(codeExe), { throwIfNoEntry: false })?.isFile()
+        && cliJs && fs.statSync(cliJs, { throwIfNoEntry: false })?.isFile()) {
+      return {
+        command: path.resolve(codeExe),
+        prefixArgs: [cliJs],
+        extraEnv: { ELECTRON_RUN_AS_NODE: '1' },
+      };
     }
-
-    const comSpec = env.ComSpec || 'cmd.exe';
-    return {
-      command: comSpec,
-      prefixArgs: ['/d', '/s', '/c', candidate],
-      extraEnv: {},
-    };
+    throw new Error(`Unsupported VS Code shim ${candidate}: expected Code.exe, cli.js and ELECTRON_RUN_AS_NODE=1; pass --code-path.`);
   }
 
   return {
@@ -237,6 +214,8 @@ function snapshotWatchlist(paths) {
  *
  * @param options - Runner configuration options.
  * @returns Result object containing evidence and status.
+ * @remarks Evidence keeps every observation made before a failure, and the home
+ * preservation check runs whether or not an earlier step failed.
  */
 async function runAcceptance(options = {}) {
   const startedAt = new Date().toISOString();
@@ -255,17 +234,19 @@ async function runAcceptance(options = {}) {
 
   let isolated = null;
   const steps = [];
+  const redactPaths = text => redactHome(text, [os.homedir(), realHome, isolated ? isolated.root : null]);
+  const persistedError = err => redactPaths(redactDiagnostic(err));
 
-  function recordStep(id, name, fn) {
+  async function recordStep(id, name, fn) {
     const stepStart = Date.now();
     try {
-      const res = fn();
+      const res = await fn();
       steps.push({
         id,
         name,
         status: 'PASS',
         durationMs: Date.now() - stepStart,
-        details: res && typeof res === 'object' && res.details ? res.details : undefined,
+        details: res && typeof res === 'object' && typeof res.details === 'string' ? res.details : undefined,
       });
       return res;
     } catch (err) {
@@ -274,7 +255,7 @@ async function runAcceptance(options = {}) {
         name,
         status: 'FAIL',
         durationMs: Date.now() - stepStart,
-        error: redactHome(err.message || String(err), [os.homedir(), realHome, isolated ? isolated.root : null]),
+        error: persistedError(err),
       });
       throw err;
     }
@@ -282,26 +263,33 @@ async function runAcceptance(options = {}) {
 
   let tarballPath = options.tarball ? path.resolve(options.tarball) : null;
   let vsixPath = options.vsix ? path.resolve(options.vsix) : null;
-  let syntheticCleanup = null;
+  let artifactData = null;
+  const hostData = {
+    node: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    osRelease: os.release(),
+    vscode: null,
+  };
+  let runtimeData = null;
+  let failure = null;
 
   try {
     // 1. Environment initialization
-    recordStep('step_env_init', 'Initialize isolated temporary directory tree', () => {
+    await recordStep('step_env_init', 'Initialize isolated temporary directory tree', () => {
       isolated = createIsolatedAcceptanceEnvironment({
-        tempRoot: options.tempRoot,
+        tempParent: options.tempParent,
         parentEnv: options.parentEnv || process.env,
       });
       return { details: 'Isolated root created' };
     });
 
     // 2. Artifact validation & hash calculation
-    const artifactData = recordStep('step_artifacts', 'Locate and validate candidate artifacts', () => {
+    artifactData = await recordStep('step_artifacts', 'Locate and validate candidate artifacts', () => {
       if (isDryRun && (!tarballPath || !vsixPath)) {
-        const synDir = path.join(isolated.root, 'synthetic-artifacts');
-        const syn = createSyntheticArtifacts(synDir);
+        const syn = createSyntheticArtifacts(path.join(isolated.root, 'synthetic-artifacts'));
         tarballPath = syn.tarballPath;
         vsixPath = syn.vsixPath;
-        syntheticCleanup = () => fs.rmSync(synDir, { recursive: true, force: true });
       } else if (!tarballPath || !vsixPath) {
         // Look for existing packaged artifacts in repo root .artifacts
         const pkgArtifacts = path.join(repoRoot, '.artifacts', 'package');
@@ -324,64 +312,58 @@ async function runAcceptance(options = {}) {
         throw new Error(`VSIX artifact not found: ${vsixPath || 'unspecified'}`);
       }
 
-      const tarballSha256 = sha256File(tarballPath);
-      const vsixSha256 = sha256File(vsixPath);
-      const tarballPkg = readTarballPackageJson(tarballPath);
-      const vsixPkg = readVsixPackageJson(vsixPath);
-
       return {
         tarball: {
           path: path.basename(tarballPath),
-          sha256: tarballSha256,
-          version: tarballPkg.version,
+          sha256: sha256File(tarballPath),
+          version: readTarballPackageJson(tarballPath).version,
         },
         vsix: {
           path: path.basename(vsixPath),
-          sha256: vsixSha256,
-          version: vsixPkg.version,
+          sha256: sha256File(vsixPath),
+          version: readVsixPackageJson(vsixPath).version,
         },
       };
     });
 
     // 3. Host probe
-    const hostData = recordStep('step_host_probe', 'Probe Node, OS, and VS Code versions', () => {
-      let vscodeVersion = null;
-      if (!isDryRun) {
-        const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
-        const codeProbe = runProcess(codeCli.command, [
-          ...codeCli.prefixArgs,
-          '--user-data-dir', isolated.vscodeUserData,
-          '--extensions-dir', isolated.vscodeExtensions,
-          '--version',
-        ], {
-          env: { ...isolated.childEnv, ...codeCli.extraEnv },
-          timeoutMs: 10_000,
-        });
-        if (codeProbe.status === 0) {
-          vscodeVersion = codeProbe.stdout.trim().split('\n')[0] || null;
-        }
+    await recordStep('step_host_probe', 'Probe Node, OS, and VS Code versions', async () => {
+      if (isDryRun) {
+        return { details: 'VS Code version not probed in dry run' };
       }
-      return {
-        node: process.version,
-        platform: process.platform,
-        arch: process.arch,
-        osRelease: os.release(),
-        vscode: vscodeVersion,
-      };
+      const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
+      const codeProbe = await runProcess(codeCli.command, [
+        ...codeCli.prefixArgs,
+        '--user-data-dir', isolated.vscodeUserData,
+        '--extensions-dir', isolated.vscodeExtensions,
+        '--version',
+      ], {
+        env: { ...isolated.childEnv, ...codeCli.extraEnv },
+        timeoutMs: 10_000,
+      });
+      if (!codeProbe.ok) {
+        throw new Error(describeFailure('VS Code version probe', codeProbe));
+      }
+      const version = codeProbe.stdout.trim().split(/\r?\n/)[0];
+      if (!version) {
+        throw new Error('VS Code version probe printed no version.');
+      }
+      hostData.vscode = version;
+      return { details: `VS Code ${version}` };
     });
 
     // 4. Tarball isolated installation
-    recordStep('step_tarball_install', 'Install tarball in clean isolated npm prefix', () => {
+    await recordStep('step_tarball_install', 'Install tarball in clean isolated npm prefix', async () => {
       const installCwd = isolated.npmPrefix;
-      const initRes = runProcess(process.execPath, [npm, 'init', '--yes'], {
+      const initRes = await runProcess(process.execPath, [npm, 'init', '--yes'], {
         cwd: installCwd,
         env: isolated.childEnv,
       });
-      if (initRes.status !== 0) {
-        throw new Error(`npm init failed in isolated prefix: ${initRes.stderr || initRes.stdout}`);
+      if (!initRes.ok) {
+        throw new Error(describeFailure('npm init in isolated prefix', initRes));
       }
 
-      const installRes = runProcess(process.execPath, [
+      const installRes = await runProcess(process.execPath, [
         npm,
         'install',
         '--no-audit',
@@ -393,8 +375,8 @@ async function runAcceptance(options = {}) {
         env: isolated.childEnv,
         timeoutMs: 60_000,
       });
-      if (installRes.status !== 0) {
-        throw new Error(`npm install failed for ${path.basename(tarballPath)}: ${installRes.stderr || installRes.stdout}`);
+      if (!installRes.ok) {
+        throw new Error(describeFailure(`npm install of ${path.basename(tarballPath)}`, installRes));
       }
 
       const installedPkgJson = path.join(installCwd, 'node_modules', 'coagent8', 'package.json');
@@ -405,16 +387,16 @@ async function runAcceptance(options = {}) {
     });
 
     // 5. VSIX installation / verification
-    recordStep('step_vsix_install', 'Verify or install VSIX in isolated environment', () => {
+    await recordStep('step_vsix_install', 'Verify or install VSIX in isolated environment', async () => {
       if (isDryRun) {
         // In dry run, verify package manifest and integrity without launching GUI
         const vsixManifest = readVsixPackageJson(vsixPath);
-        return { details: `VSIX verified without GUI: ${vsixManifest.name}@${vsixManifest.version}` };
+        return { details: `VSIX verified without installation in dry run: ${vsixManifest.name}@${vsixManifest.version}` };
       }
 
       // Native mode: install extension using explicit directories
       const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
-      const installRes = runProcess(codeCli.command, [
+      const installRes = await runProcess(codeCli.command, [
         ...codeCli.prefixArgs,
         '--user-data-dir', isolated.vscodeUserData,
         '--extensions-dir', isolated.vscodeExtensions,
@@ -423,21 +405,21 @@ async function runAcceptance(options = {}) {
         env: { ...isolated.childEnv, ...codeCli.extraEnv },
         timeoutMs: 60_000,
       });
-      if (installRes.status !== 0) {
-        throw new Error(`VS Code extension installation failed: ${installRes.stderr || installRes.stdout}`);
+      if (!installRes.ok) {
+        throw new Error(describeFailure('VS Code extension installation', installRes));
       }
       return { details: `VSIX installed into ${path.basename(isolated.vscodeExtensions)}` };
     });
 
     // 6. Runtime probe
-    const runtimeData = recordStep('step_runtime_probe', 'Start installed runtime and verify doctor server_version', () => {
+    runtimeData = await recordStep('step_runtime_probe', 'Start installed runtime and verify doctor server_version', async () => {
       const installedEntry = path.join(isolated.npmPrefix, 'node_modules', 'coagent8', 'dist', 'index.cjs');
       if (!fs.existsSync(installedEntry)) {
         throw new Error(`Runtime entrypoint not found at ${installedEntry}`);
       }
 
       const bundleSha256 = sha256File(installedEntry);
-      const doctorRes = runProcess(process.execPath, [
+      const doctorRes = await runProcess(process.execPath, [
         installedEntry,
         'doctor',
         '--json',
@@ -449,15 +431,15 @@ async function runAcceptance(options = {}) {
         timeoutMs: 15_000,
       });
 
-      if (doctorRes.status !== 0) {
-        throw new Error(`doctor probe failed with code ${doctorRes.status}: ${doctorRes.stderr || doctorRes.stdout}`);
+      if (!doctorRes.ok) {
+        throw new Error(describeFailure('doctor probe', doctorRes));
       }
 
       let parsedDoctor;
       try {
         parsedDoctor = JSON.parse(doctorRes.stdout);
-      } catch (err) {
-        throw new Error(`Malformed doctor JSON output: ${doctorRes.stdout.slice(0, 200)}`);
+      } catch {
+        throw new Error(`Malformed doctor JSON output: ${redactDiagnostic(doctorRes.stdout, 200)}`);
       }
 
       const startedVersion = parsedDoctor.server_version || null;
@@ -496,9 +478,13 @@ async function runAcceptance(options = {}) {
       durationMs: 0,
       details: 'Deferred to ACCEPT-001a2 (row 2.17)',
     });
+  } catch (err) {
+    failure = err;
+  }
 
-    // 8. Home preservation verification
-    recordStep('step_home_preservation', 'Verify user home preservation and isolation', () => {
+  // 8. Home preservation verification, also after a failed step
+  try {
+    await recordStep('step_home_preservation', 'Verify user home preservation and isolation', () => {
       for (const [watchedPath, preState] of homePreSnapshot.entries()) {
         const currentlyExists = fs.existsSync(watchedPath);
         if (!preState.exists) {
@@ -509,8 +495,7 @@ async function runAcceptance(options = {}) {
           if (!currentlyExists) {
             throw new Error(`Home preservation violation: ${watchedPath} was deleted during acceptance run!`);
           }
-          const currentContent = fs.readFileSync(watchedPath);
-          const currentHash = sha256Buffer(currentContent);
+          const currentHash = sha256Buffer(fs.readFileSync(watchedPath));
           if (currentHash !== preState.hash) {
             throw new Error(`Home preservation violation: ${watchedPath} was modified during acceptance run!`);
           }
@@ -520,109 +505,54 @@ async function runAcceptance(options = {}) {
         details: `Verified ${preservationWatchlist.length} real home registration paths untouched: ${preservationWatchlist.map(p => path.basename(p)).join(', ')}`,
       };
     });
+  } catch (err) {
+    failure = failure || err;
+  }
 
-    const completedAt = new Date().toISOString();
-    const durationMs = Date.now() - startTime;
-    const hasFailures = steps.some(s => s.status === 'FAIL');
-    const hasNotRun = steps.some(s => s.status === 'NOT_RUN');
-    const overallStatus = hasFailures ? 'FAIL' : (hasNotRun ? 'INCOMPLETE' : 'PASS');
+  const hasFailures = steps.some(s => s.status === 'FAIL');
+  const hasNotRun = steps.some(s => s.status === 'NOT_RUN');
+  const status = failure || hasFailures ? 'FAIL' : (hasNotRun ? 'INCOMPLETE' : 'PASS');
+  const missingArtifact = file => ({ path: file ? path.basename(file) : 'missing', sha256: null, version: null });
 
-    const evidence = {
-      schemaVersion: SCHEMA_VERSION,
-      version: artifactData.tarball.version,
-      startedAt,
-      completedAt,
-      durationMs,
-      status: overallStatus,
-      mode,
-      artifacts: artifactData,
-      host: hostData,
-      runtime: runtimeData,
-      steps,
-    };
+  const evidence = {
+    schemaVersion: SCHEMA_VERSION,
+    version: artifactData ? artifactData.tarball.version : null,
+    startedAt,
+    completedAt: new Date().toISOString(),
+    durationMs: Date.now() - startTime,
+    status,
+    mode,
+    artifacts: artifactData || { tarball: missingArtifact(tarballPath), vsix: missingArtifact(vsixPath) },
+    host: hostData,
+    runtime: runtimeData || {
+      startedVersion: null,
+      serverStatus: 'not_started',
+      versionAgreement: false,
+      bundleSha256: null,
+    },
+    steps,
+    error: failure ? persistedError(failure) : undefined,
+  };
 
-    // Redact real and isolated home paths from evidence text
-    const serialized = redactHome(JSON.stringify(evidence, null, 2) + '\n', [
-      os.homedir(),
-      realHome,
-      isolated.root,
-    ]);
-
+  // Redact real and isolated home paths from evidence text
+  const serialized = redactPaths(JSON.stringify(evidence, null, 2) + '\n');
+  const keptRoot = isolated && options.keepTemp ? isolated.root : undefined;
+  try {
     fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
     fs.writeFileSync(evidencePath, serialized);
-
-    return {
-      status: overallStatus,
-      evidence: JSON.parse(serialized),
-      evidencePath,
-    };
-  } catch (err) {
-    const completedAt = new Date().toISOString();
-    const durationMs = Date.now() - startTime;
-    const rawErrorMessage = err && err.message ? err.message : String(err);
-    const redactedErrorMessage = redactHome(rawErrorMessage, [
-      os.homedir(),
-      realHome,
-      isolated ? isolated.root : null,
-    ]);
-
-    const evidence = {
-      schemaVersion: SCHEMA_VERSION,
-      version: 'unknown',
-      startedAt,
-      completedAt,
-      durationMs,
-      status: 'FAIL',
-      mode,
-      artifacts: {
-        tarball: { path: tarballPath ? path.basename(tarballPath) : 'missing', sha256: 'none', version: 'none' },
-        vsix: { path: vsixPath ? path.basename(vsixPath) : 'missing', sha256: 'none', version: 'none' },
-      },
-      host: {
-        node: process.version,
-        platform: process.platform,
-        arch: process.arch,
-        osRelease: os.release(),
-        vscode: null,
-      },
-      runtime: {
-        startedVersion: null,
-        serverStatus: 'failed',
-        versionAgreement: false,
-        bundleSha256: null,
-      },
-      steps,
-      error: redactedErrorMessage,
-    };
-
-    let serializedFail = JSON.stringify(evidence, null, 2) + '\n';
-    serializedFail = redactHome(serializedFail, [
-      os.homedir(),
-      realHome,
-      isolated ? isolated.root : null,
-    ]);
-
-    try {
-      fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
-      fs.writeFileSync(evidencePath, serializedFail);
-    } catch {
-      // Ignore write failure on abort
-    }
-
-    return {
-      status: 'FAIL',
-      evidence: JSON.parse(serializedFail),
-      evidencePath,
-      error: new Error(redactedErrorMessage),
-    };
   } finally {
-    if (syntheticCleanup) {
-      try { syntheticCleanup(); } catch {}
-    }
     if (isolated && !options.keepTemp) {
       cleanupIsolatedEnvironment(isolated);
     }
   }
+
+  return {
+    status,
+    evidence: JSON.parse(serialized),
+    evidencePath,
+    tempRoot: keptRoot,
+    error: failure ? new Error(evidence.error) : undefined,
+  };
 }
 
 module.exports = {

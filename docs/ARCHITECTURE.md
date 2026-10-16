@@ -1237,8 +1237,10 @@ without requiring chat UI interactions, producing verifiable JSON evidence.
 ### Isolated home and environment containment (ACCEPT-001b)
 
 Every filesystem path the runner or an isolated instance writes lies strictly under a
-disposable temporary root directory it owns (`tempRoot`), canonicalized via native realpath
-to avoid short-path mismatches on Windows:
+disposable temporary root (`tempRoot`) that the runner creates itself with `mkdtemp`
+inside the system temporary directory or a caller-given parent; an existing directory is
+never adopted as the root. The root is canonicalized via native realpath to avoid
+short-path mismatches on Windows:
 
 - User home: `HOME` and `USERPROFILE` point to `tempRoot/home`.
 - Operating system application data: `APPDATA` points to `tempRoot/appdata`, `LOCALAPPDATA`
@@ -1252,12 +1254,26 @@ to avoid short-path mismatches on Windows:
 - Default runtime resolution: `coagent8_DIR` and `coagent8_CONFIG` are deliberately omitted
   from child environments so that the runtime naturally resolves to `tempRoot/home/.coagent8`
   and `tempRoot/home/.coagent8/config.json`, ensuring default registration shapes.
-- Stripping parent environment: all parent environment variables matching prefixes
-  `coagent8_*`, `codex_*`, `claude_*`, `gemini_*`, `npm_*`, `vscode_*`, `electron_*`,
-  or token/key patterns (`*_api_key`, `*_token`, `COAGENT8_NESTED_TURN`) are stripped
-  case-insensitively. The runner never mutates its own `process.env` globally.
-- Teardown: `tempRoot` is cleaned up recursively in a `finally` block on both success and
-  failure, with Windows retry backoff for transient file locks.
+- Stripping parent environment: parent variables are compared case-insensitively. Dropped
+  are the prefixes `coagent8_*`, `codex_*`, `claude_*`, `gemini_*`, `agy_*`, `npm_*`,
+  `vscode_*`, `electron_*`, `git_config*`, `aws_*` and `azure_*`; the credential
+  suffixes `*_api_key`, `*_token`, `*_secret`, `*_password` and `*_credentials`;
+  Node.js preload and coverage settings (`NODE_OPTIONS`, `NODE_PATH`, `NODE_V8_COVERAGE`,
+  `NODE_REPL_HISTORY`, `NODE_COMPILE_CACHE`); credential file overrides
+  (`GOOGLE_APPLICATION_CREDENTIALS`, `CLOUDSDK_CONFIG`); `HOMEDRIVE`/`HOMEPATH`; and
+  any parent spelling of an overridden name (Windows `Temp` beside `TEMP`). The runner
+  never mutates its own `process.env`.
+- Processes: every child (npm, the VS Code CLI, the installed runtime) runs through the
+  runtime supervisor `runCommand` (`src/execution/process.ts`): no shell, 512 KiB output
+  bound, deadline and owned teardown. On Windows the VS Code `code.cmd` shim is resolved to
+  the `Code.exe` and `cli.js` it starts with `ELECTRON_RUN_AS_NODE=1`; a shim of another
+  shape is refused, never run through `cmd.exe`.
+- Archives: the tarball and the VSIX are read by the shared bounded readers in
+  `scripts/archive.cjs` (size limit, tar checksums and bounds, ZIP structure and CRC-32,
+  ZIP64 rejected), the same readers packaging uses.
+- Teardown: the runner removes `tempRoot` after writing the evidence, on success and
+  failure, with Windows retry backoff for transient file locks; `--keep-temp` keeps it
+  and prints its location.
 
 ### Backend sign-in inheritance policy for scenario execution (2.17)
 
@@ -1272,7 +1288,8 @@ user home directory or system credential managers. For automated scenarios in 2.
 3. **OS-level credential vaults**: Windows Credential Manager and macOS Keychain are scoped to
    the user logon session and are not isolated by `HOME` or `USERPROFILE`.
 4. **Current boundary (2.15/2.16)**: Credentials are never copied, accessed, or persisted.
-   Evidence generation strictly redacts home directory strings and credential tokens.
+   Persisted errors pass the runtime's `redactDiagnostic` (credentials, keyword values,
+   home path) and the evidence file has the real and isolated home paths replaced by `~`.
 
 ### Native acceptance evidence contract (ACCEPT-001a1)
 
@@ -1286,7 +1303,7 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
   "type": "object",
   "properties": {
     "schemaVersion": { "type": "string" },
-    "version": { "type": "string" },
+    "version": { "type": ["string", "null"] },
     "startedAt": { "type": "string", "format": "date-time" },
     "completedAt": { "type": "string", "format": "date-time" },
     "durationMs": { "type": "number" },
@@ -1299,8 +1316,8 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
           "type": "object",
           "properties": {
             "path": { "type": "string" },
-            "sha256": { "type": "string" },
-            "version": { "type": "string" }
+            "sha256": { "type": ["string", "null"] },
+            "version": { "type": ["string", "null"] }
           },
           "required": ["path", "sha256", "version"]
         },
@@ -1308,8 +1325,8 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
           "type": "object",
           "properties": {
             "path": { "type": "string" },
-            "sha256": { "type": "string" },
-            "version": { "type": "string" }
+            "sha256": { "type": ["string", "null"] },
+            "version": { "type": ["string", "null"] }
           },
           "required": ["path", "sha256", "version"]
         }
@@ -1351,7 +1368,8 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
         },
         "required": ["id", "name", "status"]
       }
-    }
+    },
+    "error": { "type": "string" }
   },
   "required": [
     "schemaVersion", "version", "startedAt", "completedAt",
@@ -1359,6 +1377,14 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
   ]
 }
 ```
+
+A digest, version or runtime field is `null` only when the run failed before observing
+it; a failed run keeps every observation made before the failure and records `error`.
+The home preservation step runs after a failed step as well. A step that cannot obtain
+its observation fails: a VS Code version probe that does not exit 0 with a version fails
+the host step. A dry run installs synthetic candidates, does not probe or install VS Code
+(the host and VSIX steps say so in `details`) and, while scenarios N2-N4 are `NOT_RUN`,
+ends `INCOMPLETE`, never `PASS`.
 
 ## Code documentation and package evidence
 

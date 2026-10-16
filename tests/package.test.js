@@ -6,7 +6,8 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 
 const { buildBundles } = require('../scripts/build.cjs');
-const { readTarball, extractPackage, verifyPlugin } = require('../scripts/package-artifacts.cjs');
+const { extractPackage, verifyPlugin } = require('../scripts/package-artifacts.cjs');
+const { readTarball } = require('../scripts/archive.cjs');
 
 test('optional setup is a separate bundle and core startup excludes installation and JSONC modules', async () => {
   const root = path.resolve(__dirname, '..');
@@ -55,6 +56,10 @@ function tarball(entries) {
     block.write(size.toString(8).padStart(11, '0'), 124);
     block.write(type, 156);
     block.write('ustar\u000000', 257);
+    block.fill(32, 148, 156);
+    let sum = 0;
+    for (const byte of block) sum += byte;
+    block.write(`${sum.toString(8).padStart(6, '0')}\u0000 `, 148);
     return block;
   };
   const body = data => Buffer.concat([data, Buffer.alloc((512 - (data.length % 512)) % 512)]);

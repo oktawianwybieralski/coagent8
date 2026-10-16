@@ -225,3 +225,33 @@ test('isolated child process resolves isolated home from child environment witho
     assert.equal(postRecord.hash, preRecord.hash);
   }
 });
+
+test('isolated child environment drops preload, coverage, credential and shadowing parent variables', () => {
+  const { buildIsolatedChildEnv } = require('../../tooling/acceptance/environment.cjs');
+  const isolated = {
+    root: path.join(os.tmpdir(), 'iso'), home: path.join(os.tmpdir(), 'iso', 'home'), appdata: 'a', localappdata: 'l',
+    config: 'c', npmPrefix: 'p', npmCache: 'n', tmp: path.join(os.tmpdir(), 'iso', 'tmp'),
+  };
+  const env = buildIsolatedChildEnv(isolated, {
+    Path: '/usr/bin',
+    NODE_OPTIONS: '--require /real/home/preload.js',
+    NODE_V8_COVERAGE: '/real/home/coverage',
+    GOOGLE_APPLICATION_CREDENTIALS: '/real/home/gcloud.json',
+    AWS_SECRET_ACCESS_KEY: 'secret',
+    GH_TOKEN: 'token',
+    DB_PASSWORD: 'pw',
+    AGY_PATH: '/real/agy',
+    HOMEDRIVE: 'C:',
+    HOMEPATH: '\Users\real',
+    Temp: '/real/tmp',
+    UserProfile: '/real/home',
+    GIT_CONFIG_GLOBAL: '/real/home/.gitconfig',
+  });
+  for (const key of ['NODE_OPTIONS', 'NODE_V8_COVERAGE', 'GOOGLE_APPLICATION_CREDENTIALS', 'AWS_SECRET_ACCESS_KEY', 'GH_TOKEN',
+    'DB_PASSWORD', 'AGY_PATH', 'HOMEDRIVE', 'HOMEPATH', 'Temp', 'UserProfile', 'GIT_CONFIG_GLOBAL']) {
+    assert.equal(Object.hasOwn(env, key), false, `${key} must not reach the child`);
+  }
+  assert.equal(env.Path, '/usr/bin');
+  assert.equal(env.TEMP, isolated.tmp);
+  assert.equal(env.USERPROFILE, isolated.home);
+});
