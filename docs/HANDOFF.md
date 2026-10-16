@@ -200,6 +200,24 @@ Do not append another session transcript or treat old test counts as fresh evide
   MCP server to pick up changes. The next agent work is the `0.7.0` rows: 2.13
   (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) in parallel, then 2.15-2.18 (the
   POSIX recovery checks run with 2.18).
+- **Rows 2.15 + 2.16 (`ACCEPT-001b` isolated user home, `ACCEPT-001a1` runner skeleton, #67):**
+  `tooling/acceptance/` creates its own temporary root, gives every child an explicit
+  isolated environment (contract in [ACCEPT-001](ARCHITECTURE.md#accept-001-automated-native-acceptance)),
+  runs children through `runCommand` and reads archives through the shared bounded
+  readers in `scripts/archive.cjs`.
+  - Row 2.15: `tests/acceptance/isolated-home.test.js` runs `setupClients` with a
+    hostile parent environment pointing at a seeded fake home; the fake home stays
+    byte-identical. A second test proves preload, coverage, credential and shadowing
+    parent variables never reach the child.
+  - Row 2.16: `npm run acceptance:native` (dry run in CI through
+    `tests/acceptance/runner-skeleton.test.js`). Native run on Windows 11, Node
+    v26.10.0, 2026-10-16, with candidates packed from the branch (`npm run
+    package:vscode`): status `INCOMPLETE` (only N2-N4 `NOT_RUN`), VS Code 1.142.0
+    installed the VSIX into the isolated profile, the installed runtime reported
+    0.6.1 matching both manifests, the five real home registration files were
+    unchanged and the evidence held no user name. The same run against the older
+    `.artifacts` 0.6.1 build failed correctly: that runtime's `doctor --json` has no
+    `server_version`.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;
