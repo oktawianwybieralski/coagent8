@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { runAcceptance, resolveCodeCli, SCHEMA_VERSION } = require('../../tooling/acceptance/runner.cjs');
-const { createSyntheticArtifacts } = require('../../tooling/acceptance/artifacts.cjs');
+const { createSyntheticArtifacts, buildTarGz, buildZip } = require('../../tooling/acceptance/artifacts.cjs');
 
 test('runner skeleton completes dry run and produces valid evidence JSON (ACCEPT-001a1)', async t => {
   const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-test-'));
@@ -408,4 +408,25 @@ test('an interrupt stops the running process, writes evidence and removes the is
   assert.ok(Date.now() - started >= 400, 'the probe ran until the interrupt');
   assert.equal(evidence.steps.find(s => s.id === 'step_home_preservation').status, 'PASS');
   assert.deepEqual(fs.readdirSync(parent), []);
+});
+
+test('a manifest without a version fails the artifact step and evidence keeps null versions', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-manifest-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
+  const tarball = path.join(testRoot, 'noversion.tgz');
+  fs.writeFileSync(tarball, buildTarGz({ 'package/package.json': '{}' }));
+  const vsix = path.join(testRoot, 'noversion.vsix');
+  fs.writeFileSync(vsix, buildZip({ 'extension/package.json': '{"name":"x"}' }));
+
+  for (const [label, candidates] of [['tarball', { tarball, vsix: syn.vsixPath }], ['vsix', { tarball: syn.tarballPath, vsix }]]) {
+    const evidencePath = path.join(testRoot, `${label}.json`);
+    const result = await runAcceptance({ dryRun: true, ...candidates, evidencePath, tempParent: testRoot });
+    assert.equal(result.status, 'FAIL');
+    const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+    assert.match(evidence.steps.find(s => s.id === 'step_artifacts').error, /has no version/);
+    assert.equal(evidence.artifacts[label].version, null);
+    assert.ok(Object.hasOwn(evidence, 'version'));
+    assert.ok(Object.hasOwn(evidence.artifacts.tarball, 'version') && Object.hasOwn(evidence.artifacts.vsix, 'version'));
+  }
 });

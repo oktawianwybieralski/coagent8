@@ -27,6 +27,27 @@ function sha256File(filePath) {
 }
 
 /**
+ * Parses a package manifest and requires a non-empty string version.
+ *
+ * @param content - Manifest bytes.
+ * @param label - Manifest description for errors.
+ * @returns The parsed manifest.
+ */
+function parseManifest(content, label) {
+  let manifest;
+  try {
+    manifest = JSON.parse(content.toString('utf8'));
+  } catch {
+    throw new Error(`${label} is not valid JSON.`);
+  }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)
+      || typeof manifest.version !== 'string' || !manifest.version) {
+    throw new Error(`${label} has no version.`);
+  }
+  return manifest;
+}
+
+/**
  * Reads and parses package.json from an npm tarball.
  *
  * @param tarballPath - Path to the .tgz package.
@@ -38,7 +59,7 @@ function readTarballPackageJson(tarballPath) {
   if (!candidate) {
     throw new Error(`Tarball ${tarballPath} contains no package.json entry.`);
   }
-  return JSON.parse(candidate.toString('utf8'));
+  return parseManifest(candidate, `package.json in ${path.basename(tarballPath)}`);
 }
 
 /**
@@ -52,7 +73,7 @@ function readVsixPackageJson(vsixPath) {
   if (!content) {
     throw new Error(`VSIX ${vsixPath} contains no extension/package.json entry.`);
   }
-  return JSON.parse(content.toString('utf8'));
+  return parseManifest(content, `extension/package.json in ${path.basename(vsixPath)}`);
 }
 
 /**
@@ -246,5 +267,7 @@ module.exports = {
   readTarballPackageJson,
   readVsixPackageJson,
   createSyntheticArtifacts,
+  buildTarGz,
+  buildZip,
 };
 
