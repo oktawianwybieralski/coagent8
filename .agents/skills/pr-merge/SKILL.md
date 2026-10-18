@@ -88,7 +88,8 @@ listed PRs' branches; it covers nothing else.
      (`git diff --name-only origin/develop -- tests`),
      `node tests/run.cjs <file>`, which must report `fail 0`.
 7. `git rev-parse HEAD` gives the new local head. Push with
-   `git push --force-with-lease=<branch>:<headRefOid> origin <branch>`, then
+   `git push --force-with-lease=<branch>:<headRefOid> --force-if-includes origin <branch>`
+   ([rule 02](../../rules/02-git-workflow.md) section 1), then
    `gh pr view N --json headRefOid` must equal the new local head (otherwise
    stop: someone else pushed). From now on `headRefOid` is that SHA.
 8. CI on the current head: `gh pr view N --json headRefOid` must still equal
