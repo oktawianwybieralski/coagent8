@@ -1,8 +1,9 @@
 /**
- * Native acceptance test runner skeleton (ACCEPT-001a1, row 2.16).
+ * Native acceptance test runner (ACCEPT-001a1 and ACCEPT-001a2, rows 2.16-2.17).
  *
  * @remarks
- * Installs given artifacts (tarball and VSIX) in isolation and produces
+ * Installs given artifacts (tarball and VSIX) in isolation, drives the scenarios
+ * N2-N4 through the installed runtime and the real backend CLIs, and produces
  * verifiable evidence JSON bound to artifact digests, host versions, and the
  * runtime version actually started. Processes run through the runtime's
  * supervisor (`runCommand`): shell-free, bounded output, owned teardown.
@@ -26,8 +27,10 @@ const {
   readVsixPackageJson,
   createSyntheticArtifacts,
 } = require('./artifacts.cjs');
+const { BACKENDS, resolveBackendCommands, scenarioBackendEnv } = require('./backends.cjs');
+const { runScenarios, NotRun } = require('./scenarios.cjs');
 
-const SCHEMA_VERSION = '1.0.0';
+const SCHEMA_VERSION = '1.1.0';
 const npm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
 /** Budget for subprocess output quoted in evidence, in bytes. */
 const DIAGNOSTIC_BYTES = 1024;
@@ -178,6 +181,15 @@ function resolveCodeCli(customCodePath, env = process.env) {
 }
 
 /**
+ * Top-level keys a signed-in backend CLI rewrites in a watched file of the real home even
+ * though its `HOME` and `USERPROFILE` are isolated. Observed 2026-10-18: the native Claude
+ * Code 2.1.301 binary resolves the profile through the operating system and refreshes its
+ * feature-flag cache timestamp in `~/.claude.json`. Accepted only with
+ * `--with-backend-auth`, which shares backend state by design; any other change still fails.
+ */
+const BACKEND_CACHE_KEYS = { '.claude.json': ['cachedGrowthBookFeaturesAt'] };
+
+/**
  * Returns the standard client registration file paths in a home directory.
  */
 function getHomePreservationWatchlist(homeDir) {
@@ -188,6 +200,26 @@ function getHomePreservationWatchlist(homeDir) {
     path.join(homeDir, '.coagent8', 'config.json'),
     path.join(homeDir, '.coagent8', 'setup.json'),
   ];
+}
+
+/**
+ * Digests of a JSON object's top-level values, to name the keys that changed without
+ * persisting any value; `null` for a file that is not a JSON object.
+ */
+function topLevelDigests(content) {
+  try {
+    const parsed = JSON.parse(content.toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, sha256Buffer(Buffer.from(JSON.stringify(value)))]));
+  } catch {
+    return null;
+  }
+}
+
+/** Top-level keys whose values differ between two digests (key names only). */
+function changedKeys(before, after) {
+  if (!before || !after) return null;
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => before[key] !== after[key]).sort();
 }
 
 /**
@@ -202,12 +234,49 @@ function snapshotWatchlist(paths) {
         exists: true,
         hash: sha256Buffer(content),
         size: content.length,
+        keys: topLevelDigests(content),
       });
     } else {
       snapshot.set(p, { exists: false });
     }
   }
   return snapshot;
+}
+
+/**
+ * Compares the watched real-home files with their snapshot.
+ *
+ * @param allowBackendCacheKeys - Accept changes limited to {@link BACKEND_CACHE_KEYS}.
+ * @returns The accepted backend cache writes, named by file and keys.
+ * @throws On any other creation, deletion or modification.
+ */
+function verifyHomePreservation(snapshot, allowBackendCacheKeys) {
+  const backendWrites = [];
+  for (const [watchedPath, preState] of snapshot.entries()) {
+    const currentlyExists = fs.existsSync(watchedPath);
+    if (!preState.exists) {
+      if (currentlyExists) {
+        throw new Error(`Home preservation violation: ${watchedPath} was created during acceptance run!`);
+      }
+    } else {
+      if (!currentlyExists) {
+        throw new Error(`Home preservation violation: ${watchedPath} was deleted during acceptance run!`);
+      }
+      const currentHash = sha256Buffer(fs.readFileSync(watchedPath));
+      if (currentHash !== preState.hash) {
+        // Key names help attribute a change, for example to a desktop client of the same
+        // backend that runs beside the acceptance run; no value is recorded.
+        const keys = changedKeys(preState.keys, topLevelDigests(fs.readFileSync(watchedPath)));
+        const allowed = allowBackendCacheKeys ? BACKEND_CACHE_KEYS[path.basename(watchedPath)] || [] : [];
+        if (keys && keys.length && keys.every(key => allowed.includes(key))) {
+          backendWrites.push(`${path.basename(watchedPath)} (${keys.join(', ')})`);
+          continue;
+        }
+        throw new Error(`Home preservation violation: ${watchedPath} was modified during acceptance run${keys ? ` (top-level keys changed: ${keys.join(', ') || 'none; formatting only'})` : ''}!`);
+      }
+    }
+  }
+  return backendWrites;
 }
 
 /**
@@ -260,6 +329,23 @@ async function runAcceptance(options = {}) {
         error: persistedError(err),
       });
       throw err;
+    }
+  }
+
+  /**
+   * A scenario step: a failure or a missing precondition is recorded and the next
+   * scenario runs; an interrupt stops the run before the next one starts.
+   */
+  async function recordScenario(id, name, backend, fn) {
+    if (options.signal?.aborted) throw new Error('Acceptance run interrupted.');
+    const stepStart = Date.now();
+    const step = { id, name, ...(backend ? { backend } : {}), package: 'npm' };
+    try {
+      const res = await fn();
+      steps.push({ ...step, status: 'PASS', durationMs: Date.now() - stepStart, details: res && typeof res.details === 'string' ? res.details : undefined });
+    } catch (err) {
+      if (err instanceof NotRun) steps.push({ ...step, status: 'NOT_RUN', durationMs: Date.now() - stepStart, details: err.message });
+      else steps.push({ ...step, status: 'FAIL', durationMs: Date.now() - stepStart, error: persistedError(err) });
     }
   }
 
@@ -479,14 +565,29 @@ async function runAcceptance(options = {}) {
       return { details: `Runtime ${startedVersion} matches both manifests` };
     });
 
-    // 7. Scenarios N2-N4 (deferred to 2.17)
-    steps.push({
-      id: 'step_scenarios_n2_n4',
-      name: 'Execute live scenarios N2-N4 through real CLIs',
-      status: 'NOT_RUN',
-      durationMs: 0,
-      details: 'Deferred to ACCEPT-001a2 (row 2.17)',
-    });
+    // 7. Scenarios N2-N4 through the installed runtime and the real backend CLIs
+    if (isDryRun) {
+      steps.push({ id: 'step_scenarios', name: 'Execute live scenarios N2-N4 through real CLIs', status: 'NOT_RUN', durationMs: 0, details: 'A dry run starts no backend.' });
+    } else if (!options.withBackendAuth) {
+      steps.push({ id: 'step_scenarios', name: 'Execute live scenarios N2-N4 through real CLIs', status: 'NOT_RUN', durationMs: 0, details: 'The real backends need their sign-in: pass --with-backend-auth.' });
+    } else {
+      const parentEnv = options.parentEnv || process.env;
+      let commands = null;
+      await runStep('step_backend_cli', 'Resolve backend CLIs in the parent context', () => {
+        commands = resolveBackendCommands(parentEnv, realHome);
+        return { details: (options.backends || BACKENDS).map(id => `${id}: ${commands[id].command ? 'found' : commands[id].reason}`).join('; ') };
+      });
+      await runScenarios({
+        entry: path.join(isolated.npmPrefix, 'node_modules', 'coagent8', 'dist', 'index.cjs'),
+        env: { ...isolated.childEnv, ...scenarioBackendEnv(commands, { withBackendAuth: true, parentEnv, realHome }) },
+        workRoot: path.join(isolated.root, 'scenarios'),
+        backends: options.backends || BACKENDS,
+        models: options.models || {},
+        cheapest: Boolean(options.cheapest),
+        record: recordScenario,
+        signal: options.signal,
+      });
+    }
   } catch (err) {
     failure = err;
   }
@@ -494,24 +595,9 @@ async function runAcceptance(options = {}) {
   // 8. Home preservation verification, also after a failed step
   try {
     await recordStep('step_home_preservation', 'Verify user home preservation and isolation', () => {
-      for (const [watchedPath, preState] of homePreSnapshot.entries()) {
-        const currentlyExists = fs.existsSync(watchedPath);
-        if (!preState.exists) {
-          if (currentlyExists) {
-            throw new Error(`Home preservation violation: ${watchedPath} was created during acceptance run!`);
-          }
-        } else {
-          if (!currentlyExists) {
-            throw new Error(`Home preservation violation: ${watchedPath} was deleted during acceptance run!`);
-          }
-          const currentHash = sha256Buffer(fs.readFileSync(watchedPath));
-          if (currentHash !== preState.hash) {
-            throw new Error(`Home preservation violation: ${watchedPath} was modified during acceptance run!`);
-          }
-        }
-      }
+      const backendWrites = verifyHomePreservation(homePreSnapshot, options.withBackendAuth && !isDryRun);
       return {
-        details: `Verified ${preservationWatchlist.length} real home registration paths untouched: ${preservationWatchlist.map(p => path.basename(p)).join(', ')}`,
+        details: `Verified ${preservationWatchlist.length} real home registration paths: ${preservationWatchlist.map(p => path.basename(p)).join(', ')}; ${backendWrites.length ? `only backend cache keys changed: ${backendWrites.join('; ')}` : 'all untouched'}`,
       };
     });
   } catch (err) {
@@ -560,6 +646,8 @@ async function runAcceptance(options = {}) {
 
 module.exports = {
   runAcceptance,
+  snapshotWatchlist,
+  verifyHomePreservation,
   redactHome,
   resolveCodeCli,
   SCHEMA_VERSION,

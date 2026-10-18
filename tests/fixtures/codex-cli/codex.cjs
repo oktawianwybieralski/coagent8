@@ -2,8 +2,12 @@
 // the `jsonrpc` field), with the isolation requests of 0.162 (`config/read`,
 // `experimentalFeature/list`, `mcpServerStatus/list`). Like the real server it exits on stdin
 // EOF. CODEX_FIXTURE_MODE selects failure variants; CODEX_FIXTURE_CAPTURE records argv, every
-// client message and the prompt.
+// client message and the prompt. `acceptance` (ACCEPT-001a2) gives each new thread its own id,
+// remembers its prompts under CODEX_HOME and answers with them, or with a READY envelope for
+// the review prompt's snapshot; `acceptance-slow` starts a tool and waits for an interrupt.
 const fs = require('node:fs');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 const args = process.argv.slice(2);
 const mode = process.env.CODEX_FIXTURE_MODE || 'success';
 if (args.includes('--version')) {
@@ -37,6 +41,21 @@ function mcpStatusPage(cursor) {
   return cursor ? { data: servers.slice(1), nextCursor: null } : { data: servers.slice(0, 1), nextCursor: 'page-2' };
 }
 const send = message => process.stdout.write(JSON.stringify(message) + '\n');
+const acceptance = mode === 'acceptance' || mode === 'acceptance-slow';
+/** The answer of an acceptance turn: every prompt of the thread so far, or a review envelope. */
+function acceptanceAnswer(prompt) {
+  const snapshot = /^SNAPSHOT: (\S+)$/m.exec(prompt || '');
+  if (prompt && prompt.includes('CHECKS: typecheck=<PASS|FAIL|NOT_RUN>') && snapshot) {
+    return ['REVIEW: 1', `SNAPSHOT: ${snapshot[1]}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: fixture review of the diff.', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n');
+  }
+  const dir = path.join(process.env.CODEX_HOME || process.cwd(), 'fixture-threads');
+  const file = path.join(dir, `${threadId}.json`);
+  const prompts = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+  prompts.push(prompt || '');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(prompts));
+  return `Echo of this thread:\n${prompts.join('\n---\n')}`;
+}
 const notify = (method, params) => send({ method, params });
 function capture() {
   if (!process.env.CODEX_FIXTURE_CAPTURE) return;
@@ -66,14 +85,14 @@ function runTurn() {
   if (mode === 'large-tool-output') for (let i = 0; i < 8; i++) item('item/completed', { type: 'commandExecution', id: `read-big-${i}`, command: 'git diff', status: 'completed', aggregatedOutput: 'x'.repeat(100 * 1024), exitCode: 0 });
   item('item/started', { type: 'agentMessage', id: 'message-1', text: '' });
   notify('item/agentMessage/delta', { threadId, turnId: TURN, itemId: 'message-1', delta: 'Draft' });
-  const text = 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';
+  const text = acceptance ? acceptanceAnswer(userPrompt) : 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   const usage = last => ({ threadId, turnId: TURN, tokenUsage: { total: last, last, modelContextWindow: null } });
   notify('thread/tokenUsage/updated', usage({ totalTokens: 6, inputTokens: 2, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }));
   notify('thread/tokenUsage/updated', usage({ totalTokens: 8, inputTokens: 3, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 0 }));
   if (mode === 'server-request') send({ id: 'srv-1', method: 'item/commandExecution/requestApproval', params: { threadId, turnId: TURN, itemId: 'read-1' } });
-  if (mode === 'hang' || mode === 'interruptible') return;
+  if (mode === 'hang' || mode === 'interruptible' || mode === 'acceptance-slow') return;
   if (mode === 'no-terminal') process.exit(0);
   if (mode === 'auth') { completeTurn('failed', { message: 'Authentication required; api_key=fixtureSecret', codexErrorInfo: 'unauthorized', additionalDetails: null }); return; }
   if (mode === 'rate') { completeTurn('failed', { message: 'HTTP 429 Too Many Requests', codexErrorInfo: 'usageLimitExceeded', additionalDetails: null }); return; }
@@ -97,7 +116,7 @@ function handle(message) {
   } else if (method === 'thread/start' || method === 'thread/resume') {
     if (method === 'thread/resume' && mode === 'invalid-session') { send({ id, error: { code: -32600, message: `no rollout found for thread id ${params.threadId}` } }); return; }
     threadConfig = params.config || null;
-    threadId = method === 'thread/resume' ? (mode === 'wrong-thread' ? '22222222-aaaa-bbbb-cccc-123456789012' : params.threadId) : THREAD;
+    threadId = method === 'thread/resume' ? (mode === 'wrong-thread' ? '22222222-aaaa-bbbb-cccc-123456789012' : params.threadId) : (acceptance ? randomUUID() : THREAD);
     const sandbox = mode === 'sandbox-writable'
       ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
       : { type: 'readOnly', networkAccess: false };

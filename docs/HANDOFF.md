@@ -197,10 +197,11 @@ Do not append another session transcript or treat old test counts as fresh evide
   [ROADMAP split](ROADMAP.md#070-beta3-plan) assigns each open row. The owner's
   Claude Code, Codex and VS Code registrations run the working-tree build
   (`dist/index.cjs mcp`); rebuild with `npm run build` and restart the client's
-  MCP server to pick up changes. Rows 2.13-2.16 are merged; the next agent
-  work is 2.17 (`ACCEPT-001a2`), then 2.18 (the POSIX recovery checks run
-  with 2.18), alongside the proposal rows 3.9-3.11 and publication automation
-  5.1-5.8.
+  MCP server to pick up changes. Rows 2.13-2.17 and 3.9-3.13b are done; the
+  next agent work is the server-owned review terminator (owner decision
+  2026-10-18), 2.18 (the POSIX recovery checks run with 2.18), 2.36 and
+  publication automation 5.1-5.8. The owner develops delegation (`DELEGATE-001`)
+  on a separate branch.
 - **Rows 2.15 + 2.16 (`ACCEPT-001b` isolated user home, `ACCEPT-001a1` runner skeleton, #67):**
   `tooling/acceptance/` creates its own temporary root, gives every child an explicit
   isolated environment (contract in [ACCEPT-001](ARCHITECTURE.md#accept-001-automated-native-acceptance)),
@@ -219,12 +220,53 @@ Do not append another session transcript or treat old test counts as fresh evide
     unchanged and the evidence held no user name. The same run against the older
     `.artifacts` 0.6.1 build failed correctly: that runtime's `doctor --json` has no
     `server_version`.
+- **Row 2.17 (`ACCEPT-001a2` scenarios N2-N4):** `npm run acceptance:native --
+  --with-backend-auth` drives 30 scenario steps per run through the installed npm
+  package and the real CLIs ([contract](ARCHITECTURE.md#scenarios-n2-n4-accept-001a2));
+  the fixture lane `tests/acceptance/scenarios.test.js` runs every scenario in CI with
+  the Codex double. Native runs on Windows 11, Node v26.10.0, VS Code 1.142.0, 2026-10-18,
+  candidates packed from the branch (tarball
+  `84f38299d3c8a2c461dc0ed1c773ddea1b07379dc348a322be946966f3266400`, VSIX
+  `7c0fbbc9c70ed0ccb7334a599f9ff9bb12c07bee53e6ad012b81715d481ca184`, runtime 0.6.1,
+  bundle `98ccb4b9...6e3868`), `codex-cli 0.162.0-alpha.17.2`, Claude Code 2.1.301, agy 1.4.2:
+  - Recorded run (19:13 UTC, 224 s): status `INCOMPLETE` with 37 PASS and only `n2_quiet` NOT_RUN
+    (a console window is an owner UI check). Codex `gpt-6.1-sol` and agy
+    `gemini-3.8-flash` are their defaults; Claude ran `claude-sonnet-5-5` by
+    `--model`, because its default `claude-opus-5-5` needs approval in a fresh
+    configuration (the owner's allow list stays in the real home) and the runner never
+    grants it. Every backend: consult, continuation, history paging, workspace
+    isolation, review (server verdict BLOCKED on the seeded contradiction, recorded,
+    not asserted), unchanged repeat without a turn, TIMEOUT naming the 1,000 ms budget,
+    and cancel of a running turn (refused from another server process, cancelled by
+    the owner, lease released, reused). Close, closed-session refusal and
+    `delete_history` passed on Codex. The five watched home files were unchanged
+    (no backend cache write occurred in that run).
+  - Earlier runs found runner defects, fixed before the recorded run: the timeout
+    check missed `[TIMEOUT, retryable]`; a cheapest-model run (`claude-haiku-5-5`)
+    failed Claude's review twice with "no review envelope", an envelope whose final
+    `END_REVIEW` line was apparently missing (the gate requires it), which led to the
+    owner decisions below. Two runs reported the real `~/.claude.json` modified. I first
+    attributed it to this session's own Claude Code client; that was wrong. The
+    violation message now names the changed top-level keys (never values): only
+    `cachedGrowthBookFeaturesAt` changed, at 21:05:21 local, inside the first Claude
+    scenario turn (21:05:18-21:05:23), so the native Claude Code binary refreshes its
+    feature cache in the real profile although `HOME` and `USERPROFILE` are isolated.
+    With `--with-backend-auth` the check now accepts exactly that key and reports it;
+    any other change, such as `mcpServers`, still fails.
+  - Not covered here: the VSIX runtime (it starts only in the editor), quiet
+    execution, model discovery after installation, and two separate client
+    applications for `PATCH-061-N4`; they stay in the 5.10 acceptance.
+- **Owner decisions 2026-10-18 (review models and terminator):** scenarios use each
+  backend's default model, what a user gets with `auto`; `--cheapest` is opt-in.
+  The review terminator `END_REVIEW` becomes server-owned: the model no longer has
+  to write it, and the gate accepts an envelope without it only on observed
+  completion evidence (consulted design, session `syn_sess_8bf51979b8095360e87ea4b0`).
 - **Owner decisions 2026-10-18 (row 3.0):** `PROPOSALS-001k`, `l` and `n`
   accepted, `l` moved from `0.8.0` to `0.7.0` (row 3.10b, with 3.10); `m`
   deferred as research only. Rows 3.13 and 3.13b are done: rule 02 requires an
   explicit lease with `--force-if-includes`, rule 04 keeps agent files out of
   `.artifacts/`, and the rules and documents describe the branch model without
-  naming an external project. WSL lane 2.18 needs an Ubuntu distribution with
+  naming an external project (#68); rows 3.9-3.11 followed in #69 and #70. WSL lane 2.18 needs an Ubuntu distribution with
   Node and signed-in CLIs; on 2026-10-18 the machine had only `docker-desktop`.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as

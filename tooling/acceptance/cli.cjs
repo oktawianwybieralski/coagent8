@@ -3,6 +3,7 @@
  * CLI entrypoint for `npm run acceptance:native` (ACCEPT-001a1).
  */
 const { runAcceptance } = require('./runner.cjs');
+const { BACKENDS } = require('./backends.cjs');
 
 function parseArgs(argv) {
   const options = {
@@ -12,6 +13,10 @@ function parseArgs(argv) {
     evidencePath: null,
     codePath: null,
     keepTemp: false,
+    withBackendAuth: false,
+    backends: null,
+    models: {},
+    cheapest: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -20,6 +25,17 @@ function parseArgs(argv) {
       options.dryRun = true;
     } else if (arg === '--keep-temp') {
       options.keepTemp = true;
+    } else if (arg === '--cheapest') {
+      options.cheapest = true;
+    } else if (arg === '--with-backend-auth') {
+      options.withBackendAuth = true;
+    } else if (arg === '--backends' && i + 1 < argv.length) {
+      options.backends = argv[++i].split(',').map(id => id.trim()).filter(Boolean);
+      for (const id of options.backends) if (!BACKENDS.includes(id)) throw new Error(`Unknown backend: ${id}`);
+    } else if (arg === '--model' && i + 1 < argv.length) {
+      const [id, model] = argv[++i].split('=');
+      if (!BACKENDS.includes(id) || !model) throw new Error('Pass --model <backend>=<model>.');
+      options.models[id] = model;
     } else if (arg === '--tarball' && i + 1 < argv.length) {
       options.tarball = argv[++i];
     } else if (arg === '--vsix' && i + 1 < argv.length) {
@@ -29,7 +45,15 @@ function parseArgs(argv) {
     } else if (arg === '--code-path' && i + 1 < argv.length) {
       options.codePath = argv[++i];
     } else if (arg === '--help' || arg === '-h') {
-      console.log('Usage: node tooling/acceptance/cli.cjs [--dry-run] [--tarball <path>] [--vsix <path>] [--evidence <path>] [--code-path <path>] [--keep-temp]');
+      console.log([
+        'Usage: node tooling/acceptance/cli.cjs [--dry-run] [--tarball <path>] [--vsix <path>] [--evidence <path>]',
+        '         [--code-path <path>] [--keep-temp] [--with-backend-auth] [--backends codex,claude,agy] [--model <backend>=<model>] [--cheapest]',
+        '',
+        '--with-backend-auth  Let the scenario servers use your real Codex, Claude Code and agy sign-in in place',
+        '                     (shared writable backend state; credentials are never copied). Without it the',
+        '                     scenarios N2-N4 are NOT_RUN.',
+        '--cheapest           Use the lowest-priced model of each backend instead of its default (what users get).',
+      ].join('\n'));
       process.exit(0);
     } else {
       throw new Error(`Unknown or incomplete argument: ${arg}`);
