@@ -4,7 +4,7 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-13. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-18. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
@@ -197,9 +197,10 @@ Do not append another session transcript or treat old test counts as fresh evide
   [ROADMAP split](ROADMAP.md#070-beta3-plan) assigns each open row. The owner's
   Claude Code, Codex and VS Code registrations run the working-tree build
   (`dist/index.cjs mcp`); rebuild with `npm run build` and restart the client's
-  MCP server to pick up changes. The next agent work is the `0.7.0` rows: 2.13
-  (`FEEDBACK-061i`) and 2.14 (`FEEDBACK-061h`) in parallel, then 2.15-2.18 (the
-  POSIX recovery checks run with 2.18).
+  MCP server to pick up changes. Rows 2.13-2.16 are merged; the next agent
+  work is 2.17 (`ACCEPT-001a2`), then 2.18 (the POSIX recovery checks run
+  with 2.18), alongside the proposal rows 3.9-3.11 and publication automation
+  5.1-5.8.
 - **Rows 2.15 + 2.16 (`ACCEPT-001b` isolated user home, `ACCEPT-001a1` runner skeleton, #67):**
   `tooling/acceptance/` creates its own temporary root, gives every child an explicit
   isolated environment (contract in [ACCEPT-001](ARCHITECTURE.md#accept-001-automated-native-acceptance)),
@@ -218,6 +219,13 @@ Do not append another session transcript or treat old test counts as fresh evide
     unchanged and the evidence held no user name. The same run against the older
     `.artifacts` 0.6.1 build failed correctly: that runtime's `doctor --json` has no
     `server_version`.
+- **Owner decisions 2026-10-18 (row 3.0):** `PROPOSALS-001k`, `l` and `n`
+  accepted, `l` moved from `0.8.0` to `0.7.0` (row 3.10b, with 3.10); `m`
+  deferred as research only. Rows 3.13 and 3.13b are done: rule 02 requires an
+  explicit lease with `--force-if-includes`, rule 04 keeps agent files out of
+  `.artifacts/`, and the rules and documents describe the branch model without
+  naming an external project. WSL lane 2.18 needs an Ubuntu distribution with
+  Node and signed-in CLIs; on 2026-10-18 the machine had only `docker-desktop`.
 - **PR scope (owner direction, 2026-10-13):** use the
   [result groups](ROADMAP.md#pr-groups-and-existing-history), with subtasks as
   commits/checklist items on one branch. Merged #33-#45 keep their history;

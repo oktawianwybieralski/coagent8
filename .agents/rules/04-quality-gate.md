@@ -62,6 +62,13 @@ protocol behavior, not native CLI authentication, sandbox isolation or host UI.
 A build after a suite run cannot retroactively make that run fresh-dist evidence.
 Restart MCP clients that retain an old bundle before live integration acceptance.
 
+`.artifacts/` holds only what project scripts write there: build and packaging
+output, coverage, API documentation and acceptance evidence. Agents keep their
+own scripts, logs, PR body drafts and notes in their session scratch directory,
+never in `.artifacts/`, so that removing `.artifacts/` before a clean rebuild
+loses nothing and a packaging step never picks up agent files (owner decision 2026-10-13,
+`PROPOSALS-001g`). Evidence worth keeping goes into `docs/HANDOFF.md` or the PR.
+
 ## Full release gate
 
 For a release candidate, shared-runtime overhaul or other change whose risk spans

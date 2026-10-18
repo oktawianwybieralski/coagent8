@@ -86,11 +86,12 @@ and its row numbers stay:
   `FEEDBACK-061` rows, 2.13 and 2.14, the acceptance runner and WSL lane
   2.15-2.18 (which also run the 2.12d POSIX checks), native acceptance of the
   shipped skills and CLI management 2.36, the proposal rows 3.0, 3.9, 3.10,
-  3.11, 3.13 and 3.13b, publication automation 5.1-5.8 and the release rows 5.9-5.12.
+  3.10b, 3.11, 3.13 and 3.13b (3.10b joined `0.7.0` by owner decision
+  2026-10-18), publication automation 5.1-5.8 and the release rows 5.9-5.12.
   Phase 5 follows these rows, not all of Phases 3 and 4.
 - `0.8.0` is the first release candidate (rc.1, the start of the `1.0.x` line
   at feature freeze) and carries delegation and orchestration: 1.14, the open
-  rows 2.19-2.35, 3.1-3.8, 3.10b, 3.12, 3.14-3.20, Phase 4, 5.13 and the
+  rows 2.19-2.35, 3.1-3.8, 3.12, 3.14-3.20, Phase 4, 5.13 and the
   delegated coordination listed under [After 0.7.0](#after-070). Delegation
   and the write profiles therefore reach testers first in a release
   candidate; no beta between `0.7.0` and `0.8.0` is planned unless the owner
@@ -892,7 +893,7 @@ may proceed in the beta.3 window; 001f waits for accepted profiles.
 
 ## REPO-002: branch model and release workflow
 
-PrestaShop-style branch model (owner decision 2026-10-10): `develop` is the
+Branch model (owner decision 2026-10-10): `develop` is the
 default and only integration branch, and each maintained release has a `X.Y.x`
 line (`1.0.x` from the first release candidate). Every commit on a protected
 branch is a GitHub-signed (Verified) squash commit `<PR title> (#N)`. CI tests
@@ -1387,7 +1388,9 @@ Proposals made in earlier sessions that were never recorded. Each needs an
 owner decision before it becomes a card with acceptance criteria. Owner
 decision 2026-10-13 (Phase 0 of the [0.7.0 plan](#070-beta3-plan)): the
 recommendations for a to j are accepted; c and j are deferred. Items k to n
-were found later in the same review and await the owner's confirmation.
+were found later in the same review; owner decision 2026-10-18 (row 3.0): k,
+l and n are accepted, l already for `0.7.0` together with d, and m is
+deferred as research only.
 
 | Item | Recommendation |
 | --- | --- |
@@ -1401,10 +1404,10 @@ were found later in the same review and await the owner's confirmation.
 | h | Accept. |
 | i | Accept for `0.8.0` (decided for `0.7.0`; moved by the release split of 2026-10-15). |
 | j | Defer; it grants new rights for published copies and is a legal choice, not a formality. |
-| k | Accept. |
-| l | Accept with d. |
-| m | Defer; research only. |
-| n | Accept, before `0.7.0`. |
+| k | Accepted (2026-10-18). |
+| l | Accepted for `0.7.0`, with d (2026-10-18). |
+| m | Deferred; research only (2026-10-18). |
+| n | Accepted, before `0.7.0` (2026-10-18). |
 
 - [ ] **PROPOSALS-001a - MCP Registry entry.** Publish `server.json` (with
   `mcpName` in `package.json`) as `io.github.oktawianwybieralski/coagent8`, so
@@ -1431,9 +1434,10 @@ were found later in the same review and await the owner's confirmation.
   blocks a push of a topic branch that fails it or changes `CHANGELOG.md`
   (regenerated only in release PRs, owner decision 2026-10-14), instead of
   relying on agents.
-- [ ] **PROPOSALS-001g - agent output outside `.artifacts/`.** A rule that
+- [x] **PROPOSALS-001g - agent output outside `.artifacts/`.** A rule that
   agents keep their scripts and logs in their scratch directories, not in
-  `.artifacts/`, which holds build output only.
+  `.artifacts/`, which holds build output only. Done in
+  [rule 04](../.agents/rules/04-quality-gate.md#source-bundle-and-artifact-provenance).
 - [ ] **PROPOSALS-001h - cancel description.** Say in the `cancel` tool
   description that it asks the backend to stop and then terminates its process
   if it does not exit, without renaming the tool.
@@ -1442,23 +1446,27 @@ were found later in the same review and await the owner's confirmation.
 - [ ] **PROPOSALS-001j - MIT for older copies.** Optionally also permit use
   of `0.6.0` and `1.0.0-beta.1` under MIT, keeping their GPL-3.0-only
   permissions, after extending the rights check to those packages.
-- [ ] **PROPOSALS-001k - explicit force-with-lease.** Rule 02 allows
+- [x] **PROPOSALS-001k - explicit force-with-lease.** Rule 02 allows
   `--force-with-lease` on the author's own topic branch; a bare lease is
   silently refreshed by a background `git fetch` (editor autofetch, another
   agent) and can overwrite unseen commits. Require
-  `--force-with-lease=<branch>:<sha> --force-if-includes`.
+  `--force-with-lease=<branch>:<sha> --force-if-includes`. Done in
+  [rule 02](../.agents/rules/02-git-workflow.md) section 1 and the `pr-merge`
+  skill.
 - [ ] **PROPOSALS-001l - compact session resources.** The session and history
   MCP resources use `JSON.stringify(..., null, 2)` (`src/mcp/server.ts`);
   indentation costs tokens when a model reads them. Use compact JSON or
-  concise text.
+  concise text. Accepted for `0.7.0` (row 3.10b).
 - [ ] **PROPOSALS-001m - connectome orchestration experiment.** An informal
   research idea (2026-10-09): test whether a circuit from the published fruit
   fly connectome could drive role, model or decomposition choices. No
-  validated mapping exists; research only, no commitment.
-- [ ] **PROPOSALS-001n - neutral branch-model wording.** Rule 02, AGENTS.md,
+  validated mapping exists; research only, no commitment. Deferred (owner
+  decision 2026-10-18); no card.
+- [x] **PROPOSALS-001n - neutral branch-model wording.** Rule 02, AGENTS.md,
   the ARCHITECTURE decision log and ROADMAP still name the external project
   the branch model was modeled on; describe the model on its own (owner
-  decision 2026-10-12, before `0.7.0`).
+  decision 2026-10-12, before `0.7.0`). Done: rule 02, AGENTS.md,
+  ARCHITECTURE and this roadmap describe the model without that name.
 
 ## DOCS-003: documentation site
 
@@ -1937,7 +1945,7 @@ agent (owner assigns).
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
-| 3.0 | Confirm `PROPOSALS-001k` to `n` | O | - | Owner accepts or rejects each; the proposal cards record it. |
+| 3.0 | [x] Confirm `PROPOSALS-001k` to `n` (#68) | O | - | Owner accepts or rejects each; the proposal cards record it. |
 | 3.1 | `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (consult) returns a handle at once and the turn runs under owned supervision independent of the request; tests. |
 | 3.2 | `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown stop delegated turns without survivors; tests. |
 | 3.3 | `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `coagent8 wait <handle>` in the CLI; tests. |
@@ -1948,11 +1956,11 @@ agent (owner assigns).
 | 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.9 | `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
 | 3.10 | `PROPOSALS-001d` | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
-| 3.10b | `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON, if accepted. |
+| 3.10b | `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
 | 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
-| 3.13 | `PROPOSALS-001g` rule text | P | - par | Rule and AGENTS.md updated. |
-| 3.13b | `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
+| 3.13 | [x] `PROPOSALS-001g` rule text (#68) | P | - par | Rule and AGENTS.md updated. |
+| 3.13b | [x] `PROPOSALS-001k`, `001n` rule texts (#68) | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
 | 3.14 | `PROPOSALS-001e` signed-commit ruleset | O | - | Owner adds `required_signatures`; 3.13 aligns the text. |
 | 3.15 | `DOCS-003a` site purpose | P | - | Page list and published documents recorded; reviewed READY. |
 | 3.16 | `DOCS-003b` TypeDoc configuration | R | 3.15 | `npm run docs` passes with the new configuration. |

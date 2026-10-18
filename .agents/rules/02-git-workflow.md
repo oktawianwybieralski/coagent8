@@ -11,8 +11,8 @@ title: Git workflow
 
 The process follows widely used conventions:
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
-[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) and the
-`develop` plus release-line model of PrestaShop (owner decision 2026-10-10):
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) and a
+`develop` plus release-line branch model (owner decision 2026-10-10):
 a permanent integration branch, one branch per maintained `X.Y` line, releases as
 tags on those branches, and squash-merged pull requests.
 
@@ -105,8 +105,17 @@ Format: `<type>/<short-kebab-description>`, optionally with the issue number:
 
 Keep a topic branch focused on one concern. Rebase it onto its target to pick
 up changes (`git rebase origin/develop`). The author may force-push their own
-topic branch with `--force-with-lease` before merge; never force-push a branch
-someone else is working on.
+topic branch before merge, only with an explicit lease on the commit they last
+saw on the remote and `--force-if-includes`:
+
+```bash
+git push --force-with-lease=<branch>:<sha> --force-if-includes origin <branch>
+```
+
+A bare `--force-with-lease` compares against the local remote-tracking ref,
+which a background `git fetch` (editor autofetch, another agent) can move, so
+it may overwrite commits the author never saw (owner decision 2026-10-18,
+`PROPOSALS-001k`). Never force-push a branch someone else is working on.
 
 ---
 
