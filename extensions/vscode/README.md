@@ -93,7 +93,7 @@ only when the snapshot or its completeness changed.
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives |
 | `doctor` | Models, efforts, prices and approval per backend; installation, sign-in and quota with `scope: "health"` |
 | `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session; a closed session reports that it is closed on a follow-up or `cancel`, while its history stays readable |
-| `cancel` | Cancel the running turn of a session |
+| `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
 | `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a GitHub bug report form link to paste it into; it never submits anything |
 
 Answers come back as Markdown with the backend, model, duration and session

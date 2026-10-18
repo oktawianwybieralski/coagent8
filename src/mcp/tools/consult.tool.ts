@@ -16,7 +16,7 @@ export function getCanonicalConsultToolDefinition() {
     inputSchema: {
       type: 'object',
       properties: {
-        proposal: { type: 'string', description: 'Self-contained question or plan. Good: "Is this retry loop safe with concurrent writers? <code>". Bad: "thoughts?".' },
+        proposal: { type: 'string', description: 'Self-contained question or plan; name files instead of pasting them. Bad: "thoughts?"' },
         task_type: { type: 'string', enum: ['architecture', 'debug', 'implementation'], description: 'Omit for a plain question; set to ask for that kind of analysis.' },
         context_files: { type: 'array', items: { type: 'string' }, description: 'Workspace paths the agent reads itself; only the paths are sent.' },
         // Accepted alias of context_files.

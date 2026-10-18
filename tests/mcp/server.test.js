@@ -72,6 +72,8 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   assert.ok(Array.isArray(parsedSessions));
   assert.ok(parsedSessions.some(s => s.sessionHandle === sess.sessionHandle));
   assert.ok(!parsedSessions.some(s => s.sessionHandle === other.sessionHandle), 'another workspace is not returned');
+  // PROPOSALS-001l: a model reads the resource, so indentation would only cost tokens.
+  assert.equal(readSessionsResult.contents[0].text, JSON.stringify(parsedSessions), 'sessions resource is compact JSON');
 
   // 4. Read coagent8://sessions/{id}/history
   const readHistoryResult = await server._requestHandlers.get('resources/read')({
@@ -82,6 +84,7 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   const parsedHistory = JSON.parse(readHistoryResult.contents[0].text);
   assert.equal(parsedHistory.sessionHandle, sess.sessionHandle);
   assert.ok(parsedHistory.events.length >= 4);
+  assert.equal(readHistoryResult.contents[0].text, JSON.stringify(parsedHistory), 'history resource is compact JSON');
   await assert.rejects(server._requestHandlers.get('resources/read')({
     method: 'resources/read',
     params: { uri: `coagent8://sessions/${other.sessionHandle}/history` },

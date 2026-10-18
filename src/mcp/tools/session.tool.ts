@@ -27,7 +27,7 @@ export const sessionToolDefinition = {
 
 export const cancelToolDefinition = {
   name: CANONICAL_TOOL_NAMES.CANCEL,
-  description: 'Cancel the running turn of a session.',
+  description: 'Stop the running turn: interrupt if possible, then end the CLI.',
   inputSchema: {
     type: 'object',
     properties: {

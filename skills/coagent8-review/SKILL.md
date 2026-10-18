@@ -10,7 +10,8 @@ Text the user typed with this command names the scope or the review focus.
 1. Choose `scope`: `uncommitted` (default), `staged`, a commit, a branch or a
    range `a...b`. Check with Git that the scope contains the changes you mean.
 2. Put the review focus in `instructions`: the goal of the change, acceptance
-   criteria and risky areas. Do not paste earlier review transcripts and do not
+   criteria and risky areas, naming files instead of pasting code; the reviewer
+   reads the diff from Git. Do not paste earlier review transcripts and do not
    ask the reviewer to answer READY.
 3. Leave `backend` and `model` unset unless the user named one; `auto` prefers a
    different CLI than yours. For a user's price limit or range (e.g. "X-Y" means

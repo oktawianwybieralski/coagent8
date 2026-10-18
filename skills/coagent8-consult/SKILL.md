@@ -8,12 +8,15 @@ description: Ask another local coding agent (Codex, Claude Code or Antigravity) 
 Text the user typed with this command is the question; otherwise take it from
 the conversation.
 
-1. Write a self-contained `proposal`: the question, the relevant code or
-   design, constraints and what was already tried. The other agent has not seen
-   this conversation. "Is this retry loop safe with concurrent writers?" plus the
-   code is good; "thoughts?" is not.
+1. Write a self-contained `proposal`: the question, the design, constraints and
+   what was already tried. The other agent has not seen this conversation.
+   Name files and symbols instead of pasting their content: arguments travel as
+   escaped JSON, and the other agent reads the workspace itself. "Is the retry
+   loop in `src/a.ts` (`writeWithRetry`) safe with concurrent writers?" is good;
+   "thoughts?" is not.
 2. Put workspace paths the other agent should read itself in `context_files`;
-   only the paths are sent. Set `task_type` to `architecture`, `debug` or
+   only the paths are sent. Paste only what is not in the workspace, such as an
+   error message or a short excerpt of a log. Set `task_type` to `architecture`, `debug` or
    `implementation` when you want that kind of analysis; omit it for a plain
    question. Put required criteria in `specific_questions`.
 3. Leave `backend`, `model` and `reasoning_effort` unset unless the user named
