@@ -45,7 +45,7 @@ const acceptance = mode === 'acceptance' || mode === 'acceptance-slow';
 /** The answer of an acceptance turn: every prompt of the thread so far, or a review envelope. */
 function acceptanceAnswer(prompt) {
   const snapshot = /^SNAPSHOT: (\S+)$/m.exec(prompt || '');
-  if (prompt && prompt.includes('END_REVIEW') && snapshot) {
+  if (prompt && prompt.includes('CHECKS: typecheck=<PASS|FAIL|NOT_RUN>') && snapshot) {
     return ['REVIEW: 1', `SNAPSHOT: ${snapshot[1]}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: fixture review of the diff.', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n');
   }
   const dir = path.join(process.env.CODEX_HOME || process.cwd(), 'fixture-threads');

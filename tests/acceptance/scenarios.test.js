@@ -121,3 +121,24 @@ test('ACCEPT-001a2: with backend sign-in only the observed backend cache key may
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('ACCEPT-001a2: a late response to a timed-out request is dropped and the client keeps working', async () => {
+  const { connectMcp } = require('../../tooling/acceptance/mcp-client.cjs');
+  const server = [
+    'let buffer = "";',
+    'const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");',
+    'process.stdin.on("data", chunk => { buffer += chunk; let i; while ((i = buffer.indexOf("\\n")) >= 0) { const m = JSON.parse(buffer.slice(0, i)); buffer = buffer.slice(i + 1);',
+    '  if (m.method === "initialize") reply(m.id, { protocolVersion: "2025-06-18", serverInfo: { name: "fixture" }, capabilities: {} });',
+    '  else if (m.method === "slow") setTimeout(() => reply(m.id, { late: true }), 400);',
+    '  else if (m.id != null) reply(m.id, { ok: true }); } });',
+    'process.stdin.on("end", () => process.exit(0));',
+  ].join('\n');
+  const client = await connectMcp({ command: process.execPath, args: ['-e', server], closeGraceMs: 300 });
+  try {
+    await assert.rejects(client.request('slow', {}, { timeoutMs: 100 }), /timed out/);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    assert.deepEqual(await client.request('fast', {}), { ok: true }, 'the late response did not close the client');
+  } finally {
+    await client.close();
+  }
+});

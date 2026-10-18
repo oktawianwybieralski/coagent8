@@ -31,6 +31,8 @@ const CLOSE_GRACE_MS = 10_000;
 async function connectMcp(options) {
   const pending = new Map();
   let nextId = 1, channel = null, failure = null, closed = false;
+  // Ids of requests that timed out: a late response to one is dropped, not a protocol error.
+  const expired = new Set();
   // The caller's signal, or our own stop when the server does not exit after stdin closes.
   const stop = new AbortController();
   const abortSignal = options.abortSignal ? AbortSignal.any([options.abortSignal, stop.signal]) : stop.signal;
@@ -67,6 +69,7 @@ async function connectMcp(options) {
       return;
     }
     const item = pending.get(message.id);
+    if (!item && expired.delete(message.id)) return;
     if (!item) { rejectAll(new Error(`Unexpected MCP response id ${message.id}.`)); channel?.close(); return; }
     pending.delete(message.id);
     clearTimeout(item.timer);
@@ -114,6 +117,7 @@ async function connectMcp(options) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
+        expired.add(id);
         reject(new Error(`MCP request ${method} timed out after ${requestOptions.timeoutMs || DEFAULT_REQUEST_MS} ms.`));
       }, requestOptions.timeoutMs || DEFAULT_REQUEST_MS);
       pending.set(id, { resolve, reject, timer, progressToken, onProgress: requestOptions.onProgress });

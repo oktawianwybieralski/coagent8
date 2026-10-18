@@ -191,7 +191,8 @@ async function runScenarios(options) {
         const listed = (await call(main, 'session', { action: 'list', workspace_path: workspaceB })).structuredContent;
         if ((listed?.sessions || []).some(item => item.sessionHandle === consultHandle)) throw new Error('another workspace lists the session.');
         const foreign = await call(main, 'session', { action: 'history', session_handle: consultHandle, workspace_path: workspaceB });
-        if (!foreign.isError) throw new Error('another workspace can read the session history.');
+        // Only the documented workspace refusal proves isolation; any other error does not.
+        if (!foreign.isError || !resultText(foreign).includes('History not found in this workspace')) throw new Error(`another workspace's history read did not end in the workspace refusal: ${resultText(foreign).slice(0, 300)}`);
         return { details: 'not listed and not readable from another workspace' };
       });
 
@@ -213,7 +214,7 @@ async function runScenarios(options) {
         const result = await call(main, 'review', { ...modelArgs, scope: 'uncommitted', session_handle: reviewHandle, instructions: 'Check notes.md for statements that contradict each other.' });
         const text = resultText(result);
         const after = (await call(main, 'session', { action: 'list' })).structuredContent.sessions.find(item => item.sessionHandle === reviewHandle);
-        if (!text.includes('No model turn')) throw new Error('the unchanged repeat started a model turn.');
+        if (result.isError || !/^No model turn: this request matches a completed review/m.test(text)) throw new Error(`the unchanged repeat was not deduplicated: ${text.slice(0, 300)}`);
         if (footer(text).handle !== reviewHandle) throw new Error('the repeat returned another session handle.');
         if (!before || !after || after.turnCount !== before.turnCount) throw new Error('the turn count changed.');
         return { details: `no new turn; turn count ${after.turnCount}` };
