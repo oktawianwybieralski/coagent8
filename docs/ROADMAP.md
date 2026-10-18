@@ -1958,9 +1958,9 @@ agent (owner assigns).
 | 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.9 | `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
-| 3.10 | [x] `PROPOSALS-001d` | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
-| 3.10b | [x] `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
-| 3.11 | [x] `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
+| 3.10 | [x] `PROPOSALS-001d` (#69) | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
+| 3.10b | [x] `PROPOSALS-001l` (#69) | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
+| 3.11 | [x] `PROPOSALS-001h` cancel description (#69) | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
 | 3.13 | [x] `PROPOSALS-001g` rule text (#68) | P | - par | Rule and AGENTS.md updated. |
 | 3.13b | [x] `PROPOSALS-001k`, `001n` rule texts (#68) | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
