@@ -27,7 +27,7 @@ body = """
 {# A breaking commit is listed under "Breaking change" of its area only, not
    again under its type. #}
 {% for scope, area in commits | group_by(attribute="scope") %}
-- {{ scope | upper_first }}:
+- {{ self::area(scope=scope) }}:
 {%- set breaking = area | filter(attribute="breaking", value=true) %}
 {%- if breaking | length > 0 %}
   - Breaking change:
@@ -48,6 +48,10 @@ body = """
    --with-commit has neither and shows as pending. The author is the GitHub
    account of a GitHub no-reply address (squash commits use it); any other
    address names no account, and the entry then has no author. #}
+{# Commit scopes are short; release readers see product names (RELEASE-001e). #}
+{% macro area(scope) -%}
+{% if scope == "vscode" %}VS Code{% elif scope == "mcp" %}MCP{% elif scope == "agy" %}Antigravity (agy){% elif scope == "cli" %}CLI{% else %}{{ scope | upper_first }}{% endif %}
+{%- endmacro area %}
 {% macro entry(commit, repo) -%}
 {% set text = commit.message | split(pat=" (#") | first | upper_first -%}
 {% set email = commit.author.email | default(value="") -%}
@@ -86,7 +90,7 @@ request, which its page keeps.
   - Bug fix:
     - [`bbbfc51`](https://github.com/oktawianwybieralski/coagent8/commit/bbbfc51bb5405bed37aadd943bf9fb9b64f5362a): Refuse recursive turns and name agy's inherited tools
     - [`edee627`](https://github.com/oktawianwybieralski/coagent8/commit/edee6272cd03a50f8efffc07185e4b013dc0f336): Disable and verify inherited Codex MCP servers per thread
-- Agy:
+- Antigravity (agy):
   - New feature:
     - [`86249ae`](https://github.com/oktawianwybieralski/coagent8/commit/86249ae4c2aebb6021bf2338bb477207ed11f114): Bound probe, catalog, quota, and tool reads (EXEC-001-T08e)
   - Bug fix:
@@ -220,7 +224,7 @@ request, which its page keeps.
 - Locks:
   - Bug fix:
     - [`4afc7f2`](https://github.com/oktawianwybieralski/coagent8/commit/4afc7f277923fd246aecb220d7dd28ddd56f2f28): Publish leases atomically, renew them and reclaim stale ones by age
-- Mcp:
+- MCP:
   - Breaking change:
     - [`77bef3e`](https://github.com/oktawianwybieralski/coagent8/commit/77bef3e1ea4bd86e6af8269ccf54003025e7733d): Remove the compact tool profile
   - New feature:
@@ -355,7 +359,7 @@ request, which its page keeps.
     - [`4b9307b`](https://github.com/oktawianwybieralski/coagent8/commit/4b9307bce0603fc932d3cb3de241bb5e51845ea1): Say how to call CoAgent8 right on the first attempt
   - Refactoring:
     - [`702d52e`](https://github.com/oktawianwybieralski/coagent8/commit/702d52ee253f2c4463b7f85d9464da1653f4a78b): Map the deprecated tools and run actions through one alias table
-- Vscode:
+- VS Code:
   - Breaking change:
     - [`b2e483c`](https://github.com/oktawianwybieralski/coagent8/commit/b2e483cd37bdb617da0f43f3863773ea320bcd9a): Share ~/.coagent8/config.json with the CLI and keep it on uninstall
     - [`b79f744`](https://github.com/oktawianwybieralski/coagent8/commit/b79f7449f70ae5fd2c76d7b337347d79a62b4c04): One setup list, CLI executable choice and complete uninstall

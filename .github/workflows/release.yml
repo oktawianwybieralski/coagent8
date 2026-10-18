@@ -66,6 +66,10 @@ jobs:
           fi
           echo "Tag $tag ($GITHUB_SHA) is on $on_branch"
 
+      # The release PR adds the tester header (RELEASE-001e); without it no draft is built.
+      - name: Require the release notes header
+        run: node scripts/release-notes.cjs --check --tag "$GITHUB_REF_NAME"
+
       - name: Install dependencies
         run: |
           npm ci
@@ -127,25 +131,9 @@ jobs:
           # commit" that the first release reaches, are no Conventional Commits: skip every one.
           skips=()
           for root in $(git rev-list --max-parents=0 "$GITHUB_SHA"); do skips+=(--skip-commit "$root"); done
-          npx --no-install git-cliff --config cliff.release-notes.toml --current "${skips[@]}" --strip all > release/notes.md
-          {
-            echo
-            echo "## Artifacts"
-            echo
-            echo "Verify downloads against \`SHA256SUMS\` and their build provenance:"
-            echo
-            echo '```text'
-            cat release/SHA256SUMS
-            echo '```'
-            echo
-            echo '```bash'
-            echo "sha256sum --check --ignore-missing SHA256SUMS"
-            echo "gh attestation verify coagent8-mcp-${GITHUB_REF_NAME#v}.vsix --repo $GITHUB_REPOSITORY"
-            echo "gh attestation verify coagent8-${GITHUB_REF_NAME#v}.tgz --repo $GITHUB_REPOSITORY"
-            echo '```'
-            echo
-            echo "Built by the Release workflow from \`$GITHUB_SHA\`. The npm package is published separately by the maintainer after verification."
-          } >> release/notes.md
+          npx --no-install git-cliff --config cliff.release-notes.toml --current "${skips[@]}" --strip all > release/changelog.md
+          node scripts/release-notes.cjs --tag "$GITHUB_REF_NAME" --changelog release/changelog.md \
+            --sums release/SHA256SUMS --repository "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --out release/notes.md
 
       - name: Create draft GitHub Release
         shell: bash

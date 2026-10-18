@@ -366,21 +366,23 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
      `package.json` and `package-lock.json`) and in `plugin.json`,
      `extensions/vscode/package.json` and both versions in `server.json`; `git grep -n "<previous version>"` then
      finds no other manifest still carrying the old number;
-   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`.
+   * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`;
+   * adds the tester header `docs/releases/vX.Y.Z.md` (step 9).
 
    Every later regeneration on this branch also passes `--tag vX.Y.Z`; plain
    `npm run changelog` would turn the version heading back into Unreleased.
 8. **Local checks on that commit:** the full local gate
    ([04-quality-gate](04-quality-gate.md#full-release-gate)) with platform, Node,
    commit, tree and tarball digest recorded.
-9. **Release notes draft** in English for testers: a hand-written header (what
-   CoAgent8 is, install, what changed in plain words, known limitations,
-   upgrade notes), then the generated entries
-   (`npm run release-notes -- --tag vX.Y.Z`). No internal card IDs or process
-   notes in the header.
+9. **Release notes header** in English for testers, written to
+   `docs/releases/vX.Y.Z.md` and reviewed with the release PR: what CoAgent8 is,
+   install, what changed in plain words, known limitations, upgrade notes. No
+   internal card IDs or process notes. `npm run release-notes -- --tag vX.Y.Z`
+   previews the generated part; `release.yml` puts the header above it and fails
+   without the file (`RELEASE-001e`).
 10. Run `npm run changelog -- --tag vX.Y.Z` once more (it must leave the file
     unchanged), push the branch and open the PR `chore(release): vX.Y.Z` into
-    the target, with the evidence and the notes draft. Its six CI jobs must be green; they
+    the target, with the evidence. Its six CI jobs must be green; they
     build the release candidate's VSIX and tarball with the new version.
 11. **Native acceptance of the candidate.** Download the VSIX and the tarball
     from the PR head's CI run (`gh run download <run> --repo <repo>
@@ -434,8 +436,9 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     numeric annotated `vX.Y.Z` on `develop` or an `X.Y.x` line matching
     `package.json`, runs the full gate on Ubuntu with Node 24, packs and
     smoke-tests the exact tarball, packages the VSIX, writes `SHA256SUMS`, signs
-    build provenance for both, generates notes with git-cliff (`--current`,
-    root commits skipped) and creates a **draft** release, a pre-release below
+    build provenance for both, composes the notes (`scripts/release-notes.cjs`:
+    the step 9 header, the git-cliff changelog with `--current` and root commits
+    skipped, the artifacts) and creates a **draft** release, a pre-release below
     1.0.0. It never publishes anything. A failure here is fixed by a new patch
     version; the tag stays.
 
@@ -455,8 +458,9 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     downloaded tarball in a clean npm folder, confirm the installed extension
     files equal the VSIX (VS Code adds only `__metadata` to `package.json`), and
     repeat `doctor` with `scope: "health"` and one `consult` through each.
-20. Replace the draft's generated notes with the Phase A notes, keeping the
-    generated Full Changelog, Contributors, Compare and Artifacts sections.
+20. Read the draft's notes: the reviewed header from step 9, then the generated
+    Full Changelog, Contributors, Compare and Artifacts sections. Nothing is
+    replaced by hand; a wrong header is fixed in the next version.
 
 ### Phase E - publish (owner, in this order, from the Phase D folder)
 
