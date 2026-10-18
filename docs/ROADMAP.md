@@ -959,7 +959,7 @@ as possible and include WSL. The `0.6.1` acceptance was manual, ran a stale
 runtime in its first round and let an isolated test instance rewrite the
 user's real client registrations (`FEEDBACK-061a/b`).
 
-- [x] **ACCEPT-001a - native acceptance runner (#67, 2.17).** `npm run acceptance:native`
+- [x] **ACCEPT-001a - native acceptance runner (#67, #71).** `npm run acceptance:native`
   takes the CI tarball and VSIX, installs them in an isolated VS Code instance
   and a clean npm folder, drives the scenarios that need no chat UI (start with
   `PATCH-061-N2`, `N3` and `N4` through the real CLIs) and writes a JSON
@@ -1925,7 +1925,7 @@ agent (owner assigns).
 | 2.14 | [x] `FEEDBACK-061h` acceptance procedure (#66) | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | [x] `ACCEPT-001b` isolated user home (#67) | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
 | 2.16 | [x] `ACCEPT-001a1` runner skeleton (#67) | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
-| 2.17 | [x] `ACCEPT-001a2` scenarios N2-N4 | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
+| 2.17 | [x] `ACCEPT-001a2` scenarios N2-N4 (#71) | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
 | 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios, including the 2.12d recovery checks; results recorded. |
 | 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
 | 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
