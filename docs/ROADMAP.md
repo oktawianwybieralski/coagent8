@@ -1961,7 +1961,7 @@ agent (owner assigns).
 | 3.6 | `DELEGATE-001d1` Claude Code adapter | R | 3.3, 1.14 | The skill tells the agent to run `coagent8 wait` in the background; native check. |
 | 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
-| 3.9 | [x] `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
+| 3.9 | [x] `PROPOSALS-001a` `server.json` and `mcpName` (#70) | R | - par | Files added; publication stays an owner action. |
 | 3.10 | [x] `PROPOSALS-001d` (#69) | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
 | 3.10b | [x] `PROPOSALS-001l` (#69) | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
 | 3.11 | [x] `PROPOSALS-001h` cancel description (#69) | R | - par | Description updated within the byte budget. |
