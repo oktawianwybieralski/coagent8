@@ -311,6 +311,11 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
   }
   assert.match(consultProperties.timeout_ms.description, /monotonic/i, 'timeout_ms defines monotonic call budget');
+  // PROPOSALS-001d: arguments travel as escaped JSON, so the caller names files instead of pasting them.
+  assert.match(consultProperties.proposal.description, /name files instead of pasting them/);
+  assert.match(consultProperties.context_files.description, /only the paths are sent/);
+  // PROPOSALS-001h: cancel says how it stops the turn, without a new tool name.
+  assert.equal(tools.find(t => t.name === 'cancel').description, 'Stop the running turn: interrupt if possible, then end the CLI.');
   // No model names in descriptions (owner decision of 2026-10-07): doctor lists them, and a
   // wrong name fails before any model call with the accepted ones.
   assert.match(consultProperties.model.description, /Omit unless the user names a model or price limit\. doctor lists models, efforts and prices/, 'model points to the place that lists them and permits selection for a limit');

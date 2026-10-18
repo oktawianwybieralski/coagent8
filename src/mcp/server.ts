@@ -327,7 +327,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           {
             uri,
             mimeType: 'application/json',
-            text: JSON.stringify(sessions, null, 2),
+            text: JSON.stringify(sessions),
           },
         ],
       };
@@ -344,7 +344,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           {
             uri,
             mimeType: 'application/json',
-            text: JSON.stringify(h, null, 2),
+            text: JSON.stringify(h),
           },
         ],
       };

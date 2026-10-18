@@ -1422,9 +1422,10 @@ deferred as research only.
   extension declares no `extensionKind`. If yes, add cards for the topology
   and for a native acceptance runner (separate Windows account, Windows
   Sandbox or VM).
-- [ ] **PROPOSALS-001d - paths instead of pasted content.** Check that tool
+- [x] **PROPOSALS-001d - paths instead of pasted content.** Check that tool
   descriptions and skills tell agents to pass file paths and short questions
-  instead of pasting code, since arguments travel as escaped JSON.
+  instead of pasting code, since arguments travel as escaped JSON. Done: the
+  `consult` `proposal` description and the consult and review skills.
 - [ ] **PROPOSALS-001e - signed-commit rule.** Rule 02 lists signed commits
   for `develop` and release lines, but the rulesets have no
   `required_signatures` rule (GitHub squash commits are Verified anyway). Add
@@ -1438,9 +1439,11 @@ deferred as research only.
   agents keep their scripts and logs in their scratch directories, not in
   `.artifacts/`, which holds build output only. Done in
   [rule 04](../.agents/rules/04-quality-gate.md#source-bundle-and-artifact-provenance).
-- [ ] **PROPOSALS-001h - cancel description.** Say in the `cancel` tool
+- [x] **PROPOSALS-001h - cancel description.** Say in the `cancel` tool
   description that it asks the backend to stop and then terminates its process
-  if it does not exit, without renaming the tool.
+  if it does not exit, without renaming the tool. Done: the description says
+  it interrupts where the CLI supports it (Codex, Claude Code), then ends the
+  CLI process.
 - [ ] **PROPOSALS-001i - documentation site cleanup.** Accepted; planned as
   [`DOCS-003`](#docs-003-documentation-site).
 - [ ] **PROPOSALS-001j - MIT for older copies.** Optionally also permit use
@@ -1453,7 +1456,7 @@ deferred as research only.
   `--force-with-lease=<branch>:<sha> --force-if-includes`. Done in
   [rule 02](../.agents/rules/02-git-workflow.md) section 1 and the `pr-merge`
   skill.
-- [ ] **PROPOSALS-001l - compact session resources.** The session and history
+- [x] **PROPOSALS-001l - compact session resources.** The session and history
   MCP resources use `JSON.stringify(..., null, 2)` (`src/mcp/server.ts`);
   indentation costs tokens when a model reads them. Use compact JSON or
   concise text. Accepted for `0.7.0` (row 3.10b).
@@ -1955,9 +1958,9 @@ agent (owner assigns).
 | 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.9 | `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
-| 3.10 | `PROPOSALS-001d` | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
-| 3.10b | `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
-| 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
+| 3.10 | [x] `PROPOSALS-001d` | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
+| 3.10b | [x] `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
+| 3.11 | [x] `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
 | 3.13 | [x] `PROPOSALS-001g` rule text (#68) | P | - par | Rule and AGENTS.md updated. |
 | 3.13b | [x] `PROPOSALS-001k`, `001n` rule texts (#68) | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
