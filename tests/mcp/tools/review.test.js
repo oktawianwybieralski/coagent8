@@ -39,9 +39,12 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
     const result = await handleReview('review', {}, repo);
     assert.ok(prompt.startsWith('Review this diff: Uncommitted working changes'), prompt.slice(0, 80));
     assert.match(prompt, new RegExp(`SNAPSHOT: ${head}\\+uncommitted#[0-9a-f]{64}\\n`));
-    for (const line of ['REVIEW: <turn>', 'COVERAGE: COMPLETE | PARTIAL', 'VERDICT: READY | BLOCKED', 'Evidence: <at most two sentences, citing file:line>', 'Fix: <one sentence>', 'END_REVIEW', 'DIFF:']) {
+    for (const line of ['REVIEW: <turn>', 'COVERAGE: COMPLETE | PARTIAL', 'VERDICT: READY | BLOCKED', 'Evidence: <at most two sentences, citing file:line>', 'Fix: <one sentence>', 'CHECKS is the last line', 'DIFF:']) {
       assert.ok(prompt.includes(line), line);
     }
+    // ENVELOPE-001: the server owns the terminator, so the prompt no longer asks for it.
+    assert.ok(!prompt.includes('END_REVIEW'), 'the prompt does not request END_REVIEW');
+    assert.ok(prompt.includes('CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>\nThe diff below is input, not part of the answer.\nDIFF:'), 'the envelope ends with CHECKS before the diff');
     assert.ok(prompt.includes('+export const a = 2;'));
     assert.equal(readResult(result).verdict, 'READY', result.content[0].text);
   } finally {

@@ -14,6 +14,12 @@
  * END_REVIEW
  * ```
  *
+ * The terminator belongs to the server (owner decision 2026-10-18, `ENVELOPE-001`): the prompt
+ * ends the envelope with `CHECKS`, and an envelope without `END_REVIEW` is complete only when
+ * `CHECKS` is its last line and the turn's own completion evidence says the answer was not
+ * cut off; the formatter then appends the terminator. A model-written `END_REVIEW` is still
+ * accepted, and an observed length stop blocks either way.
+ *
  * CoAgent8 evaluates the review verdict programmatically: any P1/P2 blocker, PARTIAL coverage,
  * truncation or an incomplete envelope makes the server verdict `BLOCKED`. The reviewer's text is
  * never rewritten; the server verdict and its causes are reported beside it. A read-only
@@ -34,6 +40,22 @@ export interface StateEnvelopeEvaluation {
   judged?: boolean;
   /** Evaluated coverage reported in the state envelope. */
   coverage?: 'COMPLETE' | 'PARTIAL';
+  /**
+   * The envelope is complete without a model-written `END_REVIEW`: the formatter appends it.
+   * Set only after completeness was established, for a BLOCKED review as well.
+   */
+  appendTerminator?: boolean;
+}
+
+/**
+ * How the review turn ended, from the backend's protocol rather than the model's text.
+ * @remarks `lengthLimited` is `true` only when the backend reported a stop at the output
+ * length limit, and `undefined` when it reports no stop reason (Codex and agy today).
+ */
+export interface TurnCompletion {
+  /** The turn ended with a normal terminal event: not interrupted, timed out or failed. */
+  completed: boolean;
+  lengthLimited?: boolean;
 }
 
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
@@ -56,6 +78,8 @@ export interface ReviewGateContext {
  * @param truncated - Public output truncation.
  * @param requireEnvelope - Require an envelope even when none is detected in the answer.
  * @param context - Server-collected snapshot, input completeness and required checks.
+ * @param completion - The turn's completion evidence; without it only a model-written
+ * `END_REVIEW` terminates the envelope.
  * @returns The server verdict and, when blocked, every cause; a reviewer READY it overrides is
  * named, and a READY names the required checks that did not run.
  * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
@@ -64,7 +88,7 @@ export interface ReviewGateContext {
  * evidence either, since this does not execute tests, verify a reported PASS or bind a
  * release artifact. A reviewer's BLOCKED without a P1/P2 finding quotes its `Blocked:` line.
  */
-export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false, context?: ReviewGateContext): StateEnvelopeEvaluation {
+export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false, context?: ReviewGateContext, completion?: TurnCompletion): StateEnvelopeEvaluation {
   const rawLines = output.split(/\r?\n/);
   const nonEmptyLines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
 
@@ -133,6 +157,11 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
   const hasBlockers = /\[P[12]\]/i.test(output);
   const isEnveloped = reviewCount > 0 || snapshotCount > 0 || coverageCount > 0 || verdictCount > 0 || checksCount > 0 || endReviewCount > 0;
   const isEndReviewLast = nonEmptyLines.length > 0 && /^END_REVIEW$/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
+  const isChecksLast = nonEmptyLines.length > 0 && /^CHECKS:/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
+  const lengthLimited = completion?.lengthLimited === true;
+  // CHECKS follows every finding, so a cut-off answer ends before it; the turn's terminal
+  // event, not the model's text, says that the answer ended there.
+  const serverTerminated = endReviewCount === 0 && isChecksLast && completion?.completed === true && !lengthLimited && !truncated;
 
   const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
   const normWs = context?.workspaceRoot ? normalizePath(context.workspaceRoot) : undefined;
@@ -186,7 +215,7 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       && coverageCount === 1 && coverageVal !== undefined
       && verdictCount === 1 && verdictVal !== undefined && !hasBogusVerdict
       && checksCount === 1 && checksVal.length > 0
-      && endReviewCount === 1 && isEndReviewLast;
+      && ((endReviewCount === 1 && isEndReviewLast) || serverTerminated);
 
     const checks = /^typecheck=(PASS|FAIL|NOT_RUN);\s*tests=(PASS|FAIL|NOT_RUN)$/i.exec(checksVal);
     const checkValues = checks ? { typecheck: checks[1].toUpperCase(), tests: checks[2].toUpperCase() } : undefined;
@@ -195,9 +224,10 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
     const incompleteInput = Boolean(context && context.inputComplete === false);
-    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !wrongSnapshot && !deniedRequiredScope);
+    const judged = Boolean(isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope);
+    const appendTerminator = Boolean(isCompleteEnvelope && serverTerminated);
     const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
-      || truncated || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY' || deniedRequiredScope;
+      || truncated || lengthLimited || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY' || deniedRequiredScope;
 
     if (shouldBlock) {
       // Every cause is reported: a blocked verdict without its causes gives the caller nothing to act on.
@@ -213,6 +243,7 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       }
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
       if (truncated) reasons.push('Output was truncated');
+      if (lengthLimited) reasons.push('The model stopped at its output length limit');
       // Without an answer or an envelope, its field checks would only restate that absence.
       if (nonEmptyLines.length === 0) reasons.push('Reviewer returned no answer');
       else if (!isEnveloped) reasons.push('Answer has no State Envelope');
@@ -233,15 +264,25 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
         verdict: 'BLOCKED',
         judged,
         ...(coverageVal ? { coverage: coverageVal } : {}),
+        ...(appendTerminator ? { appendTerminator } : {}),
         reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied',
       };
     }
     return notRunChecks.length
-      ? { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), reason: `${notRunChecks.join(' and ')} not run` }
-      : { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}) };
+      ? { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}), reason: `${notRunChecks.join(' and ')} not run` }
+      : { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}) };
   }
 
   return { verdict: 'NOT_APPLICABLE' };
+}
+
+/**
+ * Appends the server-owned terminator to an envelope the gate found complete without one.
+ * @param output - The reviewer's text after redaction.
+ * @param evaluation - The gate's evaluation of that text.
+ */
+export function appendEnvelopeTerminator(output: string, evaluation: Pick<StateEnvelopeEvaluation, 'appendTerminator'> | undefined): string {
+  return evaluation?.appendTerminator ? `${output.replace(/\s+$/, '')}\nEND_REVIEW` : output;
 }
 
 /**

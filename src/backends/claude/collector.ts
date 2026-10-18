@@ -59,6 +59,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   let category: string | null = null;
   let rateLimitResetsAt: number | null = null;
   let resultFields: { isError: boolean; subtype: string | null; apiErrorStatus: number | null; errors: string[] } | null = null;
+  // `stop_reason` of the result event (Claude Code stream-json), e.g. `end_turn` or `max_tokens`.
+  let stopReason: string | null = null;
   let usage: TerminalExecutionResult['usage'];
   const emit = (event: AdapterEvent) => options.onEvent?.(event);
   const warnOnce = (key: string, message: string) => {
@@ -161,6 +163,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       apiErrorStatus: typeof event.api_error_status === 'number' ? event.api_error_status : null,
       errors: Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [] };
     if (typeof event.result === 'string') finalText = event.result;
+    if (typeof event.stop_reason === 'string') stopReason = event.stop_reason;
     const data = record(event.usage);
     if (data) {
       // Anthropic reports cached input separately; the sum is the input actually processed.
@@ -200,7 +203,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       ? classifyClaudeFailure({ category, apiErrorStatus: resultFields.apiErrorStatus, subtype: resultFields.subtype,
         errors: resultFields.errors, message: finalText, rateLimitResetsAt })
       : truncated ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false } : undefined;
-    return { sessionId, initialized: sessionId !== null, model, terminal, usage, truncated, error, output: (resultFields?.isError || !sessionId) ? '' : output, hasAssistantMessage: reducer.getMessageMap().size > 0 };
+    return { sessionId, initialized: sessionId !== null, model, terminal, usage, truncated, lengthLimited: stopReason === null ? undefined : stopReason === 'max_tokens', error, output: (resultFields?.isError || !sessionId) ? '' : output, hasAssistantMessage: reducer.getMessageMap().size > 0 };
   }
   return { line, snapshot, isTerminal: () => terminal };
 }

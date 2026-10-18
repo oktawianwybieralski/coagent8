@@ -488,7 +488,10 @@ async function executeTaskInternal(
         const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
         if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
         result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
-          error, truncated: !!raw.truncated, continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
+          error, truncated: !!raw.truncated,
+          // Only a boolean is evidence of the stop reason; anything else means it was not reported.
+          lengthLimited: typeof raw.lengthLimited === 'boolean' ? raw.lengthLimited : undefined,
+          continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
       } catch (err) {
         const code = errorCodeOf(err);
         result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
@@ -630,7 +633,8 @@ async function executeTaskInternal(
             stripAnsi(result.output || '').trim(),
             result.truncated,
             true,
-            reviewContext
+            reviewContext,
+            { completed: result.status === 'completed', lengthLimited: result.lengthLimited },
           );
         }
       }

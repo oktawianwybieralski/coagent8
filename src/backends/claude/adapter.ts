@@ -376,6 +376,7 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   return { status, isError: status !== 'completed', output: snapshot.output, model: snapshot.model ?? model, threadId: nativeSessionId, nativeSessionId,
     error, errorDetail: error?.message, exitCode: result.exitCode, signal: result.signal, usage: snapshot.usage,
     truncated: snapshot.truncated || error?.code === 'BUFFER_LIMIT',
+    ...(snapshot.lengthLimited === undefined ? {} : { lengthLimited: snapshot.lengthLimited }),
     continuationAvailable };
 }
 export const execute = executeClaude;

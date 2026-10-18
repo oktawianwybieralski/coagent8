@@ -106,6 +106,11 @@ export interface ExecutionResult {
   signal?: NodeJS.Signals | null;
   model?: string;
   truncated?: boolean;
+  /**
+   * The backend reported that the model stopped at its output length limit; `undefined`
+   * when the backend reports no stop reason. A review cut off this way is never judged.
+   */
+  lengthLimited?: boolean;
   continuationAvailable?: boolean;
   usage?: { source: 'provider'; inputTokens?: number; outputTokens?: number; totalTokens?: number };
   /** Observed tool/filesystem permission denials or policy rejections during execution. */

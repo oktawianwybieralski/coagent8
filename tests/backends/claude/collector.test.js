@@ -127,3 +127,12 @@ test('Claude collector reports the model resolved in system/init and ignores an 
   events[0].model = '--tools=Bash';
   assert.equal(collect(events).snapshot.model, undefined);
 });
+
+test('ENVELOPE-001: the result event\'s stop_reason tells whether the answer stopped at the length limit', () => {
+  const events = recording('success-partial');
+  assert.equal(collect(events).snapshot.lengthLimited, false, 'end_turn in the recorded result');
+  const limited = events.map(event => event.type === 'result' ? { ...event, stop_reason: 'max_tokens' } : event);
+  assert.equal(collect(limited).snapshot.lengthLimited, true);
+  const silent = events.map(event => { if (event.type !== 'result') return event; const { stop_reason, ...rest } = event; return rest; });
+  assert.equal(collect(silent).snapshot.lengthLimited, undefined, 'no stop reason is unknown, not false');
+});

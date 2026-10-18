@@ -83,7 +83,7 @@ coherent PR results with a fixed procedure.
 and its row numbers stay:
 
 - `0.7.0` (beta.3) is a stability release: the merged public CLI and
-  `FEEDBACK-061` rows, 2.13 and 2.14, the acceptance runner and WSL lane
+  `FEEDBACK-061` rows, 2.12e (`ENVELOPE-001`), 2.13 and 2.14, the acceptance runner and WSL lane
   2.15-2.18 (which also run the 2.12d POSIX checks), native acceptance of the
   shipped skills and CLI management 2.36, the proposal rows 3.0, 3.9, 3.10,
   3.10b, 3.11, 3.13 and 3.13b (3.10b joined `0.7.0` by owner decision
@@ -982,6 +982,28 @@ user's real client registrations (`FEEDBACK-061a/b`).
   2.12d recovery checks with Codex (owner decision 2026-10-15): tracked docs
   are readable, denied required scope blocks READY, and an unchanged failed
   review is retried with and without `session_handle`. Check: native.
+
+## ENVELOPE-001: server-owned review terminator
+
+Owner decision 2026-10-18: in the 2.17 native runs `claude-haiku-5-5` returned a
+well-formed envelope with a valid finding but without the final `END_REVIEW`, and the
+gate rejected it as incomplete. The terminator only proved that the answer was not cut
+off, which the backend's terminal event shows more reliably than the model's text, as
+the server-owned review turn number (`FEEDBACK-061e`) already does. The design was
+consulted (Codex `gpt-6.1-sol`, session `syn_sess_8bf51979b8095360e87ea4b0`).
+
+- [x] **ENVELOPE-001a - completion evidence and the server terminator.** The prompt
+  ends the envelope with `CHECKS` and asks for every finding before it; the gate
+  accepts an envelope without `END_REVIEW` only when `CHECKS` is its last line, the
+  turn completed, the output is untruncated and no length stop was reported, and the
+  formatter then appends `END_REVIEW`. A model-written terminator is still accepted. A
+  reported length stop (Claude Code `stop_reason: max_tokens`, `lengthLimited` on the
+  execution result) blocks with either end and leaves the review unjudged. Check: R,
+  gate, formatter, collector and prompt tests.
+- [ ] **ENVELOPE-001b - length stops of Codex and agy.** Find whether their protocols
+  report a stop at the output limit and report it as `lengthLimited`; until then
+  `CHECKS` last and the terminal event are their only evidence. Check: R, native
+  evidence of the protocol fields. Not a `0.7.0` blocker.
 
 ## RELEASE-001: automated publication
 
@@ -1921,6 +1943,7 @@ agent (owner assigns).
 | 2.12b | [x] `FEEDBACK-061k1` Codex read-denial reproduction (#49) | N | - par | HANDOFF records the fixture matrix, denial events, CLI and config versions and attribution; unavailable lanes are NOT_RUN, not inferred. |
 | 2.12c | [x] `FEEDBACK-061k2` correction and denial reporting (#49) | R | 2.12b | The reproduced cause has a fix or a verified remedy (release blocker; the remaining Codex sandbox cause became known limitation `CUR-014`, owner decision 2026-10-15); observed denied paths reach the review result; `doctor` does not claim workspace access; tests. |
 | 2.12d | [x] `FEEDBACK-061j`/`k` native recovery check | N | 2.12a, 2.12c | On Windows and POSIX, tracked docs are readable, denied required scope blocks READY, and an unchanged failed review can be retried. Windows passed; the POSIX run moves to 2.18 (owner decision 2026-10-15). |
+| 2.12e | [x] `ENVELOPE-001a` server-owned review terminator | R | - | The gate accepts a complete envelope without `END_REVIEW` only on completion evidence and the server appends it; a length stop blocks; tests (owner decision 2026-10-18). |
 | 2.13 | [x] `FEEDBACK-061i` agy retry mapper and resumed turn (#65) | R | - par | `final` mapping documented; fixture for a resumed turn without a conversation id keeps requested id. |
 | 2.14 | [x] `FEEDBACK-061h` acceptance procedure (#66) | P | - par | "Native VS Code acceptance" lists new chats, runtime version check, sequential clients and a tree check after closing a client. |
 | 2.15 | [x] `ACCEPT-001b` isolated user home (#67) | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |

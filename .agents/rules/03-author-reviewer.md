@@ -75,6 +75,8 @@ Before merging significant architectural changes, refactors, or creating Release
    CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
    END_REVIEW
    ```
+   The reviewer ends with `CHECKS`; CoAgent8 appends `END_REVIEW` after it has
+   verified that the turn completed (`ENVELOPE-001`).
 3. Verify expected scope/snapshot and actual check evidence outside the text gate.
    The runtime gate blocks incomplete input, a wrong snapshot, changed workspace
    and failed CHECKS (`CUR-001`, fixed locally). It validates reported outcomes

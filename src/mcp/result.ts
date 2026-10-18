@@ -16,7 +16,7 @@ import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult } from
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
-import { evaluateStateEnvelopeGate, alignEnvelopeReviewTurn, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
+import { evaluateStateEnvelopeGate, alignEnvelopeReviewTurn, appendEnvelopeTerminator, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
 import type { ResolvedWorkspace } from '../workspace/workspace.js';
 import { providerForClient } from '../execution/routing.js';
 
@@ -144,10 +144,13 @@ export function formatExecutionResult(
 
   let verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
   let reason: string | undefined;
+  // Whether the server appends the terminator it owns (ENVELOPE-001).
+  let evaluation: StateEnvelopeEvaluation | undefined;
 
   if (preEvaluatedReview) {
     verdict = preEvaluatedReview.verdict;
     reason = preEvaluatedReview.reason;
+    evaluation = preEvaluatedReview;
   } else if (formatOpts.requireEnvelope) {
     if (res.isError || error) {
       verdict = 'BLOCKED';
@@ -156,7 +159,8 @@ export function formatExecutionResult(
       const reviewCtx = res.denials?.length
         ? { ...formatOpts.reviewContext, observedDenials: res.denials }
         : formatOpts.reviewContext;
-      ({ verdict, reason } = evaluateStateEnvelopeGate(cleaned, res.truncated, true, reviewCtx));
+      evaluation = evaluateStateEnvelopeGate(cleaned, res.truncated, true, reviewCtx, { completed: res.status === 'completed', lengthLimited: res.lengthLimited });
+      ({ verdict, reason } = evaluation);
     }
   } else {
     verdict = 'NOT_APPLICABLE';
@@ -166,6 +170,7 @@ export function formatExecutionResult(
   if (verdict !== 'NOT_APPLICABLE' && executionMeta.turn > 0) {
     output = alignEnvelopeReviewTurn(output, executionMeta.turn);
   }
+  if (verdict !== 'NOT_APPLICABLE' && !error) output = appendEnvelopeTerminator(output, evaluation);
   const parts: string[] = [];
   if (error) {
     parts.push(`Error [${error.code}${error.retryable ? ', retryable' : ''}]: ${error.message}`);
