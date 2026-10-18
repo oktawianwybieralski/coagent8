@@ -1413,7 +1413,11 @@ deferred as research only.
   `mcpName` in `package.json`) as `io.github.oktawianwybieralski/coagent8`, so
   VS Code can show details, README and icon in "MCP Servers - Installed"
   (today only Configuration). Deferred until the GitHub MCP registry lists
-  the server; publication is an owner action.
+  the server; publication is an owner action. Prepared: `server.json`
+  (schema `2025-12-11`, validated) and `mcpName` in `package.json`; the
+  registry checks `mcpName` in the published package, so the first version it
+  can list is `0.7.0`, and `mcp-publisher publish` after that release stays
+  with the owner.
 - [ ] **PROPOSALS-001b - Open VSX.** Reserve the `okidev` namespace on Open
   VSX (used by Cursor, VSCodium and Windsurf) and publish the same VSIX there,
   possibly from the `RELEASE-001d` job.
@@ -1957,7 +1961,7 @@ agent (owner assigns).
 | 3.6 | `DELEGATE-001d1` Claude Code adapter | R | 3.3, 1.14 | The skill tells the agent to run `coagent8 wait` in the background; native check. |
 | 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
-| 3.9 | `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
+| 3.9 | [x] `PROPOSALS-001a` `server.json` and `mcpName` | R | - par | Files added; publication stays an owner action. |
 | 3.10 | [x] `PROPOSALS-001d` (#69) | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
 | 3.10b | [x] `PROPOSALS-001l` (#69) | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
 | 3.11 | [x] `PROPOSALS-001h` cancel description (#69) | R | - par | Description updated within the byte budget. |

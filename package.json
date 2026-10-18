@@ -1,5 +1,6 @@
 {
   "name": "coagent8",
+  "mcpName": "io.github.oktawianwybieralski/coagent8",
   "displayName": "CoAgent8 - MCP bridge to coding CLIs",
   "version": "0.6.1",
   "description": "Expose local coding CLIs through MCP with public conversation history and read-only execution profiles.",

@@ -73,7 +73,7 @@ establish compliance.
 ## 3. Verifiable Reality & Zero Hallucinated Claims
 * **Evidence-Grounded Reporting**: Never claim a milestone, test pass rate, release status, or benchmark unless backed by verifiable, objective execution evidence.
 * **No Weakening Tests**: Never delete, weaken, comment out, or doctor test assertions simply to make a failing suite pass. Tests define the public contract.
-* **Synchronized Metadata**: Package metadata (`package.json`, `package-lock.json`, `plugin.json`), runtime constants (`BRAND.SERVER_VERSION`), and documentation must strictly reflect the actual state of the codebase.
+* **Synchronized Metadata**: Package metadata (`package.json`, `package-lock.json`, `plugin.json`, `server.json`), runtime constants (`BRAND.SERVER_VERSION`), and documentation must strictly reflect the actual state of the codebase.
 * **Honest Development Status**: When a package is in development (e.g. `0.9.0-dev`), documentation must honestly reflect that state rather than prematurely proclaiming a production release.
 
 ---
