@@ -1945,7 +1945,7 @@ agent (owner assigns).
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
-| 3.0 | [x] Confirm `PROPOSALS-001k` to `n` | O | - | Owner accepts or rejects each; the proposal cards record it. |
+| 3.0 | [x] Confirm `PROPOSALS-001k` to `n` (#68) | O | - | Owner accepts or rejects each; the proposal cards record it. |
 | 3.1 | `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (consult) returns a handle at once and the turn runs under owned supervision independent of the request; tests. |
 | 3.2 | `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown stop delegated turns without survivors; tests. |
 | 3.3 | `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `coagent8 wait <handle>` in the CLI; tests. |
@@ -1959,8 +1959,8 @@ agent (owner assigns).
 | 3.10b | `PROPOSALS-001l` | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
 | 3.11 | `PROPOSALS-001h` cancel description | R | - par | Description updated within the byte budget. |
 | 3.12 | `PROPOSALS-001f` pre-push hook | R | - par | Versioned hook and setup instructions; test of the hook script. |
-| 3.13 | [x] `PROPOSALS-001g` rule text | P | - par | Rule and AGENTS.md updated. |
-| 3.13b | [x] `PROPOSALS-001k`, `001n` rule texts | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
+| 3.13 | [x] `PROPOSALS-001g` rule text (#68) | P | - par | Rule and AGENTS.md updated. |
+| 3.13b | [x] `PROPOSALS-001k`, `001n` rule texts (#68) | P | 3.0 | Rules and AGENTS.md updated for the accepted items. |
 | 3.14 | `PROPOSALS-001e` signed-commit ruleset | O | - | Owner adds `required_signatures`; 3.13 aligns the text. |
 | 3.15 | `DOCS-003a` site purpose | P | - | Page list and published documents recorded; reviewed READY. |
 | 3.16 | `DOCS-003b` TypeDoc configuration | R | 3.15 | `npm run docs` passes with the new configuration. |
