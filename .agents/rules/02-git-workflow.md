@@ -300,8 +300,8 @@ become the final commit, so they must meet this section.
   [release acceptance](../../docs/ROADMAP.md#release-acceptance) defines each
   stage's entry gate.
 * The version is changed only in a release PR (section 5), consistently in
-  `package.json`, `package-lock.json`, `plugin.json`, `extensions/vscode/package.json`
-  and `CHANGELOG.md`. Runtime constants read it from `package.json`.
+  `package.json`, `package-lock.json`, `plugin.json`, `extensions/vscode/package.json`,
+  `server.json` (its `version` and `packages[0].version`) and `CHANGELOG.md`. Runtime constants read it from `package.json`.
 * A build from an untagged commit is a development build and is never distributed,
   even though it carries the last version string.
 * Published versions are immutable. A correction is always a new version number;
@@ -363,8 +363,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 7. **Release branch.** `git switch -c release/vX.Y.Z origin/<target>` with one
    commit `chore(release): vX.Y.Z` that only:
    * sets the version with `npm version X.Y.Z --no-git-tag-version` (it updates
-     `package.json` and `package-lock.json`) and in `plugin.json` and
-     `extensions/vscode/package.json`; `git grep -n "<previous version>"` then
+     `package.json` and `package-lock.json`) and in `plugin.json`,
+     `extensions/vscode/package.json` and both versions in `server.json`; `git grep -n "<previous version>"` then
      finds no other manifest still carrying the old number;
    * regenerates `CHANGELOG.md` with `npm run changelog -- --tag vX.Y.Z`.
 

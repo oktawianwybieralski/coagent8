@@ -131,9 +131,31 @@ test('npm, plugin and VS Code manifests share one numeric version', () => {
   const { version } = read('package.json');
   assert.match(version, /^\d+\.\d+\.\d+$/);
   const lock = read('package-lock.json');
-  for (const [name, actual] of [['package-lock.json', lock.version], ['package-lock.json packages[""]', lock.packages[''].version], ['plugin.json', read('plugin.json').version], ['extensions/vscode/package.json', read('extensions/vscode/package.json').version]]) {
+  const server = read('server.json');
+  for (const [name, actual] of [['package-lock.json', lock.version], ['package-lock.json packages[""]', lock.packages[''].version], ['plugin.json', read('plugin.json').version], ['extensions/vscode/package.json', read('extensions/vscode/package.json').version], ['server.json', server.version], ['server.json packages[0]', server.packages[0].version]]) {
     assert.equal(actual, version, `${name} carries the package version`);
   }
+});
+
+test('PROPOSALS-001a: server.json describes the npm package for the MCP Registry', () => {
+  const root = path.resolve(__dirname, '..');
+  const read = name => JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
+  const manifest = read('package.json'), server = read('server.json');
+  // The registry accepts an npm package only when its published package.json names the server.
+  assert.equal(manifest.mcpName, server.name);
+  assert.match(server.name, /^io\.github\.oktawianwybieralski\/[a-zA-Z0-9._-]+$/, 'the GitHub namespace the owner can authenticate');
+  assert.ok(server.description.length <= 100, 'the registry limits the description to 100 characters');
+  assert.equal(server.packages.length, 1);
+  const [pkg] = server.packages;
+  assert.deepEqual({ registryType: pkg.registryType, identifier: pkg.identifier, transport: pkg.transport }, { registryType: 'npm', identifier: manifest.name, transport: { type: 'stdio' } });
+  // New registrations start the server with `mcp` (CLI-FIRST-001a2).
+  assert.deepEqual(pkg.packageArguments, [{ type: 'positional', value: 'mcp' }]);
+  for (const icon of server.icons) {
+    const local = icon.src.match(/^https:\/\/raw\.githubusercontent\.com\/oktawianwybieralski\/coagent8\/develop\/(assets\/[\w.-]+\.png)$/);
+    assert.ok(local, `${icon.src} is a project asset`);
+    assert.ok(manifest.files.includes(local[1]) && fs.existsSync(path.join(root, local[1])), `${local[1]} exists and ships`);
+  }
+  assert.ok(!manifest.files.includes('server.json'), 'registry metadata is published by the owner, not shipped');
 });
 
 test('RELEASE-001a: npm publish script targets ./release/... tarball, validates channel and prerelease flag', () => {

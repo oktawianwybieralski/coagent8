@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.oktawianwybieralski/coagent8",
+  "title": "CoAgent8",
+  "description": "Second opinions and Git reviews from local Codex, Claude Code and Antigravity CLIs.",
+  "repository": {
+    "url": "https://github.com/oktawianwybieralski/coagent8",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/oktawianwybieralski/coagent8",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/oktawianwybieralski/coagent8/develop/assets/logo256.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"],
+      "theme": "light"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/oktawianwybieralski/coagent8/develop/assets/logo256-light.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"],
+      "theme": "dark"
+    }
+  ],
+  "version": "0.6.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "coagent8",
+      "version": "0.6.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}
