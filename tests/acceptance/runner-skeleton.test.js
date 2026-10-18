@@ -74,12 +74,12 @@ test('runner skeleton completes dry run and produces valid evidence JSON (ACCEPT
   assert.ok(stepIds.includes('step_tarball_install'));
   assert.ok(stepIds.includes('step_vsix_install'));
   assert.ok(stepIds.includes('step_runtime_probe'));
-  assert.ok(stepIds.includes('step_scenarios_n2_n4'));
+  assert.ok(stepIds.includes('step_scenarios'));
   assert.ok(stepIds.includes('step_home_preservation'));
 
-  const scenarioStep = evidence.steps.find(s => s.id === 'step_scenarios_n2_n4');
+  const scenarioStep = evidence.steps.find(s => s.id === 'step_scenarios');
   assert.equal(scenarioStep.status, 'NOT_RUN');
-  assert.match(scenarioStep.details, /2\.17/);
+  assert.match(scenarioStep.details, /dry run starts no backend/);
 
   // 6. Validate cleanup of temp root
   assert.deepEqual(fs.readdirSync(tempInstanceRoot), [], 'Temporary instance root must be cleaned up on success');

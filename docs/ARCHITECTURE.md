@@ -1277,21 +1277,77 @@ short-path mismatches on Windows:
   supervisor's abort signal (owned teardown), after which the evidence is written, the
   root removed and the CLI exits 130.
 
-### Backend sign-in inheritance policy for scenario execution (2.17)
+### Backend sign-in for scenario execution (ACCEPT-001a2)
 
-Real backend CLIs (Codex, Claude Code, Antigravity) store access and refresh tokens under the
-user home directory or system credential managers. For automated scenarios in 2.17:
+Real backend CLIs (Codex, Claude Code, Antigravity) keep access and refresh tokens under the
+user's home or in an operating system credential store. The scenarios N2-N4 need them:
 
-1. **Explicit read-only opt-in**: Real backend credentials reach an isolated acceptance home
-   only when an explicit flag (such as `--with-backend-auth`) is provided by the operator.
-2. **Token rotation and primary session safety**: Refresh tokens (such as in Codex `auth.json`)
-   rotate upon session refresh. If an isolated test instance refreshes tokens, the real desktop
-   session may be revoked.
-3. **OS-level credential vaults**: Windows Credential Manager and macOS Keychain are scoped to
-   the user logon session and are not isolated by `HOME` or `USERPROFILE`.
-4. **Current boundary (2.15/2.16)**: Credentials are never copied, accessed, or persisted.
-   Persisted errors pass the runtime's `redactDiagnostic` (credentials, keyword values,
-   home path) and the evidence file has the real and isolated home paths replaced by `~`.
+1. **Explicit opt-in**: sign-in reaches the scenario servers only with `--with-backend-auth`.
+   Without it a native run records the scenarios `NOT_RUN` and ends `INCOMPLETE`. A dry run
+   never starts a backend.
+2. **In place, never copied**: with the flag, each scenario server gets `CODEX_HOME`,
+   `CLAUDE_CONFIG_DIR` and `GEMINI_CLI_HOME` pointing at the user's real roots, a root the
+   user configured through those variables first. Refresh tokens rotate: a refresh in a
+   copy would revoke the token the user's own clients hold, so nothing is copied, and
+   nothing is restored after the run, which could undo a refresh.
+3. **Shared writable backend state**: in-place use is what the user's own CoAgent8 does
+   daily. The CLIs may refresh credentials and write settings, histories and caches in
+   those roots, and they can race a desktop client's refresh; the flag accepts that.
+   `HOME`, `USERPROFILE`, `~/.coagent8` and every client registration stay isolated, and
+   installation and the runtime probe never receive the backend roots. A native CLI may
+   still find the real profile through the operating system: on 2026-10-18 Claude Code
+   2.1.301 refreshed `cachedGrowthBookFeaturesAt` in the real `~/.claude.json` during its
+   first scenario turn. With the flag, the home preservation step accepts a change limited
+   to such an observed backend cache key, names it in `details`, and fails on any other
+   change of a watched file (registrations included); without the flag nothing may change.
+4. **Operating system credential stores** (Windows Credential Manager, macOS Keychain) are
+   scoped to the logon session and are not isolated by any variable.
+5. **CLI resolution in the parent context**: the runner resolves each CLI as the user's
+   runtime would (its `*_PATH` variable, `backends.<id>.executable` in the user's
+   configuration file, then the parent `PATH`) and passes the absolute path through
+   `CODEX_PATH`, `CLAUDE_PATH` and `AGY_PATH`. VS Code settings are not read.
+6. **Redaction**: persisted errors pass the runtime's `redactDiagnostic` (credentials, keyword
+   values, home path) and the evidence file has the real and isolated home paths replaced
+   by `~`.
+
+### Scenarios N2-N4 (ACCEPT-001a2)
+
+The scenarios (`tooling/acceptance/scenarios.cjs`) run the installed npm package as
+`node <prefix>/node_modules/coagent8/dist/index.cjs mcp` through `runCommand` with a stdin
+protocol session (`tooling/acceptance/mcp-client.cjs`), so the supervisor's bounds,
+deadline and owned teardown apply. The client declares no elicitation capability: a model
+that needs approval is refused, never approved by the runner. Two throwaway Git
+repositories under the isolated root serve as workspaces; the first has an uncommitted
+prose change with a seeded contradiction. Each backend uses its default model, as a user
+gets with `auto` (the calls omit `model`, so the server resolves it), unless the operator
+names one with `--model <backend>=<model>`; a default that needs approval fails the health
+step, since the runner never grants it. `--cheapest` takes the lowest-priced model with a
+verified price that needs no approval instead, with the lowest listed effort where one is
+required; cheap models follow the envelope format less reliably and do not represent daily
+use (owner decision 2026-10-18).
+
+| Step | Check |
+| --- | --- |
+| `n2_doctor` | `doctor` health and models return backends and a selection. |
+| `n2_health_<id>` | The backend is installed and can execute; its version, sign-in state and model are recorded. agy reports `unknown` sign-in by design; only an execution proves it. |
+| `n2_consult_<id>` | A consult repeats a nonce; the footer names the backend. |
+| `n3_continuation_<id>` | A follow-up on the handle recalls the nonce without being told it. |
+| `n3_history_<id>` | History pages of two events reach the end with strictly increasing sequences, an advancing cursor and two turns. |
+| `n3_isolation_<id>` | The second workspace neither lists the session nor reads its history. |
+| `n2_review_<id>` | The review returns an envelope, complete coverage and a server verdict, which is recorded, not asserted. |
+| `n3_repeat_<id>` | An unchanged repeat on the handle starts no model turn and keeps the turn count. |
+| `n2_timeout_<id>` | A consult with a 1,000 ms budget fails with `TIMEOUT` naming the budget; a turn that beats it is `NOT_RUN`. |
+| `n4_cancel_<id>` | A second server starts a turn that reads 40 files one by one. After a progress message from the backend's event stream, the first server's `cancel` is refused (another server process owns the turn), the owning server's `cancel` succeeds, the turn returns an error, the lease is released, and the first server reuses the session. A turn that ends before the backend reports work is `NOT_RUN`. |
+| `n3_close` | Once, on the first usable backend: a closed session refuses a turn with `SESSION_INVALID` and keeps its history; `delete_history` removes a disposable session's history. |
+| `n2_quiet` | `NOT_RUN`: a console window cannot be observed headless; the owner checks it. |
+
+A failed scenario is recorded and the next one runs; a scenario whose prerequisite failed
+is `NOT_RUN`. Steps carry `backend` and `package` (`npm`): the VSIX installs into the
+isolated profile, but its runtime copy starts only in the editor, so these steps establish
+the npm package, not the VSIX runtime. The fixture lane
+(`tests/acceptance/scenarios.test.js`) runs every scenario through the built runtime with
+the Codex double in its `acceptance` modes; it proves the scenario logic and server
+behavior, not native sign-in or a real model.
 
 ### Native acceptance evidence contract (ACCEPT-001a1)
 
@@ -1363,6 +1419,8 @@ The runner records execution evidence in JSON format at `.artifacts/acceptance/e
         "properties": {
           "id": { "type": "string" },
           "name": { "type": "string" },
+          "backend": { "type": "string", "enum": ["codex", "claude", "agy"] },
+          "package": { "type": "string", "enum": ["npm"] },
           "status": { "type": "string", "enum": ["PASS", "FAIL", "NOT_RUN"] },
           "durationMs": { "type": "number" },
           "details": { "type": "string" },
@@ -1387,8 +1445,9 @@ above the 64 MiB archive bound are refused before they are read or hashed.
 The home preservation step runs after a failed step as well. A step that cannot obtain
 its observation fails: a VS Code version probe that does not exit 0 with a version fails
 the host step. A dry run installs synthetic candidates, does not probe or install VS Code
-(the host and VSIX steps say so in `details`) and, while scenarios N2-N4 are `NOT_RUN`,
-ends `INCOMPLETE`, never `PASS`.
+(the host and VSIX steps say so in `details`), records the scenarios `NOT_RUN` and ends
+`INCOMPLETE`, never `PASS`. Schema version `1.1.0` adds the scenario steps' `backend` and
+`package`; a native run with scenarios adds `step_backend_cli`.
 
 ## Code documentation and package evidence
 
