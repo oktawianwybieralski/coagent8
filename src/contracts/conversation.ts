@@ -11,7 +11,8 @@ import type { ExecutionError } from './error.js';
  * Tokens one turn used, as the backend reported them (`AX-001a`).
  * @remarks An absent field is unknown, never zero. `inputTokens` counts every input token
  * the model processed, cached ones included; `cachedInputTokens` and
- * `cacheWriteInputTokens` are the parts read from and written to the prompt cache.
+ * `cacheWriteInputTokens` are the parts read from and written to the prompt cache, and
+ * `cacheWriteLongInputTokens` the part of the writes kept for an hour instead of minutes.
  * `outputTokens` counts every output token, reasoning included; `reasoningTokens` is the
  * reasoning part. These are counts, not billing: a subscription CLI may charge nothing per
  * token, and a list-price equivalent is a separate calculation.
@@ -21,6 +22,7 @@ export interface TokenUsage {
   inputTokens?: number;
   cachedInputTokens?: number;
   cacheWriteInputTokens?: number;
+  cacheWriteLongInputTokens?: number;
   outputTokens?: number;
   reasoningTokens?: number;
   totalTokens?: number;

@@ -114,7 +114,7 @@ export function validateEvent(event: AdapterEvent): void {
   }
 }
 
-const USAGE_COUNTS = ['inputTokens', 'cachedInputTokens', 'cacheWriteInputTokens', 'outputTokens', 'reasoningTokens', 'totalTokens'] as const;
+const USAGE_COUNTS = ['inputTokens', 'cachedInputTokens', 'cacheWriteInputTokens', 'cacheWriteLongInputTokens', 'outputTokens', 'reasoningTokens', 'totalTokens'] as const;
 
 /** Whether a value is a {@link TokenUsage} with only known non-negative integer counts. */
 function validUsage(value: unknown): value is TokenUsage {

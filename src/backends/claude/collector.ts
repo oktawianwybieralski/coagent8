@@ -173,10 +173,14 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       const uncached = data.input_tokens, read = data.cache_read_input_tokens, write = data.cache_creation_input_tokens;
       const output = data.output_tokens, thinking = record(data.output_tokens_details)?.thinking_tokens;
       const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
+      // Writes kept for an hour have their own list price; the split counts only when it adds up.
+      const classes = record(data.cache_creation), short = classes?.ephemeral_5m_input_tokens, long = classes?.ephemeral_1h_input_tokens;
+      const longWrite = known(write) && known(short) && known(long) && short + long === write ? long : undefined;
       const counts: NonNullable<typeof usage> = { source: 'provider',
         ...(input !== undefined ? { inputTokens: input } : {}),
         ...(known(read) ? { cachedInputTokens: read } : {}),
         ...(known(write) ? { cacheWriteInputTokens: write } : {}),
+        ...(longWrite !== undefined ? { cacheWriteLongInputTokens: longWrite } : {}),
         ...(known(output) ? { outputTokens: output } : {}),
         ...(known(thinking) ? { reasoningTokens: thinking } : {}),
         ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}) };

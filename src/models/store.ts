@@ -60,6 +60,15 @@ export interface PriceRecord {
   input: number | null;
   /** Cached input read; null when the list states none. */
   cachedInput: number | null;
+  /** Cache writes kept for minutes; null when the list states none, absent in older stores. */
+  cacheWrite?: number | null;
+  /** Cache writes kept for an hour; null when the list states none, absent in older stores. */
+  cacheWriteLong?: number | null;
+  /**
+   * The prompt size in tokens from which other prices apply; null for one price, absent in
+   * stores written before tiers were read.
+   */
+  tieredFrom?: number | null;
   /** The list entry the prices belong to. */
   matched: string;
   /** False when the entry was found only by a looser name comparison. */
@@ -149,7 +158,15 @@ function parsePriceRecord(value: unknown): PriceRecord | null | undefined {
     || typeof price.matched !== 'string' || price.matched.length > 128 || typeof price.exact !== 'boolean') return undefined;
   const released = price.released;
   if (released !== undefined && released !== null && !isValidReleaseDate(released)) return undefined;
-  return { output: price.output, input: price.input, cachedInput: price.cachedInput, matched: price.matched, exact: price.exact, released: released ?? null };
+  const optional = (value: unknown) => value === undefined || value === null || isPrice(value);
+  const tier = price.tieredFrom;
+  if (!optional(price.cacheWrite) || !optional(price.cacheWriteLong)
+    || !(tier === undefined || tier === null || (typeof tier === 'number' && Number.isSafeInteger(tier) && tier >= 0))) return undefined;
+  return { output: price.output, input: price.input, cachedInput: price.cachedInput,
+    ...(price.cacheWrite !== undefined ? { cacheWrite: price.cacheWrite as number | null } : {}),
+    ...(price.cacheWriteLong !== undefined ? { cacheWriteLong: price.cacheWriteLong as number | null } : {}),
+    ...(tier !== undefined ? { tieredFrom: tier as number | null } : {}),
+    matched: price.matched, exact: price.exact, released: released ?? null };
 }
 
 /** Validates stored prices; any invalid model entry discards them all, so a damaged file is read again. */

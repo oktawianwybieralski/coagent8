@@ -20,7 +20,7 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 const now = Date.now();
 const listed = [['openai/gpt-6-sol', 10], ['openai/gpt-6-luna', 0.5], ['openai/gpt-5.6-luna', 1.2], ['openai/gpt-6-terra', 4.9999],
   ['google/gemini-3.8-flash', 3.75], ['google/gemini-3.1-pro-preview', 12], ['anthropic/claude-haiku-4.5', 5], ['other/gpt-6-luna', 0.7]]
-  .map(([id, output]) => ({ id, output, input: null, cachedInput: null, released: null }));
+  .map(([id, output]) => ({ id, output, input: null, cachedInput: null, cacheWrite: null, cacheWriteLong: null, tieredFrom: null, released: null }));
 const offered = ['gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-terra', 'gpt-6-astra', 'mystery', 'gemini-3.1-pro-low', 'claude-haiku-4-5[1m]', 'claude-haiku-4-5',
   'gemini-3.8-flash', 'gemini-3.8-flash-high', 'gemini-3.8-flash-low', 'gemini-3.8-flash-max', 'claude-haiku-4-5-20251001'];
 const list = { fetchedAt: now, source: 'openrouter', models: matchPrices(listed, offered) };
@@ -53,7 +53,7 @@ test('unknown, approximate, missing and stale prices never meet a limit, however
 
 test('aliases match exactly through effort and date suffixes; the evidence names the list entry', () => {
   assert.deepEqual({ ...priceEvidence(list, 'gemini-3.8-flash-high', now), fetchedAt: undefined },
-    { outputUsdPerMTok: 3.75, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'openrouter', fetchedAt: undefined, stale: false, released: null });
+    { outputUsdPerMTok: 3.75, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, cacheWriteUsdPerMTok: null, cacheWriteLongUsdPerMTok: null, tieredFromInputTokens: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'openrouter', fetchedAt: undefined, stale: false, released: null });
   assert.equal(priceEvidence(list, 'claude-haiku-4-5-20251001', now).match, 'exact');
   assert.equal(priceEvidence(list, 'claude-haiku-4-5-20251001', now).outputUsdPerMTok, 5);
 });
@@ -72,7 +72,23 @@ test('invalid price fields are left out of a list, never read as a price', () =>
   ] });
   assert.deepEqual(entries.map(entry => [entry.id, entry.output]), [['a/ok', 2], ['a/numeric', 0.1]], 'null or empty is no price, not a free model');
   assert.deepEqual(parsePriceList({ data: [{ id: 'a/x', pricing: { completion: '0.000004', prompt: '', input_cache_read: '0.0000001' } }] }),
-    [{ id: 'a/x', output: 4, input: null, cachedInput: 0.1, released: null }], 'an empty input price is unknown, not free');
+    [{ id: 'a/x', output: 4, input: null, cachedInput: 0.1, cacheWrite: null, cacheWriteLong: null, tieredFrom: null, released: null }], 'an empty input price is unknown, not free');
+});
+
+test('AX-001g: cache-write prices by how long writes are kept, and where prompt-size tiers start', () => {
+  const read = pricing => parsePriceList({ data: [{ id: 'a/x', pricing: { completion: '0.00002', ...pricing } }] })[0];
+  // Opus 5.5 and gpt-6.1-sol as OpenRouter lists them.
+  const opus = read({ prompt: '0.000004', input_cache_read: '0.0000002', input_cache_write: '0.000005', input_cache_write_1h: '0.000008' });
+  assert.deepEqual([opus.cacheWrite, opus.cacheWriteLong, opus.tieredFrom], [5, 8, null]);
+  const sol = read({ input_cache_write: '0.0000025', overrides: [{ min_prompt_tokens: 272000, prompt: '0.000004' }, { min_prompt_tokens: 1000000 }] });
+  assert.deepEqual([sol.cacheWrite, sol.cacheWriteLong, sol.tieredFrom], [2.5, null, 272000], 'the smallest tier start');
+  assert.equal(read({ overrides: [] }).tieredFrom, null);
+  for (const overrides of [{}, 'x', [{ prompt: '1' }], [{ min_prompt_tokens: -1 }], [{ min_prompt_tokens: '272000' }]]) {
+    assert.equal(read({ overrides }).tieredFrom, 0, `unreadable tiers ${JSON.stringify(overrides)} withhold amounts`);
+  }
+  const old = { fetchedAt: now, source: 'openrouter', models: { 'gpt-6-sol': { output: 10, input: 2, cachedInput: 0.1, matched: 'openai/gpt-6-sol', exact: true, released: null } } };
+  const evidence = priceEvidence(old, 'gpt-6-sol', now);
+  assert.deepEqual([evidence.cacheWriteUsdPerMTok, evidence.cacheWriteLongUsdPerMTok, evidence.tieredFromInputTokens], [null, null, 0], 'a list stored before tiers were read');
 });
 
 test('a turn with a limit reads a stale list again and keeps it stale when the source fails', async () => {
@@ -767,14 +783,17 @@ test('parsePriceList reads created Unix seconds as released YYYY-MM-DD (AX-002e)
 
 test('matchPrices takes the release date from the entry whose price it keeps (AX-002e)', () => {
   const entries = [
-    { id: 'other/model-a', output: 1.0, input: null, cachedInput: null, released: '2026-01-01' },
-    { id: 'openai/model-a', output: 2.0, input: null, cachedInput: null, released: '2026-05-01' },
+    { id: 'other/model-a', output: 1.0, input: null, cachedInput: null, cacheWrite: null, cacheWriteLong: null, tieredFrom: null, released: '2026-01-01' },
+    { id: 'openai/model-a', output: 2.0, input: null, cachedInput: null, cacheWrite: 2.5, cacheWriteLong: null, tieredFrom: 272000, released: '2026-05-01' },
   ];
   const matched = matchPrices(entries, ['model-a']);
   assert.deepEqual(matched['model-a'], {
     output: 2.0,
     input: null,
     cachedInput: null,
+    cacheWrite: 2.5,
+    cacheWriteLong: null,
+    tieredFrom: 272000,
     matched: 'openai/model-a',
     exact: true,
     released: '2026-05-01',
@@ -813,6 +832,8 @@ test('stored prices carry released date and round-trip through store, and versio
     models: {
       'gpt-6-sol': { output: 10, input: null, cachedInput: null, matched: 'openai/gpt-6-sol', exact: true, released: '2026-09-10' },
       'undated-model': { output: 5, input: null, cachedInput: null, matched: 'openai/undated-model', exact: true, released: null },
+      'claude-opus-5-5': { output: 20, input: 4, cachedInput: 0.2, cacheWrite: 5, cacheWriteLong: 8, tieredFrom: null, matched: 'anthropic/claude-opus-5.5', exact: true, released: '2026-09-22' },
+      'gpt-6.1-sol': { output: 10, input: 2, cachedInput: 0.1, cacheWrite: 2.5, cacheWriteLong: null, tieredFrom: 272000, matched: 'openai/gpt-6.1-sol', exact: true, released: '2026-09-29' },
     },
   };
   await recordPrices(newPrices);
@@ -836,5 +857,10 @@ test('stored prices reject invalid calendar dates or dates outside 2000..2100', 
       },
     }));
     assert.equal(readStoredPrices(), undefined, `stored prices with date ${badDate} must be rejected as invalid`);
+  }
+  for (const bad of [{ cacheWrite: -1 }, { cacheWriteLong: 'x' }, { tieredFrom: 1.5 }, { tieredFrom: -1 }]) {
+    fs.writeFileSync(storeFile, JSON.stringify({ schemaVersion: 3, backends: {}, prices: { fetchedAt: now, source: 'openrouter',
+      models: { m: { output: 1, input: null, cachedInput: null, matched: 'a/m', exact: true, released: null, ...bad } } } }));
+    assert.equal(readStoredPrices(), undefined, `stored ${JSON.stringify(bad)} is rejected`);
   }
 });

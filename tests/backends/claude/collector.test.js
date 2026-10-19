@@ -33,7 +33,7 @@ test('Claude collector streams deltas, final message, usage and the session from
   assert.equal(snapshot.usage.outputTokens, 48);
   assert.equal(snapshot.usage.inputTokens, 10 + 2010 + 4570);
   // AX-001c: cache reads, cache writes and thinking are the reported parts; nothing is invented.
-  assert.deepEqual(snapshot.usage, { source: 'provider', inputTokens: 6590, outputTokens: 48, totalTokens: 6638, cachedInputTokens: 4570, cacheWriteInputTokens: 2010, reasoningTokens: 41 });
+  assert.deepEqual(snapshot.usage, { source: 'provider', inputTokens: 6590, outputTokens: 48, totalTokens: 6638, cachedInputTokens: 4570, cacheWriteInputTokens: 2010, cacheWriteLongInputTokens: 2010, reasoningTokens: 41 });
 });
 
 test('Claude collector reports read tool activity and a refused write as a completed answer', () => {
@@ -146,4 +146,8 @@ test('AX-001c: partial Claude usage keeps the reported counts and sums only comp
     'without cache fields the inclusive input and total are unknown');
   assert.deepEqual(collect(withUsage({ cache_read_input_tokens: 5, output_tokens: 7 })).snapshot.usage, { source: 'provider', cachedInputTokens: 5, outputTokens: 7 });
   assert.equal(collect(withUsage({ unrelated: 1 })).snapshot.usage, undefined, 'no reported count, no usage');
+  const writes = (cache_creation) => collect(withUsage({ input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 30, output_tokens: 4, cache_creation })).snapshot.usage;
+  assert.equal(writes({ ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 20 }).cacheWriteLongInputTokens, 20, 'the hour-long part of the writes');
+  assert.equal(writes({ ephemeral_5m_input_tokens: 10, ephemeral_1h_input_tokens: 5 }).cacheWriteLongInputTokens, undefined, 'a split that does not add up is unknown');
+  assert.equal(writes(undefined).cacheWriteLongInputTokens, undefined, 'no split reported');
 });

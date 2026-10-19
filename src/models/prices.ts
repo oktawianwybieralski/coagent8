@@ -50,6 +50,15 @@ export interface ListedPrice {
   output: number;
   input: number | null;
   cachedInput: number | null;
+  /** Cache writes kept for minutes; null when the list states none. */
+  cacheWrite: number | null;
+  /** Cache writes kept for an hour; null when the list states none. */
+  cacheWriteLong: number | null;
+  /**
+   * The smallest prompt, in tokens, from which other prices apply (`overrides`); null when
+   * the entry has one price for every prompt, 0 when its tiers cannot be read.
+   */
+  tieredFrom: number | null;
   released: string | null;
 }
 
@@ -81,7 +90,9 @@ function parseReleaseDate(raw: unknown): string | null {
 }
 
 /**
- * Reads an OpenRouter-shaped `{ data: [{ id, pricing: { completion, prompt, input_cache_read }, created }] }`.
+ * Reads an OpenRouter-shaped `{ data: [{ id, pricing, created }] }`, where `pricing` holds
+ * `completion`, `prompt`, `input_cache_read`, `input_cache_write`, `input_cache_write_1h`
+ * and `overrides`.
  * @returns The entries with an output price, or undefined when the payload has none.
  * Variants (`:batch`, `:free`) are left out.
  */
@@ -95,9 +106,22 @@ export function parsePriceList(payload: unknown): ListedPrice[] | undefined {
     const output = perMillion(pricing?.completion);
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(id) || output === null) continue;
     const released = parseReleaseDate(entry?.created);
-    entries.push({ id, output, input: perMillion(pricing?.prompt), cachedInput: perMillion(pricing?.input_cache_read), released });
+    entries.push({ id, output, input: perMillion(pricing?.prompt), cachedInput: perMillion(pricing?.input_cache_read),
+      cacheWrite: perMillion(pricing?.input_cache_write), cacheWriteLong: perMillion(pricing?.input_cache_write_1h), tieredFrom: tierStart(pricing?.overrides), released });
   }
   return entries.length ? entries : undefined;
+}
+
+/**
+ * Where the prices of an entry start to depend on the prompt size: the smallest
+ * `min_prompt_tokens` of its `overrides`.
+ * @returns null without overrides; 0 when they cannot be read, so no amount is computed.
+ */
+function tierStart(raw: unknown): number | null {
+  if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0)) return null;
+  if (!Array.isArray(raw)) return 0;
+  const starts = raw.map(item => record(item)?.min_prompt_tokens);
+  return starts.every(start => typeof start === 'number' && Number.isSafeInteger(start) && start >= 0) ? Math.min(...starts as number[]) : 0;
 }
 
 function normalize(name: string): string {
@@ -124,7 +148,8 @@ export function matchPrices(entries: readonly ListedPrice[], models: Iterable<st
   }
   const highest = (found: ListedPrice[], exact: boolean): PriceRecord => {
     const top = found.reduce((best, entry) => entry.output > best.output ? entry : best);
-    return { output: top.output, input: top.input, cachedInput: top.cachedInput, matched: top.id, exact, released: top.released };
+    return { output: top.output, input: top.input, cachedInput: top.cachedInput, cacheWrite: top.cacheWrite, cacheWriteLong: top.cacheWriteLong,
+      tieredFrom: top.tieredFrom, matched: top.id, exact, released: top.released };
   };
   const match = (model: string): PriceRecord | null => {
     const variant = /\[[^\]]*\]$/.test(model);
@@ -555,6 +580,15 @@ export interface PriceEvidence {
   inputUsdPerMTok: number | null;
   /** USD per million cached input tokens read; null when unknown. */
   cachedInputUsdPerMTok: number | null;
+  /** USD per million input tokens written to the cache for minutes; null when unknown. */
+  cacheWriteUsdPerMTok: number | null;
+  /** USD per million input tokens written to the cache for an hour; null when unknown. */
+  cacheWriteLongUsdPerMTok: number | null;
+  /**
+   * The prompt size in tokens from which other prices apply; null when one price applies to
+   * every prompt, 0 when unknown (a list stored before tiers were read).
+   */
+  tieredFromInputTokens: number | null;
   /** The list entry the price belongs to; null when unknown. */
   matched: string | null;
   match: PriceMatch;
@@ -575,12 +609,15 @@ export interface PriceEvidence {
  * @param now - Milliseconds since the epoch, for staleness.
  */
 export function priceEvidence(list: PriceList | undefined, model: string, now = Date.now()): PriceEvidence {
-  if (!list) return { outputUsdPerMTok: null, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, matched: null, match: 'unknown', source: null, fetchedAt: null, stale: false, released: null };
+  if (!list) return { outputUsdPerMTok: null, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, cacheWriteUsdPerMTok: null, cacheWriteLongUsdPerMTok: null, tieredFromInputTokens: 0, matched: null, match: 'unknown', source: null, fetchedAt: null, stale: false, released: null };
   const price = findPrice(list, model);
   return {
     outputUsdPerMTok: price?.output ?? null,
     inputUsdPerMTok: price?.input ?? null,
     cachedInputUsdPerMTok: price?.cachedInput ?? null,
+    cacheWriteUsdPerMTok: price?.cacheWrite ?? null,
+    cacheWriteLongUsdPerMTok: price?.cacheWriteLong ?? null,
+    tieredFromInputTokens: price && price.tieredFrom !== undefined ? price.tieredFrom : 0,
     matched: price?.matched ?? null,
     match: !price ? 'unknown' : price.exact ? 'exact' : 'approximate',
     source: list.source,
