@@ -1486,6 +1486,13 @@ every scenario; these findings are fixed before the tag (owner direction
   session whose repository was deleted could not be closed (`workspace path
   does not exist`). Session list, history and close accept an absolute path
   that no longer exists; ownership is still checked.
+- [x] **FEEDBACK-070d - name binary changes instead of omitting input.** A
+  branch that deleted two images could never pass review: every binary
+  change made the collected input PARTIAL, the prompt said omitted input
+  prevents READY, and every reviewer answered BLOCKED. Binary files are now
+  listed with their status, the snapshot digest binds their content, and
+  READY states `N binary files not reviewed` (owner decision 2026-10-20).
+  Submodules, byte budgets and index flags still make the input PARTIAL.
 - Observations without a change: agy reviews of a one-line defect took
   112-300 s and up to 36 operations, with a sandbox-denial warning that does
   not name the action; the closed-session footer reads `CLI · provider
@@ -2116,7 +2123,7 @@ agent (owner assigns).
 | 5.8 | [x] `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.4, 5.6-5.7 | Rule 02 describes the automated phases. |
 | 5.9 | Release PR `0.7.0` | R | merged agent rows; manual Marketplace path accepted by owner on 2026-10-19 | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
-| 5.10a | [x] `FEEDBACK-070a`-`c` acceptance findings | R | 5.10 | Fixed with regression tests before the tag; the release PR is rebuilt and accepted again on its new artifacts. |
+| 5.10a | [x] `FEEDBACK-070a`-`d` acceptance findings | R | 5.10 | Fixed with regression tests before the tag; the release PR is rebuilt and accepted again on its new artifacts. |
 | 5.11 | Independent release review | R | 5.10a | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
 | 5.13 | `PLUGIN-001f` | N | 5.12 | Plugin install, update and removal per client against the published `0.8.0` package; plugin paths documented only after it passes. |

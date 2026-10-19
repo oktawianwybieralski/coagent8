@@ -74,6 +74,11 @@ export interface ReviewGateContext {
   expectedSnapshot?: string;
   inputComplete?: boolean;
   requiredChecks?: readonly ('typecheck' | 'tests')[];
+  /**
+   * Binary files the scope changes, named but not reviewable as text: a READY says so,
+   * as it does for checks that did not run (`FEEDBACK-070d`).
+   */
+  unreviewedBinaryFiles?: number;
   invalidatedReason?: string;
   requiredFiles?: readonly string[];
   observedDenials?: readonly { path?: string; operation?: string; reason?: string }[];
@@ -279,9 +284,13 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
         reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied',
       };
     }
-    return notRunChecks.length
-      ? { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}), reason: `${notRunChecks.join(' and ')} not run` }
-      : { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}) };
+    const binaries = context?.unreviewedBinaryFiles ?? 0;
+    const caveats = [
+      ...(notRunChecks.length ? [`${notRunChecks.join(' and ')} not run`] : []),
+      ...(binaries ? [`${binaries} binary ${binaries === 1 ? 'file' : 'files'} not reviewed`] : []),
+    ];
+    return { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}),
+      ...(caveats.length ? { reason: caveats.join('; ') } : {}) };
   }
 
   return { verdict: 'NOT_APPLICABLE' };

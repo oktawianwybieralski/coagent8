@@ -21,10 +21,12 @@ test('F21: isolated Git fixture covers staged/uncommitted/SHA/branch/range, untr
     fs.writeFileSync(path.join(sub,'new file.txt'),'UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}\n');fs.writeFileSync(path.join(sub,'binary.bin'),Buffer.from([0,1,2]));
     fs.writeFileSync(path.join(sub,'too-large.txt'),'x'.repeat(256*1024+1));
     const work=await collectGitScope('uncommitted',sub);
-    assert.equal(work.inputComplete, false, 'binary and oversized files make coverage incomplete');
-    assert.ok(work.omissions.some(reason => reason.includes('Binary')));
+    assert.equal(work.inputComplete, false, 'an oversized file makes coverage incomplete');
+    assert.ok(!work.omissions.some(reason => reason.includes('Binary')), 'a binary file is named, not omitted (FEEDBACK-070d)');
+    assert.deepEqual(work.binaryFiles.map(({ path: file, status }) => [file, status]), [['binary.bin', 'added']]);
+    assert.match(work.binaryFiles[0].id, /^sha256:[0-9a-f]{64}$/);
     assert.ok(work.omissions.some(reason => reason.includes('oversized')));
-    for(const text of ['staged change','unstaged change','UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}','Binary file omitted','oversized file'])assert.ok(work.diff.includes(text),text);
+    for(const text of ['staged change','unstaged change','UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}','Binary file not collected','oversized file'])assert.ok(work.diff.includes(text),text);
     assert.ok(!work.diff.includes('OUTSIDE_'));
     const staged=await collectGitScope('staged',sub);assert.ok(staged.diff.includes('staged change'));assert.ok(!staged.diff.includes('unstaged change'));assert.ok(!staged.diff.includes('UNTRACKED_CONTENT'));
     for(const [scope,type] of [[sha,'commit'],['fixture-base','branch'],['fixture-base..HEAD','range'],['HEAD','commit']]) {
@@ -68,6 +70,34 @@ test('snapshotId names the reviewed snapshot for every scope, including a reposi
     assert.equal(await snapshotId(await collectGitScope('HEAD~1', root), root), base);
     assert.equal(await snapshotId(await collectGitScope('base', root), root), `base...${head}`);
     assert.equal(await snapshotId(await collectGitScope('base..HEAD', root), root), 'base..HEAD');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('FEEDBACK-070d: committed binary changes are named with their blob ids, not omitted', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-git-binary-'));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    fs.writeFileSync(path.join(root, 'kept.png'), Buffer.from([0x89, 0, 1])); fs.writeFileSync(path.join(root, 'gone.jpg'), Buffer.from([0xff, 0, 2]));
+    git('add', '.'); git('commit', '-qm', 'base'); git('branch', 'base');
+    fs.writeFileSync(path.join(root, 'kept.png'), Buffer.from([0x89, 0, 3])); fs.rmSync(path.join(root, 'gone.jpg'));
+    fs.writeFileSync(path.join(root, 'new.ico'), Buffer.from([0, 0, 4])); fs.writeFileSync(path.join(root, 'notes.txt'), 'text\n');
+    git('add', '-A'); git('commit', '-qm', 'binaries');
+    for (const scope of ['base..HEAD', 'base', 'HEAD']) {
+      const info = await collectGitScope(scope, root);
+      assert.equal(info.inputComplete, true, scope);
+      assert.deepEqual(info.omissions, [], scope);
+      const byPath = Object.fromEntries(info.binaryFiles.map(file => [file.path, file]));
+      assert.deepEqual(Object.keys(byPath).sort(), ['gone.jpg', 'kept.png', 'new.ico'], scope);
+      assert.equal(byPath['gone.jpg'].status, 'deleted');
+      assert.equal(byPath['gone.jpg'].id, 'deleted');
+      assert.equal(byPath['kept.png'].status, 'modified');
+      assert.equal(byPath['kept.png'].id, git('rev-parse', 'HEAD:kept.png'), `${scope}: the reviewed blob`);
+      assert.equal(byPath['new.ico'].status, 'added');
+      assert.equal(byPath['new.ico'].id, git('rev-parse', 'HEAD:new.ico'));
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

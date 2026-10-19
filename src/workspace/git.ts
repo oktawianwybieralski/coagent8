@@ -7,6 +7,7 @@
 import { runCommand } from '../execution/process.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { readBoundedFile } from '../storage/read.js';
 import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { ToolError } from '../contracts/error.js';
@@ -25,6 +26,31 @@ export interface GitScopeInfo {
   omissions: string[];
   /** NUL-delimited Git inventory, decoded independently of human-readable diff headers. */
   changedPaths: string[];
+  /**
+   * Binary files the scope changes: named, with an identity of their content, but not
+   * collected, since a model cannot review them as text (`FEEDBACK-070d`).
+   */
+  binaryFiles: BinaryChange[];
+}
+
+/** One binary file a review scope changes. */
+export interface BinaryChange {
+  path: string;
+  status: 'added' | 'deleted' | 'modified';
+  /** Git blob id or SHA-256 of the reviewed content; `deleted` for a removal. */
+  id: string;
+}
+
+/** Binary files named in a diff by Git's `Binary files a/<path> and b/<path> differ` line. */
+function diffBinaries(diff: string): Omit<BinaryChange, 'id'>[] {
+  const found: Omit<BinaryChange, 'id'>[] = [];
+  for (const line of diff.split(/\r?\n/)) {
+    const match = /^Binary files (?:a\/(.+?)|\/dev\/null) and (?:b\/(.+?)|\/dev\/null) differ$/.exec(line);
+    if (!match) continue;
+    const [, before, after] = match;
+    found.push({ path: (after ?? before)!, status: before === undefined ? 'added' : after === undefined ? 'deleted' : 'modified' });
+  }
+  return found;
 }
 
 export const GIT_DIFF_PATHSPEC_EXCLUSIONS: readonly string[] = [
@@ -200,10 +226,11 @@ export async function collectGitScope(
 ): Promise<GitScopeInfo> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
   const omissions: string[] = [];
+  const untrackedBinaries: string[] = [];
   const git = (args: string[]) => runGit(args, workspaceCwd, abortSignal, 15000,
     () => { omissions.push('Git command output exceeded its byte budget.'); }, context);
-  const describe = async (info: Omit<GitScopeInfo, 'inputComplete' | 'omissions' | 'changedPaths'>): Promise<GitScopeInfo> => {
-    if (/^Binary files .* differ$|^GIT binary patch$|^Submodule |^[+-]Subproject commit |^(?:new|deleted) file mode 160000$/m.test(info.diff)) omissions.push('Binary or submodule contents were omitted.');
+  const describe = async (info: Omit<GitScopeInfo, 'inputComplete' | 'omissions' | 'changedPaths' | 'binaryFiles'>): Promise<GitScopeInfo> => {
+    if (/^GIT binary patch$|^Submodule |^[+-]Subproject commit |^(?:new|deleted) file mode 160000$/m.test(info.diff)) omissions.push('Submodule contents were omitted.');
     const index = await git(['ls-files', '--stage', '-z', '--', '.']);
     if (/\b160000 [0-9a-f]+ [0-3]\t/.test(index)) omissions.push('Workspace contains submodules whose contents are not collected.');
     if (/(?:^|\0)\d{6} [0-9a-f]+ [123]\t/.test(index)) omissions.push('Unmerged index entries prevent a complete snapshot.');
@@ -220,7 +247,46 @@ export async function collectGitScope(
     else inventory = await git(['diff', ...names, info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!, '--', '.']);
     const changedPaths = [...new Set(inventory.split('\0').filter(Boolean))].filter(file => !isExcludedPath(file));
     const diff = boundedSnapshot(info.diff, omissions);
-    return { ...info, diff, changedPaths, inputComplete: omissions.length === 0, omissions };
+    const binaryFiles = await identifyBinaries(info, [...diffBinaries(info.diff), ...untrackedBinaries.map(file => ({ path: file, status: 'added' as const }))]);
+    return { ...info, diff, changedPaths, binaryFiles, inputComplete: omissions.length === 0, omissions };
+  };
+  /**
+   * Gives each binary change the identity of its reviewed content, so an unchanged repeat is
+   * recognized only when those bytes are unchanged too: the blob id for a revision or the
+   * index, the SHA-256 of the file for the working tree.
+   */
+  const identifyBinaries = async (info: Pick<GitScopeInfo, 'type' | 'revision'>, changes: Omit<BinaryChange, 'id'>[]): Promise<BinaryChange[]> => {
+    if (!changes.length) return [];
+    const paths = changes.filter(change => change.status !== 'deleted').map(change => change.path);
+    const blobs = new Map<string, string>();
+    if (paths.length && info.type !== 'uncommitted') {
+      const raw = info.type === 'staged' ? await git(['ls-files', '-s', '-z', '--', ...paths])
+        : info.type === 'commit' ? await git(['show', '--raw', '--no-abbrev', '--format=', '-z', info.revision!, '--', ...paths])
+        : await git(['diff', '--raw', '--no-abbrev', '-z', info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!, '--', ...paths]);
+      const fields = raw.split('\0');
+      if (info.type === 'staged') {
+        for (const entry of fields) {
+          const match = /^\d{6} ([0-9a-f]{40,64}) \d\t(.+)$/.exec(entry);
+          if (match) blobs.set(match[2], match[1]);
+        }
+      } else {
+        // `--raw -z`: a `:<modes> <old> <new> <status>` field, then the path.
+        for (let i = 0; i + 1 < fields.length; i += 2) {
+          const match = /^:\d{6} \d{6} [0-9a-f]+ ([0-9a-f]{40,64}) /.exec(fields[i].replace(/^\n/, ''));
+          if (match) blobs.set(fields[i + 1], match[1]);
+        }
+      }
+    }
+    const root = info.type === 'uncommitted' ? await fs.realpath(workspaceCwd) : '';
+    return Promise.all(changes.map(async change => {
+      if (change.status === 'deleted') return { ...change, id: 'deleted' };
+      if (info.type !== 'uncommitted') return { ...change, id: blobs.get(change.path) ?? 'unknown' };
+      try {
+        return { ...change, id: `sha256:${createHash('sha256').update(await fs.readFile(path.resolve(root, change.path))).digest('hex')}` };
+      } catch {
+        return { ...change, id: 'unreadable' };
+      }
+    }));
   };
   const scope = typeof rawScope === 'string' && rawScope.trim() ? rawScope.trim() : 'uncommitted';
 
@@ -278,8 +344,8 @@ export async function collectGitScope(
           const real = await fs.realpath(file);
           if (!real.startsWith(root + path.sep)) { omissions.push(`File outside workspace: ${filename}`); diff += `\n[Omitted file outside workspace: ${filename}]`; continue; }
           const text = await readBoundedFile(file, 256 * 1024);
-          if (text.includes('\0')) omissions.push(`Binary file omitted: ${filename}`);
-          diff += text.includes('\0') ? `\n[Binary file omitted: ${filename}]` : `\n--- ${filename} ---\n${text}\n`;
+          if (text.includes('\0')) untrackedBinaries.push(filename);
+          diff += text.includes('\0') ? `\n[Binary file not collected: ${filename}]` : `\n--- ${filename} ---\n${text}\n`;
         } catch { omissions.push(`Unreadable or oversized file: ${filename}`); diff += `\n[Omitted unreadable or oversized file: ${filename}]`; }
       }
     }

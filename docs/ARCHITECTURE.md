@@ -408,9 +408,13 @@ or release artifact hashes. Independent evidence is still required.
 
 Git stdout: 4 MiB per command; composed snapshot: 3 MiB; each untracked file:
 256 KiB. Omissions/truncation block READY. Dist/maps/lockfiles are deliberately
-excluded and require separate release coverage. Binary/gitlink contents, unmerged
-entries and submodule limitations prevent complete approval; hidden index flags
-refuse review. Changed-path classification uses NUL-delimited paths/rename sources.
+excluded and require separate release coverage. Gitlink contents, unmerged entries
+and submodule limitations prevent complete approval; hidden index flags refuse
+review. Binary files are named instead (owner decision 2026-10-20, `FEEDBACK-070d`):
+a model cannot review their bytes as text, so they do not make the input PARTIAL.
+The prompt lists each with its status, the snapshot digest binds its content (the
+blob id for a revision or the index, the SHA-256 of the working file), and READY
+states `N binary files not reviewed`, as it names checks that did not run. Changed-path classification uses NUL-delimited paths/rename sources.
 
 Review reads the current workspace. Revision/range/branch tracked files must match
 it; staged files must match the index and untracked files prevent readiness for

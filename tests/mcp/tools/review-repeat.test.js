@@ -264,7 +264,7 @@ test('a review ending with PARTIAL coverage and BLOCKED is retried without and w
 
 test('incomplete collected input is retried even if reviewer reported COVERAGE: COMPLETE', async () => {
   const { repo } = fixtureRepo('incomplete-input-retry');
-  fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 1, 2, 3]));
+  fs.writeFileSync(path.join(repo, 'too-large.txt'), 'x'.repeat(256 * 1024 + 1));
   const turns = installReviewers(snapshot => [
     'REVIEW: 1',
     `SNAPSHOT: ${snapshot}`,
@@ -283,6 +283,23 @@ test('incomplete collected input is retried even if reviewer reported COVERAGE: 
   // Retrying the unchanged workspace starts another model turn because collected input is incomplete
   const second = readResult(await handleReview('review', {}, repo, null, null, approve));
   assert.equal(turns.agy, 2, 'incomplete collected input suppresses deduplication');
+});
+
+test('a READY with a binary change repeats only while the binary bytes are unchanged (FEEDBACK-070d)', async () => {
+  const { repo } = fixtureRepo('binary-identity-repeat');
+  fs.writeFileSync(path.join(repo, 'image.png'), Buffer.from([0x89, 0x50, 0, 1, 2, 3]));
+  const turns = installReviewers(snapshot => ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY',
+    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n'));
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+
+  const first = readResult(await handleReview('review', {}, repo, null, null, approve));
+  assert.equal(first.verdict, 'READY');
+  assert.match(first.reason, /1 binary file not reviewed/);
+  readResult(await handleReview('review', { session_handle: first.sessionHandle }, repo, null, null, approve));
+  assert.equal(turns.agy, 1, 'an unchanged repeat costs no turn');
+  fs.writeFileSync(path.join(repo, 'image.png'), Buffer.from([0x89, 0x50, 0, 9, 9, 9]));
+  readResult(await handleReview('review', { session_handle: first.sessionHandle }, repo, null, null, approve));
+  assert.equal(turns.agy, 2, 'other binary bytes are another snapshot');
 });
 
 test('a typed execution failure is retried and starts a new model turn', async () => {
