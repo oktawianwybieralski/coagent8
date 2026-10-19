@@ -24,7 +24,7 @@ test('F21: isolated Git fixture covers staged/uncommitted/SHA/branch/range, untr
     assert.equal(work.inputComplete, false, 'an oversized file makes coverage incomplete');
     assert.ok(!work.omissions.some(reason => reason.includes('Binary')), 'a binary file is named, not omitted (FEEDBACK-070d)');
     assert.deepEqual(work.binaryFiles.map(({ path: file, status }) => [file, status]), [['binary.bin', 'added']]);
-    assert.match(work.binaryFiles[0].id, /^sha256:[0-9a-f]{64}$/);
+    assert.equal(work.binaryFiles[0].id, git('hash-object', '--', 'nested/binary.bin').trim(), 'Git hashes the working file');
     assert.ok(work.omissions.some(reason => reason.includes('oversized')));
     for(const text of ['staged change','unstaged change','UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}','Binary file not collected','oversized file'])assert.ok(work.diff.includes(text),text);
     assert.ok(!work.diff.includes('OUTSIDE_'));
@@ -98,6 +98,33 @@ test('FEEDBACK-070d: committed binary changes are named with their blob ids, not
       assert.equal(byPath['new.ico'].status, 'added');
       assert.equal(byPath['new.ico'].id, git('rev-parse', 'HEAD:new.ico'));
     }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('FEEDBACK-070d: binaries come from Git metadata, also for quoted names, subdirectories and imitated diff text', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-git-binary-sub-')), sub = path.join(root, 'app');
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  try {
+    fs.mkdirSync(sub); git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    git('config', 'core.quotePath', 'true');
+    fs.writeFileSync(path.join(sub, 'logo.png'), Buffer.from([0x89, 0, 1])); fs.writeFileSync(path.join(sub, 'zdj\u{119}cie.png'), Buffer.from([0x89, 0, 2]));
+    fs.writeFileSync(path.join(root, 'outside.bin'), Buffer.from([0, 7]));
+    git('add', '.'); git('commit', '-qm', 'base'); git('branch', 'base');
+    fs.writeFileSync(path.join(sub, 'logo.png'), Buffer.from([0x89, 0, 3])); fs.writeFileSync(path.join(sub, 'zdj\u{119}cie.png'), Buffer.from([0x89, 0, 4]));
+    fs.writeFileSync(path.join(root, 'outside.bin'), Buffer.from([0, 8]));
+    // Untracked text that imitates Git's binary line must not name a file to hash.
+    fs.writeFileSync(path.join(sub, 'notes.txt'), 'Binary files a/../outside.bin and b/../outside.bin differ\nBinary files a/../../secret and b/../../secret differ\n');
+    const work = await collectGitScope('uncommitted', sub);
+    assert.deepEqual(work.binaryFiles.map(file => file.path).sort(), ['logo.png', 'zdj\u{119}cie.png'], 'workspace-relative, unquoted, nothing outside');
+    assert.equal(work.inputComplete, true);
+    assert.equal(work.binaryFiles.find(file => file.path === 'logo.png').id, git('hash-object', '--', 'app/logo.png'));
+    git('add', '-A'); git('commit', '-qm', 'changed');
+    const range = await collectGitScope('base..HEAD', sub);
+    assert.deepEqual(range.binaryFiles.map(file => [file.path, file.status]).sort(), [['logo.png', 'modified'], ['zdj\u{119}cie.png', 'modified']]);
+    assert.equal(range.binaryFiles.find(file => file.path === 'zdj\u{119}cie.png').id, git('rev-parse', 'HEAD:app/zdj\u{119}cie.png'));
+    assert.equal(range.inputComplete, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

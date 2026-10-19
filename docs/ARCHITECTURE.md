@@ -412,8 +412,10 @@ excluded and require separate release coverage. Gitlink contents, unmerged entri
 and submodule limitations prevent complete approval; hidden index flags refuse
 review. Binary files are named instead (owner decision 2026-10-20, `FEEDBACK-070d`):
 a model cannot review their bytes as text, so they do not make the input PARTIAL.
-The prompt lists each with its status, the snapshot digest binds its content (the
-blob id for a revision or the index, the SHA-256 of the working file), and READY
+They come from Git's `--numstat`/`--raw` output, never from diff text a file could
+imitate, with workspace-relative paths. The prompt lists each with its status, the
+snapshot digest binds its Git blob id (working files hashed by `git hash-object`, a
+bounded Git call), a binary without an identity makes the input PARTIAL, and READY
 states `N binary files not reviewed`, as it names checks that did not run. Changed-path classification uses NUL-delimited paths/rename sources.
 
 Review reads the current workspace. Revision/range/branch tracked files must match

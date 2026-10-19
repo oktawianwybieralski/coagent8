@@ -7,7 +7,6 @@
 import { runCommand } from '../execution/process.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import { readBoundedFile } from '../storage/read.js';
 import { truncateToByteLength } from '../execution/runtime/stream.js';
 import { ToolError } from '../contracts/error.js';
@@ -37,21 +36,10 @@ export interface GitScopeInfo {
 export interface BinaryChange {
   path: string;
   status: 'added' | 'deleted' | 'modified';
-  /** Git blob id or SHA-256 of the reviewed content; `deleted` for a removal. */
+  /** Git blob id of the reviewed content; `deleted` for a removal. */
   id: string;
 }
 
-/** Binary files named in a diff by Git's `Binary files a/<path> and b/<path> differ` line. */
-function diffBinaries(diff: string): Omit<BinaryChange, 'id'>[] {
-  const found: Omit<BinaryChange, 'id'>[] = [];
-  for (const line of diff.split(/\r?\n/)) {
-    const match = /^Binary files (?:a\/(.+?)|\/dev\/null) and (?:b\/(.+?)|\/dev\/null) differ$/.exec(line);
-    if (!match) continue;
-    const [, before, after] = match;
-    found.push({ path: (after ?? before)!, status: before === undefined ? 'added' : after === undefined ? 'deleted' : 'modified' });
-  }
-  return found;
-}
 
 export const GIT_DIFF_PATHSPEC_EXCLUSIONS: readonly string[] = [
   ':(exclude)dist/**',
@@ -247,46 +235,57 @@ export async function collectGitScope(
     else inventory = await git(['diff', ...names, info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!, '--', '.']);
     const changedPaths = [...new Set(inventory.split('\0').filter(Boolean))].filter(file => !isExcludedPath(file));
     const diff = boundedSnapshot(info.diff, omissions);
-    const binaryFiles = await identifyBinaries(info, [...diffBinaries(info.diff), ...untrackedBinaries.map(file => ({ path: file, status: 'added' as const }))]);
+    const binaryFiles = await identifyBinaries(info);
     return { ...info, diff, changedPaths, binaryFiles, inputComplete: omissions.length === 0, omissions };
   };
   /**
-   * Gives each binary change the identity of its reviewed content, so an unchanged repeat is
-   * recognized only when those bytes are unchanged too: the blob id for a revision or the
-   * index, the SHA-256 of the file for the working tree.
+   * Finds the scope's binary changes from Git's machine-readable output, never from diff text a
+   * file could imitate, and gives each the Git blob id of its reviewed content, so an unchanged
+   * repeat is recognized only when those bytes are unchanged too. Working-tree content is
+   * hashed by `git hash-object`, bounded like every Git call. Paths are relative to the
+   * workspace. A binary whose identity cannot be found makes the input incomplete.
    */
-  const identifyBinaries = async (info: Pick<GitScopeInfo, 'type' | 'revision'>, changes: Omit<BinaryChange, 'id'>[]): Promise<BinaryChange[]> => {
-    if (!changes.length) return [];
-    const paths = changes.filter(change => change.status !== 'deleted').map(change => change.path);
-    const blobs = new Map<string, string>();
-    if (paths.length && info.type !== 'uncommitted') {
-      const raw = info.type === 'staged' ? await git(['ls-files', '-s', '-z', '--', ...paths])
-        : info.type === 'commit' ? await git(['show', '--raw', '--no-abbrev', '--format=', '-z', info.revision!, '--', ...paths])
-        : await git(['diff', '--raw', '--no-abbrev', '-z', info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!, '--', ...paths]);
-      const fields = raw.split('\0');
-      if (info.type === 'staged') {
-        for (const entry of fields) {
-          const match = /^\d{6} ([0-9a-f]{40,64}) \d\t(.+)$/.exec(entry);
-          if (match) blobs.set(match[2], match[1]);
-        }
-      } else {
-        // `--raw -z`: a `:<modes> <old> <new> <status>` field, then the path.
-        for (let i = 0; i + 1 < fields.length; i += 2) {
-          const match = /^:\d{6} \d{6} [0-9a-f]+ ([0-9a-f]{40,64}) /.exec(fields[i].replace(/^\n/, ''));
-          if (match) blobs.set(fields[i + 1], match[1]);
-        }
+  const identifyBinaries = async (info: Pick<GitScopeInfo, 'type' | 'revision'>): Promise<BinaryChange[]> => {
+    let comparisons: string[][];
+    if (info.type === 'uncommitted') {
+      let hasHead = true;
+      try { await git(['rev-parse', '--verify', '-q', 'HEAD']); } catch (err) {
+        if (err instanceof ToolError) throw err;
+        hasHead = false;
+      }
+      comparisons = hasHead ? [['diff', 'HEAD']] : [['diff', '--cached'], ['diff']];
+    } else if (info.type === 'staged') comparisons = [['diff', '--cached']];
+    else if (info.type === 'commit') comparisons = [['show', '--format=', info.revision!]];
+    else comparisons = [['diff', info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!]];
+    const options = ['-z', '--no-renames', '--relative', '--no-ext-diff', '--no-textconv'];
+    const found = new Map<string, { status: BinaryChange['status']; id?: string }>();
+    for (const comparison of comparisons) {
+      const numstat = (await git([...comparison, '--numstat', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
+      const binary = new Set(numstat.map(entry => /^-\t-\t([\s\S]+)$/.exec(entry.replace(/^\n/, ''))?.[1]).filter((file): file is string => Boolean(file)));
+      if (!binary.size) continue;
+      // `--raw -z`: a `:<modes> <old> <new> <status>` field, then the path.
+      const raw = (await git([...comparison, '--raw', '--no-abbrev', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
+      for (let i = 0; i + 1 < raw.length; i += 2) {
+        const match = /^:\d{6} \d{6} [0-9a-f]+ ([0-9a-f]+) ([A-Z])/.exec(raw[i].replace(/^\n/, ''));
+        const file = raw[i + 1];
+        if (!match || !binary.has(file)) continue;
+        const status = match[2] === 'A' ? 'added' : match[2] === 'D' ? 'deleted' : 'modified';
+        const earlier = found.get(file);
+        found.set(file, { status: earlier?.status === 'added' && status !== 'deleted' ? 'added' : status, id: /^0+$/.test(match[1]) ? undefined : match[1] });
       }
     }
-    const root = info.type === 'uncommitted' ? await fs.realpath(workspaceCwd) : '';
-    return Promise.all(changes.map(async change => {
-      if (change.status === 'deleted') return { ...change, id: 'deleted' };
-      if (info.type !== 'uncommitted') return { ...change, id: blobs.get(change.path) ?? 'unknown' };
-      try {
-        return { ...change, id: `sha256:${createHash('sha256').update(await fs.readFile(path.resolve(root, change.path))).digest('hex')}` };
-      } catch {
-        return { ...change, id: 'unreadable' };
-      }
-    }));
+    for (const file of untrackedBinaries) found.set(file, { status: 'added' });
+    // The working tree has no blob id yet; Git hashes those files itself.
+    const unhashed = [...found].filter(([, change]) => change.status !== 'deleted' && (info.type === 'uncommitted' || !change.id)).map(([file]) => file);
+    for (let start = 0; start < unhashed.length; start += 100) {
+      const batch = unhashed.slice(start, start + 100);
+      const ids = (await git(['hash-object', '--', ...batch])).split(/\r?\n/).filter(Boolean);
+      batch.forEach((file, index) => { if (/^[0-9a-f]{40,64}$/.test(ids[index] ?? '')) found.get(file)!.id = ids[index]; });
+    }
+    return [...found].map(([file, change]) => {
+      if (change.status !== 'deleted' && !change.id) omissions.push(`Binary file identity unavailable: ${file}`);
+      return { path: file, status: change.status, id: change.status === 'deleted' ? 'deleted' : change.id ?? 'unknown' };
+    });
   };
   const scope = typeof rawScope === 'string' && rawScope.trim() ? rawScope.trim() : 'uncommitted';
 
