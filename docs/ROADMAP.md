@@ -398,8 +398,8 @@ Price is not a proxy for capability (2026-10-14): asked for a model at USD 10-15
 
 Effective configuration provenance and bounded diagnostics are implemented in `EXEC-001-T02/T03/T08/T11`. Remaining acceptance:
 
-- [ ] **AX-004a - accept config provenance in fixtures.** Extend CONFIG/DOCTOR and setup fixtures for legacy registration paths, paths with spaces, explicit editor/backend overrides and malformed files. Acceptance: effective source/location is accurate and redacted, and diagnostics never silently rewrite config. Check: R plus affected setup tests.
-- [ ] **AX-004b - accept read effects and timings.** Compare cold and warm model and health views using DOCTOR/CACHE fixtures. Acceptance: measured native reads, optional cache writes and observed-default writes match documented contracts under missing caches and cancellation. Check: R and phase timing evidence.
+- [x] **AX-004a - accept config provenance in fixtures.** Extend CONFIG/DOCTOR and setup fixtures for legacy registration paths, paths with spaces, explicit editor/backend overrides and malformed files. Acceptance: effective source/location is accurate and redacted, and diagnostics never silently rewrite config. Check: R plus affected setup tests. Done: a path with spaces is reported accurately, an editor override over an unusable file is reported as attempted, and neither doctor view rewrites a malformed file (`tests/config-snapshot.test.js`); legacy registration shapes are covered by the setup tests.
+- [x] **AX-004b - accept read effects and timings.** Compare cold and warm model and health views using DOCTOR/CACHE fixtures. Acceptance: measured native reads, optional cache writes and observed-default writes match documented contracts under missing caches and cancellation. Check: R and phase timing evidence. Done: health reads catalogs and quotas afresh each run, the models view reuses them; the test found doctor reading every catalog twice per run (selection re-read the fresh catalog), now fixed.
 - [ ] **AX-004c - accept one live config change.** In an isolated client profile per supported client, record registration/config path, change an owned setting, perform any required restart and verify the effective value while preserving user state (`PATCH-061-N1`).
 
 ### AX-005: readiness with evidence
@@ -1998,7 +1998,7 @@ agent (owner assigns).
 | 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
 | 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | ARCHITECTURE (unimplemented) defines `delegate`, `wait`, states and ordering; reviewed READY. |
 | 2.23 | [x] `AX-005a`, then `AX-005b` | P, R | - | As the cards say; group design and implementation when the contract is accepted. |
-| 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
+| 2.24 | [x] `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
 | 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | In that order, with PR groups chosen by coherent result and risk. |
 | 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R). |
 | 2.26a | [x] `AX-002d` recency decision | P | - | ARCHITECTURE records the recency order replacing highest-price selection; reviewed READY. |

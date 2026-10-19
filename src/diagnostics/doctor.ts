@@ -301,7 +301,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   if (!configError) {
     await Promise.all(selected.filter(id => probes[id]!.installed).map(async id => {
       let selection: ModelSelection;
-      try { selection = await selectModel(id, probes[id]!, {}, { observeAfresh: true, context: readContext }); }
+      try { selection = await selectModel(id, probes[id]!, {}, { observeAfresh: true, catalog: catalogs[selected.indexOf(id)], context: readContext }); }
       catch (err) {
         const code = (err as { code?: unknown })?.code;
         if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
