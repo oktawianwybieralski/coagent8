@@ -4,12 +4,30 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-18. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-19. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
 ## Current state
 
+- **0.7.0 status (2026-10-19):** every agent row of the `0.7.0` list is merged or
+  in review: 2.12e (#72), 2.13-2.17 (#65-#67, #71), 3.0-3.13b (#68-#70) and
+  publication automation 5.1, 5.3, 5.4, 5.6-5.8 (#73-#77), and the `0.8.0` audit
+  row 2.29 (`AUDIT-001-A08`-`A21`, below). What remains for `0.7.0` needs the owner:
+  - 5.2: recreate the npm trusted publisher for `coagent8`: workflow
+    `npm-publish.yml`, no environment, allowed action `npm stage publish` only;
+    then set the repository variable `NPM_TRUSTED_PUBLISHING=true` if it is not.
+  - 5.4: a Marketplace personal access token of `okidev` (Marketplace: Manage) as
+    the secret `VSCE_PAT`, and the variable `MARKETPLACE_PUBLISHING=true`.
+  - 5.5: reserve the `okidev` namespace on Open VSX; the agent then adds the job.
+  - 2.18: a WSL2 Ubuntu distribution with Node 24+ and signed-in Codex, Claude Code
+    and agy (only `docker-desktop` exists); the agent then runs the WSL lane.
+  - 2.36: the UI steps of the skills and CLI-management acceptance.
+  Then the release rows 5.9-5.12: the agent prepares the release PR with
+  `docs/releases/v0.7.0.md`, runs the native acceptance and the independent
+  review; the owner merges, tags, publishes, approves the staged npm version and
+  runs Verify published. npm channel model (owner decision 2026-10-19): every
+  release is staged to `next`, and the owner promotes a stable one to `latest`.
 - **Released baseline (`0.6.1`):** `v0.6.1` is an annotated tag on `55c7859`
   (`chore(release): v0.6.1 (#32)`), published on GitHub, npm (`latest` and
   `next`) and the VS Code Marketplace ([release evidence](#061-release-evidence)).
@@ -192,6 +210,16 @@ Do not append another session transcript or treat old test counts as fresh evide
   output omits `conversation_id` now keeps the requested session id with
   `continuationAvailable: true`; a new turn without an id still fails with
   `PROTOCOL_ERROR`. Fixture test in `tests/backends/agy/adapter.test.js`.
+- **Row 2.29 (`AUDIT-001-A08`-`A21`, 2026-10-19):** each card reproduced first. A08 found no
+  defect (a failed session publication returns no handle, acquires no turn, leaves no
+  file), so A09 is skipped. A10-A12: `writeChecked` retries a client file replacement
+  that Windows refuses for a moment (EPERM/EBUSY/EACCES) and never overwrites an edit
+  made meanwhile (`tests/integrations/setup-write.test.js`). A13-A15: the model
+  observation cache is bounded to 100 entries (LRU). A16-A18: the torn-tail check reads
+  the log backward (8 KiB instead of the whole log; agrees with the old scan on 200
+  generated logs). A19: free-text bug reports have no safe boundary after a diff, so the
+  conservative redaction stays and A20 is skipped. Native Windows sharing violations
+  were simulated, not observed.
 - **Row 2.12e (`ENVELOPE-001a`, server-owned review terminator, owner decision
   2026-10-18):** the review prompt ends the envelope with `CHECKS`; `evaluateStateEnvelopeGate`
   takes the turn's completion evidence (terminal status and `lengthLimited`) at both call

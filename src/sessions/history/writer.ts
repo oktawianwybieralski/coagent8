@@ -37,6 +37,62 @@ import {
   pruneHistoryDirectoryInternal,
 } from './retention.js';
 
+/** Bytes read per step while scanning a log backward for its last record. */
+const TAIL_BLOCK_BYTES = 8 * 1024;
+
+/**
+ * Finds a torn final record left by a crash (AUDIT-001-A16-A18).
+ *
+ * @remarks Reads backward in 8 KiB blocks (`TAIL_BLOCK_BYTES`) until it holds the last
+ * non-blank line whole, so it reads about one record instead of the whole log (up to
+ * `SESSION_LIMIT`), which `load()` has read already. Records have no size limit: the scan
+ * continues to the file start if needed. Lines are split on `\n` bytes and decoded whole, so
+ * UTF-8 sequences never break. Semantics match the former whole-file scan: trailing blank
+ * lines are ignored, a final record that parses is kept (with or without its newline), and
+ * an unparsable one is removed together with everything after it.
+ * @param logFile - The `.jsonl` log, read under the history lock.
+ * @param size - Its current size in bytes.
+ * @returns The byte length to truncate the log to, or `null` when its last record is whole
+ * or it holds only blank lines.
+ */
+export async function tornTailOffset(logFile: string, size: number): Promise<number | null> {
+  const handle = await fs.open(logFile, 'r');
+  try {
+    let tail = Buffer.alloc(0);
+    let position = size;
+    while (position > 0) {
+      const length = Math.min(TAIL_BLOCK_BYTES, position);
+      position -= length;
+      const block = Buffer.alloc(length);
+      // A read may return fewer bytes than asked; fill the block, and on an early end of file
+      // (the log shrank) keep the log as it is rather than judge a record from a gap.
+      for (let filled = 0; filled < length;) {
+        const { bytesRead } = await handle.read(block, filled, length - filled, position + filled);
+        if (bytesRead === 0) return null;
+        filled += bytesRead;
+      }
+      tail = Buffer.concat([block, tail]);
+      // Lines after the first `\n` in `tail` are complete; the first one is complete only at the file start.
+      let end = tail.length;
+      // A negative offset would count from the end of the buffer, so the search stops at index 0.
+      const previousNewline = (before: number) => (before > 0 ? tail.lastIndexOf(0x0a, before - 1) : -1);
+      for (let newline = previousNewline(end); ; newline = previousNewline(newline)) {
+        if (newline < 0 && position > 0) break;
+        const start = newline + 1;
+        const line = tail.subarray(start, end).toString('utf8').trim();
+        if (line.length > 0) {
+          try { JSON.parse(line); return null; } catch { return position + start; }
+        }
+        if (newline < 0) return null;
+        end = newline;
+      }
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
 /**
  * Creates an append-only history writer for an active conversation turn.
  *
@@ -202,33 +258,17 @@ export function createHistoryWriter(
             }
 
             // Inspect for torn tail from an abrupt crash and truncate only the invalid suffix
-            const content = await fs.readFile(logFile, 'utf8');
-            const lines = content.split('\n');
-            while (lines.length > 0 && lines[lines.length - 1].trim().length === 0) {
-              lines.pop();
-            }
-            if (lines.length > 0) {
-              const lastLine = lines[lines.length - 1].trim();
-              let tornTail = false;
-              try {
-                JSON.parse(lastLine);
-              } catch {
-                tornTail = true;
-              }
-              if (tornTail) {
-                lines.pop();
-                const validText = lines.length > 0 ? lines.join('\n') + '\n' : '';
-                const validBytes = Buffer.byteLength(validText, 'utf8');
-                const truncatedBytes = stat.size - validBytes;
-                await fs.truncate(logFile, validBytes);
-                currentFileBytes = validBytes;
-                if (truncatedBytes > 0) {
-                  const capLockFile = path.join(dir, '.capacity.lock');
-                  await withFileLock(capLockFile, async () => {
-                    const metaFile = path.join(dir, '.capacity.meta');
-                    await adjustCapacityMeta(metaFile, -truncatedBytes);
-                  }, initLockOptions);
-                }
+            const validBytes = await tornTailOffset(logFile, stat.size);
+            if (validBytes !== null) {
+              const truncatedBytes = stat.size - validBytes;
+              await fs.truncate(logFile, validBytes);
+              currentFileBytes = validBytes;
+              if (truncatedBytes > 0) {
+                const capLockFile = path.join(dir, '.capacity.lock');
+                await withFileLock(capLockFile, async () => {
+                  const metaFile = path.join(dir, '.capacity.meta');
+                  await adjustCapacityMeta(metaFile, -truncatedBytes);
+                }, initLockOptions);
               }
             }
           } else {

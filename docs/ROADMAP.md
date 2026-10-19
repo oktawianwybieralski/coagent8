@@ -633,7 +633,7 @@ not establish a defect, its fix is skipped.
 
 ### Write reliability: separate each caller's contract
 
-- [ ] **AUDIT-001-A08 - check initial session publication separately.**
+- [x] **AUDIT-001-A08 - check initial session publication separately.**
   Depends: none. Start: `src/sessions/session.ts:saveSessionFile`, createSession,
   acquireAndResolveSession, resolveSession; `tests/sessions/session.test.js`.
   Change: fixture/reproduction only for initial creation, failed publication and
@@ -641,8 +641,9 @@ not establish a defect, its fix is skipped.
   Done: establish whether a real reachable failure exists; a new UUID destination
   is not the same case as overwriting an existing configuration.
   Checks: focused session test and P; label native Windows cases NOT_RUN if absent.
+  Done: no defect; a failed publication returns no handle, acquires no turn and leaves no file.
 
-- [ ] **AUDIT-001-A09 - fix reproduced session publication failure.**
+- [x] **AUDIT-001-A09 - fix reproduced session publication failure.**
   Depends: A08 reproduces a defect. Start: the A08 call-site inventory.
   Change: use the existing storage owner for the identified failure; if creation
   becomes async, migrate all callers/tests together. No session-mode redesign.
@@ -650,8 +651,9 @@ not establish a defect, its fix is skipped.
   acquired after failed creation, and continuation/lease behavior is unchanged.
   Checks: R, `tests/sessions/session.test.js`, LIFE and affected callers.
   Preserve EXEC-001-T06's cleanup contract.
+  Skipped: A08 found no defect.
 
-- [ ] **AUDIT-001-A10 - specify safe retries for setup writes.**
+- [x] **AUDIT-001-A10 - specify safe retries for setup writes.**
   Depends: none. Start: `src/integrations/setup-storage.ts:writeChecked`,
   `src/integrations/setup.ts`, `src/integrations/cleanup.ts`.
   Change: document the smallest write contract in ARCHITECTURE and caller inventory
@@ -661,8 +663,9 @@ not establish a defect, its fix is skipped.
   belongs; record the residual external-editor race without promising universal
   compare-and-swap. No production edit.
   Checks: P. Reuse the storage owner; no second lease or generic I/O framework.
+  Done: the contract is in the `writeChecked` TSDoc (re-check before every attempt, mode kept, residual race without compare-and-swap).
 
-- [ ] **AUDIT-001-A11 - reproduce setup sharing and conflict cases.**
+- [x] **AUDIT-001-A11 - reproduce setup sharing and conflict cases.**
   Depends: A10. Start: `tests/integrations/setup.test.js`,
   `tests/integrations/cleanup.test.js`, A10's contract.
   Change: isolated fixtures for transient replacement failure, an external edit
@@ -671,8 +674,9 @@ not establish a defect, its fix is skipped.
   Done: expected before/after bytes, permissions and rollback state are explicit;
   manual registrations and unrelated entries survive.
   Checks: these two focused files; P for native/simulated evidence limits.
+  Done: `tests/integrations/setup-write.test.js` reproduced a transient EPERM aborting setup.
 
-- [ ] **AUDIT-001-A12 - implement only the verified setup write contract.**
+- [x] **AUDIT-001-A12 - implement only the verified setup write contract.**
   Depends: A11 reproduces a defect and A10 has no unresolved design decision.
   Start: writeChecked and its setup/cleanup callers.
   Change: implement the bounded retry contract while preserving content checks,
@@ -681,10 +685,11 @@ not establish a defect, its fix is skipped.
   observed before replacement are not overwritten. No unconditional atomicWrite swap.
   Checks: R, LOCK, both A11 test files; build/package checks per scope, building
   first if tests execute dist. Native acceptance remains separate.
+  Done: bounded rename retry in `writeChecked`; edits made meanwhile are never overwritten.
 
 ### Observation cache: bound storage without stale decisions
 
-- [ ] **AUDIT-001-A13 - establish reachable observation growth.**
+- [x] **AUDIT-001-A13 - establish reachable observation growth.**
   Depends: none; align with EXEC-001-T05/T08 before editing shared files.
   Start: `src/backends/probe-cache.ts:readObservedModel`,
   `tests/backends/probe-cache.test.js`, model selection callers.
@@ -693,8 +698,9 @@ not establish a defect, its fix is skipped.
   Done: establish reachable cardinality without launching real CLIs; distinguish
   observations from provider-keyed probe/catalog maps and in-flight promises.
   Checks: focused probe-cache test; P. No timing-only memory-leak claim.
+  Done: any distinct requested name was kept forever; Claude Code accepts unlisted names.
 
-- [ ] **AUDIT-001-A14 - bound the observation map.**
+- [x] **AUDIT-001-A14 - bound the observation map.**
   Depends: A13 establishes growth. Start: `src/backends/probe-cache.ts`.
   Change: a named maximum of 100 retained observations with least-recently-used
   eviction; remove stale entries when encountered. Keep current freshness and
@@ -703,18 +709,20 @@ not establish a defect, its fix is skipped.
   repeated hits remain cached; an active shared request is not evicted/cancelled.
   Checks: R, `tests/backends/probe-cache.test.js`, SELECT, POLICY.
   Do not delay stamp checks until TTL expiry.
+  Done: `MAX_OBSERVATIONS` (100), least recently used first, stale entries dropped when met.
 
-- [ ] **AUDIT-001-A15 - verify cache invalidation and coalescing.**
+- [x] **AUDIT-001-A15 - verify cache invalidation and coalescing.**
   Depends: A14. Start: existing probe-cache tests and EXEC-001-T08 evidence.
   Change: reuse existing tests; add only missing boundary cases for cap+1 names,
   expiry, environment/config/executable changes, failed reads and shared requests.
   Done: eviction changes resource bounds without stale routing/consent, poisoned
   in-flight entries or extra launches on a shared miss.
   Checks: R, CACHE, SELECT, POLICY; record observed counters, not speed estimates.
+  Done: cap+1 names, re-read of an evicted name, recent hits and a shared in-flight read tested.
 
 ### History tail: measure before changing recovery
 
-- [ ] **AUDIT-001-A16 - measure the extra history read.**
+- [x] **AUDIT-001-A16 - measure the extra history read.**
   Depends: none. Start: `src/sessions/history/writer.ts`,
   `src/sessions/history/reader.ts`, `tests/sessions/history.test.js`.
   Change: isolated fixture measurement near SESSION_LIMIT, separating load(handle)
@@ -723,8 +731,9 @@ not establish a defect, its fix is skipped.
   Done: quantify the targeted extra read; no claim that changing it eliminates
   all full-history reads or snapshot writes.
   Checks: focused measurement and existing history tests; P for evidence.
+  Done: the check read the whole log (up to 10 MiB) again; now 8 KiB on an 800 KiB log.
 
-- [ ] **AUDIT-001-A17 - specify bounded tail recovery cases.**
+- [x] **AUDIT-001-A17 - specify bounded tail recovery cases.**
   Depends: A16 shows useful work to remove.
   Start: writer tail-recovery block and existing history/capacity fixtures.
   Change: specify recovery in ARCHITECTURE and prepare behavioral cases for
@@ -734,8 +743,9 @@ not establish a defect, its fix is skipped.
   file start; records have no assumed 4-8 KiB maximum. Define exact truncation
   offsets, sequence continuity and capacity-byte adjustment.
   Checks: P and focused fixture cases; preserve valid historical bytes.
+  Done: edge cases and 200 generated logs agree with the former scan byte for byte.
 
-- [ ] **AUDIT-001-A18 - replace only the extra tail scan.**
+- [x] **AUDIT-001-A18 - replace only the extra tail scan.**
   Depends: A17's cases and algorithm are settled.
   Start: `src/sessions/history/writer.ts`; a history-owned helper only if needed.
   Change: implement descriptor-based tail scanning under the existing lock,
@@ -746,10 +756,11 @@ not establish a defect, its fix is skipped.
   `tests/sessions/history-capacity.test.js`,
   `tests/execution/controller-history.test.js`, REDACT.
   No compaction or deferred capacity reservation in this task.
+  Done: `tornTailOffset` reads backward in 8 KiB blocks under the existing lock.
 
 ### Diagnostic diff privacy: conditional improvement
 
-- [ ] **AUDIT-001-A19 - establish safe diagnostic boundaries.**
+- [x] **AUDIT-001-A19 - establish safe diagnostic boundaries.**
   Depends: none. Start: `src/diagnostics/issue.ts:sanitizeText`,
   `tests/diagnostics/issue.test.js`, `tests/mcp/tools/issue.test.js`.
   Change: fixtures demonstrate useful text lost after diffs, including multiple
@@ -758,8 +769,9 @@ not establish a defect, its fix is skipped.
   blank lines and arbitrary headings alone are not trusted delimiters.
   Record whether an improvement is possible without changing the public contract.
   Checks: focused issue tests and P. If not, retain conservative redaction and skip A20.
+  Done: free text has no safe boundary after a diff; conservative redaction stays.
 
-- [ ] **AUDIT-001-A20 - preserve diagnostics only at proven boundaries.**
+- [x] **AUDIT-001-A20 - preserve diagnostics only at proven boundaries.**
   Depends: A19 establishes a safe compatible improvement.
   Start: `src/diagnostics/issue.ts` and the A19 fixtures.
   Change: implement that boundary, retaining conservative removal for ambiguous
@@ -767,10 +779,11 @@ not establish a defect, its fix is skipped.
   Done: actual report text/URL retains intended diagnostics and contains neither
   private diff payload nor credentials; byte limits remain enforced.
   Checks: R, both A19 test files and REDACT.
+  Skipped: A19 found no safe boundary.
 
 ### Batch acceptance
 
-- [ ] **AUDIT-001-A21 - reconcile evidence and request independent review.**
+- [x] **AUDIT-001-A21 - reconcile evidence and request independent review.**
   Depends: all preceding cards have PASS, documented skip, or explicit open status.
   Start: this section, HANDOFF and the actual diff.
   Change: document implemented behavior, source identity, reproducible checks,
@@ -782,6 +795,7 @@ not establish a defect, its fix is skipped.
   before merge; author evidence cannot mark release READY.
   Checks: P plus the scope-based combined gate; release/package/native/CI evidence
   remains distinct. No automatic commit, push, merge or publication.
+  Done: HANDOFF records the outcomes; one review of the combined branch.
 
 ### Audit traceability
 
@@ -1994,7 +2008,7 @@ agent (owner assigns).
 | 2.27 | `AX-003a` | R | - | Elicitation outcome fixtures per the card (`Check: R`). |
 | 2.27b | `AX-003b`, then `AX-003c` | P | 2.27 | Form-less consent design, then implementation cards added here. |
 | 2.28 | `AX-006a`, then `AX-006b`/`c`/`d` | R, N | 2.23 | `AX-006a` acceptance script; the `b`/`c`/`d` fresh-client runs are native, one per client, with evidence recorded in HANDOFF (no PR per run). |
-| 2.29 | `AUDIT-001-A08` to `A21` | R | - | In card order and grouping (A08-A09, A10-A12, A13-A15, A16-A18, A19-A20, A21); a reproduction that finds no defect skips its fix. |
+| 2.29 | [x] `AUDIT-001-A08` to `A21` | R | - | In card order and grouping (A08-A09, A10-A12, A13-A15, A16-A18, A19-A20, A21); a reproduction that finds no defect skips its fix. |
 | 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R). |
 | 2.31 | `WINDOWS-001b` launcher contract | P S | - | Card done; reviewed READY. |
 | 2.32 | `WINDOWS-001c` helper | R S | 2.31 | Rust helper and measured overhead per the card. |

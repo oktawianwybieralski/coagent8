@@ -407,7 +407,26 @@ export async function readModelCatalog(id: ProviderId, options: ReadModelCatalog
 }
 
 interface CachedObservation { observeFn: CliAdapter['observeModel']; model: string | undefined; key: string; at: number }
+/**
+ * Most observations kept in memory (AUDIT-001-A14). A requested name is any string a caller
+ * passes (Claude Code accepts unlisted names), so a long-running server would otherwise keep
+ * one entry per distinct name forever. The least recently used entry goes first; an evicted
+ * name is read again from `models.json` or the CLI. In-flight reads live in `inflight`.
+ */
+export const MAX_OBSERVATIONS = 100;
 const observations = new Map<string, CachedObservation>();
+
+/** Keeps an observation as the most recently used one, evicting beyond {@link MAX_OBSERVATIONS}. */
+function rememberObservation(memoryKey: string, entry: CachedObservation): void {
+  observations.delete(memoryKey);
+  observations.set(memoryKey, entry);
+  while (observations.size > MAX_OBSERVATIONS) observations.delete(observations.keys().next().value!);
+}
+
+/** Number of observations held in memory; for diagnostics and tests. */
+export function observationCacheSize(): number {
+  return observations.size;
+}
 
 /**
  * Returns the concrete model the CLI reports for a requested name, or for no name: from
@@ -431,10 +450,15 @@ export async function readObservedModel(
   const name = requested ?? '';
   const memoryKey = `${id}:${name}`;
   const cached = observations.get(memoryKey);
-  if (!options.fresh && cached && cached.observeFn === adapter.observeModel && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) return cached.model;
+  if (!options.fresh && cached && cached.observeFn === adapter.observeModel && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) {
+    rememberObservation(memoryKey, cached);
+    return cached.model;
+  }
+  // A stale entry (expired, another executable, configuration or adapter) is dropped when met.
+  if (cached) observations.delete(memoryKey);
   const stored = options.fresh ? undefined : readObservedModels(id, key)?.resolved?.[name];
   if (stored && Date.now() - stored.observedAt < STORED_TTL_MS) {
-    observations.set(memoryKey, { observeFn: adapter.observeModel, model: stored.model, key, at: Date.now() });
+    rememberObservation(memoryKey, { observeFn: adapter.observeModel, model: stored.model, key, at: Date.now() });
     return stored.model;
   }
   const observeFn = adapter.observeModel;
@@ -442,7 +466,7 @@ export async function readObservedModel(
   return coalesce(observeInflightKey, observeFn, !options.fresh, async (readContext) => {
     const model = await observeFn.call(adapter, requested, probe, readContext);
     if (!readContext?.abortSignal?.aborted && isCurrentInflight(observeInflightKey, readContext)) {
-      observations.set(memoryKey, { observeFn, model, key, at: Date.now() });
+      rememberObservation(memoryKey, { observeFn, model, key, at: Date.now() });
       if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
     }
     return model;
