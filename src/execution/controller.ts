@@ -44,6 +44,7 @@ import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
 import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
+import { recordTurnSuccess } from '../backends/probe-cache.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { stripAnsi } from './cli-output.js';
@@ -589,6 +590,15 @@ async function executeTaskInternal(
         }
       } catch (error) {
         warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
+      }
+
+      // Readiness evidence (AX-005b): this installation completed a turn with this model.
+      if (!result.isError && result.status === 'completed') {
+        try {
+          await recordTurnSuccess(backend.id, result.model || model || '', executionContext);
+        } catch (error) {
+          warnings.push(`Readiness evidence not recorded: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
+        }
       }
 
       // Review snapshot verification & gate evaluation: failed snapshot recheck cannot yield READY

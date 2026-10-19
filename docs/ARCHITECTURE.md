@@ -340,7 +340,11 @@ read can supply auth evidence, explaining agy's cold not-ready/success discrepan
 Codex auth is inferred from file/environment presence and its 5-hour/weekly
 windows come from app-server account/rateLimits/read (ChatGPT sign-in, no thread);
 Claude uses native login status. Unknown readiness is not proof that a turn will fail; successful execution
-does not prove universal profile isolation. AX-004/005 separate these facts.
+does not prove universal profile isolation. `src/diagnostics/readiness.ts` decides one state per
+backend from these facts (`AX-005`): not installed, not allowed, read-only profile not verified,
+signed out, rate limited, quota exhausted, ready, or sign-in unverified (nothing contradicts
+readiness, nothing proves sign-in). A turn completed within a day on the same CLI installation
+is sign-in evidence for the model it ran; doctor reports it as the last turn.
 
 ## Review contract
 

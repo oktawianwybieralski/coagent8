@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { adapterRegistry } from './registry.js';
 import { resolveCliCommand } from '../execution/cli-resolver.js';
-import { ToolError, type ProviderId } from '../contracts/index.js';
+import { ToolError, isValidModelIdentifier, type ProviderId } from '../contracts/index.js';
 import { readObservedModels, recordObservedModels } from '../models/store.js';
 import type { AdapterProbeResult, CliAdapter, ModelCatalog, BackendReadContext } from './types.js';
 
@@ -471,4 +471,23 @@ export async function readObservedModel(
     }
     return model;
   }, options.context);
+}
+
+/**
+ * Records that a turn completed on this backend with `model` (`AX-005b`).
+ * @remarks Bound to the current CLI installation's key, so an update of the CLI, its
+ * configuration or its environment starts without the evidence. Reuses the cached probe
+ * (no process starts when it is fresh). Best-effort: a store failure is not thrown.
+ */
+export async function recordTurnSuccess(id: ProviderId, model: string, context?: BackendReadContext): Promise<void> {
+  // Without a valid model name there is nothing to attribute the evidence to.
+  if (!isValidModelIdentifier(model)) return;
+  const probe = await probeBackend(id, { context });
+  if (!probe.installed) return;
+  await recordObservedModels(id, probeKey(probe), { success: model });
+}
+
+/** The last completed turn of the current installation, or undefined. */
+export function readTurnSuccess(id: ProviderId, probe: AdapterProbeResult): { model: string; observedAt: number } | undefined {
+  return probe.installed ? readObservedModels(id, probeKey(probe))?.lastSuccess : undefined;
 }
