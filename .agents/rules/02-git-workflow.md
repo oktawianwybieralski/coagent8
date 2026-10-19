@@ -486,6 +486,10 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     channel and publishes that exact file under `okidev` (`RELEASE-001d`). Without
     it (section 8), publish the verified file by hand:
     `npx @vscode/vsce@4.0.0 publish --packagePath ./coagent8-mcp-X.Y.Z.vsix`.
+    Once the staged npm version is approved, run the **Verify published** workflow
+    with the tag (`RELEASE-001f`): npm `dist.shasum`, `dist.integrity` and `next`, and
+    the Marketplace VSIX, must equal the release files. Locally:
+    `node scripts/verify-published.cjs --tag vX.Y.Z --dir <Phase D folder>`.
 24. Announce the release to testers with the GitHub Release link.
 
 ### After the release
