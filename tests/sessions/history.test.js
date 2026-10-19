@@ -617,3 +617,29 @@ test('oversized provider metadata cannot hang history pagination',async()=>{
   raw.events[0].messageId='x'.repeat(300*1024);fs.writeFileSync(file,JSON.stringify(raw));
   await assert.rejects(sessionHistory(s.sessionHandle,tempDir),/identifier/);
 });
+
+test('AX-001f: a turn keeps its token usage in history, and turns without usage still load', async () => {
+  const { sessionHistory: readHistory } = require('../../src/sessions/history/index.ts');
+  const sess = createSession('agy', tempDir);
+  const usage = { source: 'provider', inputTokens: 120, cachedInputTokens: 100, outputTokens: 30, reasoningTokens: 10, totalTokens: 150 };
+  const first = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
+  first.accept({ type: 'turn_started' });
+  first.accept({ type: 'user_message', text: 'first' });
+  first.accept({ type: 'assistant_message', messageId: 'm1', text: 'answer' });
+  first.accept({ type: 'turn_finished', status: 'completed', usage });
+  await first.flush();
+  const second = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
+  second.accept({ type: 'turn_started' });
+  second.accept({ type: 'user_message', text: 'second' });
+  second.accept({ type: 'turn_finished', status: 'completed' });
+  await second.flush();
+  // Invalid usage (a negative or an unknown field) is refused like any invalid event.
+  const third = createHistoryWriter(sess.sessionHandle, tempDir, 'agy', randomUUID());
+  assert.throws(() => third.accept({ type: 'turn_finished', status: 'completed', usage: { source: 'provider', inputTokens: -1 } }), /Invalid token usage/);
+  assert.throws(() => third.accept({ type: 'turn_finished', status: 'completed', usage: { source: 'provider', bogus: 3 } }), /Invalid token usage/);
+  const page = await readHistory(sess.sessionHandle, tempDir, undefined, 100);
+  const finished = page.events.filter(e => e.type === 'turn_finished');
+  assert.equal(finished.length, 2);
+  assert.deepEqual(finished[0].usage, usage);
+  assert.equal(finished[1].usage, undefined, 'a turn without usage loads unchanged');
+});

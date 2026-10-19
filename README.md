@@ -299,6 +299,11 @@ of running another model; an explicit model over the limit is never replaced.
 The footer states the price, its list and date. A model within the limit may
 still need your approval.
 
+Every result also shows the tokens the turn used, as the backend reported them,
+and, when the model's price is known exactly, what they cost at list price:
+`Usage: 6,692 input (6,580 cached) · 70 output (56 reasoning) tokens · list price ~0.0042 USD (openrouter 2026-10-19)`.
+A list price is not your bill: a subscription CLI may charge nothing per token.
+
 To choose yourself, call `doctor`: it lists each backend's models with their
 accepted efforts, output price (`~` approximate, `?` unknown), default and
 approval tag (`ask: <rule>`, `deny` or `allow`). **CoAgent8: Manage Model

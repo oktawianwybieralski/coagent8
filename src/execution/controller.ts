@@ -313,7 +313,7 @@ async function executeTaskInternal(
     }
 
     const consentHandle = startControllerPhase('consent');
-    const { priceNote, warnings: consentWarnings } = await prepared.confirmConsent({
+    const { priceNote, listPrice, warnings: consentWarnings } = await prepared.confirmConsent({
       askConsent: options.askConsent,
       abortSignal,
       budget,
@@ -544,7 +544,7 @@ async function executeTaskInternal(
       try {
         if (result.output && !sawPublicMessage) writer.accept({ type: 'assistant_message', messageId: 'final', text: result.output });
         if (result.error) writer.accept({ type: 'error', error: result.error });
-        writer.accept({ type: 'turn_finished', status: result.status });
+        writer.accept({ type: 'turn_finished', status: result.status, ...(result.usage ? { usage: result.usage } : {}) });
         await writer.flush();
       } catch (err) {
         if (!historyError) historyError = err as Error;
@@ -700,6 +700,7 @@ async function executeTaskInternal(
         },
         warnings,
         price: priceNote,
+        ...(listPrice ? { listPrice } : {}),
         review,
       };
     } finally {

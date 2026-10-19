@@ -243,3 +243,19 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
   await handleConsult('consult', { proposal: 'File check', context_files: ['sample.ts'] }, tempDir);
   assert.ok(receivedPrompts[2].includes(READ_ONLY_FILE_TOOL_GUIDANCE), 'context_files consult includes read-only file tool guidance');
 });
+
+test('AX-001g: the footer shows the turn usage with the list price of the exact-matched model', async () => {
+  const original = adapterRegistry.agy;
+  adapterRegistry.agy = { id: 'agy', name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async () => ({ status: 'completed', isError: false, output: 'Consult answer', nativeSessionId: randomUUID(), model: 'fixture-model',
+      truncated: false, continuationAvailable: true, usage: { source: 'provider', inputTokens: 200_000, outputTokens: 20_000, totalTokens: 220_000 } }) };
+  try {
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    const result = readResult(await handleConsult('consult', { proposal: 'usage?' }, tempDir));
+    // fixture/fixture-model: 0.75 USD per million input and 3.75 per million output tokens.
+    assert.match(result.usage, /^200,000 input \u{b7} 20,000 output tokens \u{b7} list price ~0\.23 USD \(coagent8_PRICES_URL \d{4}-\d{2}-\d{2}\)$/u);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});

@@ -69,6 +69,7 @@ function readResult(result) {
     if ((match = /^Verdict: (READY|BLOCKED)(?: \((.*)\))?$/.exec(line))) { parsed.verdict = match[1]; parsed.reason = match[2] || null; }
     else if (line === 'Notice: Output reached buffer limit.') parsed.truncated = true;
     else if ((match = /^Price: (.+)$/.exec(line))) parsed.price = match[1];
+    else if ((match = /^Usage: (.+)$/.exec(line))) parsed.usage = match[1];
     else if ((match = /^Warning: (.*)$/.exec(line))) parsed.warnings.push(match[1]);
     else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool prepares the sanitized report to paste\)$/.exec(line))) parsed.issueUrl = match[1];
     else if ((match = /^Workspace: (.+) \(server directory\)$/.exec(line))) parsed.workspace = match[1];

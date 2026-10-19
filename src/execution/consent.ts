@@ -5,7 +5,7 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
-import { errorCodeOf, ToolError, type ProviderId } from '../contracts/index.js';
+import { errorCodeOf, ToolError, type ListPrice, type ProviderId } from '../contracts/index.js';
 import { loadConfig, loadConfigSnapshot, type CoAgent8Config, type ConfigSnapshot } from '../config.js';
 import {
   decideConsent,
@@ -105,6 +105,18 @@ export interface RevalidateConsentOptions {
   context?: BackendReadContext;
 }
 
+/** The model's list price when the list matched it exactly; nothing for an approximate or no match. */
+function listPriceOf(list: PriceList | undefined, model: string): { listPrice?: ListPrice } {
+  const evidence = priceEvidence(list, model);
+  if (evidence.match !== 'exact' || !evidence.source || !evidence.fetchedAt) return {};
+  return { listPrice: {
+    inputUsdPerMTok: evidence.inputUsdPerMTok,
+    cachedInputUsdPerMTok: evidence.cachedInputUsdPerMTok,
+    outputUsdPerMTok: evidence.outputUsdPerMTok,
+    source: `${evidence.source} ${evidence.fetchedAt.slice(0, 10)}`,
+  } };
+}
+
 /**
  * Result of successful consent and price re-validation (`EXEC-001-T10b`).
  */
@@ -113,6 +125,8 @@ export interface RevalidateConsentResult {
   freshSnapshot: ConfigSnapshot;
   freshPrices: PriceList;
   priceNote?: string;
+  /** The model's list price from an exact match in the fresh list (`AX-001g`). */
+  listPrice?: ListPrice;
 }
 
 /**
@@ -275,5 +289,6 @@ export async function revalidateConsent(
     freshSnapshot: currentSnapshot,
     freshPrices: freshPrices ?? { fetchedAt: 0, source: 'none', models: {} },
     priceNote,
+    ...listPriceOf(freshPrices, model),
   };
 }
