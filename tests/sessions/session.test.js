@@ -626,3 +626,25 @@ test('cancel of a closed session says it is closed, not that no turn runs (FEEDB
   assert.equal(outcome.cancelled, false);
   assert.match(outcome.message, /is closed; nothing to cancel/);
 });
+
+test('AUDIT-001-A08: a failed initial publication returns no handle, acquires no turn and leaves no file', async () => {
+  const { createSession: create, acquireAndResolveSession: acquire, listSessions: list, getSessionsDir: dir } = require('../../src/sessions/session.ts');
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-a08-'));
+  const before = fs.existsSync(dir()) ? fs.readdirSync(dir()).sort() : [];
+  const rename = fs.renameSync;
+  // A new session publishes a temporary file by renaming it to a fresh handle; fail that step.
+  fs.renameSync = (from, to) => { if (String(from).includes('.tmp.')) throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' }); return rename(from, to); };
+  try {
+    assert.throws(() => create('codex', workspace), /EPERM/, 'createSession reports the failure instead of returning a handle');
+    await assert.rejects(acquire(null, 'codex', workspace), /EPERM/, 'no turn is acquired after a failed creation');
+  } finally {
+    fs.renameSync = rename;
+  }
+  const after = fs.existsSync(dir()) ? fs.readdirSync(dir()).sort() : [];
+  assert.deepEqual(after, before, 'neither a session file nor a temporary file remains');
+  assert.deepEqual(list(workspace), []);
+  // The same path succeeds once publication works, and only then is the handle returned.
+  const created = create('codex', workspace);
+  assert.ok(fs.existsSync(path.join(dir(), `${created.sessionHandle}.json`)));
+  fs.rmSync(workspace, { recursive: true, force: true });
+});
