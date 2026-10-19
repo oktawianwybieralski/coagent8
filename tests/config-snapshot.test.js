@@ -258,6 +258,9 @@ test('AX-004b: health reads every backend afresh each time; the models view reus
   const { adapterRegistry } = require('../src/backends/registry.ts');
   const original = { ...adapterRegistry };
   const reads = { probe: 0, catalog: 0, quota: 0 };
+  // Doctor records each first-listed default in config.json: keep that out of the shared file.
+  const savedConfigEnv = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(tempDir, 'ax-004b-config.json');
   try {
     for (const id of ['codex', 'claude', 'agy']) {
       adapterRegistry[id] = { ...original[id],
@@ -277,5 +280,8 @@ test('AX-004b: health reads every backend afresh each time; the models view reus
     await runModelReport({});
     assert.equal(reads.catalog - beforeModels.catalog, 0, 'the models view reuses the catalogs health just read');
     assert.equal(reads.quota - beforeModels.quota, 0, 'the models view reads no quota');
-  } finally { Object.assign(adapterRegistry, original); }
+  } finally {
+    Object.assign(adapterRegistry, original);
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+  }
 });
