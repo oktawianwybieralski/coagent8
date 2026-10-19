@@ -1081,11 +1081,15 @@ check that runs the real publish commands without publishing.
   publishes only then) runs `scripts/verify-published.cjs`, which reads the public
   registry and Marketplace endpoints. Against the published `0.6.1` it matched; a
   locally packed `0.6.1` was refused on all three digests.
-- [ ] **RELEASE-001g - rule 02 and AGENTS.md.** Describe the automated phases:
+- [x] **RELEASE-001g - rule 02 and AGENTS.md.** Describe the automated phases:
   the owner merges, tags and approves. Remove `--delete-branch` from the merge
   commands (the repository deletes merged branches). Record whether the
   throwaway-repository rehearsal (rule 02 step 12) stays, given the owner's
-  2026-10-13 decision to verify the tag's draft instead for `0.6.1`. Check: P.
+  2026-10-13 decision to verify the tag's draft instead for `0.6.1`. Check: P. Done: rule 02 section 5 opens with
+  the automated phases, the merge commands drop `--delete-branch` (rules 00 and 02,
+  AGENTS.md), and step 12 stays mandatory when release tooling changed: the
+  2026-10-13 decision is recorded as an exception for `0.6.1` only, since no
+  broader owner decision exists.
 
 ## FEEDBACK-060: findings of the 0.6.0 native acceptance
 
@@ -2052,7 +2056,7 @@ agent (owner assigns).
 | 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
 | 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
 | 5.7 | [x] `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
-| 5.8 | `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
+| 5.8 | [x] `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
 | 5.9 | Release PR `0.7.0` | R | the `0.7.0` rows above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
 | 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
