@@ -68,6 +68,22 @@ test('unrun checks of a read-only reviewer do not block READY; they are named, a
   assert.equal(otherCause.reason, 'Review input is incomplete; the reviewer answered READY');
 });
 
+test('a P1/P2 finding header without brackets blocks; prose, P3 and P20 do not', () => {
+  const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] };
+  const envelope = (verdict, ...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, ...extra, 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\r\n');
+  // Antigravity wrote this header in native 0.7.0 acceptance; its BLOCKED named no finding.
+  for (const header of ['P2 sum.js:4', '  p1 src/auth.ts:42  ', '- **P2** src/a.ts:10-12', '1. P1: src/b.ts:3']) {
+    const blocked = evaluateStateEnvelopeGate(envelope('BLOCKED', header, 'Problem: off by one.'), false, true, context);
+    assert.equal(blocked.reason, 'Blocker issue [P1/P2] reported', header);
+    const ready = evaluateStateEnvelopeGate(envelope('READY', header), false, true, context);
+    assert.equal(ready.verdict, 'BLOCKED', `${header} overrides READY`);
+    assert.equal(ready.reason, 'Blocker issue [P1/P2] reported; the reviewer answered READY');
+  }
+  for (const line of ['P3 sum.js:4', 'P20 sum.js:4', 'Reviewed: no P2 sum.js:4 issue remains.', 'P2 findings: none', 'P2 sum.js']) {
+    assert.equal(evaluateStateEnvelopeGate(envelope('READY', line), false, true, context).verdict, 'READY', line);
+  }
+});
+
 test('the server blocks a READY answer if a P1 issue is reported', () => {
   const reviewOutput = [
     'REVIEW: 1',

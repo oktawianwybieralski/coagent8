@@ -58,6 +58,12 @@ export interface TurnCompletion {
   lengthLimited?: boolean;
 }
 
+/**
+ * A P1 or P2 finding header without brackets: an optional list marker or bold, the severity,
+ * then `<file>:<line>`, as in `P2 sum.js:4` or `- **P1** src/a.ts:10`.
+ */
+const UNBRACKETED_BLOCKER = /^(?:[-*]\s+|\d+[.)]\s+)?(?:\*\*)?P[12](?:\*\*)?:?\s+\S+:\d+(?:[-:]\d+)?(?:\s|$)/i;
+
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
 const MAX_BLOCKED_REASON_CHARS = 300;
 
@@ -82,7 +88,8 @@ export interface ReviewGateContext {
  * `END_REVIEW` terminates the envelope.
  * @returns The server verdict and, when blocked, every cause; a reviewer READY it overrides is
  * named, and a READY names the required checks that did not run.
- * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
+ * @remarks Literal P1/P2 markers, P1/P2 finding headers without brackets, partial coverage
+ * and malformed/truncated output block.
  * With context, SNAPSHOT must match and input must be complete and unchanged. Failed
  * checks always block. A required check reported NOT_RUN does not: a reported PASS is not
  * evidence either, since this does not execute tests, verify a reported PASS or bind a
@@ -154,7 +161,9 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     if (blockedMatch && !blockedVal) blockedVal = blockedMatch[1].trim();
   }
 
-  const hasBlockers = /\[P[12]\]/i.test(output);
+  // A model may drop the brackets of a finding header (`P2 sum.js:4`); only a line shaped
+  // like a header counts then, so prose that mentions P1 or P2 does not block.
+  const hasBlockers = /\[P[12]\]/i.test(output) || rawLines.some(line => UNBRACKETED_BLOCKER.test(line.trim()));
   const isEnveloped = reviewCount > 0 || snapshotCount > 0 || coverageCount > 0 || verdictCount > 0 || checksCount > 0 || endReviewCount > 0;
   const isEndReviewLast = nonEmptyLines.length > 0 && /^END_REVIEW$/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
   const isChecksLast = nonEmptyLines.length > 0 && /^CHECKS:/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
