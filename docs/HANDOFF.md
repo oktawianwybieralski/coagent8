@@ -11,21 +11,24 @@ Do not append another session transcript or treat old test counts as fresh evide
 ## Current state
 
 - **Next session starts here (owner decision 2026-10-19):** finish `0.7.0`
-  only. `develop` baseline is `955e2b3`; the agent implementation rows are
-  merged (#68-#82). `DELEGATE-001` belongs to the owner on a separate branch;
+  only. Release simplification is merged as `f0de595` (#83), following the
+  completed agent implementation rows (#68-#82). `DELEGATE-001` belongs to the owner on a separate branch;
   do not touch it or implement `0.8.0` work in this session.
-- **Release simplification (owner decision 2026-10-19):** one PR combines the
-  direct npm publish command, CI dry run, regression tests and these documents.
-  Review with backend `codex` on `origin/develop...<branch>`; carry requirements,
-  dated decisions and the proposed PR title/body, and reuse `session_handle`
-  after fixes. The owner authorized squash-merge of this PR only after READY
-  without P1/P2, six green CI jobs and an up-to-date branch. Never run the full
-  test suite concurrently with review. `WINDOWS-001a` descendant-survivor warning
-  is expected.
+- **Release simplification (#83, 2026-10-19):** direct npm publication and
+  CI dry run are merged. Independent Codex review READY, coverage COMPLETE,
+  no P1/P2, handle `syn_sess_b8101fd87f1d7fc6073c983b`, reviewed head `a753055`;
+  PR CI six green jobs. Squash `f0de595` is Verified and has the same tree.
+  Author checks: TypeScript, dependency boundaries, build, full tests (905 pass,
+  zero fail, three skipped, expected `WINDOWS-001a` TODO), docs, consumer smoke,
+  publish dry run and changelog title preview passed on Windows / Node 26.10.0.
+  Never run the full suite concurrently with CoAgent8 review.
 - **0.7.0 owner gates and order (2026-10-19):**
-  - Before starting release PR 5.9, wait for the owner's confirmation of secret
-    `VSCE_PAT` (publisher `okidev`, Marketplace: Manage) and repository variable
-    `MARKETPLACE_PUBLISHING=true`. `NPM_TRUSTED_PUBLISHING=true` already exists.
+  - Later owner decision 2026-10-19 supersedes the earlier Marketplace setup
+    gate: the owner uploads the exact verified release VSIX manually through
+    publisher `okidev`. Do not require `VSCE_PAT` or
+    `MARKETPLACE_PUBLISHING=true`, and leave the Marketplace job disabled.
+    Release PR preparation may proceed. npm remains automated;
+    `NPM_TRUSTED_PUBLISHING=true` already exists.
   - WSL 2.18 (`ACCEPT-001c`, including 2.12d POSIX recovery) and Open VSX 5.5
     (`PROPOSALS-001b`) move to `0.8.0`. Namespace `okidev` is created;
     [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422)
@@ -46,8 +49,9 @@ Do not append another session transcript or treat old test counts as fresh evide
     stays for `docs.yml`.
   - Publishing the verified GitHub Release draft is the approval: npm publishes
     its exact verified tarball directly to `next` through trusted publishing
-    with provenance. No staging or npmjs.com 2FA approval. After both publishing
-    jobs finish, run **Verify published** for `next` and the Marketplace. The owner
+    with provenance. No staging or npmjs.com 2FA approval. After npm publication
+    and the owner's upload of the exact verified VSIX, run **Verify published**
+    for `next` and the Marketplace. The owner
     promotes a stable version manually: `npm dist-tag add coagent8@X.Y.Z latest`.
 - **Released baseline (`0.6.1`):** `v0.6.1` is an annotated tag on `55c7859`
   (`chore(release): v0.6.1 (#32)`), published on GitHub, npm (`latest` and

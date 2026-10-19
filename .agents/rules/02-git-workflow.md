@@ -344,6 +344,14 @@ owner creates the npm trusted publisher immediately before publishing the draft
 stable version to `latest`. Nothing is built or uploaded by hand on this path;
 the hand steps in 22 and 23 are fallbacks for a workflow that is off or failed.
 
+Owner decision 2026-10-19 (supersedes the earlier Marketplace setup gate): for
+`0.7.0`, the owner uploads the exact verified release VSIX manually through the
+Marketplace publisher panel for `okidev`. `VSCE_PAT` and
+`MARKETPLACE_PUBLISHING=true` are not prerequisites for preparing this release;
+leave the Marketplace workflow disabled. npm remains automated. In Phase E,
+publish the GitHub Release draft, wait for npm publication, upload the verified
+VSIX in the publisher panel, then run Verify published against both channels.
+
 The **target** is the branch that carries the tag (section 1): `develop` for
 betas and their patches; `X.Y.x` for release candidates, `X.Y.0` and later
 patches. Before the first release candidate the owner creates `X.Y.x` from
@@ -671,7 +679,11 @@ the tag-creation rule:
   and Open VSX (5.5, `PROPOSALS-001b`) move to `0.8.0`. The Open VSX namespace
   `okidev` is created; the [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422)
   is recorded, with no Open VSX publication work for `0.7.0`.
-* **Marketplace publishing** (RELEASE-001d): the repository secret `VSCE_PAT` holds
+* **Marketplace publishing** (owner decision 2026-10-19): `0.7.0` uses the
+  owner's manual upload of the exact verified release VSIX in the `okidev`
+  publisher panel. No Azure subscription, PAT or Marketplace workflow variable
+  is required for this path. The automatic workflow remains available as an
+  optional path and stays disabled. To enable it (RELEASE-001d), the repository secret `VSCE_PAT` holds
   a Marketplace personal access token of the `okidev` publisher (scope Marketplace:
   Manage), and the repository variable `MARKETPLACE_PUBLISHING` is `true`; without
   the variable `marketplace-publish.yml` is skipped. Publishing the GitHub Release

@@ -1083,7 +1083,11 @@ check that runs the real publish commands without publishing.
   dry run; CI packages the VSIX with the same `vsce` and a test pins the normal
   channel. `--azure-credential` (Entra ID) exists but needs an Azure tenant, so
   the token is used. Publishing the GitHub Release is the approval; no GitHub
-  environment. The owner adds the secret and the variable (row 5.4).
+  environment. Later owner decision 2026-10-19: `0.7.0` uses manual upload of
+  the exact verified VSIX through publisher `okidev`; leave the job disabled.
+  This supersedes the `VSCE_PAT` and `MARKETPLACE_PUBLISHING=true` gate for
+  release preparation. npm remains automated; Verify published runs after npm
+  publication and the owner's Marketplace upload (row 5.4).
 - [x] **RELEASE-001e - release notes from the repository.** The release PR adds
   `docs/releases/vX.Y.Z.md` with the tester header (what CoAgent8 is, install,
   changes, known limitations, upgrade notes), reviewed like code. `release.yml`
@@ -2074,12 +2078,12 @@ agent (owner assigns).
 | 5.1 | [x] `RELEASE-001b1` direct publishing workflow | R | 1.3 | Workflow runs `npm publish <verified tarball> --tag next` through trusted publishing with provenance; dry-run check in CI (owner decision 2026-10-19). |
 | 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | On release day immediately before publishing the draft, owner creates the trusted publisher: user `oktawianwybieralski`, repo `coagent8`, workflow `npm-publish.yml`, no environment, Allow npm publish enabled, Allow npm dist-tag disabled; unvalidated settings expire after about 48 hours (owner decision 2026-10-19, rule 02 section 8). |
 | 5.3 | [x] `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases (done with 5.1); Marketplace without `--pre-release` and the VSIX without the pre-release flag; npm stays on `next` with the owner's promotion to `latest` (owner decision 2026-10-19). |
-| 5.4 | [x] `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; the owner adds the secret `VSCE_PAT` and the variable `MARKETPLACE_PUBLISHING` (O). |
+| 5.4 | [x] `RELEASE-001d` Marketplace job | R | 5.3 | Job is implemented. Owner decision 2026-10-19 supersedes the setup gate: 0.7.0 uses manual upload of the exact verified VSIX through publisher `okidev`; keep the job disabled, no `VSCE_PAT` or `MARKETPLACE_PUBLISHING=true` required. |
 | 5.5 | `PROPOSALS-001b` Open VSX (`0.8.0`) | R | 5.4 | Deferred by owner decision 2026-10-19; namespace `okidev` created, [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422) recorded. |
 | 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
 | 5.7 | [x] `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
 | 5.8 | [x] `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.4, 5.6-5.7 | Rule 02 describes the automated phases. |
-| 5.9 | Release PR `0.7.0` | R | merged agent rows; owner confirms `VSCE_PAT` and `MARKETPLACE_PUBLISHING=true` | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
+| 5.9 | Release PR `0.7.0` | R | merged agent rows; manual Marketplace path accepted by owner on 2026-10-19 | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
 | 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
