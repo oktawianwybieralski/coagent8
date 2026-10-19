@@ -1043,7 +1043,7 @@ check that runs the real publish commands without publishing.
   personal access token secret, or keyless federation if the Marketplace
   supports it (verify first). Check: `vsce` in dry-run or package validation
   mode in CI, then the first real release.
-- [ ] **RELEASE-001e - release notes from the repository.** The release PR adds
+- [x] **RELEASE-001e - release notes from the repository.** The release PR adds
   `docs/releases/vX.Y.Z.md` with the tester header (what CoAgent8 is, install,
   changes, known limitations, upgrade notes), reviewed like code. `release.yml`
   puts it above the generated sections and fails without it, which removes
@@ -1051,7 +1051,9 @@ check that runs the real publish commands without publishing.
   `<details>`, map scope names to product names ("Vscode" to "VS Code",
   "Mcp" to "MCP", "Agy" to "Antigravity (agy)") in `cliff.toml` and
   `cliff.release-notes.toml`, and give both the same layout. Check: R, CI on
-  the PR.
+  the PR. Done: `scripts/release-notes.cjs` composes the notes, `release.yml`
+  fails early without the header, and both layouts map `vscode`, `mcp`, `agy`
+  and `cli`.
 - [ ] **RELEASE-001f - published-package verification.** After the publish
   jobs, a job checks that the npm `dist.shasum`/`dist.integrity` and the
   Marketplace VSIX SHA-256 equal the release files and that dist-tags point to
@@ -2025,7 +2027,7 @@ agent (owner assigns).
 | 5.3 | `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases, npm publishes to `latest` and moves `next`, Marketplace without `--pre-release`. |
 | 5.4 | `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; needs the owner's token secret (O). |
 | 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
-| 5.6 | `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
+| 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
 | 5.7 | `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
 | 5.8 | `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
 | 5.9 | Release PR `0.7.0` | R | the `0.7.0` rows above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |

@@ -1,10 +1,10 @@
-# git-cliff configuration for GitHub release notes (CHANGELOG-001): a collapsed
+# git-cliff configuration for GitHub release notes (CHANGELOG-001): an expanded
 # "Full Changelog" list by area (commit scope), then type, then
 # "#PR: description (by @author)", like CHANGELOG.md;
 # contributors and a compare link follow. GitHub links "#N" and "@user" in release
-# notes itself. Run `npm run release-notes -- --tag vX` in the release procedure and
-# pass the output to `gh release create --notes-file`. Known issues and security
-# notes are added by hand (Git governance section 6).
+# notes itself. release.yml renders it below the tester header that the release PR adds
+# as docs/releases/vX.Y.Z.md (scripts/release-notes.cjs, RELEASE-001e); `npm run
+# release-notes -- --tag vX` previews it.
 #
 # With GITHUB_TOKEN set, authors and PR numbers come from the GitHub API. Without
 # it, the PR number is read from the "(#N)" suffix of the squash-merge subject and
@@ -18,14 +18,11 @@ repo = "coagent8"
 header = ""
 body = """
 {% set repo = "https://github.com/oktawianwybieralski/coagent8" -%}
-# Full Changelog
-
-<details><summary>Click here to see</summary>
-<p>
+## Full Changelog
 {# A breaking commit is listed under "Breaking change" of its area only, not
    again under its type. #}
 {% for scope, area in commits | group_by(attribute="scope") %}
-- {{ scope | upper_first }}:
+- {{ self::area(scope=scope) }}:
 {%- set breaking = area | filter(attribute="breaking", value=true) %}
 {%- if breaking | length > 0 %}
   - Breaking change:
@@ -41,8 +38,6 @@ body = """
 {%- endfor %}
 {%- endfor %}
 
-</p>
-</details>
 
 {% if github.contributors | length > 0 -%}
 ## Contributors
@@ -57,6 +52,10 @@ body = """
 **Compare**: [{{ version }}]({{ repo }}/commits/{{ version }})
 {% endif -%}
 
+{# Commit scopes are short; release readers see product names (RELEASE-001e). #}
+{% macro area(scope) -%}
+{% if scope == "vscode" %}VS Code{% elif scope == "mcp" %}MCP{% elif scope == "agy" %}Antigravity (agy){% elif scope == "cli" %}CLI{% else %}{{ scope | upper_first }}{% endif %}
+{%- endmacro area %}
 {% macro entry(commit) -%}
 {% if commit.remote.pr_number -%}
 {% set number = commit.remote.pr_number -%}
