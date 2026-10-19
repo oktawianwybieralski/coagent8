@@ -32,6 +32,8 @@ test('Claude collector streams deltas, final message, usage and the session from
   assert.ok(!seen.some(e => e.type === 'assistant_message' && /thinking/i.test(e.text)), 'thinking is private');
   assert.equal(snapshot.usage.outputTokens, 48);
   assert.equal(snapshot.usage.inputTokens, 10 + 2010 + 4570);
+  // AX-001c: cache reads, cache writes and thinking are the reported parts; nothing is invented.
+  assert.deepEqual(snapshot.usage, { source: 'provider', inputTokens: 6590, outputTokens: 48, totalTokens: 6638, cachedInputTokens: 4570, cacheWriteInputTokens: 2010, reasoningTokens: 41 });
 });
 
 test('Claude collector reports read tool activity and a refused write as a completed answer', () => {
@@ -135,4 +137,13 @@ test('ENVELOPE-001: the result event\'s stop_reason tells whether the answer sto
   assert.equal(collect(limited).snapshot.lengthLimited, true);
   const silent = events.map(event => { if (event.type !== 'result') return event; const { stop_reason, ...rest } = event; return rest; });
   assert.equal(collect(silent).snapshot.lengthLimited, undefined, 'no stop reason is unknown, not false');
+});
+
+test('AX-001c: partial Claude usage keeps the reported counts and sums only complete parts', () => {
+  const events = recording('success-partial');
+  const withUsage = usage => events.map(event => event.type === 'result' ? { ...event, usage } : event);
+  assert.deepEqual(collect(withUsage({ input_tokens: 10, output_tokens: 48 })).snapshot.usage, { source: 'provider', outputTokens: 48 },
+    'without cache fields the inclusive input and total are unknown');
+  assert.deepEqual(collect(withUsage({ cache_read_input_tokens: 5, output_tokens: 7 })).snapshot.usage, { source: 'provider', cachedInputTokens: 5, outputTokens: 7 });
+  assert.equal(collect(withUsage({ unrelated: 1 })).snapshot.usage, undefined, 'no reported count, no usage');
 });

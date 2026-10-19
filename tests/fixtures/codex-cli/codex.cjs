@@ -88,9 +88,16 @@ function runTurn() {
   const text = acceptance ? acceptanceAnswer(userPrompt) : 'Final **Markdown** 😀\n```js\nconst answer = 42;\n```\nsk-fixtureSecret1234567890abcdef';
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
   item('item/completed', { type: 'agentMessage', id: 'message-1', text, phase: 'final_answer' });
-  const usage = last => ({ threadId, turnId: TURN, tokenUsage: { total: last, last, modelContextWindow: null } });
-  notify('thread/tokenUsage/updated', usage({ totalTokens: 6, inputTokens: 2, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }));
-  notify('thread/tokenUsage/updated', usage({ totalTokens: 8, inputTokens: 3, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 0 }));
+  // `total` accumulates over the thread (100 input and 40 output tokens before this turn),
+  // `last` is one model request; the second update repeats to show it counts once.
+  const usage = (total, last) => ({ threadId, turnId: TURN, tokenUsage: { total, last, modelContextWindow: null } });
+  const before = { totalTokens: 140, inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 0, outputTokens: 40, reasoningOutputTokens: 10 };
+  const first = { totalTokens: 6, inputTokens: 2, cachedInputTokens: 1, cacheWriteInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 1 };
+  const second = { totalTokens: 8, inputTokens: 3, cachedInputTokens: 2, cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 2 };
+  const add = (a, b) => Object.fromEntries(Object.keys(a).map(key => [key, a[key] + b[key]]));
+  notify('thread/tokenUsage/updated', usage(add(before, first), first));
+  notify('thread/tokenUsage/updated', usage(add(add(before, first), second), second));
+  notify('thread/tokenUsage/updated', usage(add(add(before, first), second), second));
   if (mode === 'server-request') send({ id: 'srv-1', method: 'item/commandExecution/requestApproval', params: { threadId, turnId: TURN, itemId: 'read-1' } });
   if (mode === 'hang' || mode === 'interruptible' || mode === 'acceptance-slow') return;
   if (mode === 'no-terminal') process.exit(0);

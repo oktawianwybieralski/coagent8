@@ -134,7 +134,8 @@ test('Codex declines server requests, ignores sub-agent threads, sums turn usage
     const events = [];
     const result = await execute('x',{...options,onEvent:e=>events.push(e)});
     assert.equal(result.status,'completed',mode); assert.equal(result.output.includes('SUBAGENT'),false);
-    assert.deepEqual(result.usage,{source:'provider',inputTokens:5,outputTokens:9,totalTokens:14});
+    // AX-001b: the turn's usage is the thread total minus the total before the turn; a repeated update counts once.
+    assert.deepEqual(result.usage,{source:'provider',inputTokens:5,cachedInputTokens:3,cacheWriteInputTokens:0,outputTokens:9,reasoningTokens:3,totalTokens:14});
     assert.ok(events.some(e=>e.type==='tool_started'&&e.name==='commandExecution')); assert.ok(events.some(e=>e.type==='tool_finished'&&e.success));
     assert.ok(events.some(e=>e.type==='assistant_delta'&&e.text==='Draft'));
     assert.equal(events.filter(e=>e.type==='warning').length,1,mode);

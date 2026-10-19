@@ -11,6 +11,7 @@ import { sanitizeHandle } from '../identity.js';
 import { redactDiagnostic, redactCredentialFormats } from '../../security/index.js';
 import type { AdapterEvent, ConversationEvent } from '../../contracts/index.js';
 import { validEventIdentifier, PROVIDERS, ERROR_CODES } from '../../contracts/index.js';
+import type { TokenUsage } from '../../contracts/index.js';
 
 /** Maximum byte capacity for a single session's history log (10 MiB). */
 export const SESSION_LIMIT = 10 * 1024 * 1024;
@@ -104,12 +105,23 @@ export function validateEvent(event: AdapterEvent): void {
       break;
     case 'turn_finished':
       if (!['completed', 'failed', 'cancelled', 'timed_out'].includes(event.status)) throw new Error('Invalid terminal status.');
+      if (event.usage !== undefined && !validUsage(event.usage)) throw new Error('Invalid token usage.');
       break;
     case 'turn_started':
       break;
     default:
       throw new Error('Invalid public event type.');
   }
+}
+
+const USAGE_COUNTS = ['inputTokens', 'cachedInputTokens', 'cacheWriteInputTokens', 'outputTokens', 'reasoningTokens', 'totalTokens'] as const;
+
+/** Whether a value is a {@link TokenUsage} with only known non-negative integer counts. */
+function validUsage(value: unknown): value is TokenUsage {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const usage = value as Record<string, unknown>;
+  if (usage.source !== 'provider') return false;
+  return Object.keys(usage).every(key => key === 'source' || ((USAGE_COUNTS as readonly string[]).includes(key) && Number.isSafeInteger(usage[key]) && (usage[key] as number) >= 0));
 }
 
 /** Redacts sensitive content from an adapter event before persisting to history. */
@@ -133,7 +145,7 @@ export function sanitize(event: AdapterEvent): AdapterEvent {
     case 'turn_started':
       return { type: event.type };
     case 'turn_finished':
-      return { type: event.type, status: event.status };
+      return { type: event.type, status: event.status, ...(event.usage && validUsage(event.usage) ? { usage: { ...event.usage } } : {}) };
   }
 }
 

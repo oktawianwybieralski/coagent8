@@ -166,10 +166,21 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (typeof event.stop_reason === 'string') stopReason = event.stop_reason;
     const data = record(event.usage);
     if (data) {
-      // Anthropic reports cached input separately; the sum is the input actually processed.
-      const input = count(data.input_tokens) + count(data.cache_creation_input_tokens) + count(data.cache_read_input_tokens);
-      const output = count(data.output_tokens);
-      usage = { source: 'provider', inputTokens: input, outputTokens: output, totalTokens: input + output };
+      // Anthropic reports cached input separately; the sum is the input actually processed
+      // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
+      // Each count is kept only when reported; a sum only when every part is known.
+      const known = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+      const uncached = data.input_tokens, read = data.cache_read_input_tokens, write = data.cache_creation_input_tokens;
+      const output = data.output_tokens, thinking = record(data.output_tokens_details)?.thinking_tokens;
+      const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
+      const counts: NonNullable<typeof usage> = { source: 'provider',
+        ...(input !== undefined ? { inputTokens: input } : {}),
+        ...(known(read) ? { cachedInputTokens: read } : {}),
+        ...(known(write) ? { cacheWriteInputTokens: write } : {}),
+        ...(known(output) ? { outputTokens: output } : {}),
+        ...(known(thinking) ? { reasoningTokens: thinking } : {}),
+        ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}) };
+      if (Object.keys(counts).length > 1) usage = counts;
     }
     const denials = Array.isArray(event.permission_denials) ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier) : [];
     if (denials.length) emit({ type: 'warning', message: `Claude Code denied tool calls outside the read-only profile: ${[...new Set(denials)].join(', ')}.` });

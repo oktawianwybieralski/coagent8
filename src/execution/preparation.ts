@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 
-import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget, type ListPrice } from '../contracts/index.js';
 import type { BackendReadContext } from '../backends/types.js';
 import { effortVariant } from '../contracts/models.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
@@ -100,6 +100,7 @@ export interface ConfirmConsentOptions {
  */
 export interface ConfirmConsentResult {
   priceNote?: string;
+  listPrice?: ListPrice;
   warnings: string[];
 }
 
@@ -551,7 +552,7 @@ export async function prepareTask(
       }
     }
 
-    return { priceNote: revalidation.priceNote, warnings: consentWarnings };
+    return { priceNote: revalidation.priceNote, listPrice: revalidation.listPrice, warnings: consentWarnings };
   };
 
   return {

@@ -12,7 +12,8 @@
  * @packageDocumentation
  */
 
-import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult } from '../contracts/execution.js';
+import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult, ListPrice } from '../contracts/execution.js';
+import type { TokenUsage } from '../contracts/conversation.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
@@ -77,6 +78,45 @@ export interface FormatExecutionOptions {
 }
 
 /**
+ * The footer line with a turn's token counts and, when it can be computed without guessing,
+ * their list-price equivalent (`AX-001g`).
+ * @remarks Reasoning is part of output and cached input part of input, so neither is counted
+ * twice. An amount needs known input, cached-input, cache-write and output counts and their
+ * prices: cached input needs its own price, and cache writes have no list price here, so a
+ * turn that wrote to the cache shows counts only. Unknown is never taken as zero. It is a
+ * list-price equivalent, not billing: a subscription CLI may charge nothing per token.
+ * @returns The line, or undefined when the backend reported no counts.
+ */
+export function formatUsage(usage: TokenUsage | undefined, price: ListPrice | undefined): string | undefined {
+  if (!usage || (usage.inputTokens === undefined && usage.outputTokens === undefined)) return undefined;
+  const n = (value: number) => value.toLocaleString('en-US');
+  const parts: string[] = [];
+  if (usage.inputTokens !== undefined) parts.push(`${n(usage.inputTokens)} input${usage.cachedInputTokens ? ` (${n(usage.cachedInputTokens)} cached)` : ''}`);
+  if (usage.outputTokens !== undefined) parts.push(`${n(usage.outputTokens)} output${usage.reasoningTokens ? ` (${n(usage.reasoningTokens)} reasoning)` : ''}`);
+  let line = `Usage: ${parts.join(' · ')} tokens`;
+  const cost = listPriceEquivalent(usage, price);
+  if (cost !== undefined && price) line += ` · list price ~${formatUsd(cost)} USD (${price.source})`;
+  return line;
+}
+
+/** Cents from 1 USD up; two significant digits below, down to a millionth of a dollar. */
+function formatUsd(amount: number): string {
+  if (amount >= 1) return amount.toFixed(2);
+  if (amount < 0.000001) return amount === 0 ? '0' : '<0.000001';
+  return String(Number(amount.toFixed(Math.min(6, 1 - Math.floor(Math.log10(amount))))));
+}
+
+/** USD at list price, or undefined when a needed count or price is unknown. */
+function listPriceEquivalent(usage: TokenUsage, price: ListPrice | undefined): number | undefined {
+  const { inputTokens, cachedInputTokens: cached, cacheWriteInputTokens: written, outputTokens } = usage;
+  if (!price || inputTokens === undefined || outputTokens === undefined || cached === undefined || written === undefined) return undefined;
+  if (price.inputUsdPerMTok === null || price.outputUsdPerMTok === null || written > 0) return undefined;
+  if (cached > 0 && price.cachedInputUsdPerMTok === null) return undefined;
+  const uncached = Math.max(0, inputTokens - cached);
+  return (uncached * price.inputUsdPerMTok + cached * (price.cachedInputUsdPerMTok ?? 0) + outputTokens * price.outputUsdPerMTok) / 1_000_000;
+}
+
+/**
  * Formats a terminal execution result into the canonical MCP response envelope.
  *
  * - Strips ANSI escape codes and outer whitespace; preserves quoted update banners.
@@ -113,6 +153,7 @@ export function formatExecutionResult(
   let executionMeta: ExecutionMeta;
   let rawWarnings: string[];
   let priceNote: string | undefined;
+  let listPrice: ListPrice | undefined;
   let preEvaluatedReview: StateEnvelopeEvaluation | undefined;
   let fallbackText = '';
   let formatOpts = options;
@@ -125,6 +166,7 @@ export function formatExecutionResult(
     executionMeta = outcome.meta;
     rawWarnings = outcome.warnings || [];
     priceNote = outcome.price;
+    listPrice = outcome.listPrice;
     preEvaluatedReview = outcome.review;
     fallbackText = typeof resOrDefaultText === 'string' ? resOrDefaultText : '';
   } else {
@@ -208,6 +250,8 @@ export function formatExecutionResult(
     }
   }
   if (priceNote) footerLines.push(`Price: ${priceNote}`);
+  const usageLine = formatUsage(res.usage, listPrice);
+  if (usageLine) footerLines.push(usageLine);
   if (res.truncated) {
     footerLines.push('Notice: Output reached buffer limit.');
   }
