@@ -10,7 +10,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import type { ElicitResult, Tool, Resource, ResourceTemplate } from '@modelcontextprotocol/sdk/types.js';
 import { createProgressReporter } from './progress.js';
-import { chooseWorkspace, type ResolvedWorkspace } from '../workspace/workspace.js';
+import { chooseWorkspace, deletedSessionWorkspace, type ResolvedWorkspace } from '../workspace/workspace.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { BRAND } from '../brand.js';
 import { CANONICAL_TOOL_NAMES, SERVER_INSTRUCTIONS } from './constants.js';
@@ -372,6 +372,12 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
         case CANONICAL_TOOL_NAMES.CANCEL:
           // Without workspace_path, cancel stays unscoped: the handle alone identifies the turn.
           return await handleCancelSession(args as { session_handle: string; workspace_path?: string });
+        case CANONICAL_TOOL_NAMES.SESSION: {
+          // Sessions of a deleted directory can still be listed, read and closed.
+          const deleted = deletedSessionWorkspace(args.workspace_path);
+          if (deleted) return await handleSession(args, deleted);
+          break;
+        }
       }
       if (executionNames.has(name) && !(name === CANONICAL_TOOL_NAMES.RUN && args.action === 'issue')) {
         budget = createExecutionBudget({
