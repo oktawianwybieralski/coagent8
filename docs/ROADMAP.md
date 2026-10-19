@@ -1020,19 +1020,29 @@ check that runs the real publish commands without publishing.
   `./release/...`. Move the publish commands into a script that CI runs against
   a packed tarball in the same layout with `npm publish --dry-run`. Check: R,
   CI on the PR.
-- [ ] **RELEASE-001b - npm trusted publisher.** The trusted publisher allows
+- [ ] **RELEASE-001b - npm trusted publisher.** `b1` (workflow) done; `b2` (the owner
+  recreates the trusted publisher) open. The trusted publisher allows
   only `npm stage publish` and its validation expired unused. Owner decision
   2026-10-13: staged publishing; the workflow runs `npm stage publish`, the
   owner approves the version on npmjs.com with 2FA, and the GitHub `npm`
   environment approval goes. Confirm the `npm stage publish` syntax and
   dist-tag handling from npm documentation, then recreate the trusted
   publisher. Check: first publication through the
-  workflow with provenance.
-- [ ] **RELEASE-001c - normal releases.** Owner decision 2026-10-13: GitHub
+  workflow with provenance. Done in `b1`: `npm-publish.yml` stages the verified
+  tarball with `npm stage publish` (npm 11.19.1 pinned beside the runner's;
+  verified locally that a tarball path stages that exact file) and has no GitHub
+  environment, which blocked the job. Owner decision 2026-10-19: every release is
+  staged to `next`; `latest` is the owner's promotion of a stable version
+  (`npm dist-tag add`), since a staged version's dist-tag cannot change and
+  existing registrations use `coagent8@next`. This replaces the `latest`-first
+  plan of `RELEASE-001c` for npm.
+- [ ] **RELEASE-001c - normal releases.** GitHub part done with `b1`; the
+  Marketplace channel (VSIX pre-release flag) follows with `RELEASE-001d`. Owner decision 2026-10-13: GitHub
   releases below `1.0.0` are not marked pre-release, because the flag hides the
   release from the repository page. `release.yml` creates a normal draft,
-  `npm-publish.yml` drops the pre-release check and publishes to `latest` (and
-  moves `next` with it), so the manual `dist-tag add` step goes. The
+  `npm-publish.yml` drops the pre-release check. npm superseded by the owner
+  decision of 2026-10-19 (`RELEASE-001b`): releases go to `next` and the owner
+  promotes a stable one to `latest`. The
   Marketplace also uses the normal channel (no `--pre-release`, owner
   decision 2026-10-13). Update rule 02
   sections 4 and 5, AGENTS.md and README install text. Check: R, P.
@@ -2022,9 +2032,9 @@ agent (owner assigns).
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
-| 5.1 | `RELEASE-001b1` staged publishing workflow | R | 1.3 | Workflow runs `npm stage publish` with provenance; dry-run check in CI. |
-| 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | Owner recreates the trusted publisher for staged publishing and removes the GitHub `npm` environment approval. |
-| 5.3 | `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases, npm publishes to `latest` and moves `next`, Marketplace without `--pre-release`. |
+| 5.1 | [x] `RELEASE-001b1` staged publishing workflow | R | 1.3 | Workflow runs `npm stage publish` with provenance; dry-run check in CI. |
+| 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | Owner recreates the trusted publisher: workflow `npm-publish.yml`, no environment, allowed action `npm stage publish` only (rule 02 section 8). |
+| 5.3 | `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases (done with 5.1); Marketplace without `--pre-release` and the VSIX without the pre-release flag; npm stays on `next` with the owner's promotion to `latest` (owner decision 2026-10-19). |
 | 5.4 | `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; needs the owner's token secret (O). |
 | 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
 | 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |

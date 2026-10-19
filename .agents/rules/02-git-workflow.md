@@ -43,7 +43,7 @@ must be disclosed with their effect on the earlier review.
 | Merge a PR | Only on the owner's explicit instruction for that PR | Yes |
 | Create a release line, push a tag | Never | Yes |
 | Verify a draft release, edit its notes | Yes | Yes |
-| Publish a GitHub Release, approve the `npm` environment, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
+| Publish a GitHub Release, approve a staged npm version, promote it to `latest`, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
 
 An agent prepares release PRs, release notes and evidence (section 5) and
 stops. It never states or implies that a push, merge, tag or publication
@@ -291,8 +291,8 @@ become the final commit, so they must meet this section.
   continue with `0.10.0`. A release of a preview that only fixes it raises the
   patch instead (owner decision 2026-10-11): `0.6.1`, `0.6.2`; it ships as a
   preview like its minor. The final release is `1.0.0`. A preview is a VS Code
-  pre-release, a GitHub pre-release and npm `next`; `isPreview` in
-  `scripts/build-vscode.cjs` and the release workflows apply this rule. How a version after 1.0.0 is
+  pre-release (`isPreview` in `scripts/build-vscode.cjs`); its GitHub Release is a
+  normal release (owner decision 2026-10-13), and npm channels follow the table below. How a version after 1.0.0 is
   previewed is an owner decision before the first such preview.
 * **Beta**: feature-incomplete or not fully hardened; distributed to invited
   testers as a preview. **Release candidate**: scope frozen on the line; only
@@ -311,15 +311,15 @@ become the final commit, so they must meet this section.
 
 | npm dist-tag | Holds | Install |
 | --- | --- | --- |
-| `next` | The newest preview (a version below 1.0.0) | `npm install coagent8@next` |
-| `latest` | The newest final release; before 1.0.0 the newest preview | `npm install coagent8` |
+| `next` | Every new release, as soon as it is published; fixes may still follow | `npm install coagent8@next` |
+| `latest` | The release the owner promoted as stable | `npm install coagent8` |
 
-* A preview is published to `next`. npm always keeps a `latest` tag and its
-  package page shows the version and README `latest` points at, so while only
-  previews exist `latest` follows the newest preview (owner decision
-  2026-10-12, after the npm page kept showing the withdrawn 1.0.0-beta.1). From
-  1.0.0 on, `latest` holds only final releases and a preview stays on `next`.
-  The README install instructions use `@next` until 1.0.0.
+* Every release is staged to `next` by `npm-publish.yml` (`npm stage publish`, owner
+  decision 2026-10-19); the owner approves it on npmjs.com with 2FA. A staged
+  version's dist-tag cannot change, so `latest` is a separate owner step once the
+  version proved stable: `npm dist-tag add coagent8@X.Y.Z latest`. npm's package
+  page shows the version `latest` points at. The README install instructions use
+  `@next`, which existing registrations also use.
 * The `beta` dist-tag is retired (removed with 0.6.0).
 
 ---
@@ -408,9 +408,11 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
       documentation must deploy;
     * delete the repository afterwards.
 
-    `npm-publish.yml` cannot be rehearsed without publishing. When it changed
-    since the previous tag, keep `NPM_TRUSTED_PUBLISHING` off for this release
-    and publish npm by hand (step 22). The real tag cannot be retried.
+    `npm-publish.yml` only stages: nothing is public before the owner approves, and
+    a wrong staged version is rejected on npmjs.com (`npm stage reject`). A re-run
+    uses the workflow at the tag, so when a changed workflow fails, stage the
+    verified file by hand (step 22). CI runs its command with `--dry-run` on every
+    PR. The real tag cannot be retried.
 13. **Independent review** of `<previous tag>...release/vX.Y.Z`, bound to the
     base, candidate, tree and tarball hashes ([03-author-reviewer](03-author-reviewer.md)).
 
@@ -438,9 +440,9 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     smoke-tests the exact tarball, packages the VSIX, writes `SHA256SUMS`, signs
     build provenance for both, composes the notes (`scripts/release-notes.cjs`:
     the step 9 header, the git-cliff changelog with `--current` and root commits
-    skipped, the artifacts) and creates a **draft** release, a pre-release below
-    1.0.0. It never publishes anything. A failure here is fixed by a new patch
-    version; the tag stays.
+    skipped, the artifacts) and creates a **draft** normal release. It never
+    publishes anything. A failure here is fixed by a new patch version; the tag
+    stays.
 
 ### Phase D - verify the draft (agent may run, owner decides)
 
@@ -464,21 +466,19 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 
 ### Phase E - publish (owner, in this order, from the Phase D folder)
 
-21. Publish the draft release (keep "pre-release" below 1.0.0). This deploys
-    the documentation site (`docs.yml`). GitHub lists a pre-release under
-    Releases but never as "Latest" on the repository page.
-22. Publish the verified tarball, never a rebuild. With npm trusted publishing
-    enabled (section 8), approving the `npm` environment of `npm-publish.yml`
-    publishes it to `next` or `latest`; below 1.0.0 the owner then runs only the
-    `dist-tag add` line below. Otherwise by hand:
+21. Publish the draft release as a normal release. This deploys the
+    documentation site (`docs.yml`) and starts `npm-publish.yml`.
+22. npm: `npm-publish.yml` verifies the release tarball's checksum and provenance and
+    stages that exact file to `next` (section 4). Approve it on npmjs.com with 2FA
+    (Packages, coagent8, staged versions); the version is then live on `next`.
+    Promote it to `latest` once it proved stable, never in the same breath:
     ```bash
-    npm publish ./coagent8-X.Y.Z.tgz --tag next    # below 1.0.0
-    npm dist-tag add coagent8@X.Y.Z latest         # below 1.0.0, while only previews exist (section 4)
-    npm publish ./coagent8-X.Y.Z.tgz               # 1.0.0 and later: latest
+    npm dist-tag add coagent8@X.Y.Z latest
     npm dist-tag ls coagent8                       # check the tags
     ```
-    npm never accepts the same version twice. The package page then shows this
-    version and its README.
+    Without trusted publishing (section 8) stage the verified file by hand:
+    `npm stage publish ./coagent8-X.Y.Z.tgz --tag next`. npm never accepts the
+    same version twice.
 23. Publish the same verified VSIX on the VS Code Marketplace under `okidev`:
     ```bash
     npx @vscode/vsce publish --pre-release --packagePath ./coagent8-mcp-X.Y.Z.vsix   # below 1.0.0
@@ -627,12 +627,13 @@ the tag-creation rule:
 * **GitHub Pages:** source "GitHub Actions"; the `github-pages` environment allows
   deployments from tags `v*` (a release event runs on the tag) and from
   `develop` (manual runs). Site: https://oktawianwybieralski.github.io/coagent8/.
-* **npm trusted publishing** (after 0.6.0, REPO-002g): on npmjs.com the
-  package `coagent8` trusts publisher repository `oktawianwybieralski/coagent8`,
-  workflow `npm-publish.yml`, environment `npm`; the GitHub environment `npm`
-  requires the owner's review and allows tags `v*`; the repository variable
-  `NPM_TRUSTED_PUBLISHING` is `true`. The package then disallows token
-  publishing. Without the variable the publish job is skipped.
+* **npm trusted publishing** (RELEASE-001b): on npmjs.com the package `coagent8`
+  trusts publisher repository `oktawianwybieralski/coagent8`, workflow
+  `npm-publish.yml`, no environment, allowed action `npm stage publish` only;
+  the approval is the owner's 2FA on the staged version, not a GitHub
+  environment (whose rules blocked the job). The repository variable
+  `NPM_TRUSTED_PUBLISHING` is `true` and the package disallows token
+  publishing. Without the variable the staging job is skipped.
 * No protection, required check or review gate may be disabled or bypassed
   outside the recovery procedure below.
 
