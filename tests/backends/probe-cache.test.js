@@ -637,3 +637,37 @@ test('a probe without a command (an unresolved configured executable) is not reu
     adapterRegistry.agy = original;
   }
 });
+
+test('AUDIT-001-A13-A15: observations stay bounded, evicted names are read again and shared reads survive eviction', async () => {
+  const { readObservedModel, observationCacheSize, MAX_OBSERVATIONS } = require('../../src/backends/probe-cache.ts');
+  const original = adapterRegistry.claude;
+  const observed = new Map();
+  let release;
+  const slow = new Promise(resolve => { release = resolve; });
+  adapterRegistry.claude = { id: 'claude', name: 'fixture', execute: async () => { throw new Error('must not run'); },
+    probe: async () => ({ installed: true, executionSupported: true, version: `fixture-${Date.now()}` }),
+    observeModel: async requested => {
+      observed.set(requested, (observed.get(requested) || 0) + 1);
+      if (requested === 'shared') await slow;
+      return `${requested}-resolved`;
+    } };
+  try {
+    // A13: any distinct name a caller passes is reachable (Claude Code accepts unlisted names).
+    const shared = Promise.all([readObservedModel('claude', 'shared'), readObservedModel('claude', 'shared')]);
+    const names = Array.from({ length: MAX_OBSERVATIONS + 50 }, (_, i) => `name-${i}`);
+    for (const name of names) assert.equal(await readObservedModel('claude', name), `${name}-resolved`);
+    assert.ok(observationCacheSize() <= MAX_OBSERVATIONS, `retained ${observationCacheSize()} of ${names.length} names`);
+    // A shared in-flight read is not evicted or cancelled by the churn, and its waiters share one request.
+    release();
+    assert.deepEqual(await shared, ['shared-resolved', 'shared-resolved']);
+    assert.equal(observed.get('shared'), 1);
+    // A recent name is still a memory hit; an evicted one is read again (from models.json) correctly.
+    const recent = names[names.length - 1];
+    assert.equal(await readObservedModel('claude', recent), `${recent}-resolved`);
+    assert.equal(observed.get(recent), 1, 'a recent name stays cached');
+    assert.equal(await readObservedModel('claude', names[0]), `${names[0]}-resolved`, 'an evicted name is read again');
+    assert.ok(observationCacheSize() <= MAX_OBSERVATIONS);
+  } finally {
+    adapterRegistry.claude = original;
+  }
+});
