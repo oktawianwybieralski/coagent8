@@ -17,15 +17,6 @@ function extensionVersion(manifestVersion, serverVersion) {
 }
 
 /**
- * Whether a version is a preview: every version below 1.0.0 (REPO-003). A preview is a VS Code
- * pre-release; GitHub Releases are normal releases and npm channels follow rule 02 section 4.
- * @param version - A numeric major.minor.patch version.
- */
-function isPreview(version) {
-  return /^0\.\d+\.\d+$/.test(version);
-}
-
-/**
  * Stages the VS Code extension in `.artifacts/vscode`.
  * @param serverRoot - The extracted npm package; the MCP server bundle, its notices,
  * the logo and the license are taken from it, never from the working tree.
@@ -66,4 +57,4 @@ async function buildExtension(serverRoot) {
   return output;
 }
 
-module.exports = { buildExtension, extensionVersion, isPreview };
+module.exports = { buildExtension, extensionVersion };

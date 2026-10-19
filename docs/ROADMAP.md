@@ -937,8 +937,9 @@ numeric `major.minor.patch` for an extension and offers Restart Extensions after
 an update only when that number changes, and the Marketplace refuses a repeated
 version. Each preview stage raises the minor, while a fix-only preview release
 raises the patch (`0.6.1`). npm, the VSIX and the Git tag carry the same number.
-Every version below `1.0.0` is a preview (VS Code pre-release, GitHub
-pre-release, npm `next`):
+Every version below `1.0.0` is a preview (at the time a VS Code pre-release, a
+GitHub pre-release and npm `next`; since `RELEASE-001` the GitHub Release and the
+Marketplace use normal channels and npm stages every release to `next`):
 
 | Preview | Version | Tag |
 | --- | --- | --- |
@@ -1036,8 +1037,9 @@ check that runs the real publish commands without publishing.
   (`npm dist-tag add`), since a staged version's dist-tag cannot change and
   existing registrations use `coagent8@next`. This replaces the `latest`-first
   plan of `RELEASE-001c` for npm.
-- [ ] **RELEASE-001c - normal releases.** GitHub part done with `b1`; the
-  Marketplace channel (VSIX pre-release flag) follows with `RELEASE-001d`. Owner decision 2026-10-13: GitHub
+- [x] **RELEASE-001c - normal releases.** GitHub part done with `b1`; the
+  Marketplace part with `RELEASE-001d`: the VSIX is built without the
+  pre-release flag and the Marketplace job refuses a flagged one. Owner decision 2026-10-13: GitHub
   releases below `1.0.0` are not marked pre-release, because the flag hides the
   release from the repository page. `release.yml` creates a normal draft,
   `npm-publish.yml` drops the pre-release check. npm superseded by the owner
@@ -1046,13 +1048,20 @@ check that runs the real publish commands without publishing.
   Marketplace also uses the normal channel (no `--pre-release`, owner
   decision 2026-10-13). Update rule 02
   sections 4 and 5, AGENTS.md and README install text. Check: R, P.
-- [ ] **RELEASE-001d - Marketplace workflow.** Add a job on `release:
+- [x] **RELEASE-001d - Marketplace workflow.** Add a job on `release:
   published` with an owner-approved environment that downloads the release
   VSIX, verifies `SHA256SUMS` and the `release.yml` attestation and runs
   `vsce publish --packagePath` on that file. Authentication: a Marketplace
   personal access token secret, or keyless federation if the Marketplace
   supports it (verify first). Check: `vsce` in dry-run or package validation
-  mode in CI, then the first real release.
+  mode in CI, then the first real release. Done: `marketplace-publish.yml`
+  verifies the checksum, the attestation, the version and the normal channel and
+  runs `vsce@4.0.0 publish --packagePath --skip-duplicate` with the secret
+  `VSCE_PAT`, gated by the variable `MARKETPLACE_PUBLISHING`. `vsce` 4.0.0 has no
+  dry run; CI packages the VSIX with the same `vsce` and a test pins the normal
+  channel. `--azure-credential` (Entra ID) exists but needs an Azure tenant, so
+  the token is used. Publishing the GitHub Release is the approval; no GitHub
+  environment. The owner adds the secret and the variable (row 5.4).
 - [x] **RELEASE-001e - release notes from the repository.** The release PR adds
   `docs/releases/vX.Y.Z.md` with the tester header (what CoAgent8 is, install,
   changes, known limitations, upgrade notes), reviewed like code. `release.yml`
@@ -2034,8 +2043,8 @@ agent (owner assigns).
 | --- | --- | --- | --- | --- |
 | 5.1 | [x] `RELEASE-001b1` staged publishing workflow | R | 1.3 | Workflow runs `npm stage publish` with provenance; dry-run check in CI. |
 | 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | Owner recreates the trusted publisher: workflow `npm-publish.yml`, no environment, allowed action `npm stage publish` only (rule 02 section 8). |
-| 5.3 | `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases (done with 5.1); Marketplace without `--pre-release` and the VSIX without the pre-release flag; npm stays on `next` with the owner's promotion to `latest` (owner decision 2026-10-19). |
-| 5.4 | `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; needs the owner's token secret (O). |
+| 5.3 | [x] `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases (done with 5.1); Marketplace without `--pre-release` and the VSIX without the pre-release flag; npm stays on `next` with the owner's promotion to `latest` (owner decision 2026-10-19). |
+| 5.4 | [x] `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; the owner adds the secret `VSCE_PAT` and the variable `MARKETPLACE_PUBLISHING` (O). |
 | 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
 | 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
 | 5.7 | `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
