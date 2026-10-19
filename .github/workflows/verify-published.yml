@@ -1,0 +1,49 @@
+name: Verify published
+
+# After the owner approved the staged npm version and the Marketplace job ran (rule 02,
+# section 5, RELEASE-001f), this checks that npm and the Marketplace serve the release files:
+# npm dist.shasum and dist.integrity, the `next` dist-tag, and the Marketplace VSIX SHA-256.
+# npm publishes only after the owner's approval on npmjs.com, so the owner starts it.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, vX.Y.Z
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify ${{ inputs.tag }} on npm and the Marketplace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      # The verifier comes from the workflow's own revision, so older releases, whose tags
+      # predate it, can be verified; the tag only selects the release files and versions.
+      - name: Checkout the verifier
+        uses: actions/checkout@v4
+
+      - name: Download the release files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$TAG is not vX.Y.Z"; exit 1; }
+          version="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release \
+            --pattern "coagent8-$version.tgz" --pattern "coagent8-mcp-$version.vsix" --pattern SHA256SUMS
+          (cd release && sha256sum --check --ignore-missing --strict SHA256SUMS)
+
+      - name: Compare with npm and the Marketplace
+        env:
+          TAG: ${{ inputs.tag }}
+        run: node scripts/verify-published.cjs --tag "$TAG" --dir release

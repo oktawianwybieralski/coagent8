@@ -1073,10 +1073,14 @@ check that runs the real publish commands without publishing.
   the PR. Done: `scripts/release-notes.cjs` composes the notes, `release.yml`
   fails early without the header, and both layouts map `vscode`, `mcp`, `agy`
   and `cli`.
-- [ ] **RELEASE-001f - published-package verification.** After the publish
+- [x] **RELEASE-001f - published-package verification.** After the publish
   jobs, a job checks that the npm `dist.shasum`/`dist.integrity` and the
   Marketplace VSIX SHA-256 equal the release files and that dist-tags point to
-  the version (done by hand for `0.6.1`). Check: R.
+  the version (done by hand for `0.6.1`). Check: R. Done: `verify-published.yml`
+  (started by the owner after approving the staged npm version, since npm
+  publishes only then) runs `scripts/verify-published.cjs`, which reads the public
+  registry and Marketplace endpoints. Against the published `0.6.1` it matched; a
+  locally packed `0.6.1` was refused on all three digests.
 - [ ] **RELEASE-001g - rule 02 and AGENTS.md.** Describe the automated phases:
   the owner merges, tags and approves. Remove `--delete-branch` from the merge
   commands (the repository deletes merged branches). Record whether the
@@ -2047,7 +2051,7 @@ agent (owner assigns).
 | 5.4 | [x] `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; the owner adds the secret `VSCE_PAT` and the variable `MARKETPLACE_PUBLISHING` (O). |
 | 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
 | 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
-| 5.7 | `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
+| 5.7 | [x] `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
 | 5.8 | `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
 | 5.9 | Release PR `0.7.0` | R | the `0.7.0` rows above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
