@@ -4,7 +4,7 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-10-15. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-19. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -83,15 +83,16 @@ coherent PR results with a fixed procedure.
 and its row numbers stay:
 
 - `0.7.0` (beta.3) is a stability release: the merged public CLI and
-  `FEEDBACK-061` rows, 2.12e (`ENVELOPE-001`), 2.13 and 2.14, the acceptance runner and WSL lane
-  2.15-2.18 (which also run the 2.12d POSIX checks), native acceptance of the
+  `FEEDBACK-061` rows, 2.12e (`ENVELOPE-001`), 2.13 and 2.14, the acceptance runner
+  2.15-2.17 (WSL 2.18 and its 2.12d POSIX checks move to `0.8.0`, owner
+  decision 2026-10-19), native acceptance of the
   shipped skills and CLI management 2.36, the proposal rows 3.0, 3.9, 3.10,
   3.10b, 3.11, 3.13 and 3.13b (3.10b joined `0.7.0` by owner decision
-  2026-10-18), publication automation 5.1-5.8 and the release rows 5.9-5.12.
+  2026-10-18), publication automation 5.1-5.4, 5.6-5.8 and the release rows 5.9-5.12.
   Phase 5 follows these rows, not all of Phases 3 and 4.
 - `0.8.0` is the first release candidate (rc.1, the start of the `1.0.x` line
   at feature freeze) and carries delegation and orchestration: 1.14, the open
-  rows 2.19-2.35, 3.1-3.8, 3.12, 3.14-3.20, Phase 4, 5.13 and the
+  rows 2.18-2.35, 3.1-3.8, 3.12, 3.14-3.20, Phase 4, 5.5, 5.13 and the
   delegated coordination listed under [After 0.7.0](#after-070). Delegation
   and the write profiles therefore reach testers first in a release
   candidate; no beta between `0.7.0` and `0.8.0` is planned unless the owner
@@ -135,8 +136,10 @@ recorded in the card it changes:
   ([`DELEGATE-001`](#delegate-001-asynchronous-delegation-and-caller-wake-up)):
   read-only delegation lands early, delegation with writes follows the write
   profiles.
-- npm publishes through staged publishing with approval on npmjs.com
-  (`RELEASE-001b`); GitHub releases and the Marketplace use normal, not
+- npm publishes directly to `next` through trusted publishing with provenance;
+  publishing the verified GitHub Release draft is the approval, with no staging
+  or npmjs.com 2FA approval (superseded by owner decision 2026-10-19,
+  `RELEASE-001b`); GitHub releases and the Marketplace use normal, not
   pre-release, channels for `0.x` (`RELEASE-001c`).
 - `RELEASE-001` stays in Phase 5, but `RELEASE-001a` (command fix and dry
   run) lands early.
@@ -219,7 +222,8 @@ per rule 02 with native acceptance that includes the `PATCH-061` tasks that
 did not run for `0.6.1` (N1, N4, N6, N7, the Claude backend in N2, the rest of
 N3, consent in N5), `EXEC-001-T12c/d`, the acceptance procedure from
 `FEEDBACK-061h`, the fixed `FEEDBACK-061j` and `061k` with native check
-2.12d and its POSIX run in 2.18 (release blockers), and the Socket and license checks (`SUPPLY-001f`,
+2.12d on Windows (the POSIX run in 2.18 moves to `0.8.0`, owner decision
+2026-10-19), and the Socket and license checks (`SUPPLY-001f`,
 `LIC-001d`). `RELEASE-001a` (dry-run of the publish commands) is independent
 and may land earlier without changing this order.
 
@@ -923,7 +927,8 @@ Completed for `0.6.0`:
   ([evidence](HANDOFF.md#repo-002cde-beta2-pull-request-branch-and-api-site)).
 - `REPO-002g`: added build provenance attestation (`actions/attest-build-provenance`)
   for the tarball and VSIX in `release.yml` and added `npm-publish.yml`
-  (gated by environment `npm` and repository variable `NPM_TRUSTED_PUBLISHING`).
+  (now gated only by repository variable `NPM_TRUSTED_PUBLISHING`; the owner
+  removes the unused `npm` environment, owner decision 2026-10-19).
 - Owner migration steps 1-8: configured `develop` and branch/tag rulesets,
   released `v0.6.0` on GitHub, npm (`next`) and the VS Code Marketplace, and
   unpublished the `1.0.0-beta.1` placeholder ([evidence](HANDOFF.md#060-release-evidence)).
@@ -939,10 +944,12 @@ Open work:
   `0.6.1` attempt is recorded in [RELEASE-001b](#release-001-automated-publication)): on
   npmjs.com, package `coagent8` > Settings > Trusted publishing: GitHub Actions,
   repository `oktawianwybieralski/coagent8`, workflow `npm-publish.yml`,
-  environment `npm`; then disallow token publishing. On GitHub create the
-  environment `npm` (required reviewer: the owner; deployment tags `v*`) and the
-  repository variable `NPM_TRUSTED_PUBLISHING` = `true`. Until enabled,
-  `npm-publish.yml` stays skipped and npm releases are published manually.
+  no environment, **Allow npm publish** enabled, **Allow npm dist-tag** disabled.
+  Owner decision 2026-10-19: an unvalidated configuration expires after about
+  48 hours, so create it on release day just before publishing the verified
+  draft. `NPM_TRUSTED_PUBLISHING=true` already exists. The owner removes GitHub's
+  unused `npm` environment and keeps `github-pages` for `docs.yml`. Until the
+  variable is enabled, `npm-publish.yml` stays skipped.
 
 ## REPO-003: one numeric version for npm, VSIX and tags
 
@@ -953,7 +960,7 @@ version. Each preview stage raises the minor, while a fix-only preview release
 raises the patch (`0.6.1`). npm, the VSIX and the Git tag carry the same number.
 Every version below `1.0.0` is a preview (at the time a VS Code pre-release, a
 GitHub pre-release and npm `next`; since `RELEASE-001` the GitHub Release and the
-Marketplace use normal channels and npm stages every release to `next`):
+Marketplace use normal channels and npm publishes every release directly to `next`):
 
 | Preview | Version | Tag |
 | --- | --- | --- |
@@ -988,8 +995,9 @@ user's real client registrations (`FEEDBACK-061a/b`).
   instance use their own `HOME`/`USERPROFILE` (or an equivalent override) so
   they never write the user's real client registrations or
   `~/.coagent8/config.json`. Check: R, native.
-- [ ] **ACCEPT-001c - WSL lane.** In a WSL2 Ubuntu distribution with the real
-  CLIs: POSIX process groups and parent-death cleanup (`CUR-011`), CLIs and
+- [ ] **ACCEPT-001c - WSL lane.** Moved to `0.8.0` (owner decision
+  2026-10-19), including the 2.12d POSIX recovery checks. In a WSL2 Ubuntu
+  distribution with the real CLIs: POSIX process groups and parent-death cleanup (`CUR-011`), CLIs and
   workspaces on either side (`\\wsl.localhost\...` and `/mnt/c`), and
   redaction of `/home/<user>` and `/mnt/c/Users/<user>` paths. Hosted CI
   offers only WSL1, so the lane runs locally. Supporting VS Code Remote-WSL as
@@ -1035,22 +1043,22 @@ check that runs the real publish commands without publishing.
   `./release/...`. Move the publish commands into a script that CI runs against
   a packed tarball in the same layout with `npm publish --dry-run`. Check: R,
   CI on the PR.
-- [ ] **RELEASE-001b - npm trusted publisher.** `b1` (workflow) done; `b2` (the owner
-  recreates the trusted publisher) open. The trusted publisher allows
-  only `npm stage publish` and its validation expired unused. Owner decision
-  2026-10-13: staged publishing; the workflow runs `npm stage publish`, the
-  owner approves the version on npmjs.com with 2FA, and the GitHub `npm`
-  environment approval goes. Confirm the `npm stage publish` syntax and
-  dist-tag handling from npm documentation, then recreate the trusted
-  publisher. Check: first publication through the
-  workflow with provenance. Done in `b1`: `npm-publish.yml` stages the verified
-  tarball with `npm stage publish` (npm 11.19.1 pinned beside the runner's;
-  verified locally that a tarball path stages that exact file) and has no GitHub
-  environment, which blocked the job. Owner decision 2026-10-19: every release is
-  staged to `next`; `latest` is the owner's promotion of a stable version
-  (`npm dist-tag add`), since a staged version's dist-tag cannot change and
-  existing registrations use `coagent8@next`. This replaces the `latest`-first
-  plan of `RELEASE-001c` for npm.
+- [ ] **RELEASE-001b - npm trusted publisher.** `b1` (workflow) done; `b2`
+  (owner configuration on release day) open. Owner decision 2026-10-19
+  supersedes staging: `npm-publish.yml` publishes the verified tarball directly
+  with `npm publish ./release/coagent8-X.Y.Z.tgz --tag next --access public --provenance`
+  through OIDC. CI runs the same command with `--dry-run` instead
+  of provenance; the staging-specific npm pin is removed. Publishing the verified
+  GitHub Release draft is the owner's approval; there is no npmjs.com 2FA step
+  or GitHub `npm` environment. The owner removes that environment and keeps
+  `github-pages` for `docs.yml`. Create the trusted publisher on release day,
+  immediately before publishing the draft: user `oktawianwybieralski`, repository
+  `coagent8`, workflow `npm-publish.yml`, no environment, **Allow npm publish**
+  enabled and **Allow npm dist-tag** disabled. Unvalidated configuration expires
+  after approximately 48 hours. `NPM_TRUSTED_PUBLISHING=true` already exists.
+  Check: first workflow publication with provenance, followed by Verify published.
+  The owner later promotes a stable version with
+  `npm dist-tag add coagent8@X.Y.Z latest`.
 - [x] **RELEASE-001c - normal releases.** GitHub part done with `b1`; the
   Marketplace part with `RELEASE-001d`: the VSIX is built without the
   pre-release flag and the Marketplace job refuses a flagged one. Owner decision 2026-10-13: GitHub
@@ -1091,9 +1099,8 @@ check that runs the real publish commands without publishing.
   jobs, a job checks that the npm `dist.shasum`/`dist.integrity` and the
   Marketplace VSIX SHA-256 equal the release files and that dist-tags point to
   the version (done by hand for `0.6.1`). Check: R. Done: `verify-published.yml`
-  (started by the owner after approving the staged npm version, since npm
-  publishes only then) runs `scripts/verify-published.cjs`, which reads the public
-  registry and Marketplace endpoints. Against the published `0.6.1` it matched; a
+  (started by the owner after both publishing jobs finish) runs
+  `scripts/verify-published.cjs`, which reads the public registry and Marketplace endpoints. Against the published `0.6.1` it matched; a
   locally packed `0.6.1` was refused on all three digests.
 - [x] **RELEASE-001g - rule 02 and AGENTS.md.** Describe the automated phases:
   the owner merges, tags and approves. Remove `--delete-branch` from the merge
@@ -1486,9 +1493,10 @@ deferred as research only.
   registry checks `mcpName` in the published package, so the first version it
   can list is `0.7.0`, and `mcp-publisher publish` after that release stays
   with the owner.
-- [ ] **PROPOSALS-001b - Open VSX.** Reserve the `okidev` namespace on Open
-  VSX (used by Cursor, VSCodium and Windsurf) and publish the same VSIX there,
-  possibly from the `RELEASE-001d` job.
+- [ ] **PROPOSALS-001b - Open VSX.** Moved to `0.8.0` (owner decision
+  2026-10-19). Namespace `okidev` is created;
+  [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422)
+  is recorded. Publication of the same verified VSIX stays future work.
 - [ ] **PROPOSALS-001c - VS Code Remote and WSL.** Decide whether Remote-WSL
   (and VS Code Remote in general) is a supported topology for `1.0`; the
   extension declares no `extensionKind`. If yes, add cards for the topology
@@ -1992,7 +2000,7 @@ agent (owner assigns).
 | 2.15 | [x] `ACCEPT-001b` isolated user home (#67) | R | - | Isolated instances and the runner set their own home; a test proves real registrations are untouched. |
 | 2.16 | [x] `ACCEPT-001a1` runner skeleton (#67) | R | 2.15 | `npm run acceptance:native` installs given artifacts in isolation and writes evidence JSON with hashes and versions; dry run in CI without backends. |
 | 2.17 | [x] `ACCEPT-001a2` scenarios N2-N4 (#71) | R | 2.16 | The runner drives health, consult, review, session and cancel through the real CLIs; one native run recorded. |
-| 2.18 | `ACCEPT-001c` WSL lane | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios, including the 2.12d recovery checks; results recorded. |
+| 2.18 | `ACCEPT-001c` WSL lane (`0.8.0`, owner decision 2026-10-19) | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios, including the 2.12d recovery checks; results recorded. |
 | 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
 | 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
 | 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
@@ -2063,15 +2071,15 @@ agent (owner assigns).
 
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
-| 5.1 | [x] `RELEASE-001b1` staged publishing workflow | R | 1.3 | Workflow runs `npm stage publish` with provenance; dry-run check in CI. |
-| 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | Owner recreates the trusted publisher: workflow `npm-publish.yml`, no environment, allowed action `npm stage publish` only (rule 02 section 8). |
+| 5.1 | [x] `RELEASE-001b1` direct publishing workflow | R | 1.3 | Workflow runs `npm publish <verified tarball> --tag next` through trusted publishing with provenance; dry-run check in CI (owner decision 2026-10-19). |
+| 5.2 | `RELEASE-001b2` trusted publisher | O | 5.1 | On release day immediately before publishing the draft, owner creates the trusted publisher: user `oktawianwybieralski`, repo `coagent8`, workflow `npm-publish.yml`, no environment, Allow npm publish enabled, Allow npm dist-tag disabled; unvalidated settings expire after about 48 hours (owner decision 2026-10-19, rule 02 section 8). |
 | 5.3 | [x] `RELEASE-001c` normal channels | R | 5.1 | Drafts are normal releases (done with 5.1); Marketplace without `--pre-release` and the VSIX without the pre-release flag; npm stays on `next` with the owner's promotion to `latest` (owner decision 2026-10-19). |
 | 5.4 | [x] `RELEASE-001d` Marketplace job | R | 5.3 | Job verifies and publishes the release VSIX; the owner adds the secret `VSCE_PAT` and the variable `MARKETPLACE_PUBLISHING` (O). |
-| 5.5 | `PROPOSALS-001b` Open VSX | R | 5.4 | Same verified VSIX to Open VSX after the owner reserves `okidev`. |
+| 5.5 | `PROPOSALS-001b` Open VSX (`0.8.0`) | R | 5.4 | Deferred by owner decision 2026-10-19; namespace `okidev` created, [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422) recorded. |
 | 5.6 | [x] `RELEASE-001e` notes file and changelog layout | R | - par | `docs/releases/vX.Y.Z.md` required by `release.yml`; expanded changelog; area names mapped. |
 | 5.7 | [x] `RELEASE-001f` published-package verification | R | 5.4 | Job compares registry and Marketplace files with the release files. |
-| 5.8 | [x] `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.7 | Rule 02 describes the automated phases. |
-| 5.9 | Release PR `0.7.0` | R | the `0.7.0` rows above | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
+| 5.8 | [x] `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.4, 5.6-5.7 | Rule 02 describes the automated phases. |
+| 5.9 | Release PR `0.7.0` | R | merged agent rows; owner confirms `VSCE_PAT` and `MARKETPLACE_PUBLISHING=true` | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
 | 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
@@ -2089,7 +2097,7 @@ previews are `0.7.0`, `0.8.0` and `0.9.0`.
 | --- | --- |
 | BETA-001: beta.2 (0.6.0, released) | Released as `v0.6.0` ([evidence](HANDOFF.md#060-release-evidence)): bridge audit blockers (`AUDIT-001-A01` to `A07`), `AX-007a-c`, `WINDOWS-001a`, `SKILLS-001a-d`, and `EXEC-001-T12` package/matrix/independent review and native VS Code checks. No write claim. |
 | PATCH-061: 0.6.1 (fix-only preview, released) | `FEEDBACK-060` 0.6.1 fixes, `PUBLIC-001`, `DOCS-002a/b/d`, `LIC-001` MIT relicensing, `SUPPLY-001a-b` packaging fixes, and `PATCH-061-R1..R7`/`N1..N7` release acceptance. |
-| BETA-001: beta.3 (0.7.0) | The `0.7.0` rows of the [release split](#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner and WSL lane (ACCEPT-001), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items, RELEASE-001 and a native upgrade from the published `0.6.1` (row 5.10). No write claim. |
+| BETA-001: beta.3 (0.7.0) | The `0.7.0` rows of the [release split](#070-beta3-plan): public CLI (CLI-FIRST-001a-e, h), FEEDBACK-061, the acceptance runner (ACCEPT-001a/b; WSL 2.18 deferred to `0.8.0` on 2026-10-19), native acceptance of shipped skills and CLI management, the accepted PROPOSALS-001 rule and description items, RELEASE-001 and a native upgrade from the published `0.6.1` (row 5.10). No write claim. |
 | RC-001: rc.1 (0.8.0, first on `1.0.x`) | The `0.8.0` rows of the release split: asynchronous delegation with caller wake-up (DELEGATE-001), host-led COAGENT-001 through 005 and applicable 007 (verified writes/checks/review/skills), WINDOWS-001 containment before write profiles, the delegated/parallel slice, COAGENT-008, PLUGIN-001, DOCS-003, SUPPLY-001c-e, AX acceptance and AUDIT-001-A08 to A21, all complete or explicitly deferred before freeze, unsupported claims removed. |
 | rc.2 if needed | Corrections with renewed evidence; never replace a published artifact. |
 | 1.0.0 | Accepted audited snapshot, tagged on `1.0.x` through its release PR (rule 02 section 5). |

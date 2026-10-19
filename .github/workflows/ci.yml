@@ -70,13 +70,9 @@ jobs:
       - name: Install exact tarball and verify consumer MCP
         run: npm run test:consumer
 
-      # The same pinned npm as npm-publish.yml, beside the runner's, for `npm stage publish`.
-      - name: Verify npm stage publish dry-run on packed tarball
-        shell: bash
-        run: |
-          npm install --prefix "$RUNNER_TEMP/npm" --no-audit --no-fund npm@11.19.1
-          npm_execpath="$RUNNER_TEMP/npm/node_modules/npm/bin/npm-cli.js" node scripts/publish-npm.cjs --dry-run
-
+      # Exercise the same publish command as npm-publish.yml without publishing.
+      - name: Verify npm publish dry-run on packed tarball
+        run: node scripts/publish-npm.cjs --dry-run
 
       - name: Install VSIX packaging dependencies (Node 24)
         if: matrix.node-version == '24.x'
