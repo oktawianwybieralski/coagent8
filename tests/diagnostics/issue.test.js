@@ -221,3 +221,27 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
   assert.ok(elapsed < 100, `Sanitization took too long (${elapsed}ms), possible ReDoS`);
   assert.ok(sanitizedA.length <= 4096, 'Bounded length should be enforced');
 });
+
+test('AUDIT-001-A19: free text has no safe boundary after a diff, so everything after it stays redacted', () => {
+  const { sanitizeText } = require('../../src/diagnostics/issue.ts');
+  const diffWithLookalikes = [
+    'Review failed after this change:',
+    'diff --git a/src/a.ts b/src/a.ts',
+    '--- a/src/a.ts',
+    '+++ b/src/a.ts',
+    '@@ -1,2 +1,3 @@',
+    '+const key = "sk-live-secretvalue1234567890";',
+    '',
+    '## Error',
+    '+console.log("private payload");',
+    '```',
+    'Error: PROTOCOL_ERROR after the diff',
+  ].join('\n');
+  const clean = sanitizeText(diffWithLookalikes);
+  // The diff may itself contain blank lines, headings and fences, so none of them ends it.
+  assert.ok(clean.startsWith('Review failed after this change:'), 'text before the diff is kept');
+  assert.match(clean, /\[git diff redacted for privacy\]/);
+  for (const leaked of ['secretvalue', 'private payload', 'src/a.ts']) assert.ok(!clean.includes(leaked), leaked);
+  // The cost of that rule: a diagnostic written after the diff is lost too (A20 is skipped).
+  assert.ok(!clean.includes('PROTOCOL_ERROR after the diff'));
+});
