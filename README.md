@@ -46,8 +46,9 @@ installed and signed-in CLI.
 ## Status
 
 `0.6.0` is the first release for testers. Every version below 1.0.0 is a
-**preview**: a GitHub pre-release, a VS Code pre-release and npm
-`coagent8@next`, all with the same version number.
+**preview** and a VS Code pre-release, with the same version number on GitHub,
+npm and VS Code. On npm each release appears first as `coagent8@next`; `latest`
+follows once the version has proved stable.
 
 What works today: consultations and reviews by another agent in a read-only
 profile, model selection by price with your approval for expensive models,

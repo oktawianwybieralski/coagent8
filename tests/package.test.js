@@ -158,7 +158,7 @@ test('PROPOSALS-001a: server.json describes the npm package for the MCP Registry
   assert.ok(!manifest.files.includes('server.json'), 'registry metadata is published by the owner, not shipped');
 });
 
-test('RELEASE-001a: npm publish script targets ./release/... tarball, validates channel and prerelease flag', () => {
+test('RELEASE-001a/b1: the npm script stages the ./release/... tarball on next with an npm that supports staging', () => {
   const { resolvePublishPlan, runPublishNpm, resolveNpmCommand } = require('../scripts/publish-npm.cjs');
 
   const customNpm = resolveNpmCommand({ npm_execpath: process.execPath });
@@ -183,23 +183,20 @@ test('RELEASE-001a: npm publish script targets ./release/... tarball, validates 
     assert.match(fallbackExec.stdout.trim(), /^\d+\.\d+\.\d+/);
   }
 
-  const previewPlan = resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'true' });
-  assert.equal(previewPlan.version, '0.7.0');
-  assert.equal(previewPlan.channel, 'next');
-  assert.equal(previewPlan.tarballPath, './release/coagent8-0.7.0.tgz');
-  assert.equal(previewPlan.tarballPath.startsWith('./release/'), true, 'Tarball path must explicitly start with ./release/ to avoid git shorthand');
-
-  const releasePlan = resolvePublishPlan({ tag: 'v1.0.0', prerelease: 'false' });
-  assert.equal(releasePlan.version, '1.0.0');
-  assert.equal(releasePlan.channel, 'latest');
-  assert.equal(releasePlan.tarballPath, './release/coagent8-1.0.0.tgz');
-
-  assert.throws(() => resolvePublishPlan({ tag: 'v0.7.0', prerelease: 'false' }), /pre-release flag false does not match/);
-  assert.throws(() => resolvePublishPlan({ tag: 'v1.0.0', prerelease: 'true' }), /pre-release flag true does not match/);
-
+  // Every release is staged to `next`; the owner promotes a stable version to `latest` (RELEASE-001b1).
+  for (const tag of ['v0.7.0', 'v1.0.0']) {
+    const plan = resolvePublishPlan({ tag });
+    assert.equal(plan.version, tag.slice(1));
+    assert.equal(plan.channel, 'next');
+    assert.equal(plan.tarballPath, `./release/coagent8-${tag.slice(1)}.tgz`, 'an explicit ./release/ path, never a git shorthand');
+  }
+  assert.throws(() => resolvePublishPlan({ tag: 'v1.0.0-beta.1' }), /not numeric major.minor.patch/);
+  // `npm stage publish` exists from npm 11.15.0.
+  const { supportsStaging } = require('../scripts/publish-npm.cjs');
+  for (const [version, ok] of [['11.15.0', true], ['11.19.1', true], ['12.0.0', true], ['11.14.9', false], ['10.99.0', false], ['', false]]) assert.equal(supportsStaging(version), ok, version);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-pub-'));
   try {
-    assert.throws(() => runPublishNpm({ cwd: dir, tag: 'v0.7.0', prerelease: 'true', dryRun: true }), /Release tarball not found/);
+    assert.throws(() => runPublishNpm({ cwd: dir, tag: 'v0.7.0', dryRun: true }), /Release tarball not found/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

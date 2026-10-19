@@ -1,10 +1,13 @@
 name: npm publish
 
 # Phase E of the release process (Git workflow rule 02, section 5). Publishing the
-# verified GitHub Release publishes its exact npm tarball, never a rebuild, through
-# npm trusted publishing (OIDC, no token) with provenance. The job runs only after
-# the owner set the repository variable NPM_TRUSTED_PUBLISHING to `true` (rule 02,
-# section 8) and waits for the owner's approval in the `npm` environment.
+# verified GitHub Release stages its exact npm tarball, never a rebuild, through npm
+# trusted publishing (OIDC, no token) with provenance: `npm stage publish` to the `next`
+# dist-tag (RELEASE-001b1). The owner then approves the staged version on npmjs.com with
+# 2FA, which is the approval; there is no GitHub environment gate, whose rules blocked the
+# job before. The owner promotes a version that proved stable to `latest` by hand. The job
+# runs only after the owner set the repository variable NPM_TRUSTED_PUBLISHING to `true`
+# (rule 02, section 8).
 on:
   release:
     types: [published]
@@ -16,10 +19,9 @@ permissions:
 
 jobs:
   publish:
-    name: Publish ${{ github.event.release.tag_name }} to npm
+    name: Stage ${{ github.event.release.tag_name }} on npm
     if: vars.NPM_TRUSTED_PUBLISHING == 'true' && startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
-    environment: npm
     steps:
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -32,14 +34,11 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      # Trusted publishing needs npm 11.5.1 or later.
-      - name: Check npm version
+      # Staged publishing needs npm 11.15.0 or later. This pinned npm is installed beside the
+      # runner's and used only by the publish script (npm_execpath), which checks its version.
+      - name: Install pinned npm for staging
         shell: bash
-        run: |
-          set -euo pipefail
-          version="$(npm --version)"
-          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$version" \
-            || { echo "::error::npm $version cannot use trusted publishing; 11.5.1 or later is required"; exit 1; }
+        run: npm install --prefix "$RUNNER_TEMP/npm" --no-audit --no-fund npm@11.19.1
 
       - name: Download the release tarball and checksums
         shell: bash
@@ -67,13 +66,9 @@ jobs:
           gh attestation verify "release/coagent8-$version.tgz" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
 
-      # A preview (every version below 1.0.0, rule 02 section 4) goes to `next`, a final
-      # version to `latest`; the GitHub pre-release flag must agree.
-      # Delegates to scripts/publish-npm.cjs, ensuring ./release/... explicit pathing (RELEASE-001a).
-      - name: Publish to npm
+      # Stages ./release/coagent8-X.Y.Z.tgz to `next` (scripts/publish-npm.cjs, RELEASE-001a/b1).
+      - name: Stage on npm
         shell: bash
         env:
           TAG: ${{ github.event.release.tag_name }}
-          PRERELEASE: ${{ github.event.release.prerelease }}
-        run: |
-          node scripts/publish-npm.cjs
+        run: npm_execpath="$RUNNER_TEMP/npm/node_modules/npm/bin/npm-cli.js" node scripts/publish-npm.cjs

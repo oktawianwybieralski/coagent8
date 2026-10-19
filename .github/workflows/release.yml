@@ -143,9 +143,8 @@ jobs:
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
-          prerelease=()
-          # Every version below 1.0.0 is a preview (rule 02, section 4).
-          case "$version" in 0.*) prerelease=(--prerelease) ;; esac
-          gh release create "$tag" --draft --verify-tag "${prerelease[@]}" \
+          # A normal release, also below 1.0.0: the pre-release flag hides it from the
+          # repository page (owner decision 2026-10-13, RELEASE-001c).
+          gh release create "$tag" --draft --verify-tag \
             --title "CoAgent8 $tag" --notes-file release/notes.md \
             "release/coagent8-$version.tgz" "release/coagent8-mcp-$version.vsix" release/SHA256SUMS

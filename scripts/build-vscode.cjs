@@ -18,7 +18,7 @@ function extensionVersion(manifestVersion, serverVersion) {
 
 /**
  * Whether a version is a preview: every version below 1.0.0 (REPO-003). A preview is a VS Code
- * pre-release, a GitHub pre-release and npm `next`; the release workflows apply the same rule.
+ * pre-release; GitHub Releases are normal releases and npm channels follow rule 02 section 4.
  * @param version - A numeric major.minor.patch version.
  */
 function isPreview(version) {

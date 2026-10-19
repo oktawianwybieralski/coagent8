@@ -1,5 +1,9 @@
-// Publishes the verified package tarball to npm (RELEASE-001a).
-// Used by .github/workflows/npm-publish.yml for production releases and by CI for dry-run verification.
+// Stages the verified package tarball on npm (RELEASE-001a, RELEASE-001b1).
+// Used by .github/workflows/npm-publish.yml for releases and by CI for dry-run verification.
+// `npm stage publish` through trusted publishing (OIDC) puts the exact file in npm's staging
+// queue; the owner approves it on npmjs.com with 2FA. Every release goes to the `next`
+// dist-tag, which is immutable for a staged version; the owner promotes a version to `latest`
+// by hand once it proved stable (owner decision 2026-10-19).
 // Targets ./release/coagent8-<version>.tgz explicitly with leading ./ to prevent npm from interpreting
 // release/<file> as a GitHub user/repo repository identifier.
 const fs = require('node:fs');
@@ -55,6 +59,18 @@ function resolveNpmCommand(env = process.env, execPath = process.execPath) {
   return { command: 'npm', argsPrefix: [] };
 }
 
+/** Oldest npm CLI with `npm stage publish`. */
+const MIN_STAGE_NPM = [11, 15, 0];
+
+/** Whether an npm version string supports staged publishing. */
+function supportsStaging(version) {
+  const parts = String(version).trim().split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((parts[i] || 0) !== MIN_STAGE_NPM[i]) return (parts[i] || 0) > MIN_STAGE_NPM[i];
+  }
+  return true;
+}
+
 function resolvePublishPlan(options = {}) {
   const cwd = options.cwd || root;
   let version = options.version;
@@ -69,17 +85,9 @@ function resolvePublishPlan(options = {}) {
     }
   }
 
-  const isPreview = version.startsWith('0.');
-  const channel = options.channel || (isPreview ? 'next' : 'latest');
-  const expectedPrerelease = isPreview;
-
-  const rawPrerelease = options.prerelease !== undefined ? options.prerelease : process.env.PRERELEASE;
-  if (rawPrerelease !== undefined && rawPrerelease !== '') {
-    const actualPrerelease = String(rawPrerelease) === 'true';
-    if (actualPrerelease !== expectedPrerelease) {
-      throw new Error(`GitHub pre-release flag ${rawPrerelease} does not match version ${version} (expected ${expectedPrerelease})`);
-    }
-  }
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`Version ${version} is not numeric major.minor.patch.`);
+  // Every release is staged to `next`; `latest` is the owner's promotion of a stable version.
+  const channel = 'next';
 
   const releaseDir = options.releaseDir || './release';
   const normalizedDir = releaseDir.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -89,7 +97,6 @@ function resolvePublishPlan(options = {}) {
   return {
     version,
     channel,
-    isPreview,
     tarballPath,
   };
 }
@@ -111,8 +118,12 @@ function runPublishNpm(options = {}) {
   }
 
   const npmCmd = options.npmCommand || resolveNpmCommand();
+  const npmVersion = spawnSync(npmCmd.command, [...npmCmd.argsPrefix, '--version'], { cwd, encoding: 'utf8', windowsHide: true });
+  if (npmVersion.status !== 0 || !supportsStaging(npmVersion.stdout)) {
+    throw new Error(`npm ${String(npmVersion.stdout || '').trim() || '(unknown version)'} cannot stage packages; ${MIN_STAGE_NPM.join('.')} or later is required.`);
+  }
   const publishTarget = plan.tarballPath.startsWith('./') ? plan.tarballPath : `./${plan.tarballPath.replace(/^\/+/, '')}`;
-  const args = [...npmCmd.argsPrefix, 'publish', publishTarget, '--tag', plan.channel, '--access', 'public'];
+  const args = [...npmCmd.argsPrefix, 'stage', 'publish', publishTarget, '--tag', plan.channel, '--access', 'public'];
 
   if (dryRun) {
     args.push('--dry-run');
@@ -131,10 +142,10 @@ function runPublishNpm(options = {}) {
 
   if (proc.status !== 0) {
     if (dryRun && /You cannot publish over the previously published versions/.test(output)) {
-      process.stdout.write(`npm publish dry-run verified for ${publishTarget}: version ${plan.version} already published on registry.\n`);
+      process.stdout.write(`npm stage publish dry-run verified for ${publishTarget}: version ${plan.version} already published on registry.\n`);
       return { status: 0, stdout: proc.stdout, stderr: proc.stderr, plan };
     }
-    throw new Error(`npm publish failed (status ${proc.status}):\n${output}`);
+    throw new Error(`npm stage publish failed (status ${proc.status}):\n${output}`);
   }
 
   process.stdout.write(output);
@@ -155,4 +166,5 @@ module.exports = {
   resolveNpmCommand,
   resolvePublishPlan,
   runPublishNpm,
+  supportsStaging,
 };
