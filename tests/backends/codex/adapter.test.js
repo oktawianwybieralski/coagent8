@@ -13,6 +13,8 @@ const {execute, probe, readCodexConfig, normalizeReasoningEffort, codexAdapter, 
 const {executeTask} = require('../../../src/execution/controller.ts');
 const {sessionHistory} = require('../../../src/sessions/history/index.ts');
 const {getSession} = require('../../../src/sessions/session.ts');
+const {INTERRUPT_GRACE_MS} = require('../../../src/execution/process.ts');
+const {ToolError} = require('../../../src/contracts/index.ts');
 const {saveConfig} = require('../../../src/config.ts');
 const { readResult } = require('../../helpers/result.cjs');
 const options = {cwd:directory,model:'gpt-6.1-sol'};
@@ -177,26 +179,47 @@ test('Codex respects deadlines and cancellation through the common runner, and n
   const aborted = await execute('x',{...options,abortSignal:AbortSignal.abort()});
   assert.equal(aborted.status,'cancelled'); assert.equal(aborted.error.code,'ABORTED');
   assert.equal(fs.existsSync(process.env.CODEX_FIXTURE_CAPTURE),false);
-  for (const [mode,expected] of [['abort','cancelled'],['deadline','timed_out']]) {
-    process.env.CODEX_FIXTURE_MODE = 'interruptible';
-    const controller = new AbortController(); const startedAt = Date.now();
-    const result = await execute('x',{...options,abortSignal:controller.signal,timeoutMs:mode==='deadline'?1500:30000,
-      onEvent:e=>{if(mode==='abort'&&e.type==='assistant_message')controller.abort();}});
-    assert.equal(result.status,expected,mode); assert.equal(result.error.code,mode==='abort'?'ABORTED':'TIMEOUT');
-    assert.equal(result.exitCode,0,`${mode}: the server exited by itself after the interrupted turn`);
-    assert.ok(Date.now()-startedAt<2900,`${mode}: no wait for the forced-stop grace period`);
-    assert.ok(result.output.includes('const answer = 42;'),mode);
-    const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8'));
-    const interrupt = capture.records.find(r=>r.method==='turn/interrupt');
-    assert.deepEqual(interrupt.params,{threadId:'11111111-aaaa-bbbb-cccc-123456789012',turnId:'019a0000-0000-7000-8000-000000000001'});
-  }
-  process.env.CODEX_FIXTURE_MODE = 'hang';
-  const startedAt = Date.now();
-  const timedOut = await execute('x',{...options,timeoutMs:1500});
+  // Times are measured from the stop, never from the call: a slow runner may take longer than
+  // a fixed deadline just to start the fixture (2026-10-19, windows-latest Node 26).
+  const turn = {threadId:'11111111-aaaa-bbbb-cccc-123456789012',turnId:'019a0000-0000-7000-8000-000000000001'};
+  const interruptOf = () => JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8')).records.find(r=>r.method==='turn/interrupt');
+  process.env.CODEX_FIXTURE_MODE = 'interruptible';
+  const controller = new AbortController(); let abortedAt = 0;
+  const cancelled = await execute('x',{...options,abortSignal:controller.signal,timeoutMs:60000,
+    onEvent:e=>{if(e.type==='assistant_message'&&!abortedAt){abortedAt=Date.now();controller.abort();}}});
+  assert.equal(cancelled.status,'cancelled'); assert.equal(cancelled.error.code,'ABORTED');
+  assert.equal(cancelled.exitCode,0,'the server exited by itself after the interrupted turn');
+  assert.ok(Date.now()-abortedAt<INTERRUPT_GRACE_MS-100,'no wait for the forced-stop grace period');
+  assert.ok(cancelled.output.includes('const answer = 42;'));
+  assert.deepEqual(interruptOf().params,turn);
+  // A deadline during the turn: an execution budget stops a turn with its TIMEOUT error as the
+  // abort reason, which stays a timeout; the turn is interrupted without a forced stop.
+  const budget = new AbortController(); let expiredAt = 0;
+  const timedOut = await execute('x',{...options,abortSignal:budget.signal,timeoutMs:60000,
+    onEvent:e=>{if(e.type==='assistant_message'&&!expiredAt){expiredAt=Date.now();budget.abort(new ToolError('TIMEOUT','Execution deadline exceeded.'));}}});
   assert.equal(timedOut.status,'timed_out'); assert.equal(timedOut.error.code,'TIMEOUT');
-  assert.ok(Date.now()-startedAt>=4500,'a server that ignores the interrupt is stopped after the grace period');
-  assert.notEqual(timedOut.exitCode,0);
+  assert.equal(timedOut.exitCode,0,'the server exited by itself after the interrupted turn');
+  assert.ok(Date.now()-expiredAt<INTERRUPT_GRACE_MS-100,'no wait for the forced-stop grace period');
+  assert.deepEqual(interruptOf().params,turn);
   assert.ok(timedOut.output.includes('const answer = 42;'));
+  // The runner's own deadline before any turn exists (the thread never starts): nothing to
+  // interrupt, so EOF ends the server, again without a forced stop.
+  process.env.CODEX_FIXTURE_MODE = 'no-thread';
+  const deadlineAt = Date.now();
+  const early = await execute('x',{...options,timeoutMs:500});
+  assert.equal(early.status,'timed_out'); assert.equal(early.error.code,'TIMEOUT');
+  assert.equal(early.exitCode,0,'the server exited by itself on EOF');
+  assert.ok(Date.now()-deadlineAt<500+INTERRUPT_GRACE_MS-100,'no wait for the forced-stop grace period');
+  assert.equal(interruptOf(),undefined,'no turn, nothing to interrupt');
+  // A server that ignores the interrupt is stopped once the grace period after the stop has passed.
+  process.env.CODEX_FIXTURE_MODE = 'hang';
+  const hung = new AbortController(); let stoppedAt = 0;
+  const forced = await execute('x',{...options,abortSignal:hung.signal,timeoutMs:60000,
+    onEvent:e=>{if(e.type==='assistant_message'&&!stoppedAt){stoppedAt=Date.now();hung.abort();}}});
+  assert.equal(forced.status,'cancelled'); assert.equal(forced.error.code,'ABORTED');
+  assert.ok(Date.now()-stoppedAt>=INTERRUPT_GRACE_MS-50,'a server that ignores the interrupt is stopped after the grace period');
+  assert.notEqual(forced.exitCode,0);
+  assert.ok(forced.output.includes('const answer = 42;'));
   delete process.env.CODEX_FIXTURE_MODE;
 });
 
@@ -302,7 +325,6 @@ test('Codex rate limits without a measured window are no quota', () => {
 });
 
 test('EXEC-001-T08c: probe, listModels, and inspectQuota abort deterministically via abortSignal and release handles', async () => {
-  const { ToolError } = require('../../../src/contracts/index.ts');
   const { activeProcesses } = require('../../../src/execution/process.ts');
 
   // 1. Backward compatibility without context
