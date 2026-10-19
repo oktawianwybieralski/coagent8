@@ -99,14 +99,39 @@ export function backupDirectory(root: string, origin?: RegistrationOrigin): stri
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   return directory;
 }
+/** Replacement attempts of a setup write before a sharing failure is reported. */
+const REPLACE_ATTEMPTS = 20;
+/** Errors Windows reports while another process holds the file open for a moment. */
+const TRANSIENT_REPLACE_ERRORS = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const pause = new Int32Array(new SharedArrayBuffer(4));
+
+/**
+ * Replaces a client or setup file only if it still holds `before`.
+ * @remarks A client that keeps its configuration open makes Windows refuse the replacement
+ * for a moment (AUDIT-001-A12). The rename is retried a bounded number of times (under
+ * 1 s in all) on EPERM, EBUSY or EACCES; the content is checked again before every
+ * attempt, so an edit made meanwhile is never overwritten. Callers are synchronous, so the
+ * wait blocks. A change between the last check and the rename remains possible: there is no
+ * compare-and-swap for files. A new file is private (0600); an existing one keeps its mode.
+ * @throws When the content changed, or the replacement still fails with its last error.
+ */
 export function writeChecked(file: string, before: string | null, after: string): void {
-  if (read(file) !== before) throw new Error('Configuration changed concurrently; setup did not overwrite it.');
+  const changed = () => new Error('Configuration changed concurrently; setup did not overwrite it.');
+  if (read(file) !== before) throw changed();
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = file + '.' + randomUUID() + '.tmp';
   try {
     fs.writeFileSync(temp, after, { flag: 'wx', mode: before === null ? 0o600 : fs.statSync(file).mode & 0o777 });
-    if (read(file) !== before) throw new Error('Configuration changed concurrently; setup did not overwrite it.');
-    fs.renameSync(temp, file);
+    for (let attempt = 1; ; attempt++) {
+      if (read(file) !== before) throw changed();
+      try {
+        fs.renameSync(temp, file);
+        return;
+      } catch (error) {
+        if (attempt >= REPLACE_ATTEMPTS || !TRANSIENT_REPLACE_ERRORS.has((error as NodeJS.ErrnoException).code || '')) throw error;
+        Atomics.wait(pause, 0, 0, Math.min(50, 5 * attempt));
+      }
+    }
   } finally {
     fs.rmSync(temp, { force: true });
   }
