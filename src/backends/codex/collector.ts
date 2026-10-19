@@ -2,7 +2,7 @@
 import { BufferLimitError, truncateToByteLength } from '../../execution/runtime/stream.js';
 import { StreamReducer } from '../../execution/stream-reducer.js';
 import { redactDiagnostic, redactCredentialFormats } from '../../security/redaction.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError, type TokenUsage } from '../../contracts/index.js';
 import type { TerminalExecutionResult } from '../types.js';
 import { classifyCodexTurnError } from './errors.js';
 
@@ -22,6 +22,21 @@ function protocolError(message: string): never {
 }
 function count(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+/** Codex `TokenUsageBreakdown` fields mapped to {@link TokenUsage} (AX-001b). */
+const USAGE_FIELDS = [
+  ['inputTokens', 'inputTokens'], ['cachedInputTokens', 'cachedInputTokens'], ['cacheWriteInputTokens', 'cacheWriteInputTokens'],
+  ['outputTokens', 'outputTokens'], ['reasoningOutputTokens', 'reasoningTokens'], ['totalTokens', 'totalTokens'],
+] as const;
+type UsageCounts = Partial<Record<(typeof USAGE_FIELDS)[number][1], number>>;
+/** The known non-negative counts of a breakdown; a missing field stays unknown. */
+function breakdown(value: Record<string, unknown>): UsageCounts {
+  const counts: UsageCounts = {};
+  for (const [from, to] of USAGE_FIELDS) {
+    const n = value[from];
+    if (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0) counts[to] = n;
+  }
+  return counts;
 }
 /** Thread item types reported as tool activity; their operands and output stay private. */
 const TOOL_ITEMS: Record<string, string> = {
@@ -54,7 +69,10 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   let terminal = false;
   let interrupted = false;
   let providerError: ExecutionError | undefined;
-  let inputTokens = 0, outputTokens = 0, usageSeen = false;
+  // `total` accumulates over the thread, `last` is one model request. The turn's usage is the
+  // last total minus the total before the turn (first total minus first last), so a repeated
+  // update counts once and a resumed thread's earlier turns are excluded.
+  let usageBaseline: UsageCounts | null = null, usageTotal: UsageCounts | null = null;
   let streamedBytes = 0;
   const commentaryIds = new Set<string>();
   let finalAnswerSeen = false;
@@ -185,11 +203,17 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     }
   }
   function acceptUsage(params: Record<string, unknown>) {
-    const last = record(record(params.tokenUsage)?.last);
-    if (!last) protocolError('Invalid Codex token usage.');
-    inputTokens += count(last.inputTokens);
-    outputTokens += count(last.outputTokens);
-    usageSeen = true;
+    const usage = record(params.tokenUsage);
+    const last = record(usage?.last), total = record(usage?.total);
+    if (!last || !total) protocolError('Invalid Codex token usage.');
+    const totals = breakdown(total!), lasts = breakdown(last!);
+    if (!usageBaseline) {
+      usageBaseline = {};
+      for (const [, field] of USAGE_FIELDS) {
+        if (totals[field] !== undefined && lasts[field] !== undefined) usageBaseline[field] = Math.max(0, totals[field]! - lasts[field]!);
+      }
+    }
+    usageTotal = totals;
   }
   function acceptTurnCompleted(params: Record<string, unknown>) {
     const turn = record(params.turn);
@@ -257,8 +281,14 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     const joined = [...reducer.getMessageMap().values()].join('\n\n');
     const output = truncateToByteLength(joined, reducer.maxTotalBytes);
     const truncated = reducer.isTruncated() || output !== joined;
-    const usage: TerminalExecutionResult['usage'] = usageSeen
-      ? { source: 'provider', inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } : undefined;
+    let usage: TerminalExecutionResult['usage'];
+    if (usageTotal && usageBaseline) {
+      usage = { source: 'provider' };
+      for (const [, field] of USAGE_FIELDS) {
+        const end = usageTotal[field], start = usageBaseline[field];
+        if (end !== undefined && start !== undefined) usage[field] = Math.max(0, end - start);
+      }
+    }
     return { threadId, turnId, initialized, terminal, interrupted, usage, truncated, output,
       denials: [...denials],
       error: providerError || (truncated ? { code: 'BUFFER_LIMIT' as const, message: 'Codex public output exceeded the byte budget.', retryable: false } : undefined) };

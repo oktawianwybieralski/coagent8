@@ -32,6 +32,8 @@ test('Claude collector streams deltas, final message, usage and the session from
   assert.ok(!seen.some(e => e.type === 'assistant_message' && /thinking/i.test(e.text)), 'thinking is private');
   assert.equal(snapshot.usage.outputTokens, 48);
   assert.equal(snapshot.usage.inputTokens, 10 + 2010 + 4570);
+  // AX-001c: cache reads, cache writes and thinking are the reported parts; nothing is invented.
+  assert.deepEqual(snapshot.usage, { source: 'provider', inputTokens: 6590, outputTokens: 48, totalTokens: 6638, cachedInputTokens: 4570, cacheWriteInputTokens: 2010, reasoningTokens: 41 });
 });
 
 test('Claude collector reports read tool activity and a refused write as a completed answer', () => {

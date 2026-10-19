@@ -7,6 +7,25 @@
 import type { ProviderId } from './provider.js';
 import type { ExecutionError } from './error.js';
 
+/**
+ * Tokens one turn used, as the backend reported them (`AX-001a`).
+ * @remarks An absent field is unknown, never zero. `inputTokens` counts every input token
+ * the model processed, cached ones included; `cachedInputTokens` and
+ * `cacheWriteInputTokens` are the parts read from and written to the prompt cache.
+ * `outputTokens` counts every output token, reasoning included; `reasoningTokens` is the
+ * reasoning part. These are counts, not billing: a subscription CLI may charge nothing per
+ * token, and a list-price equivalent is a separate calculation.
+ */
+export interface TokenUsage {
+  source: 'provider';
+  inputTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+}
+
 export type TerminalStatus = 'completed' | 'failed' | 'cancelled' | 'timed_out';
 
 export type ConversationPayload =
@@ -19,7 +38,8 @@ export type ConversationPayload =
   | { type: 'status'; message: string }
   | { type: 'warning'; message: string }
   | { type: 'error'; error: ExecutionError }
-  | { type: 'turn_finished'; status: TerminalStatus };
+  /** `usage` is optional: older histories and backends without counts have none (AX-001f). */
+  | { type: 'turn_finished'; status: TerminalStatus; usage?: TokenUsage };
 
 export type ConversationEvent = ConversationPayload & {
   schemaVersion: 1;

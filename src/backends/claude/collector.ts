@@ -166,10 +166,17 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (typeof event.stop_reason === 'string') stopReason = event.stop_reason;
     const data = record(event.usage);
     if (data) {
-      // Anthropic reports cached input separately; the sum is the input actually processed.
-      const input = count(data.input_tokens) + count(data.cache_creation_input_tokens) + count(data.cache_read_input_tokens);
-      const output = count(data.output_tokens);
-      usage = { source: 'provider', inputTokens: input, outputTokens: output, totalTokens: input + output };
+      // Anthropic reports cached input separately; the sum is the input actually processed
+      // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
+      const known = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+      if (known(data.input_tokens) && known(data.output_tokens)) {
+        const input = count(data.input_tokens) + count(data.cache_creation_input_tokens) + count(data.cache_read_input_tokens);
+        const output = count(data.output_tokens);
+        usage = { source: 'provider', inputTokens: input, outputTokens: output, totalTokens: input + output,
+          ...(known(data.cache_read_input_tokens) ? { cachedInputTokens: count(data.cache_read_input_tokens) } : {}),
+          ...(known(data.cache_creation_input_tokens) ? { cacheWriteInputTokens: count(data.cache_creation_input_tokens) } : {}),
+          ...(known(record(data.output_tokens_details)?.thinking_tokens) ? { reasoningTokens: count(record(data.output_tokens_details)!.thinking_tokens) } : {}) };
+      }
     }
     const denials = Array.isArray(event.permission_denials) ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier) : [];
     if (denials.length) emit({ type: 'warning', message: `Claude Code denied tool calls outside the read-only profile: ${[...new Set(denials)].join(', ')}.` });

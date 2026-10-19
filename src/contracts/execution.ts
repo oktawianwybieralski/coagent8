@@ -5,7 +5,7 @@
  */
 
 import type { ProviderId } from './provider.js';
-import type { AdapterEvent, TerminalStatus } from './conversation.js';
+import type { AdapterEvent, TerminalStatus, TokenUsage } from './conversation.js';
 import type { ExecutionError } from './error.js';
 
 /**
@@ -70,6 +70,19 @@ export interface ExecutionMeta {
  * Neutral execution outcome returned by the execution controller.
  * Contains all evidence required by transport adapters without MCP formatting.
  */
+/**
+ * The list price of the model a turn ran, from an exact price-list match (`AX-001g`).
+ * @remarks USD per million tokens; `null` when the list states none. A list price is not
+ * what a subscription CLI bills; it only states what the tokens would cost at that price.
+ */
+export interface ListPrice {
+  inputUsdPerMTok: number | null;
+  cachedInputUsdPerMTok: number | null;
+  outputUsdPerMTok: number | null;
+  /** Where the list came from and when it was read (`openrouter 2026-10-19`). */
+  source: string;
+}
+
 export interface TaskExecutionResult {
   isError: boolean;
   provider: ProviderId | null;
@@ -79,6 +92,8 @@ export interface TaskExecutionResult {
   meta: ExecutionMeta;
   warnings: string[];
   price?: string;
+  /** List price of the model, when the price list matched it exactly. */
+  listPrice?: ListPrice;
   review?: {
     verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
     reason?: string;
@@ -112,7 +127,7 @@ export interface ExecutionResult {
    */
   lengthLimited?: boolean;
   continuationAvailable?: boolean;
-  usage?: { source: 'provider'; inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  usage?: TokenUsage;
   /** Observed tool/filesystem permission denials or policy rejections during execution. */
   denials?: Array<{ path?: string; operation?: string; reason?: string }>;
 }
