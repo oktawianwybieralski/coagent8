@@ -671,3 +671,26 @@ test('AUDIT-001-A13-A15: observations stay bounded, evicted names are read again
     adapterRegistry.claude = original;
   }
 });
+
+test('AUDIT-001-A14: a hit makes an observation the most recently used, so the oldest unused one goes first', async () => {
+  const { readObservedModel, MAX_OBSERVATIONS } = require('../../src/backends/probe-cache.ts');
+  const original = adapterRegistry.claude;
+  const calls = new Map();
+  // An unobserved model (undefined) is not written to models.json, so a miss always asks the CLI.
+  adapterRegistry.claude = { id: 'claude', name: 'fixture', execute: async () => { throw new Error('must not run'); },
+    probe: async () => ({ installed: true, executionSupported: true, version: 'fixture-lru' }),
+    observeModel: async requested => { calls.set(requested, (calls.get(requested) || 0) + 1); return undefined; } };
+  try {
+    const names = Array.from({ length: MAX_OBSERVATIONS }, (_, i) => `lru-${i}`);
+    for (const name of names) await readObservedModel('claude', name);
+    await readObservedModel('claude', 'lru-0');
+    assert.equal(calls.get('lru-0'), 1, 'a hit asks nothing');
+    await readObservedModel('claude', 'lru-new');
+    await readObservedModel('claude', 'lru-0');
+    assert.equal(calls.get('lru-0'), 1, 'the refreshed entry survived the eviction');
+    await readObservedModel('claude', 'lru-1');
+    assert.equal(calls.get('lru-1'), 2, 'the least recently used entry was evicted, not the oldest inserted one');
+  } finally {
+    adapterRegistry.claude = original;
+  }
+});

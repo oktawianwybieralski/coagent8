@@ -64,8 +64,14 @@ export async function tornTailOffset(logFile: string, size: number): Promise<num
       const length = Math.min(TAIL_BLOCK_BYTES, position);
       position -= length;
       const block = Buffer.alloc(length);
-      const { bytesRead } = await handle.read(block, 0, length, position);
-      tail = Buffer.concat([block.subarray(0, bytesRead), tail]);
+      // A read may return fewer bytes than asked; fill the block, and on an early end of file
+      // (the log shrank) keep the log as it is rather than judge a record from a gap.
+      for (let filled = 0; filled < length;) {
+        const { bytesRead } = await handle.read(block, filled, length - filled, position + filled);
+        if (bytesRead === 0) return null;
+        filled += bytesRead;
+      }
+      tail = Buffer.concat([block, tail]);
       // Lines after the first `\n` in `tail` are complete; the first one is complete only at the file start.
       let end = tail.length;
       // A negative offset would count from the end of the buffer, so the search stops at index 0.

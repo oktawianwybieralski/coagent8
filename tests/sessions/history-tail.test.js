@@ -87,3 +87,22 @@ test('AUDIT-001-A16: the check reads about one record, not the whole log', async
   assert.ok(text.length > 800 * 1024, `log of ${text.length} bytes`);
   assert.equal(bytesRead, 8 * 1024, `read ${bytesRead} bytes of a ${text.length}-byte log (the former scan read all of it)`);
 });
+
+test('AUDIT-001-A18: short reads are filled, and an early end of file truncates nothing', async () => {
+  const fsp = require('node:fs/promises');
+  const open = fsp.open;
+  const text = `${header}\n${record(1)}\n${record(2)}\n`;
+  const withReads = async (limitRead) => {
+    fsp.open = async (...args) => {
+      const handle = await open(...args);
+      const read = handle.read.bind(handle);
+      handle.read = (buffer, offset, length, position) => limitRead(read, buffer, offset, length, position);
+      return handle;
+    };
+    try { return await offsetOf(text); } finally { fsp.open = open; }
+  };
+  // Every read returns at most 6 bytes: the block is filled and the valid final record kept.
+  assert.equal(await withReads((read, buffer, offset, length, position) => read(buffer, offset, Math.min(6, length), position)), null);
+  // The file ends early (as if it shrank): no truncation is judged from the gap.
+  assert.equal(await withReads(async () => ({ bytesRead: 0, buffer: Buffer.alloc(0) })), null);
+});
