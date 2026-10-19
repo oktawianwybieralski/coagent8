@@ -43,7 +43,7 @@ const TAIL_BLOCK_BYTES = 8 * 1024;
 /**
  * Finds a torn final record left by a crash (AUDIT-001-A16-A18).
  *
- * @remarks Reads backward in {@link TAIL_BLOCK_BYTES} blocks until it holds the last
+ * @remarks Reads backward in 8 KiB blocks (`TAIL_BLOCK_BYTES`) until it holds the last
  * non-blank line whole, so it reads about one record instead of the whole log (up to
  * `SESSION_LIMIT`), which `load()` has read already. Records have no size limit: the scan
  * continues to the file start if needed. Lines are split on `\n` bytes and decoded whole, so
