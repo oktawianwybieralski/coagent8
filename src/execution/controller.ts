@@ -700,7 +700,8 @@ async function executeTaskInternal(
         },
         warnings,
         price: priceNote,
-        ...(listPrice ? { listPrice } : {}),
+        // A backend may run a resolved model other than the requested one: its price is unknown.
+        ...(listPrice && (!result.model || result.model === listPrice.model) ? { listPrice } : {}),
         review,
       };
     } finally {

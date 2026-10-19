@@ -76,6 +76,8 @@ export interface ExecutionMeta {
  * what a subscription CLI bills; it only states what the tokens would cost at that price.
  */
 export interface ListPrice {
+  /** The model the price belongs to; a result of another model gets no list price. */
+  model: string;
   inputUsdPerMTok: number | null;
   cachedInputUsdPerMTok: number | null;
   outputUsdPerMTok: number | null;

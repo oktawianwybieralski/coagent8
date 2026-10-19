@@ -138,3 +138,12 @@ test('ENVELOPE-001: the result event\'s stop_reason tells whether the answer sto
   const silent = events.map(event => { if (event.type !== 'result') return event; const { stop_reason, ...rest } = event; return rest; });
   assert.equal(collect(silent).snapshot.lengthLimited, undefined, 'no stop reason is unknown, not false');
 });
+
+test('AX-001c: partial Claude usage keeps the reported counts and sums only complete parts', () => {
+  const events = recording('success-partial');
+  const withUsage = usage => events.map(event => event.type === 'result' ? { ...event, usage } : event);
+  assert.deepEqual(collect(withUsage({ input_tokens: 10, output_tokens: 48 })).snapshot.usage, { source: 'provider', outputTokens: 48 },
+    'without cache fields the inclusive input and total are unknown');
+  assert.deepEqual(collect(withUsage({ cache_read_input_tokens: 5, output_tokens: 7 })).snapshot.usage, { source: 'provider', cachedInputTokens: 5, outputTokens: 7 });
+  assert.equal(collect(withUsage({ unrelated: 1 })).snapshot.usage, undefined, 'no reported count, no usage');
+});

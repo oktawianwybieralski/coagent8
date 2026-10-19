@@ -110,6 +110,7 @@ function listPriceOf(list: PriceList | undefined, model: string): { listPrice?: 
   const evidence = priceEvidence(list, model);
   if (evidence.match !== 'exact' || !evidence.source || !evidence.fetchedAt) return {};
   return { listPrice: {
+    model,
     inputUsdPerMTok: evidence.inputUsdPerMTok,
     cachedInputUsdPerMTok: evidence.cachedInputUsdPerMTok,
     outputUsdPerMTok: evidence.outputUsdPerMTok,
