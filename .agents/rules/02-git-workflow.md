@@ -264,9 +264,10 @@ become the final commit, so they must meet this section.
   open finding or conversation) onto its target is an update, not a rewrite
   during review; it supersedes the review evidence, and the rebased head needs
   a new independent review ([03-author-reviewer](03-author-reviewer.md#recording-pr-evidence)).
-* **Merge method:** Squash and Merge, then delete the topic branch:
+* **Merge method:** Squash and Merge; the repository deletes the merged topic
+  branch itself:
   ```bash
-  gh pr merge <number> --squash --delete-branch
+  gh pr merge <number> --squash
   ```
   Before confirming, edit the squash message so that it complies with section 2
   (keep footers such as `Fixes #...` and `BREAKING CHANGE:`; remove any AI
@@ -332,6 +333,15 @@ built, fixed or edited after the tag; a defect found later ships in the next
 version (section 4: a fix-only release raises the patch, `0.6.1`). The owner
 performs every step marked (owner); an agent prepares the rest and stops there.
 
+On the normal path publication is automated (RELEASE-001) and the owner only
+decides. The owner merges
+the release PR and pushes the tag; `release.yml` builds and verifies a draft. The
+owner publishes the draft, which starts `npm-publish.yml` (stages the npm tarball on
+`next`) and `marketplace-publish.yml` (publishes the VSIX); the owner approves the
+staged npm version on npmjs.com, runs **Verify published**, and later promotes a
+stable version to `latest`. Nothing is built or uploaded by hand on this path;
+the hand steps in 22 and 23 are fallbacks for a workflow that is off or failed.
+
 The **target** is the branch that carries the tag (section 1): `develop` for
 betas and their patches; `X.Y.x` for release candidates, `X.Y.0` and later
 patches. Before the first release candidate the owner creates `X.Y.x` from
@@ -348,7 +358,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
    for code, an independent CoAgent8 review of the branch with `VERDICT: READY`
    ([03-author-reviewer](03-author-reviewer.md)).
 3. Open the PR into the target (section 3). It merges when the six CI jobs are
-   green on its head and no P1/P2 finding is open; squash and delete the branch.
+   green on its head and no P1/P2 finding is open; squash, and the repository
+   deletes the merged branch.
 4. After each merge CI runs again on the target. When a job there fails, only
    the PR that fixes it may merge next: find the cause and fix it with a test
    that reproduces it. A job is re-run only when its cause is known and its fix
@@ -396,7 +407,9 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 12. **Rehearsal when release tooling changed.** If any PR since the previous
     tag changed `.github/workflows/`, `package.json` or `package-lock.json`,
     `scripts/`, `tooling/` or `cliff*.toml`, rehearse with the release PR's
-    head in a throwaway public repository `<repo>-release-test`:
+    head in a throwaway public repository `<repo>-release-test` (for `0.6.1` the
+    owner skipped it and Phase D verified the tag's draft instead, owner decision
+    2026-10-13; that exception covers only `0.6.1`):
     * push the head as `develop` and make `develop` its default branch (the
       workflow accepts tags only on `develop` or a line);
     * push the release tags that exist in `<repo>` (each tag listed by
