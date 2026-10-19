@@ -277,9 +277,9 @@ check the generated report for private data before submitting it.
 ## Updates, support and license
 
 The extension and its bundled server carry the same version as the npm package
-`coagent8`. Versions below 1.0.0 are VS Code pre-releases; every release has a
-new number, so VS Code offers **Restart Extensions** after an update. The
-**Changelog** tab shows the release history of user-facing changes.
+`coagent8`. Every release has a new number, so VS Code offers **Restart
+Extensions** after an update. The **Changelog** tab shows the release history
+of user-facing changes.
 
 [Website](https://oki.dev) |
 [Issues and questions](https://github.com/oktawianwybieralski/coagent8/issues) |

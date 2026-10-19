@@ -290,10 +290,11 @@ become the final commit, so they must meet this section.
   prepared as 1.0.0-beta.2), `0.7.0`, `0.8.0`, `0.9.0`; further previews would
   continue with `0.10.0`. A release of a preview that only fixes it raises the
   patch instead (owner decision 2026-10-11): `0.6.1`, `0.6.2`; it ships as a
-  preview like its minor. The final release is `1.0.0`. A preview is a VS Code
-  pre-release (`isPreview` in `scripts/build-vscode.cjs`); its GitHub Release is a
-  normal release (owner decision 2026-10-13), and npm channels follow the table below. How a version after 1.0.0 is
-  previewed is an owner decision before the first such preview.
+  preview like its minor. The final release is `1.0.0`. A preview ships in the
+  normal channels: a normal GitHub Release and a Marketplace release without the
+  pre-release flag (owner decision 2026-10-13, RELEASE-001c); npm channels follow
+  the table below. How a version after 1.0.0 is previewed is an owner decision
+  before the first such preview.
 * **Beta**: feature-incomplete or not fully hardened; distributed to invited
   testers as a preview. **Release candidate**: scope frozen on the line; only
   release-blocking fixes. The roadmap's
@@ -454,7 +455,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     gh attestation verify coagent8-X.Y.Z.tgz --repo <repo>
     gh attestation verify coagent8-mcp-X.Y.Z.vsix --repo <repo>
     ```
-    Check the version inside both files and, below 1.0.0, the VSIX pre-release
+    Check the version inside both files and that the VSIX carries no pre-release
     flag.
 19. Install the downloaded VSIX in an isolated VS Code instance and the
     downloaded tarball in a clean npm folder, confirm the installed extension
@@ -467,7 +468,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 ### Phase E - publish (owner, in this order, from the Phase D folder)
 
 21. Publish the draft release as a normal release. This deploys the
-    documentation site (`docs.yml`) and starts `npm-publish.yml`.
+    documentation site (`docs.yml`) and starts `npm-publish.yml` and
+    `marketplace-publish.yml`.
 22. npm: `npm-publish.yml` verifies the release tarball's checksum and provenance and
     stages that exact file to `next` (section 4). Approve it on npmjs.com with 2FA
     (Packages, coagent8, staged versions); the version is then live on `next`.
@@ -479,11 +481,11 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     Without trusted publishing (section 8) stage the verified file by hand:
     `npm stage publish ./coagent8-X.Y.Z.tgz --tag next`. npm never accepts the
     same version twice.
-23. Publish the same verified VSIX on the VS Code Marketplace under `okidev`:
-    ```bash
-    npx @vscode/vsce publish --pre-release --packagePath ./coagent8-mcp-X.Y.Z.vsix   # below 1.0.0
-    npx @vscode/vsce publish --packagePath ./coagent8-mcp-X.Y.Z.vsix                 # 1.0.0 and later
-    ```
+23. Marketplace: publishing the release also starts `marketplace-publish.yml`,
+    which verifies the release VSIX's checksum, provenance, version and normal
+    channel and publishes that exact file under `okidev` (`RELEASE-001d`). Without
+    it (section 8), publish the verified file by hand:
+    `npx @vscode/vsce@4.0.0 publish --packagePath ./coagent8-mcp-X.Y.Z.vsix`.
 24. Announce the release to testers with the GitHub Release link.
 
 ### After the release
@@ -634,6 +636,11 @@ the tag-creation rule:
   environment (whose rules blocked the job). The repository variable
   `NPM_TRUSTED_PUBLISHING` is `true` and the package disallows token
   publishing. Without the variable the staging job is skipped.
+* **Marketplace publishing** (RELEASE-001d): the repository secret `VSCE_PAT` holds
+  a Marketplace personal access token of the `okidev` publisher (scope Marketplace:
+  Manage), and the repository variable `MARKETPLACE_PUBLISHING` is `true`; without
+  the variable `marketplace-publish.yml` is skipped. Publishing the GitHub Release
+  is the approval.
 * No protection, required check or review gate may be disabled or bypassed
   outside the recovery procedure below.
 

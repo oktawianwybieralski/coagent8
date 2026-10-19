@@ -46,9 +46,9 @@ installed and signed-in CLI.
 ## Status
 
 `0.6.0` is the first release for testers. Every version below 1.0.0 is a
-**preview** and a VS Code pre-release, with the same version number on GitHub,
-npm and VS Code. On npm each release appears first as `coagent8@next`; `latest`
-follows once the version has proved stable.
+**preview**, with the same version number on GitHub, npm and VS Code. On npm
+each release appears first as `coagent8@next`; `latest` follows once the
+version has proved stable.
 
 What works today: consultations and reviews by another agent in a read-only
 profile, model selection by price with your approval for expensive models,
@@ -70,7 +70,7 @@ signed in:
 
 ### VS Code
 
-Install **CoAgent8** (`okidev.coagent8-mcp`) as a pre-release from the
+Install **CoAgent8** (`okidev.coagent8-mcp`) from the
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=okidev.coagent8-mcp),
 or download `coagent8-mcp-0.6.0.vsix` from the
 [GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.6.0)

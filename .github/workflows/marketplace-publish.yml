@@ -1,0 +1,71 @@
+name: Marketplace publish
+
+# Phase E of the release process (Git workflow rule 02, section 5, RELEASE-001d). Publishing
+# the verified GitHub Release publishes its exact VSIX, never a rebuild, on the VS Code
+# Marketplace under `okidev`, in the normal channel (owner decision 2026-10-13). Publishing
+# the release is the owner's approval; there is no GitHub environment gate. The job runs only
+# after the owner set the repository variable MARKETPLACE_PUBLISHING to `true` and stored a
+# Marketplace personal access token as the secret VSCE_PAT (rule 02, section 8).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  publish:
+    name: Publish ${{ github.event.release.tag_name }} on the Marketplace
+    if: vars.MARKETPLACE_PUBLISHING == 'true' && startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Download the release VSIX and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release \
+            --pattern "coagent8-mcp-$version.vsix" --pattern SHA256SUMS
+
+      # The same file the owner verified: its checksum, the provenance of release.yml, the
+      # version of the tag and the normal channel.
+      - name: Verify checksum, build provenance and manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          vsix="release/coagent8-mcp-$version.vsix"
+          (cd release && sha256sum --check --ignore-missing --strict SHA256SUMS)
+          grep -q " coagent8-mcp-$version.vsix\$" release/SHA256SUMS \
+            || { echo "::error::SHA256SUMS lists no coagent8-mcp-$version.vsix"; exit 1; }
+          gh attestation verify "$vsix" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          manifest_version="$(unzip -p "$vsix" extension/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")"
+          [ "$manifest_version" = "$version" ] \
+            || { echo "::error::the VSIX carries version $manifest_version, not $version"; exit 1; }
+          # Read the manifest first: under pipefail, `grep -q` closing a pipe early could make
+          # unzip fail with SIGPIPE and turn a match into a pass.
+          vsixmanifest="$(unzip -p "$vsix" extension.vsixmanifest)"
+          if grep -q 'Microsoft.VisualStudio.Code.PreRelease" Value="true"' <<< "$vsixmanifest"; then
+            echo "::error::the VSIX is marked pre-release; releases use the normal channel"; exit 1
+          fi
+
+      # --skip-duplicate makes a re-run after a partial failure safe.
+      - name: Publish the VSIX
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: npx --yes @vscode/vsce@4.0.0 publish --packagePath "release/coagent8-mcp-${TAG#v}.vsix" --skip-duplicate

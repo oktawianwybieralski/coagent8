@@ -114,15 +114,13 @@ test('PACKAGE-001: the plugin check rejects a package whose manifests reference 
   }
 });
 
-test('the VSIX keeps the shared numeric version and every version below 1.0.0 is a preview', () => {
-  const { extensionVersion, isPreview } = require('../scripts/build-vscode.cjs');
+test('the VSIX keeps the shared numeric version and is built for the normal Marketplace channel', () => {
+  const { extensionVersion } = require('../scripts/build-vscode.cjs');
   assert.equal(extensionVersion('0.6.0', '0.6.0'), '0.6.0');
   assert.throws(() => extensionVersion('0.6.0', '0.7.0'), /must match/);
   assert.throws(() => extensionVersion('1.0.0-beta.2', '1.0.0-beta.2'), /numeric major\.minor\.patch version, not 1\.0\.0-beta\.2/, 'a pre-release suffix is refused, not stripped');
-  assert.equal(isPreview('0.6.0'), true);
-  assert.equal(isPreview('0.10.3'), true);
-  assert.equal(isPreview('1.0.0'), false);
-  assert.equal(isPreview('10.0.0'), false);
+  // RELEASE-001c: no pre-release flag, also below 1.0.0; marketplace-publish.yml refuses a flagged VSIX.
+  assert.match(fs.readFileSync(path.resolve(__dirname, '../tooling/vscode/package.cjs'), 'utf8'), /^\s*preRelease: false,$/m);
 });
 
 test('npm, plugin and VS Code manifests share one numeric version', () => {
