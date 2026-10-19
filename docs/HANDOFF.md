@@ -10,6 +10,21 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Next session starts here (2026-10-19):** the agent rows of `0.7.0` are done; the
+  release waits for the owner steps listed in the next bullet. Meanwhile the agent works
+  on `0.8.0` rows that are not delegation (the owner develops `DELEGATE-001` on a
+  separate branch). Merged since `0.6.1` beyond the `0.7.0` rows: #79 (Codex
+  stop-timing test), #80 (`AUDIT-001-A08`-`A21`), #81 (`AX-001a-d`, `f`, `g`: token
+  usage and list-price equivalent in the footer) and the `AX-004`/`AX-005` PR
+  (readiness from evidence; doctor read every catalog twice per run, fixed). Open
+  `0.8.0` candidates without owner input: `AX-001e` (subscription-window observations,
+  P first), `AX-001h`/`i` (estimates), `AX-003a` (elicitation outcome fixtures),
+  `AX-006a` (first-use acceptance script), `ENVELOPE-001b` (Codex/agy length stops),
+  `WINDOWS-001b`/`c` (containment launcher contract and helper) and `DOCS-003`.
+  Working rules the owner set this session: one PR per result group with many
+  commits and one review; docs ride in that PR (no docs-only or PR-link commits);
+  every PR targets `develop`; run `npm run docs` locally (typedoc warnings fail CI);
+  tests never use wall-clock limits, only scaling or event-relative timing.
 - **0.7.0 status (2026-10-19):** every agent row of the `0.7.0` list is merged or
   in review: 2.12e (#72), 2.13-2.17 (#65-#67, #71), 3.0-3.13b (#68-#70) and
   publication automation 5.1, 5.3, 5.4, 5.6-5.8 (#73-#77), and the `0.8.0` audit

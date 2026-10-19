@@ -694,3 +694,21 @@ test('AUDIT-001-A14: a hit makes an observation the most recently used, so the o
     adapterRegistry.claude = original;
   }
 });
+
+test('AX-005b: a stored success with a time no Date can hold is rejected, not formatted', async () => {
+  const { recordTurnSuccess, readTurnSuccess } = require('../../src/backends/probe-cache.ts');
+  const original = adapterRegistry.agy;
+  const probe = { id: 'agy', installed: true, executionSupported: true, version: 'ax-005b-store' };
+  try {
+    adapterRegistry.agy = { ...original, probe: async () => probe };
+    await recordTurnSuccess('agy', 'gemini-3.8-flash');
+    assert.equal(readTurnSuccess('agy', probe)?.model, 'gemini-3.8-flash');
+    const file = path.join(tempDir, 'models.json');
+    const store = JSON.parse(fs.readFileSync(file, 'utf8'));
+    store.backends.agy.lastSuccess.observedAt = 1e100;
+    fs.writeFileSync(file, JSON.stringify(store));
+    assert.equal(readTurnSuccess('agy', probe), undefined);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});

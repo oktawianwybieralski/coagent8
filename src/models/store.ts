@@ -46,6 +46,11 @@ export interface ObservedModels {
   catalog?: ObservedCatalog;
   /** Per requested name; `''` is the request without a model. */
   resolved?: Record<string, ObservedModel>;
+  /**
+   * The last turn this installation completed, with the model it ran (`AX-005b`): evidence
+   * that the CLI is signed in and can execute that model, not that every model or profile can.
+   */
+  lastSuccess?: ObservedModel;
 }
 
 /** The list price of one model, in USD per million tokens. */
@@ -88,7 +93,8 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-const isTime = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0;
+/** A positive time a `Date` can represent, so formatting it never throws. */
+const isTime = (value: unknown): value is number => typeof value === 'number' && value > 0 && value <= 8.64e15;
 
 function parseCatalogModel(value: unknown): CatalogModel | null {
   const entry = record(value);
@@ -117,6 +123,11 @@ function parseEntry(value: unknown): ObservedModels | null {
       if ((name !== '' && !isValidModelIdentifier(name)) || !item || !isValidModelIdentifier(item.model) || !isTime(item.observedAt)) return null;
       parsed.resolved[name] = { model: item.model, observedAt: item.observedAt };
     }
+  }
+  const success = record(entry.lastSuccess);
+  if (success) {
+    if (!isValidModelIdentifier(success.model) || !isTime(success.observedAt)) return null;
+    parsed.lastSuccess = { model: success.model, observedAt: success.observedAt };
   }
   return parsed;
 }
@@ -209,17 +220,19 @@ export function readObservedModels(id: ProviderId, key: string): ObservedModels 
 
 /**
  * Records an observation for the backend. A catalog replaces the previous one; a resolved
- * name is added to those already observed for the same installation.
+ * name is added to those already observed for the same installation; a completed turn's
+ * model replaces the last success.
  * @remarks Best-effort: a lock or write failure is reported on stderr, never thrown.
  */
-export async function recordObservedModels(id: ProviderId, key: string, observation: { catalog?: ModelCatalog; resolved?: Record<string, string> }): Promise<void> {
+export async function recordObservedModels(id: ProviderId, key: string, observation: { catalog?: ModelCatalog; resolved?: Record<string, string>; success?: string }): Promise<void> {
   await updateStore(({ backends }) => {
     const previous = backends[id]?.key === key ? backends[id] : undefined;
     const now = Date.now();
     const catalog = observation.catalog ? { ...observation.catalog, observedAt: now } : previous?.catalog;
     const added = Object.fromEntries(Object.entries(observation.resolved ?? {}).map(([name, model]) => [name, { model, observedAt: now }]));
     const resolved = previous?.resolved || observation.resolved ? { ...previous?.resolved, ...added } : undefined;
-    backends[id] = { key, ...(catalog ? { catalog } : {}), ...(resolved ? { resolved } : {}) };
+    const lastSuccess = observation.success ? { model: observation.success, observedAt: now } : previous?.lastSuccess;
+    backends[id] = { key, ...(catalog ? { catalog } : {}), ...(resolved ? { resolved } : {}), ...(lastSuccess ? { lastSuccess } : {}) };
   });
 }
 

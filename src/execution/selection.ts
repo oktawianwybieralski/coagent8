@@ -48,7 +48,9 @@ export interface SelectModelOptions {
  * (doctor, which has just read the catalogs afresh). `constraint` applies a price limit when
  * neither the call nor a session names a model, as {@link choosePricedModel} describes; a
  * named model is returned as is and checked by the caller. `config` supplies an existing snapshot or configuration;
- * `catalog` reuses pre-observed catalog evidence from provider routing (`EXEC-001-T05a`).
+ * `catalog` reuses pre-observed catalog evidence from provider routing (`EXEC-001-T05a`); with
+ * `observeAfresh` it is taken as just read afresh and used as is, including an explicit
+ * `undefined` for a CLI that listed nothing.
  * @throws `MODEL_UNAVAILABLE` when no source names a model; `PRICE_LIMIT` when a constraint
  * applies and no model of this backend meets it.
  */
@@ -74,8 +76,14 @@ export async function selectModel(
   let catalogFetched = false;
 
   async function getCatalog(): Promise<ModelCatalog | undefined> {
-    if (options.observeAfresh) {
+    // A catalog given with `observeAfresh` was just read afresh by the caller (doctor): reading
+    // it again would launch the CLI a second time for the same answer (AX-004b).
+    if (options.observeAfresh && !('catalog' in options)) {
       currentCatalog = await readModelCatalog(id, { fresh: true, probe, context: options.context });
+      catalogFetched = true;
+      return currentCatalog;
+    }
+    if (options.observeAfresh) {
       catalogFetched = true;
       return currentCatalog;
     }

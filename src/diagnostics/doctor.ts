@@ -1,4 +1,5 @@
-import { probeBackend, readModelCatalog } from '../backends/probe-cache.js';
+import { probeBackend, readModelCatalog, readTurnSuccess } from '../backends/probe-cache.js';
+import { decideReadiness, READINESS_LABEL, type BackendReadiness } from './readiness.js';
 import { loadConfigSnapshotForDiagnostics, recordDefaultModel, type ConfigSnapshot } from '../config.js';
 import { PROVIDERS, ToolError, type ProviderId, type ModelCatalog } from '../contracts/index.js';
 import { inspectQuotas } from '../backends/availability.js';
@@ -103,6 +104,11 @@ export interface DoctorReport {
    * Does not probe or imply workspace filesystem access permissions, which are scoped per workspace.
    */
   ready_backends: ProviderId[];
+  /**
+   * Each diagnosed backend's readiness state and the evidence it rests on (`AX-005`);
+   * `ready_backends` lists those in state `ready`.
+   */
+  readiness: Partial<Record<ProviderId, BackendReadiness>>;
   /** Running server version (`FEEDBACK-061a1`). */
   server_version: string;
   /** Active runtime path executing CoAgent8 (`FEEDBACK-061a1`). */
@@ -242,14 +248,24 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   });
 
   const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
-  const ready = active.filter(id => {
+  // One decision table (AX-005a); a quota the CLI measured in this run (agy and Claude
+  // `/usage`) or a recent completed turn also proves a signed-in CLI.
+  const readiness: DoctorReport['readiness'] = {};
+  for (const id of selected) {
     const b = probes[id]!;
     const q = cached[id];
-    // A quota the CLI measured in this run (agy and Claude `/usage`) also proves a signed-in CLI.
-    const isExecutionReady = Boolean(b.executionSupported && b.capabilities?.readOnlyVerified && (b.authStatus === 'authenticated' || measuredNow.has(id)));
-    const isQuotaReady = q ? q.status !== 'rate_limited' && (q.headroomPercent === null || q.headroomPercent > 0) : true;
-    return isExecutionReady && isQuotaReady;
-  });
+    readiness[id] = decideReadiness({
+      installed: b.installed,
+      allowed: config.routing.allowedBackends.includes(id),
+      executionSupported: Boolean(b.executionSupported),
+      readOnlyVerified: Boolean(b.capabilities?.readOnlyVerified),
+      authStatus: b.authStatus,
+      quotaMeasuredNow: measuredNow.has(id),
+      ...(q ? { quota: { status: q.status, headroomPercent: q.headroomPercent, cooldownUntil: q.cooldownUntil, resetsAt: q.resetsAt } } : {}),
+      lastSuccess: readTurnSuccess(id, b),
+    });
+  }
+  const ready = active.filter(id => readiness[id]!.state === 'ready');
 
   const effective = config.routing.strategy === 'smart_quota' ? 'smart_quota' : config.defaultBackend || (active.length === 1 ? active[0] : null);
 
@@ -285,7 +301,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   if (!configError) {
     await Promise.all(selected.filter(id => probes[id]!.installed).map(async id => {
       let selection: ModelSelection;
-      try { selection = await selectModel(id, probes[id]!, {}, { observeAfresh: true, context: readContext }); }
+      try { selection = await selectModel(id, probes[id]!, {}, { observeAfresh: true, catalog: catalogs[selected.indexOf(id)], context: readContext }); }
       catch (err) {
         const code = (err as { code?: unknown })?.code;
         if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
@@ -373,6 +389,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     active_backends: active,
     installed_backends: selected.filter(id => probes[id]!.installed),
     ready_backends: ready,
+    readiness,
     server_version: BRAND.SERVER_VERSION,
     runtime_path: redactDiagnostic(getRuntimePath()),
     configuredDefault: config.defaultBackend,
@@ -511,8 +528,10 @@ export function formatDoctorSummary(report: DoctorReport): string {
     for (const id of ids) {
       const probe = report.backends[id]!;
       if (!probe.installed) { lines.push(`${id}: not installed`); continue; }
-      const state = report.ready_backends.includes(id) ? 'ready' : !report.active_backends.includes(id) ? 'not allowed' : probe.authStatus === 'unauthenticated' ? 'signed out' : 'not ready';
-      lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} · ${formatQuota(report.quotas[id])}`);
+      const readiness = report.readiness?.[id];
+      const state = readiness ? READINESS_LABEL[readiness.state] : report.ready_backends.includes(id) ? 'ready' : 'not ready';
+      const lastTurn = readiness?.lastSuccess ? ` · last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}` : '';
+      lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} · ${formatQuota(report.quotas[id])}${lastTurn}`);
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
       const unlisted = formatUnlisted({ listed: Boolean(probe.models?.length), acceptsUnlisted: probe.acceptsUnlisted, availableModels: probe.availableModels });
       if (unlisted) lines.push(unlisted);

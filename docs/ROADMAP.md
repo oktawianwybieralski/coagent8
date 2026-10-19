@@ -235,9 +235,9 @@ Both items complete before the `0.8.0` feature freeze (rc.1, `RC-001`).
    (`CLI-FIRST-001g-i`, `COAGENT-008`, `FAILOVER-001b/c`, `REPO-002f`), then
    complete the release-candidate gates.
 
-Known limitations carried from `0.6.0` and `0.6.1`: plain `auto` consult without a price
-limit may run an expensive default (`AX-002`), agy may report not-ready and
-still run (`AX-005`), and a cancelled or expired agy turn on Windows can leave
+Known limitations carried from `0.6.0` and `0.6.1` (agy's not-ready report before its first
+turn is now "sign-in unverified", `AX-005`): plain `auto` consult without a price
+limit may run an expensive default (`AX-002`), and a cancelled or expired agy turn on Windows can leave
 native child processes outside its job, such as MCP servers, running until they
 exit or the server stops (`WINDOWS-001a`; fixed by `WINDOWS-001b-e` before write
 profiles).
@@ -398,14 +398,14 @@ Price is not a proxy for capability (2026-10-14): asked for a model at USD 10-15
 
 Effective configuration provenance and bounded diagnostics are implemented in `EXEC-001-T02/T03/T08/T11`. Remaining acceptance:
 
-- [ ] **AX-004a - accept config provenance in fixtures.** Extend CONFIG/DOCTOR and setup fixtures for legacy registration paths, paths with spaces, explicit editor/backend overrides and malformed files. Acceptance: effective source/location is accurate and redacted, and diagnostics never silently rewrite config. Check: R plus affected setup tests.
-- [ ] **AX-004b - accept read effects and timings.** Compare cold and warm model and health views using DOCTOR/CACHE fixtures. Acceptance: measured native reads, optional cache writes and observed-default writes match documented contracts under missing caches and cancellation. Check: R and phase timing evidence.
+- [x] **AX-004a - accept config provenance in fixtures.** Extend CONFIG/DOCTOR and setup fixtures for legacy registration paths, paths with spaces, explicit editor/backend overrides and malformed files. Acceptance: effective source/location is accurate and redacted, and diagnostics never silently rewrite config. Check: R plus affected setup tests. Done: a path with spaces is reported accurately, an editor override over an unusable file is reported as attempted, and neither doctor view rewrites a malformed file (`tests/config-snapshot.test.js`); legacy registration shapes are covered by the setup tests.
+- [x] **AX-004b - accept read effects and timings.** Compare cold and warm model and health views using DOCTOR/CACHE fixtures. Acceptance: measured native reads, optional cache writes and observed-default writes match documented contracts under missing caches and cancellation. Check: R and phase timing evidence. Done: health reads catalogs and quotas afresh each run, the models view reuses them; the test found doctor reading every catalog twice per run (selection re-read the fresh catalog), now fixed.
 - [ ] **AX-004c - accept one live config change.** In an isolated client profile per supported client, record registration/config path, change an owned setting, perform any required restart and verify the effective value while preserving user state (`PATCH-061-N1`).
 
 ### AX-005: readiness with evidence
 
-- [ ] **AX-005a - define the readiness decision table.** Start: `src/diagnostics/doctor.ts`, `src/backends/types.ts`, `availability.ts`. Specify unknown, failed and verified states separately for installation, login, execution, quota freshness and sandbox profile evidence. Acceptance: quota disabled, expired login, rate limit and sandbox rejection produce distinct outcomes. Check: P.
-- [ ] **AX-005b - implement and render that evidence.** After `AX-005a`, implement the decision table in one diagnostic owner and update report and summary together. Acceptance: a successful turn is timestamped for its actual model/profile without implying universal isolation on cold agy runs. Check: R, DOCTOR/CACHE/MCP.
+- [x] **AX-005a - define the readiness decision table.** Start: `src/diagnostics/doctor.ts`, `src/backends/types.ts`, `availability.ts`. Specify unknown, failed and verified states separately for installation, login, execution, quota freshness and sandbox profile evidence. Acceptance: quota disabled, expired login, rate limit and sandbox rejection produce distinct outcomes. Check: P. Done: the decision table is in `src/diagnostics/readiness.ts`; disabled quota, expired login, rate limit and sandbox rejection get distinct states.
+- [x] **AX-005b - implement and render that evidence.** After `AX-005a`, implement the decision table in one diagnostic owner and update report and summary together. Acceptance: a successful turn is timestamped for its actual model/profile without implying universal isolation on cold agy runs. Check: R, DOCTOR/CACHE/MCP. Done: doctor reports `readiness` per backend and the summary its label; a completed turn is recorded for its model and CLI installation and counts as sign-in evidence for a day.
 
 ### AX-006: first-use contract
 
@@ -1997,8 +1997,8 @@ agent (owner assigns).
 | 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
 | 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
 | 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | ARCHITECTURE (unimplemented) defines `delegate`, `wait`, states and ordering; reviewed READY. |
-| 2.23 | `AX-005a`, then `AX-005b` | P, R | - | As the cards say; group design and implementation when the contract is accepted. |
-| 2.24 | `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
+| 2.23 | [x] `AX-005a`, then `AX-005b` | P, R | - | As the cards say; group design and implementation when the contract is accepted. |
+| 2.24 | [x] `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
 | 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | In that order, with PR groups chosen by coherent result and risk. |
 | 2.26 | `AX-002b` | O | 2.25 | Owner chooses the plain-consult default policy; then `AX-002c` (R). |
 | 2.26a | [x] `AX-002d` recency decision | P | - | ARCHITECTURE records the recency order replacing highest-price selection; reviewed READY. |

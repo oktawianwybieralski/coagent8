@@ -618,3 +618,44 @@ test('EXEC-001-T11b: model view stays cheap: cached probes, catalogs, and prices
     else process.env.coagent8_PRICES_URL = savedPricesUrl;
   }
 });
+
+test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with its model and time', async () => {
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const { recordTurnSuccess } = require('../../src/backends/probe-cache.ts');
+  const { formatDoctorSummary } = require('../../src/diagnostics/doctor.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.agy = { ...original.agy, inspectQuota: async () => undefined, probe: async () => ({ id: 'agy', installed: true, executionSupported: true,
+      version: 'agy-ready-fixture', authStatus: 'unknown', capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }) };
+    await saveConfig({ routing: { allowedBackends: ['codex', 'claude', 'agy'] } });
+    const before = await runDoctor({ backend: 'agy' });
+    assert.equal(before.readiness.agy.state, 'sign_in_unverified');
+    assert.deepEqual(before.ready_backends, []);
+    await recordTurnSuccess('agy', 'gemini-3.8-flash');
+    const after = await runDoctor({ backend: 'agy' });
+    assert.equal(after.readiness.agy.state, 'ready');
+    assert.deepEqual(after.ready_backends, ['agy']);
+    assert.equal(after.readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
+    const summary = formatDoctorSummary(after);
+    assert.match(summary, /^agy: ready · agy-ready-fixture .* · last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash$/m);
+    // An invalid model name is not recorded as evidence.
+    await recordTurnSuccess('agy', '');
+    assert.equal((await runDoctor({ backend: 'agy' })).readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
+  } finally { Object.assign(adapterRegistry, original); }
+});
+
+test('AX-005a: a measured zero quota is reported as exhausted, not as a rate limit', async () => {
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.agy = { ...original.agy,
+      inspectQuota: async () => ({ measured: true, window: 'weekly', usedPercent: 100, headroomPercent: 0, resetsAt: '2026-10-26T00:00:00Z' }),
+      probe: async () => ({ id: 'agy', installed: true, executionSupported: true, version: 'agy-zero-quota-fixture', authStatus: 'authenticated',
+        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }) };
+    await saveConfig({ routing: { allowedBackends: ['codex', 'claude', 'agy'] } });
+    const report = await runDoctor({ backend: 'agy' });
+    assert.equal(report.readiness.agy.state, 'quota_exhausted', JSON.stringify(report.readiness.agy));
+    assert.equal(report.readiness.agy.evidence, 'Quota exhausted until 2026-10-26T00:00:00Z.');
+    assert.deepEqual(report.ready_backends, []);
+  } finally { Object.assign(adapterRegistry, original); }
+});

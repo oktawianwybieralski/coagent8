@@ -228,3 +228,81 @@ test('EXEC-001-T03: execution preparation loads configuration snapshot once and 
     adapterRegistry.codex = origCodex;
   }
 });
+
+test('AX-004a: a configuration path with spaces is reported accurately, and a malformed file is never rewritten by diagnostics', async () => {
+  const savedConfigEnv = process.env.coagent8_CONFIG;
+  const savedEditorEnv = process.env[EDITOR_SETTINGS_ENV];
+  const spaced = path.join(tempDir, 'dir with spaces', 'my config.json');
+  fs.mkdirSync(path.dirname(spaced), { recursive: true });
+  const malformed = '{ "defaultBackend": "codex", ';
+  fs.writeFileSync(spaced, malformed, 'utf8');
+  process.env.coagent8_CONFIG = spaced;
+  process.env[EDITOR_SETTINGS_ENV] = JSON.stringify({ defaultBackend: 'claude' });
+  try {
+    const report = await runDoctor({ quota: false });
+    assert.equal(report.configProvenance.origin, 'custom-env');
+    assert.equal(report.configProvenance.existed, true);
+    assert.ok(report.configProvenance.path.endsWith(path.join('dir with spaces', 'my config.json')), report.configProvenance.path);
+    assert.ok(report.configProvenance.error, 'the malformed file is named as the error');
+    assert.deepEqual(report.configProvenance.overrides, [], 'an editor override is not applied over an unusable file');
+    assert.deepEqual(report.configProvenance.attemptedOverrides, ['defaultBackend'], 'but it is reported as attempted');
+    await runModelReport({});
+    assert.equal(fs.readFileSync(spaced, 'utf8'), malformed, 'neither view rewrote the file');
+  } finally {
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+    if (savedEditorEnv !== undefined) process.env[EDITOR_SETTINGS_ENV] = savedEditorEnv; else delete process.env[EDITOR_SETTINGS_ENV];
+  }
+});
+
+test('AX-004b: health reads every backend afresh each time; the models view reuses fresh observations', async () => {
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const original = { ...adapterRegistry };
+  const reads = { probe: 0, catalog: 0, quota: 0 };
+  // Doctor records each first-listed default in config.json: keep that out of the shared file.
+  const savedConfigEnv = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(tempDir, 'ax-004b-config.json');
+  try {
+    for (const id of ['codex', 'claude', 'agy']) {
+      adapterRegistry[id] = { ...original[id],
+        probe: async () => { reads.probe++; return { id, installed: true, executionSupported: true, version: 'ax-004b', authStatus: 'authenticated', capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }; },
+        listModels: async () => { reads.catalog++; return { models: [{ id: `${id}-model`, efforts: [] }], source: 'fixture' }; },
+        inspectQuota: async () => { reads.quota++; return undefined; },
+        observeModel: async () => undefined };
+    }
+    await saveConfig({ routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
+    await runDoctor();
+    const firstHealth = { ...reads };
+    assert.equal(firstHealth.probe >= 3 && firstHealth.catalog === 3 && firstHealth.quota === 3, true, JSON.stringify(firstHealth));
+    await runDoctor();
+    assert.deepEqual({ catalog: reads.catalog - firstHealth.catalog, quota: reads.quota - firstHealth.quota }, { catalog: 3, quota: 3 }, 'health reads catalogs and quotas afresh');
+    const beforeModels = { ...reads };
+    await runModelReport({});
+    await runModelReport({});
+    assert.equal(reads.catalog - beforeModels.catalog, 0, 'the models view reuses the catalogs health just read');
+    assert.equal(reads.quota - beforeModels.quota, 0, 'the models view reads no quota');
+  } finally {
+    Object.assign(adapterRegistry, original);
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+  }
+});
+
+test('AX-004b: a catalog the CLI did not answer is not read a second time for the default model', async () => {
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const original = adapterRegistry.agy;
+  const savedConfigEnv = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(tempDir, 'ax-004b-unanswered-config.json');
+  let catalogReads = 0;
+  try {
+    adapterRegistry.agy = { ...original,
+      probe: async () => ({ id: 'agy', installed: true, executionSupported: true, version: 'ax-004b-unanswered', authStatus: 'authenticated',
+        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }),
+      listModels: async () => { catalogReads++; return undefined; },
+      inspectQuota: async () => undefined, observeModel: undefined };
+    await saveConfig({ routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await runDoctor({ backend: 'agy' });
+    assert.equal(catalogReads, 1);
+  } finally {
+    adapterRegistry.agy = original;
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+  }
+});
