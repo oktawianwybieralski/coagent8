@@ -114,6 +114,8 @@ function handle(message) {
     else if (method === 'experimentalFeature/list') send({ id, result: { data: [...DEFAULT_ON, 'multi_agent_v2', 'image_generation'].map(name => ({ name, stage: 'stable', enabled: featureEnabled(name), defaultEnabled: DEFAULT_ON.includes(name) })), nextCursor: null } });
     else send({ id, result: mcpStatusPage(params.cursor) });
   } else if (method === 'thread/start' || method === 'thread/resume') {
+    // `no-thread`: the thread never starts, so a deadline always falls before any turn.
+    if (mode === 'no-thread') return;
     if (method === 'thread/resume' && mode === 'invalid-session') { send({ id, error: { code: -32600, message: `no rollout found for thread id ${params.threadId}` } }); return; }
     threadConfig = params.config || null;
     threadId = method === 'thread/resume' ? (mode === 'wrong-thread' ? '22222222-aaaa-bbbb-cccc-123456789012' : params.threadId) : (acceptance ? randomUUID() : THREAD);
