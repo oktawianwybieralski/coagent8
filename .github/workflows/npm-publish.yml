@@ -1,13 +1,10 @@
 name: npm publish
 
-# Phase E of the release process (Git workflow rule 02, section 5). Publishing the
-# verified GitHub Release stages its exact npm tarball, never a rebuild, through npm
-# trusted publishing (OIDC, no token) with provenance: `npm stage publish` to the `next`
-# dist-tag (RELEASE-001b1). The owner then approves the staged version on npmjs.com with
-# 2FA, which is the approval; there is no GitHub environment gate, whose rules blocked the
-# job before. The owner promotes a version that proved stable to `latest` by hand. The job
-# runs only after the owner set the repository variable NPM_TRUSTED_PUBLISHING to `true`
-# (rule 02, section 8).
+# Phase E of the release process (rule 02, section 5). Publishing the verified
+# GitHub Release is the owner's approval to publish its exact npm tarball to `next`
+# through trusted publishing (OIDC) with provenance, without a GitHub environment.
+# The owner later promotes a stable version to `latest` by hand (2026-10-19).
+# Requires NPM_TRUSTED_PUBLISHING=true and a valid publisher (rule 02, section 8).
 on:
   release:
     types: [published]
@@ -19,7 +16,7 @@ permissions:
 
 jobs:
   publish:
-    name: Stage ${{ github.event.release.tag_name }} on npm
+    name: Publish ${{ github.event.release.tag_name }} on npm
     if: vars.NPM_TRUSTED_PUBLISHING == 'true' && startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     steps:
@@ -33,12 +30,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
-
-      # Staged publishing needs npm 11.15.0 or later. This pinned npm is installed beside the
-      # runner's and used only by the publish script (npm_execpath), which checks its version.
-      - name: Install pinned npm for staging
-        shell: bash
-        run: npm install --prefix "$RUNNER_TEMP/npm" --no-audit --no-fund npm@11.19.1
 
       - name: Download the release tarball and checksums
         shell: bash
@@ -66,9 +57,9 @@ jobs:
           gh attestation verify "release/coagent8-$version.tgz" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
 
-      # Stages ./release/coagent8-X.Y.Z.tgz to `next` (scripts/publish-npm.cjs, RELEASE-001a/b1).
-      - name: Stage on npm
+      # Publishes ./release/coagent8-X.Y.Z.tgz to `next` (scripts/publish-npm.cjs, RELEASE-001a/b1).
+      - name: Publish on npm
         shell: bash
         env:
           TAG: ${{ github.event.release.tag_name }}
-        run: npm_execpath="$RUNNER_TEMP/npm/node_modules/npm/bin/npm-cli.js" node scripts/publish-npm.cjs
+        run: node scripts/publish-npm.cjs

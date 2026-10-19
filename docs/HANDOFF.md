@@ -10,39 +10,45 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
-- **Next session starts here (2026-10-19):** the agent rows of `0.7.0` are done; the
-  release waits for the owner steps listed in the next bullet. Meanwhile the agent works
-  on `0.8.0` rows that are not delegation (the owner develops `DELEGATE-001` on a
-  separate branch). Merged since `0.6.1` beyond the `0.7.0` rows: #79 (Codex
-  stop-timing test), #80 (`AUDIT-001-A08`-`A21`), #81 (`AX-001a-d`, `f`, `g`: token
-  usage and list-price equivalent in the footer) and the `AX-004`/`AX-005` PR
-  (readiness from evidence; doctor read every catalog twice per run, fixed). Open
-  `0.8.0` candidates without owner input: `AX-001e` (subscription-window observations,
-  P first), `AX-001h`/`i` (estimates), `AX-003a` (elicitation outcome fixtures),
-  `AX-006a` (first-use acceptance script), `ENVELOPE-001b` (Codex/agy length stops),
-  `WINDOWS-001b`/`c` (containment launcher contract and helper) and `DOCS-003`.
-  Working rules the owner set this session: one PR per result group with many
-  commits and one review; docs ride in that PR (no docs-only or PR-link commits);
-  every PR targets `develop`; run `npm run docs` locally (typedoc warnings fail CI);
-  tests never use wall-clock limits, only scaling or event-relative timing.
-- **0.7.0 status (2026-10-19):** every agent row of the `0.7.0` list is merged or
-  in review: 2.12e (#72), 2.13-2.17 (#65-#67, #71), 3.0-3.13b (#68-#70) and
-  publication automation 5.1, 5.3, 5.4, 5.6-5.8 (#73-#77), and the `0.8.0` audit
-  row 2.29 (`AUDIT-001-A08`-`A21`, below). What remains for `0.7.0` needs the owner:
-  - 5.2: recreate the npm trusted publisher for `coagent8`: workflow
-    `npm-publish.yml`, no environment, allowed action `npm stage publish` only;
-    then set the repository variable `NPM_TRUSTED_PUBLISHING=true` if it is not.
-  - 5.4: a Marketplace personal access token of `okidev` (Marketplace: Manage) as
-    the secret `VSCE_PAT`, and the variable `MARKETPLACE_PUBLISHING=true`.
-  - 5.5: reserve the `okidev` namespace on Open VSX; the agent then adds the job.
-  - 2.18: a WSL2 Ubuntu distribution with Node 24+ and signed-in Codex, Claude Code
-    and agy (only `docker-desktop` exists); the agent then runs the WSL lane.
-  - 2.36: the UI steps of the skills and CLI-management acceptance.
-  Then the release rows 5.9-5.12: the agent prepares the release PR with
-  `docs/releases/v0.7.0.md`, runs the native acceptance and the independent
-  review; the owner merges, tags, publishes, approves the staged npm version and
-  runs Verify published. npm channel model (owner decision 2026-10-19): every
-  release is staged to `next`, and the owner promotes a stable one to `latest`.
+- **Next session starts here (owner decision 2026-10-19):** finish `0.7.0`
+  only. `develop` baseline is `955e2b3`; the agent implementation rows are
+  merged (#68-#82). `DELEGATE-001` belongs to the owner on a separate branch;
+  do not touch it or implement `0.8.0` work in this session.
+- **Release simplification (owner decision 2026-10-19):** one PR combines the
+  direct npm publish command, CI dry run, regression tests and these documents.
+  Review with backend `codex` on `origin/develop...<branch>`; carry requirements,
+  dated decisions and the proposed PR title/body, and reuse `session_handle`
+  after fixes. The owner authorized squash-merge of this PR only after READY
+  without P1/P2, six green CI jobs and an up-to-date branch. Never run the full
+  test suite concurrently with review. `WINDOWS-001a` descendant-survivor warning
+  is expected.
+- **0.7.0 owner gates and order (2026-10-19):**
+  - Before starting release PR 5.9, wait for the owner's confirmation of secret
+    `VSCE_PAT` (publisher `okidev`, Marketplace: Manage) and repository variable
+    `MARKETPLACE_PUBLISHING=true`. `NPM_TRUSTED_PUBLISHING=true` already exists.
+  - WSL 2.18 (`ACCEPT-001c`, including 2.12d POSIX recovery) and Open VSX 5.5
+    (`PROPOSALS-001b`) move to `0.8.0`. Namespace `okidev` is created;
+    [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422)
+    is recorded. Neither blocks `0.7.0`.
+  - The release PR contains only synchronized versions, generated changelog
+    (`npm run changelog -- --tag v0.7.0`) and the required tester header
+    `docs/releases/v0.7.0.md`. Give the owner links to the PR head's CI VSIX and
+    tarball for UI acceptance (2.36); finish native acceptance and the independent
+    release review bound to base, candidate, tree and artifact hashes.
+  - Stop before release merge, tag or publication until the owner explicitly
+    authorizes each step. Order: merge, tag `v0.7.0`, verified draft from
+    `release.yml`, npm configuration, Publish, **Verify published**, later `latest`.
+  - On release day just before publishing the verified draft, the owner creates
+    the npm trusted publisher: user `oktawianwybieralski`, repo `coagent8`, workflow
+    `npm-publish.yml`, no environment, **Allow npm publish** enabled and **Allow
+    npm dist-tag** disabled. Unvalidated configuration expires after about
+    48 hours. The owner removes GitHub's unused `npm` environment; `github-pages`
+    stays for `docs.yml`.
+  - Publishing the verified GitHub Release draft is the approval: npm publishes
+    its exact verified tarball directly to `next` through trusted publishing
+    with provenance. No staging or npmjs.com 2FA approval. After both publishing
+    jobs finish, run **Verify published** for `next` and the Marketplace. The owner
+    promotes a stable version manually: `npm dist-tag add coagent8@X.Y.Z latest`.
 - **Released baseline (`0.6.1`):** `v0.6.1` is an annotated tag on `55c7859`
   (`chore(release): v0.6.1 (#32)`), published on GitHub, npm (`latest` and
   `next`) and the VS Code Marketplace ([release evidence](#061-release-evidence)).
@@ -254,10 +260,10 @@ Do not append another session transcript or treat old test counts as fresh evide
   Claude Code, Codex and VS Code registrations run the working-tree build
   (`dist/index.cjs mcp`); rebuild with `npm run build` and restart the client's
   MCP server to pick up changes. Rows 2.13-2.17 and 3.9-3.13b are done; the
-  next agent work is the server-owned review terminator (owner decision
-  2026-10-18), 2.18 (the POSIX recovery checks run with 2.18), 2.36 and
-  publication automation 5.1-5.8. The owner develops delegation (`DELEGATE-001`)
-  on a separate branch.
+  server-owned review terminator is merged (#72). Remaining `0.7.0` work is
+  release simplification, 2.36 and release rows 5.9-5.12. WSL 2.18 and Open VSX
+  5.5 move to `0.8.0` (owner decision 2026-10-19). The owner develops delegation
+  (`DELEGATE-001`) on a separate branch.
 - **Rows 2.15 + 2.16 (`ACCEPT-001b` isolated user home, `ACCEPT-001a1` runner skeleton, #67):**
   `tooling/acceptance/` creates its own temporary root, gives every child an explicit
   isolated environment (contract in [ACCEPT-001](ARCHITECTURE.md#accept-001-automated-native-acceptance)),

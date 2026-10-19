@@ -1,9 +1,8 @@
 name: Verify published
 
-# After the owner approved the staged npm version and the Marketplace job ran (rule 02,
-# section 5, RELEASE-001f), this checks that npm and the Marketplace serve the release files:
-# npm dist.shasum and dist.integrity, the `next` dist-tag, and the Marketplace VSIX SHA-256.
-# npm publishes only after the owner's approval on npmjs.com, so the owner starts it.
+# After npm and Marketplace publishing finish (rule 02, section 5, RELEASE-001f),
+# the owner starts this check: npm dist.shasum, dist.integrity and `next`, and the
+# Marketplace VSIX SHA-256 must match the verified GitHub Release files.
 on:
   workflow_dispatch:
     inputs:

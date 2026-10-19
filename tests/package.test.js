@@ -156,7 +156,7 @@ test('PROPOSALS-001a: server.json describes the npm package for the MCP Registry
   assert.ok(!manifest.files.includes('server.json'), 'registry metadata is published by the owner, not shipped');
 });
 
-test('RELEASE-001a/b1: the npm script stages the ./release/... tarball on next with an npm that supports staging', () => {
+test('RELEASE-001a/b1: the npm script publishes the ./release/... tarball directly on next', () => {
   const { resolvePublishPlan, runPublishNpm, resolveNpmCommand } = require('../scripts/publish-npm.cjs');
 
   const customNpm = resolveNpmCommand({ npm_execpath: process.execPath });
@@ -181,7 +181,7 @@ test('RELEASE-001a/b1: the npm script stages the ./release/... tarball on next w
     assert.match(fallbackExec.stdout.trim(), /^\d+\.\d+\.\d+/);
   }
 
-  // Every release is staged to `next`; the owner promotes a stable version to `latest` (RELEASE-001b1).
+  // Every release is published to `next`; the owner promotes a stable version to `latest` (RELEASE-001b1).
   for (const tag of ['v0.7.0', 'v1.0.0']) {
     const plan = resolvePublishPlan({ tag });
     assert.equal(plan.version, tag.slice(1));
@@ -189,12 +189,51 @@ test('RELEASE-001a/b1: the npm script stages the ./release/... tarball on next w
     assert.equal(plan.tarballPath, `./release/coagent8-${tag.slice(1)}.tgz`, 'an explicit ./release/ path, never a git shorthand');
   }
   assert.throws(() => resolvePublishPlan({ tag: 'v1.0.0-beta.1' }), /not numeric major.minor.patch/);
-  // `npm stage publish` exists from npm 11.15.0.
-  const { supportsStaging } = require('../scripts/publish-npm.cjs');
-  for (const [version, ok] of [['11.15.0', true], ['11.19.1', true], ['12.0.0', true], ['11.14.9', false], ['10.99.0', false], ['', false]]) assert.equal(supportsStaging(version), ok, version);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-pub-'));
   try {
     assert.throws(() => runPublishNpm({ cwd: dir, tag: 'v0.7.0', dryRun: true }), /Release tarball not found/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('RELEASE-001b1: publish executes the exact tarball with provenance or a dry run and propagates failures', () => {
+  const { runPublishNpm } = require('../scripts/publish-npm.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-publish-command-'));
+  try {
+    const cli = path.join(dir, 'npm-fixture.cjs');
+    const recorded = path.join(dir, 'args.json');
+    fs.writeFileSync(cli, `
+      const fs = require('node:fs');
+      fs.writeFileSync('args.json', JSON.stringify(process.argv.slice(2)));
+      if (fs.existsSync('fail')) {
+        process.stderr.write(fs.readFileSync('fail', 'utf8'));
+        process.exit(1);
+      }
+    `);
+    const consumer = path.join(dir, '.artifacts', 'consumer');
+    fs.mkdirSync(consumer, { recursive: true });
+    const bytes = Buffer.from('exact consumer tarball');
+    fs.writeFileSync(path.join(consumer, 'coagent8-0.7.0.tgz'), bytes);
+    const options = { cwd: dir, tag: 'v0.7.0', npmCommand: { command: process.execPath, argsPrefix: [cli] } };
+    // A real publish must require the downloaded release file, never copy a local build.
+    assert.throws(() => runPublishNpm({ ...options, dryRun: false }), /Release tarball not found/);
+    assert.ok(!fs.existsSync(recorded));
+    assert.equal(runPublishNpm({ ...options, dryRun: true }).status, 0);
+    assert.deepEqual(fs.readFileSync(path.join(dir, 'release', 'coagent8-0.7.0.tgz')), bytes);
+    const args = ['publish', './release/coagent8-0.7.0.tgz', '--tag', 'next', '--access', 'public'];
+    assert.deepEqual(JSON.parse(fs.readFileSync(recorded, 'utf8')), [...args, '--dry-run']);
+    assert.equal(runPublishNpm({ ...options, dryRun: false }).status, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(recorded, 'utf8')), [...args, '--provenance']);
+
+    const failure = path.join(dir, 'fail');
+    fs.writeFileSync(failure, 'OIDC authentication failed');
+    for (const dryRun of [false, true]) {
+      assert.throws(() => runPublishNpm({ ...options, dryRun }), /npm publish failed.*\n[\s\S]*OIDC authentication failed/);
+    }
+    fs.writeFileSync(failure, 'You cannot publish over the previously published versions');
+    assert.equal(runPublishNpm({ ...options, dryRun: true }).status, 0);
+    assert.throws(() => runPublishNpm({ ...options, dryRun: false }), /npm publish failed/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

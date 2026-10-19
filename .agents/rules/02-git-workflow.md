@@ -43,7 +43,7 @@ must be disclosed with their effect on the earlier review.
 | Merge a PR | Only on the owner's explicit instruction for that PR | Yes |
 | Create a release line, push a tag | Never | Yes |
 | Verify a draft release, edit its notes | Yes | Yes |
-| Publish a GitHub Release, approve a staged npm version, promote it to `latest`, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
+| Publish a GitHub Release, promote a version to `latest`, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
 
 An agent prepares release PRs, release notes and evidence (section 5) and
 stops. It never states or implies that a push, merge, tag or publication
@@ -316,11 +316,12 @@ become the final commit, so they must meet this section.
 | `next` | Every new release, as soon as it is published; fixes may still follow | `npm install coagent8@next` |
 | `latest` | The release the owner promoted as stable | `npm install coagent8` |
 
-* Every release is staged to `next` by `npm-publish.yml` (`npm stage publish`, owner
-  decision 2026-10-19); the owner approves it on npmjs.com with 2FA. A staged
-  version's dist-tag cannot change, so `latest` is a separate owner step once the
-  version proved stable: `npm dist-tag add coagent8@X.Y.Z latest`. npm's package
-  page shows the version `latest` points at. The README install instructions use
+* Every release is published directly to `next` by `npm-publish.yml`
+  (`npm publish <verified tarball> --tag next` through trusted publishing with
+  provenance, owner decision 2026-10-19). Publishing the verified GitHub Release
+  draft is the owner's approval; there is no staging or npmjs.com 2FA approval.
+  `latest` is a separate owner step once the version proved stable:
+  `npm dist-tag add coagent8@X.Y.Z latest`. npm's package page shows the version `latest` points at. The README install instructions use
   `@next`, which existing registrations also use.
 * The `beta` dist-tag is retired (removed with 0.6.0).
 
@@ -336,9 +337,10 @@ performs every step marked (owner); an agent prepares the rest and stops there.
 On the normal path publication is automated (RELEASE-001) and the owner only
 decides. The owner merges
 the release PR and pushes the tag; `release.yml` builds and verifies a draft. The
-owner publishes the draft, which starts `npm-publish.yml` (stages the npm tarball on
-`next`) and `marketplace-publish.yml` (publishes the VSIX); the owner approves the
-staged npm version on npmjs.com, runs **Verify published**, and later promotes a
+owner creates the npm trusted publisher immediately before publishing the draft
+(section 8), which starts `npm-publish.yml` (publishes the npm tarball directly to
+`next`) and `marketplace-publish.yml` (publishes the VSIX). The owner then runs
+**Verify published**, and later promotes a
 stable version to `latest`. Nothing is built or uploaded by hand on this path;
 the hand steps in 22 and 23 are fallbacks for a workflow that is off or failed.
 
@@ -422,11 +424,11 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
       documentation must deploy;
     * delete the repository afterwards.
 
-    `npm-publish.yml` only stages: nothing is public before the owner approves, and
-    a wrong staged version is rejected on npmjs.com (`npm stage reject`). A re-run
-    uses the workflow at the tag, so when a changed workflow fails, stage the
-    verified file by hand (step 22). CI runs its command with `--dry-run` on every
-    PR. The real tag cannot be retried.
+    Leave `NPM_TRUSTED_PUBLISHING` and `MARKETPLACE_PUBLISHING` unset in the
+    throwaway repository, so publishing its draft cannot publish packages.
+    CI exercises `npm publish --dry-run` on every PR; it does not verify OIDC
+    credentials. A re-run uses the workflow at the tag; a failed publishing job
+    can use the verified-file fallback (step 22). A tag is never replaced.
 13. **Independent review** of `<previous tag>...release/vX.Y.Z`, bound to the
     base, candidate, tree and tarball hashes ([03-author-reviewer](03-author-reviewer.md)).
 
@@ -480,26 +482,32 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 
 ### Phase E - publish (owner, in this order, from the Phase D folder)
 
-21. Publish the draft release as a normal release. This deploys the
+21. On release day, immediately before publishing the verified draft, create
+    the npm trusted publisher with the fields and permissions in section 8.
+    An unvalidated configuration expires after approximately 48 hours (owner
+    decision 2026-10-19). Publish the draft as a normal release: this is the
+    approval for direct npm and Marketplace publishing. This deploys the
     documentation site (`docs.yml`) and starts `npm-publish.yml` and
     `marketplace-publish.yml`.
 22. npm: `npm-publish.yml` verifies the release tarball's checksum and provenance and
-    stages that exact file to `next` (section 4). Approve it on npmjs.com with 2FA
-    (Packages, coagent8, staged versions); the version is then live on `next`.
-    Promote it to `latest` once it proved stable, never in the same breath:
+    publishes that exact file directly to `next` through trusted publishing
+    with provenance (section 4), with no staging or npmjs.com 2FA approval.
+    After step 23 verifies publication, promote it to `latest` once it proved
+    stable, never in the same breath:
     ```bash
     npm dist-tag add coagent8@X.Y.Z latest
     npm dist-tag ls coagent8                       # check the tags
     ```
-    Without trusted publishing (section 8) stage the verified file by hand:
-    `npm stage publish ./coagent8-X.Y.Z.tgz --tag next`. npm never accepts the
-    same version twice.
+    If the workflow is unavailable, the owner's authenticated fallback publishes
+    the verified file by hand: `npm publish ./coagent8-X.Y.Z.tgz --tag next`.
+    This fallback does not establish trusted-publishing provenance. npm never
+    accepts the same version twice.
 23. Marketplace: publishing the release also starts `marketplace-publish.yml`,
     which verifies the release VSIX's checksum, provenance, version and normal
     channel and publishes that exact file under `okidev` (`RELEASE-001d`). Without
     it (section 8), publish the verified file by hand:
     `npx @vscode/vsce@4.0.0 publish --packagePath ./coagent8-mcp-X.Y.Z.vsix`.
-    Once the staged npm version is approved, run the **Verify published** workflow
+    Once both publishing jobs finish, run the **Verify published** workflow
     with the tag (`RELEASE-001f`): npm `dist.shasum`, `dist.integrity` and `next`, and
     the Marketplace VSIX, must equal the release files. Locally:
     `node scripts/verify-published.cjs --tag vX.Y.Z --dir <Phase D folder>`.
@@ -648,11 +656,21 @@ the tag-creation rule:
   `develop` (manual runs). Site: https://oktawianwybieralski.github.io/coagent8/.
 * **npm trusted publishing** (RELEASE-001b): on npmjs.com the package `coagent8`
   trusts publisher repository `oktawianwybieralski/coagent8`, workflow
-  `npm-publish.yml`, no environment, allowed action `npm stage publish` only;
-  the approval is the owner's 2FA on the staged version, not a GitHub
-  environment (whose rules blocked the job). The repository variable
-  `NPM_TRUSTED_PUBLISHING` is `true` and the package disallows token
-  publishing. Without the variable the staging job is skipped.
+  `npm-publish.yml`, no environment. Owner decision 2026-10-19: enable
+  **Allow npm publish** and disable **Allow npm dist-tag**. The user field is
+  `oktawianwybieralski`, repository `coagent8`; enter only the workflow filename.
+  An unvalidated configuration expires after approximately 48 hours, so the
+  owner creates it on release day immediately before publishing the verified
+  draft, which is the publication approval. Use npm >=11.5.1 (Node 24's bundled
+  npm supports OIDC); no staging-specific npm installation is needed.
+  The repository variable `NPM_TRUSTED_PUBLISHING` is `true` and the package
+  disallows token publishing. Without the variable the publish job is skipped.
+  The owner removes the unused GitHub `npm` environment; `github-pages` stays
+  for `docs.yml`. No npm environment or npmjs.com 2FA approval is required.
+* **0.7.0 scope** (owner decision 2026-10-19): WSL acceptance (roadmap 2.18)
+  and Open VSX (5.5, `PROPOSALS-001b`) move to `0.8.0`. The Open VSX namespace
+  `okidev` is created; the [ownership request](https://github.com/EclipseFdn/open-vsx.org/issues/14422)
+  is recorded, with no Open VSX publication work for `0.7.0`.
 * **Marketplace publishing** (RELEASE-001d): the repository secret `VSCE_PAT` holds
   a Marketplace personal access token of the `okidev` publisher (scope Marketplace:
   Manage), and the repository variable `MARKETPLACE_PUBLISHING` is `true`; without
