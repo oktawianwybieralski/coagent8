@@ -1461,6 +1461,37 @@ behavior or a test-procedure lesson.
   sandbox becomes one execution option, not the only way CoAgent8 runs an agent.
   The POSIX native check moves to 2.18.
 
+## FEEDBACK-070: findings of the 0.7.0 native acceptance
+
+Native acceptance of the release PR #85 candidate on 2026-10-20 (Codex, Claude
+Code and Antigravity in VS Code on Windows, runtime from the CI VSIX) passed
+every scenario; these findings are fixed before the tag (owner direction
+2026-10-20, consulted with Codex). Each fix has a regression test.
+
+- [x] **FEEDBACK-070a - finding headers without brackets.** agy wrote
+  `P2 sum.js:4` in two of four seeded-defect reviews; the gate read only
+  `[P2]`, so its reason denied a finding and a READY with such a header would
+  have passed. A line shaped as a P1/P2 finding header now blocks; prose, P3
+  and `P20` do not.
+- [x] **FEEDBACK-070b - price cache writes by how long they are kept.** The
+  footer showed an amount for Codex, rarely for Claude Code (whose turns write
+  to the one-hour cache) and never for agy, while the release notes promised
+  one per turn. Cache writes are priced at `input_cache_write` or
+  `input_cache_write_1h`, using Claude Code's split; a turn reaching the
+  list's `overrides` prompt size shows counts only, since a turn total does
+  not say how large each request was (gpt-6.1-sol prices differently from
+  272,000 prompt tokens). agy still reports no cache counts and shows counts
+  only.
+- [x] **FEEDBACK-070c - close the sessions of a deleted workspace.** A review
+  session whose repository was deleted could not be closed (`workspace path
+  does not exist`). Session list, history and close accept an absolute path
+  that no longer exists; ownership is still checked.
+- Observations without a change: agy reviews of a one-line defect took
+  112-300 s and up to 36 operations, with a sandbox-denial warning that does
+  not name the action; the closed-session footer reads `CLI · provider
+  default`; setup status counts a manual registration that starts another
+  runtime as registered. They are candidates for `0.8.0`.
+
 ## PROPOSALS-001: proposals awaiting an owner decision
 
 Proposals made in earlier sessions that were never recorded. Each needs an
@@ -2085,7 +2116,8 @@ agent (owner assigns).
 | 5.8 | [x] `RELEASE-001g` rules and AGENTS.md | P | 5.1-5.4, 5.6-5.7 | Rule 02 describes the automated phases. |
 | 5.9 | Release PR `0.7.0` | R | merged agent rows; manual Marketplace path accepted by owner on 2026-10-19 | Rule 02 phase A by an agent: version, changelog, gate, notes file, PR; CI green. |
 | 5.10 | 0.7.0 native acceptance | N | 5.9 | Runner plus owner UI steps: carried `PATCH-061` tasks, `EXEC-001-T12c`, `FEEDBACK-061h` procedure, and an upgrade from the published `0.6.1` npm package and VSIX to the exact candidate artifacts, recording the started runtime version, the migration of owned registrations to `mcp` and the preservation of manual entries, configuration and sessions. |
-| 5.11 | Independent release review | R | 5.10 | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
+| 5.10a | [x] `FEEDBACK-070a`-`c` acceptance findings | R | 5.10 | Fixed with regression tests before the tag; the release PR is rebuilt and accepted again on its new artifacts. |
+| 5.11 | Independent release review | R | 5.10a | `EXEC-001-T12d`, bound to base, candidate, tree and artifact hashes. |
 | 5.12 | Tag and publish | O | 5.11 | Owner merges, tags and approves the automated publication; `SUPPLY-001f` and `LIC-001d` checks follow. |
 | 5.13 | `PLUGIN-001f` | N | 5.12 | Plugin install, update and removal per client against the published `0.8.0` package; plugin paths documented only after it passes. |
 

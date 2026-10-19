@@ -144,7 +144,10 @@ workspaces. Roots refresh on roots/list_changed. Only a server-directory fallbac
 adds the workspace line.
 
 Session list/history/close and coagent8://sessions resources enforce workspace
-ownership. Resource history is not the paginated session API. Cancel without
+ownership. An absolute workspace_path that no longer exists still names the sessions
+that ran there, so they can be listed, read and closed after the directory was
+deleted; other tools still require an existing directory. Resource history is not
+the paginated session API. Cancel without
 workspace_path remains unscoped; an initial session handle arrives only at return,
 so use host request cancellation during the first call.
 
@@ -287,6 +290,16 @@ the user's limit in USD per million output tokens. It is strict: 5 excludes a
 model priced at 5. It is a list unit price, not a request estimate, measured
 usage, quota or bill; request estimates remain open in AX-001.
 
+The `Usage:` footer prices a finished turn at list price only from the model's exact
+match: regular input, cache reads, cache writes kept for minutes (`input_cache_write`)
+and for an hour (`input_cache_write_1h`) and output, each once. Writes need their
+split when the list prices both kinds; Claude Code reports it, a list with one kind
+prices unsplit writes at it. A turn whose input reached the smallest
+`min_prompt_tokens` of the entry's `overrides` shows counts only, because the total
+does not say how large each request was; a stored list without that field is treated
+the same until it is read again. agy reports no cache counts, so its turns show counts
+only.
+
 - Only an exact match from a list younger than seven days meets a limit. Unknown,
   approximate (including context variants such as [1m]) and stale prices never do;
   several exact entries count at their highest price. A constrained call reads a
@@ -365,7 +378,9 @@ CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
 ~~~
 
 The gate requires complete input/output, exact snapshot, recognized fields and an
-end, COMPLETE/READY and no literal [P1]/[P2]. The end is a model-written `END_REVIEW`
+end, COMPLETE/READY and no literal [P1]/[P2]. A finding header that lost its brackets
+(`P2 sum.js:4`, also after a list marker or in bold) blocks as well; only a line shaped
+as a header counts, so prose naming P1 or P2 does not. The end is a model-written `END_REVIEW`
 (once, last) or, without one, `CHECKS` as the last line of a turn that ended with a
 normal terminal event, untruncated and without a reported length stop; the returned
 envelope then ends with a server-appended `END_REVIEW`, so clients see the same shape.

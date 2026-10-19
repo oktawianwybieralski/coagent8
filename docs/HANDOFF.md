@@ -4,11 +4,26 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-19. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-20. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
 ## Current state
+
+- **0.7.0 native acceptance (2026-10-20):** release PR #85 at `4590d34`, CI run
+  `39327153830` six green jobs; CI VSIX `coagent8-mcp-0.7.0.vsix` SHA-256
+  `0ebb354e98f7da94b131c10a0870aaba498866220b814ca3c16d3ddbb06c6390`, tarball
+  `f0655c7b4bc2b3c48d6539fa4159175b7f60ab05e78db84ec4ec5e1e200c9ae2`, runtime
+  `dist/index.cjs` `2e0828374cc8b088eefda0dd32e6a1707cf7b6ced0aa9508db1a1cba712fc043`.
+  Codex, Claude Code and Antigravity in VS Code on Windows started that runtime
+  (`~/.coagent8/runtime/2e0828.../index.cjs`) and passed issue, doctor, consult
+  with continuation, seeded-defect review BLOCKED then READY on the same handle,
+  session list/history/cancel, closed-session refusal and cleanup. Codex could
+  not delete its scratch repository (its own execution policy). An earlier
+  Claude Code run used a manual registration of the source build and does not
+  count. Findings: [FEEDBACK-070](ROADMAP.md#feedback-070-findings-of-the-070-native-acceptance),
+  fixed on `fix/acceptance-070` before the tag; then #85 is rebased, its new
+  artifacts accepted again and the release review bound to their hashes.
 
 - **Next session starts here (owner decision 2026-10-19):** finish `0.7.0`
   only. Release simplification is merged as `f0de595` (#83), following the
