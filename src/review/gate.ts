@@ -59,11 +59,12 @@ export interface TurnCompletion {
 }
 
 /**
- * A P1 or P2 finding header without brackets: an optional Markdown list or heading marker,
- * the severity with an optional colon and bold, then `<file>:<line>`, as in `P2 sum.js:4`,
- * `+ **P1:** src/a.ts:10` or a header bold as a whole.
+ * A P1 or P2 finding header without brackets: after an optional Markdown list, quote or
+ * heading marker and emphasis, the line starts with the severity and names a `<file>:<line>`
+ * anywhere, as in `P2 sum.js:4`, `+ **P1:** src/a.ts:10` or `P2 a.ts:3: text`. It errs
+ * towards blocking: a line that opens with P1 or P2 and cites a location is a finding.
  */
-const UNBRACKETED_BLOCKER = /^(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s+)?(?:\*\*|__)?P[12]:?(?:\*\*|__)?:?\s+\S+?:\d+(?:[-:]\d+)?(?:\*\*|__)?(?:\s|$)/i;
+const UNBRACKETED_BLOCKER = /^(?:[-*+>]\s+|\d+[.)]\s+|#{1,6}\s+)?[*_`]*P[12](?![0-9])[*_`:]*\s.*?[^\s:]*[a-z.][^\s:]*:\d+/i;
 
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
 const MAX_BLOCKED_REASON_CHARS = 300;

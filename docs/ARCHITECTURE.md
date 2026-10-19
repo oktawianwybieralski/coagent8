@@ -379,8 +379,10 @@ CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
 
 The gate requires complete input/output, exact snapshot, recognized fields and an
 end, COMPLETE/READY and no literal [P1]/[P2]. A finding header that lost its brackets
-(`P2 sum.js:4`, also after a list marker or in bold) blocks as well; only a line shaped
-as a header counts, so prose naming P1 or P2 does not. The end is a model-written `END_REVIEW`
+blocks as well: a line that, after Markdown list, quote, heading or emphasis marks,
+opens with P1 or P2 and cites a `<file>:<line>` (`P2 sum.js:4`, `**P1:** a.ts:10`).
+Prose that does not open with the severity or cites no location does not block; the
+check errs towards blocking. The end is a model-written `END_REVIEW`
 (once, last) or, without one, `CHECKS` as the last line of a turn that ended with a
 normal terminal event, untruncated and without a reported length stop; the returned
 envelope then ends with a server-appended `END_REVIEW`, so clients see the same shape.
