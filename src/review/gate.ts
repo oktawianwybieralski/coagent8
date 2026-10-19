@@ -59,10 +59,11 @@ export interface TurnCompletion {
 }
 
 /**
- * A P1 or P2 finding header without brackets: an optional list marker or bold, the severity,
- * then `<file>:<line>`, as in `P2 sum.js:4`, `- **P1** src/a.ts:10` or a header bold as a whole.
+ * A P1 or P2 finding header without brackets: an optional Markdown list or heading marker,
+ * the severity with an optional colon and bold, then `<file>:<line>`, as in `P2 sum.js:4`,
+ * `+ **P1:** src/a.ts:10` or a header bold as a whole.
  */
-const UNBRACKETED_BLOCKER = /^(?:[-*]\s+|\d+[.)]\s+)?(?:\*\*)?P[12](?:\*\*)?:?\s+\S+?:\d+(?:[-:]\d+)?(?:\*\*)?(?:\s|$)/i;
+const UNBRACKETED_BLOCKER = /^(?:[-*+]\s+|\d+[.)]\s+|#{1,6}\s+)?(?:\*\*|__)?P[12]:?(?:\*\*|__)?:?\s+\S+?:\d+(?:[-:]\d+)?(?:\*\*|__)?(?:\s|$)/i;
 
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
 const MAX_BLOCKED_REASON_CHARS = 300;
