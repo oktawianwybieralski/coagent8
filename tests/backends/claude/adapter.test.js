@@ -499,3 +499,11 @@ test('FEEDBACK-060h: deterministic running-turn handshake confirms live Claude t
     await turn1Promise?.catch(() => {});
   }
 }));
+
+test('ENVELOPE-001: Claude forwards a stop at the output length limit as lengthLimited',()=>withFixture(async({dir})=>{
+  const done=await executeClaude('Reply with OK',{cwd:dir,model:MODEL});
+  assert.equal(done.status,'completed');assert.equal(done.lengthLimited,false,'end_turn in the recorded result');
+  process.env.CLAUDE_FIXTURE_SCENARIO='max-tokens';
+  const limited=await executeClaude('Reply with OK',{cwd:dir,model:MODEL});
+  assert.equal(limited.status,'completed');assert.equal(limited.lengthLimited,true);
+}));

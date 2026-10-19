@@ -268,3 +268,51 @@ test('FEEDBACK-061e: returned envelope carries server turn number, ignoring mode
   assert.equal(alignEnvelopeReviewTurn('  REVIEW:  old-counter  \nSNAPSHOT: x', 4), '  REVIEW: 4\nSNAPSHOT: x');
   assert.equal(alignEnvelopeReviewTurn('plain output without envelope', 2), 'plain output without envelope');
 });
+
+test('ENVELOPE-001: the server owns END_REVIEW and accepts an envelope without it only on completion evidence', () => {
+  const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] };
+  const lines = (verdict, ...findings) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, 'Reviewed: notes.md.', ...findings, 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'];
+  const ready = lines('READY').join('\n');
+  const completed = { completed: true };
+  // A complete answer without the terminator: judged, and the formatter appends it.
+  const accepted = evaluateStateEnvelopeGate(ready, false, true, context, completed);
+  assert.deepEqual({ verdict: accepted.verdict, judged: accepted.judged, appendTerminator: accepted.appendTerminator }, { verdict: 'READY', judged: true, appendTerminator: true });
+  const blocked = evaluateStateEnvelopeGate(lines('BLOCKED', '[P2] notes.md:5', 'Problem: Contradicts line 3.').join('\n'), false, true, context, completed);
+  assert.deepEqual({ verdict: blocked.verdict, judged: blocked.judged, appendTerminator: blocked.appendTerminator }, { verdict: 'BLOCKED', judged: true, appendTerminator: true }, 'a complete BLOCKED review is judged too');
+  // Without completion evidence, or with the turn not completed, only a model-written terminator ends it.
+  for (const [completion, label] of [[undefined, 'no evidence'], [{ completed: false }, 'not completed']]) {
+    const result = evaluateStateEnvelopeGate(ready, false, true, context, completion);
+    assert.deepEqual({ verdict: result.verdict, judged: result.judged, appendTerminator: result.appendTerminator }, { verdict: 'BLOCKED', judged: false, appendTerminator: undefined }, label);
+    assert.match(result.reason, /Incomplete State Envelope/, label);
+  }
+  // Text after CHECKS, or CHECKS before a finding, is not a complete envelope.
+  assert.equal(evaluateStateEnvelopeGate(`${ready}\nLet me know if you need more.`, false, true, context, completed).verdict, 'BLOCKED');
+  assert.equal(evaluateStateEnvelopeGate([...lines('READY'), '[P3] notes.md:1'].join('\n'), false, true, context, completed).verdict, 'BLOCKED');
+  // Truncation or an observed length stop blocks and stays retryable, with or without a model terminator.
+  for (const answer of [ready, `${ready}\nEND_REVIEW`]) {
+    const truncated = evaluateStateEnvelopeGate(answer, true, true, context, completed);
+    assert.equal(truncated.judged, false);
+    const limited = evaluateStateEnvelopeGate(answer, false, true, context, { completed: true, lengthLimited: true });
+    assert.deepEqual({ verdict: limited.verdict, judged: limited.judged, appendTerminator: limited.appendTerminator }, { verdict: 'BLOCKED', judged: false, appendTerminator: undefined });
+    assert.match(limited.reason, /stopped at its output length limit/);
+  }
+  // A model-written terminator is still accepted, once and last, and nothing is appended to it.
+  const modelTerminated = evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW`, false, true, context, completed);
+  assert.deepEqual({ verdict: modelTerminated.verdict, appendTerminator: modelTerminated.appendTerminator }, { verdict: 'READY', appendTerminator: undefined });
+  assert.equal(evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW\nEND_REVIEW`, false, true, context, completed).verdict, 'BLOCKED', 'duplicate terminator');
+  assert.equal(evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW\nMore text.`, false, true, context, completed).verdict, 'BLOCKED', 'misplaced terminator');
+});
+
+test('ENVELOPE-001: the returned envelope ends with the server terminator; a failed or incomplete one gets none', () => {
+  const { formatExecutionResult } = require('../../src/mcp/result.ts');
+  const answer = ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: notes.md.', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'].join('\n');
+  const format = res => formatExecutionResult('claude', { isError: false, truncated: false, continuationAvailable: false, ...res },
+    '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
+    { requireEnvelope: true, reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] } }).content[0].text;
+  const completed = format({ status: 'completed', output: answer });
+  assert.match(completed, /CHECKS: typecheck=NOT_RUN; tests=NOT_RUN\nEND_REVIEW\n/);
+  assert.match(completed, /^Verdict: READY$/m);
+  const limited = format({ status: 'completed', output: answer, lengthLimited: true });
+  assert.ok(!limited.includes('END_REVIEW'), 'a length-limited answer is not terminated by the server');
+  assert.match(limited, /^Verdict: BLOCKED \(.*stopped at its output length limit/m);
+});

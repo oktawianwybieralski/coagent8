@@ -495,3 +495,34 @@ test('an unchanged repeat after a review blocked by filesystem denials starts a 
   assert.equal(round, 2, 'unchanged repeat with session_handle starts a new model turn');
   assert.equal(retryWithHandle.verdict, 'READY');
 });
+
+test('ENVELOPE-001: a server-terminated review is judged and deduplicated; a length-limited one stays retryable', async () => {
+  await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy', 'codex'] } });
+  // No END_REVIEW from the model: CHECKS is last and the turn completed.
+  const { repo } = fixtureRepo('server-terminated');
+  const turns = installReviewers(snapshot => ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'].join('\n'));
+  const first = await handleReview('review', {}, repo, null, null, approve);
+  assert.equal(readResult(first).verdict, 'READY');
+  assert.match(first.content[0].text, /CHECKS: typecheck=NOT_RUN; tests=NOT_RUN\nEND_REVIEW\n/, 'the server appended the terminator');
+  await handleReview('review', {}, repo, null, null, approve);
+  assert.equal(turns.agy, 1, 'the judged review deduplicates an unchanged repeat');
+
+  // The backend reports a stop at the length limit: blocked, not recorded, so a repeat runs again.
+  const limited = fixtureRepo('length-limited');
+  let limitedTurns = 0;
+  adapterRegistry.agy = {
+    id: 'agy', name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async prompt => {
+      limitedTurns++;
+      const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
+      return { status: 'completed', isError: false, truncated: false, lengthLimited: true, continuationAvailable: true, nativeSessionId: `11111111-2222-3333-4444-66666666666${limitedTurns}`, model: 'fixture-model',
+        output: ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n') };
+    },
+  };
+  const blocked = readResult(await handleReview('review', {}, limited.repo, null, null, approve));
+  assert.equal(blocked.verdict, 'BLOCKED');
+  assert.match(blocked.reason, /stopped at its output length limit/);
+  await handleReview('review', {}, limited.repo, null, null, approve);
+  assert.equal(limitedTurns, 2, 'a length-limited review is never recorded as judged');
+});

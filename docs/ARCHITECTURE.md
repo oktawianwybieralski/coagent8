@@ -345,7 +345,8 @@ does not prove universal profile isolation. AX-004/005 separate these facts.
 ## Review contract
 
 Review collects bounded Git input and supplies a snapshot identifier incorporating
-SHA-256 of diff/workspace input/omissions. The requested envelope is:
+SHA-256 of diff/workspace input/omissions. The requested envelope ends with `CHECKS`;
+the server owns the terminator (owner decision 2026-10-18, `ENVELOPE-001`):
 
 ~~~text
 REVIEW: <turn>
@@ -357,11 +358,17 @@ Problem: <description>
 Evidence: <file:line evidence>
 Fix: <action>
 CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>
-END_REVIEW
 ~~~
 
-The gate requires complete input/output, exact snapshot, recognized fields and
-terminator, COMPLETE/READY and no literal [P1]/[P2]. Any FAIL blocks. Runtime
+The gate requires complete input/output, exact snapshot, recognized fields and an
+end, COMPLETE/READY and no literal [P1]/[P2]. The end is a model-written `END_REVIEW`
+(once, last) or, without one, `CHECKS` as the last line of a turn that ended with a
+normal terminal event, untruncated and without a reported length stop; the returned
+envelope then ends with a server-appended `END_REVIEW`, so clients see the same shape.
+A reported length stop (Claude Code `stop_reason: max_tokens`) blocks with either end and
+leaves the review unjudged, so it can be retried. Codex and agy report no stop reason; for
+them `CHECKS` last and the terminal event are the evidence, and a model that writes
+`CHECKS` before its findings and then stops cannot be detected. Any FAIL blocks. Runtime
 scopes require both checks; a read-only reviewer cannot run them, so its honest
 NOT_RUN does not block and the server verdict names the checks it did not run:
 `Verdict: READY (typecheck and tests not run)`. A reported PASS is not evidence

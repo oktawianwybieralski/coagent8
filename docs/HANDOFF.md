@@ -192,6 +192,19 @@ Do not append another session transcript or treat old test counts as fresh evide
   output omits `conversation_id` now keeps the requested session id with
   `continuationAvailable: true`; a new turn without an id still fails with
   `PROTOCOL_ERROR`. Fixture test in `tests/backends/agy/adapter.test.js`.
+- **Row 2.12e (`ENVELOPE-001a`, server-owned review terminator, owner decision
+  2026-10-18):** the review prompt ends the envelope with `CHECKS`; `evaluateStateEnvelopeGate`
+  takes the turn's completion evidence (terminal status and `lengthLimited`) at both call
+  sites (`src/execution/controller.ts`, `src/mcp/result.ts`), accepts a missing `END_REVIEW`
+  only with `CHECKS` last, a completed turn and untruncated output, and the formatter then
+  appends it; the Claude collector reports `stop_reason: max_tokens` as `lengthLimited`, which
+  blocks with either end. Codex and agy stop reasons are `ENVELOPE-001b`. Native
+  check on 2026-10-18 (Windows 11, candidate tarball `d54f1b19...47db3` packed from the
+  branch, `--backends claude --model claude=claude-haiku-5-5`): all nine Claude scenarios
+  and `n3_close` passed, including the review (complete coverage, server verdict BLOCKED
+  on the seeded contradiction) and its unchanged repeat without a turn, so the review
+  was judged; the run reproduced the `cachedGrowthBookFeaturesAt` write, accepted and
+  reported by the home check.
 - **Release split (owner decision 2026-10-15):** `0.7.0` is a stability release and
   `0.8.0` (rc.1) carries delegation and orchestration; the
   [ROADMAP split](ROADMAP.md#070-beta3-plan) assigns each open row. The owner's

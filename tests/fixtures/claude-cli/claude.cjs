@@ -48,7 +48,7 @@ const recordings = {
   'auth-failed': ['auth-failed', 1], 'model-not-found': ['model-not-found', 1], 'resume-unknown': ['resume-unknown', 1],
   'unknown-events': ['success-partial', 0], 'write-tools': ['success-partial', 0], 'no-result': ['success-partial', 0],
   'missing-init': ['success-partial', 0], 'startup-failure': ['success-partial', 1],
-  interruptible: ['success-partial', 0], 'ignore-interrupt': ['success-partial', 0],
+  interruptible: ['success-partial', 0], 'ignore-interrupt': ['success-partial', 0], 'max-tokens': ['success-partial', 0],
 };
 const [file, exitCode] = recordings[scenario] || [];
 if (!file) { console.error(`unknown fixture scenario ${scenario}`); process.exit(2); }
@@ -73,6 +73,8 @@ function answer() {
     if (sessionId && typeof event.session_id === 'string') event.session_id = sessionId;
     if (scenario === 'missing-init' && event.subtype === 'init') continue;
     if (scenario === 'write-tools' && event.subtype === 'init') event.tools = [...event.tools, 'Bash', 'Write'];
+    // `max-tokens`: the answer stopped at the output length limit (ENVELOPE-001).
+    if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;
     if (scenario === 'unknown-events' && event.type === 'result') {
       out.push({ type: 'future_event_type', payload: 1 }, { type: 'future_event_type', payload: 2 }, { type: 'system', subtype: 'future_subtype' });
