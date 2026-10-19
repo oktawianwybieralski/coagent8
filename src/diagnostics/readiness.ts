@@ -61,8 +61,10 @@ export function decideReadiness(facts: ReadinessFacts, now = Date.now()): Backen
   if (!facts.executionSupported || !facts.readOnlyVerified) return result('profile_unverified', 'The CLI cannot run turns, or its read-only profile is not verified.');
   if (facts.authStatus === 'unauthenticated') return result('signed_out', 'The CLI reports that it is not signed in.');
   const cooldown = facts.quota?.cooldownUntil ? Date.parse(facts.quota.cooldownUntil) : NaN;
-  if (facts.quota?.status === 'rate_limited' && (!Number.isFinite(cooldown) || cooldown > now)) {
-    return result('rate_limited', facts.quota.cooldownUntil ? `Rate limited until ${facts.quota.cooldownUntil}.` : 'Rate limited.');
+  // A measured zero quota is also reported as rate limited, without a cooldown: only a
+  // running cooldown is a rate limit, the rest falls to the quota row below.
+  if (facts.quota?.status === 'rate_limited' && Number.isFinite(cooldown) && cooldown > now) {
+    return result('rate_limited', `Rate limited until ${facts.quota.cooldownUntil}.`);
   }
   if (facts.quota?.headroomPercent === 0) return result('quota_exhausted', facts.quota.resetsAt ? `Quota exhausted until ${facts.quota.resetsAt}.` : 'Quota exhausted.');
   if (facts.authStatus === 'authenticated') return result('ready', 'The CLI reports a signed-in account.');

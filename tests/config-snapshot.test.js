@@ -285,3 +285,24 @@ test('AX-004b: health reads every backend afresh each time; the models view reus
     if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
   }
 });
+
+test('AX-004b: a catalog the CLI did not answer is not read a second time for the default model', async () => {
+  const { adapterRegistry } = require('../src/backends/registry.ts');
+  const original = adapterRegistry.agy;
+  const savedConfigEnv = process.env.coagent8_CONFIG;
+  process.env.coagent8_CONFIG = path.join(tempDir, 'ax-004b-unanswered-config.json');
+  let catalogReads = 0;
+  try {
+    adapterRegistry.agy = { ...original,
+      probe: async () => ({ id: 'agy', installed: true, executionSupported: true, version: 'ax-004b-unanswered', authStatus: 'authenticated',
+        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }),
+      listModels: async () => { catalogReads++; return undefined; },
+      inspectQuota: async () => undefined, observeModel: undefined };
+    await saveConfig({ routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
+    await runDoctor({ backend: 'agy' });
+    assert.equal(catalogReads, 1);
+  } finally {
+    adapterRegistry.agy = original;
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+  }
+});

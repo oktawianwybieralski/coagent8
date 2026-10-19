@@ -93,7 +93,8 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-const isTime = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0;
+/** A positive time a `Date` can represent, so formatting it never throws. */
+const isTime = (value: unknown): value is number => typeof value === 'number' && value > 0 && value <= 8.64e15;
 
 function parseCatalogModel(value: unknown): CatalogModel | null {
   const entry = record(value);

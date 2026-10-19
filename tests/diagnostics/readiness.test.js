@@ -16,6 +16,7 @@ test('AX-005a: the decision table distinguishes every failure from an unproven s
   assert.equal(state({ authStatus: 'authenticated', quota: { status: 'rate_limited', headroomPercent: null, cooldownUntil: '2026-10-19T13:00:00Z' } }), 'rate_limited');
   assert.equal(state({ authStatus: 'authenticated', quota: { status: 'rate_limited', headroomPercent: null, cooldownUntil: '2026-10-19T11:00:00Z' } }), 'ready', 'an expired cooldown no longer limits');
   assert.equal(state({ authStatus: 'authenticated', quota: { status: 'operational', headroomPercent: 0, resetsAt: '2026-10-20T00:00:00Z' } }), 'quota_exhausted', 'quota disabled or used up');
+  assert.equal(state({ authStatus: 'authenticated', quota: { status: 'rate_limited', headroomPercent: 0, cooldownUntil: null } }), 'quota_exhausted', 'a measured zero quota has no cooldown');
   assert.equal(state({ authStatus: 'authenticated' }), 'ready');
   assert.equal(state({ quotaMeasuredNow: true }), 'ready', 'a quota measured now needs a signed-in CLI');
   assert.equal(state({}), 'sign_in_unverified', 'agy before its first turn: unknown, not failed');

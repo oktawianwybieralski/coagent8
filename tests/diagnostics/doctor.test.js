@@ -643,3 +643,19 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     assert.equal((await runDoctor({ backend: 'agy' })).readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
   } finally { Object.assign(adapterRegistry, original); }
 });
+
+test('AX-005a: a measured zero quota is reported as exhausted, not as a rate limit', async () => {
+  const { adapterRegistry } = require('../../src/backends/registry.ts');
+  const original = { ...adapterRegistry };
+  try {
+    adapterRegistry.agy = { ...original.agy,
+      inspectQuota: async () => ({ measured: true, window: 'weekly', usedPercent: 100, headroomPercent: 0, resetsAt: '2026-10-26T00:00:00Z' }),
+      probe: async () => ({ id: 'agy', installed: true, executionSupported: true, version: 'agy-zero-quota-fixture', authStatus: 'authenticated',
+        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }) };
+    await saveConfig({ routing: { allowedBackends: ['codex', 'claude', 'agy'] } });
+    const report = await runDoctor({ backend: 'agy' });
+    assert.equal(report.readiness.agy.state, 'quota_exhausted', JSON.stringify(report.readiness.agy));
+    assert.equal(report.readiness.agy.evidence, 'Quota exhausted until 2026-10-26T00:00:00Z.');
+    assert.deepEqual(report.ready_backends, []);
+  } finally { Object.assign(adapterRegistry, original); }
+});
