@@ -213,13 +213,23 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
   assert.ok(!sanitizedEmbedded.includes('leakedInner'));
   assert.ok(!sanitizedEmbedded.includes('leakedAfter'));
 
-  // ReDoS test: 40,000 'a' characters must sanitize linearly in under 100ms
-  const longA = 'a'.repeat(40000);
-  const start = Date.now();
-  const sanitizedA = sanitizeText(longA);
-  const elapsed = Date.now() - start;
-  assert.ok(elapsed < 100, `Sanitization took too long (${elapsed}ms), possible ReDoS`);
-  assert.ok(sanitizedA.length <= 4096, 'Bounded length should be enforced');
+  // ReDoS: the credential patterns run on the whole input, so sanitizing must scale linearly.
+  // A 4x larger input is timed against a smaller one (best of three each) instead of a fixed
+  // wall-clock limit, which a loaded runner under coverage exceeded (128 ms for 40,000
+  // characters, macos-latest, Node 26, 2026-10-19). Linear work grows about 4x, quadratic 16x.
+  const bestOf3 = size => {
+    const text = 'a'.repeat(size);
+    let best = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const started = process.hrtime.bigint();
+      sanitizeText(text);
+      best = Math.min(best, Number(process.hrtime.bigint() - started) / 1e6);
+    }
+    return best;
+  };
+  const small = bestOf3(400_000), large = bestOf3(1_600_000);
+  assert.ok(large < small * 8 + 10, `sanitizing grew from ${small.toFixed(1)} ms to ${large.toFixed(1)} ms for 4x the input, possible ReDoS`);
+  assert.ok(sanitizeText('a'.repeat(40000)).length <= 4096, 'Bounded length should be enforced');
 });
 
 test('AUDIT-001-A19: free text has no safe boundary after a diff, so everything after it stays redacted', () => {
