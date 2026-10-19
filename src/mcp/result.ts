@@ -119,8 +119,9 @@ function listPriceEquivalent(usage: TokenUsage, price: ListPrice | undefined): n
   let long = usage.cacheWriteLongInputTokens;
   // Without a split, the writes are of one kind only when the list prices one kind.
   if (long === undefined) {
-    if (written > 0 && price.cacheWriteLongUsdPerMTok !== null) return undefined;
-    long = 0;
+    const shortListed = price.cacheWriteUsdPerMTok !== null, longListed = price.cacheWriteLongUsdPerMTok !== null;
+    if (written > 0 && shortListed && longListed) return undefined;
+    long = longListed && !shortListed ? written : 0;
   }
   const short = written - long;
   if (short < 0 || (short > 0 && price.cacheWriteUsdPerMTok === null) || (long > 0 && price.cacheWriteLongUsdPerMTok === null)) return undefined;

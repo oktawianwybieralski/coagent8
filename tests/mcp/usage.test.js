@@ -41,6 +41,9 @@ test('AX-001g: cache writes are priced by how long they are kept, never by a gue
   assert.equal(formatUsage(unsplit, opus), 'Usage: 100 input · 20 output tokens', 'two kinds of writes listed, the split unknown');
   // A list with one kind of write (OpenAI, Gemini) prices unsplit writes at it: 70 x 4 + 30 x 5 + 20 x 20.
   assert.equal(formatUsage(unsplit, { ...opus, cacheWriteLongUsdPerMTok: null }), 'Usage: 100 input · 20 output tokens · list price ~0.00083 USD (openrouter 2026-10-19)');
+  // Only the hour-long price listed: unsplit writes are of that kind, 70 x 4 + 30 x 8 + 20 x 20.
+  assert.equal(formatUsage(unsplit, { ...opus, cacheWriteUsdPerMTok: null }), 'Usage: 100 input \u{b7} 20 output tokens \u{b7} list price ~0.00092 USD (openrouter 2026-10-19)');
+  assert.equal(formatUsage(unsplit, { ...opus, cacheWriteUsdPerMTok: null, cacheWriteLongUsdPerMTok: null }), 'Usage: 100 input \u{b7} 20 output tokens', 'no write price listed');
   assert.equal(formatUsage(known({ inputTokens: 100, cacheWriteInputTokens: 30, cacheWriteLongInputTokens: 30, outputTokens: 20 }), { ...opus, cacheWriteLongUsdPerMTok: null }),
     'Usage: 100 input · 20 output tokens', 'hour-long writes without their price');
   assert.equal(formatUsage(known({ inputTokens: 10, cachedInputTokens: 8, cacheWriteInputTokens: 5, outputTokens: 1 }), opus), 'Usage: 10 input (8 cached) · 1 output tokens', 'parts larger than the input');
