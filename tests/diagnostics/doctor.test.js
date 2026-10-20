@@ -144,7 +144,7 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
       ['claude', 'claude-model', null, 'unknown', true, 'cli-config'],
     ]);
     const flash = report.selection.find(row => row.model === 'gemini-3.8-flash');
-    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, inputUsdPerMTok: 0.75, cachedInputUsdPerMTok: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false, released: '2026-03-15' });
+    assert.deepEqual({ ...flash.price, fetchedAt: undefined }, { outputUsdPerMTok: 3.75, inputUsdPerMTok: 0.75, cachedInputUsdPerMTok: null, cacheWriteUsdPerMTok: null, cacheWriteLongUsdPerMTok: null, tieredFromInputTokens: null, matched: 'google/gemini-3.8-flash', match: 'exact', source: 'coagent8_PRICES_URL', fetchedAt: undefined, stale: false, released: '2026-03-15' });
     assert.deepEqual(flash.approval, { required: false, denied: false, basis: 'priced', reason: 'Its output costs 3.75 USD per million tokens.', rememberable: false });
     assert.equal(report.prices.stale, false);
 

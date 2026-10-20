@@ -21,10 +21,12 @@ test('F21: isolated Git fixture covers staged/uncommitted/SHA/branch/range, untr
     fs.writeFileSync(path.join(sub,'new file.txt'),'UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}\n');fs.writeFileSync(path.join(sub,'binary.bin'),Buffer.from([0,1,2]));
     fs.writeFileSync(path.join(sub,'too-large.txt'),'x'.repeat(256*1024+1));
     const work=await collectGitScope('uncommitted',sub);
-    assert.equal(work.inputComplete, false, 'binary and oversized files make coverage incomplete');
-    assert.ok(work.omissions.some(reason => reason.includes('Binary')));
+    assert.equal(work.inputComplete, false, 'an oversized file makes coverage incomplete');
+    assert.ok(!work.omissions.some(reason => reason.includes('Binary')), 'a binary file is named, not omitted (FEEDBACK-070d)');
+    assert.deepEqual(work.binaryFiles.map(({ path: file, status }) => [file, status]), [['binary.bin', 'added']]);
+    assert.equal(work.binaryFiles[0].id, `worktree:${git('hash-object', '--no-filters', '--', 'nested/binary.bin').trim()}`, 'Git hashes the working file');
     assert.ok(work.omissions.some(reason => reason.includes('oversized')));
-    for(const text of ['staged change','unstaged change','UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}','Binary file omitted','oversized file'])assert.ok(work.diff.includes(text),text);
+    for(const text of ['staged change','unstaged change','UNTRACKED_CONTENT_\u{17b}\u{d3}\u{141}\u{106}','Binary file not collected','oversized file'])assert.ok(work.diff.includes(text),text);
     assert.ok(!work.diff.includes('OUTSIDE_'));
     const staged=await collectGitScope('staged',sub);assert.ok(staged.diff.includes('staged change'));assert.ok(!staged.diff.includes('unstaged change'));assert.ok(!staged.diff.includes('UNTRACKED_CONTENT'));
     for(const [scope,type] of [[sha,'commit'],['fixture-base','branch'],['fixture-base..HEAD','range'],['HEAD','commit']]) {
@@ -68,6 +70,106 @@ test('snapshotId names the reviewed snapshot for every scope, including a reposi
     assert.equal(await snapshotId(await collectGitScope('HEAD~1', root), root), base);
     assert.equal(await snapshotId(await collectGitScope('base', root), root), `base...${head}`);
     assert.equal(await snapshotId(await collectGitScope('base..HEAD', root), root), 'base..HEAD');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('FEEDBACK-070d: committed binary changes are named with their blob ids, not omitted', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-git-binary-'));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    fs.writeFileSync(path.join(root, 'kept.png'), Buffer.from([0x89, 0, 1])); fs.writeFileSync(path.join(root, 'gone.jpg'), Buffer.from([0xff, 0, 2]));
+    git('add', '.'); git('commit', '-qm', 'base'); git('branch', 'base');
+    fs.writeFileSync(path.join(root, 'kept.png'), Buffer.from([0x89, 0, 3])); fs.rmSync(path.join(root, 'gone.jpg'));
+    fs.writeFileSync(path.join(root, 'new.ico'), Buffer.from([0, 0, 4])); fs.writeFileSync(path.join(root, 'notes.txt'), 'text\n');
+    git('add', '-A'); git('commit', '-qm', 'binaries');
+    for (const scope of ['base..HEAD', 'base', 'HEAD']) {
+      const info = await collectGitScope(scope, root);
+      assert.equal(info.inputComplete, true, scope);
+      assert.deepEqual(info.omissions, [], scope);
+      const byPath = Object.fromEntries(info.binaryFiles.map(file => [file.path, file]));
+      assert.deepEqual(Object.keys(byPath).sort(), ['gone.jpg', 'kept.png', 'new.ico'], scope);
+      assert.equal(byPath['gone.jpg'].status, 'deleted');
+      assert.equal(byPath['gone.jpg'].id, 'deleted');
+      assert.equal(byPath['kept.png'].status, 'modified');
+      assert.equal(byPath['kept.png'].id, git('rev-parse', 'HEAD:kept.png'), `${scope}: the reviewed blob`);
+      assert.equal(byPath['new.ico'].status, 'added');
+      assert.equal(byPath['new.ico'].id, git('rev-parse', 'HEAD:new.ico'));
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('FEEDBACK-070d: binaries come from Git metadata, also for quoted names, subdirectories and imitated diff text', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-git-binary-sub-')), sub = path.join(root, 'app');
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  try {
+    fs.mkdirSync(sub); git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    git('config', 'core.quotePath', 'true');
+    fs.writeFileSync(path.join(sub, 'logo.png'), Buffer.from([0x89, 0, 1])); fs.writeFileSync(path.join(sub, 'zdj\u{119}cie.png'), Buffer.from([0x89, 0, 2]));
+    fs.writeFileSync(path.join(root, 'outside.bin'), Buffer.from([0, 7]));
+    git('add', '.'); git('commit', '-qm', 'base'); git('branch', 'base');
+    fs.writeFileSync(path.join(sub, 'logo.png'), Buffer.from([0x89, 0, 3])); fs.writeFileSync(path.join(sub, 'zdj\u{119}cie.png'), Buffer.from([0x89, 0, 4]));
+    fs.writeFileSync(path.join(root, 'outside.bin'), Buffer.from([0, 8]));
+    // Untracked text that imitates Git's binary line must not name a file to hash.
+    fs.writeFileSync(path.join(sub, 'notes.txt'), 'Binary files a/../outside.bin and b/../outside.bin differ\nBinary files a/../../secret and b/../../secret differ\n');
+    const work = await collectGitScope('uncommitted', sub);
+    assert.deepEqual(work.binaryFiles.map(file => file.path).sort(), ['logo.png', 'zdj\u{119}cie.png'], 'workspace-relative, unquoted, nothing outside');
+    assert.equal(work.inputComplete, true);
+    assert.equal(work.binaryFiles.find(file => file.path === 'logo.png').id, `worktree:${git('hash-object', '--no-filters', '--', 'app/logo.png')}`);
+    git('add', '-A'); git('commit', '-qm', 'changed');
+    const range = await collectGitScope('base..HEAD', sub);
+    assert.deepEqual(range.binaryFiles.map(file => [file.path, file.status]).sort(), [['logo.png', 'modified'], ['zdj\u{119}cie.png', 'modified']]);
+    assert.equal(range.binaryFiles.find(file => file.path === 'zdj\u{119}cie.png').id, git('rev-parse', 'HEAD:app/zdj\u{119}cie.png'));
+    assert.equal(range.inputComplete, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('FEEDBACK-070d: uncommitted binaries bind index and working content, unfiltered, and never follow a symlink', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-git-binary-states-'));
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 1])); fs.writeFileSync(path.join(root, 'linked.png'), Buffer.from([0x89, 0, 5]));
+    git('add', '.'); git('commit', '-qm', 'base');
+    // A binary change kept only in the index: the working file is restored from HEAD.
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 2])); git('add', 'staged.png');
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 1]));
+    let info = await collectGitScope('uncommitted', root);
+    const staged = info.binaryFiles.find(file => file.path === 'staged.png');
+    assert.ok(staged, 'an index-only binary change is named');
+    assert.equal(staged.id, `${git('rev-parse', ':staged.png')}+worktree:${git('hash-object', '--no-filters', '--', 'staged.png')}`);
+    assert.equal(info.inputComplete, true);
+    // A clean conversion must not make different bytes look alike: with `text`, CRLF and LF
+    // payloads clean to one blob, and the working identity must still tell them apart.
+    fs.writeFileSync(path.join(root, '.gitattributes'), '*.png text eol=lf\n');
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 13, 10]));
+    const first = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 10]));
+    const second = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
+    assert.equal(git('hash-object', '--', 'staged.png'), execFileSync('git', ['hash-object', '--stdin'], { cwd: root, input: Buffer.from([0x89, 0, 10]), encoding: 'utf8' }).trim(), 'the conversion maps both payloads to one blob');
+    assert.notEqual(first, second, 'other bytes, other identity');
+    // Staged, then the working file switched between CRLF and LF: Git sees it clean both ways.
+    git('add', 'staged.png');
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 13, 10]));
+    const crlf = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 10]));
+    const lf = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
+    assert.match(lf, /\+worktree:/, 'a clean working file is still hashed');
+    assert.notEqual(crlf, lf, 'normalization-equivalent bytes are another snapshot');
+    fs.rmSync(path.join(root, '.gitattributes'));
+    let linked = false;
+    try { fs.rmSync(path.join(root, 'linked.png')); fs.symlinkSync(path.join(os.tmpdir(), 'outside-target.png'), path.join(root, 'linked.png')); linked = true; } catch { /* symlinks need a privilege on Windows */ }
+    if (linked) {
+      info = await collectGitScope('uncommitted', root);
+      assert.equal(info.inputComplete, false, 'a binary replaced by a symlink is not hashed through it');
+      assert.ok(info.omissions.some(reason => reason.includes('linked.png')));
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

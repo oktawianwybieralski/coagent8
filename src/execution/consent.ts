@@ -113,6 +113,9 @@ function listPriceOf(list: PriceList | undefined, model: string): { listPrice?: 
     model,
     inputUsdPerMTok: evidence.inputUsdPerMTok,
     cachedInputUsdPerMTok: evidence.cachedInputUsdPerMTok,
+    cacheWriteUsdPerMTok: evidence.cacheWriteUsdPerMTok,
+    cacheWriteLongUsdPerMTok: evidence.cacheWriteLongUsdPerMTok,
+    tieredFromInputTokens: evidence.tieredFromInputTokens,
     outputUsdPerMTok: evidence.outputUsdPerMTok,
     source: `${evidence.source} ${evidence.fetchedAt.slice(0, 10)}`,
   } };

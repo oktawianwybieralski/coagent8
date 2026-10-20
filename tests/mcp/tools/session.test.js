@@ -287,6 +287,36 @@ test('session list and the sessions resource show a workspace under the home dir
   }
 });
 
+test('sessions of a deleted workspace can still be listed, read and closed, only by that workspace', async () => {
+  const { createServer } = require('../../../src/mcp/server.ts');
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-deleted-'));
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-'));
+  const created = createSession('agy', workspace);
+  // Native 0.7.0 acceptance: another client deleted the repository a review session ran in.
+  fs.rmSync(workspace, { recursive: true, force: true });
+  const server = createServer(), client = new Client({ name: 'deleted-client', version: '1' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  try {
+    await server.connect(serverTransport); await client.connect(clientTransport);
+    const call = args => client.callTool({ name: 'session', arguments: args });
+    const listed = await call({ action: 'list', workspace_path: workspace });
+    assert.ok(listed.structuredContent.sessions.some(entry => entry.sessionHandle === created.sessionHandle));
+    const foreign = await call({ action: 'close', session_handle: created.sessionHandle, workspace_path: other });
+    assert.equal(foreign.isError, true, 'another workspace does not own it');
+    const closed = await call({ action: 'close', session_handle: created.sessionHandle, workspace_path: workspace });
+    assert.notEqual(closed.isError, true, closed.content?.[0]?.text);
+    assert.equal(getSession(created.sessionHandle), null, 'closed sessions are not returned');
+    assert.match(closed.content[0].text, /closed successfully/);
+    const relative = await call({ action: 'list', workspace_path: 'no-such-directory-' + randomUUID() });
+    assert.equal(relative.isError, true, 'a relative path that does not exist is still a validation error');
+  } finally {
+    await client.close(); await server.close();
+    fs.rmSync(other, { recursive: true, force: true });
+  }
+});
+
 test('second client cancels a confirmed running Claude turn, releases lease and process resources, and permits a subsequent turn in the same session (FEEDBACK-060h)', async () => {
   const { createServer } = require('../../../src/mcp/server.ts');
   const { Client } = require('@modelcontextprotocol/sdk/client/index.js');

@@ -25,7 +25,21 @@ export interface GitScopeInfo {
   omissions: string[];
   /** NUL-delimited Git inventory, decoded independently of human-readable diff headers. */
   changedPaths: string[];
+  /**
+   * Binary files the scope changes: named, with an identity of their content, but not
+   * collected, since a model cannot review them as text (`FEEDBACK-070d`).
+   */
+  binaryFiles: BinaryChange[];
 }
+
+/** One binary file a review scope changes. */
+export interface BinaryChange {
+  path: string;
+  status: 'added' | 'deleted' | 'modified';
+  /** Git blob id of the reviewed content; `deleted` for a removal. */
+  id: string;
+}
+
 
 export const GIT_DIFF_PATHSPEC_EXCLUSIONS: readonly string[] = [
   ':(exclude)dist/**',
@@ -200,10 +214,11 @@ export async function collectGitScope(
 ): Promise<GitScopeInfo> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
   const omissions: string[] = [];
+  const untrackedBinaries: string[] = [];
   const git = (args: string[]) => runGit(args, workspaceCwd, abortSignal, 15000,
     () => { omissions.push('Git command output exceeded its byte budget.'); }, context);
-  const describe = async (info: Omit<GitScopeInfo, 'inputComplete' | 'omissions' | 'changedPaths'>): Promise<GitScopeInfo> => {
-    if (/^Binary files .* differ$|^GIT binary patch$|^Submodule |^[+-]Subproject commit |^(?:new|deleted) file mode 160000$/m.test(info.diff)) omissions.push('Binary or submodule contents were omitted.');
+  const describe = async (info: Omit<GitScopeInfo, 'inputComplete' | 'omissions' | 'changedPaths' | 'binaryFiles'>): Promise<GitScopeInfo> => {
+    if (/^GIT binary patch$|^Submodule |^[+-]Subproject commit |^(?:new|deleted) file mode 160000$/m.test(info.diff)) omissions.push('Submodule contents were omitted.');
     const index = await git(['ls-files', '--stage', '-z', '--', '.']);
     if (/\b160000 [0-9a-f]+ [0-3]\t/.test(index)) omissions.push('Workspace contains submodules whose contents are not collected.');
     if (/(?:^|\0)\d{6} [0-9a-f]+ [123]\t/.test(index)) omissions.push('Unmerged index entries prevent a complete snapshot.');
@@ -220,7 +235,73 @@ export async function collectGitScope(
     else inventory = await git(['diff', ...names, info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!, '--', '.']);
     const changedPaths = [...new Set(inventory.split('\0').filter(Boolean))].filter(file => !isExcludedPath(file));
     const diff = boundedSnapshot(info.diff, omissions);
-    return { ...info, diff, changedPaths, inputComplete: omissions.length === 0, omissions };
+    const binaryFiles = await identifyBinaries(info);
+    return { ...info, diff, changedPaths, binaryFiles, inputComplete: omissions.length === 0, omissions };
+  };
+  /**
+   * Finds the scope's binary changes from Git's machine-readable output, never from diff text a
+   * file could imitate, and gives each the Git blob id of its reviewed content, so an unchanged
+   * repeat is recognized only when those bytes are unchanged too. Working-tree content is
+   * hashed by `git hash-object`, bounded like every Git call. Paths are relative to the
+   * workspace. A binary whose identity cannot be found makes the input incomplete.
+   */
+  const identifyBinaries = async (info: Pick<GitScopeInfo, 'type' | 'revision'>): Promise<BinaryChange[]> => {
+    let comparisons: string[][];
+    // Uncommitted content may differ in the index and the working tree; both are reviewed.
+    if (info.type === 'uncommitted') comparisons = [['diff', '--cached'], ['diff']];
+    else if (info.type === 'staged') comparisons = [['diff', '--cached']];
+    else if (info.type === 'commit') comparisons = [['show', '--format=', info.revision!]];
+    else comparisons = [['diff', info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!]];
+    const options = ['-z', '--no-renames', '--relative', '--no-ext-diff', '--no-textconv'];
+    // Per file: its status and the identities of each reviewed state; `worktree` is hashed below.
+    const found = new Map<string, { status: BinaryChange['status']; ids: string[]; worktree: boolean; regular: boolean }>();
+    for (const comparison of comparisons) {
+      const numstat = (await git([...comparison, '--numstat', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
+      const binary = new Set(numstat.map(entry => /^-\t-\t([\s\S]+)$/.exec(entry.replace(/^\n/, ''))?.[1]).filter((file): file is string => Boolean(file)));
+      if (!binary.size) continue;
+      // `--raw -z`: a `:<modes> <old> <new> <status>` field, then the path.
+      const raw = (await git([...comparison, '--raw', '--no-abbrev', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
+      for (let i = 0; i + 1 < raw.length; i += 2) {
+        const match = /^:\d{6} (\d{6}) [0-9a-f]+ ([0-9a-f]+) ([A-Z])/.exec(raw[i].replace(/^\n/, ''));
+        const file = raw[i + 1];
+        if (!match || !binary.has(file)) continue;
+        const [, mode, id, letter] = match;
+        const status = letter === 'A' ? 'added' : letter === 'D' ? 'deleted' : 'modified';
+        const earlier = found.get(file) ?? { status, ids: [], worktree: false, regular: true };
+        earlier.status = earlier.status === 'added' && status !== 'deleted' ? 'added' : status;
+        if (status === 'deleted') earlier.ids.push('deleted');
+        else if (/^0+$/.test(id)) earlier.worktree = true;
+        else earlier.ids.push(id);
+        // Only regular files are hashed; a symlink or gitlink is not reviewable content.
+        if (status !== 'deleted' && mode !== '100644' && mode !== '100755') earlier.regular = false;
+        found.set(file, earlier);
+      }
+    }
+    for (const file of untrackedBinaries) found.set(file, { status: 'added', ids: [], worktree: true, regular: true });
+    // Git calls a working file clean when it normalizes to the index blob; its own bytes are
+    // still what an uncommitted review covers, so every present one is hashed.
+    if (info.type === 'uncommitted') for (const change of found.values()) if (change.status !== 'deleted') change.worktree = true;
+    // The working tree has no blob id yet. Git hashes those files itself, unfiltered, after
+    // lstat (metadata only) shows a regular file inside the workspace, never a link's target.
+    const root = await fs.realpath(workspaceCwd);
+    const unhashed: string[] = [];
+    for (const [file, change] of found) {
+      if (!change.worktree || !change.regular) continue;
+      const stat = await fs.lstat(path.resolve(root, file)).catch(() => undefined);
+      if (stat?.isFile() && path.resolve(root, file).startsWith(root + path.sep)) unhashed.push(file);
+      else change.regular = false;
+    }
+    for (let start = 0; start < unhashed.length; start += 100) {
+      const batch = unhashed.slice(start, start + 100);
+      const ids = (await git(['hash-object', '--no-filters', '--', ...batch])).split(/\r?\n/).filter(Boolean);
+      batch.forEach((file, index) => { if (/^[0-9a-f]{40,64}$/.test(ids[index] ?? '')) found.get(file)!.ids.push(`worktree:${ids[index]}`); else found.get(file)!.regular = false; });
+    }
+    return [...found].map(([file, change]) => {
+      if (!change.regular || (change.worktree && !change.ids.some(id => id.startsWith('worktree:'))) || !change.ids.length) {
+        omissions.push(`Binary file identity unavailable: ${file}`);
+      }
+      return { path: file, status: change.status, id: change.ids.join('+') || 'unknown' };
+    });
   };
   const scope = typeof rawScope === 'string' && rawScope.trim() ? rawScope.trim() : 'uncommitted';
 
@@ -278,8 +359,8 @@ export async function collectGitScope(
           const real = await fs.realpath(file);
           if (!real.startsWith(root + path.sep)) { omissions.push(`File outside workspace: ${filename}`); diff += `\n[Omitted file outside workspace: ${filename}]`; continue; }
           const text = await readBoundedFile(file, 256 * 1024);
-          if (text.includes('\0')) omissions.push(`Binary file omitted: ${filename}`);
-          diff += text.includes('\0') ? `\n[Binary file omitted: ${filename}]` : `\n--- ${filename} ---\n${text}\n`;
+          if (text.includes('\0')) untrackedBinaries.push(filename);
+          diff += text.includes('\0') ? `\n[Binary file not collected: ${filename}]` : `\n--- ${filename} ---\n${text}\n`;
         } catch { omissions.push(`Unreadable or oversized file: ${filename}`); diff += `\n[Omitted unreadable or oversized file: ${filename}]`; }
       }
     }

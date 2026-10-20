@@ -142,6 +142,9 @@ export async function handleReview(
     'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix. Any other BLOCKED states its cause on the Blocked line.',
     `Required checks for this scope: ${(context.requiredChecks ?? []).join(', ') || 'none (prose only)'}. Report NOT_RUN when no check was executed; never infer PASS from reading code. A check that cannot run here is NOT_RUN, not FAIL. The server applies the check outcomes; do not set BLOCKED for a check that did not run.`,
     `Collected input: ${context.inputComplete ? 'COMPLETE' : 'PARTIAL'}. Omitted input prevents READY regardless of reported coverage.`,
+    // Binary contents cannot be reviewed as text; they are named, not omitted (FEEDBACK-070d).
+    ...(scopeInfo.binaryFiles.length ? [`Binary files changed (contents not collected; they do not make the input PARTIAL; check only their paths and references): ${
+      scopeInfo.binaryFiles.slice(0, 20).map(file => `${file.path} (${file.status})`).join(', ')}${scopeInfo.binaryFiles.length > 20 ? `, and ${scopeInfo.binaryFiles.length - 20} more` : ''}.`] : []),
     // The envelope ends with CHECKS; the server owns END_REVIEW (ENVELOPE-001).
     'Answer with exactly this envelope and nothing before or after it. Put every finding and any Blocked line before CHECKS; CHECKS is the last line:',
     'REVIEW: <turn>',

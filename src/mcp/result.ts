@@ -80,11 +80,13 @@ export interface FormatExecutionOptions {
 /**
  * The footer line with a turn's token counts and, when it can be computed without guessing,
  * their list-price equivalent (`AX-001g`).
- * @remarks Reasoning is part of output and cached input part of input, so neither is counted
- * twice. An amount needs known input, cached-input, cache-write and output counts and their
- * prices: cached input needs its own price, and cache writes have no list price here, so a
- * turn that wrote to the cache shows counts only. Unknown is never taken as zero. It is a
- * list-price equivalent, not billing: a subscription CLI may charge nothing per token.
+ * @remarks Reasoning is part of output, and cache reads and writes are parts of input, so none
+ * is counted twice. An amount needs known input, cache-read, cache-write and output counts and
+ * a price for each part used. Writes kept for an hour have their own price: when the list
+ * names one and the backend did not split its writes, no amount is shown. A turn whose input
+ * reached the size from which the list prices prompts differently shows none either, since a
+ * turn's total does not say how large each request was. Unknown is never taken as zero. It is
+ * a list-price equivalent, not billing: a subscription CLI may charge nothing per token.
  * @returns The line, or undefined when the backend reported no counts.
  */
 export function formatUsage(usage: TokenUsage | undefined, price: ListPrice | undefined): string | undefined {
@@ -110,10 +112,21 @@ function formatUsd(amount: number): string {
 function listPriceEquivalent(usage: TokenUsage, price: ListPrice | undefined): number | undefined {
   const { inputTokens, cachedInputTokens: cached, cacheWriteInputTokens: written, outputTokens } = usage;
   if (!price || inputTokens === undefined || outputTokens === undefined || cached === undefined || written === undefined) return undefined;
-  if (price.inputUsdPerMTok === null || price.outputUsdPerMTok === null || written > 0) return undefined;
-  if (cached > 0 && price.cachedInputUsdPerMTok === null) return undefined;
-  const uncached = Math.max(0, inputTokens - cached);
-  return (uncached * price.inputUsdPerMTok + cached * (price.cachedInputUsdPerMTok ?? 0) + outputTokens * price.outputUsdPerMTok) / 1_000_000;
+  if (price.inputUsdPerMTok === null || price.outputUsdPerMTok === null) return undefined;
+  if (price.tieredFromInputTokens !== null && inputTokens >= price.tieredFromInputTokens) return undefined;
+  const regular = inputTokens - cached - written;
+  if (regular < 0 || (cached > 0 && price.cachedInputUsdPerMTok === null)) return undefined;
+  let long = usage.cacheWriteLongInputTokens;
+  // Without a split, the writes are of one kind only when the list prices one kind.
+  if (long === undefined) {
+    const shortListed = price.cacheWriteUsdPerMTok !== null, longListed = price.cacheWriteLongUsdPerMTok !== null;
+    if (written > 0 && shortListed && longListed) return undefined;
+    long = longListed && !shortListed ? written : 0;
+  }
+  const short = written - long;
+  if (short < 0 || (short > 0 && price.cacheWriteUsdPerMTok === null) || (long > 0 && price.cacheWriteLongUsdPerMTok === null)) return undefined;
+  return (regular * price.inputUsdPerMTok + cached * (price.cachedInputUsdPerMTok ?? 0) + short * (price.cacheWriteUsdPerMTok ?? 0)
+    + long * (price.cacheWriteLongUsdPerMTok ?? 0) + outputTokens * price.outputUsdPerMTok) / 1_000_000;
 }
 
 /**

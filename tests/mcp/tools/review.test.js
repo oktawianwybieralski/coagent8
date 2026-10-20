@@ -199,7 +199,7 @@ test('recheck failure or workspace mutation during review turn blocks READY verd
   }
 });
 
-test('an untracked binary blocks READY as incomplete input only, not as a change during the turn (FEEDBACK-060d)', async () => {
+test('an untracked binary is named to the reviewer and READY says it was not reviewed (FEEDBACK-060d, FEEDBACK-070d)', async () => {
   const repo = path.join(tempDir, 'untracked-binary');
   fs.mkdirSync(repo);
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
@@ -214,6 +214,7 @@ test('an untracked binary blocks READY as incomplete input only, not as a change
     name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
+      seenPrompt = prompt;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
       return {
         status: 'completed',
@@ -223,13 +224,15 @@ test('an untracked binary blocks READY as incomplete input only, not as a change
       };
     },
   };
+  let seenPrompt = '';
 
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const { verdict, reason } = readResult(await handleReview('review', {}, repo));
-    assert.equal(verdict, 'BLOCKED');
-    assert.match(reason, /Review input is incomplete/i);
-    assert.doesNotMatch(reason, /changed during the turn/i, 'nothing changed during the turn');
+    assert.equal(verdict, 'READY', 'a binary change no longer makes the input PARTIAL');
+    assert.equal(reason, '1 binary file not reviewed');
+    assert.match(seenPrompt, /^Collected input: COMPLETE\./m);
+    assert.match(seenPrompt, /^Binary files changed .*module\.pyc \(added\)\.$/m);
   } finally {
     adapterRegistry.agy = original;
   }

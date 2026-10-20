@@ -80,6 +80,12 @@ export interface ListPrice {
   model: string;
   inputUsdPerMTok: number | null;
   cachedInputUsdPerMTok: number | null;
+  /** Cache writes kept for minutes. */
+  cacheWriteUsdPerMTok: number | null;
+  /** Cache writes kept for an hour. */
+  cacheWriteLongUsdPerMTok: number | null;
+  /** The prompt size in tokens from which other prices apply; null for one price, 0 when unknown. */
+  tieredFromInputTokens: number | null;
   outputUsdPerMTok: number | null;
   /** Where the list came from and when it was read (`openrouter 2026-10-19`). */
   source: string;

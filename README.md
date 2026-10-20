@@ -302,9 +302,11 @@ still need your approval.
 Every result also shows the tokens the turn used, as the backend reported them,
 and what they cost at list price when every count and the model's exact price
 are known: `Usage: 12,400 input (9,600 cached) · 900 output (300 reasoning) tokens · list price ~0.014 USD (openrouter 2026-10-19)`.
-Unknown counts are left out, never shown as zero, and a turn that wrote to the
-prompt cache shows counts only. A list price is not your bill: a subscription
-CLI may charge nothing per token.
+Unknown counts are left out, never shown as zero. Cache writes are priced by how
+long they are kept; agy reports no cache counts, and a turn whose input reached a
+size the list prices differently (such as 272,000 tokens for some OpenAI models)
+shows counts only. A list price is not your bill: a subscription CLI may charge
+nothing per token.
 
 To choose yourself, call `doctor`: it lists each backend's models with their
 accepted efforts, output price (`~` approximate, `?` unknown), default and

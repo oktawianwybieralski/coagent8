@@ -27,6 +27,20 @@ export function resolveWorkspacePath(rawPath?: string | null): string {
   return process.cwd();
 }
 
+/**
+ * The workspace of a session call whose absolute `workspace_path` no longer exists.
+ * @remarks Sessions are owned by the directory they ran in; listing, reading or closing them
+ * runs nothing there, so a deleted directory still identifies them. Ownership is checked
+ * against the session record as before.
+ * @returns The resolved path, or undefined when the path exists, is relative or is empty,
+ * which {@link resolveWorkspacePath} then validates.
+ */
+export function deletedSessionWorkspace(rawPath: unknown): string | undefined {
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return undefined;
+  const cleanPath = rawPath.trim();
+  return path.isAbsolute(cleanPath) && !fs.existsSync(cleanPath) ? path.resolve(cleanPath) : undefined;
+}
+
 /** Workspace origin used internally; only server-directory fallback is reported in the Markdown footer. */
 export type WorkspaceSource = 'argument' | 'client_root' | 'server_directory';
 

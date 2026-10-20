@@ -69,10 +69,14 @@ export async function collectReviewInput(
       workspace: working.diff,
       changedPaths: info.changedPaths,
       omissions: [...info.omissions, ...working.omissions],
+      // Binary contents are not in the diff text; their identities bind the snapshot to them.
+      binaryFiles: info.binaryFiles,
+      workingBinaryFiles: working.binaryFiles,
     })).digest('hex');
     const reviewGateContext: ReviewGateContext = {
       expectedSnapshot: `${identity}#${digest}`,
       inputComplete: info.inputComplete && working.inputComplete,
+      ...(info.binaryFiles.length ? { unreviewedBinaryFiles: info.binaryFiles.length } : {}),
       requiredChecks: proseOnly(info) ? [] : ['typecheck', 'tests'],
       requiredFiles: info.changedPaths,
       workspaceRoot: cwd,

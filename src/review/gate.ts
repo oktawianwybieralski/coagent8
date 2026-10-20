@@ -58,6 +58,14 @@ export interface TurnCompletion {
   lengthLimited?: boolean;
 }
 
+/**
+ * A P1 or P2 finding header without brackets: after an optional Markdown list, quote or
+ * heading marker and emphasis, the line starts with the severity and names a `<file>:<line>`
+ * anywhere, as in `P2 sum.js:4`, `+ **P1:** src/a.ts:10` or `P2 a.ts:3: text`. It errs
+ * towards blocking: a line that opens with P1 or P2 and cites a location is a finding.
+ */
+const UNBRACKETED_BLOCKER = /^(?:[-*+>]\s+|\d+[.)]\s+|#{1,6}\s+)?[*_`]*P[12](?![0-9])[*_`:]*\s.*?[^\s:]*[a-z.][^\s:]*:\d+/i;
+
 /** Bound for the reviewer's own `Blocked:` reason quoted in the verdict line. */
 const MAX_BLOCKED_REASON_CHARS = 300;
 
@@ -66,6 +74,11 @@ export interface ReviewGateContext {
   expectedSnapshot?: string;
   inputComplete?: boolean;
   requiredChecks?: readonly ('typecheck' | 'tests')[];
+  /**
+   * Binary files the scope changes, named but not reviewable as text: a READY says so,
+   * as it does for checks that did not run (`FEEDBACK-070d`).
+   */
+  unreviewedBinaryFiles?: number;
   invalidatedReason?: string;
   requiredFiles?: readonly string[];
   observedDenials?: readonly { path?: string; operation?: string; reason?: string }[];
@@ -82,7 +95,8 @@ export interface ReviewGateContext {
  * `END_REVIEW` terminates the envelope.
  * @returns The server verdict and, when blocked, every cause; a reviewer READY it overrides is
  * named, and a READY names the required checks that did not run.
- * @remarks Literal P1/P2 markers, partial coverage and malformed/truncated output block.
+ * @remarks Literal P1/P2 markers, P1/P2 finding headers without brackets, partial coverage
+ * and malformed/truncated output block.
  * With context, SNAPSHOT must match and input must be complete and unchanged. Failed
  * checks always block. A required check reported NOT_RUN does not: a reported PASS is not
  * evidence either, since this does not execute tests, verify a reported PASS or bind a
@@ -154,7 +168,9 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     if (blockedMatch && !blockedVal) blockedVal = blockedMatch[1].trim();
   }
 
-  const hasBlockers = /\[P[12]\]/i.test(output);
+  // A model may drop the brackets of a finding header (`P2 sum.js:4`); only a line shaped
+  // like a header counts then, so prose that mentions P1 or P2 does not block.
+  const hasBlockers = /\[P[12]\]/i.test(output) || rawLines.some(line => UNBRACKETED_BLOCKER.test(line.trim()));
   const isEnveloped = reviewCount > 0 || snapshotCount > 0 || coverageCount > 0 || verdictCount > 0 || checksCount > 0 || endReviewCount > 0;
   const isEndReviewLast = nonEmptyLines.length > 0 && /^END_REVIEW$/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
   const isChecksLast = nonEmptyLines.length > 0 && /^CHECKS:/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
@@ -268,9 +284,13 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
         reason: reasons.length > 0 ? reasons.join('; ') : 'Review requirements not satisfied',
       };
     }
-    return notRunChecks.length
-      ? { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}), reason: `${notRunChecks.join(' and ')} not run` }
-      : { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}) };
+    const binaries = context?.unreviewedBinaryFiles ?? 0;
+    const caveats = [
+      ...(notRunChecks.length ? [`${notRunChecks.join(' and ')} not run`] : []),
+      ...(binaries ? [`${binaries} binary ${binaries === 1 ? 'file' : 'files'} not reviewed`] : []),
+    ];
+    return { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}),
+      ...(caveats.length ? { reason: caveats.join('; ') } : {}) };
   }
 
   return { verdict: 'NOT_APPLICABLE' };
