@@ -1466,7 +1466,8 @@ behavior or a test-procedure lesson.
 Native acceptance of the release PR #85 candidate on 2026-10-20 (Codex, Claude
 Code and Antigravity in VS Code on Windows, runtime from the CI VSIX) passed
 every scenario; these findings are fixed before the tag (owner direction
-2026-10-20, consulted with Codex). Each fix has a regression test.
+2026-10-20, consulted with Codex). Each fix has a regression test. Done in #86;
+delivered record: [FEEDBACK-070](delivered/0.7.0/FEEDBACK-070.md).
 
 - [x] **FEEDBACK-070a - finding headers without brackets.** agy wrote
   `P2 sum.js:4` in two of four seeded-defect reviews; the gate read only
@@ -1898,6 +1899,8 @@ does not complete a native task.
 ## TASKS-070: 0.7.0 task queue
 
 The [0.7.0 plan](#070-beta3-plan) split into implementation and acceptance steps.
+What 0.7.0 delivered, per card with its evidence, is recorded in
+[docs/delivered/0.7.0](delivered/0.7.0/README.md).
 Its [release split](#070-beta3-plan) assigns each open row to `0.7.0` or `0.8.0`.
 Rows are checklist items, not automatic branch or PR boundaries. Group related
 steps into one coherent result per [rule 02](../.agents/rules/02-git-workflow.md#3-pull-requests).
