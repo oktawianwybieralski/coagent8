@@ -32,10 +32,10 @@ still decide what to do next.
 - In the same PR the ROADMAP card links the record, and once the card is
   complete it shrinks to one line with its status and that link. HANDOFF
   links the record instead of repeating the evidence.
-- PR number, squash SHA and merge date are unknown until the merge. The next
-  PR after the merge fills them in; that is the only change a record receives.
-  Corrections go into a dated note at the end of the record, never into its
-  original text.
+- The PR number is known once the PR opens; its squash SHA and merge date only
+  after the merge, and the next PR fills them in. Existing text is never
+  rewritten: later deliveries of the same card in that version add items and
+  evidence below it, and corrections go into a dated note at the end.
 - Release evidence (native acceptance of the candidate artifacts, the
   release review and publication) is added by the first PR after the tag, in
   the version README. A version without a tag is a candidate, and its README

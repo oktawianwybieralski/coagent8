@@ -15,8 +15,8 @@ Card at closure: [ROADMAP FEEDBACK-061 at `00eb614`](https://github.com/oktawian
 | [#51](https://github.com/oktawianwybieralski/coagent8/pull/51) | `5f4bc05` | 2026-10-14 | fix(issue): link the bug report form and paste the sanitized report |
 | [#54](https://github.com/oktawianwybieralski/coagent8/pull/54) | `6ad6038` | 2026-10-14 | fix(vscode): report extension selection outside profile as unavailable |
 | [#55](https://github.com/oktawianwybieralski/coagent8/pull/55) | `906f5c8` | 2026-10-14 | feat(issue): add open actions for bug report form in extension and CLI |
-| [#56](https://github.com/oktawianwybieralski/coagent8/pull/56) | `189a40e` | 2026-10-14 | fix(review): carry server turn number in review envelope |
-| [#57](https://github.com/oktawianwybieralski/coagent8/pull/57) | `62eb7b2` | 2026-10-14 | fix(codex): support large prompt lines up to 16 MiB in app-server reviews |
+| [#56](https://github.com/oktawianwybieralski/coagent8/pull/56) | `189a40e` | 2026-10-14 | fix(review): carry server turn number in review envelope (#56) |
+| [#57](https://github.com/oktawianwybieralski/coagent8/pull/57) | `62eb7b2` | 2026-10-14 | fix(codex): support large prompt lines up to 16 MiB in app-server reviews (#57) |
 | [#59](https://github.com/oktawianwybieralski/coagent8/pull/59) | `303fe94` | 2026-10-15 | fix(review): retry reviews that ended with partial coverage |
 | [#60](https://github.com/oktawianwybieralski/coagent8/pull/60) | `3821852` | 2026-10-15 | fix(codex): report read denials and restore Windows workspace reads |
 | [#61](https://github.com/oktawianwybieralski/coagent8/pull/61) | `7937a30` | 2026-10-15 | docs(handoff): record Windows native recovery check evidence for 2.12d |

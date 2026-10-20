@@ -25,7 +25,7 @@ Each item was met in the merges above.
 
 Not part of 0.7.0:
 
-- `PROPOSALS-001b` (Open VSX) moved to `0.8.0`; `001e` (signed-commit ruleset) and `001f` (pre-push hook) stay open; `001m` was deferred as research.
+- `PROPOSALS-001b` (Open VSX) moved to `0.8.0`; `001i` (documentation site cleanup) was accepted as `DOCS-003` and ships with `0.8.0`; `001c` (VS Code Remote and WSL topology), `001e` (signed-commit ruleset), `001f` (pre-push hook) and `001j` (MIT for older copies) stay open; `001m` was deferred as research.
 
 ## Delivered
 
