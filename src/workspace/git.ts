@@ -247,18 +247,14 @@ export async function collectGitScope(
    */
   const identifyBinaries = async (info: Pick<GitScopeInfo, 'type' | 'revision'>): Promise<BinaryChange[]> => {
     let comparisons: string[][];
-    if (info.type === 'uncommitted') {
-      let hasHead = true;
-      try { await git(['rev-parse', '--verify', '-q', 'HEAD']); } catch (err) {
-        if (err instanceof ToolError) throw err;
-        hasHead = false;
-      }
-      comparisons = hasHead ? [['diff', 'HEAD']] : [['diff', '--cached'], ['diff']];
-    } else if (info.type === 'staged') comparisons = [['diff', '--cached']];
+    // Uncommitted content may differ in the index and the working tree; both are reviewed.
+    if (info.type === 'uncommitted') comparisons = [['diff', '--cached'], ['diff']];
+    else if (info.type === 'staged') comparisons = [['diff', '--cached']];
     else if (info.type === 'commit') comparisons = [['show', '--format=', info.revision!]];
     else comparisons = [['diff', info.type === 'branch' ? `${info.revision}...HEAD` : info.revision!]];
     const options = ['-z', '--no-renames', '--relative', '--no-ext-diff', '--no-textconv'];
-    const found = new Map<string, { status: BinaryChange['status']; id?: string }>();
+    // Per file: its status and the identities of each reviewed state; `worktree` is hashed below.
+    const found = new Map<string, { status: BinaryChange['status']; ids: string[]; worktree: boolean; regular: boolean }>();
     for (const comparison of comparisons) {
       const numstat = (await git([...comparison, '--numstat', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
       const binary = new Set(numstat.map(entry => /^-\t-\t([\s\S]+)$/.exec(entry.replace(/^\n/, ''))?.[1]).filter((file): file is string => Boolean(file)));
@@ -266,25 +262,42 @@ export async function collectGitScope(
       // `--raw -z`: a `:<modes> <old> <new> <status>` field, then the path.
       const raw = (await git([...comparison, '--raw', '--no-abbrev', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
       for (let i = 0; i + 1 < raw.length; i += 2) {
-        const match = /^:\d{6} \d{6} [0-9a-f]+ ([0-9a-f]+) ([A-Z])/.exec(raw[i].replace(/^\n/, ''));
+        const match = /^:\d{6} (\d{6}) [0-9a-f]+ ([0-9a-f]+) ([A-Z])/.exec(raw[i].replace(/^\n/, ''));
         const file = raw[i + 1];
         if (!match || !binary.has(file)) continue;
-        const status = match[2] === 'A' ? 'added' : match[2] === 'D' ? 'deleted' : 'modified';
-        const earlier = found.get(file);
-        found.set(file, { status: earlier?.status === 'added' && status !== 'deleted' ? 'added' : status, id: /^0+$/.test(match[1]) ? undefined : match[1] });
+        const [, mode, id, letter] = match;
+        const status = letter === 'A' ? 'added' : letter === 'D' ? 'deleted' : 'modified';
+        const earlier = found.get(file) ?? { status, ids: [], worktree: false, regular: true };
+        earlier.status = earlier.status === 'added' && status !== 'deleted' ? 'added' : status;
+        if (status === 'deleted') earlier.ids.push('deleted');
+        else if (/^0+$/.test(id)) earlier.worktree = true;
+        else earlier.ids.push(id);
+        // Only regular files are hashed; a symlink or gitlink is not reviewable content.
+        if (status !== 'deleted' && mode !== '100644' && mode !== '100755') earlier.regular = false;
+        found.set(file, earlier);
       }
     }
-    for (const file of untrackedBinaries) found.set(file, { status: 'added' });
-    // The working tree has no blob id yet; Git hashes those files itself.
-    const unhashed = [...found].filter(([, change]) => change.status !== 'deleted' && (info.type === 'uncommitted' || !change.id)).map(([file]) => file);
+    for (const file of untrackedBinaries) found.set(file, { status: 'added', ids: [], worktree: true, regular: true });
+    // The working tree has no blob id yet. Git hashes those files itself, unfiltered, after
+    // lstat (metadata only) shows a regular file inside the workspace, never a link's target.
+    const root = await fs.realpath(workspaceCwd);
+    const unhashed: string[] = [];
+    for (const [file, change] of found) {
+      if (!change.worktree || !change.regular) continue;
+      const stat = await fs.lstat(path.resolve(root, file)).catch(() => undefined);
+      if (stat?.isFile() && path.resolve(root, file).startsWith(root + path.sep)) unhashed.push(file);
+      else change.regular = false;
+    }
     for (let start = 0; start < unhashed.length; start += 100) {
       const batch = unhashed.slice(start, start + 100);
-      const ids = (await git(['hash-object', '--', ...batch])).split(/\r?\n/).filter(Boolean);
-      batch.forEach((file, index) => { if (/^[0-9a-f]{40,64}$/.test(ids[index] ?? '')) found.get(file)!.id = ids[index]; });
+      const ids = (await git(['hash-object', '--no-filters', '--', ...batch])).split(/\r?\n/).filter(Boolean);
+      batch.forEach((file, index) => { if (/^[0-9a-f]{40,64}$/.test(ids[index] ?? '')) found.get(file)!.ids.push(`worktree:${ids[index]}`); else found.get(file)!.regular = false; });
     }
     return [...found].map(([file, change]) => {
-      if (change.status !== 'deleted' && !change.id) omissions.push(`Binary file identity unavailable: ${file}`);
-      return { path: file, status: change.status, id: change.status === 'deleted' ? 'deleted' : change.id ?? 'unknown' };
+      if (!change.regular || (change.worktree && !change.ids.some(id => id.startsWith('worktree:'))) || !change.ids.length) {
+        omissions.push(`Binary file identity unavailable: ${file}`);
+      }
+      return { path: file, status: change.status, id: change.ids.join('+') || 'unknown' };
     });
   };
   const scope = typeof rawScope === 'string' && rawScope.trim() ? rawScope.trim() : 'uncommitted';
