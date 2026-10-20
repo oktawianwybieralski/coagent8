@@ -10,6 +10,11 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Delivered records (owner decision 2026-10-20):** what 0.7.0 delivered, per
+  card with PRs, review handles and evidence, is in
+  [docs/delivered/0.7.0](delivered/0.7.0/README.md); new evidence moves there
+  before this file overwrites it ([rules](delivered/README.md#rules)).
+
 - **0.7.0 native acceptance (2026-10-20):** release PR #85 at `4590d34`, CI run
   `39327153830` six green jobs; CI VSIX `coagent8-mcp-0.7.0.vsix` SHA-256
   `0ebb354e98f7da94b131c10a0870aaba498866220b814ca3c16d3ddbb06c6390`, tarball
@@ -22,7 +27,7 @@ Do not append another session transcript or treat old test counts as fresh evide
   not delete its scratch repository (its own execution policy). An earlier
   Claude Code run used a manual registration of the source build and does not
   count. Findings: [FEEDBACK-070](ROADMAP.md#feedback-070-findings-of-the-070-native-acceptance),
-  fixed on `fix/acceptance-070` before the tag; then #85 is rebased, its new
+  fixed in #86 (`87c7b13`) before the tag; then #85 is rebased, its new
   artifacts accepted again and the release review bound to their hashes.
 
 - **Next session starts here (owner decision 2026-10-19):** finish `0.7.0`

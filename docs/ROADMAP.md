@@ -1898,6 +1898,8 @@ does not complete a native task.
 ## TASKS-070: 0.7.0 task queue
 
 The [0.7.0 plan](#070-beta3-plan) split into implementation and acceptance steps.
+What 0.7.0 delivered, per card with its evidence, is recorded in
+[docs/delivered/0.7.0](delivered/0.7.0/README.md).
 Its [release split](#070-beta3-plan) assigns each open row to `0.7.0` or `0.8.0`.
 Rows are checklist items, not automatic branch or PR boundaries. Group related
 steps into one coherent result per [rule 02](../.agents/rules/02-git-workflow.md#3-pull-requests).
