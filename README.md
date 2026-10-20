@@ -72,8 +72,8 @@ signed in:
 
 Install **CoAgent8** (`okidev.coagent8-mcp`) from the
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=okidev.coagent8-mcp),
-or download `coagent8-mcp-0.6.0.vsix` from the
-[GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.6.0)
+or download `coagent8-mcp-0.7.0.vsix` from the
+[GitHub release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.7.0)
 and run **Extensions: Install from VSIX...**. Then:
 
 1. The first start shows one notice with the CLIs it found, or an offer to set
@@ -117,17 +117,19 @@ Add a stdio server to the host's MCP configuration:
   "mcpServers": {
     "coagent8": {
       "command": "npx",
-      "args": ["-y", "coagent8@next"]
+      "args": ["-y", "coagent8@next", "mcp"]
     }
   }
 }
 ```
 
 On Windows, a host that starts commands without a shell may need
-`"command": "cmd"` and `"args": ["/c", "npx", "-y", "coagent8@next"]`. Both
-`coagent8` and `coagent8-mcp` start the server when run without arguments;
-`coagent8@0.6.0` pins a version. Plain `coagent8` (npm `latest`) is not a
-supported channel before 1.0.0.
+`"command": "cmd"` and `"args": ["/c", "npx", "-y", "coagent8@next", "mcp"]`.
+`coagent8 mcp` starts the server; run in a terminal without arguments,
+`coagent8` shows help. Older entries without `mcp` keep working, because
+`coagent8` and `coagent8-mcp` still start the server when a host pipes their
+standard input. `coagent8@0.7.0` pins a version. Plain `coagent8` (npm `latest`)
+is not a supported channel before 1.0.0.
 
 A host with its own tool deadline can stop a long review early. For Codex, set
 `tool_timeout_sec = 1800` in `[mcp_servers.coagent8]` (setup does this). Continue
