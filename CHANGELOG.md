@@ -9,9 +9,73 @@ request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
 
-## v0.6.1 - (2026-10-12)
+## v0.7.0 - (2026-10-20)
 
-- Agy:
+- Acceptance:
+  - New feature:
+    - [#71](https://github.com/oktawianwybieralski/coagent8/pull/71): Drive scenarios N2-N4 through the real CLIs (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#67](https://github.com/oktawianwybieralski/coagent8/pull/67): Isolate user home and add native runner skeleton (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Antigravity (agy):
+  - Bug fix:
+    - [#65](https://github.com/oktawianwybieralski/coagent8/pull/65): Preserve requested session id on resume without conversation id (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- CLI:
+  - New feature:
+    - [#42](https://github.com/oktawianwybieralski/coagent8/pull/42): Expose session list and history inspection (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#41](https://github.com/oktawianwybieralski/coagent8/pull/41): Expose models and doctor CLI diagnostics (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#37](https://github.com/oktawianwybieralski/coagent8/pull/37): Implement Option D mcp, help and version root dispatch (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Codex:
+  - Bug fix:
+    - [#60](https://github.com/oktawianwybieralski/coagent8/pull/60): Report read denials and restore Windows workspace reads (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#57](https://github.com/oktawianwybieralski/coagent8/pull/57): Support large prompt lines up to 16 MiB in app-server reviews (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Diagnostics:
+  - Bug fix:
+    - [#45](https://github.com/oktawianwybieralski/coagent8/pull/45): Report running version and clarify update guidance (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Doctor:
+  - New feature:
+    - [#82](https://github.com/oktawianwybieralski/coagent8/pull/82): Decide backend readiness from evidence and read each catalog once (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- General:
+  - Bug fix:
+    - [#86](https://github.com/oktawianwybieralski/coagent8/pull/86): Correct findings of the 0.7.0 native acceptance (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#80](https://github.com/oktawianwybieralski/coagent8/pull/80): Retry setup writes, bound the observation cache and read history tails backward (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Integrations:
+  - New feature:
+    - [#39](https://github.com/oktawianwybieralski/coagent8/pull/39): Write and migrate explicit mcp registrations (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#38](https://github.com/oktawianwybieralski/coagent8/pull/38): Recognize legacy and mcp registration shapes (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Issue:
+  - New feature:
+    - [#55](https://github.com/oktawianwybieralski/coagent8/pull/55): Add open actions for bug report form in extension and CLI (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Bug fix:
+    - [#51](https://github.com/oktawianwybieralski/coagent8/pull/51): Link the bug report form and paste the sanitized report (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- MCP:
+  - Bug fix:
+    - [#69](https://github.com/oktawianwybieralski/coagent8/pull/69): Ask for file paths, describe cancel and compact session resources (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Models:
+  - New feature:
+    - [#47](https://github.com/oktawianwybieralski/coagent8/pull/47): Rank models under a price limit by release date (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Release:
+  - Bug fix:
+    - [#83](https://github.com/oktawianwybieralski/coagent8/pull/83): Publish verified packages directly to next (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Review:
+  - Bug fix:
+    - [#72](https://github.com/oktawianwybieralski/coagent8/pull/72): Own the envelope terminator on the server (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#59](https://github.com/oktawianwybieralski/coagent8/pull/59): Retry reviews that ended with partial coverage (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#56](https://github.com/oktawianwybieralski/coagent8/pull/56): Carry server turn number in review envelope (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Setup:
+  - Bug fix:
+    - [#46](https://github.com/oktawianwybieralski/coagent8/pull/46): Unify shared registration policy and prevent runtime downgrade (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- Usage:
+  - New feature:
+    - [#81](https://github.com/oktawianwybieralski/coagent8/pull/81): Show each turn's token usage and its list-price equivalent (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+- VS Code:
+  - New feature:
+    - [#43](https://github.com/oktawianwybieralski/coagent8/pull/43): Add opt-in PATH integration and lifecycle cleanup (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+    - [#40](https://github.com/oktawianwybieralski/coagent8/pull/40): Use explicit mcp in profile and server definitions (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+  - Bug fix:
+    - [#54](https://github.com/oktawianwybieralski/coagent8/pull/54): Report extension selection outside profile as unavailable (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
+
+## v0.6.1 - (2026-10-13)
+
+- Antigravity (agy):
   - Bug fix:
     - [#29](https://github.com/oktawianwybieralski/coagent8/pull/29): Recover from empty sandbox command denials and guide file reads (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 - Docs:
@@ -36,7 +100,7 @@ Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workf
   - Bug fix:
     - [#24](https://github.com/oktawianwybieralski/coagent8/pull/24): Scope paging parameters and retain handle on repeat review (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
     - [#12](https://github.com/oktawianwybieralski/coagent8/pull/12): Say that a session is closed when a call or cancel uses it (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
-- Vscode:
+- VS Code:
   - Bug fix:
     - [#27](https://github.com/oktawianwybieralski/coagent8/pull/27): Lead with VS Code commands and align 0.6.1 README guidance (by [@oktawianwybieralski](https://github.com/oktawianwybieralski))
 
@@ -52,7 +116,7 @@ request, which its page keeps.
   - Bug fix:
     - [`bbbfc51`](https://github.com/oktawianwybieralski/coagent8/commit/bbbfc51bb5405bed37aadd943bf9fb9b64f5362a): Refuse recursive turns and name agy's inherited tools
     - [`edee627`](https://github.com/oktawianwybieralski/coagent8/commit/edee6272cd03a50f8efffc07185e4b013dc0f336): Disable and verify inherited Codex MCP servers per thread
-- Agy:
+- Antigravity (agy):
   - New feature:
     - [`86249ae`](https://github.com/oktawianwybieralski/coagent8/commit/86249ae4c2aebb6021bf2338bb477207ed11f114): Bound probe, catalog, quota, and tool reads (EXEC-001-T08e)
   - Bug fix:
@@ -186,7 +250,7 @@ request, which its page keeps.
 - Locks:
   - Bug fix:
     - [`4afc7f2`](https://github.com/oktawianwybieralski/coagent8/commit/4afc7f277923fd246aecb220d7dd28ddd56f2f28): Publish leases atomically, renew them and reclaim stale ones by age
-- Mcp:
+- MCP:
   - Breaking change:
     - [`77bef3e`](https://github.com/oktawianwybieralski/coagent8/commit/77bef3e1ea4bd86e6af8269ccf54003025e7733d): Remove the compact tool profile
   - New feature:
@@ -321,7 +385,7 @@ request, which its page keeps.
     - [`4b9307b`](https://github.com/oktawianwybieralski/coagent8/commit/4b9307bce0603fc932d3cb3de241bb5e51845ea1): Say how to call CoAgent8 right on the first attempt
   - Refactoring:
     - [`702d52e`](https://github.com/oktawianwybieralski/coagent8/commit/702d52ee253f2c4463b7f85d9464da1653f4a78b): Map the deprecated tools and run actions through one alias table
-- Vscode:
+- VS Code:
   - Breaking change:
     - [`b2e483c`](https://github.com/oktawianwybieralski/coagent8/commit/b2e483cd37bdb617da0f43f3863773ea320bcd9a): Share ~/.coagent8/config.json with the CLI and keep it on uninstall
     - [`b79f744`](https://github.com/oktawianwybieralski/coagent8/commit/b79f7449f70ae5fd2c76d7b337347d79a62b4c04): One setup list, CLI executable choice and complete uninstall
