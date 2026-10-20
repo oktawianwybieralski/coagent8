@@ -45,6 +45,8 @@ Planning, rules and test-stability changes that belong to no delivered card:
 | [#58](https://github.com/oktawianwybieralski/coagent8/pull/58) | Planned the review retry and Codex read-denial fixes |
 | [#64](https://github.com/oktawianwybieralski/coagent8/pull/64) | Split the 0.7.0 stability release from 0.8.0 orchestration |
 | [#79](https://github.com/oktawianwybieralski/coagent8/pull/79) | Codex stop-timing tests independent of runner speed |
+| [#87](https://github.com/oktawianwybieralski/coagent8/pull/87) | Started these delivered records (`8af2df7`, 2026-10-20) |
+| [#88](https://github.com/oktawianwybieralski/coagent8/pull/88) | README install link and `coagent8 mcp` startup for 0.7.0, found by the release review (owner decision 2026-10-20) |
 
 ## Moved to 0.8.0
 
