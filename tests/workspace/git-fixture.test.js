@@ -154,6 +154,14 @@ test('FEEDBACK-070d: uncommitted binaries bind index and working content, unfilt
     const second = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
     assert.equal(git('hash-object', '--', 'staged.png'), execFileSync('git', ['hash-object', '--stdin'], { cwd: root, input: Buffer.from([0x89, 0, 10]), encoding: 'utf8' }).trim(), 'the conversion maps both payloads to one blob');
     assert.notEqual(first, second, 'other bytes, other identity');
+    // Staged, then the working file switched between CRLF and LF: Git sees it clean both ways.
+    git('add', 'staged.png');
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 13, 10]));
+    const crlf = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
+    fs.writeFileSync(path.join(root, 'staged.png'), Buffer.from([0x89, 0, 10]));
+    const lf = (await collectGitScope('uncommitted', root)).binaryFiles.find(file => file.path === 'staged.png').id;
+    assert.match(lf, /\+worktree:/, 'a clean working file is still hashed');
+    assert.notEqual(crlf, lf, 'normalization-equivalent bytes are another snapshot');
     fs.rmSync(path.join(root, '.gitattributes'));
     let linked = false;
     try { fs.rmSync(path.join(root, 'linked.png')); fs.symlinkSync(path.join(os.tmpdir(), 'outside-target.png'), path.join(root, 'linked.png')); linked = true; } catch { /* symlinks need a privilege on Windows */ }

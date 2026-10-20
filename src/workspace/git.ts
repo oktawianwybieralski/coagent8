@@ -278,6 +278,9 @@ export async function collectGitScope(
       }
     }
     for (const file of untrackedBinaries) found.set(file, { status: 'added', ids: [], worktree: true, regular: true });
+    // Git calls a working file clean when it normalizes to the index blob; its own bytes are
+    // still what an uncommitted review covers, so every present one is hashed.
+    if (info.type === 'uncommitted') for (const change of found.values()) if (change.status !== 'deleted') change.worktree = true;
     // The working tree has no blob id yet. Git hashes those files itself, unfiltered, after
     // lstat (metadata only) shows a regular file inside the workspace, never a link's target.
     const root = await fs.realpath(workspaceCwd);
