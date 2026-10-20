@@ -30,7 +30,7 @@ and coagent profiles follow in 0.8.0.
 | [AUDIT-001](AUDIT-001.md) | Audit findings A08-A21 | #80 |
 | [RELEASE-001](RELEASE-001.md) | Verified draft releases, npm publication to `next`, published-package verification | #35, #73-#77, #83, #84 |
 | [PROPOSALS-001](PROPOSALS-001.md) | Accepted proposals a, d, g, h, k, l, n | #68-#70 |
-| [FEEDBACK-070](FEEDBACK-070.md) | Findings of the 0.7.0 native acceptance: finding headers, cache-write prices, deleted workspaces, binary changes | #86 |
+| [FEEDBACK-070](FEEDBACK-070.md) | Findings of the 0.7.0 native acceptance: finding headers, cache-write prices, deleted workspaces, binary changes | #86 (`87c7b13`) |
 
 ## Merged without a card record
 

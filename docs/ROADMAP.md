@@ -1466,7 +1466,8 @@ behavior or a test-procedure lesson.
 Native acceptance of the release PR #85 candidate on 2026-10-20 (Codex, Claude
 Code and Antigravity in VS Code on Windows, runtime from the CI VSIX) passed
 every scenario; these findings are fixed before the tag (owner direction
-2026-10-20, consulted with Codex). Each fix has a regression test.
+2026-10-20, consulted with Codex). Each fix has a regression test. Done in #86;
+delivered record: [FEEDBACK-070](delivered/0.7.0/FEEDBACK-070.md).
 
 - [x] **FEEDBACK-070a - finding headers without brackets.** agy wrote
   `P2 sum.js:4` in two of four seeded-defect reviews; the gate read only
