@@ -457,11 +457,11 @@ error.
   a headless agy client stopped calls after 180 seconds.
 - **Sessions on disk.** Every call keeps a session record, even with archives
   turned off, and the session handle arrives with the result.
-- **Codex read denials on Windows.** Codex's Windows sandbox grants read
-  access only on the workspace folder and relies on inherited permissions, so
-  it cannot read a subfolder whose permission inheritance is turned off. The
-  review names the denied files and stays incomplete; run
-  `icacls <folder> /reset /t` on that folder to restore inheritance.
+- **Codex sandbox on Windows.** CoAgent8 runs Codex in its unelevated
+  Windows sandbox, which reads what your account can read and blocks writes.
+  A PowerShell installed from the Microsoft Store cannot start inside it, so
+  Codex falls back to Windows PowerShell 5.1; install PowerShell 7 another way
+  (for example `scoop install pwsh` or the MSI) to give Codex version 7.
 - **Reviews of another tree.** A staged, commit or range review whose files do
   not match the current workspace is refused rather than reviewed.
 

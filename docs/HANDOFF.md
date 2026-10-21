@@ -10,6 +10,23 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Codex Windows sandbox backend (owner decision 2026-10-21):** branch
+  `fix/codex-windows-sandbox-backend`. On codex-cli 0.162.0-alpha.17.2, `codex
+  sandbox` with `read-only` and `windows.sandbox="elevated"` ran as
+  `CodexSandboxOffline` and could not read `assets/` (protected ACL without
+  `CodexSandboxUsers`), so `git status` listed its 25 tracked files as deleted;
+  with `windows.sandbox="unelevated"` the same commands read all 25 files, ran Git
+  and Node, and a write in the workspace was denied (`workspace-write`: written
+  inside, denied outside). Through `app-server` every command first failed with
+  `CreateProcessAsUserW` error 5: Codex starts the first `pwsh.exe` on `PATH`, a
+  Microsoft Store alias that a restricted token cannot start (directly from the
+  package directory neither). With that directory removed from the server's
+  `PATH`, `allow_login_shell=false` and the owner's PowerShell 7.6.7 from Scoop,
+  a CoAgent8 consult on gpt-6.1-sol ran PowerShell 7.6.7, read `assets/` (25),
+  reported a correct `git status`, printed no profile errors and was denied the
+  write probe (16.2 s, 4 operations; handle `syn_sess_59b59a2e22e834dac9f131e5`).
+  Not run: an isolated `CODEX_HOME` (lane 4 of 2.12d) and POSIX, which is unchanged.
+
 - **Delivered records (owner decision 2026-10-20):** what 0.7.0 delivered, per
   card with PRs, review handles and evidence, is in
   [docs/delivered/0.7.0](delivered/0.7.0/README.md); new evidence moves there

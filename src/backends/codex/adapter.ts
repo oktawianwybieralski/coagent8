@@ -14,7 +14,7 @@ import { ToolError, validEventIdentifier, type ExecutionError } from '../../cont
 import { isValidModelIdentifier } from '../../models/identifier.js';
 import { redactDiagnostic } from '../../security/redaction.js';
 import { createCodexStreamCollector } from './collector.js';
-import { codexAppServerArgs, createCodexAppSession } from './app-server.js';
+import { codexAppServerArgs, codexLaunchEnvironment, createCodexAppSession } from './app-server.js';
 import { listCodexModels, readCodexRateLimits } from './models.js';
 import { classifyCodexError } from './errors.js';
 import { parse as parseToml } from 'smol-toml';
@@ -195,15 +195,15 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (serializedPromptBytes > CODEX_MAX_SERIALIZED_PROMPT_BYTES) {
     return rejected('INPUT_LIMIT', `Serialized prompt exceeds the line record limit (${serializedPromptBytes} > ${CODEX_MAX_SERIALIZED_PROMPT_BYTES} bytes).`);
   }
-  // The app-server session requests read-only mode per thread and verifies the server's
-  // answer; the config overrides pin the same policy for the server's defaults and turn off
-  // the features that add tools beyond the read-only shell.
+  // The app-server session requests the sandbox of CODEX_SANDBOX per thread and verifies the
+  // server's answer; the config overrides pin the same policy for the server's defaults and
+  // turn off the features that add tools beyond the shell.
   const args = codexAppServerArgs();
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
   const app = createCodexAppSession({ collector, threadId: requestedThread, model, effort,
     cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent });
   const result = await runCommand(configuredBackendCommand('codex'), args, {
-    cwd: options.cwd, env: turnEnvironment(), stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
+    cwd: options.cwd, env: codexLaunchEnvironment(turnEnvironment()), stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
     maxBufferBytes: 512 * 1024, maxLineBytes: CODEX_MAX_LINE_BYTES, maxInputBytes: CODEX_MAX_PROMPT_BYTES, onStdoutLine: app.line,
   });
   const snapshot = collector.snapshot();

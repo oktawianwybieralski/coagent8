@@ -1460,6 +1460,11 @@ behavior or a test-procedure lesson.
   with the task-scoped coagent profiles (planned for `0.8.0`) the backend
   sandbox becomes one execution option, not the only way CoAgent8 runs an agent.
   The POSIX native check moves to 2.18.
+  Remedy replaced (owner decision 2026-10-21): the denials kept recurring and
+  blocked the review loop. The cause is the elevated backend's separate sandbox
+  account, not the sandbox itself, so Codex on Windows now uses
+  `windows.sandbox="unelevated"` with `allow_login_shell=false` and without the
+  app execution alias directory on `PATH`; the read-only sandbox stays.
 
 ## FEEDBACK-070: findings of the 0.7.0 native acceptance
 
