@@ -29,6 +29,12 @@ export const id = 'agy';
 export const name = 'Google Gemini (Antigravity agy)';
 /** POSIX time agy gets between `SIGTERM` and `SIGKILL` to shut down its session and commands. */
 const AGY_SIGNAL_GRACE_MS = 2000;
+/**
+ * Added to a workspace-write prompt: agy approves only file edits there, and a single denied
+ * command ends its headless turn without an answer (verified natively 2026-10-21).
+ */
+export const AGY_WRITE_NOTE = 'In this run you cannot execute any command: a command attempt ends your turn without an answer. '
+  + 'Read, create and edit files only with your file tools, and report every check as NOT_RUN.';
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -281,7 +287,7 @@ function failed(error: ExecutionError): TerminalExecutionResult {
 }
 
 /**
- * Runs one agy turn in its read-only sandbox.
+ * Runs one agy turn: read-only in its sandbox, or for `workspace-write` without it.
  * @remarks Every turn passes `--model`: agy keeps the model last selected in its interface
  * in internal state, so its own choice is unknown before the turn and could be top-tier
  * (AUD-P1-7). The deadline and cancellation are `runCommand`'s: it validates `timeoutMs`,
@@ -329,7 +335,13 @@ export async function execute(
 
   const { model: targetModel, effort: targetEffort } = resolveModelAndEffort(model, options.reasoningEffort);
 
-  const baseArgs = [...resolved.argsPrefix, '--sandbox', '--output-format', 'stream-json'];
+  // A workspace-write turn runs without the sandbox and without any enforced path limit, in
+  // `accept-edits` mode: headless agy approves file edits and denies every command, which the
+  // caller runs instead (owner decisions 2026-10-21, DELEGATE-001w); the prompt names the scope.
+  const writes = options.profile === 'workspace-write';
+  const baseArgs = [...resolved.argsPrefix, ...(writes ? ['--mode', 'accept-edits'] : ['--sandbox']), '--output-format', 'stream-json'];
+  // Headless agy ends its turn at the first denied command, so the writer is told to try none.
+  const turnPrompt = writes ? `${prompt}\n\n${AGY_WRITE_NOTE}` : prompt;
   if (options.cwd) {
     baseArgs.push('--add-dir', path.resolve(options.cwd));
   }
@@ -385,12 +397,14 @@ export async function execute(
         options.onEvent?.(event);
       }
     : undefined;
-  const first = await runTurn(prompt, native, effectiveTimeoutMs, initialOnEvent);
+  const first = await runTurn(turnPrompt, native, effectiveTimeoutMs, initialOnEvent);
   let processResult = first.processResult;
   let s = first.snapshot;
   let retriedAfterDenial = false;
 
+  // The recovery prompt forbids shell commands, which a writer needs; it is read-only only.
   const canRetryEmptyDenial =
+    !writes &&
     processResult.status === 'completed' &&
     !processResult.error &&
     !s.terminalError &&
@@ -434,7 +448,9 @@ export async function execute(
   }
 
   // A denied action shows that the sandbox works; the answer stays, as with Claude permission denials.
-  if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
+  if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: writes
+    ? 'agy denied a command (a workspace-write turn runs no commands); the answer may be incomplete.'
+    : 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
   const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
   const sessionMismatch = Boolean(expectedSessionId && s.nativeSessionId && s.nativeSessionId !== expectedSessionId);
   let error: ExecutionError | undefined = sessionMismatch
@@ -453,9 +469,11 @@ export async function execute(
   if (!error && s.sandboxDenied && !s.output.trim()) {
     error = {
       code: 'POLICY_DENIED',
-      message: retriedAfterDenial
-        ? 'agy ended the turn without an answer after its sandbox denied a command, including on automatic retry without shell commands (headless mode cannot ask for permission).'
-        : 'agy ended the turn without an answer after its sandbox denied a command (headless mode cannot ask for permission). Ask again for an answer that reads files without running commands.',
+      message: writes
+        ? 'agy ended the turn without an answer after it denied a command: a workspace-write turn edits files only, and headless agy ends its turn on a denied command.'
+        : retriedAfterDenial
+          ? 'agy ended the turn without an answer after its sandbox denied a command, including on automatic retry without shell commands (headless mode cannot ask for permission).'
+          : 'agy ended the turn without an answer after its sandbox denied a command (headless mode cannot ask for permission). Ask again for an answer that reads files without running commands.',
       retryable: false,
     };
   }

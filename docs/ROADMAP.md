@@ -498,6 +498,18 @@ the next minor, `0.8.0` after the release split of 2026-10-15. Read-only delegat
 [0.7.0 plan](#070-beta3-plan)); delegation of write tasks follows the
 profiles (Phase 4).
 
+- [ ] **DELEGATE-001w - synchronous write delegation.** Owner request
+  2026-10-21, ahead of `001c-f`: the `delegate` tool, its write profiles,
+  the single-writer lease, the before/after Git evidence and the
+  `coagent8-delegate` skill, as specified in
+  [ARCHITECTURE](ARCHITECTURE.md#synchronous-write-delegation-delegate-001w).
+  It brings forward a minimal slice of `COAGENT-002` (profiles, one writer)
+  without `WINDOWS-001b-e`, whose gap is a documented limitation. Acceptance:
+  per backend, a worker adds a function with a test in a scratch repository;
+  a write outside the workspace is denied for Codex; a second `delegate` in
+  the same workspace is refused; changes outside `scope` and to files dirty
+  before are reported; the skill is installed in all three clients by
+  `coagent8 skills install`. Check: R, MCP/E2E, native per backend.
 - [ ] **DELEGATE-001a - native tests of the wake-up mechanisms.** Owner
   decision 2026-10-13: delegation must work in every client, so try the
   mechanisms in this order and stop at the first that works:

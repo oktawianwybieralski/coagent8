@@ -23,7 +23,7 @@ test('MCP stdio exposes unified schema; two fixture turns, public history, fallb
     assert.deepEqual(Buffer.from(icon.src.slice('data:image/png;base64,'.length),'base64'),fs.readFileSync(path.resolve(asset)));
   }
   c.proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-  const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,6);assert.ok(list.result.tools.some(x=>x.name==='issue'));
+  const list=await c.request('tools/list',{});assert.equal(list.result.tools.length,7);assert.ok(list.result.tools.some(x=>x.name==='issue'));
   assert.ok(list.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
   assert.match(init.result.instructions,/^Asks another local coding agent .* doctor lists the models/);
   const definition=list.result.tools.find(x=>x.name==='consult');assert.ok(definition.inputSchema.properties.backend.enum.includes('agy'));

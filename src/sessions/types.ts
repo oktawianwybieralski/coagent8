@@ -11,6 +11,11 @@ export interface SessionRecord {
   reasoningEffort?: string;
   cliVersion?: string;
   safetyProfile?: string;
+  /**
+   * Set once, when the session is created by a `workspace-write` call (`DELEGATE-001w`);
+   * absent means read-only. A call with the other profile cannot continue the session.
+   */
+  profile?: 'workspace-write';
   lastErrorCode?: string;
   /** Public session handle identifier. */
   sessionHandle: string;

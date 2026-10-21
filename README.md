@@ -26,10 +26,11 @@
 
 CoAgent8 lets the coding agent you work with ask another one. It is an MCP
 server that puts Codex, Claude Code and Antigravity (`agy`, which runs Gemini and
-other models) behind the same six tools: your agent requests a second opinion or
-an independent review of your Git changes, and gets the other agent's answer
-back in the chat. The other agent runs in a read-only profile, on your own
-installed and signed-in CLI.
+other models) behind the same seven tools: your agent requests a second opinion or
+an independent review of your Git changes, or delegates a code change, and gets
+the other agent's answer back in the chat. Consultations and reviews run in a
+read-only profile; a delegated change edits the workspace. Every agent runs on
+your own installed and signed-in CLI.
 
 **Contents:**
 [Status](#status) |
@@ -139,7 +140,7 @@ supports stdio MCP in Agent mode through the same definition, following
 ## Features
 
 - **One MCP server, three coding CLIs.** Codex, Claude Code and Antigravity
-  behind the same six tools, for any stdio MCP host.
+  behind the same seven tools, for any stdio MCP host.
 - **Read-only profiles.** Every backend runs in a read-only profile; for Codex
   and Claude Code CoAgent8 verifies it and refuses a turn it cannot confirm.
 - **Second opinion and independent review.** `consult` answers a question;
@@ -247,6 +248,7 @@ supports stdio MCP in Agent mode through the same definition, following
 | --- | --- |
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives |
+| `delegate` | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session |
 | `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
@@ -268,7 +270,16 @@ follow-up on the same topic; a call without it starts a fresh agent that
 rereads everything. `review` adds its verdict.
 
 The deprecated `analyze`, `debug` and `implement` aliases and the `run` gateway
-still work but are not listed. Every client receives the same six tools.
+still work but are not listed. Every client receives the same seven tools.
+
+`delegate` needs a Git work tree. Codex writes only inside the workspace
+(its sandbox, without network access); Claude Code's `Edit` and `Write` are
+limited to the workspace but its `Bash` is not; Antigravity runs without its
+sandbox and without a path limit, and only edits files (it runs no commands).
+The agent reports each check as PASS, FAIL or NOT_RUN; run the checks yourself
+before accepting the change. Codex on Windows cannot run test runners that start
+processes from Node, such as `node --test`, Jest or Vitest. On Windows a cancelled agent's child
+processes can outlive it, so check `git status` after a cancel or timeout.
 
 ### Approving expensive models
 
@@ -340,7 +351,8 @@ where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
 | `coagent8-doctor` | See models, efforts and prices, apply a price limit, check backend health |
 | `coagent8-session` | List, read, continue, cancel or close sessions |
 | `coagent8-issue` | Prepare a sanitized CoAgent8 bug report |
-| `coagent8-loop` | Plan, get the plan reviewed, implement, run checks and get an independent review |
+| `coagent8-delegate` | Hand a defined code change to another agent, then check what it changed |
+| `coagent8-loop` | Plan, get the plan reviewed, implement or delegate, run checks and get an independent review |
 
 | Client | Skill directory |
 | --- | --- |

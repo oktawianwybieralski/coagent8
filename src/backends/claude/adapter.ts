@@ -7,13 +7,28 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
 import { DEFAULT_PROBE_TIMEOUT_MS, type AdapterProbeResult, type BackendReadContext, type CatalogModel, type ExecutionOptions, type ModelCatalog, type TerminalExecutionResult, type CliAdapter } from '../types.js';
-import { ToolError, type ExecutionError } from '../../contracts/index.js';
+import { ToolError, type ExecutionError, type ExecutionProfile } from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
 export const id = 'claude', name = 'Claude Code CLI';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
 export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
+/**
+ * Built-in tools of the `workspace-write` profile (`DELEGATE-001w`). `Bash` runs checks and is
+ * not limited to the workspace (owner decision 2026-10-21); `Edit` and `Write` are.
+ */
+export const CLAUDE_WRITE_TOOLS = Object.freeze(['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash']);
+/**
+ * Settings of a turn: hooks off, and for `workspace-write` allow rules for the write tools.
+ * Under `dontAsk` a tool call no rule allows is denied; `./**` is relative to the turn's
+ * directory, the workspace, so `Edit` and `Write` outside it are denied.
+ */
+export function claudeTurnSettings(profile: ExecutionProfile): string {
+  return JSON.stringify(profile === 'workspace-write'
+    ? { disableAllHooks: true, permissions: { allow: ['Edit(./**)', 'Write(./**)', 'Bash'] } }
+    : { disableAllHooks: true });
+}
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const claudeCommand = () => configuredBackendCommand('claude');
@@ -314,10 +329,11 @@ export async function listModels(probe?: AdapterProbeResult, context?: BackendRe
 }
 
 /**
- * Runs one Claude Code turn in restricted, read-only print mode.
+ * Runs one Claude Code turn in restricted print mode with the profile's tools.
  * @remarks Subscription (OAuth) and API-key authentication both work. Each run
  * fails closed with `SANDBOX_UNAVAILABLE` unless `system/init` reports only
- * {@link CLAUDE_READ_ONLY_TOOLS}, no MCP server and `dontAsk`. A new turn
+ * {@link CLAUDE_READ_ONLY_TOOLS}, or {@link CLAUDE_WRITE_TOOLS} for `workspace-write`,
+ * no MCP server and `dontAsk`. A new turn
  * pins a fresh `--session-id`; a continuation passes `--resume`. The prompt is one
  * stream-json user message on stdin, which stays open so cancellation and deadlines
  * can interrupt the turn (`control_request` `interrupt`) before the process is stopped.
@@ -334,14 +350,16 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   if (resumeId && !SESSION_ID_PATTERN.test(resumeId)) return rejected('SESSION_INVALID', 'Invalid native Claude session ID.', model);
   const sessionId = (resumeId || randomUUID()).toLowerCase();
   // --restricted keeps OAuth/subscription auth (unlike --bare) and ignores user/project/local settings.
-  const args = ['-p', '--restricted', '--tools', CLAUDE_READ_ONLY_TOOLS.join(','), '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
-    '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+  const profile = options.profile ?? 'read-only';
+  const tools = profile === 'workspace-write' ? CLAUDE_WRITE_TOOLS : CLAUDE_READ_ONLY_TOOLS;
+  const args = ['-p', '--restricted', '--tools', tools.join(','), '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
+    '--settings', claudeTurnSettings(profile), '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', model];
   const effort = options.reasoningEffort?.toLowerCase();
   if (effort && VALID_REASONING_EFFORTS.includes(effort)) args.push('--effort', effort);
   else if (effort) options.onEvent?.({ type: 'warning', message: redactDiagnostic(`Ignoring unsupported Claude reasoning effort '${effort.slice(0, 32)}'.`) });
   args.push(resumeId ? '--resume' : '--session-id', sessionId);
-  const collector = createClaudeStreamCollector({ expectedSessionId: sessionId, allowedTools: CLAUDE_READ_ONLY_TOOLS, onEvent: options.onEvent });
+  const collector = createClaudeStreamCollector({ expectedSessionId: sessionId, allowedTools: tools, onEvent: options.onEvent });
   let channel: StdinChannel | undefined;
   const session: StdinSession = {
     start(opened, input) {

@@ -40,7 +40,7 @@ flowchart LR
 | Owner | Responsibility |
 | --- | --- |
 | src/index.ts, src/mcp/stdio-server.ts | Entry dispatch, stdio transport, maintenance and shutdown |
-| src/mcp/server.ts | Six tools, strict arguments, client roots, human elicitation, workspace resources |
+| src/mcp/server.ts | Seven tools, strict arguments, client roots, human elicitation, workspace resources |
 | src/mcp/tools/, src/mcp/result.ts | Task prompts, management and transport result formatting |
 | src/execution/ | Turn lifecycle, routing, model selection and consent orchestration |
 | src/execution/runtime/, runtime primitives | Owned processes, cancellation, decoding and buffer bounds |
@@ -111,6 +111,7 @@ The retired src/constants.ts forwarding module has no compatibility exemption.
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
 | review | Bounded Git review, State Envelope and server-derived READY/BLOCKED |
+| delegate | Workspace-write turn with task, scope and checks; one writer per workspace; observed Git changes reported apart from the answer ([DELEGATE-001w](#synchronous-write-delegation-delegate-001w)) |
 | doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, server version, runtime path, defaults, quotas |
 | session | Workspace-scoped list/history/close; continuation uses session_handle |
 | cancel | Stops a known active/abandoned session turn; idle returns false |
@@ -151,9 +152,9 @@ the paginated session API. Cancel without
 workspace_path remains unscoped; an initial session handle arrives only at return,
 so use host request cancellation during the first call.
 
-The source surface budget is 512 initialization characters and 5,800 model-visible
-tool-definition bytes (server icon excluded; owner decision 2026-10-10 for actionable
-issue telemetry instructions); Codex loads definitions with every
+The source surface budget is 512 initialization characters and 7,700 model-visible
+tool-definition bytes (server icon excluded; owner decision 2026-10-21 for delegate,
+after 5,900 B on 2026-10-11 and 5,800 B on 2026-10-10); Codex loads definitions with every
 request, so each byte is paid per turn there. Hosts control ToolSearch, instruction
 visibility, UI rendering and cached schemas. A skill is not required for a plain call.
 
@@ -1202,6 +1203,61 @@ atomic update/rollback and scoped client installation. No bundled script executi
 Detect real client loaders and remote/local path boundaries; verify actual discovery
 and use. Plain MCP remains usable without a skill or repository knowledge.
 
+## Synchronous write delegation (DELEGATE-001w)
+
+Owner request 2026-10-21: a coordinating agent hands a coding task to another
+backend, which changes files in the workspace, and gets the observed changes
+back. This is the synchronous first step of [DELEGATE-001](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up);
+asynchronous start, `wait` and caller wake-up (`001c-e`) keep this contract and
+add an immediate handle. `consult` and `review` stay read-only, so a reviewer
+never edits what it judges.
+
+**Tool `delegate`.** `task` (required): objective and acceptance criteria,
+naming files instead of pasting them. `scope` (optional): workspace-relative
+paths the worker may change; default the whole workspace. `checks` (optional):
+commands the worker runs before it reports. Shared execution parameters:
+`backend`, `model`, `reasoning_effort`, `output_price_below`,
+`session_handle` (a fix round in the same worker session), `workspace_path`,
+`timeout_ms`. Model consent, price limits, routing and cancellation are the
+existing ones; `cancel` stops a running worker.
+
+**Preconditions.** The workspace is a Git work tree. One writer per work tree: a
+second `delegate` there is refused while one runs. The writer record lives in
+the work tree's Git directory (`coagent8-writer.json`, `sessions/writer.ts`), so
+every client's server process sees it whatever its data directory; each linked
+worktree has its own, which permits parallel writers in separate worktrees.
+`consult` and `review` are not blocked. The nested-turn refusal stays: a worker
+cannot call CoAgent8.
+
+**Write profiles.** Approvals stay off, tool features and inherited MCP servers
+stay disabled and verified as in the read-only profiles.
+
+| Backend | Profile | Path limit |
+| --- | --- | --- |
+| Codex | `sandbox_mode="workspace-write"` with network off; Windows `unelevated`; the thread must report `workspaceWrite`, `never` and no network | Enforced by the OS sandbox: writes outside the workspace are denied |
+| Claude Code | `--restricted --tools Read,Glob,Grep,Edit,Write,Bash`, `dontAsk`, allow rules `Edit(./**)`, `Write(./**)` and `Bash`, the workspace as working directory, hooks and MCP off | `Edit`/`Write` enforced by Claude Code (`--restricted` keeps file tools in the working directory; a write outside was denied natively); `Bash` is not contained |
+| agy | No `--sandbox`, `--mode accept-edits` (edits approved, every command denied), `--add-dir <workspace>` | Not enforced; prompt only |
+
+**Evidence.** Before the turn the server records HEAD and the `git status` of
+the tree, with a content hash of every dirty file. After it, the result lists
+what the server observed, separate from the worker's report: changed, added
+and deleted paths with a diff stat; paths outside `scope`; files that were dirty
+before and changed (the user's uncommitted work); a moved HEAD, a new commit or
+a changed branch. The worker is told not to commit, push, reset, stash or
+switch branches; the server never does any of them and never cleans up.
+
+**Checks.** The worker runs `checks` where it can and reports each as PASS, FAIL
+or NOT_RUN; a denied command is reported, not worked around. The calling agent
+runs the checks itself before accepting the change (owner decision 2026-10-21).
+agy runs no command. Codex 0.162 on Windows cannot start a process from Node
+inside its sandbox (`spawn EPERM`, verified natively 2026-10-21), so test runners
+that spawn processes fail there.
+
+**Known limitations.** Claude's `Bash` and agy write wherever the user's account
+can. On Windows a cancelled or timed-out worker's descendants can outlive it
+until `WINDOWS-001b-e` (`CUR-011`), so they may still change files. Checks are
+reported by the worker, not observed by the server (`COAGENT-004b`).
+
 ## Owner decisions
 
 These decisions explain behavior that could otherwise look accidental. Change them
@@ -1245,6 +1301,8 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-14 | A price limit without a named model runs the qualifying default first; otherwise the most recently released qualifying catalog model, then the higher price, then catalog order; a model without a release date ranks after every dated one. The date is OpenRouter's `created` timestamp, the day the model was listed there, labelled as such. Model descriptions from the list are neither stored nor shown: they are third-party text that would reach caller context. Replaces the 2026-10-08 highest-price selection rule (AX-002d). |
 | 2026-10-14 | OpenRouter's `expiration_date` is ignored: it is neither stored nor shown and affects neither selection under a price limit nor doctor, because the backend's catalog alone states which models it serves. A model that leaves OpenRouter's list loses its price and is handled as unknown-priced under the existing rules (AX-002i). |
 | 2026-10-15 | Codex read denials caused by the Codex Windows sandbox setup (read access granted only on the workspace root, relying on ACL inheritance) are a documented known limitation (CUR-014) with the `icacls <dir> /reset /t` remedy, not an upstream report: with the task-scoped coagent profiles (planned for 0.8.0) the backend sandbox is one execution option. CoAgent8 still reports observed denials and keeps a review with denied required scope PARTIAL. |
+| 2026-10-21 | Native DELEGATE-001w runs: Codex and Claude made the change and were denied a write outside the workspace; agy without `--sandbox` still denied every command in headless mode and made no change. agy workers run with `--mode accept-edits` (edits only), not `--dangerously-skip-permissions`, which would also approve inherited MCP tools. The caller, not the server, runs `checks`: Codex on Windows cannot start processes from Node in its sandbox. |
+| 2026-10-21 | DELEGATE-001w: a synchronous `delegate` tool lets a coordinating agent hand a coding task to another backend, ahead of the asynchronous DELEGATE-001c-f; `consult` and `review` stay read-only. The model-visible tool-definition budget rises to 7,700 B for it. Claude workers get `Bash` although it is not path-limited, agy workers run without `--sandbox` and without any enforced path limit, and on Windows a cancelled worker's descendants can outlive it until WINDOWS-001b-e; each is a documented limitation, and the server reports observed changes outside `scope`. WINDOWS-001b-e stays a condition of the 0.8.0 release candidate. |
 | 2026-10-21 | Codex on Windows uses the unelevated sandbox instead of the elevated one (CUR-014): the elevated backend runs commands as a separate `CodexSandbox*` account, which loses read access wherever ACL inheritance is cut and made Git report unreadable tracked files as deleted; the unelevated restricted token of the user's own account reads the whole tree and still denies writes (verified natively). Codex picks the first `pwsh.exe` on `PATH` and has no shell setting, so the server's `PATH` omits the app execution alias directory, and commands run without the user's PowerShell profile. Replaces the 2026-10-15 `icacls` remedy; the read-only sandbox stays on every platform. |
 | 2026-10-15 | Release split: `0.7.0` (beta.3) is a stability release (public CLI, FEEDBACK-061, acceptance runner and WSL lane, publication automation); `0.8.0` is rc.1, the first release candidate on `1.0.x`, and carries asynchronous delegation, host-led coagent profiles and delegated coordination. Until `0.7.0` the owner runs the working-tree build as the local MCP server; it is never distributed. |
 

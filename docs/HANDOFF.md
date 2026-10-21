@@ -10,6 +10,27 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **DELEGATE-001w synchronous write delegation (owner request 2026-10-21):** on
+  branch `fix/codex-windows-sandbox-backend`, in its own commit after the sandbox fix.
+  Native runs on Windows through CoAgent8 in a scratch repository (codex-cli
+  0.162.0-alpha.17.2, Claude Code 2.1.300, agy 1.4.4): Codex (gpt-6.1-sol) and
+  Claude (claude-opus-5-5) each added a function with a test and were denied a
+  write one level above the workspace (Codex by its sandbox, Claude by
+  `--restricted`); Claude ran `npm test` (PASS); Codex could not, because
+  inside its Windows sandbox every process started from Node fails with
+  `spawn EPERM` (reproduced with `codex sandbox`: node to node and node to
+  cmd). agy without `--sandbox` denied every command in headless mode and
+  changed nothing; with `--mode accept-edits` and the write note it added the
+  function and tests and reported `npm test` as NOT_RUN; the tests passed when
+  run by the caller (5/5). The "Observed by CoAgent8" block matched each diff,
+  including the warning for files dirty before the turn. Claude Code sent two
+  parallel delegate calls one after the other, so the single-writer refusal is
+  covered by tests across server processes with different data directories,
+  not natively. Independent review (Codex, handle
+  `syn_sess_a3dd10933437bf6e4860fada`): BLOCKED in rounds 1 and 2 (redaction,
+  evidence completeness, existence inference, writer record reads), READY in
+  round 3 with one P3 documentation fix applied.
+
 - **Codex Windows sandbox backend (owner decision 2026-10-21):** branch
   `fix/codex-windows-sandbox-backend`. On codex-cli 0.162.0-alpha.17.2, `codex
   sandbox` with `read-only` and `windows.sandbox="elevated"` ran as

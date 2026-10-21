@@ -120,7 +120,7 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
   // The advertised tools pass the SDK's ListToolsResultSchema validation
   const { ListToolsResultSchema } = require('@modelcontextprotocol/sdk/types.js');
   const parsed = ListToolsResultSchema.parse({ tools: createToolDefinitions() });
-  assert.equal(parsed.tools.length, 6);
+  assert.equal(parsed.tools.length, 7);
 
   // tools/call dispatch
   const callHandler = server._requestHandlers.get('tools/call');

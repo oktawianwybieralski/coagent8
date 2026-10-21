@@ -19,6 +19,7 @@ import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
 import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession, publicSessionRecord } from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
 import { getCanonicalConsultToolDefinition, handleConsult } from './tools/consult.tool.js';
+import { getCanonicalDelegateToolDefinition, handleDelegate, type DelegateArguments } from './tools/delegate.tool.js';
 import { handleLegacyAlias, legacyAliasToolDefinitions } from './tools/legacy.js';
 import { runToolDefinition, handleRun } from './tools/run.tool.js';
 import { issueToolDefinition, handleIssue } from './tools/issue.tool.js';
@@ -42,6 +43,7 @@ export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inpu
 const executionNames = new Set<string>([
   CANONICAL_TOOL_NAMES.CONSULT,
   CANONICAL_TOOL_NAMES.REVIEW,
+  CANONICAL_TOOL_NAMES.DELEGATE,
   CANONICAL_TOOL_NAMES.ANALYZE,
   CANONICAL_TOOL_NAMES.DEBUG,
   CANONICAL_TOOL_NAMES.IMPLEMENT,
@@ -63,12 +65,13 @@ function buildToolDefinitionsWithSchemas(tools: ToolDefinition[]): Tool[] {
 }
 
 /**
- * Six canonical domain tools defined by the SURFACE-001 public contract.
+ * Canonical domain tools: the six of the SURFACE-001 public contract and `delegate` (`DELEGATE-001w`).
  */
 export function getCoreCanonicalTools(): ToolDefinition[] {
   return [
     getCanonicalConsultToolDefinition(),
     getCanonicalReviewToolDefinition(),
+    getCanonicalDelegateToolDefinition(),
     doctorToolDefinition,
     sessionToolDefinition,
     cancelToolDefinition,
@@ -93,7 +96,7 @@ export function getAllCallableToolDefinitions(): Tool[] {
 }
 
 /**
- * Returns the advertised tool definitions: the six core tools, for every client.
+ * Returns the advertised tool definitions: the core tools, for every client.
  */
 export function createToolDefinitions(): Tool[] {
   return buildToolDefinitionsWithSchemas(getCoreCanonicalTools());
@@ -410,6 +413,9 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.CONSULT:
           return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, execOptions), workspace);
+        case CANONICAL_TOOL_NAMES.DELEGATE:
+          // The schema validated `scope` and `checks` as string lists.
+          return withWorkspace(await handleDelegate(args as unknown as DelegateArguments, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.ANALYZE:
         case CANONICAL_TOOL_NAMES.DEBUG:
         case CANONICAL_TOOL_NAMES.IMPLEMENT:
