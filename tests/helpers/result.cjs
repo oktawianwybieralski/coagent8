@@ -7,7 +7,7 @@
  * parse, which keeps the documented format under test. Both result styles are read: `framed`
  * (answer and footer each in a plaintext block) and `raw` (Codex: plain lines).
  */
-const STATUS = /^(?<provider>\S+) · (?<model>.+?) · (?<duration>\d+\.\d)s(?: · (?<ops>\d+) ops?)?(?: · (?:session_handle=)?(?<handle>\S+) \((?:turn (?<turn>\d+), )?(?<state>ready|finished)(?<noHistory>, no history)?\))?$/;
+const STATUS = /^(?<provider>\S+) - (?<model>.+?) - (?<duration>\d+\.\d)s(?: - (?<ops>\d+) ops?)?(?: - (?:session_handle=)?(?<handle>\S+) \((?:turn (?<turn>\d+), )?(?<state>ready|finished)(?<noHistory>, no history)?\))?$/;
 const ERROR = /^Error \[(?<code>[A-Z_]+)(?<retryable>, retryable)?\]: (?<message>[\s\S]*)$/;
 /** A plaintext block: a fence longer than any backtick run inside it. */
 const FRAME = /^(?<fence>`{3,})plaintext\n(?<content>[\s\S]*)\n\k<fence>$/;

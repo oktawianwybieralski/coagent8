@@ -549,9 +549,9 @@ test('the CLI list opens before its checks and shows each CLI with its state and
   const [list] = result.menus;
   assert.equal(list.title, 'Manage Coding CLIs');
   assert.deepEqual(list.items.map(item => [item.label, item.description]), [
-    ['$(pass-filled) Codex CLI', 'Ready · in its chat'],
-    ['$(warning) Claude Code CLI', 'Sign-in needed (unauthenticated) · not in its chat'],
-    ['$(pass-filled) Antigravity CLI', 'Ready · in its chat (manual entry, kept)'],
+    ['$(pass-filled) Codex CLI', 'Ready - in its chat'],
+    ['$(warning) Claude Code CLI', 'Sign-in needed (unauthenticated) - not in its chat'],
+    ['$(pass-filled) Antigravity CLI', 'Ready - in its chat (manual entry, kept)'],
     ['All CLIs', undefined],
     ['$(plug) Add CoAgent8 to All CLI Chats', 'Claude Code CLI'],
   ], 'a compatible CLI needs no sign-in to be added; a manual entry stays');
@@ -578,7 +578,7 @@ test('a CLI menu lists its installations first, the one in use marked, others as
   const npm = path.resolve('npm-claude.js');
   const two = await runExtension({ extraInstallations: { claude: [{ kind: 'npm', executable: npm, file: npm }] }, steps: [{ client: 'claude' }] });
   assert.deepEqual(two.menus[1].items.slice(1, 3).map(item => [item.label, item.description, item.action]), [
-    ['$(pass-filled) Standalone CLI', `${path.resolve('fixture-claude')} · in use`, undefined],
+    ['$(pass-filled) Standalone CLI', `${path.resolve('fixture-claude')} - in use`, undefined],
     ['$(circle-large-outline) npm package', npm, 'use'],
   ]);
 });
@@ -607,7 +607,7 @@ test('the actions for several CLI chats add or update every one at once without 
 test('a CLI menu reuses the list checks and offers only the actions its state allows', async () => {
   const ready = await runExtension({ steps: [{ client: 'codex' }], registrations: { codex: 'owned' } });
   const menu = ready.menus[1];
-  assert.equal(menu.title, 'Codex CLI: Ready · in its chat');
+  assert.equal(menu.title, 'Codex CLI: Ready - in its chat');
   assert.deepEqual(menu.buttons, ['Back', 'Check Again', 'Show Details']);
   assert.ok(menu.items.every(item => item.detail === undefined), 'no second lines');
   assert.deepEqual(menu.items.map(item => item.separator ? `-- ${item.label}` : item.label), [
@@ -618,7 +618,7 @@ test('a CLI menu reuses the list checks and offers only the actions its state al
   ], 'sections with icons; a section without actions is left out');
   assert.equal(ready.events.filter(event => event === 'status').length, 1, 'the menu reuses the checks the list ran');
   const missing = await runExtension({ installed: ['claude'], steps: [{ client: 'codex' }] });
-  assert.equal(missing.menus[1].title, 'Codex CLI: Not installed · not in its chat');
+  assert.equal(missing.menus[1].title, 'Codex CLI: Not installed - not in its chat');
   assert.deepEqual(actionsOf(missing.menus[1]), ['installExtension', 'installStandalone', 'chooseExecutable', 'skills']);
   assert.ok(!missing.menus[1].items.some(item => item.separator && item.label === 'Installations'), 'no empty section');
   assert.equal(missing.menus[1].placeholder, 'Choose an action');
@@ -671,7 +671,7 @@ test('Install VS Code Extension installs the vendor extension for this machine a
   assert.deepEqual(result.installs, { installedExtensions: ['openai.chatgpt'] }, 'kept in ~/.coagent8, which survives an uninstall');
   assert.match(result.progress[0], /^Waiting for Codex CLI from the Codex \(OpenAI\) extension/);
   assert.deepEqual(result.registrations, [], 'installation never registers');
-  assert.equal(result.menus[2].title, 'Codex CLI: Sign-in needed (unknown) · not in its chat', 'the menu reopens on the next steps');
+  assert.equal(result.menus[2].title, 'Codex CLI: Sign-in needed (unknown) - not in its chat', 'the menu reopens on the next steps');
   assert.deepEqual(actionsOf(result.menus[2]), ['installStandalone', 'chooseExecutable', 'signIn', 'connect', 'skills', 'uninstallExtension']);
   const lagging = await runExtension({ installed: [], discoverable: ['claude'], commands: { claude: path.resolve('vendor', 'anthropic.claude-code', 'claude.exe') }, steps: [{ client: 'claude' }, { action: 'installExtension' }], extensionApiLags: true });
   assert.deepEqual(lagging.installs, { installedExtensions: ['anthropic.claude-code'] }, 'recorded although the extension API does not list it yet');
@@ -830,11 +830,11 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   const run = (action, extra = {}) => runExtension({ ...options, steps: [{ client: 'agy' }, { action }, { names: ['coagent8-review'] }], ...extra });
   const installed = await run('install');
   assert.deepEqual(installed.errors, []);
-  assert.equal(installed.menus[0].items.find(item => item.client === 'agy').description, '0 enabled · 7 not installed', 'each CLI shows its packages');
+  assert.equal(installed.menus[0].items.find(item => item.client === 'agy').description, '0 enabled - 7 not installed', 'each CLI shows its packages');
   assert.deepEqual(installed.menus[1].items.map(item => item.action), ['install'], 'only actions with packages to change are offered');
   assert.deepEqual(installed.menus[1].items.map(item => [item.label, item.description]), [['$(cloud-download) Install / Update', '7 to install or update']], 'an icon and the number of packages it changes');
   assert.equal(installed.menus[0].items.find(item => item.client === 'agy').label, '$(circle-large-outline) Antigravity CLI');
-  assert.equal(installed.menus[1].placeholder, '0 enabled · 7 not installed');
+  assert.equal(installed.menus[1].placeholder, '0 enabled - 7 not installed');
   assert.ok(installed.menus[2].many && installed.menus[2].items.every(item => item.picked), 'every package starts selected');
   assert.equal(fs.existsSync(file), true);
   assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(file))), ['coagent8-review']);
@@ -854,7 +854,7 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   assert.deepEqual(disabled.menus[1].items.map(item => item.label), ['$(cloud-download) Install / Update', '$(eye-closed) Disable', '$(trash) Uninstall']);
   assert.equal(disabled.menus[0].items.find(item => item.client === 'agy').label, '$(pass-filled) Antigravity CLI');
   const enabled = await run('enable');
-  assert.equal(enabled.menus[1].placeholder, '0 enabled · 1 disabled · 6 not installed');
+  assert.equal(enabled.menus[1].placeholder, '0 enabled - 1 disabled - 6 not installed');
   assert.equal(fs.existsSync(file), true); assert.equal(fs.existsSync(archived), false);
   await run('uninstall');
   assert.equal(fs.existsSync(file), false);
@@ -896,28 +896,28 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
     ['$(symbol-number) Ask Above Price', '20 USD per million output tokens'],
     ['$(symbol-number) Ask Above Default Price', '2× the backend\'s default model'],
     '-- Models',
-    ['$(server) Codex CLI', '3 models · 2 ask'],
+    ['$(server) Codex CLI', '3 models - 2 ask'],
     ['$(server) Antigravity CLI', '1 model'],
   ], 'price rules first, then each backend that lists models with its counts');
   assert.deepEqual([models.title, models.step, models.buttons.includes('Back')], ['Codex CLI Models', '2/3', true]);
   assert.deepEqual(models.items.map(item => [item.label, item.description]), [
-    ['$(question) gpt-7-nova', 'price unknown · asks: price unknown'],
-    ['$(question) gpt-6-astra', '50 USD · asks: above price'],
-    ['$(circle-large-outline) gpt-6-luna', '0.5 USD · default · runs without asking'],
+    ['$(question) gpt-7-nova', 'price unknown - asks: price unknown'],
+    ['$(question) gpt-6-astra', '50 USD - asks: above price'],
+    ['$(circle-large-outline) gpt-6-luna', '0.5 USD - default - runs without asking'],
   ], 'an unknown price first, then the most expensive');
   assert.deepEqual([rule.title, rule.step], ['gpt-6-astra', '3/3']);
   assert.deepEqual(rule.items.map(item => item.label), ['$(pass-filled) Allow', '$(question) Ask Every Time', '$(circle-slash) Deny', '$(law) Price Rules']);
-  assert.equal(rule.items[3].description, 'current · Asks only when the price rules say so', 'the rule in force is marked');
+  assert.equal(rule.items[3].description, 'current - Asks only when the price rules say so', 'the rule in force is marked');
   assert.deepEqual(allowed.config.governance.models, { allow: ['gpt-6-astra'], ask: [], deny: [] });
   assert.equal(again.title, 'Codex CLI Models', 'the list of models reopens, read again');
-  assert.equal(again.items.find(item => item.label.endsWith('gpt-6-astra')).description, '50 USD · allow');
-  assert.deepEqual(allowed.statusMessages, ['CoAgent8: gpt-6-astra · allow']);
+  assert.equal(again.items.find(item => item.label.endsWith('gpt-6-astra')).description, '50 USD - allow');
+  assert.deepEqual(allowed.statusMessages, ['CoAgent8: gpt-6-astra - allow']);
   assert.ok(allowed.modelRuns.every(run => JSON.stringify(run.args) === '["models","--json"]' && run.config === path.join(home, '.coagent8/config.json')), 'the bundled runtime reads the file the server uses');
 
   // A new rule replaces the earlier one; Price Rules removes the model from every list.
   const denied = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(circle-slash) Deny' }] });
   assert.deepEqual(denied.config.governance.models, { allow: [], ask: [], deny: ['gpt-6-astra'] });
-  assert.equal(denied.menus[2].items[0].description, 'current · Runs without asking');
+  assert.equal(denied.menus[2].items[0].description, 'current - Runs without asking');
   assert.equal(denied.menus[3].items.find(item => item.label.endsWith('gpt-6-astra')).label, '$(circle-slash) gpt-6-astra');
   const priced = await runExtension({ home, command, steps: [{ label: /Codex CLI$/ }, { label: /gpt-6-astra$/ }, { label: '$(law) Price Rules' }] });
   assert.deepEqual(priced.config.governance.models, { allow: [], ask: [], deny: [] });
@@ -936,9 +936,9 @@ test('Manage Model Approvals lists price rules and backends, then models by pric
   fs.writeFileSync(path.join(home, '.coagent8/config.json'), JSON.stringify({ governance: { models: { allow: ['gemini-3.8-flash-low'], ask: [], deny: [] } } }));
   const variant = await runExtension({ home, command, steps: [{ label: /Antigravity CLI$/ }, { label: /gemini-3.8-flash$/ }, { label: '$(law) Price Rules' }] });
   assert.deepEqual(variant.errors, []);
-  assert.equal(variant.menus[2].items[0].description, 'current · Runs without asking', 'the rule on the variant is shown as the rule in force');
+  assert.equal(variant.menus[2].items[0].description, 'current - Runs without asking', 'the rule on the variant is shown as the rule in force');
   assert.deepEqual(variant.config.governance.models, { allow: [], ask: [], deny: [] }, 'Price Rules removes the rule that decided it');
-  assert.deepEqual(variant.statusMessages, ['CoAgent8: gemini-3.8-flash-low · price rules']);
+  assert.deepEqual(variant.statusMessages, ['CoAgent8: gemini-3.8-flash-low - price rules']);
 });
 test('Manage Model Approvals opens in a multi-root window, where setup asks for one workspace', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-approvals-roots-'));
@@ -957,7 +957,7 @@ test('Manage Model Approvals edits the price rules: an empty price turns that ru
   assert.deepEqual(off.inputBoxes, [{ title: 'Ask Above Price', value: '20', valid: true }]);
   assert.equal(off.config.governance.askAbovePrice, null);
   assert.equal(off.menus[1].items.find(item => item.label.endsWith('Ask Above Price')).description, 'off', 'the list reopens with the new value');
-  assert.equal(off.menus[1].items.find(item => item.label.endsWith('Codex CLI')).description, '3 models · 1 ask', 'only the unknown price still asks');
+  assert.equal(off.menus[1].items.find(item => item.label.endsWith('Codex CLI')).description, '3 models - 1 ask', 'only the unknown price still asks');
   const multiplier = await runExtension({ home, command, steps: [{ label: /Ask Above Default Price$/ }], inputs: ['3.5'] });
   assert.equal(multiplier.config.governance.priceMultiplier, 3.5);
   const invalid = await runExtension({ home, command, steps: [{ label: /Ask Above Default Price$/ }, { label: /Ask Above Price$/ }], inputs: ['1', '-2'] });

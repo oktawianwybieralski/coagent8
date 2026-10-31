@@ -66,7 +66,7 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
     }
     const lines = ['## Active CoAgent8 Sessions', ''];
     for (const s of sessions) {
-      lines.push(`- \`${s.sessionHandle}\`: ${s.backend} (${s.model || 'default'}) · turns: ${s.turnCount || 0} · state: ${s.state}`);
+      lines.push(`- \`${s.sessionHandle}\`: ${s.backend} (${s.model || 'default'}) - turns: ${s.turnCount || 0} - state: ${s.state}`);
     }
     return {
       content: [{ type: 'text' as const, text: lines.join('\n') }],

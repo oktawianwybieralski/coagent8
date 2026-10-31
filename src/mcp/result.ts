@@ -123,9 +123,9 @@ export function formatUsage(usage: TokenUsage | undefined, price: ListPrice | un
   const parts: string[] = [];
   if (usage.inputTokens !== undefined) parts.push(`${n(usage.inputTokens)} input${usage.cachedInputTokens ? ` (${n(usage.cachedInputTokens)} cached)` : ''}`);
   if (usage.outputTokens !== undefined) parts.push(`${n(usage.outputTokens)} output${usage.reasoningTokens ? ` (${n(usage.reasoningTokens)} reasoning)` : ''}`);
-  let line = `Usage: ${parts.join(' · ')} tokens`;
+  let line = `Usage: ${parts.join(' - ')} tokens`;
   const cost = listPriceEquivalent(usage, price);
-  if (cost !== undefined && price) line += ` · list price ~${formatUsd(cost)} USD (${price.source})`;
+  if (cost !== undefined && price) line += ` - list price ~${formatUsd(cost)} USD (${price.source})`;
   return line;
 }
 
@@ -270,16 +270,16 @@ export function formatExecutionResult(
     ? executionMeta.totalMs
     : (executionMeta.durationMs || 0));
   const durationSec = (durationMs / 1000).toFixed(1);
-  const ops = executionMeta.toolCount > 0 ? ` \u{b7} ${executionMeta.toolCount} ${executionMeta.toolCount === 1 ? 'op' : 'ops'}` : '';
+  const ops = executionMeta.toolCount > 0 ? ` - ${executionMeta.toolCount} ${executionMeta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = executionMeta.turn > 1 ? `turn ${executionMeta.turn}, ` : '';
   // A call that started no turn wrote nothing, which says nothing about the session's history;
   // an unchanged repeat review still retains a valid workspace session_handle in the footer (FEEDBACK-060f4).
   const history = executionMeta.historyAvailable || executionMeta.turn === 0 ? '' : ', no history';
   // Labelled with its parameter name, so a caller passes it back as `session_handle` (AX-007b).
-  const session = activeHandle ? ` \u{b7} session_handle=${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
+  const session = activeHandle ? ` - session_handle=${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
 
   const footerLines: string[] = [
-    `CoAgent8: ${provider || 'CLI'} \u{b7} ${res.model || 'provider default'} \u{b7} ${durationSec}s${ops}${session}`,
+    `CoAgent8: ${provider || 'CLI'} - ${res.model || 'provider default'} - ${durationSec}s${ops}${session}`,
   ];
   if (verdict !== 'NOT_APPLICABLE') {
     // A failed run states its reason in the error line already.

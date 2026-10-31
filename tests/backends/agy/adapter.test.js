@@ -209,7 +209,7 @@ test('#89: an answer cut off at agy\'s output token limit is a completed, length
 
 test('#92: denied action names come from agy reports and stderr, bounded and without operands', () => {
   const collector = createGeminiCollector();
-  collector.denySandbox('jetski: no output produced — a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.');
+  collector.denySandbox('jetski: no output produced - a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.');
   collector.denySandbox('jetski: RunCommand auto-denied by sandbox policy');
   collector.line(JSON.stringify({ event: 'result', result: { conversation_id: '11111111-aaaa-bbbb-cccc-123456789012', status: 'SUCCESS', response: '', denied_actions: [
     { action: 'read_file' }, { action: 'command' }, { action: 'C:\\Users\\name\\secret.txt' }, { action: 'rm -rf /' }, {}, null,

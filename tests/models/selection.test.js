@@ -98,7 +98,7 @@ test('the first doctor records a default the CLI does not state itself in config
   assert.deepEqual(first.defaultModels.agy, { model: 'gemini-3.8-flash-high', source: 'first-listed', recorded: true });
   assert.deepEqual(first.defaultModels.claude, { model: 'claude-observed-default', source: 'observed', recorded: true, asks: true });
   assert.deepEqual(first.defaultModels.codex, { model: 'gpt-6.1-sol', source: 'catalog' }, "Codex's declared default is not pinned");
-  assert.match(formatDoctorSummary(first), /agy: [^\n]* · model gemini-3\.8-flash-high \(first listed, recorded in config\.json\)/);
+  assert.match(formatDoctorSummary(first), /agy: [^\n]* - model gemini-3\.8-flash-high \(first listed, recorded in config\.json\)/);
   assert.deepEqual(loadConfig().backends, { codex: {}, claude: { defaultModel: 'claude-observed-default' }, agy: { defaultModel: 'gemini-3.8-flash-high' } });
   // A later catalog order no longer moves the default.
   adapterRegistry.agy = stub('agy', { listModels: async () => ({ ...AGY_CATALOG, models: [...AGY_CATALOG.models].reverse() }) });

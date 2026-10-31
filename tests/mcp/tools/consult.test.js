@@ -256,11 +256,11 @@ test('AX-001g: the footer shows the turn usage with the list price of the exact-
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const result = readResult(await handleConsult('consult', { proposal: 'usage?' }, tempDir));
     // fixture/fixture-model: 0.75 USD per million input and 3.75 per million output tokens.
-    assert.match(result.usage, /^200,000 input \u{b7} 20,000 output tokens \u{b7} list price ~0\.23 USD \(coagent8_PRICES_URL \d{4}-\d{2}-\d{2}\)$/u);
+    assert.match(result.usage, /^200,000 input - 20,000 output tokens - list price ~0\.23 USD \(coagent8_PRICES_URL \d{4}-\d{2}-\d{2}\)$/u);
     // The backend ran a resolved model the price list did not match: counts only.
     ran = 'fixture-model-2026-10-01';
     const resolved = readResult(await handleConsult('consult', { proposal: 'usage again?' }, tempDir));
-    assert.equal(resolved.usage, '200,000 input \u{b7} 20,000 output tokens');
+    assert.equal(resolved.usage, '200,000 input - 20,000 output tokens');
   } finally {
     adapterRegistry.agy = original;
   }

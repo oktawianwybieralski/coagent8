@@ -44,7 +44,7 @@ test('one pipeline pins provider, persists two turns and canonical messages, pre
   try {
     await saveConfig({defaultBackend:'agy',routing:{strategy:'fixed',allowedBackends:['agy']}});
     const first=await executeTask('PROMPT_WITH_PRIVATE_SNAPSHOT','User first turn',{backend:'agy'},tempDir);
-    assert.equal(first.isError,false); assert.match(readResult(first).text,/ · 1 op · /); assert.ok(first.result.output.includes('const answer = 42;'));
+    assert.equal(first.isError,false); assert.match(readResult(first).text,/ - 1 op - /); assert.ok(first.result.output.includes('const answer = 42;'));
     const handle=readResult(first).sessionHandle;
     const second=await executeTask('second prompt','User second turn',{session_handle:handle},tempDir);
     assert.equal(readResult(second).turn,2);

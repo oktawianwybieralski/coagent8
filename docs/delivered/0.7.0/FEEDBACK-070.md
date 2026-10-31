@@ -29,7 +29,7 @@ every scenario; these findings were fixed before the tag (owner direction
   not reviewed (owner decision 2026-10-20).
 
 Not part of 0.7.0: slow agy reviews with an unnamed sandbox denial, the
-closed-session footer `CLI · provider default`, and setup status counting a manual
+closed-session footer `CLI - provider default`, and setup status counting a manual
 registration of another runtime as registered. They are candidates for 0.8.0.
 
 ## Delivered
