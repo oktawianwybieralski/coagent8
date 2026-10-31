@@ -14,7 +14,8 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 
 | Card | Delivered in 0.8.0 | PRs |
 | --- | --- | --- |
-| [STANDARDS-001](STANDARDS-001.md) | Shared agent standards v0.1.0 and keyboard characters in CoAgent8 output | #96, adoption PR |
+| [STANDARDS-001](STANDARDS-001.md) | Shared agent standards v0.1.0 and keyboard characters in CoAgent8 output | #96, #97 |
+| [FORMAT-001](FORMAT-001.md) | One formatter (Prettier) checked in CI | formatter PR |
 
 ## Merged without a card record yet
 

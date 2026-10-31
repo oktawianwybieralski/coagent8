@@ -66,7 +66,7 @@ Labels not yet created in the repository are created by the owner.
 | Check | Command |
 | --- | --- |
 | Lint | `npm run lint:docs` (TSDoc) |
-| Format | none yet (`FORMAT-001` in the roadmap) |
+| Format | `npm run format:check`, `npm run format` (Prettier; Markdown keeps its own layout, `.prettierignore`) |
 | Typecheck | `npm run typecheck` |
 | Dependency boundaries | `npm run check:dependencies` |
 | Tests | `npm test` (all), `node tests/run.cjs <file>...` (focused) |
