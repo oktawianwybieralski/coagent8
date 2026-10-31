@@ -1252,10 +1252,12 @@ runs the checks itself before accepting the change (owner decision 2026-10-21).
 agy runs no command.
 
 **agy denials (#92).** Headless agy ends its turn without an answer at the first
-denied action: a command, or a file tool on a path outside the workspace. In a
-Git worktree or a clone, agy can follow the Git metadata to the main checkout
-and read there (reproduced natively on 2026-10-31: `denied_actions` named
-`read_file`). The writer prompt asks it to stay inside the workspace. After an
+denied action. That can be a command, or a file tool that headless mode does not
+approve. A `read_file` in another checkout outside the workspace was denied,
+while agy's own data directory stayed readable. Which other paths agy denies
+is not established. In a Git worktree or a clone, agy can follow the Git
+metadata to the main checkout and read there (reproduced natively on
+2026-10-31: `denied_actions` named `read_file`). The writer prompt asks it to stay inside the workspace. After an
 empty denied turn the adapter sends one recovery turn in the same conversation
 that names the denied actions and the workspace, within the remaining budget.
 Natively that turn finished the edit. If it fails too, the result is

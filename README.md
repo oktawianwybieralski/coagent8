@@ -276,9 +276,10 @@ still work but are not listed. Every client receives the same seven tools.
 (its sandbox, without network access); Claude Code's `Edit` and `Write` are
 limited to the workspace but its `Bash` is not; Antigravity runs without its
 sandbox and without a path limit, and only edits files (it runs no commands).
-Antigravity ends its turn when it reads a file outside the workspace, such as
-the main checkout of a Git worktree; CoAgent8 then retries once inside the
-workspace and names the denied action if that also fails.
+Antigravity can end its turn when it reads a file in another checkout, such as
+the main checkout of a Git worktree (observed with agy 1.4.12). CoAgent8 then
+retries once inside the workspace, and if that also fails, names the denied
+action.
 The agent reports each check as PASS, FAIL or NOT_RUN; run the checks yourself
 before accepting the change. Codex on Windows cannot run test runners that start
 processes from Node, such as `node --test`, Jest or Vitest. On Windows a cancelled agent's child
