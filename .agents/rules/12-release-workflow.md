@@ -667,8 +667,12 @@ the tag-creation rule:
 
 ## 9. History Recovery Protocol (Emergency Incident Exception)
 
-* History rewrites are strictly an emergency incident recovery mechanism, never routine cleanup.
-* An owner-authorized recovery must identify:
+* [Core rule 02](core/02-git-workflow.md#branches) forbids force pushes to `develop`,
+  a release line and tags, and this rule does not relax it. Only the owner's
+  explicit instruction for one incident, which precedes the core rules
+  ([AGENTS.md](../../AGENTS.md)), can order a history rewrite; an agent never
+  proposes one as routine cleanup or performs one without that instruction.
+* The owner's instruction for a recovery must identify:
   - The exact affected refs and expected old object IDs.
   - The consolidated replacement tree SHA.
   - Complete local validation evidence.

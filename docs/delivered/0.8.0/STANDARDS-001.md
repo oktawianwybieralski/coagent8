@@ -53,11 +53,25 @@ Not part of this record:
 
 ## Evidence
 
-Each PR body records the author checks (commands with PASS, FAIL or NOT_RUN,
-platform and Node version) and the review rounds. The final independent review
-of every merge:
+[#96](https://github.com/oktawianwybieralski/coagent8/pull/96), author checks
+on Windows 11, Node 24.21.0, at head `f312726`:
 
-| PR | Final independent review |
-| --- | --- |
-| [#96](https://github.com/oktawianwybieralski/coagent8/pull/96) | codex READY, coverage COMPLETE, no unresolved P1/P2, `syn_sess_edfebb71cb4e412b4cf2e39c`; agy READY, coverage COMPLETE, no unresolved P1/P2, `syn_sess_04b995d977abaeb1769a2b5a` |
-| Adoption PR | Recorded in its PR body; moved here by the next PR |
+- `npm run typecheck`, `npm run lint:docs`, `npm run docs` (no warning) and
+  `npm run build`: PASS.
+- `npm test`: PASS (936 tests: 932 pass, 0 fail, 3 skipped, 1 todo for the
+  expected WINDOWS-001a observation).
+- `npm run test:consumer`, `npm run package:vscode` and
+  `npm run changelog:check -- --with-commit "<title>"`: PASS.
+- CI: the six test jobs (three OSes, Node 24 and 26), Analyze and CodeQL
+  passed.
+
+Final independent review of #96, base `origin/develop`, scope
+`origin/develop...HEAD`:
+
+| Reviewer | Head | Verdict | Handle |
+| --- | --- | --- | --- |
+| codex | `f312726` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_edfebb71cb4e412b4cf2e39c` |
+| agy | `f312726` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_04b995d977abaeb1769a2b5a` |
+
+The adoption PR's author checks and final reviews are in its PR body; the next
+PR moves them here with its squash commit.
