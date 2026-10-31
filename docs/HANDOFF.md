@@ -20,7 +20,8 @@ Do not append another session transcript or treat old test counts as fresh evide
   prints a middle dot. The recorded Claude CLI output in
   `tests/fixtures/claude-cli/recordings/` stays verbatim and excluded with its
   reason. #94 is resolved by core rule 02 (merge only on the owner's explicit
-  instruction for that PR).
+  instruction for that PR). Record:
+  [STANDARDS-001 in 0.8.0](delivered/0.8.0/STANDARDS-001.md).
 
 - **Open issues on the 001w branch (owner request 2026-10-31):** the owner asked
   to fix the open issues first and then work toward `0.8.0` with a complete
