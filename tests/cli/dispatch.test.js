@@ -292,7 +292,7 @@ test('CLI-FIRST-001b1/001c/001e: subprocess execution verifies clean exits and s
     windowsHide: true,
   });
   assert.equal(modelsRes.status, 0);
-  assert.match(modelsRes.stdout, /^CoAgent8 models · /);
+  assert.match(modelsRes.stdout, /^CoAgent8 models - /);
 
   // 6. models --json subprocess
   const modelsJsonRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'models', '--backend', 'codex', '--json'], {
@@ -312,7 +312,7 @@ test('CLI-FIRST-001b1/001c/001e: subprocess execution verifies clean exits and s
     windowsHide: true,
   });
   assert.equal(doctorRes.status, 0);
-  assert.match(doctorRes.stdout, /^CoAgent8 models · /);
+  assert.match(doctorRes.stdout, /^CoAgent8 models - /);
 
   // 8. doctor --scope health --json subprocess
   const doctorHealthJsonRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'doctor', '--scope=health', '--backend=codex', '--json'], {

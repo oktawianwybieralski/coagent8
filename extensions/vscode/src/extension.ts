@@ -134,7 +134,7 @@ function describe(result: SetupStatus, registration: RegistrationStatus): string
     ? (registration.current ? 'in its chat' : registration.isNewer ? 'in its chat (newer version)' : 'in its chat for another version')
     : registration.state === 'manual' ? 'in its chat (manual entry, kept)'
       : registration.state === 'blocked' ? `chat configuration unreadable - ${registration.message}` : 'not in its chat';
-  return `${cli} · ${chat}`;
+  return `${cli} - ${chat}`;
 }
 /** Whether Manage Coding CLIs can install or sign in the CLI; ready, blocked and outdated CLIs need nothing it offers. */
 function needsAction(result: SetupStatus): boolean {
@@ -840,7 +840,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       picker.dispose();
     }
   }
-  /** A client's packages in one line, such as `5 enabled · 1 disabled · 1 update available`. */
+  /** A client's packages in one line, such as `5 enabled - 1 disabled - 1 update available`. */
   function skillSummary(skills: ManagedSkill[]): string {
     const count = (state: ManagedSkill['state']) => skills.filter(item => item.state === state).length;
     const updates = skills.filter(item => item.updateAvailable).length;
@@ -850,7 +850,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       count('absent') ? `${count('absent')} not installed` : '',
       updates ? `${updates} update${updates > 1 ? 's' : ''} available` : '',
       count('conflict') ? `${count('conflict')} changed outside CoAgent8` : '',
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean).join(' - ');
   }
   /** The packages each action can change; an action without any is not offered. */
   const SKILL_ACTIONS = [
@@ -862,7 +862,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
   /** A package's state as a short description. */
   function skillState(item: ManagedSkill): string {
     const state = item.state === 'absent' ? 'not installed' : item.state === 'conflict' ? 'changed outside CoAgent8' : item.state;
-    return `${state}${item.updateAvailable ? ' · update available' : ''}`;
+    return `${state}${item.updateAvailable ? ' - update available' : ''}`;
   }
   /**
    * Chooses an action, then packages, for one client's skills; Back returns one step.
@@ -938,11 +938,11 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
       ? { icon: '$(question)', text: `asks: ${PRICE_REASONS[row.approval.basis] ?? row.approval.basis}` }
       : { icon: '$(circle-large-outline)', text: 'runs without asking' };
   }
-  /** One backend's models in one line, such as `8 models · 2 ask · 1 deny`. */
+  /** One backend's models in one line, such as `8 models - 2 ask - 1 deny`. */
   function modelSummary(rows: ModelCandidate[]): string {
     const asks = rows.filter(row => row.approval.required).length, denied = rows.filter(row => row.approval.denied).length;
     const allowed = rows.filter(row => ruleOf(row) === 'allow').length;
-    return [`${rows.length} model${rows.length === 1 ? '' : 's'}`, asks ? `${asks} ask` : '', denied ? `${denied} deny` : '', allowed ? `${allowed} allow` : ''].filter(Boolean).join(' · ');
+    return [`${rows.length} model${rows.length === 1 ? '' : 's'}`, asks ? `${asks} ask` : '', denied ? `${denied} deny` : '', allowed ? `${allowed} allow` : ''].filter(Boolean).join(' - ');
   }
   /** The value a price rule's input means: a number, null for an empty `askAbovePrice`, else undefined (invalid). */
   function parsePriceRule(field: PriceRule, text: string): number | null | undefined {
@@ -980,22 +980,22 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
           .sort((a, b) => (b.price.outputUsdPerMTok ?? Infinity) - (a.price.outputUsdPerMTok ?? Infinity));
         return { placeholder: 'Choose a model to set its rule', items: rows.map(row => {
           const { icon, text } = approvalOf(row);
-          return { label: `${icon} ${row.model}`, description: [priceText(row), row.defaultSource ? 'default' : '', text].filter(Boolean).join(' · '), row };
+          return { label: `${icon} ${row.model}`, description: [priceText(row), row.defaultSource ? 'default' : '', text].filter(Boolean).join(' - '), row };
         }) };
       }, true, { busy: 'Reading models and prices...', details: () => report, step: [2, 3] });
       if (chosen === 'back') return 'back';
       if (!chosen?.row) return;
       const { row } = chosen, current = ruleOf(row);
       const rule = await choose({ title: row.model, step: [3, 3], back: true,
-        placeholder: `${priceText(row)} per million output tokens · applies to every client that runs CoAgent8`,
-        items: RULE_ITEMS.map(item => ({ ...item, description: item.rule === current ? `current · ${item.description}` : item.description })) });
+        placeholder: `${priceText(row)} per million output tokens - applies to every client that runs CoAgent8`,
+        items: RULE_ITEMS.map(item => ({ ...item, description: item.rule === current ? `current - ${item.description}` : item.description })) });
       if (rule === 'back') continue;
       if (!rule?.length) return;
       if (rule[0].rule === current) continue;
       // The entry that decides the model, such as the variant a default runs as, is the one changed.
       const target = row.approval.ruleEntry ?? row.model;
       await startTracked(() => setModelRule(target, rule[0].rule, configurationFile()));
-      vscode.window.setStatusBarMessage(`CoAgent8: ${target} · ${rule[0].rule ? RULE_TEXT[rule[0].rule] : 'price rules'}`, 5000);
+      vscode.window.setStatusBarMessage(`CoAgent8: ${target} - ${rule[0].rule ? RULE_TEXT[rule[0].rule] : 'price rules'}`, 5000);
     }
   }
   register('coagent8.manageModelApprovals', async () => {
@@ -1079,7 +1079,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
     const compatible = result.installed && result.compatibility === 'supported';
     const section = (label: string, lines: MenuItem[]): MenuItem[] => lines.length ? [separator(label), ...lines] : [];
     const installed: MenuItem[] = installations.map(item => item === inUse
-      ? { label: `$(pass-filled) ${sourceName(client, item)}`, description: [sourcePath(client, item, home), configured?.found ? 'in use, selected' : 'in use'].filter(Boolean).join(' · ') }
+      ? { label: `$(pass-filled) ${sourceName(client, item)}`, description: [sourcePath(client, item, home), configured?.found ? 'in use, selected' : 'in use'].filter(Boolean).join(' - ') }
       : { label: `$(circle-large-outline) ${sourceName(client, item)}`, description: sourcePath(client, item, home), action: 'use', installation: item });
     if (configured && !configured.found) {
       const unavailableHere = configured.value === VSCODE_EXTENSION_EXECUTABLE && !extensionInstalled;

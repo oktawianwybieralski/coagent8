@@ -27,7 +27,7 @@ function sink() {
 test('coagent8 doctor defaults to scope models and prints human summary or JSON', async () => {
   const text = sink(), json = sink(), err = sink();
   assert.equal(await runDoctorCli([], text.stream, err.stream), 0);
-  assert.match(text.text(), /^CoAgent8 models · /);
+  assert.match(text.text(), /^CoAgent8 models - /);
   assert.equal(err.text(), '');
 
   assert.equal(await runDoctorCli(['--json', '--backend', 'codex'], json.stream, err.stream), 0);
@@ -41,7 +41,7 @@ test('coagent8 doctor defaults to scope models and prints human summary or JSON'
 test('coagent8 doctor --scope health prints health diagnostics or JSON matching MCP doctor', async () => {
   const text = sink(), json = sink(), err = sink();
   assert.equal(await runDoctorCli(['--scope', 'health'], text.stream, err.stream), 0);
-  assert.match(text.text(), /^CoAgent8 doctor: \w+ · v\d+\.\d+\.\d+.* · runtime: .* · default backend:/);
+  assert.match(text.text(), /^CoAgent8 doctor: \w+ - v\d+\.\d+\.\d+.* - runtime: .* - default backend:/);
   assert.equal(err.text(), '');
 
   assert.equal(await runDoctorCli(['--scope=health', '--backend=codex', '--json'], json.stream, err.stream), 0);

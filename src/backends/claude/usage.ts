@@ -2,11 +2,14 @@
 import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';
 
 /**
- * One limit line, e.g. `Current session: 40% used · resets Oct 5, 7:20pm (America/New_York)`
- * or `Current week (all models): 15% used · resets Oct 6, 2:15pm (America/New_York)`
- * (observed with Claude Code 2.1.289).
+ * One limit line, e.g. `Current session: 40% used <sep> resets Oct 5, 7:20pm (America/New_York)`
+ * or `Current week (all models): 15% used <sep> resets Oct 6, 2:15pm (America/New_York)`
+ * (observed with Claude Code 2.1.289). Claude prints a middle dot (U+00B7) as `<sep>`; the
+ * pattern accepts any one separator character there, because agent-standards core rule 00
+ * keeps that character out of authored files (the recordings in
+ * `tests/fixtures/claude-cli/recordings/` keep it verbatim).
  */
-const LIMIT_LINE = /^Current (session|week)(?: \(([^)\n]+)\))?: (\d{1,3})% used(?: · resets ([^(\n]+?) \(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?[ \t]*$/gm;
+const LIMIT_LINE = /^Current (session|week)(?: \(([^)\n]+)\))?: (\d{1,3})% used(?: \S resets ([^(\n]+?) \(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?[ \t]*$/gm;
 const RESET_TIME = /^(?:([A-Z][a-z]{2}) (\d{1,2}), )?(\d{1,2})(?::(\d{2}))?(am|pm)$/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 /** Week scopes that limit every model; model-specific weekly limits do not block the backend. */

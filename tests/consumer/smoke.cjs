@@ -93,11 +93,11 @@ function npmRun(args,cwd=root) {
     const applied=dispatch(['cleanup',`--apply=${plan.token}`]);assert.equal(applied.status,0,applied.stderr);
     assert.match(dispatch(['--help']).stdout,/cleanup/);
     const modelsOut=dispatch(['models']);assert.equal(modelsOut.status,0,modelsOut.stderr);
-    assert.match(modelsOut.stdout,/^CoAgent8 models · /);
+    assert.match(modelsOut.stdout,/^CoAgent8 models - /);
     const modelsJson=dispatch(['models','--json']);assert.equal(modelsJson.status,0,modelsJson.stderr);
     assert.equal(JSON.parse(modelsJson.stdout).scope,'models');
     const doctorOut=dispatch(['doctor']);assert.equal(doctorOut.status,0,doctorOut.stderr);
-    assert.match(doctorOut.stdout,/^CoAgent8 models · /);
+    assert.match(doctorOut.stdout,/^CoAgent8 models - /);
     const doctorJson=dispatch(['doctor','--json']);assert.equal(doctorJson.status,0,doctorJson.stderr);
     assert.equal(JSON.parse(doctorJson.stdout).scope,'models');
     const sessionListOut=dispatch(['session','list']);assert.equal(sessionListOut.status,0,sessionListOut.stderr);

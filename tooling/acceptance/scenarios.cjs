@@ -34,7 +34,8 @@ ${text.slice(-500)}`;
 
 function footer(text) {
   const handle = /session_handle=(\S+)/.exec(text);
-  const line = /CoAgent8: ([a-z]+) · ([^·\n]+?) · /.exec(text);
+  // Model names contain hyphens, so the model ends at the separator before the duration.
+  const line = /CoAgent8: ([a-z]+) - (.+?) - \d+\.\ds\b/.exec(text);
   const verdict = /^Verdict: (READY|BLOCKED)/m.exec(text);
   return { handle: handle ? handle[1] : null, backend: line ? line[1] : null, model: line ? line[2].trim() : null, verdict: verdict ? verdict[1] : null };
 }

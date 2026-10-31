@@ -19,7 +19,7 @@ test('Claude /usage parser reads the recorded session and weekly limits and pick
 });
 
 test('Claude /usage parser ignores model-specific weekly limits, API billing text and malformed lines', () => {
-  const text = 'Current session: 10% used · resets 9:30pm (America/New_York)\nCurrent week (Opus): 100% used · resets Oct 9, 1:00am (America/New_York)\nCurrent week (all models): 140% used';
+  const text = 'Current session: 10% used - resets 9:30pm (America/New_York)\nCurrent week (Opus): 100% used - resets Oct 9, 1:00am (America/New_York)\nCurrent week (all models): 140% used';
   const quota = parseClaudeUsage(text, NOW);
   assert.deepEqual(quota.buckets.map(b => b.id), ['session']);
   assert.equal(quota.headroomPercent, 90);

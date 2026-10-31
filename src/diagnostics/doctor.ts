@@ -482,7 +482,7 @@ function formatPrices(list: DoctorPrices | null): string {
 
 /** Names the default model and where it came from. */
 function formatDefault(selected: DoctorDefaultModel | undefined): string {
-  return selected ? ` · model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''}${selected.denied ? ', denied by the user' : ''})` : '';
+  return selected ? ` - model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''}${selected.denied ? ', denied by the user' : ''})` : '';
 }
 
 /** What a backend accepts beyond the listed models: unlisted names, the probe's aliases, or any name. */
@@ -520,18 +520,18 @@ export const DOCTOR_RUNTIME_PATH_MAX_BYTES = 256;
  */
 export function formatDoctorSummary(report: DoctorReport): string {
   const ids = Object.keys(report.backends) as ProviderId[];
-  const versionPart = report.server_version ? ` · v${report.server_version}` : '';
+  const versionPart = report.server_version ? ` - v${report.server_version}` : '';
   const boundedRuntime = report.runtime_path ? truncateToByteLength(report.runtime_path, DOCTOR_RUNTIME_PATH_MAX_BYTES, '...[truncated]') : '';
-  const runtimePart = boundedRuntime ? ` · runtime: ${boundedRuntime}` : '';
+  const runtimePart = boundedRuntime ? ` - runtime: ${boundedRuntime}` : '';
   return fitSummary(report.selection, (rows, limits) => {
-    const lines = [`CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} · default backend: ${report.default_backend} · ${formatPrices(report.prices)}`];
+    const lines = [`CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} - default backend: ${report.default_backend} - ${formatPrices(report.prices)}`];
     for (const id of ids) {
       const probe = report.backends[id]!;
       if (!probe.installed) { lines.push(`${id}: not installed`); continue; }
       const readiness = report.readiness?.[id];
       const state = readiness ? READINESS_LABEL[readiness.state] : report.ready_backends.includes(id) ? 'ready' : 'not ready';
-      const lastTurn = readiness?.lastSuccess ? ` · last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}` : '';
-      lines.push(`${id}: ${state} · ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} · ${formatQuota(report.quotas[id])}${lastTurn}`);
+      const lastTurn = readiness?.lastSuccess ? ` - last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}` : '';
+      lines.push(`${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn}`);
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
       const unlisted = formatUnlisted({ listed: Boolean(probe.models?.length), acceptsUnlisted: probe.acceptsUnlisted, availableModels: probe.availableModels });
       if (unlisted) lines.push(unlisted);
@@ -755,11 +755,11 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
 export function formatModelSummary(report: ModelReport): string {
   const ids = Object.keys(report.backends) as ProviderId[];
   return fitSummary(report.selection, (rows, limits) => {
-    const lines = [`CoAgent8 models · ${formatPrices(report.prices)} · scope "health" diagnoses sign-in and quota`];
+    const lines = [`CoAgent8 models - ${formatPrices(report.prices)} - scope "health" diagnoses sign-in and quota`];
     for (const id of ids) {
       const backend = report.backends[id]!;
       if (!backend.installed) { lines.push(`${id}: not installed`); continue; }
-      lines.push(`${id}${backend.allowed ? '' : ' (not allowed by routing.allowedBackends)'} · ${backend.version || 'unknown version'}${formatDefault(backend.defaultModel)}`);
+      lines.push(`${id}${backend.allowed ? '' : ' (not allowed by routing.allowedBackends)'} - ${backend.version || 'unknown version'}${formatDefault(backend.defaultModel)}`);
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
       const unlisted = formatUnlisted({ listed: Boolean(backend.catalogSource), acceptsUnlisted: backend.acceptsUnlisted, availableModels: backend.availableModels });
       if (unlisted) lines.push(unlisted);

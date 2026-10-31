@@ -131,10 +131,10 @@ test('doctor summary is a few lines, backend filter keeps other cached quotas, f
     assert.match(summary, /\nagy: ready[^\n]*\n {2}models, USD per million output tokens, date added to the price list: agy-model \? \? \[default, ask: no price\], gemini-3\.8-flash \(high\|low required\) 3\.75 2026-03-15(\n|$)/,
       'the default and the catalog the CLI lists, with prices and the efforts a model needs');
     assert.match(summary, /\n {2}also accepted: claude-model-0, [^\n]*claude-model-13, or a full model id/, 'without a catalog, the aliases the probe knows');
-    assert.match(summary, /^CoAgent8 doctor: operational · v\d+\.\d+\.\d+.* · runtime: .* · default backend: auto · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
+    assert.match(summary, /^CoAgent8 doctor: operational - v\d+\.\d+\.\d+.* - runtime: .* - default backend: auto - prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\)\n/);
     // The fixture models have no price, so the policy asks before each turn and doctor says so.
-    assert.match(summary, /claude: ready · claude 1\.0\.0 · model claude-model \(CLI config, asks each turn\) · 5h 60% left, resets 2026-10-07T12:00:00Z/);
-    assert.match(summary, /agy: ready · agy 1\.0\.0 · model agy-model \(CLI config, asks each turn\) · weekly 75% left/);
+    assert.match(summary, /claude: ready - claude 1\.0\.0 - model claude-model \(CLI config, asks each turn\) - 5h 60% left, resets 2026-10-07T12:00:00Z/);
+    assert.match(summary, /agy: ready - agy 1\.0\.0 - model agy-model \(CLI config, asks each turn\) - weekly 75% left/);
     assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, 'within the bound agy shows inline');
     // Summary and full report state the same rows (AX-001).
     assert.deepEqual(report.selection.map(row => [row.backend, row.model, row.price.outputUsdPerMTok, row.price.match, row.approval.required, row.defaultSource]), [
@@ -225,7 +225,7 @@ test('the doctor summary drops whole model rows to stay within the inline bound 
   };
   const summary = formatDoctorSummary(report);
   assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, `${Buffer.byteLength(summary)} B`);
-  assert.match(summary, /^CoAgent8 doctor: operational · default backend: auto · prices openrouter 2026-09-01 \(300 models priced, stale: meets no price limit\)\n/);
+  assert.match(summary, /^CoAgent8 doctor: operational - default backend: auto - prices openrouter 2026-09-01 \(300 models priced, stale: meets no price limit\)\n/);
   const codexLine = summary.split('\n').find(line => line.includes('codex-catalog-model-0'));
   const counted = Number(codexLine.match(/, \+(\d+) more \(detail: full\); reasoning_effort low\|high$/)[1]);
   const shown = codexLine.replace(/^ {2}models, USD per million output tokens, date added to the price list: /, '').replace(/, \+\d+ more.*$/, '').split(', ');
@@ -258,7 +258,7 @@ test('formatDoctorSummary bounds long runtime path to prevent summary overflow (
   const summary = formatDoctorSummary(report);
   assert.ok(Buffer.byteLength(summary) <= DOCTOR_SUMMARY_MAX_BYTES, 'summary fits within DOCTOR_SUMMARY_MAX_BYTES');
   assert.match(summary, /\.\.\.\[truncated\]/);
-  const runtimeMatch = summary.match(/ · runtime: (.*?) · default backend:/);
+  const runtimeMatch = summary.match(/ - runtime: (.*?) - default backend:/);
   assert.ok(runtimeMatch, 'runtime path is included in header');
   assert.ok(Buffer.byteLength(runtimeMatch[1]) <= DOCTOR_RUNTIME_PATH_MAX_BYTES);
 });
@@ -284,14 +284,14 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
     const summary = (await handleDoctor({})).content[0].text;
     assert.deepEqual(summary.split('\n'), [
       summary.split('\n')[0],
-      'codex · codex 2.0.0 · model gpt-6-luna (CLI default)',
+      'codex - codex 2.0.0 - model gpt-6-luna (CLI default)',
       '  models, USD per million output tokens, date added to the price list: gpt-6-luna 0.5 2026-02-01 [default], gpt-6-astra 50 2026-03-01 [ask: askAbovePrice]; reasoning_effort low|high',
       'agy: not installed',
-      'claude · claude 2.0.0 · model claude-haiku-4-5-20251001 (CLI default)',
+      'claude - claude 2.0.0 - model claude-haiku-4-5-20251001 (CLI default)',
       '  models, USD per million output tokens, date added to the price list: claude-haiku-4-5-20251001 5 2024-06-01 [default]',
       '  also accepted: unlisted names the CLI resolves itself',
     ]);
-    assert.match(summary, /^CoAgent8 models · prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\) · scope "health" diagnoses sign-in and quota\n/);
+    assert.match(summary, /^CoAgent8 models - prices coagent8_PRICES_URL \d{4}-\d{2}-\d{2} \(\d+ models priced\) - scope "health" diagnoses sign-in and quota\n/);
     assert.deepEqual(quotaReads, [], 'the model view reads no quota');
     assert.deepEqual(loadConfig().backends.codex, {}, 'and records no default');
     const full = (await handleDoctor({ detail: 'full', backend: 'claude' })).structuredContent;
@@ -306,7 +306,7 @@ test('doctor defaults to the model view: cached catalogs, defaults and prices, n
     fs.writeFileSync(require('../../src/config.ts').getConfigFile(), JSON.stringify({ routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] },
       governance: { models: { allow: ['claude-haiku-4-5-20251001'], ask: ['gpt-6-luna'], deny: ['gpt-6-astra'] } } }));
     const ruled = (await handleDoctor({})).content[0].text.split('\n');
-    assert.ok(ruled.includes('codex · codex 2.0.0 · model gpt-6-luna (CLI default, asks each turn)'), ruled.join('\n'));
+    assert.ok(ruled.includes('codex - codex 2.0.0 - model gpt-6-luna (CLI default, asks each turn)'), ruled.join('\n'));
     assert.ok(ruled.includes('  models, USD per million output tokens, date added to the price list: gpt-6-luna 0.5 2026-02-01 [default, ask: user list], gpt-6-astra 50 2026-03-01 [deny]; reasoning_effort low|high'), ruled.join('\n'));
     assert.ok(ruled.includes('  models, USD per million output tokens, date added to the price list: claude-haiku-4-5-20251001 5 2024-06-01 [default, allow]'), ruled.join('\n'));
     await saveConfig({ governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: ['gpt-6-luna'] } } });
@@ -637,7 +637,7 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     assert.deepEqual(after.ready_backends, ['agy']);
     assert.equal(after.readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
     const summary = formatDoctorSummary(after);
-    assert.match(summary, /^agy: ready · agy-ready-fixture .* · last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash$/m);
+    assert.match(summary, /^agy: ready - agy-ready-fixture .* - last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash$/m);
     // An invalid model name is not recorded as evidence.
     await recordTurnSuccess('agy', '');
     assert.equal((await runDoctor({ backend: 'agy' })).readiness.agy.lastSuccess.model, 'gemini-3.8-flash');

@@ -191,13 +191,14 @@ function run() {
         num_turns: 1,
         usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
         // coagent8_FIXTURE_DENIED_ACTION=read_file: agy 1.4.12 (2026-10-31) denying a file outside the workspace (#92).
+        // Its stderr line below is verbatim except the em dash after "produced", written as "-" (agent-standards core rule 00).
         // A comma list names several actions; coagent8_FIXTURE_RETRY_DENIED_ACTION replaces it on the recovery turn.
         denied_actions: ((isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_DENIED_ACTION) || process.env.coagent8_FIXTURE_DENIED_ACTION || 'command')
           .split(',').map(action => ({ action, display_name: 'RunCommand' })),
       },
     };
     const denial = () => process.stderr.write(process.env.coagent8_FIXTURE_DENIED_ACTION === 'read_file'
-      ? 'jetski: no output produced — a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.\n'
+      ? 'jetski: no output produced - a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.\n'
       : 'jetski: RunCommand auto-denied by sandbox policy\n');
     if (mode === 'sandbox-denied-stderr-first') {
       process.stderr.write('jetski: RunCommand auto-denied by sandbox policy\n', () => setTimeout(() => send(terminal), 100));

@@ -318,7 +318,7 @@ still need your approval.
 
 Every result also shows the tokens the turn used, as the backend reported them,
 and what they cost at list price when every count and the model's exact price
-are known: `Usage: 12,400 input (9,600 cached) · 900 output (300 reasoning) tokens · list price ~0.014 USD (openrouter 2026-10-19)`.
+are known: `Usage: 12,400 input (9,600 cached) - 900 output (300 reasoning) tokens - list price ~0.014 USD (openrouter 2026-10-19)`.
 Unknown counts are left out, never shown as zero. Cache writes are priced by how
 long they are kept; agy reports no cache counts, and a turn whose input reached a
 size the list prices differently (such as 272,000 tokens for some OpenAI models)
@@ -546,5 +546,5 @@ distribution, or to suggest endorsement. Accurate references to CoAgent8, such
 as naming it as the origin of a fork or describing compatibility, need no
 permission.
 
-Created by [Oktawian Wybieralski](https://oki.dev) ·
+Created by [Oktawian Wybieralski](https://oki.dev) -
 [GitHub repository](https://github.com/oktawianwybieralski/coagent8)

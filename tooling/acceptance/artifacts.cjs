@@ -230,7 +230,7 @@ if (args[0] === 'doctor') {
       readiness: { codex: { status: 'ready' }, claude: { status: 'ready' }, agy: { status: 'ready' } }
     }));
   } else {
-    console.log('CoAgent8 doctor: operational · version ${version}');
+    console.log('CoAgent8 doctor: operational - version ${version}');
   }
   process.exit(0);
 }

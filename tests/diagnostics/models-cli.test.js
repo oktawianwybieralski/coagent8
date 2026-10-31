@@ -15,7 +15,7 @@ function sink() {
 test('coagent8 models prints the model view as text or as the report the VS Code menu reads', async () => {
   const text = sink(), json = sink(), err = sink();
   assert.equal(await runModelsCli([], text.stream, err.stream), 0);
-  assert.match(text.text(), /^CoAgent8 models · /);
+  assert.match(text.text(), /^CoAgent8 models - /);
   assert.equal(await runModelsCli(['--json', '--backend', 'codex'], json.stream, err.stream), 0);
   const report = JSON.parse(json.text());
   assert.equal(report.scope, 'models');

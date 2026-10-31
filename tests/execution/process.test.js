@@ -133,7 +133,8 @@ test('F08: UTF-8, CRLF, split emoji, complete oversized lines and trailing fragm
     assert.throws(() => createLineDecoder(() => {}, 20).push(Buffer.from(text)), { code: 'BUFFER_LIMIT' });
   }
   for (let limit = 0; limit < 30; limit++) {
-    const output = truncateToByteLength('😀'.repeat(50), limit, '…');
+    // A multibyte suffix is cut on a character boundary too.
+    const output = truncateToByteLength('😀'.repeat(50), limit, 'é');
     assert.ok(Buffer.byteLength(output) <= limit); assert.ok(!output.includes('�'));
   }
 });
