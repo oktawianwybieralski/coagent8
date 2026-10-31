@@ -23,7 +23,8 @@ export const MAX_LISTED_CHANGES = 200;
 /** Working files larger than this are compared by size and modification time only. */
 const MAX_HASHED_BYTES = 16 * 1024 * 1024;
 
-interface PathState {
+/** One path of a {@link WorkspaceSnapshot}: its Git status and a signature of its content. */
+export interface PathState {
   /** Porcelain v1 status code, such as ` M`, `A `, `??` or ` D`. */
   status: string;
   /** Staged mode and blob, when the path differs from HEAD in the index. */
