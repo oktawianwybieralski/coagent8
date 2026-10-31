@@ -1209,8 +1209,8 @@ Owner request 2026-10-21: a coordinating agent hands a coding task to another
 backend, which changes files in the workspace, and gets the observed changes
 back. This is the synchronous first step of [DELEGATE-001](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up);
 asynchronous start, `wait` and caller wake-up (`001c-e`) keep this contract and
-add an immediate handle. `consult` and `review` stay read-only, so a reviewer
-never edits what it judges.
+add an immediate handle ([asynchronous delegation](#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented)).
+`consult` and `review` stay read-only, so a reviewer never edits what it judges.
 
 **Tool `delegate`.** `task` (required): objective and acceptance criteria,
 naming files instead of pasting them. `scope` (optional): workspace-relative
@@ -1236,7 +1236,7 @@ stay disabled and verified as in the read-only profiles.
 | --- | --- | --- |
 | Codex | `sandbox_mode="workspace-write"` with network off; Windows `unelevated`; the thread must report `workspaceWrite`, `never` and no network | Enforced by the OS sandbox: writes outside the workspace are denied |
 | Claude Code | `--restricted --tools Read,Glob,Grep,Edit,Write,Bash`, `dontAsk`, allow rules `Edit(./**)`, `Write(./**)` and `Bash`, the workspace as working directory, hooks and MCP off | `Edit`/`Write` enforced by Claude Code (`--restricted` keeps file tools in the working directory; a write outside was denied natively); `Bash` is not contained |
-| agy | No `--sandbox`, `--mode accept-edits` (edits approved, every command denied), `--add-dir <workspace>` | Not enforced; prompt only |
+| agy | No `--sandbox`, `--mode accept-edits` (edits approved, every command denied), `--add-dir <workspace>` | Not enforced for writes; prompt only. A `read_file` of another checkout outside the workspace was auto-denied natively (agy 1.4.12, 2026-10-31), while agy's own data directory stayed readable |
 
 **Evidence.** Before the turn the server records HEAD and the `git status` of
 the tree, with a content hash of every dirty file. After it, the result lists
@@ -1249,7 +1249,22 @@ switch branches; the server never does any of them and never cleans up.
 **Checks.** The worker runs `checks` where it can and reports each as PASS, FAIL
 or NOT_RUN; a denied command is reported, not worked around. The calling agent
 runs the checks itself before accepting the change (owner decision 2026-10-21).
-agy runs no command. Codex 0.162 on Windows cannot start a process from Node
+agy runs no command.
+
+**agy denials (#92).** Headless agy ends its turn without an answer at the first
+denied action: a command, or a file tool on a path outside the workspace. In a
+Git worktree or a clone, agy can follow the Git metadata to the main checkout
+and read there (reproduced natively on 2026-10-31: `denied_actions` named
+`read_file`). The writer prompt asks it to stay inside the workspace. After an
+empty denied turn the adapter sends one recovery turn in the same conversation
+that names the denied actions and the workspace, within the remaining budget.
+Natively that turn finished the edit. If it fails too, the result is
+`POLICY_DENIED`. The error and the warning in the session history name the
+denied actions. They name only identifiers from agy's report or its stderr
+line, at most five, and never paths, arguments or command text. Observed
+changes cover both turns.
+
+Codex 0.162 on Windows cannot start a process from Node
 inside its sandbox (`spawn EPERM`, verified natively 2026-10-21), so test runners
 that spawn processes fail there.
 
@@ -1257,6 +1272,124 @@ that spawn processes fail there.
 can. On Windows a cancelled or timed-out worker's descendants can outlive it
 until `WINDOWS-001b-e` (`CUR-011`), so they may still change files. Checks are
 reported by the worker, not observed by the server (`COAGENT-004b`).
+
+## Asynchronous delegation and caller wake-up (DELEGATE-001c, not implemented)
+
+Owner request 2026-10-21: `delegate` delegates. The call returns as soon as the
+worker runs, and the caller is woken when the worker finishes, so a calling
+agent no longer wraps the blocking call in a subagent of its own vendor that
+only waits. Planned with a Codex consultation (`gpt-6.1-sol`, session
+`syn_sess_973e692be03b734e8b5fdbaa`); its claims about the current code were
+checked against `src/mcp/server.ts`, `src/execution/delegation.ts` and
+`src/sessions/writer.ts`. Open owner decisions are listed in the
+[DELEGATE-001 card](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
+
+**Mode.** `mode: "async" | "sync"`. `async` is the target default; `sync` keeps
+the DELEGATE-001w contract. There is no `auto`: the same request runs the same
+way in every client, and client capability selects only how the caller is woken.
+
+**Start.** Before the call returns, the server validates the request, obtains
+model approval (elicitation needs the open request), acquires the writer,
+captures the Git baseline and registers the task durably; the existing refusal
+order (writer before consent) stays. "At once" means before the worker
+finishes, not before consent. The state is `running` only after the backend
+acknowledged the launch, `queued` before. Every delegation, a fix round
+included, gets its own task handle; `session_handle` stays the worker's
+continuation identity. A repeated start with the same request id returns the
+existing task, so a lost response cannot start a second writer. The response is
+the usual Markdown execution result:
+
+~~~text
+Delegation started.
+task_handle: task_123
+session_handle: syn_sess_456
+state: running
+wakeup: background_wait
+wait_argv: ["<node>", "<runtime>/index.cjs", "wait", "--data-dir", "<dir>", "task_123"]
+~~~
+
+followed by the instruction for the caller: start the wait command with the
+client's background-task facility now, continue independent work, and do not
+edit the work tree while the worker runs. `wakeup` is `background_wait`,
+`armed` (a push adapter registered successfully) or `none` (fetch the result
+through `session` or a bounded `wait`).
+
+**Wait command.** The server builds it from its own process, so no PATH, shim or
+standalone CLI is needed: `process.execPath`, the running bundle
+(`getRuntimePath()`), `wait`, the server's data directory as `--data-dir`, so
+the waiter reads the same session store whatever environment the client's
+shell passes, and the task handle. Environment the runtime itself needs is
+returned beside it, such as `ELECTRON_RUN_AS_NODE=1` when the server runs on
+VS Code's Electron. The command is returned as a JSON argv and as one quoted
+command line; the skill tells the agent to run it verbatim. `coagent8 wait` on
+PATH is only a documented shorthand for npm installs. `wait` exits on
+completion, cancellation or its own bound; a waiter that times out or is
+stopped never cancels the worker. Exit codes follow the CLI contract.
+
+**Result.** `session` gains task status and result retrieval (today it has list,
+history and close). The complete result, observed Git changes included, is
+persisted independently of the optional transcript history before any
+notification. Completed, notified and fetched are separate, deduplicated states.
+After cancellation wins no new notification is dispatched; one already
+delivered cannot be withdrawn.
+
+**Lifecycle.** The worker outlives the MCP request, not the server: client
+disconnect and server shutdown cancel it, and there is no detached daemon. One
+task-owned operation replaces the request-owned flow:
+
+~~~text
+prepare/approve -> acquire writer, register -> execute -> stop descendants
+  -> capture Git evidence -> persist result -> release writer -> notify
+~~~
+
+Today the MCP handler passes the request's abort signal and call budget and
+disposes the budget on return, and `executeDelegation` releases the writer
+when the request ends; asynchronous execution needs task-owned cancellation and
+deadlines, and shutdown and `cancel` await the whole operation, evidence and
+release included. The writer is never released because the response returned
+or cancellation was requested. After a crash the task is `interrupted`; partial
+changes stay and are inspected before a retry. The writer record is taken over
+only when the previous writer cannot continue: today a record whose server
+process is gone is taken over, which on Windows assumes that no descendant
+survived (`WINDOWS-001b-e`).
+
+**Caller identity (`001b`).** The task records the caller's session or thread id,
+from an inherited variable or an explicit argument. Claude Code sets
+`CLAUDE_CODE_SESSION_ID` in the processes it starts (seen 2026-10-21 in a Bash
+tool process of the VS Code extension 2.1.306; the MCP server process is still
+to be checked); Codex and agy are to be researched. The id filters
+`session list` and routes a wake-up; it never authorizes cancel or close.
+
+**Wake-up.** MCP cannot start a turn in the caller: notifications, sampling,
+elicitation and MCP tasks do not. Each client therefore needs its own mechanism:
+
+| Client | Mechanism | Status |
+| --- | --- | --- |
+| Claude Code | The agent runs the returned wait command as a background task; its exit starts a new turn | Observed 2026-10-13 in the VS Code extension |
+| Claude Code | Channels: the server declares `experimental['claude/channel']` and emits `notifications/claude/channel`; the event arrives in the open session, queued while it is busy | Research preview (documentation read 2026-10-21): registers only with `--channels` for an allowlisted plugin (the default list is `claude-plugins-official`) or with `--dangerously-load-development-channels`, which works only interactively and is ignored with `-p` and the Agent SDK; needs claude.ai or Console sign-in and `channelsEnabled` on Team and Enterprise; a server that negotiates MCP revision 2026-07-28 is not registered by the v2 MCP client. Untested in the VS Code extension; usable only after an official listing |
+| Codex | `codex queue --thread <id>` | Present in codex-cli 0.162; idle, busy and unloaded threads untested |
+| agy | Background `run_command` re-invocation | Claimed; untested |
+| Any | `session` or a bounded `wait` | Fallback; the caller has to ask |
+
+Rejected: resuming the caller's session from another process
+(`claude --resume`), which forks its history and never reaches the open window,
+and Claude Code's private messaging pipe (`CLAUDE_CODE_MESSAGING_SOCKET`), an
+undocumented protocol that falls under step 4 of `DELEGATE-001a` and never ships
+without a separate owner decision.
+
+**Server-owned loop (`001f2`).** After asynchronous delegation works, supervision
+moves from the caller into CoAgent8's application layer, because it needs no
+model: after the worker's turn the server runs `checks` in the candidate under a
+command policy (working directory, deadline, output bound, recorded exits),
+returns failures to the same worker session for a bounded number of rounds,
+then requests an independent read-only review in a separate session (another
+backend preferred; another backend alone is not independence), and wakes the
+caller once with the final result. Every round is budgeted and approved before
+acceptance, or the task pauses for input. The writer is held across rounds; a
+later change invalidates earlier check and review evidence. Merge and
+publication stay outside the loop. It depends on `COAGENT-002` to `004` and
+`WINDOWS-001b-e`; containment alone does not authorize the server to run
+arbitrary `checks` strings.
 
 ## Owner decisions
 
