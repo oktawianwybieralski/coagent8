@@ -133,6 +133,16 @@ function run() {
   }
 
   // #89 (agy 1.4.3): agy's own continuation retries ran out at the output token limit.
+  // A finish reason MAX_TOKENS as agy's consultation described it: a success without an
+  // answer, or a partial answer followed by an unrelated failure.
+  if (mode === 'max-tokens-empty' || mode === 'max-tokens-failure') {
+    send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'DONE', step_type: 'agent_response', finish_reason: 'MAX_TOKENS',
+      ...(mode === 'max-tokens-failure' ? { text_delta: 'partial' } : {}) } });
+    send({ event: 'result', result: mode === 'max-tokens-empty'
+      ? { conversation_id: sid, status: 'SUCCESS', response: '' }
+      : { conversation_id: sid, status: 'ERROR', error: 'internal backend crash' } });
+    return;
+  }
   if (mode === 'output-limit' || mode === 'output-limit-empty') {
     if (mode === 'output-limit') {
       send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'D1: first part of a long answer' } });
@@ -181,7 +191,9 @@ function run() {
         num_turns: 1,
         usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
         // coagent8_FIXTURE_DENIED_ACTION=read_file: agy 1.4.12 (2026-10-31) denying a file outside the workspace (#92).
-        denied_actions: [{ action: process.env.coagent8_FIXTURE_DENIED_ACTION || 'command', display_name: 'RunCommand' }],
+        // A comma list names several actions; coagent8_FIXTURE_RETRY_DENIED_ACTION replaces it on the recovery turn.
+        denied_actions: ((isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_DENIED_ACTION) || process.env.coagent8_FIXTURE_DENIED_ACTION || 'command')
+          .split(',').map(action => ({ action, display_name: 'RunCommand' })),
       },
     };
     const denial = () => process.stderr.write(process.env.coagent8_FIXTURE_DENIED_ACTION === 'read_file'

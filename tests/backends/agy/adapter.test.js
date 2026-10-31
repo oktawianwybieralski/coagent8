@@ -160,8 +160,12 @@ test('#92: a workspace-write turn names the denied action and recovers once insi
     assert.equal(empty.status, 'failed');
     assert.equal(empty.error.code, 'POLICY_DENIED');
     assert.match(empty.error.message, /after headless mode denied action read_file, including on automatic retry inside the workspace: /);
+
+    Object.assign(process.env, { coagent8_FIXTURE_DENIED_ACTION: 'a1,a2,a3,a4,a5', coagent8_FIXTURE_RETRY_DENIED_ACTION: 'b1,b2,b3,b4,b5' });
+    const many = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
+    assert.match(many.error.message, /denied actions a1, a2, a3, a4, a5, including/, 'both turns together still name five actions at most');
   } finally {
-    for (const key of ['coagent8_FIXTURE_MODE', 'coagent8_FIXTURE_DENIED_ACTION', 'coagent8_FIXTURE_CAPTURE']) delete process.env[key];
+    for (const key of ['coagent8_FIXTURE_MODE', 'coagent8_FIXTURE_DENIED_ACTION', 'coagent8_FIXTURE_RETRY_DENIED_ACTION', 'coagent8_FIXTURE_CAPTURE']) delete process.env[key];
   }
 });
 
@@ -183,6 +187,17 @@ test('#89: an answer cut off at agy\'s output token limit is a completed, length
     assert.equal(empty.error.code, 'PROCESS_ERROR');
     assert.match(empty.error.message, /output token limit before it answered\. Ask for a shorter answer in a new session/);
     assert.equal(empty.lengthLimited, true);
+
+    process.env.coagent8_FIXTURE_MODE = 'max-tokens-empty';
+    const stoppedEmpty = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir });
+    assert.equal(stoppedEmpty.status, 'failed', 'a stop at the limit without an answer is no answer');
+    assert.match(stoppedEmpty.error.message, /output token limit before it answered/);
+
+    process.env.coagent8_FIXTURE_MODE = 'max-tokens-failure';
+    const unrelated = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir });
+    assert.equal(unrelated.status, 'failed', 'a stop at the limit does not clear an unrelated failure');
+    assert.equal(unrelated.error.code, 'PROCESS_ERROR');
+    assert.match(unrelated.error.message, /internal backend crash/);
 
     delete process.env.coagent8_FIXTURE_MODE;
     const normal = await execute('request', { model: MODEL, cwd: tempDir });

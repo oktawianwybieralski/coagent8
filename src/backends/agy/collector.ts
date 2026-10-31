@@ -9,7 +9,7 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
 /** Distinct unknown event types reported per turn; later ones are ignored silently. */
 const MAX_REPORTED_UNKNOWN_TYPES = 5;
 /** Distinct denied action names kept per turn; the names identify a tool, never its operands. */
-const MAX_DENIED_ACTIONS = 5;
+export const MAX_DENIED_ACTIONS = 5;
 /** A denied action name as agy reports it (`read_file`, `command`); anything else is not kept. */
 const DENIED_ACTION_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 /**

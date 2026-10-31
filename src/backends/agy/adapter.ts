@@ -1,4 +1,4 @@
-import { createGeminiCollector } from './collector.js';
+import { createGeminiCollector, MAX_DENIED_ACTIONS } from './collector.js';
 import { classifyGeminiError, isOutputLimitError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -463,7 +463,7 @@ export async function execute(
         ...s2,
         model: s2.model ?? s.model,
         sandboxDenied: s.sandboxDenied || s2.sandboxDenied,
-        deniedActions: [...new Set([...s.deniedActions, ...s2.deniedActions])],
+        deniedActions: [...new Set([...s.deniedActions, ...s2.deniedActions])].slice(0, MAX_DENIED_ACTIONS),
         truncated: s.truncated || s2.truncated,
         usage: mergeUsage(s.usage, s2.usage),
       };
@@ -488,11 +488,13 @@ export async function execute(
   }
   // agy's own continuation retries ran out at the output token limit: the streamed text is a
   // usable, incomplete answer, not a process failure (#89). A review stopped there is never judged.
-  const outputLimited = s.lengthLimited || (error?.code === 'PROCESS_ERROR' && isOutputLimitError(error.message));
-  if (outputLimited && error?.code === 'PROCESS_ERROR') {
+  // Only the output-limit error itself is cleared; any other failure stays a failure.
+  const errorIsOutputLimit = error?.code === 'PROCESS_ERROR' && isOutputLimitError(error.message);
+  const outputLimited = s.lengthLimited || errorIsOutputLimit;
+  if (outputLimited && (!error || errorIsOutputLimit)) {
     error = s.output.trim()
       ? undefined
-      : { ...error, message: 'agy stopped at its output token limit before it answered. Ask for a shorter answer in a new session (without session_handle).' };
+      : { code: 'PROCESS_ERROR', message: 'agy stopped at its output token limit before it answered. Ask for a shorter answer in a new session (without session_handle).', retryable: false };
   }
   if (outputLimited && !error) options.onEvent?.({ type: 'warning', message: 'agy stopped at its output token limit; the answer is incomplete. '
     + 'A follow-up in the same session can stop the same way: ask for the rest in a shorter form or in a new session.' });
