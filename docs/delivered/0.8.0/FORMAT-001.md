@@ -12,7 +12,7 @@ the next PR ([rules](../README.md#rules)).
 
 | PR | Squash | Merged | Title |
 | --- | --- | --- | --- |
-| Formatter PR | pending | pending | chore(format): format the repository with Prettier |
+| [#98](https://github.com/oktawianwybieralski/coagent8/pull/98) | pending | pending | chore(format): format the repository with Prettier |
 
 ## Scope at closure
 

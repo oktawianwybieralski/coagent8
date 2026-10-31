@@ -11,7 +11,7 @@ Do not append another session transcript or treat old test counts as fresh evide
 ## Current state
 
 - **Formatter (`FORMAT-001`, owner decisions 2026-10-31):** branch
-  `chore/formatter`. Prettier, line width 140, formats TypeScript,
+  `chore/formatter`, PR #98. Prettier, line width 140, formats TypeScript,
   JavaScript, JSON and YAML; Markdown keeps its layout. CI runs
   `npm run format:check`. The reformat needed two source fixes: the branding
   generator now writes the formatted layout, and the VS Code command test no
