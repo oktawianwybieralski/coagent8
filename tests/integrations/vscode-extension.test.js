@@ -968,7 +968,7 @@ test('coagent8.openBugReport explicitly opens the GitHub bug report form URL and
 
 test('every registered command is contributed with a title and every contributed command is registered', () => {
   const source = fs.readFileSync(path.resolve(__dirname, '../../extensions/vscode/src/extension.ts'), 'utf8');
-  const registered = [...source.matchAll(/register\('(coagent8\.[A-Za-z]+)'/g)].map(match => match[1]).sort();
+  const registered = [...source.matchAll(/register\(\s*'(coagent8\.[A-Za-z]+)'/g)].map(match => match[1]).sort();
   const contributed = require('../../extensions/vscode/package.json').contributes.commands;
   assert.deepEqual(contributed.map(item => item.command).sort(), registered);
   // The Command Palette shows the category as a prefix: CoAgent8: Manage Coding CLIs.
