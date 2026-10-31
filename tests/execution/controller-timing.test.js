@@ -68,7 +68,9 @@ test('controller records all 5 execution phases on normal run', async () => {
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const result = await executeTask('test prompt', 'test input', { backend: 'agy' }, tempDir, null, null, {
-    onTiming: (trace) => { observedTrace = trace; },
+    onTiming: trace => {
+      observedTrace = trace;
+    },
   });
 
   assert.equal(result.isError, false);
@@ -117,14 +119,22 @@ test('controller records deliberate consent phase delay', async () => {
   await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
 
   let consentTime = 0;
-  const result = await executeTask('expensive prompt', 'expensive input', { backend: 'codex', model: 'gpt-6-expensive' }, tempDir, null, null, {
-    askConsent: async () => {
-      const start = Date.now();
-      await new Promise(r => setTimeout(r, 50));
-      consentTime = Date.now() - start;
-      return { approved: true };
+  const result = await executeTask(
+    'expensive prompt',
+    'expensive input',
+    { backend: 'codex', model: 'gpt-6-expensive' },
+    tempDir,
+    null,
+    null,
+    {
+      askConsent: async () => {
+        const start = Date.now();
+        await new Promise(r => setTimeout(r, 50));
+        consentTime = Date.now() - start;
+        return { approved: true };
+      },
     },
-  });
+  );
 
   assert.equal(result.isError, false);
   assert.ok(result.meta.phases.consent >= 40, `consent phase (${result.meta.phases.consent}ms) must reflect prompt delay`);
@@ -160,16 +170,16 @@ test('controller onTiming observer captures early failure before session creatio
           await new Promise(r => setTimeout(r, 20));
           return { approved: false };
         },
-        onTiming: (trace) => {
+        onTiming: trace => {
           observedTrace = trace;
         },
       });
     },
-    (err) => {
+    err => {
       // Must preserve exact public error code and message
       assert.equal(err.code, 'POLICY_DENIED');
       return true;
-    }
+    },
   );
 
   // onTiming must still have received the partial trace
@@ -251,12 +261,12 @@ test('controller isolates throwing onTiming observer during early failure and pr
         },
       });
     },
-    (err) => {
+    err => {
       // Must preserve original error code POLICY_DENIED, NOT observer error
       assert.equal(err.code, 'POLICY_DENIED');
       assert.ok(!err.message.includes('Exploding observer on denial'));
       return true;
-    }
+    },
   );
 });
 
@@ -312,10 +322,10 @@ test('controller isolates unstringifiable thrown values from onTiming observer',
         },
       });
     },
-    (err) => {
+    err => {
       assert.equal(err.code, 'POLICY_DENIED');
       return true;
-    }
+    },
   );
 });
 
@@ -359,7 +369,10 @@ test('controller isolates rejected asynchronous onTiming observers without unhan
   });
 
   assert.equal(result.isError, false);
-  assert.ok(result.warnings.some(w => w.includes('Timing observer failed') && w.includes('Async observer explosion')), 'Async observer error must be visible in warnings');
+  assert.ok(
+    result.warnings.some(w => w.includes('Timing observer failed') && w.includes('Async observer explosion')),
+    'Async observer error must be visible in warnings',
+  );
 
   // Async observer rejecting on early denial
   await assert.rejects(
@@ -372,10 +385,10 @@ test('controller isolates rejected asynchronous onTiming observers without unhan
         },
       });
     },
-    (err) => {
+    err => {
       assert.equal(err.code, 'POLICY_DENIED');
       return true;
-    }
+    },
   );
 });
 
@@ -438,25 +451,17 @@ test('early controller failure with borrowed tracker closes controller spans wit
   let capturedTrace = null;
   await assert.rejects(
     async () => {
-      await executeTask(
-        'prompt',
-        'input',
-        { backend: 'agy', model: '--invalid-flag-model' },
-        tempDir,
-        null,
-        null,
-        {
-          tracker: callerTracker,
-          onTiming: trace => {
-            capturedTrace = trace;
-          },
-        }
-      );
+      await executeTask('prompt', 'input', { backend: 'agy', model: '--invalid-flag-model' }, tempDir, null, null, {
+        tracker: callerTracker,
+        onTiming: trace => {
+          capturedTrace = trace;
+        },
+      });
     },
     err => {
       assert.equal(err.code, 'INPUT_LIMIT');
       return true;
-    }
+    },
   );
 
   // Failure trace captured
@@ -526,7 +531,11 @@ test('EXEC-001-T11c: teardown and verification time are included in reported tot
   });
 
   assert.equal(result.isError, false);
-  assert.equal(result.meta.durationMs, 1800, `total duration (${result.meta.durationMs}ms) must include execution (1000ms), verification (500ms), and cleanup (300ms)`);
+  assert.equal(
+    result.meta.durationMs,
+    1800,
+    `total duration (${result.meta.durationMs}ms) must include execution (1000ms), verification (500ms), and cleanup (300ms)`,
+  );
   assert.equal(result.meta.totalMs, 1800);
   assert.ok(result.meta.phases.execution >= 1000);
   assert.ok(result.meta.phases.finalization >= 800);

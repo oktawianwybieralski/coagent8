@@ -2,7 +2,14 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions, type CompletedReview, type ReviewIdentity } from './types.js';
+import {
+  SessionRecord,
+  SessionResult,
+  AcquireSessionResult,
+  GetSessionOptions,
+  type CompletedReview,
+  type ReviewIdentity,
+} from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock, combineSignals, type FileLockOptions } from '../storage/lock.js';
 import { PROVIDERS, ToolError, type BackendReadContext, type ExecutionBudget, type ExecutionProfile } from '../contracts/index.js';
@@ -18,52 +25,102 @@ export { getSessionsDir, isProcessAlive, getSessionFilePath };
 const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
 /** Longest stored review reason; the reference to it stays bounded. */
 export const MAX_REVIEW_REASON_CHARS = 600;
-const boundedString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
+const boundedString = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= max;
 /** A stored review outcome, or undefined when absent or malformed; a malformed one never invalidates the session. */
 function parseCompletedReview(raw: unknown): CompletedReview | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const r = raw as CompletedReview;
-  if (!boundedString(r.snapshot, 512) || !boundedString(r.scope, 512) || (r.model !== null && !boundedString(r.model, 256))) return undefined;
+  if (!boundedString(r.snapshot, 512) || !boundedString(r.scope, 512) || (r.model !== null && !boundedString(r.model, 256)))
+    return undefined;
   if ((r.verdict !== 'READY' && r.verdict !== 'BLOCKED') || !Number.isFinite(Date.parse(r.completedAt))) return undefined;
   if (r.reason !== undefined && !boundedString(r.reason, MAX_REVIEW_REASON_CHARS)) return undefined;
   if (r.coverage !== undefined && r.coverage !== 'COMPLETE' && r.coverage !== 'PARTIAL') return undefined;
-  return { snapshot: r.snapshot, scope: r.scope, model: r.model, verdict: r.verdict, ...(r.coverage ? { coverage: r.coverage } : {}), ...(r.reason ? { reason: r.reason } : {}), completedAt: r.completedAt };
+  return {
+    snapshot: r.snapshot,
+    scope: r.scope,
+    model: r.model,
+    verdict: r.verdict,
+    ...(r.coverage ? { coverage: r.coverage } : {}),
+    ...(r.reason ? { reason: r.reason } : {}),
+    completedAt: r.completedAt,
+  };
 }
 const ownedTurns = new Map<string, string>();
 function saveSessionFile(file: string, record: SessionRecord): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.tmp.${crypto.randomUUID()}`;
-  try { fs.writeFileSync(temp, JSON.stringify(record), { mode: 0o600, flag: 'wx' }); fs.renameSync(temp, file); }
-  finally { fs.rmSync(temp, { force: true }); }
+  try {
+    fs.writeFileSync(temp, JSON.stringify(record), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temp, file);
+  } finally {
+    fs.rmSync(temp, { force: true });
+  }
 }
 function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const s = raw as SessionRecord;
-  if (s.sessionHandle !== handle || !sanitizeHandle(handle) || !PROVIDERS.includes(s.backend as typeof PROVIDERS[number]) || typeof s.workspace !== 'string' || !path.isAbsolute(s.workspace)) return null;
+  if (
+    s.sessionHandle !== handle ||
+    !sanitizeHandle(handle) ||
+    !PROVIDERS.includes(s.backend as (typeof PROVIDERS)[number]) ||
+    typeof s.workspace !== 'string' ||
+    !path.isAbsolute(s.workspace)
+  )
+    return null;
   if (!Number.isFinite(Date.parse(s.createdAt)) || !Number.isFinite(Date.parse(s.lastUsedAt))) return null;
   if (s.threadId != null && (typeof s.threadId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(s.threadId))) return null;
-  if (s.backend === 'agy' && s.threadId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s.threadId)) return null;
+  if (s.backend === 'agy' && s.threadId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s.threadId))
+    return null;
   if (s.activePid != null && (!Number.isSafeInteger(s.activePid) || s.activePid <= 0)) return null;
   if (s.activeTurnAt != null && (!Number.isFinite(s.activeTurnAt) || s.activeTurnAt < 0)) return null;
   if (s.state && !['idle', 'running', 'invalidated', 'closed'].includes(s.state)) return null;
   if (s.schemaVersion != null && s.schemaVersion !== 2) return null;
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
   if (s.turnCount != null && (!Number.isSafeInteger(s.turnCount) || s.turnCount < 0)) return null;
-  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode]) if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
+  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode])
+    if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   if (s.profile != null && s.profile !== 'workspace-write') return null;
   const { lastReview: rawReview, ...rest } = s;
   const lastReview = parseCompletedReview(rawReview);
-  return { ...rest, schemaVersion: 2, state: s.state || (s.activePid ? 'running' : 'idle'), activePid: s.activePid ?? null, activeTurnAt: s.activeTurnAt ?? null, threadId: s.threadId ?? null, turnToken: s.turnToken ?? null, turnCount: s.turnCount ?? 0, ...(lastReview ? { lastReview } : {}) };
+  return {
+    ...rest,
+    schemaVersion: 2,
+    state: s.state || (s.activePid ? 'running' : 'idle'),
+    activePid: s.activePid ?? null,
+    activeTurnAt: s.activeTurnAt ?? null,
+    threadId: s.threadId ?? null,
+    turnToken: s.turnToken ?? null,
+    turnCount: s.turnCount ?? 0,
+    ...(lastReview ? { lastReview } : {}),
+  };
 }
 function readRecord(file: string, handle: string): SessionRecord | null {
-  try { return parseSession(JSON.parse(readBoundedFileSync(file)), handle); } catch { return null; }
+  try {
+    return parseSession(JSON.parse(readBoundedFileSync(file)), handle);
+  } catch {
+    return null;
+  }
 }
-function active(s: SessionRecord): boolean { return isProcessAlive(s.activePid); }
+function active(s: SessionRecord): boolean {
+  return isProcessAlive(s.activePid);
+}
 export function getSession(handle: string, options: GetSessionOptions = {}): SessionRecord | null {
-  const file = getSessionFilePath(handle); if (!file) return null;
+  const file = getSessionFilePath(handle);
+  if (!file) return null;
   const s = readRecord(file, handle);
-  if (!s || s.state === 'closed' || s.state === 'invalidated' || (!active(s) && Date.now() - Date.parse(s.lastUsedAt) > DEFAULT_SESSION_TTL_MS)) return null;
-  if ((options.backend && s.backend !== options.backend) || (options.workspace && canonicalPath(s.workspace) !== canonicalPath(options.workspace))) return null;
+  if (
+    !s ||
+    s.state === 'closed' ||
+    s.state === 'invalidated' ||
+    (!active(s) && Date.now() - Date.parse(s.lastUsedAt) > DEFAULT_SESSION_TTL_MS)
+  )
+    return null;
+  if (
+    (options.backend && s.backend !== options.backend) ||
+    (options.workspace && canonicalPath(s.workspace) !== canonicalPath(options.workspace))
+  )
+    return null;
   return s;
 }
 /**
@@ -74,15 +131,14 @@ export function getSession(handle: string, options: GetSessionOptions = {}): Ses
  * belongs to another workspace, which a refusal must not reveal.
  */
 export function unavailableSessionState(handle: string, workspace: string): 'closed' | 'invalidated' | 'expired' | undefined {
-  const file = getSessionFilePath(handle); if (!file) return undefined;
+  const file = getSessionFilePath(handle);
+  if (!file) return undefined;
   const s = readRecord(file, handle);
   if (!s || canonicalPath(s.workspace) !== canonicalPath(workspace)) return undefined;
   if (s.state === 'closed' || s.state === 'invalidated') return s.state;
   return !active(s) && Date.now() - Date.parse(s.lastUsedAt) > DEFAULT_SESSION_TTL_MS ? 'expired' : undefined;
 }
-function parseSessionOptions(
-  options?: number | AbortSignal | FileLockOptions | BackendReadContext
-): {
+function parseSessionOptions(options?: number | AbortSignal | FileLockOptions | BackendReadContext): {
   budget?: ExecutionBudget;
   effectiveSignal?: AbortSignal | null;
 } {
@@ -97,9 +153,10 @@ function parseSessionOptions(
     const raw = options as FileLockOptions & BackendReadContext;
     const context = raw.context ?? (raw.budget || raw.abortSignal ? raw : undefined);
     const budget = raw.budget ?? context?.budget;
-    const callerSignal = raw.abortSignal !== context?.abortSignal
-      ? combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined
-      : raw.abortSignal ?? context?.abortSignal;
+    const callerSignal =
+      raw.abortSignal !== context?.abortSignal
+        ? (combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined)
+        : (raw.abortSignal ?? context?.abortSignal);
     const effectiveSignal = combineSignals(callerSignal, budget?.executionSignal);
     return { budget, effectiveSignal };
   }
@@ -111,10 +168,7 @@ export function isBudgetExpired(budget?: ExecutionBudget): boolean {
   return budget.isExecutionExpired() || budget.isTimedOut() || budget.remainingExecutionMs() <= 0;
 }
 
-export function isSessionExpired(
-  effectiveSignal?: AbortSignal | null,
-  budget?: ExecutionBudget
-): boolean {
+export function isSessionExpired(effectiveSignal?: AbortSignal | null, budget?: ExecutionBudget): boolean {
   if (effectiveSignal?.aborted) return true;
   return isBudgetExpired(budget);
 }
@@ -122,7 +176,7 @@ export function isSessionExpired(
 export function assertSessionNotExpired(
   effectiveSignal?: AbortSignal | null,
   budget?: ExecutionBudget,
-  phase = 'Session acquisition'
+  phase = 'Session acquisition',
 ): void {
   if (effectiveSignal?.aborted) {
     if (isBudgetExpired(budget)) {
@@ -138,7 +192,7 @@ export function assertSessionNotExpired(
 async function withSessionLock<T>(
   handle: string,
   fn: (file: string) => T | Promise<T>,
-  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext,
 ): Promise<SessionResult<T>> {
   const file = getSessionFilePath(handle);
   if (!file) return { ok: false, error: 'Invalid session handle format' };
@@ -148,7 +202,7 @@ async function withSessionLock<T>(
       async () => {
         return { ok: true, data: await fn(file) };
       },
-      options
+      options,
     );
   } catch (err) {
     if (options !== undefined && typeof options !== 'number') {
@@ -172,13 +226,31 @@ export function sessionProfile(s: SessionRecord): ExecutionProfile {
   return s.profile === 'workspace-write' ? 'workspace-write' : 'read-only';
 }
 
-export function createSession(backend: string, workspace = process.cwd(), threadId: string | null = null, profile: ExecutionProfile = 'read-only'): SessionRecord {
-  if (!PROVIDERS.includes(backend as typeof PROVIDERS[number])) throw new Error('Invalid session provider.');
-  const handle = `syn_sess_${crypto.randomBytes(12).toString('hex')}`, now = new Date().toISOString();
+export function createSession(
+  backend: string,
+  workspace = process.cwd(),
+  threadId: string | null = null,
+  profile: ExecutionProfile = 'read-only',
+): SessionRecord {
+  if (!PROVIDERS.includes(backend as (typeof PROVIDERS)[number])) throw new Error('Invalid session provider.');
+  const handle = `syn_sess_${crypto.randomBytes(12).toString('hex')}`,
+    now = new Date().toISOString();
   // The profile is written with the record, before any turn starts, and never updated.
-  const s: SessionRecord = { schemaVersion: 2, sessionHandle: handle, backend, workspace: canonicalPath(workspace), threadId,
-    state: 'idle', turnToken: null, turnCount: 0, activePid: null, activeTurnAt: null, createdAt: now, lastUsedAt: now,
-    ...(profile === 'workspace-write' ? { profile } : {}) };
+  const s: SessionRecord = {
+    schemaVersion: 2,
+    sessionHandle: handle,
+    backend,
+    workspace: canonicalPath(workspace),
+    threadId,
+    state: 'idle',
+    turnToken: null,
+    turnCount: 0,
+    activePid: null,
+    activeTurnAt: null,
+    createdAt: now,
+    lastUsedAt: now,
+    ...(profile === 'workspace-write' ? { profile } : {}),
+  };
   saveSessionFile(getSessionFilePath(handle)!, s);
   return s;
 }
@@ -201,52 +273,56 @@ export function createSession(backend: string, workspace = process.cwd(), thread
  */
 export async function acquireSessionTurn(
   handle: string,
-  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext,
 ): Promise<SessionResult<{ token: string }>> {
   const { effectiveSignal, budget } = parseSessionOptions(options);
   assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
 
-  const locked = await withSessionLock(handle, async file => {
-    const s = getSession(handle);
-    if (!s) return { ok: false, error: 'Invalid or expired session handle.' };
-    if (active(s)) return { ok: false, error: 'Session is currently busy executing another turn.' };
+  const locked = await withSessionLock(
+    handle,
+    async file => {
+      const s = getSession(handle);
+      if (!s) return { ok: false, error: 'Invalid or expired session handle.' };
+      if (active(s)) return { ok: false, error: 'Session is currently busy executing another turn.' };
 
-    assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
-
-    const token = crypto.randomUUID();
-    s.turnToken = token;
-    s.activePid = process.pid;
-    s.activeTurnAt = Date.now();
-    s.state = 'running';
-    s.turnCount = (s.turnCount || 0) + 1;
-    s.lastUsedAt = new Date().toISOString();
-
-    // Persist turn record atomically.
-    // Note: atomicWrite and fs.rename are atomic OS operations that cannot be
-    // interrupted mid-stream without risking corrupted temporary state on disk.
-    await atomicWrite(file, JSON.stringify(s));
-
-    // Verify cancellation status immediately across synchronous boundary after write
-    if (isSessionExpired(effectiveSignal, budget)) {
-      s.turnToken = null;
-      s.activePid = null;
-      s.activeTurnAt = null;
-      s.state = 'idle';
-      s.turnCount = Math.max(0, (s.turnCount || 1) - 1);
-      s.lastUsedAt = new Date().toISOString();
-      try {
-        await atomicWrite(file, JSON.stringify(s));
-      } catch (rollbackErr) {
-        process.stderr.write(`Warning: failed to persist session rollback for ${handle}: ${(rollbackErr as Error).message}\n`);
-      } finally {
-        ownedTurns.delete(handle);
-      }
       assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
-    }
 
-    ownedTurns.set(handle, token);
-    return { ok: true, data: { token } };
-  }, options);
+      const token = crypto.randomUUID();
+      s.turnToken = token;
+      s.activePid = process.pid;
+      s.activeTurnAt = Date.now();
+      s.state = 'running';
+      s.turnCount = (s.turnCount || 0) + 1;
+      s.lastUsedAt = new Date().toISOString();
+
+      // Persist turn record atomically.
+      // Note: atomicWrite and fs.rename are atomic OS operations that cannot be
+      // interrupted mid-stream without risking corrupted temporary state on disk.
+      await atomicWrite(file, JSON.stringify(s));
+
+      // Verify cancellation status immediately across synchronous boundary after write
+      if (isSessionExpired(effectiveSignal, budget)) {
+        s.turnToken = null;
+        s.activePid = null;
+        s.activeTurnAt = null;
+        s.state = 'idle';
+        s.turnCount = Math.max(0, (s.turnCount || 1) - 1);
+        s.lastUsedAt = new Date().toISOString();
+        try {
+          await atomicWrite(file, JSON.stringify(s));
+        } catch (rollbackErr) {
+          process.stderr.write(`Warning: failed to persist session rollback for ${handle}: ${(rollbackErr as Error).message}\n`);
+        } finally {
+          ownedTurns.delete(handle);
+        }
+        assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
+      }
+
+      ownedTurns.set(handle, token);
+      return { ok: true, data: { token } };
+    },
+    options,
+  );
 
   if (!locked.ok) {
     assertSessionNotExpired(effectiveSignal, budget, 'Session turn acquisition');
@@ -257,40 +333,71 @@ export async function acquireSessionTurn(
 }
 export async function releaseSessionTurn(handle: string, token = ownedTurns.get(handle)): Promise<SessionResult> {
   const locked = await withSessionLock(handle, async file => {
-    const s = readRecord(file, handle); if (!s) return fs.existsSync(file) ? { ok: false, error: 'Invalid session record prevents verifying turn release.' } : { ok: true };
+    const s = readRecord(file, handle);
+    if (!s) return fs.existsSync(file) ? { ok: false, error: 'Invalid session record prevents verifying turn release.' } : { ok: true };
     if (!token || s.turnToken !== token || s.activePid !== process.pid) return { ok: false, error: 'Turn ownership mismatch.' };
-    s.activePid = null; s.activeTurnAt = null; s.turnToken = null;
+    s.activePid = null;
+    s.activeTurnAt = null;
+    s.turnToken = null;
     if (s.state === 'running') s.state = 'idle';
-    s.lastUsedAt = new Date().toISOString(); await atomicWrite(file, JSON.stringify(s)); ownedTurns.delete(handle); return { ok: true };
+    s.lastUsedAt = new Date().toISOString();
+    await atomicWrite(file, JSON.stringify(s));
+    ownedTurns.delete(handle);
+    return { ok: true };
   });
   return locked.data || { ok: false, error: locked.error };
 }
-export async function updateSession(handle: string, updates: Partial<SessionRecord> = {}, token = ownedTurns.get(handle)): Promise<SessionRecord | null> {
+export async function updateSession(
+  handle: string,
+  updates: Partial<SessionRecord> = {},
+  token = ownedTurns.get(handle),
+): Promise<SessionRecord | null> {
   const locked = await withSessionLock(handle, async file => {
-    const s = readRecord(file, handle); if (!s) return null;
+    const s = readRecord(file, handle);
+    if (!s) return null;
     if (active(s) && (!token || token !== s.turnToken)) throw new Error('Turn ownership mismatch.');
-    const allowed = ['threadId', 'model', 'reasoningEffort', 'cliVersion', 'safetyProfile', 'lastErrorCode', 'state', 'lastReview'] as const;
-    for (const key of Object.keys(updates)) if (!allowed.includes(key as typeof allowed[number])) throw new Error(`Immutable session field: ${key}`);
+    const allowed = [
+      'threadId',
+      'model',
+      'reasoningEffort',
+      'cliVersion',
+      'safetyProfile',
+      'lastErrorCode',
+      'state',
+      'lastReview',
+    ] as const;
+    for (const key of Object.keys(updates))
+      if (!allowed.includes(key as (typeof allowed)[number])) throw new Error(`Immutable session field: ${key}`);
     const updated = parseSession({ ...s, ...updates, lastUsedAt: new Date().toISOString() }, handle);
     if (!updated) throw new Error('Invalid session update.');
-    await atomicWrite(file, JSON.stringify(updated)); return updated;
+    await atomicWrite(file, JSON.stringify(updated));
+    return updated;
   });
-  if (!locked.ok) throw new Error(locked.error); return locked.data || null;
+  if (!locked.ok) throw new Error(locked.error);
+  return locked.data || null;
 }
 export async function closeSession(handle: string, workspace?: string): Promise<boolean> {
   const locked = await withSessionLock(handle, async file => {
-    const s = readRecord(file, handle); if (!s) return false;
+    const s = readRecord(file, handle);
+    if (!s) return false;
     if (workspace && canonicalPath(s.workspace) !== canonicalPath(workspace)) throw new Error('Session workspace mismatch.');
     if (s.state === 'closed') return false;
     if (active(s)) throw new Error('Cannot close session: busy executing another turn.');
-    s.state = 'closed'; s.threadId = null; s.turnToken = null; await atomicWrite(file, JSON.stringify(s)); return true;
+    s.state = 'closed';
+    s.threadId = null;
+    s.turnToken = null;
+    await atomicWrite(file, JSON.stringify(s));
+    return true;
   });
   if (!locked.ok) throw new Error(locked.error);
   if (locked.data) {
     invalidateHistoryCache(handle);
     // Closing succeeded; reclaiming history space is maintenance and only reported.
-    try { await pruneHistoryDirectory(); }
-    catch (err) { process.stderr.write(`Warning: history pruning after close failed: ${redactDiagnostic((err as Error).message)}\n`); }
+    try {
+      await pruneHistoryDirectory();
+    } catch (err) {
+      process.stderr.write(`Warning: history pruning after close failed: ${redactDiagnostic((err as Error).message)}\n`);
+    }
   }
   return locked.data || false;
 }
@@ -315,7 +422,7 @@ export async function acquireAndResolveSession(
   backend = 'codex',
   workspace = process.cwd(),
   options?: number | AbortSignal | FileLockOptions | BackendReadContext,
-  profile: ExecutionProfile = 'read-only'
+  profile: ExecutionProfile = 'read-only',
 ): Promise<AcquireSessionResult> {
   const { effectiveSignal, budget } = parseSessionOptions(options);
   assertSessionNotExpired(effectiveSignal, budget, 'Session acquisition');
@@ -332,7 +439,11 @@ export async function acquireAndResolveSession(
     if (isNewSession) {
       const file = getSessionFilePath(s.sessionHandle);
       if (file) {
-        try { fs.rmSync(file, { force: true }); } catch { /* ignore cleanup error */ }
+        try {
+          fs.rmSync(file, { force: true });
+        } catch {
+          /* ignore cleanup error */
+        }
       }
     }
     throw err;
@@ -342,7 +453,11 @@ export async function acquireAndResolveSession(
     if (isNewSession) {
       const file = getSessionFilePath(s.sessionHandle);
       if (file) {
-        try { fs.rmSync(file, { force: true }); } catch { /* ignore cleanup error */ }
+        try {
+          fs.rmSync(file, { force: true });
+        } catch {
+          /* ignore cleanup error */
+        }
       }
     }
     return { error: acquired.error };
@@ -375,7 +490,11 @@ export async function acquireAndResolveSession(
     if (isNewSession) {
       const file = getSessionFilePath(s.sessionHandle);
       if (file) {
-        try { fs.rmSync(file, { force: true }); } catch { /* ignore cleanup error */ }
+        try {
+          fs.rmSync(file, { force: true });
+        } catch {
+          /* ignore cleanup error */
+        }
       }
     }
     assertSessionNotExpired(effectiveSignal, budget, 'Session acquisition');
@@ -478,8 +597,12 @@ export async function cancelSession(handle: string, workspace?: string): Promise
 export function listSessions(workspace: string): SessionRecord[] {
   const dir = getSessionsDir();
   let files: string[];
-  try { files = fs.readdirSync(dir); }
-  catch (err) { if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []; throw err; }
+  try {
+    files = fs.readdirSync(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
   const results: SessionRecord[] = [];
   for (const name of files) {
     if (!name.endsWith('.json') || !sanitizeHandle(name.slice(0, -5))) continue;
@@ -498,12 +621,13 @@ export function listSessions(workspace: string): SessionRecord[] {
 export function findCompletedReview(
   workspace: string,
   backend: string,
-  identity: ReviewIdentity
+  identity: ReviewIdentity,
 ): { sessionHandle: string; review: CompletedReview; continuationAvailable: boolean } | null {
   let found: { sessionHandle: string; review: CompletedReview; continuationAvailable: boolean } | null = null;
   for (const s of listSessions(workspace)) {
     const r = s.lastReview;
-    if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model) continue;
+    if (!r || s.backend !== backend || r.snapshot !== identity.snapshot || r.scope !== identity.scope || r.model !== identity.model)
+      continue;
     // Only a completed review with complete coverage suppresses an unchanged repeat (FEEDBACK-061j).
     if (r.coverage !== 'COMPLETE') continue;
     if (!found || Date.parse(r.completedAt) > Date.parse(found.review.completedAt)) {
@@ -526,14 +650,26 @@ async function sweepExpiredSessions(dir: string): Promise<void> {
         }
       });
     }
-  } catch (err) { if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err; }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
 }
-let lastPrunedDir = '', lastPrunedAt = 0, pruning: Promise<void> | undefined;
+let lastPrunedDir = '',
+  lastPrunedAt = 0,
+  pruning: Promise<void> | undefined;
 export async function pruneExpiredSessions(force = false): Promise<void> {
   const dir = getSessionsDir();
-  if (pruning) { await pruning; if (dir === lastPrunedDir) return; }
+  if (pruning) {
+    await pruning;
+    if (dir === lastPrunedDir) return;
+  }
   if (!force && dir === lastPrunedDir && Date.now() - lastPrunedAt < 60000) return;
   pruning = sweepExpiredSessions(dir);
-  try { await pruning; lastPrunedDir = dir; lastPrunedAt = Date.now(); }
-  finally { pruning = undefined; }
+  try {
+    await pruning;
+    lastPrunedDir = dir;
+    lastPrunedAt = Date.now();
+  } finally {
+    pruning = undefined;
+  }
 }

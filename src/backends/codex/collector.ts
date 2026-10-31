@@ -15,7 +15,7 @@ export interface CodexStreamCollectorOptions {
   maxTextPerMessage?: number;
 }
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 function protocolError(message: string): never {
   throw new ToolError('PROTOCOL_ERROR', message);
@@ -25,8 +25,12 @@ function count(value: unknown): number {
 }
 /** Codex `TokenUsageBreakdown` fields mapped to {@link TokenUsage} (AX-001b). */
 const USAGE_FIELDS = [
-  ['inputTokens', 'inputTokens'], ['cachedInputTokens', 'cachedInputTokens'], ['cacheWriteInputTokens', 'cacheWriteInputTokens'],
-  ['outputTokens', 'outputTokens'], ['reasoningOutputTokens', 'reasoningTokens'], ['totalTokens', 'totalTokens'],
+  ['inputTokens', 'inputTokens'],
+  ['cachedInputTokens', 'cachedInputTokens'],
+  ['cacheWriteInputTokens', 'cacheWriteInputTokens'],
+  ['outputTokens', 'outputTokens'],
+  ['reasoningOutputTokens', 'reasoningTokens'],
+  ['totalTokens', 'totalTokens'],
 ] as const;
 type UsageCounts = Partial<Record<(typeof USAGE_FIELDS)[number][1], number>>;
 /** The known non-negative counts of a breakdown; a missing field stays unknown. */
@@ -40,8 +44,11 @@ function breakdown(value: Record<string, unknown>): UsageCounts {
 }
 /** Thread item types reported as tool activity; their operands and output stay private. */
 const TOOL_ITEMS: Record<string, string> = {
-  commandExecution: 'sandbox command', mcpToolCall: 'MCP tool', webSearch: 'web search',
-  fileChange: 'file change', dynamicToolCall: 'tool',
+  commandExecution: 'sandbox command',
+  mcpToolCall: 'MCP tool',
+  webSearch: 'web search',
+  fileChange: 'file change',
+  dynamicToolCall: 'tool',
 };
 
 /**
@@ -61,8 +68,10 @@ const TOOL_ITEMS: Record<string, string> = {
  */
 export function createCodexStreamCollector(options: CodexStreamCollectorOptions = {}) {
   const reducer = new StreamReducer({
-    maxTotalBytes: options.maxTotalMessageBytes ?? 512 * 1024, maxMessages: options.maxMessages ?? 50,
-    maxMessageBytes: options.maxTextPerMessage ?? 512 * 1024 });
+    maxTotalBytes: options.maxTotalMessageBytes ?? 512 * 1024,
+    maxMessages: options.maxMessages ?? 50,
+    maxMessageBytes: options.maxTextPerMessage ?? 512 * 1024,
+  });
   let threadId = options.nativeSessionId ?? null;
   let turnId: string | null = null;
   let initialized = false;
@@ -72,7 +81,8 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   // `total` accumulates over the thread, `last` is one model request. The turn's usage is the
   // last total minus the total before the turn (first total minus first last), so a repeated
   // update counts once and a resumed thread's earlier turns are excluded.
-  let usageBaseline: UsageCounts | null = null, usageTotal: UsageCounts | null = null;
+  let usageBaseline: UsageCounts | null = null,
+    usageTotal: UsageCounts | null = null;
   let streamedBytes = 0;
   const commentaryIds = new Set<string>();
   let finalAnswerSeen = false;
@@ -89,20 +99,26 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
       typeof item.output === 'string' ? item.output : '',
       typeof item.error === 'string'
         ? item.error
-        : (item.error && typeof (item.error as Record<string, unknown>).message === 'string'
-            ? (item.error as Record<string, unknown>).message
-            : ''),
-    ].filter(Boolean).join(' ');
+        : item.error && typeof (item.error as Record<string, unknown>).message === 'string'
+          ? (item.error as Record<string, unknown>).message
+          : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     const command = typeof item.command === 'string' ? item.command : '';
-    const isFailed = item.status === 'failed'
-      || (typeof item.exitCode === 'number' && item.exitCode !== 0)
-      || (typeof item.exit_code === 'number' && item.exit_code !== 0)
-      || Boolean(item.error);
+    const isFailed =
+      item.status === 'failed' ||
+      (typeof item.exitCode === 'number' && item.exitCode !== 0) ||
+      (typeof item.exit_code === 'number' && item.exit_code !== 0) ||
+      Boolean(item.error);
 
     if (!isFailed) return null;
 
-    const isDenied = /permission\s+denied|unauthorizedaccessexception|itemexistsunauthorizedaccesserror|access\s+is\s+denied|odmowa\s+dost[eę]pu|blocked\s+by\s+policy|operation\s+not\s+permitted/i.test(text);
+    const isDenied =
+      /permission\s+denied|unauthorizedaccessexception|itemexistsunauthorizedaccesserror|access\s+is\s+denied|odmowa\s+dost[eę]pu|blocked\s+by\s+policy|operation\s+not\s+permitted/i.test(
+        text,
+      );
     if (!isDenied) return null;
 
     let reason = 'Permission denied';
@@ -145,7 +161,10 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     }
 
     if (path) {
-      path = path.trim().replace(/^['"]|['"]$/g, '').replace(/\\/g, '/');
+      path = path
+        .trim()
+        .replace(/^['"]|['"]$/g, '')
+        .replace(/\\/g, '/');
     }
 
     return { path, operation, reason };
@@ -168,7 +187,8 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     }
     // Commentary over the count budget is dropped and marked as truncated by the reducer;
     // the final answer removes it with that mark (CUR-005). Answer messages fail at once.
-    if (item.phase !== 'commentary' && !reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) throw new BufferLimitError('Too many Codex public messages.');
+    if (item.phase !== 'commentary' && !reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages)
+      throw new BufferLimitError('Too many Codex public messages.');
     reducer.upsertMessage(id, text);
     emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
   }
@@ -191,8 +211,13 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
       emit({ type: 'status', message: `Executing ${name}...` });
       emit({ type: 'tool_started', toolId: item.id as string, name: item.type });
     } else {
-      emit({ type: 'tool_finished', toolId: item.id as string, name: item.type,
-        success: item.status === 'completed' && item.error == null && item.success !== false && (item.exitCode == null || item.exitCode === 0) });
+      emit({
+        type: 'tool_finished',
+        toolId: item.id as string,
+        name: item.type,
+        success:
+          item.status === 'completed' && item.error == null && item.success !== false && (item.exitCode == null || item.exitCode === 0),
+      });
       const denial = extractToolDenial(item);
       if (denial) {
         const key = `${denial.operation}:${denial.path}:${denial.reason}`;
@@ -204,9 +229,11 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   }
   function acceptUsage(params: Record<string, unknown>) {
     const usage = record(params.tokenUsage);
-    const last = record(usage?.last), total = record(usage?.total);
+    const last = record(usage?.last),
+      total = record(usage?.total);
     if (!last || !total) protocolError('Invalid Codex token usage.');
-    const totals = breakdown(total!), lasts = breakdown(last!);
+    const totals = breakdown(total!),
+      lasts = breakdown(last!);
     if (!usageBaseline) {
       usageBaseline = {};
       for (const [, field] of USAGE_FIELDS) {
@@ -238,11 +265,15 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     if (typeof params.threadId === 'string' && threadId !== null && params.threadId !== threadId) return;
     if (method === 'error') {
       const error = record(params.error);
-      if (params.willRetry === true) emit({ type: 'warning', message: redactDiagnostic(`Codex is retrying: ${String(error?.message ?? 'unknown error')}`, 512) });
+      if (params.willRetry === true)
+        emit({ type: 'warning', message: redactDiagnostic(`Codex is retrying: ${String(error?.message ?? 'unknown error')}`, 512) });
       else providerError = classifyCodexTurnError(error, 'Codex reported an error.');
       return;
     }
-    if (method === 'turn/completed') { acceptTurnCompleted(params); return; }
+    if (method === 'turn/completed') {
+      acceptTurnCompleted(params);
+      return;
+    }
     // The server keeps sending thread status updates after the turn; they carry no answer.
     if (terminal) return;
     if (method === 'turn/started') emit({ type: 'status', message: 'Starting task analysis...' });
@@ -258,7 +289,8 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   }
   /** Records the thread verified by the session's `thread/start` or `thread/resume` response. */
   function initialize(id: string) {
-    if (initialized || !validEventIdentifier(id) || (options.nativeSessionId && options.nativeSessionId !== id)) protocolError('Codex returned an inconsistent thread ID.');
+    if (initialized || !validEventIdentifier(id) || (options.nativeSessionId && options.nativeSessionId !== id))
+      protocolError('Codex returned an inconsistent thread ID.');
     initialized = true;
     threadId = id;
     emit({ type: 'status', message: 'Initializing Codex session...' });
@@ -272,7 +304,11 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
   function line(raw: string) {
     if (!raw.trim()) return;
     let parsed: unknown;
-    try { parsed = JSON.parse(raw); } catch { protocolError('Invalid Codex JSONL record.'); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      protocolError('Invalid Codex JSONL record.');
+    }
     const message = record(parsed);
     if (!message || typeof message.method !== 'string') protocolError('Invalid Codex notification.');
     notify(message.method, message.params);
@@ -285,15 +321,27 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     if (usageTotal && usageBaseline) {
       usage = { source: 'provider' };
       for (const [, field] of USAGE_FIELDS) {
-        const end = usageTotal[field], start = usageBaseline[field];
+        const end = usageTotal[field],
+          start = usageBaseline[field];
         if (end !== undefined && start !== undefined) usage[field] = Math.max(0, end - start);
       }
     }
-    return { threadId, turnId, initialized, terminal, interrupted, usage, truncated, output,
+    return {
+      threadId,
+      turnId,
+      initialized,
+      terminal,
+      interrupted,
+      usage,
+      truncated,
+      output,
       denials: [...denials],
-      error: providerError || (truncated ? { code: 'BUFFER_LIMIT' as const, message: 'Codex public output exceeded the byte budget.', retryable: false } : undefined) };
+      error:
+        providerError ||
+        (truncated
+          ? { code: 'BUFFER_LIMIT' as const, message: 'Codex public output exceeded the byte budget.', retryable: false }
+          : undefined),
+    };
   }
-  return { notify, initialize, beginTurn, line, snapshot,
-    isTerminal: () => terminal,
-  };
+  return { notify, initialize, beginTurn, line, snapshot, isTerminal: () => terminal };
 }

@@ -66,10 +66,8 @@ export class StreamReducer {
     if (isDelta && prevText !== undefined) {
       const prevLast = prevText.length > 0 ? prevText.charCodeAt(prevText.length - 1) : 0;
       const currFirst = text.length > 0 ? text.charCodeAt(0) : 0;
-      const hasSurrogateJoin = (prevLast >= 0xd800 && prevLast <= 0xdbff) && (currFirst >= 0xdc00 && currFirst <= 0xdfff);
-      const incomingBytes = hasSurrogateJoin
-        ? Buffer.byteLength(prevText + text, 'utf8') - prevBytes
-        : Buffer.byteLength(text, 'utf8');
+      const hasSurrogateJoin = prevLast >= 0xd800 && prevLast <= 0xdbff && currFirst >= 0xdc00 && currFirst <= 0xdfff;
+      const incomingBytes = hasSurrogateJoin ? Buffer.byteLength(prevText + text, 'utf8') - prevBytes : Buffer.byteLength(text, 'utf8');
 
       const projectedMsgBytes = prevBytes + incomingBytes;
       const projectedTotalBytes = this.totalMessageBytes + incomingBytes;
@@ -104,15 +102,11 @@ export class StreamReducer {
         cut = true;
         const availableBytes = Math.max(0, this.maxTotalBytes - (this.totalMessageBytes - prevBytes));
         if (availableBytes > 0) {
-          const truncated = truncateToByteLength(
-            fullText,
-            availableBytes,
-            availableBytes >= 20 ? '\n...[truncated]' : '...'
-          );
+          const truncated = truncateToByteLength(fullText, availableBytes, availableBytes >= 20 ? '\n...[truncated]' : '...');
           const truncatedBytes = Buffer.byteLength(truncated, 'utf8');
           this.messageMap.set(id, truncated);
           this.messageBytesMap.set(id, truncatedBytes);
-          this.totalMessageBytes = (this.totalMessageBytes - prevBytes) + truncatedBytes;
+          this.totalMessageBytes = this.totalMessageBytes - prevBytes + truncatedBytes;
         } else {
           this.messageMap.set(id, '');
           this.messageBytesMap.set(id, 0);
@@ -133,11 +127,7 @@ export class StreamReducer {
         cut = true;
         const availableBytes = Math.max(0, this.maxTotalBytes - this.totalMessageBytes);
         if (availableBytes > 0) {
-          const truncated = truncateToByteLength(
-            fullText,
-            availableBytes,
-            availableBytes >= 20 ? '\n...[truncated]' : '...'
-          );
+          const truncated = truncateToByteLength(fullText, availableBytes, availableBytes >= 20 ? '\n...[truncated]' : '...');
           const truncatedBytes = Buffer.byteLength(truncated, 'utf8');
           this.messageMap.set(id, truncated);
           this.messageBytesMap.set(id, truncatedBytes);

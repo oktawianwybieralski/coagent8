@@ -208,13 +208,17 @@ test('pruneExpiredSessions removes expired sessions and preserves legacy artifac
   const expiredHandle = 'syn_sess_expired123';
   const expiredFile = path.join(sessionsDir, `${expiredHandle}.json`);
   const twoHoursAndTenMinsAgo = new Date(Date.now() - 130 * 60 * 1000).toISOString();
-  fs.writeFileSync(expiredFile, JSON.stringify({
-    sessionHandle: expiredHandle,
-    backend: 'codex',
-    workspace: path.join(tempDir, 'active'),
-    createdAt: twoHoursAndTenMinsAgo,
-    lastUsedAt: twoHoursAndTenMinsAgo,
-  }), 'utf8');
+  fs.writeFileSync(
+    expiredFile,
+    JSON.stringify({
+      sessionHandle: expiredHandle,
+      backend: 'codex',
+      workspace: path.join(tempDir, 'active'),
+      createdAt: twoHoursAndTenMinsAgo,
+      lastUsedAt: twoHoursAndTenMinsAgo,
+    }),
+    'utf8',
+  );
 
   // Create an expired busy lock
   const expiredBusy = path.join(sessionsDir, `${expiredHandle}.busy`);
@@ -318,59 +322,125 @@ test('dead legacy lock is preserved while the new unique-claim protocol acquires
   // Legacy shared pathnames are never reclaimed or replaced by the new protocol.
   const turn = await acquireSessionTurn(sess.sessionHandle);
   assert.equal(turn.ok, true);
-  assert.equal(fs.readFileSync(lockFile,'utf8'),staleData);
+  assert.equal(fs.readFileSync(lockFile, 'utf8'), staleData);
 
   assert.equal(fs.existsSync(reclaimMutex), false);
 
   await releaseSessionTurn(sess.sessionHandle);
 });
 
-test('F09/F10/F11: unique claim ownership, async contention, stale claimant recovery, validation and immutable fields',async()=>{
-  const sess=createSession('codex',tempDir);
-  const file=getSessionFilePath(sess.sessionHandle);
-  const first=await acquireSessionTurn(sess.sessionHandle);assert.ok(first.ok);
-  assert.equal((await acquireSessionTurn(sess.sessionHandle)).ok,false);
-  assert.equal((await releaseSessionTurn(sess.sessionHandle,randomUUID())).ok,false);
-  assert.equal(getSession(sess.sessionHandle).turnToken,first.data.token);
-  await releaseSessionTurn(sess.sessionHandle,first.data.token);
-  await assert.rejects(updateSession(sess.sessionHandle,{backend:'agy'}),/Immutable/);
-  assert.equal(getSession('../'+sess.sessionHandle),null);
-  const data=JSON.parse(fs.readFileSync(file,'utf8'));data.lastUsedAt='invalid-date';fs.writeFileSync(file,JSON.stringify(data));
-  assert.equal(getSession(sess.sessionHandle),null);
-  const lock=path.join(tempDir,'counter');let responsive=false;
-  const held=withFileLock(lock,async()=>{await new Promise(resolve=>setTimeout(resolve,80));});
-  await new Promise(resolve=>setTimeout(resolve,10));
-  const contender=withFileLock(lock,async()=>{});
-  setTimeout(()=>{responsive=true;},20);await Promise.all([held,contender]);assert.ok(responsive);
+test('F09/F10/F11: unique claim ownership, async contention, stale claimant recovery, validation and immutable fields', async () => {
+  const sess = createSession('codex', tempDir);
+  const file = getSessionFilePath(sess.sessionHandle);
+  const first = await acquireSessionTurn(sess.sessionHandle);
+  assert.ok(first.ok);
+  assert.equal((await acquireSessionTurn(sess.sessionHandle)).ok, false);
+  assert.equal((await releaseSessionTurn(sess.sessionHandle, randomUUID())).ok, false);
+  assert.equal(getSession(sess.sessionHandle).turnToken, first.data.token);
+  await releaseSessionTurn(sess.sessionHandle, first.data.token);
+  await assert.rejects(updateSession(sess.sessionHandle, { backend: 'agy' }), /Immutable/);
+  assert.equal(getSession('../' + sess.sessionHandle), null);
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  data.lastUsedAt = 'invalid-date';
+  fs.writeFileSync(file, JSON.stringify(data));
+  assert.equal(getSession(sess.sessionHandle), null);
+  const lock = path.join(tempDir, 'counter');
+  let responsive = false;
+  const held = withFileLock(lock, async () => {
+    await new Promise(resolve => setTimeout(resolve, 80));
+  });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const contender = withFileLock(lock, async () => {});
+  setTimeout(() => {
+    responsive = true;
+  }, 20);
+  await Promise.all([held, contender]);
+  assert.ok(responsive);
 });
 
-test('session leases reject a second process, permit an independent session and recover a dead turn owner',async()=>{
-  const a=createSession('codex',tempDir),b=createSession('codex',tempDir),c=createSession('codex',tempDir);
-  const lease=await acquireSessionTurn(a.sessionHandle);assert.ok(lease.ok);
-  const script=`const s=require(process.argv[1]);(async()=>{const busy=await s.acquireSessionTurn(process.argv[2]);const independent=await s.acquireSessionTurn(process.argv[3]);await s.releaseSessionTurn(process.argv[3],independent.data.token);const abandoned=await s.acquireSessionTurn(process.argv[4]);console.log(JSON.stringify({busy,independent,abandoned}));})().catch(()=>process.exit(1));`;
-  const data=await new Promise((resolve,reject)=>{const p=spawn(process.execPath,['--require','tsx/cjs','-e',script,path.resolve(__dirname, '../..', 'src/sessions/session.ts'),a.sessionHandle,b.sessionHandle,c.sessionHandle],{env:{...process.env},windowsHide:true});let out='';p.stdout.on('data',d=>out+=d);p.on('error',reject);p.on('exit',code=>code===0?resolve(JSON.parse(out)):reject(new Error('lease fixture failed')));});
-  assert.equal(data.busy.ok,false);assert.equal(data.independent.ok,true);assert.equal(data.abandoned.ok,true);
-  await releaseSessionTurn(a.sessionHandle,lease.data.token);
-  const recovered=await acquireSessionTurn(c.sessionHandle);assert.equal(recovered.ok,true);assert.notEqual(recovered.data.token,data.abandoned.data.token);await releaseSessionTurn(c.sessionHandle,recovered.data.token);
+test('session leases reject a second process, permit an independent session and recover a dead turn owner', async () => {
+  const a = createSession('codex', tempDir),
+    b = createSession('codex', tempDir),
+    c = createSession('codex', tempDir);
+  const lease = await acquireSessionTurn(a.sessionHandle);
+  assert.ok(lease.ok);
+  const script = `const s=require(process.argv[1]);(async()=>{const busy=await s.acquireSessionTurn(process.argv[2]);const independent=await s.acquireSessionTurn(process.argv[3]);await s.releaseSessionTurn(process.argv[3],independent.data.token);const abandoned=await s.acquireSessionTurn(process.argv[4]);console.log(JSON.stringify({busy,independent,abandoned}));})().catch(()=>process.exit(1));`;
+  const data = await new Promise((resolve, reject) => {
+    const p = spawn(
+      process.execPath,
+      [
+        '--require',
+        'tsx/cjs',
+        '-e',
+        script,
+        path.resolve(__dirname, '../..', 'src/sessions/session.ts'),
+        a.sessionHandle,
+        b.sessionHandle,
+        c.sessionHandle,
+      ],
+      { env: { ...process.env }, windowsHide: true },
+    );
+    let out = '';
+    p.stdout.on('data', d => (out += d));
+    p.on('error', reject);
+    p.on('exit', code => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error('lease fixture failed'))));
+  });
+  assert.equal(data.busy.ok, false);
+  assert.equal(data.independent.ok, true);
+  assert.equal(data.abandoned.ok, true);
+  await releaseSessionTurn(a.sessionHandle, lease.data.token);
+  const recovered = await acquireSessionTurn(c.sessionHandle);
+  assert.equal(recovered.ok, true);
+  assert.notEqual(recovered.data.token, data.abandoned.data.token);
+  await releaseSessionTurn(c.sessionHandle, recovered.data.token);
 });
 
-test('production execution automatically prunes expired session metadata with history disabled',async()=>{
-  const data=path.join(tempDir,'prune-production');fs.mkdirSync(data);
-  const script=`process.env.coagent8_DIR=process.argv[1];process.env.coagent8_HISTORY='off';const fs=require('node:fs');const path=require('node:path');const s=require(process.argv[2]);const {adapterRegistry}=require(process.argv[3]);const {executeTask}=require(process.argv[4]);(async()=>{const old=s.createSession('agy',process.argv[1]);const file=s.getSessionFilePath(old.sessionHandle);const raw=JSON.parse(fs.readFileSync(file));raw.lastUsedAt=new Date(0).toISOString();fs.writeFileSync(file,JSON.stringify(raw));adapterRegistry.agy={id:'agy',name:'fixture',probe:async()=>({installed:true,executionSupported:true,config:{defaultModel:'fixture-model'}}),execute:async()=>({status:'completed',isError:false,output:'public',truncated:false,continuationAvailable:false})};await executeTask('x','x',{backend:'agy'},process.argv[1]);console.log(JSON.stringify({oldFile:fs.existsSync(file)}));})().catch(e=>{console.error(e.message);process.exitCode=1;});`;
-  const result=await new Promise((resolve,reject)=>{const p=spawn(process.execPath,['--require','tsx/cjs','-e',script,data,path.resolve(__dirname, '../..', 'src/sessions/session.ts'),path.resolve(__dirname, '../..', 'src/backends/registry.ts'),path.resolve(__dirname, '../..', 'src/execution/controller.ts')],{env:{...process.env},windowsHide:true});let out='',err='';p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('error',reject);p.on('exit',code=>code===0?resolve(JSON.parse(out)):reject(new Error(err)));});
-  assert.equal(result.oldFile,false);
+test('production execution automatically prunes expired session metadata with history disabled', async () => {
+  const data = path.join(tempDir, 'prune-production');
+  fs.mkdirSync(data);
+  const script = `process.env.coagent8_DIR=process.argv[1];process.env.coagent8_HISTORY='off';const fs=require('node:fs');const path=require('node:path');const s=require(process.argv[2]);const {adapterRegistry}=require(process.argv[3]);const {executeTask}=require(process.argv[4]);(async()=>{const old=s.createSession('agy',process.argv[1]);const file=s.getSessionFilePath(old.sessionHandle);const raw=JSON.parse(fs.readFileSync(file));raw.lastUsedAt=new Date(0).toISOString();fs.writeFileSync(file,JSON.stringify(raw));adapterRegistry.agy={id:'agy',name:'fixture',probe:async()=>({installed:true,executionSupported:true,config:{defaultModel:'fixture-model'}}),execute:async()=>({status:'completed',isError:false,output:'public',truncated:false,continuationAvailable:false})};await executeTask('x','x',{backend:'agy'},process.argv[1]);console.log(JSON.stringify({oldFile:fs.existsSync(file)}));})().catch(e=>{console.error(e.message);process.exitCode=1;});`;
+  const result = await new Promise((resolve, reject) => {
+    const p = spawn(
+      process.execPath,
+      [
+        '--require',
+        'tsx/cjs',
+        '-e',
+        script,
+        data,
+        path.resolve(__dirname, '../..', 'src/sessions/session.ts'),
+        path.resolve(__dirname, '../..', 'src/backends/registry.ts'),
+        path.resolve(__dirname, '../..', 'src/execution/controller.ts'),
+      ],
+      { env: { ...process.env }, windowsHide: true },
+    );
+    let out = '',
+      err = '';
+    p.stdout.on('data', d => (out += d));
+    p.stderr.on('data', d => (err += d));
+    p.on('error', reject);
+    p.on('exit', code => (code === 0 ? resolve(JSON.parse(out)) : reject(new Error(err))));
+  });
+  assert.equal(result.oldFile, false);
 });
 
-test('closing expired, invalidated or already closed sessions checks workspace under the storage lock',async()=>{
-  const {handleCloseSession}=require('../../src/mcp/tools/session.tool.ts');
-  fs.mkdirSync(path.join(tempDir,'other'),{recursive:true});
-  for(const state of ['idle','invalidated','closed']) {
-    const s=createSession('codex',tempDir),file=getSessionFilePath(s.sessionHandle),raw=JSON.parse(fs.readFileSync(file));
-    raw.state=state;raw.lastUsedAt=new Date(Date.now()-3*3600*1000).toISOString();fs.writeFileSync(file,JSON.stringify(raw));
-    await assert.rejects(handleCloseSession({session_handle:s.sessionHandle,workspace_path:path.join(tempDir,'other')}),/workspace mismatch/);
-    assert.deepEqual(JSON.parse(fs.readFileSync(file)),raw);
-    await handleCloseSession({session_handle:s.sessionHandle,workspace_path:tempDir});
-    assert.equal(JSON.parse(fs.readFileSync(file)).state,'closed');
+test('closing expired, invalidated or already closed sessions checks workspace under the storage lock', async () => {
+  const { handleCloseSession } = require('../../src/mcp/tools/session.tool.ts');
+  fs.mkdirSync(path.join(tempDir, 'other'), { recursive: true });
+  for (const state of ['idle', 'invalidated', 'closed']) {
+    const s = createSession('codex', tempDir),
+      file = getSessionFilePath(s.sessionHandle),
+      raw = JSON.parse(fs.readFileSync(file));
+    raw.state = state;
+    raw.lastUsedAt = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+    fs.writeFileSync(file, JSON.stringify(raw));
+    await assert.rejects(
+      handleCloseSession({ session_handle: s.sessionHandle, workspace_path: path.join(tempDir, 'other') }),
+      /workspace mismatch/,
+    );
+    assert.deepEqual(JSON.parse(fs.readFileSync(file)), raw);
+    await handleCloseSession({ session_handle: s.sessionHandle, workspace_path: tempDir });
+    assert.equal(JSON.parse(fs.readFileSync(file)).state, 'closed');
   }
 });
 
@@ -387,9 +457,13 @@ test('EXEC-001-T09c: aborting contender waiting for busy session lock rejects wi
 
   // 2. Simulate storage lock contention: hold session file lock
   let lockAcquired;
-  const lockAcquiredPromise = new Promise(resolve => { lockAcquired = resolve; });
+  const lockAcquiredPromise = new Promise(resolve => {
+    lockAcquired = resolve;
+  });
   let allowLockRelease;
-  const allowLockReleasePromise = new Promise(resolve => { allowLockRelease = resolve; });
+  const allowLockReleasePromise = new Promise(resolve => {
+    allowLockRelease = resolve;
+  });
 
   const holdingLockPromise = withFileLock(file, async () => {
     lockAcquired();
@@ -449,14 +523,11 @@ test('EXEC-001-T09c: expired execution budget before or during session acquisiti
   const dir = getSessionsDir();
   const filesBefore = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
 
-  await assert.rejects(
-    acquireAndResolveSession(null, 'codex', tempDir, { budget: expiredBudget }),
-    err => {
-      assert.ok(err instanceof ToolError);
-      assert.equal(err.code, 'TIMEOUT');
-      return true;
-    }
-  );
+  await assert.rejects(acquireAndResolveSession(null, 'codex', tempDir, { budget: expiredBudget }), err => {
+    assert.ok(err instanceof ToolError);
+    assert.equal(err.code, 'TIMEOUT');
+    return true;
+  });
 
   const filesAfter = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
   assert.deepEqual(filesAfter, filesBefore, 'No orphaned session file should be created for pre-expired budget');
@@ -473,7 +544,7 @@ test('EXEC-001-T09c: expired execution budget before or during session acquisiti
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'TIMEOUT');
       return true;
-    }
+    },
   );
 
   const recordAfter = getSession(handle);
@@ -484,9 +555,13 @@ test('EXEC-001-T09c: expired execution budget before or during session acquisiti
   // Case C: Budget expires while waiting for session lock
   const file = getSessionFilePath(handle);
   let lockAcquired;
-  const lockAcquiredPromise = new Promise(resolve => { lockAcquired = resolve; });
+  const lockAcquiredPromise = new Promise(resolve => {
+    lockAcquired = resolve;
+  });
   let allowLockRelease;
-  const allowLockReleasePromise = new Promise(resolve => { allowLockRelease = resolve; });
+  const allowLockReleasePromise = new Promise(resolve => {
+    allowLockRelease = resolve;
+  });
 
   const lockHold = withFileLock(file, async () => {
     lockAcquired();
@@ -499,14 +574,11 @@ test('EXEC-001-T09c: expired execution budget before or during session acquisiti
   const shortBudget = createExecutionBudget({ totalBudgetMs: 50, teardownAllowanceMs: 25 });
   const inFlightPromise = acquireSessionTurn(handle, { budget: shortBudget });
 
-  await assert.rejects(
-    inFlightPromise,
-    err => {
-      assert.ok(err instanceof ToolError);
-      assert.equal(err.code, 'TIMEOUT');
-      return true;
-    }
-  );
+  await assert.rejects(inFlightPromise, err => {
+    assert.ok(err instanceof ToolError);
+    assert.equal(err.code, 'TIMEOUT');
+    return true;
+  });
 
   allowLockRelease();
   await lockHold;
@@ -537,26 +609,20 @@ test('EXEC-001-T09c: acquireSessionTurn surfaces expiry ToolError even if rollba
   };
 
   try {
-    await assert.rejects(
-      acquireSessionTurn(handle, { abortSignal: ac.signal }),
-      err => {
-        assert.ok(err instanceof ToolError, 'Must surface ToolError despite rollback failure');
-        assert.equal(err.code, 'ABORTED');
-        return true;
-      }
-    );
+    await assert.rejects(acquireSessionTurn(handle, { abortSignal: ac.signal }), err => {
+      assert.ok(err instanceof ToolError, 'Must surface ToolError despite rollback failure');
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    });
   } finally {
     fsp.rename = originalRename;
   }
 
   // Verify that this process holds no active turn ownership in memory
-  await assert.rejects(
-    updateSession(handle, { threadId: 'thread-test' }),
-    err => {
-      assert.ok(err.message.includes('Turn ownership mismatch'));
-      return true;
-    }
-  );
+  await assert.rejects(updateSession(handle, { threadId: 'thread-test' }), err => {
+    assert.ok(err.message.includes('Turn ownership mismatch'));
+    return true;
+  });
 });
 
 test('EXEC-001-T09c: session lock timeout under contention returns {ok:false} when options are provided without expiry', async () => {
@@ -565,9 +631,13 @@ test('EXEC-001-T09c: session lock timeout under contention returns {ok:false} wh
   const file = getSessionFilePath(handle);
 
   let lockHeld;
-  const lockHeldPromise = new Promise(resolve => { lockHeld = resolve; });
+  const lockHeldPromise = new Promise(resolve => {
+    lockHeld = resolve;
+  });
   let allowRelease;
-  const allowReleasePromise = new Promise(resolve => { allowRelease = resolve; });
+  const allowReleasePromise = new Promise(resolve => {
+    allowRelease = resolve;
+  });
 
   const hold = withFileLock(file, async () => {
     lockHeld();
@@ -604,15 +674,12 @@ test('EXEC-001-T09c: acquireSessionTurn rejects with TIMEOUT when real budget re
   assert.equal(realBudget.remainingExecutionMs(), 0, 'remainingExecutionMs must be 0');
   assert.equal(realBudget.isExecutionExpired(), false, 'isExecutionExpired must be false at 1079.8ms');
 
-  await assert.rejects(
-    acquireSessionTurn(handle, { budget: realBudget }),
-    err => {
-      assert.ok(err instanceof ToolError);
-      assert.equal(err.code, 'TIMEOUT');
-      assert.match(err.message, /Execution budget expired/);
-      return true;
-    }
-  );
+  await assert.rejects(acquireSessionTurn(handle, { budget: realBudget }), err => {
+    assert.ok(err instanceof ToolError);
+    assert.equal(err.code, 'TIMEOUT');
+    assert.match(err.message, /Execution budget expired/);
+    return true;
+  });
 
   const s = getSession(handle);
   assert.equal(s.turnToken, null);
@@ -628,12 +695,20 @@ test('cancel of a closed session says it is closed, not that no turn runs (FEEDB
 });
 
 test('AUDIT-001-A08: a failed initial publication returns no handle, acquires no turn and leaves no file', async () => {
-  const { createSession: create, acquireAndResolveSession: acquire, listSessions: list, getSessionsDir: dir } = require('../../src/sessions/session.ts');
+  const {
+    createSession: create,
+    acquireAndResolveSession: acquire,
+    listSessions: list,
+    getSessionsDir: dir,
+  } = require('../../src/sessions/session.ts');
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-a08-'));
   const before = fs.existsSync(dir()) ? fs.readdirSync(dir()).sort() : [];
   const rename = fs.renameSync;
   // A new session publishes a temporary file by renaming it to a fresh handle; fail that step.
-  fs.renameSync = (from, to) => { if (String(from).includes('.tmp.')) throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' }); return rename(from, to); };
+  fs.renameSync = (from, to) => {
+    if (String(from).includes('.tmp.')) throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    return rename(from, to);
+  };
   try {
     assert.throws(() => create('codex', workspace), /EPERM/, 'createSession reports the failure instead of returning a handle');
     await assert.rejects(acquire(null, 'codex', workspace), /EPERM/, 'no turn is acquired after a failed creation');

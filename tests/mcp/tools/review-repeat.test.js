@@ -14,7 +14,14 @@ const { adapterRegistry } = require('../../../src/backends/registry.ts');
 const { handleReview } = require('../../../src/mcp/tools/review.tool.ts');
 const { handleSession } = require('../../../src/mcp/tools/session.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
-const { createSession, updateSession, getSession, acquireSessionTurn, releaseSessionTurn, getSessionsDir } = require('../../../src/sessions/session.ts');
+const {
+  createSession,
+  updateSession,
+  getSession,
+  acquireSessionTurn,
+  releaseSessionTurn,
+  getSessionsDir,
+} = require('../../../src/sessions/session.ts');
 const { ToolError } = require('../../../src/contracts/index.ts');
 const { readResult } = require('../../helpers/result.cjs');
 const original = { agy: adapterRegistry.agy, codex: adapterRegistry.codex };
@@ -29,24 +36,46 @@ function fixtureRepo(name) {
   const repo = path.join(tempDir, name);
   fs.mkdirSync(repo);
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', windowsHide: true }).trim();
-  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
-  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n'); git('add', '.'); git('commit', '-qm', 'base');
+  git('init', '-q');
+  git('config', 'user.name', 'Fixture');
+  git('config', 'user.email', 'fixture@example.invalid');
+  fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 1;\n');
+  git('add', '.');
+  git('commit', '-qm', 'base');
   fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 2;\n');
   return { repo, git };
 }
 
 /** Fixture reviewers that count their turns; `answer` builds the reply from the prompt. */
-function installReviewers(answer = snapshot => ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n')) {
+function installReviewers(
+  answer = snapshot =>
+    [
+      'REVIEW: 1',
+      `SNAPSHOT: ${snapshot}`,
+      'COVERAGE: COMPLETE',
+      'VERDICT: READY',
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\n'),
+) {
   const turns = { agy: 0, codex: 0 };
   for (const id of ['agy', 'codex']) {
     adapterRegistry[id] = {
-      id, name: 'fixture',
+      id,
+      name: 'fixture',
       probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
       execute: async (prompt, options) => {
         turns[id]++;
         const nativeSessionId = id === 'agy' ? '11111111-2222-3333-4444-55555555555' + turns[id] : `codex-thread-${turns[id]}`;
-        return { status: 'completed', isError: false, truncated: false, continuationAvailable: true, nativeSessionId, model: options.model,
-          output: answer(prompt.match(/^SNAPSHOT: (.+)$/m)[1]) };
+        return {
+          status: 'completed',
+          isError: false,
+          truncated: false,
+          continuationAvailable: true,
+          nativeSessionId,
+          model: options.model,
+          output: answer(prompt.match(/^SNAPSHOT: (.+)$/m)[1]),
+        };
       },
     };
   }
@@ -65,7 +94,12 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
   const second = await handleReview('review', {}, repo, null, null, approve);
   const repeat = readResult(second);
   assert.equal(turns.agy, 1, 'the second identical request costs no turn');
-  assert.match(repeat.answer, new RegExp(`^No model turn: this request matches a completed review with complete coverage and input \\(same snapshot, scope, backend and model\\) in session ${first.sessionHandle}, completed `));
+  assert.match(
+    repeat.answer,
+    new RegExp(
+      `^No model turn: this request matches a completed review with complete coverage and input \\(same snapshot, scope, backend and model\\) in session ${first.sessionHandle}, completed `,
+    ),
+  );
   assert.equal(repeat.verdict, first.verdict, 'the earlier server verdict is reported');
   assert.equal(repeat.reason, first.reason);
   assert.equal(repeat.sessionHandle, first.sessionHandle, 'retains the workspace session_handle in the refusal footer (FEEDBACK-060f4)');
@@ -79,7 +113,9 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
 
   // If the caller explicitly passed another valid session_handle in the same workspace, that handle is retained
   const otherSameWorkspace = createSession('agy', repo, '11111111-2222-3333-4444-555555555599');
-  const repeatWithExplicit = readResult(await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve));
+  const repeatWithExplicit = readResult(
+    await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve),
+  );
   assert.equal(turns.agy, 1);
   assert.equal(repeatWithExplicit.sessionHandle, otherSameWorkspace.sessionHandle);
   assert.equal(repeatWithExplicit.continuationAvailable, true);
@@ -94,7 +130,9 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
   const busyTurn = await acquireSessionTurn(otherSameWorkspace.sessionHandle);
   assert.equal(busyTurn.ok, true);
   try {
-    const repeatBusy = readResult(await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve));
+    const repeatBusy = readResult(
+      await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve),
+    );
     assert.equal(repeatBusy.sessionHandle, otherSameWorkspace.sessionHandle);
     assert.equal(repeatBusy.continuationAvailable, false);
   } finally {
@@ -110,7 +148,9 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
     return baseProbe(...probeArgs);
   };
   try {
-    const repeatBusyDuringPrep = readResult(await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve));
+    const repeatBusyDuringPrep = readResult(
+      await handleReview('review', { session_handle: otherSameWorkspace.sessionHandle }, repo, null, null, approve),
+    );
     assert.equal(repeatBusyDuringPrep.sessionHandle, otherSameWorkspace.sessionHandle);
     assert.equal(repeatBusyDuringPrep.continuationAvailable, false);
   } finally {
@@ -131,7 +171,7 @@ test('an unchanged repeat review starts no model turn, refers to the earlier ver
   const { repo: otherRepo } = fixtureRepo('unchanged-other-workspace');
   await assert.rejects(
     async () => handleReview('review', { session_handle: repeat.sessionHandle }, otherRepo, null, null, approve),
-    /belongs to another workspace/
+    /belongs to another workspace/,
   );
   assert.equal(turns.agy, 2, 'cross-workspace handle rejection starts no turn');
   const otherFirst = readResult(await handleReview('review', {}, otherRepo, null, null, approve));
@@ -177,19 +217,26 @@ test('an unreadable sessions directory is reported and the review runs', async t
   const sessionsDir = path.resolve(getSessionsDir());
   const readdirSync = fs.readdirSync;
   t.mock.method(fs, 'readdirSync', function (dir, ...rest) {
-    if (path.resolve(String(dir)) === sessionsDir) throw Object.assign(new Error(`EACCES: simulated, scandir '${dir}'`), { code: 'EACCES' });
+    if (path.resolve(String(dir)) === sessionsDir)
+      throw Object.assign(new Error(`EACCES: simulated, scandir '${dir}'`), { code: 'EACCES' });
     return readdirSync.call(this, dir, ...rest);
   });
   const result = readResult(await handleReview('review', {}, repo, null, null, approve));
   t.mock.restoreAll();
   assert.equal(turns.agy, 2, 'never a silent pass: the review ran');
-  assert.ok(result.warnings.some(warning => /^Repeat-review check unavailable, so this review ran: .*EACCES/.test(warning)), result.warnings.join('\n'));
+  assert.ok(
+    result.warnings.some(warning => /^Repeat-review check unavailable, so this review ran: .*EACCES/.test(warning)),
+    result.warnings.join('\n'),
+  );
 });
 
 test('disabled history still refuses an unchanged repeat: the outcome lives in the session record', async t => {
   const previous = process.env.coagent8_HISTORY;
   process.env.coagent8_HISTORY = 'off';
-  t.after(() => { if (previous === undefined) delete process.env.coagent8_HISTORY; else process.env.coagent8_HISTORY = previous; });
+  t.after(() => {
+    if (previous === undefined) delete process.env.coagent8_HISTORY;
+    else process.env.coagent8_HISTORY = previous;
+  });
   const { repo } = fixtureRepo('history-off');
   const turns = installReviewers();
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
@@ -256,7 +303,9 @@ test('a review ending with PARTIAL coverage and BLOCKED is retried without and w
   assert.equal(turns2.agy, 1);
   assert.equal(firstWithHandle.verdict, 'BLOCKED');
 
-  const retryWithHandle = readResult(await handleReview('review', { session_handle: firstWithHandle.sessionHandle }, repo2, null, null, approve));
+  const retryWithHandle = readResult(
+    await handleReview('review', { session_handle: firstWithHandle.sessionHandle }, repo2, null, null, approve),
+  );
   assert.equal(turns2.agy, 2, 'unchanged retry with session_handle starts a new model turn');
   assert.equal(retryWithHandle.sessionHandle, firstWithHandle.sessionHandle);
   assert.equal(retryWithHandle.verdict, 'READY');
@@ -265,14 +314,16 @@ test('a review ending with PARTIAL coverage and BLOCKED is retried without and w
 test('incomplete collected input is retried even if reviewer reported COVERAGE: COMPLETE', async () => {
   const { repo } = fixtureRepo('incomplete-input-retry');
   fs.writeFileSync(path.join(repo, 'too-large.txt'), 'x'.repeat(256 * 1024 + 1));
-  const turns = installReviewers(snapshot => [
-    'REVIEW: 1',
-    `SNAPSHOT: ${snapshot}`,
-    'COVERAGE: COMPLETE',
-    'VERDICT: READY',
-    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
-    'END_REVIEW',
-  ].join('\n'));
+  const turns = installReviewers(snapshot =>
+    [
+      'REVIEW: 1',
+      `SNAPSHOT: ${snapshot}`,
+      'COVERAGE: COMPLETE',
+      'VERDICT: READY',
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\n'),
+  );
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const first = readResult(await handleReview('review', {}, repo, null, null, approve));
@@ -288,8 +339,16 @@ test('incomplete collected input is retried even if reviewer reported COVERAGE: 
 test('a READY with a binary change repeats only while the binary bytes are unchanged (FEEDBACK-070d)', async () => {
   const { repo } = fixtureRepo('binary-identity-repeat');
   fs.writeFileSync(path.join(repo, 'image.png'), Buffer.from([0x89, 0x50, 0, 1, 2, 3]));
-  const turns = installReviewers(snapshot => ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY',
-    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n'));
+  const turns = installReviewers(snapshot =>
+    [
+      'REVIEW: 1',
+      `SNAPSHOT: ${snapshot}`,
+      'COVERAGE: COMPLETE',
+      'VERDICT: READY',
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\n'),
+  );
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const first = readResult(await handleReview('review', {}, repo, null, null, approve));
@@ -307,7 +366,8 @@ test('a typed execution failure is retried and starts a new model turn', async (
   let fail = true;
   let attempts = 0;
   adapterRegistry.agy = {
-    id: 'agy', name: 'fixture',
+    id: 'agy',
+    name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async (prompt, options) => {
       attempts++;
@@ -316,8 +376,12 @@ test('a typed execution failure is retried and starts a new model turn', async (
         throw new ToolError('EXECUTION_FAILED', 'Simulated execution error');
       }
       return {
-        status: 'completed', isError: false, truncated: false, continuationAvailable: true,
-        nativeSessionId: '11111111-2222-3333-4444-555555555551', model: options.model,
+        status: 'completed',
+        isError: false,
+        truncated: false,
+        continuationAvailable: true,
+        nativeSessionId: '11111111-2222-3333-4444-555555555551',
+        model: options.model,
         output: [
           'REVIEW: 1',
           `SNAPSHOT: ${prompt.match(/^SNAPSHOT: (.+)$/m)[1]}`,
@@ -347,7 +411,8 @@ test('a review that failed before a native thread existed is retried with its se
   let fail = true;
   const resumed = [];
   adapterRegistry.agy = {
-    id: 'agy', name: 'fixture',
+    id: 'agy',
+    name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async (prompt, options) => {
       resumed.push(options.nativeSessionId ?? null);
@@ -356,8 +421,12 @@ test('a review that failed before a native thread existed is retried with its se
         throw new ToolError('EXECUTION_FAILED', 'Simulated execution error');
       }
       return {
-        status: 'completed', isError: false, truncated: false, continuationAvailable: true,
-        nativeSessionId: '11111111-2222-3333-4444-555555555552', model: options.model,
+        status: 'completed',
+        isError: false,
+        truncated: false,
+        continuationAvailable: true,
+        nativeSessionId: '11111111-2222-3333-4444-555555555552',
+        model: options.model,
         output: [
           'REVIEW: 1',
           `SNAPSHOT: ${prompt.match(/^SNAPSHOT: (.+)$/m)[1]}`,
@@ -416,18 +485,20 @@ test('a legacy session record without coverage is ignored and retried', async ()
 
 test('an unchanged complete BLOCKED review with findings still deduplicates (AX-007c)', async () => {
   const { repo } = fixtureRepo('complete-blocked-dedup');
-  const turns = installReviewers(snapshot => [
-    'REVIEW: 1',
-    `SNAPSHOT: ${snapshot}`,
-    'COVERAGE: COMPLETE',
-    'VERDICT: BLOCKED',
-    '[P1] a.ts:1',
-    'Problem: Security flaw',
-    'Evidence: a.ts:1',
-    'Fix: Fix the flaw',
-    'CHECKS: typecheck=PASS; tests=PASS',
-    'END_REVIEW',
-  ].join('\n'));
+  const turns = installReviewers(snapshot =>
+    [
+      'REVIEW: 1',
+      `SNAPSHOT: ${snapshot}`,
+      'COVERAGE: COMPLETE',
+      'VERDICT: BLOCKED',
+      '[P1] a.ts:1',
+      'Problem: Security flaw',
+      'Evidence: a.ts:1',
+      'Fix: Fix the flaw',
+      'CHECKS: typecheck=PASS; tests=PASS',
+      'END_REVIEW',
+    ].join('\n'),
+  );
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
 
   const first = readResult(await handleReview('review', {}, repo, null, null, approve));
@@ -508,7 +579,9 @@ test('an unchanged repeat after a review blocked by filesystem denials starts a 
   const firstWithHandle = readResult(await handleReview('review', {}, repo2, null, null, approve));
   assert.equal(round, 1);
   assert.equal(firstWithHandle.verdict, 'BLOCKED');
-  const retryWithHandle = readResult(await handleReview('review', { session_handle: firstWithHandle.sessionHandle }, repo2, null, null, approve));
+  const retryWithHandle = readResult(
+    await handleReview('review', { session_handle: firstWithHandle.sessionHandle }, repo2, null, null, approve),
+  );
   assert.equal(round, 2, 'unchanged repeat with session_handle starts a new model turn');
   assert.equal(retryWithHandle.verdict, 'READY');
 });
@@ -517,7 +590,9 @@ test('ENVELOPE-001: a server-terminated review is judged and deduplicated; a len
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy', 'codex'] } });
   // No END_REVIEW from the model: CHECKS is last and the turn completed.
   const { repo } = fixtureRepo('server-terminated');
-  const turns = installReviewers(snapshot => ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'].join('\n'));
+  const turns = installReviewers(snapshot =>
+    ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'].join('\n'),
+  );
   const first = await handleReview('review', {}, repo, null, null, approve);
   assert.equal(readResult(first).verdict, 'READY');
   assert.match(first.content[0].text, /CHECKS: typecheck=NOT_RUN; tests=NOT_RUN\nEND_REVIEW\n/, 'the server appended the terminator');
@@ -528,13 +603,29 @@ test('ENVELOPE-001: a server-terminated review is judged and deduplicated; a len
   const limited = fixtureRepo('length-limited');
   let limitedTurns = 0;
   adapterRegistry.agy = {
-    id: 'agy', name: 'fixture',
+    id: 'agy',
+    name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
       limitedTurns++;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)[1];
-      return { status: 'completed', isError: false, truncated: false, lengthLimited: true, continuationAvailable: true, nativeSessionId: `11111111-2222-3333-4444-66666666666${limitedTurns}`, model: 'fixture-model',
-        output: ['REVIEW: 1', `SNAPSHOT: ${snapshot}`, 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n') };
+      return {
+        status: 'completed',
+        isError: false,
+        truncated: false,
+        lengthLimited: true,
+        continuationAvailable: true,
+        nativeSessionId: `11111111-2222-3333-4444-66666666666${limitedTurns}`,
+        model: 'fixture-model',
+        output: [
+          'REVIEW: 1',
+          `SNAPSHOT: ${snapshot}`,
+          'COVERAGE: COMPLETE',
+          'VERDICT: READY',
+          'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+          'END_REVIEW',
+        ].join('\n'),
+      };
     },
   };
   const blocked = readResult(await handleReview('review', {}, limited.repo, null, null, approve));

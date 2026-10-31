@@ -30,18 +30,26 @@ const CLOSE_GRACE_MS = 10_000;
  */
 async function connectMcp(options) {
   const pending = new Map();
-  let nextId = 1, channel = null, failure = null, closed = false;
+  let nextId = 1,
+    channel = null,
+    failure = null,
+    closed = false;
   // Ids of requests that timed out: a late response to one is dropped, not a protocol error.
   const expired = new Set();
   // The caller's signal, or our own stop when the server does not exit after stdin closes.
   const stop = new AbortController();
   const abortSignal = options.abortSignal ? AbortSignal.any([options.abortSignal, stop.signal]) : stop.signal;
   let opened;
-  const ready = new Promise(resolve => { opened = resolve; });
+  const ready = new Promise(resolve => {
+    opened = resolve;
+  });
 
   function rejectAll(error) {
     failure = failure || error;
-    for (const item of pending.values()) { clearTimeout(item.timer); item.reject(failure); }
+    for (const item of pending.values()) {
+      clearTimeout(item.timer);
+      item.reject(failure);
+    }
     pending.clear();
   }
 
@@ -54,8 +62,18 @@ async function connectMcp(options) {
   function onLine(line) {
     if (!line.trim()) return;
     let message;
-    try { message = JSON.parse(line); } catch { rejectAll(new Error('Malformed MCP output.')); channel?.close(); return; }
-    if (!message || typeof message !== 'object' || Array.isArray(message)) { rejectAll(new Error('Invalid MCP record.')); channel?.close(); return; }
+    try {
+      message = JSON.parse(line);
+    } catch {
+      rejectAll(new Error('Malformed MCP output.'));
+      channel?.close();
+      return;
+    }
+    if (!message || typeof message !== 'object' || Array.isArray(message)) {
+      rejectAll(new Error('Invalid MCP record.'));
+      channel?.close();
+      return;
+    }
     if (message.method && message.id != null) {
       // A server request (such as elicitation, which this client never declares).
       send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Not supported by the acceptance client.' } });
@@ -70,7 +88,11 @@ async function connectMcp(options) {
     }
     const item = pending.get(message.id);
     if (!item && expired.delete(message.id)) return;
-    if (!item) { rejectAll(new Error(`Unexpected MCP response id ${message.id}.`)); channel?.close(); return; }
+    if (!item) {
+      rejectAll(new Error(`Unexpected MCP response id ${message.id}.`));
+      channel?.close();
+      return;
+    }
     pending.delete(message.id);
     clearTimeout(item.timer);
     if (message.error) item.reject(Object.assign(new Error(message.error.message || 'MCP error'), { rpc: message.error }));
@@ -85,8 +107,13 @@ async function connectMcp(options) {
     maxLineBytes: MAX_RECORD_BYTES,
     onStdoutLine: onLine,
     session: {
-      start(ch) { channel = ch; opened(); },
-      interrupt(ch) { ch.close(); },
+      start(ch) {
+        channel = ch;
+        opened();
+      },
+      interrupt(ch) {
+        ch.close();
+      },
     },
   }).then(result => {
     closed = true;
@@ -97,8 +124,15 @@ async function connectMcp(options) {
   /** Closes stdin, stops the server if it outlives the grace period, and waits for its exit. */
   async function shutdown() {
     if (!closed) channel.close();
-    const timer = setTimeout(() => stop.abort(new Error('MCP server did not exit after stdin closed.')), options.closeGraceMs ?? CLOSE_GRACE_MS);
-    try { return await exited; } finally { clearTimeout(timer); }
+    const timer = setTimeout(
+      () => stop.abort(new Error('MCP server did not exit after stdin closed.')),
+      options.closeGraceMs ?? CLOSE_GRACE_MS,
+    );
+    try {
+      return await exited;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   await Promise.race([ready, exited]);
@@ -121,18 +155,27 @@ async function connectMcp(options) {
         reject(new Error(`MCP request ${method} timed out after ${requestOptions.timeoutMs || DEFAULT_REQUEST_MS} ms.`));
       }, requestOptions.timeoutMs || DEFAULT_REQUEST_MS);
       pending.set(id, { resolve, reject, timer, progressToken, onProgress: requestOptions.onProgress });
-      try { send({ jsonrpc: '2.0', id, method, params: body }); }
-      catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
+      try {
+        send({ jsonrpc: '2.0', id, method, params: body });
+      } catch (error) {
+        clearTimeout(timer);
+        pending.delete(id);
+        reject(error);
+      }
     });
   }
 
   let init;
   try {
-    init = await request('initialize', {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: 'coagent8-acceptance', version: '1.0.0' },
-    }, { timeoutMs: options.initTimeoutMs || DEFAULT_REQUEST_MS });
+    init = await request(
+      'initialize',
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: 'coagent8-acceptance', version: '1.0.0' },
+      },
+      { timeoutMs: options.initTimeoutMs || DEFAULT_REQUEST_MS },
+    );
     if (!init || typeof init !== 'object' || !init.serverInfo || typeof init.protocolVersion !== 'string') {
       throw new Error('MCP server returned an invalid initialize result.');
     }
@@ -157,7 +200,10 @@ async function connectMcp(options) {
 
 /** The text of a tool result's content blocks. */
 function resultText(result) {
-  return (result?.content || []).filter(block => block.type === 'text').map(block => block.text).join('\n');
+  return (result?.content || [])
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('\n');
 }
 
 module.exports = { connectMcp, resultText };

@@ -32,7 +32,7 @@ export async function executeDelegation(
   scope: readonly string[],
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: Omit<TaskOptions, 'profile'> = {}
+  options: Omit<TaskOptions, 'profile'> = {},
 ): Promise<TaskExecutionResult> {
   const repo = await readWorkspaceRepository(cwd, options.context).catch(err => {
     if (err instanceof ToolError && ['ABORTED', 'TIMEOUT'].includes(err.code)) throw err;
@@ -47,7 +47,13 @@ export async function executeDelegation(
     try {
       changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope);
     } catch (err) {
-      changes = { changed: [], outsideScope: [], dirtyBefore: [], truncated: false, unavailable: redactDiagnostic((err as Error).message, 256) };
+      changes = {
+        changed: [],
+        outsideScope: [],
+        dirtyBefore: [],
+        truncated: false,
+        unavailable: redactDiagnostic((err as Error).message, 256),
+      };
     }
     outcome = { ...outcome, changes };
     return outcome;

@@ -11,7 +11,12 @@ function wholeFileOracle(text) {
   const lines = text.split('\n');
   while (lines.length > 0 && lines[lines.length - 1].trim().length === 0) lines.pop();
   if (lines.length === 0) return null;
-  try { JSON.parse(lines[lines.length - 1].trim()); return null; } catch { /* torn */ }
+  try {
+    JSON.parse(lines[lines.length - 1].trim());
+    return null;
+  } catch {
+    /* torn */
+  }
   lines.pop();
   return Buffer.byteLength(lines.length > 0 ? lines.join('\n') + '\n' : '', 'utf8');
 }
@@ -52,7 +57,10 @@ test('AUDIT-001-A17: the backward scan truncates exactly where the whole-file sc
 
 test('AUDIT-001-A17: the backward scan agrees with the whole-file scan on generated logs', async () => {
   let seed = 7;
-  const random = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
   for (let i = 0; i < 200; i++) {
     const parts = [header];
     const count = Math.floor(random() * 6);
@@ -76,7 +84,11 @@ test('AUDIT-001-A16: the check reads about one record, not the whole log', async
   fsp.open = async (...args) => {
     const handle = await open(...args);
     const read = handle.read.bind(handle);
-    handle.read = async (...readArgs) => { const result = await read(...readArgs); bytesRead += result.bytesRead; return result; };
+    handle.read = async (...readArgs) => {
+      const result = await read(...readArgs);
+      bytesRead += result.bytesRead;
+      return result;
+    };
     return handle;
   };
   try {
@@ -92,14 +104,18 @@ test('AUDIT-001-A18: short reads are filled, and an early end of file truncates 
   const fsp = require('node:fs/promises');
   const open = fsp.open;
   const text = `${header}\n${record(1)}\n${record(2)}\n`;
-  const withReads = async (limitRead) => {
+  const withReads = async limitRead => {
     fsp.open = async (...args) => {
       const handle = await open(...args);
       const read = handle.read.bind(handle);
       handle.read = (buffer, offset, length, position) => limitRead(read, buffer, offset, length, position);
       return handle;
     };
-    try { return await offsetOf(text); } finally { fsp.open = open; }
+    try {
+      return await offsetOf(text);
+    } finally {
+      fsp.open = open;
+    }
   };
   // Every read returns at most 6 bytes: the block is filled and the valid final record kept.
   assert.equal(await withReads((read, buffer, offset, length, position) => read(buffer, offset, Math.min(6, length), position)), null);

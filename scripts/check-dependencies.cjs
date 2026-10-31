@@ -5,11 +5,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 
 function resolveTypeScript(customRoot) {
-  const searchRoots = [
-    path.resolve(__dirname, '../tooling/documentation'),
-    customRoot || path.resolve(__dirname, '..'),
-    process.cwd(),
-  ];
+  const searchRoots = [path.resolve(__dirname, '../tooling/documentation'), customRoot || path.resolve(__dirname, '..'), process.cwd()];
 
   for (const root of searchRoots) {
     try {
@@ -24,7 +20,7 @@ function resolveTypeScript(customRoot) {
   }
 
   throw new Error(
-    'TypeScript compiler API not found. Ensure tooling dependencies are installed (e.g. npm ci --prefix tooling/documentation).'
+    'TypeScript compiler API not found. Ensure tooling dependencies are installed (e.g. npm ci --prefix tooling/documentation).',
   );
 }
 
@@ -75,83 +71,144 @@ const BOUNDARY_RULES = [
   {
     from: 'contracts',
     forbidden: [
-      'storage', 'security', 'workspace', 'review', 'config', 'sessions',
-      'models', 'backends', 'execution', 'execution/runtime', 'diagnostics',
-      'mcp', 'integrations', 'root', 'extensions'
+      'storage',
+      'security',
+      'workspace',
+      'review',
+      'config',
+      'sessions',
+      'models',
+      'backends',
+      'execution',
+      'execution/runtime',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'root',
+      'extensions',
     ],
     reason: 'contracts/ defines pure types and shared constants; it must not import any implementation module.',
   },
   {
     from: 'storage',
     forbidden: [
-      'security', 'workspace', 'review', 'config', 'sessions',
-      'models', 'backends', 'execution', 'execution/runtime', 'diagnostics',
-      'mcp', 'integrations', 'root', 'extensions'
+      'security',
+      'workspace',
+      'review',
+      'config',
+      'sessions',
+      'models',
+      'backends',
+      'execution',
+      'execution/runtime',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'root',
+      'extensions',
     ],
     reason: 'storage/ owns file locking and atomic writes; it must not import application policy or higher-level mechanisms.',
   },
   {
     from: 'security',
     forbidden: [
-      'storage', 'workspace', 'review', 'config', 'sessions',
-      'models', 'backends', 'execution', 'diagnostics',
-      'mcp', 'integrations', 'root', 'extensions'
+      'storage',
+      'workspace',
+      'review',
+      'config',
+      'sessions',
+      'models',
+      'backends',
+      'execution',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'root',
+      'extensions',
     ],
     reason: 'security/ owns redaction and credential boundaries; it must not depend on sessions, models, backends, or presentation.',
   },
   {
     from: 'workspace',
     forbidden: [
-      'review', 'config', 'sessions', 'models', 'backends', 'execution',
-      'diagnostics', 'mcp', 'integrations', 'root', 'extensions'
+      'review',
+      'config',
+      'sessions',
+      'models',
+      'backends',
+      'execution',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'root',
+      'extensions',
     ],
-    reason: 'workspace/ owns workspace resolution and bounded git evidence; it must not import sessions, application execution, or transport.',
+    reason:
+      'workspace/ owns workspace resolution and bounded git evidence; it must not import sessions, application execution, or transport.',
   },
   {
     from: 'review',
-    forbidden: [
-      'sessions', 'models', 'backends', 'execution', 'diagnostics',
-      'mcp', 'integrations', 'root', 'extensions'
-    ],
+    forbidden: ['sessions', 'models', 'backends', 'execution', 'diagnostics', 'mcp', 'integrations', 'root', 'extensions'],
     reason: 'review/ evaluates input completeness and state envelope gates; it must not format MCP envelopes or depend on execution.',
   },
   {
     from: 'config',
     forbidden: [
-      'review', 'sessions', 'models', 'backends', 'execution',
-      'execution/runtime', 'diagnostics', 'mcp', 'integrations', 'root', 'extensions'
+      'review',
+      'sessions',
+      'models',
+      'backends',
+      'execution',
+      'execution/runtime',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'root',
+      'extensions',
     ],
     reason: 'config owns validated settings and paths; it must not import models/backends implementations, session service, or execution.',
   },
   {
     from: 'sessions',
-    forbidden: [
-      'review', 'models', 'backends', 'execution', 'diagnostics',
-      'mcp', 'integrations', 'root', 'extensions'
-    ],
+    forbidden: ['review', 'models', 'backends', 'execution', 'diagnostics', 'mcp', 'integrations', 'root', 'extensions'],
     reason: 'sessions/ owns continuation and history; it must not import the controller, backends, models, or transport.',
   },
   {
     from: 'models',
     forbidden: [
-      'backends', 'execution', 'execution/runtime', 'diagnostics',
-      'mcp', 'integrations', 'sessions', 'review', 'root', 'extensions'
+      'backends',
+      'execution',
+      'execution/runtime',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'sessions',
+      'review',
+      'root',
+      'extensions',
     ],
     reason: 'models/ owns catalog/price policy and store; it must not import backend adapters, probes, discovery, or execution.',
   },
   {
     from: 'backends',
-    forbidden: [
-      'execution', 'diagnostics', 'mcp', 'integrations', 'sessions',
-      'review', 'root', 'extensions'
-    ],
-    reason: 'backends/ owns CLI adapters, discovery, and probes; it must not import application selection (execution/) or transport (mcp/).',
+    forbidden: ['execution', 'diagnostics', 'mcp', 'integrations', 'sessions', 'review', 'root', 'extensions'],
+    reason:
+      'backends/ owns CLI adapters, discovery, and probes; it must not import application selection (execution/) or transport (mcp/).',
   },
   {
     from: 'execution/runtime',
     forbidden: [
-      'execution', 'backends', 'models', 'diagnostics', 'mcp',
-      'integrations', 'sessions', 'review', 'config', 'root', 'extensions'
+      'execution',
+      'backends',
+      'models',
+      'diagnostics',
+      'mcp',
+      'integrations',
+      'sessions',
+      'review',
+      'config',
+      'root',
+      'extensions',
     ],
     reason: 'execution/runtime primitives must never import application policy or controller.',
   },
@@ -261,31 +318,25 @@ function buildModuleGraph(files, options = {}) {
               typeOnly: Boolean(clause?.isTypeOnly || e.isTypeOnly),
             }))
           : [];
-        const typeOnly = Boolean(
-          clause && (clause.isTypeOnly || (!clause.name && bindings.length > 0 && bindings.every(e => e.typeOnly)))
-        );
+        const typeOnly = Boolean(clause && (clause.isTypeOnly || (!clause.name && bindings.length > 0 && bindings.every(e => e.typeOnly))));
         addEdge(node, node.moduleSpecifier.text, typeOnly ? 'type-import' : 'import', bindings);
       } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
-        const bindings = node.exportClause && ts.isNamedExports(node.exportClause)
-          ? node.exportClause.elements.map(e => ({
-              name: e.propertyName?.text || e.name.text,
-              typeOnly: Boolean(node.isTypeOnly || e.isTypeOnly),
-            }))
-          : [];
+        const bindings =
+          node.exportClause && ts.isNamedExports(node.exportClause)
+            ? node.exportClause.elements.map(e => ({
+                name: e.propertyName?.text || e.name.text,
+                typeOnly: Boolean(node.isTypeOnly || e.isTypeOnly),
+              }))
+            : [];
         const typeOnly = Boolean(node.isTypeOnly || (bindings.length > 0 && bindings.every(e => e.typeOnly)));
         addEdge(node, node.moduleSpecifier.text, typeOnly ? 'type-reexport' : 'reexport', bindings);
       } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
         addEdge(node, node.argument.literal.text, 'type-query');
       } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-        addEdge(
-          node,
-          node.moduleReference.expression.text,
-          node.isTypeOnly ? 'type-import' : 'import-equals'
-        );
+        addEdge(node, node.moduleReference.expression.text, node.isTypeOnly ? 'type-import' : 'import-equals');
       } else if (
         ts.isCallExpression(node) &&
-        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+        (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
       ) {
         const kind = node.expression.kind === ts.SyntaxKind.ImportKeyword ? 'dynamic-import' : 'require';
         if (node.arguments.length && ts.isStringLiteralLike(node.arguments[0])) {
@@ -339,17 +390,9 @@ function buildModuleGraph(files, options = {}) {
           ts.isStringLiteralLike(n.arguments[0])
         ) {
           specs.add(n.arguments[0].text);
-        } else if (
-          ts.isImportDeclaration(n) &&
-          n.moduleSpecifier &&
-          ts.isStringLiteralLike(n.moduleSpecifier)
-        ) {
+        } else if (ts.isImportDeclaration(n) && n.moduleSpecifier && ts.isStringLiteralLike(n.moduleSpecifier)) {
           specs.add(n.moduleSpecifier.text);
-        } else if (
-          ts.isExportDeclaration(n) &&
-          n.moduleSpecifier &&
-          ts.isStringLiteralLike(n.moduleSpecifier)
-        ) {
+        } else if (ts.isExportDeclaration(n) && n.moduleSpecifier && ts.isStringLiteralLike(n.moduleSpecifier)) {
           specs.add(n.moduleSpecifier.text);
         } else if (
           ts.isCallExpression(n) &&
@@ -443,7 +486,7 @@ function findCycles(files, edges, runtimeOnly = false) {
 
 function verifyBoundaries(edges, options = {}) {
   const allowedLegacyEdges = options.allowedLegacyEdges || [];
-  const legacyMatch = (e) => {
+  const legacyMatch = e => {
     return allowedLegacyEdges.some(legacy => legacy.from === e.from && legacy.to === e.to);
   };
 
@@ -466,12 +509,15 @@ function verifyBoundaries(edges, options = {}) {
       return 'MCP SDK dependencies belong to mcp/ and the generated server icon asset, never application/domain modules.';
     }
     if (toOwner === 'editor-sdk') {
-      return fromOwner === 'extensions' ? undefined : 'Editor SDK dependencies belong to client extensions, never core server/runtime modules.';
+      return fromOwner === 'extensions'
+        ? undefined
+        : 'Editor SDK dependencies belong to client extensions, never core server/runtime modules.';
     }
     if (fromOwner === toOwner) return undefined;
     if (toOwner === 'extensions') return 'Core server/runtime in src/ must never depend on client extensions/ UI.';
     if (toOwner === 'mcp' && from !== 'src/index.ts') return 'mcp/ is the transport edge; no application/domain module may depend on it.';
-    if (toOwner === 'integrations' && from !== 'src/index.ts') return 'integrations/ owns optional setup and registrations; core server/domain modules must not depend on it.';
+    if (toOwner === 'integrations' && from !== 'src/index.ts')
+      return 'integrations/ owns optional setup and registrations; core server/domain modules must not depend on it.';
     return undefined;
   }
 
@@ -499,9 +545,10 @@ function verifyBoundaries(edges, options = {}) {
     const toOwner = getOwner(edge.to);
     const rule = forbiddenRulesMap.get(fromOwner);
     const globalRule = forbiddenRulesMap.get('*');
-    const reason = isolationReason(edge.from, edge.to)
-      || (fromOwner !== toOwner && rule?.set.has(toOwner) ? rule.reason : undefined)
-      || (globalRule?.set.has(toOwner) ? globalRule.reason : undefined);
+    const reason =
+      isolationReason(edge.from, edge.to) ||
+      (fromOwner !== toOwner && rule?.set.has(toOwner) ? rule.reason : undefined) ||
+      (globalRule?.set.has(toOwner) ? globalRule.reason : undefined);
     if (reason && !legacyMatch(edge)) report(edge, edge.to, [edge], reason);
   }
 
@@ -589,7 +636,9 @@ function checkDependencies(options = {}) {
       }
     }
 
-    files = Array.from(fileSet).filter(file => fs.existsSync(path.resolve(rootDir, file))).sort();
+    files = Array.from(fileSet)
+      .filter(file => fs.existsSync(path.resolve(rootDir, file)))
+      .sort();
   }
 
   const { edges, computed, parseErrors } = buildModuleGraph(files, {

@@ -197,7 +197,11 @@ test('runner executes native mode with mock code CLI and verifies args and home 
 
   // Verify invocations of code
   assert.ok(fs.existsSync(logFile), 'Mock code CLI must have been invoked');
-  const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const lines = fs
+    .readFileSync(logFile, 'utf8')
+    .trim()
+    .split('\n')
+    .map(l => JSON.parse(l));
   assert.ok(lines.length >= 2, 'Must have at least 2 code invocations: version probe and install');
 
   const probeCall = lines.find(args => args.includes('--version'));
@@ -272,7 +276,6 @@ test('runner fails and reports violation when home preservation is broken', asyn
   assert.match(failStep.error, /Home preservation violation/);
 });
 
-
 function writeMockCode(file, body) {
   fs.writeFileSync(file, `const args = process.argv.slice(2);\n${body}\nprocess.exit(0);\n`, 'utf8');
 }
@@ -301,7 +304,12 @@ test('a failed VS Code version probe fails the host step and evidence keeps arti
   const evidencePath = path.join(testRoot, 'evidence.json');
 
   const result = await runAcceptance({
-    dryRun: false, tarball: syn.tarballPath, vsix: syn.vsixPath, codePath: mockCode, evidencePath, tempParent: testRoot,
+    dryRun: false,
+    tarball: syn.tarballPath,
+    vsix: syn.vsixPath,
+    codePath: mockCode,
+    evidencePath,
+    tempParent: testRoot,
   });
 
   assert.equal(result.status, 'FAIL');
@@ -323,12 +331,20 @@ test('credentials in subprocess output never reach the evidence file', async t =
   const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
   const token = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
   const mockCode = path.join(testRoot, 'mock-code.cjs');
-  writeMockCode(mockCode, `if (args.includes('--version')) { console.log('1.90.0'); process.exit(0); }
-if (args.includes('--install-extension')) { console.error('auth failed for https://user:hunter2secret@example.com token ${token}'); process.exit(1); }`);
+  writeMockCode(
+    mockCode,
+    `if (args.includes('--version')) { console.log('1.90.0'); process.exit(0); }
+if (args.includes('--install-extension')) { console.error('auth failed for https://user:hunter2secret@example.com token ${token}'); process.exit(1); }`,
+  );
   const evidencePath = path.join(testRoot, 'evidence.json');
 
   const result = await runAcceptance({
-    dryRun: false, tarball: syn.tarballPath, vsix: syn.vsixPath, codePath: mockCode, evidencePath, tempParent: testRoot,
+    dryRun: false,
+    tarball: syn.tarballPath,
+    vsix: syn.vsixPath,
+    codePath: mockCode,
+    evidencePath,
+    tempParent: testRoot,
   });
 
   assert.equal(result.status, 'FAIL');
@@ -346,7 +362,13 @@ test('evidence keeps observations made inside a failing step', async t => {
 
   // A version disagreement fails the runtime step after the runtime started.
   const mismatchPath = path.join(testRoot, 'mismatch.json');
-  const mismatch = await runAcceptance({ dryRun: true, tarball: older.tarballPath, vsix: newer.vsixPath, evidencePath: mismatchPath, tempParent: testRoot });
+  const mismatch = await runAcceptance({
+    dryRun: true,
+    tarball: older.tarballPath,
+    vsix: newer.vsixPath,
+    evidencePath: mismatchPath,
+    tempParent: testRoot,
+  });
   assert.equal(mismatch.status, 'FAIL');
   const runtime = JSON.parse(fs.readFileSync(mismatchPath, 'utf8')).runtime;
   assert.equal(runtime.startedVersion, '0.6.1');
@@ -358,7 +380,13 @@ test('evidence keeps observations made inside a failing step', async t => {
   const brokenVsix = path.join(testRoot, 'broken.vsix');
   fs.writeFileSync(brokenVsix, 'not a zip', 'utf8');
   const brokenPath = path.join(testRoot, 'broken.json');
-  const broken = await runAcceptance({ dryRun: true, tarball: older.tarballPath, vsix: brokenVsix, evidencePath: brokenPath, tempParent: testRoot });
+  const broken = await runAcceptance({
+    dryRun: true,
+    tarball: older.tarballPath,
+    vsix: brokenVsix,
+    evidencePath: brokenPath,
+    tempParent: testRoot,
+  });
   assert.equal(broken.status, 'FAIL');
   const artifacts = JSON.parse(fs.readFileSync(brokenPath, 'utf8')).artifacts;
   assert.equal(artifacts.tarball.version, '0.6.1');
@@ -396,7 +424,13 @@ test('an interrupt stops the running process, writes evidence and removes the is
 
   const started = Date.now();
   const result = await runAcceptance({
-    dryRun: false, tarball: syn.tarballPath, vsix: syn.vsixPath, codePath: mockCode, evidencePath, tempParent: parent, signal: controller.signal,
+    dryRun: false,
+    tarball: syn.tarballPath,
+    vsix: syn.vsixPath,
+    codePath: mockCode,
+    evidencePath,
+    tempParent: parent,
+    signal: controller.signal,
   });
 
   assert.ok(Date.now() - started < 9_000, 'the hanging probe is stopped before its own deadline');
@@ -419,7 +453,10 @@ test('a manifest without a version fails the artifact step and evidence keeps nu
   const vsix = path.join(testRoot, 'noversion.vsix');
   fs.writeFileSync(vsix, buildZip({ 'extension/package.json': '{"name":"x"}' }));
 
-  for (const [label, candidates] of [['tarball', { tarball, vsix: syn.vsixPath }], ['vsix', { tarball: syn.tarballPath, vsix }]]) {
+  for (const [label, candidates] of [
+    ['tarball', { tarball, vsix: syn.vsixPath }],
+    ['vsix', { tarball: syn.tarballPath, vsix }],
+  ]) {
     const evidencePath = path.join(testRoot, `${label}.json`);
     const result = await runAcceptance({ dryRun: true, ...candidates, evidencePath, tempParent: testRoot });
     assert.equal(result.status, 'FAIL');

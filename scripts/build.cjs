@@ -16,19 +16,30 @@ function packageRoot(moduleId) {
 }
 
 function writeNotices(packageDirs) {
-  const entries = [...packageDirs].map(dir => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    const licenseFile = fs.readdirSync(dir).filter(name => /^(licen[sc]e|copying)(\.(md|txt))?$/i.test(name)).sort()[0];
-    if (!licenseFile) throw new Error(`Bundled package ${manifest.name} has no license file.`);
-    const license = typeof manifest.license === 'string' ? manifest.license : manifest.license?.type ?? 'see license text';
-    return { name: manifest.name, version: manifest.version, license,
-      text: fs.readFileSync(path.join(dir, licenseFile), 'utf8').replace(/\r\n/g, '\n').trim() };
-  // Code-point order keeps the file byte-identical regardless of the build machine's locale.
-  }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const entries = [...packageDirs]
+    .map(dir => {
+      const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+      const licenseFile = fs
+        .readdirSync(dir)
+        .filter(name => /^(licen[sc]e|copying)(\.(md|txt))?$/i.test(name))
+        .sort()[0];
+      if (!licenseFile) throw new Error(`Bundled package ${manifest.name} has no license file.`);
+      const license = typeof manifest.license === 'string' ? manifest.license : (manifest.license?.type ?? 'see license text');
+      return {
+        name: manifest.name,
+        version: manifest.version,
+        license,
+        text: fs.readFileSync(path.join(dir, licenseFile), 'utf8').replace(/\r\n/g, '\n').trim(),
+      };
+      // Code-point order keeps the file byte-identical regardless of the build machine's locale.
+    })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const rule = '='.repeat(80);
   const body = entries.map(entry => `${rule}\n${entry.name} ${entry.version} (${entry.license})\n${rule}\n\n${entry.text}\n`).join('\n');
-  fs.writeFileSync(path.join(dist, 'THIRD_PARTY_NOTICES.txt'),
-    `dist/index.cjs and dist/setup.cjs bundle the following third-party packages. Their license notices follow.\n\n${body}`);
+  fs.writeFileSync(
+    path.join(dist, 'THIRD_PARTY_NOTICES.txt'),
+    `dist/index.cjs and dist/setup.cjs bundle the following third-party packages. Their license notices follow.\n\n${body}`,
+  );
 }
 
 async function buildBundles({ write = true } = {}) {
@@ -61,9 +72,22 @@ async function buildBundles({ write = true } = {}) {
   const { build } = await import('tsdown');
   for (const entry of [{ index: 'src/index.ts' }, { setup: 'src/integrations/setup-cli.ts' }]) {
     await build({
-      config: false, cwd: root, entry, outDir: dist, clean: false, write,
-      format: 'cjs', platform: 'node', target: 'node24', fixedExtension: true, hash: false,
-      sourcemap: false, minify: true, dts: false, report: false, logLevel: 'warn',
+      config: false,
+      cwd: root,
+      entry,
+      outDir: dist,
+      clean: false,
+      write,
+      format: 'cjs',
+      platform: 'node',
+      target: 'node24',
+      fixedExtension: true,
+      hash: false,
+      sourcemap: false,
+      minify: true,
+      dts: false,
+      report: false,
+      logLevel: 'warn',
       checks: { legacyCjs: false },
       // tsdown externalizes package.json dependencies by default; the runtime bundle must inline them.
       deps: { alwaysBundle: [/.*/], onlyBundle: false },
@@ -90,7 +114,10 @@ async function buildBundles({ write = true } = {}) {
 }
 
 if (require.main === module) {
-  buildBundles().catch(error => { console.error(error.message); process.exitCode = 1; });
+  buildBundles().catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { buildBundles };

@@ -95,7 +95,7 @@ export async function handleRun(
     clock?: MonotonicClock;
     budget?: ExecutionBudget;
     context?: BackendReadContext;
-  } = {}
+  } = {},
 ) {
   const action = args?.action;
   switch (action) {
@@ -106,7 +106,14 @@ export async function handleRun(
       return await handleConsult(CANONICAL_TOOL_NAMES.CONSULT, args, workspaceCwd, abortSignal, onProgress, options);
     }
     case 'review': {
-      return await handleReview(CANONICAL_TOOL_NAMES.REVIEW, { ...args, scope: args.scope || args.target }, workspaceCwd, abortSignal, onProgress, options);
+      return await handleReview(
+        CANONICAL_TOOL_NAMES.REVIEW,
+        { ...args, scope: args.scope || args.target },
+        workspaceCwd,
+        abortSignal,
+        onProgress,
+        options,
+      );
     }
     case 'issue': {
       return await handleIssue(args);
@@ -116,7 +123,9 @@ export async function handleRun(
     case 'implement':
       return await handleLegacyAlias(action, args, workspaceCwd, abortSignal, onProgress, options, 'run');
     default:
-      throw new ToolError('INPUT_LIMIT', `Validation Error: Unknown action "${action}". Allowed: "consult", "review", "issue", "analyze", "debug", "implement".`);
+      throw new ToolError(
+        'INPUT_LIMIT',
+        `Validation Error: Unknown action "${action}". Allowed: "consult", "review", "issue", "analyze", "debug", "implement".`,
+      );
   }
 }
-

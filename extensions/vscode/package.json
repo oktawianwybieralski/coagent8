@@ -4,52 +4,172 @@
   "description": "Ask Codex, Claude Code and Antigravity for second opinions and Git reviews from VS Code chat through MCP.",
   "version": "0.7.0",
   "publisher": "okidev",
-  "author": { "name": "Oktawian Wybieralski", "url": "https://oki.dev" },
+  "author": {
+    "name": "Oktawian Wybieralski",
+    "url": "https://oki.dev"
+  },
   "homepage": "https://oki.dev",
-  "bugs": { "url": "https://github.com/oktawianwybieralski/coagent8/issues" },
+  "bugs": {
+    "url": "https://github.com/oktawianwybieralski/coagent8/issues"
+  },
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/oktawianwybieralski/coagent8.git" },
-  "engines": { "vscode": "^1.101.0" },
-  "categories": ["AI", "Chat"],
-  "keywords": ["mcp", "mcp-server", "model-context-protocol", "llm", "ai", "ai-agents", "vibe-coding", "codex", "claude", "claude-code", "antigravity", "gemini", "code-review", "second-opinion", "coding-agents"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oktawianwybieralski/coagent8.git"
+  },
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "llm",
+    "ai",
+    "ai-agents",
+    "vibe-coding",
+    "codex",
+    "claude",
+    "claude-code",
+    "antigravity",
+    "gemini",
+    "code-review",
+    "second-opinion",
+    "coding-agents"
+  ],
   "pricing": "Free",
-  "galleryBanner": { "color": "#1f262e", "theme": "dark" },
+  "galleryBanner": {
+    "color": "#1f262e",
+    "theme": "dark"
+  },
   "preview": true,
   "markdown": "github",
   "qna": "https://github.com/oktawianwybieralski/coagent8/issues",
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "main": "./dist/extension.cjs",
-  "scripts": { "vscode:uninstall": "node ./dist/uninstall.cjs" },
+  "scripts": {
+    "vscode:uninstall": "node ./dist/uninstall.cjs"
+  },
   "icon": "assets/logo.png",
-  "files": ["dist/**", "assets/**", "schemas/**", "skills/**", "README.md", "CHANGELOG.md", "LICENSE"],
-  "activationEvents": ["onMcpServerDefinitionProvider:coagent8", "onStartupFinished"],
+  "files": [
+    "dist/**",
+    "assets/**",
+    "schemas/**",
+    "skills/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "activationEvents": [
+    "onMcpServerDefinitionProvider:coagent8",
+    "onStartupFinished"
+  ],
   "capabilities": {
-    "untrustedWorkspaces": { "supported": false, "description": "CoAgent8 runs local coding CLIs and requires a trusted workspace." },
-    "virtualWorkspaces": { "supported": false, "description": "CoAgent8 needs a filesystem workspace and locally available Node.js and coding CLIs." }
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "CoAgent8 runs local coding CLIs and requires a trusted workspace."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "CoAgent8 needs a filesystem workspace and locally available Node.js and coding CLIs."
+    }
   },
   "contributes": {
     "commands": [
-      { "command": "coagent8.openSettings", "title": "Open Settings", "category": "CoAgent8" },
-      { "command": "coagent8.openConfiguration", "title": "Open Configuration (config.json)", "category": "CoAgent8" },
-      { "command": "coagent8.resetConfiguration", "title": "Reset Configuration (config.json)", "category": "CoAgent8" },
-      { "command": "coagent8.manageMcpServers", "title": "Show MCP Servers", "category": "CoAgent8" },
-      { "command": "coagent8.manageClis", "title": "Manage Coding CLIs", "category": "CoAgent8" },
-      { "command": "coagent8.manageSkills", "title": "Manage Skills", "category": "CoAgent8" },
-      { "command": "coagent8.manageModelApprovals", "title": "Manage Model Approvals", "category": "CoAgent8" },
-      { "command": "coagent8.addPath", "title": "Add to PATH", "category": "CoAgent8" },
-      { "command": "coagent8.removePath", "title": "Remove from PATH", "category": "CoAgent8" },
-      { "command": "coagent8.openBugReport", "title": "Open Bug Report", "category": "CoAgent8" }
+      {
+        "command": "coagent8.openSettings",
+        "title": "Open Settings",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.openConfiguration",
+        "title": "Open Configuration (config.json)",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.resetConfiguration",
+        "title": "Reset Configuration (config.json)",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.manageMcpServers",
+        "title": "Show MCP Servers",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.manageClis",
+        "title": "Manage Coding CLIs",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.manageSkills",
+        "title": "Manage Skills",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.manageModelApprovals",
+        "title": "Manage Model Approvals",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.addPath",
+        "title": "Add to PATH",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.removePath",
+        "title": "Remove from PATH",
+        "category": "CoAgent8"
+      },
+      {
+        "command": "coagent8.openBugReport",
+        "title": "Open Bug Report",
+        "category": "CoAgent8"
+      }
     ],
-    "mcpServerDefinitionProviders": [{ "id": "coagent8", "label": "CoAgent8" }],
-    "jsonValidation": [{ "fileMatch": ["**/.coagent8/config.json"], "url": "./schemas/config.schema.json" }],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "coagent8",
+        "label": "CoAgent8"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "**/.coagent8/config.json"
+        ],
+        "url": "./schemas/config.schema.json"
+      }
+    ],
     "configuration": {
       "title": "CoAgent8",
       "properties": {
         "coagent8.defaultBackend": {
           "type": "string",
-          "enum": ["auto", "codex", "claude", "agy"],
-          "enumItemLabels": ["Automatic", "Codex", "Claude Code", "Antigravity"],
-          "markdownEnumDescriptions": ["Choose among the allowed backends by routing strategy.", "Codex CLI.", "Claude Code CLI.", "Antigravity CLI (agy)."],
+          "enum": [
+            "auto",
+            "codex",
+            "claude",
+            "agy"
+          ],
+          "enumItemLabels": [
+            "Automatic",
+            "Codex",
+            "Claude Code",
+            "Antigravity"
+          ],
+          "markdownEnumDescriptions": [
+            "Choose among the allowed backends by routing strategy.",
+            "Codex CLI.",
+            "Claude Code CLI.",
+            "Antigravity CLI (agy)."
+          ],
           "default": "auto",
           "scope": "machine",
           "order": 1,
@@ -57,17 +177,34 @@
         },
         "coagent8.routing.allowedBackends": {
           "type": "array",
-          "items": { "type": "string", "enum": ["codex", "claude", "agy"] },
+          "items": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "claude",
+              "agy"
+            ]
+          },
           "uniqueItems": true,
-          "default": ["codex", "claude", "agy"],
+          "default": [
+            "codex",
+            "claude",
+            "agy"
+          ],
           "scope": "machine",
           "order": 2,
           "markdownDescription": "Backends CoAgent8 may run (`agy` is Antigravity CLI). Overrides `routing.allowedBackends` in config.json only when set here."
         },
         "coagent8.routing.strategy": {
           "type": "string",
-          "enum": ["fixed", "smart_quota"],
-          "markdownEnumDescriptions": ["Always use the default backend.", "Prefer a backend whose quota is not exhausted."],
+          "enum": [
+            "fixed",
+            "smart_quota"
+          ],
+          "markdownEnumDescriptions": [
+            "Always use the default backend.",
+            "Prefer a backend whose quota is not exhausted."
+          ],
           "default": "fixed",
           "scope": "machine",
           "order": 3,

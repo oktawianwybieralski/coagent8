@@ -13,7 +13,20 @@ import { applyEdits, modify } from 'jsonc-parser';
 import { withFileLock } from '../storage/lock.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { backupDirectory, configPath, document, entryOwnership, EXTENSION_BACKUP_PREFIX, hash, read, readSelection, serializeSelection, servers, writeChecked, type RegistrationOrigin } from './setup-storage.js';
+import {
+  backupDirectory,
+  configPath,
+  document,
+  entryOwnership,
+  EXTENSION_BACKUP_PREFIX,
+  hash,
+  read,
+  readSelection,
+  serializeSelection,
+  servers,
+  writeChecked,
+  type RegistrationOrigin,
+} from './setup-storage.js';
 import { assertSkillRoot, type SkillStatus } from './skills.js';
 import { previewManagedSkillRemoval, removeManagedSkills } from './skill-management.js';
 import { recoverSkillTransaction } from './skill-transaction.js';
@@ -46,27 +59,41 @@ export interface CleanupOptions {
   /** How long apply waits for the setup lease another process holds; the lock's default when omitted. */
   leaseTimeoutMs?: number;
 }
-export interface CleanupPreview { token: string; results: CleanupStatus[]; stateError?: string }
+export interface CleanupPreview {
+  token: string;
+  results: CleanupStatus[];
+  stateError?: string;
+}
 
 function removeEntry(client: SetupClient, before: string): string {
   // Remove only full owned TOML tables, preserving bytes of other tables/comments.
   // Parsing the header handles quoted keys; an inline/dotted unsupported layout
   // fails closed below instead of rewriting the user's entire document.
   let owned = false;
-  const after = client !== 'codex'
-    ? applyEdits(before, modify(before, ['mcpServers', 'coagent8'], undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } }))
-    : before.split(/(?<=\n)/).filter(line => {
-    if (/^\s*\[/.test(line)) {
-      try { owned = Object.hasOwn(servers('codex', document('codex', line + '\n')), 'coagent8'); }
-      catch { owned = false; }
-    }
-    return !owned;
-  }).join('');
-  const oldDoc = document(client, before), newDoc = document(client, after);
+  const after =
+    client !== 'codex'
+      ? applyEdits(before, modify(before, ['mcpServers', 'coagent8'], undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } }))
+      : before
+          .split(/(?<=\n)/)
+          .filter(line => {
+            if (/^\s*\[/.test(line)) {
+              try {
+                owned = Object.hasOwn(servers('codex', document('codex', line + '\n')), 'coagent8');
+              } catch {
+                owned = false;
+              }
+            }
+            return !owned;
+          })
+          .join('');
+  const oldDoc = document(client, before),
+    newDoc = document(client, after);
   const { coagent8: _removed, ...remaining } = servers(client, oldDoc);
   const key = client === 'codex' ? 'mcp_servers' : 'mcpServers';
-  if (!isDeepStrictEqual({ ...servers(client, newDoc) }, remaining)
-      || !isDeepStrictEqual({ ...oldDoc, [key]: undefined }, { ...newDoc, [key]: undefined })) {
+  if (
+    !isDeepStrictEqual({ ...servers(client, newDoc) }, remaining) ||
+    !isDeepStrictEqual({ ...oldDoc, [key]: undefined }, { ...newDoc, [key]: undefined })
+  ) {
     throw new Error('Entry cannot be removed without changing other settings; preserved.');
   }
   return after;
@@ -84,7 +111,8 @@ export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJ
     if (text === null) continue;
     for (const entry of Object.values(servers(client, document(client, text)))) {
       for (const arg of Array.isArray((entry as { args?: unknown })?.args) ? (entry as { args: unknown[] }).args : []) {
-        if (typeof arg === 'string' && path.resolve(arg).startsWith(runtimes + path.sep)) referenced.add(path.relative(runtimes, path.resolve(arg)).split(path.sep)[0]!);
+        if (typeof arg === 'string' && path.resolve(arg).startsWith(runtimes + path.sep))
+          referenced.add(path.relative(runtimes, path.resolve(arg)).split(path.sep)[0]!);
       }
     }
   }
@@ -93,7 +121,11 @@ export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJ
     const raw = read(installsPath);
     if (raw === null) throw new Error('Unreadable installs.json');
     let parsed: unknown;
-    try { parsed = JSON.parse(raw); } catch { throw new Error('Malformed installs.json'); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error('Malformed installs.json');
+    }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Malformed installs.json');
     // A PATH record whose runtime cannot be read may still guard a shim: prune nothing.
     const pathRecord = (parsed as { path?: unknown }).path;
@@ -128,26 +160,41 @@ function removeUnreferencedSetup(root: string, home: string, env: NodeJS.Process
     if (!fs.readdirSync(backups).length) fs.rmdirSync(backups);
   }
   const saved = readSelection(stateFile);
-  if (!saved.clients.length && !Object.keys(saved.owned).length && !Object.keys(saved.skills).length && !Object.keys(saved.disabledSkills ?? {}).length) fs.rmSync(stateFile, { force: true });
+  if (
+    !saved.clients.length &&
+    !Object.keys(saved.owned).length &&
+    !Object.keys(saved.skills).length &&
+    !Object.keys(saved.disabledSkills ?? {}).length
+  )
+    fs.rmSync(stateFile, { force: true });
 }
 
 /** Previews cleanup or applies a matching preview under the same lease as setup. */
 export async function cleanupClients(options: CleanupOptions = {}): Promise<CleanupPreview> {
-  const home = path.resolve(options.home || os.homedir()), env = options.env || process.env;
-  if (env.CODEX_CONFIG_PATH || env.CLAUDE_CONFIG_DIR || env.GEMINI_CLI_HOME || (env.CODEX_HOME && path.resolve(env.CODEX_HOME) !== path.join(home, '.codex'))) {
+  const home = path.resolve(options.home || os.homedir()),
+    env = options.env || process.env;
+  if (
+    env.CODEX_CONFIG_PATH ||
+    env.CLAUDE_CONFIG_DIR ||
+    env.GEMINI_CLI_HOME ||
+    (env.CODEX_HOME && path.resolve(env.CODEX_HOME) !== path.join(home, '.codex'))
+  ) {
     throw new Error('Custom client/profile roots are unsupported; cleanup requires the local default profile.');
   }
-  const root = path.join(home, '.coagent8'), stateFile = path.join(root, 'setup.json');
+  const root = path.join(home, '.coagent8'),
+    stateFile = path.join(root, 'setup.json');
   assertSkillRoot(root, home);
   async function perform(): Promise<CleanupPreview> {
     if (options.apply !== undefined) recoverSkillTransaction(home);
-    const stateBefore = read(stateFile), saved = readSelection(stateFile, stateBefore);
+    const stateBefore = read(stateFile),
+      saved = readSelection(stateFile, stateBefore);
     const selected = [...new Set(options.clients ?? SETUP_CLIENTS)];
     if (!selected.length || !selected.every(client => SETUP_CLIENTS.includes(client))) throw new Error('Unknown cleanup client.');
     const snapshots = new Map<SetupClient, { file: string; before: string | null; after?: string }>();
     const results: CleanupStatus[] = selected.map(client => {
       try {
-        const file = configPath(client, home, env), before = read(file);
+        const file = configPath(client, home, env),
+          before = read(file);
         snapshots.set(client, { file, before });
         const entry = before === null ? undefined : servers(client, document(client, before)).coagent8;
         if (entry === undefined) return { client, action: 'absent', message: 'No CoAgent8 entry; nothing to remove.' };
@@ -169,8 +216,18 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
       if (!saved.skills[result.client] && !saved.disabledSkills?.[result.client]) continue;
       result.skills = previewManagedSkillRemoval(result.client, home, saved, options.origin);
     }
-    const token = hash(JSON.stringify({ home, state: stateBefore === null ? null : hash(stateBefore), selected,
-      files: selected.map(client => { const item = snapshots.get(client); return item ? [item.file, item.before === null ? null : hash(item.before)] : null; }), results }));
+    const token = hash(
+      JSON.stringify({
+        home,
+        state: stateBefore === null ? null : hash(stateBefore),
+        selected,
+        files: selected.map(client => {
+          const item = snapshots.get(client);
+          return item ? [item.file, item.before === null ? null : hash(item.before)] : null;
+        }),
+        results,
+      }),
+    );
     if (options.apply === undefined) return { token, results };
     if (options.apply !== token) throw new Error('Cleanup preview changed; inspect a new preview before applying.');
     for (const result of results) {
@@ -185,7 +242,8 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
           }
           writeChecked(snapshot.file, snapshot.before, snapshot.after!);
           result.action = 'removed';
-          result.message = options.uninstall ? 'Owned registration removed with the VS Code extension. Restart the host to refresh its catalog.'
+          result.message = options.uninstall
+            ? 'Owned registration removed with the VS Code extension. Restart the host to refresh its catalog.'
             : 'Owned registration removed; private backup and runtime files retained. Restart the host to refresh its catalog.';
         } else if (read(snapshot.file) !== snapshot.before) throw new Error('Configuration changed concurrently; retry cleanup.');
         delete saved.owned[result.client];
@@ -202,12 +260,27 @@ export async function cleanupClients(options: CleanupOptions = {}): Promise<Clea
     }
     // Absent stale ownership is safely recoverable after an interrupted removal.
     if (stateBefore !== null) {
-      try { writeChecked(stateFile, stateBefore, serializeSelection(saved)); }
-      catch { return { token, results, stateError: 'Registration results above are final, but setup state changed or could not be saved. Keep backups and retry a fresh preview.' }; }
+      try {
+        writeChecked(stateFile, stateBefore, serializeSelection(saved));
+      } catch {
+        return {
+          token,
+          results,
+          stateError:
+            'Registration results above are final, but setup state changed or could not be saved. Keep backups and retry a fresh preview.',
+        };
+      }
     }
     if (options.uninstall) {
-      try { removeUnreferencedSetup(root, home, env, stateFile); }
-      catch (error) { return { token, results, stateError: redactDiagnostic(error instanceof Error ? error.message : 'Unreferenced runtime copies could not be removed.') }; }
+      try {
+        removeUnreferencedSetup(root, home, env, stateFile);
+      } catch (error) {
+        return {
+          token,
+          results,
+          stateError: redactDiagnostic(error instanceof Error ? error.message : 'Unreferenced runtime copies could not be removed.'),
+        };
+      }
     }
     return { token, results };
   }

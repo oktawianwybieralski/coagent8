@@ -82,10 +82,9 @@ test('Concurrent writers strictly enforce 100MB TOTAL_LIMIT', async t => {
 
   // Next streaming flush adds 10KB, which would push total over 100MB
   writer1.accept({ type: 'assistant_message', messageId: 'm1', text: 'x'.repeat(10000) });
-  await assert.rejects(
-    async () => { await writer1.flush(); },
-    /History total limit reached\./
-  );
+  await assert.rejects(async () => {
+    await writer1.flush();
+  }, /History total limit reached\./);
 
   // Deleting history updates capacity metadata
   await deleteHistory(sess1.sessionHandle, dir);

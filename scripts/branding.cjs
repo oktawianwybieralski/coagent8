@@ -6,8 +6,7 @@ const root = path.resolve(__dirname, '..');
 function readIcon(asset, theme) {
   const icon = fs.readFileSync(path.join(root, asset));
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  if (icon.length < 24 || !icon.subarray(0, 8).equals(signature) ||
-      icon.readUInt32BE(16) !== 64 || icon.readUInt32BE(20) !== 64) {
+  if (icon.length < 24 || !icon.subarray(0, 8).equals(signature) || icon.readUInt32BE(16) !== 64 || icon.readUInt32BE(20) !== 64) {
     throw new Error(`${asset} must be a 64x64 PNG.`);
   }
   if (icon.length > 16 * 1024) throw new Error('MCP icon must not exceed 16 KiB.');

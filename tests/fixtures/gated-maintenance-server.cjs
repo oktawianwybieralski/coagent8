@@ -10,8 +10,12 @@ async function gatedMaintenance() {
   await fs.writeFile(`${gate}.started`, 'started');
   const deadline = Date.now() + 10000;
   for (;;) {
-    try { await fs.access(`${gate}.release`); return; }
-    catch (err) { if (err.code !== 'ENOENT') throw err; }
+    try {
+      await fs.access(`${gate}.release`);
+      return;
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
     if (Date.now() > deadline) throw new Error('Maintenance gate was never released.');
     await new Promise(resolve => setTimeout(resolve, 20));
   }

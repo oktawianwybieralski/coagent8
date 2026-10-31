@@ -26,15 +26,7 @@ test('SURFACE-001: core canonical tools interface defines exactly 7 canonical to
   const coreTools = getCoreCanonicalTools();
   assert.equal(coreTools.length, 7, 'Must define exactly 7 core canonical tools (delegate, DELEGATE-001w)');
   const names = coreTools.map(t => t.name).sort();
-  assert.deepEqual(names, [
-    'cancel',
-    'consult',
-    'delegate',
-    'doctor',
-    'issue',
-    'review',
-    'session',
-  ]);
+  assert.deepEqual(names, ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session']);
   assert.deepEqual([...CORE_CANONICAL_TOOL_NAMES].sort(), names);
 });
 
@@ -48,7 +40,7 @@ test('SURFACE-001: legacy aliases define analyze, debug, implement with deprecat
   for (const tool of legacyTools) {
     assert.ok(
       tool.description.includes('[Deprecated: Use consult with task_type='),
-      `Tool ${tool.name} must have deprecation notice in description`
+      `Tool ${tool.name} must have deprecation notice in description`,
     );
   }
 });
@@ -84,34 +76,25 @@ test('SURFACE-001: run gateway validates required parameters per action', async 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-surface-'));
   try {
     // consult requires proposal
-    await assert.rejects(
-      async () => handleRun({ action: 'consult' }, tempDir),
-      /proposal must be a non-empty string for action "consult"/
-    );
+    await assert.rejects(async () => handleRun({ action: 'consult' }, tempDir), /proposal must be a non-empty string for action "consult"/);
 
     // analyze requires task
-    await assert.rejects(
-      async () => handleRun({ action: 'analyze' }, tempDir),
-      /task must be a non-empty string for action "analyze"/
-    );
+    await assert.rejects(async () => handleRun({ action: 'analyze' }, tempDir), /task must be a non-empty string for action "analyze"/);
 
     // debug requires error_message
     await assert.rejects(
       async () => handleRun({ action: 'debug' }, tempDir),
-      /error_message must be a non-empty string for action "debug"/
+      /error_message must be a non-empty string for action "debug"/,
     );
 
     // implement requires specification
     await assert.rejects(
       async () => handleRun({ action: 'implement' }, tempDir),
-      /specification must be a non-empty string for action "implement"/
+      /specification must be a non-empty string for action "implement"/,
     );
 
     // unknown action throws
-    await assert.rejects(
-      async () => handleRun({ action: 'unknown_action' }, tempDir),
-      /Unknown action "unknown_action"/
-    );
+    await assert.rejects(async () => handleRun({ action: 'unknown_action' }, tempDir), /Unknown action "unknown_action"/);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -120,9 +103,15 @@ test('SURFACE-001: run gateway validates required parameters per action', async 
 test('SURFACE-001: direct legacy handlers validate required parameters', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-surface-direct-'));
   try {
-    for (const [name, input] of [['analyze', 'task'], ['debug', 'error_message'], ['implement', 'specification']]) {
-      await assert.rejects(handleLegacyAlias(name, { [input]: ' ' }, tempDir),
-        { code: 'INPUT_LIMIT', message: `Validation Error: ${input} must be a non-empty string.` });
+    for (const [name, input] of [
+      ['analyze', 'task'],
+      ['debug', 'error_message'],
+      ['implement', 'specification'],
+    ]) {
+      await assert.rejects(handleLegacyAlias(name, { [input]: ' ' }, tempDir), {
+        code: 'INPUT_LIMIT',
+        message: `Validation Error: ${input} must be a non-empty string.`,
+      });
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -134,7 +123,11 @@ test('canonical profile advertises exactly the 7 core tools, without the callabl
 
   assert.equal(tools.length, 7, 'Default canonical profile must advertise exactly 7 tools');
   const names = tools.map(t => t.name).sort();
-  assert.deepEqual(names, ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session'], 'Canonical tools must match the 7 unprefixed names');
+  assert.deepEqual(
+    names,
+    ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session'],
+    'Canonical tools must match the 7 unprefixed names',
+  );
   for (const tool of tools) assert.equal(tool.icons, undefined, `${tool.name} carries no copy of the server icon`);
 
   // Verify none have double prefixes
@@ -153,45 +146,39 @@ test('a legacy toolProfile setting is ignored: every client gets the same six to
   process.env.coagent8_CONFIG = configFile;
   try {
     assert.equal(loadConfig().toolProfile, undefined, 'the key no longer has a meaning');
-    assert.deepEqual(createToolDefinitions().map(t => t.name).sort(), ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session']);
+    assert.deepEqual(
+      createToolDefinitions()
+        .map(t => t.name)
+        .sort(),
+      ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session'],
+    );
   } finally {
-    if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
+    if (previous === undefined) delete process.env.coagent8_CONFIG;
+    else process.env.coagent8_CONFIG = previous;
   }
 });
 
 test('run gateway strictly validates parameters per-action', async () => {
   // 1. Unknown action
-  await assert.rejects(
-    async () => handleRun({ action: 'unknown' }, tempDir),
-    /Unknown action "unknown"/
-  );
+  await assert.rejects(async () => handleRun({ action: 'unknown' }, tempDir), /Unknown action "unknown"/);
 
   // 2. Action: consult requires proposal
-  await assert.rejects(
-    async () => handleRun({ action: 'consult' }, tempDir),
-    /proposal must be a non-empty string for action "consult"/
-  );
+  await assert.rejects(async () => handleRun({ action: 'consult' }, tempDir), /proposal must be a non-empty string for action "consult"/);
   await assert.rejects(
     async () => handleRun({ action: 'consult', proposal: '   ' }, tempDir),
-    /proposal must be a non-empty string for action "consult"/
+    /proposal must be a non-empty string for action "consult"/,
   );
 
   // 3. Action: analyze requires task
-  await assert.rejects(
-    async () => handleRun({ action: 'analyze' }, tempDir),
-    /task must be a non-empty string for action "analyze"/
-  );
+  await assert.rejects(async () => handleRun({ action: 'analyze' }, tempDir), /task must be a non-empty string for action "analyze"/);
 
   // 4. Action: debug requires error_message
-  await assert.rejects(
-    async () => handleRun({ action: 'debug' }, tempDir),
-    /error_message must be a non-empty string for action "debug"/
-  );
+  await assert.rejects(async () => handleRun({ action: 'debug' }, tempDir), /error_message must be a non-empty string for action "debug"/);
 
   // 5. Action: implement requires specification
   await assert.rejects(
     async () => handleRun({ action: 'implement' }, tempDir),
-    /specification must be a non-empty string for action "implement"/
+    /specification must be a non-empty string for action "implement"/,
   );
 });
 
@@ -242,26 +229,17 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
   const callHandler = server._requestHandlers.get('tools/call');
 
   // 1. Call canonical doctor
-  const doctorCall = await callHandler(
-    { method: 'tools/call', params: { name: 'doctor', arguments: {} } },
-    { signal: null }
-  );
+  const doctorCall = await callHandler({ method: 'tools/call', params: { name: 'doctor', arguments: {} } }, { signal: null });
   assert.equal(doctorCall.isError, undefined);
   assert.ok(doctorCall.content[0].text.includes('codex'));
 
   // 2. Reject legacy coagent8_doctor
-  const legacyCall = await callHandler(
-    { method: 'tools/call', params: { name: 'coagent8_doctor', arguments: {} } },
-    { signal: null }
-  );
+  const legacyCall = await callHandler({ method: 'tools/call', params: { name: 'coagent8_doctor', arguments: {} } }, { signal: null });
   assert.equal(legacyCall.isError, true);
   assert.ok(legacyCall.content[0].text.includes('Unknown tool: coagent8_doctor'));
 
   // 3. Reject legacy codex_status
-  const codexCall = await callHandler(
-    { method: 'tools/call', params: { name: 'codex_status', arguments: {} } },
-    { signal: null }
-  );
+  const codexCall = await callHandler({ method: 'tools/call', params: { name: 'codex_status', arguments: {} } }, { signal: null });
   assert.equal(codexCall.isError, true);
   assert.ok(codexCall.content[0].text.includes('Unknown tool: codex_status'));
 
@@ -275,7 +253,7 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
         arguments: { action: 'list', workspace_path: tempDir },
       },
     },
-    { signal: null }
+    { signal: null },
   );
   assert.equal(sessionCall.isError, undefined);
   assert.ok(sessionCall.content[0].text.includes(sess.sessionHandle));
@@ -289,7 +267,7 @@ test('server tools/call dispatches canonical tools and rejects legacy aliases as
         arguments: { session_handle: sess.sessionHandle },
       },
     },
-    { signal: null }
+    { signal: null },
   );
   assert.equal(cancelCall.isError, undefined);
   assert.equal(cancelCall.structuredContent.cancelled, false, 'the session had no running turn');
@@ -305,10 +283,27 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   assert.match(SERVER_INSTRUCTIONS, /unless the user names one or a price limit; doctor lists the models, efforts and prices/);
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
-  const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 7700, `model-visible tool definitions: ${visible} B (owner budget raised to 7,700 B for delegate, 2026-10-21; 5,900 B for the approval notice on model, 2026-10-11; owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  const visible = Buffer.byteLength(
+    JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))),
+  );
+  assert.ok(
+    visible <= 7700,
+    `model-visible tool definitions: ${visible} B (owner budget raised to 7,700 B for delegate, 2026-10-21; 5,900 B for the approval notice on model, 2026-10-11; owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`,
+  );
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
-  for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle', 'timeout_ms']) {
+  for (const name of [
+    'backend',
+    'model',
+    'reasoning_effort',
+    'output_price_below',
+    'proposal',
+    'specific_questions',
+    'context_files',
+    'task_type',
+    'workspace_path',
+    'session_handle',
+    'timeout_ms',
+  ]) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);
   }
   assert.match(consultProperties.timeout_ms.description, /monotonic/i, 'timeout_ms defines monotonic call budget');
@@ -319,18 +314,48 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   assert.equal(tools.find(t => t.name === 'cancel').description, 'Stop the running turn: interrupt if possible, then end the CLI.');
   // No model names in descriptions (owner decision of 2026-10-07): doctor lists them, and a
   // wrong name fails before any model call with the accepted ones.
-  assert.match(consultProperties.model.description, /Omit unless the user names a model or price limit\. doctor lists models, efforts and prices/, 'model points to the place that lists them and permits selection for a limit');
+  assert.match(
+    consultProperties.model.description,
+    /Omit unless the user names a model or price limit\. doctor lists models, efforts and prices/,
+    'model points to the place that lists them and permits selection for a limit',
+  );
   // A calling agent learned of the approval only from the refusal (2026-10-11): it checks with the user first.
-  assert.match(consultProperties.model.description, /Tag ask: ask the user first, a form follows; deny: never runs\./, 'model warns before a call that needs approval or is denied');
-  assert.equal(tools.find(t => t.name === 'review').inputSchema.properties.model.description, consultProperties.model.description, 'review warns the same way');
-  assert.match(consultProperties.reasoning_effort.description, /Required where listed, or as a model name suffix/, 'the effort requirement is stated before a call fails');
+  assert.match(
+    consultProperties.model.description,
+    /Tag ask: ask the user first, a form follows; deny: never runs\./,
+    'model warns before a call that needs approval or is denied',
+  );
+  assert.equal(
+    tools.find(t => t.name === 'review').inputSchema.properties.model.description,
+    consultProperties.model.description,
+    'review warns the same way',
+  );
+  assert.match(
+    consultProperties.reasoning_effort.description,
+    /Required where listed, or as a model name suffix/,
+    'the effort requirement is stated before a call fails',
+  );
   // AX-002: unit, direction and strict boundary are part of the contract the caller sees.
-  assert.deepEqual({ ...consultProperties.output_price_below, description: undefined }, { type: 'number', minimum: 0, description: undefined });
-  assert.match(consultProperties.output_price_below.description, /USD per million output tokens, strict \(5 excludes 5\)\. Only verified prices qualify/);
-  assert.deepEqual(tools.find(t => t.name === 'review').inputSchema.properties.output_price_below, consultProperties.output_price_below, 'review takes the same limit');
+  assert.deepEqual(
+    { ...consultProperties.output_price_below, description: undefined },
+    { type: 'number', minimum: 0, description: undefined },
+  );
+  assert.match(
+    consultProperties.output_price_below.description,
+    /USD per million output tokens, strict \(5 excludes 5\)\. Only verified prices qualify/,
+  );
+  assert.deepEqual(
+    tools.find(t => t.name === 'review').inputSchema.properties.output_price_below,
+    consultProperties.output_price_below,
+    'review takes the same limit',
+  );
   const doctor = tools.find(t => t.name === 'doctor');
   assert.match(doctor.description, /efforts, output prices, approval need; or backend health/);
-  assert.deepEqual(doctor.inputSchema.properties.scope.enum, ['models', 'health'], 'the model view is a scope of doctor, not a seventh tool');
+  assert.deepEqual(
+    doctor.inputSchema.properties.scope.enum,
+    ['models', 'health'],
+    'the model view is a scope of doctor, not a seventh tool',
+  );
   assert.equal(doctor.inputSchema.properties.quota, undefined, 'health covers quota; the model view reads none');
   const consult = tools.find(t => t.name === 'consult');
   assert.equal(consult.inputSchema.properties.user_confirmed, undefined, 'consent is asked from the user, not set by the agent (AUD-P1-7)');
@@ -343,20 +368,52 @@ test('SIMPLIFY-001: one alias table maps each deprecated tool and run action to 
   const { randomUUID } = require('node:crypto');
   const original = adapterRegistry.agy;
   let prompt;
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
-    execute: async p => { prompt = p; return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'm', truncated: false, continuationAvailable: true }; } };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+    execute: async p => {
+      prompt = p;
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'ok',
+        nativeSessionId: randomUUID(),
+        model: 'm',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const call = createServer()._requestHandlers.get('tools/call');
-    const expected = { analyze: ['task', 'ARCHITECTURAL', 'SQ'], debug: ['error_message', 'ROOT CAUSE', 'CTX'], implement: ['specification', 'CODE IMPLEMENTATION', 'CTX'] };
+    const expected = {
+      analyze: ['task', 'ARCHITECTURAL', 'SQ'],
+      debug: ['error_message', 'ROOT CAUSE', 'CTX'],
+      implement: ['specification', 'CODE IMPLEMENTATION', 'CTX'],
+    };
     for (const [name, [input, header, questions]] of Object.entries(expected)) {
       for (const via of ['tool', 'run']) {
-        const args = { workspace_path: tempDir, [input]: 'REQUEST', file_paths: ['a.ts'], ...(name === 'analyze' ? {} : { context: 'CTX' }), ...(via === 'run' ? { action: name, specific_questions: 'SQ' } : {}) };
-        const result = await call({ method: 'tools/call', params: { name: via === 'tool' ? name : 'run', arguments: args } }, { signal: new AbortController().signal });
+        const args = {
+          workspace_path: tempDir,
+          [input]: 'REQUEST',
+          file_paths: ['a.ts'],
+          ...(name === 'analyze' ? {} : { context: 'CTX' }),
+          ...(via === 'run' ? { action: name, specific_questions: 'SQ' } : {}),
+        };
+        const result = await call(
+          { method: 'tools/call', params: { name: via === 'tool' ? name : 'run', arguments: args } },
+          { signal: new AbortController().signal },
+        );
         assert.ok(prompt.includes(header) && prompt.indexOf('REQUEST') > prompt.indexOf(header), `${name} via ${via}: header and request`);
         assert.ok(prompt.includes('Target files:\na.ts'), `${name} via ${via}: files`);
-        if (via === 'run' || name !== 'analyze') assert.ok(prompt.includes(`QUESTIONS / FOCUS:\n${questions}`), `${name} via ${via}: questions`);
-        assert.match(readResult(result).warnings[0], via === 'tool' ? new RegExp(`^Tool '${name}' is deprecated`) : new RegExp(`^Subcommand '${name}' in run gateway is deprecated`));
+        if (via === 'run' || name !== 'analyze')
+          assert.ok(prompt.includes(`QUESTIONS / FOCUS:\n${questions}`), `${name} via ${via}: questions`);
+        assert.match(
+          readResult(result).warnings[0],
+          via === 'tool' ? new RegExp(`^Tool '${name}' is deprecated`) : new RegExp(`^Subcommand '${name}' in run gateway is deprecated`),
+        );
       }
     }
   } finally {

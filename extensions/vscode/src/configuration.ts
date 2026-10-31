@@ -10,7 +10,9 @@ function replaceFile(file: string, content: string): void {
   try {
     fs.writeFileSync(temporary, content, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporary, file);
-  } finally { fs.rmSync(temporary, { force: true }); }
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 /**
@@ -24,8 +26,11 @@ export async function resetConfigurationFile(file: string, defaults: unknown): P
   fs.mkdirSync(path.dirname(file), { recursive: true });
   return withFileLock(file, async () => {
     let previous: string | undefined;
-    try { previous = readBoundedFileSync(file); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    try {
+      previous = readBoundedFileSync(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
     const backup = previous === undefined ? undefined : `${file}.backup`;
     if (backup) replaceFile(backup, previous!);
     if (previous !== undefined && readBoundedFileSync(file) !== previous) throw new Error('Configuration changed during reset; retry.');
@@ -62,7 +67,10 @@ export interface InstallRecord {
 export type SetupInstallList = keyof InstallRecord;
 const INSTALL_LISTS: SetupInstallList[] = ['installedExtensions', 'pendingClis', 'installedClis'];
 /** Where the extension keeps its state: its global storage and the user's home directory. */
-export interface StateLocation { storage: string; home: string }
+export interface StateLocation {
+  storage: string;
+  home: string;
+}
 
 function setupStateFile(storage: string): string {
   return path.join(storage, 'setup-state.json');
@@ -73,8 +81,12 @@ function installRecordFile(home: string): string {
 /** Reads a JSON object file; none when it does not exist. */
 function readObject(file: string): Record<string, unknown> {
   let raw: string;
-  try { raw = readBoundedFileSync(file); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error; }
+  try {
+    raw = readBoundedFileSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${file} is not a JSON object.`);
   return value as Record<string, unknown>;
@@ -94,7 +106,10 @@ export function readSetupState(storage: string): SetupState {
   if (typeof record.updateOffered === 'string') state.updateOffered = record.updateOffered;
   const removing = strings(record.removingExtensions);
   if (removing?.length) state.removingExtensions = removing;
-  if (typeof record.pathPrompt === 'string' && (record.pathPrompt === 'accepted' || record.pathPrompt === 'declined' || record.pathPrompt === 'dismissed')) {
+  if (
+    typeof record.pathPrompt === 'string' &&
+    (record.pathPrompt === 'accepted' || record.pathPrompt === 'declined' || record.pathPrompt === 'dismissed')
+  ) {
     state.pathPrompt = record.pathPrompt;
   }
   return state;
@@ -106,10 +121,11 @@ export function readSetupState(storage: string): SetupState {
  * @throws When a file cannot be read or is not a JSON object.
  */
 export function readInstallRecord(location: StateLocation): InstallRecord {
-  const current = readObject(installRecordFile(location.home)), legacy = readObject(setupStateFile(location.storage));
+  const current = readObject(installRecordFile(location.home)),
+    legacy = readObject(setupStateFile(location.storage));
   const record: InstallRecord = {};
   for (const list of INSTALL_LISTS) {
-    const items = [...new Set([...strings(current[list]) ?? [], ...strings(legacy[list]) ?? []])];
+    const items = [...new Set([...(strings(current[list]) ?? []), ...(strings(legacy[list]) ?? [])])];
     if (items.length) record[list] = items;
   }
   return record;
@@ -119,17 +135,22 @@ export function readInstallRecord(location: StateLocation): InstallRecord {
  * Adds items to, or removes them from, one list of what CoAgent8 setup installed, and moves
  * the lists earlier versions kept in the extension's storage. An empty record deletes the file.
  */
-export async function updateInstallList(location: StateLocation, list: SetupInstallList, add: string[], remove: string[] = []): Promise<void> {
+export async function updateInstallList(
+  location: StateLocation,
+  list: SetupInstallList,
+  add: string[],
+  remove: string[] = [],
+): Promise<void> {
   const file = installRecordFile(location.home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   await withFileLock(path.join(location.home, '.coagent8', 'setup'), async () => {
     const raw = readObject(file);
     const legacy = readObject(setupStateFile(location.storage));
     for (const name of INSTALL_LISTS) {
-      const merged = [...new Set([...strings(raw[name]) ?? [], ...strings(legacy[name]) ?? []])];
+      const merged = [...new Set([...(strings(raw[name]) ?? []), ...(strings(legacy[name]) ?? [])])];
       if (merged.length) raw[name] = merged;
     }
-    const items = [...new Set([...strings(raw[list]) ?? [], ...add])].filter(item => !remove.includes(item));
+    const items = [...new Set([...(strings(raw[list]) ?? []), ...add])].filter(item => !remove.includes(item));
     if (items.length) raw[list] = items;
     else delete raw[list];
     if (Object.keys(raw).length) replaceFile(file, JSON.stringify(raw, null, 2) + '\n');

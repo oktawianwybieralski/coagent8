@@ -89,7 +89,10 @@ test('runDoctor isolates synchronous throwing observer and async rejection with 
     },
   });
   assert.ok(report1);
-  assert.ok(report1.recommendations.some(r => r.includes('Timing observer failure: sync observer failure')), 'sync error must appear in recommendations');
+  assert.ok(
+    report1.recommendations.some(r => r.includes('Timing observer failure: sync observer failure')),
+    'sync error must appear in recommendations',
+  );
 
   // Async rejection
   const report2 = await runDoctor({
@@ -98,7 +101,10 @@ test('runDoctor isolates synchronous throwing observer and async rejection with 
     },
   });
   assert.ok(report2);
-  assert.ok(report2.recommendations.some(r => r.includes('Timing observer failure: async observer rejection')), 'async rejection must appear in recommendations');
+  assert.ok(
+    report2.recommendations.some(r => r.includes('Timing observer failure: async observer rejection')),
+    'async rejection must appear in recommendations',
+  );
 });
 
 test('runDoctor and runModelReport with borrowed tracker do not complete caller tracker', async () => {
@@ -249,7 +255,7 @@ test('handleReview preparation failure closes git_collection and emits timing tr
       // Must preserve the original error (e.g. not a git repo error or similar)
       assert.ok(err);
       return true;
-    }
+    },
   );
 
   assert.ok(recordedTrace, 'onTiming must be called even on preparation failure');

@@ -85,4 +85,3 @@ test('S1 runtime stream: truncateToByteLength and createLineDecoder in execution
   decoder.finish();
   assert.deepEqual(lines, ['line1', 'line2']);
 });
-

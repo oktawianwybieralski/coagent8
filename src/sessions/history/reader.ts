@@ -22,16 +22,7 @@ import { canonicalPath } from '../../workspace/identity.js';
 import type { ConversationEvent } from '../../contracts/index.js';
 import { validEventIdentifier, PROVIDERS } from '../../contracts/index.js';
 import type { History, CachedHistorySnapshot } from './types.js';
-import {
-  SESSION_LIMIT,
-  getHistoryDir,
-  fileFor,
-  logFileFor,
-  statIfExists,
-  sizeIfExists,
-  validateEvent,
-  cloneHistory,
-} from './types.js';
+import { SESSION_LIMIT, getHistoryDir, fileFor, logFileFor, statIfExists, sizeIfExists, validateEvent, cloneHistory } from './types.js';
 import { paginateHistory } from './page.js';
 import { setHistoryEvictionCallback, readCapacityMeta, writeCapacityMeta } from './retention.js';
 
@@ -112,14 +103,39 @@ export async function load(handle: string, forceLog = false): Promise<History | 
       const h = JSON.parse(raw) as History;
       if (h.revision == null) h.revision = createHash('sha256').update(raw).digest('hex');
       if (!validEventIdentifier(h.revision)) throw new Error('Invalid history revision.');
-      if (h.schemaVersion !== 1 || h.sessionHandle !== handle || typeof h.workspace !== 'string' || !Number.isSafeInteger(h.nextSequence) || !Array.isArray(h.events) || !Number.isFinite(Date.parse(h.updatedAt))) throw new Error('Invalid history schema.');
+      if (
+        h.schemaVersion !== 1 ||
+        h.sessionHandle !== handle ||
+        typeof h.workspace !== 'string' ||
+        !Number.isSafeInteger(h.nextSequence) ||
+        !Array.isArray(h.events) ||
+        !Number.isFinite(Date.parse(h.updatedAt))
+      )
+        throw new Error('Invalid history schema.');
       let seq = 0;
       for (const e of h.events) {
-        if (e.schemaVersion !== 1 || e.sessionHandle !== handle || !Number.isSafeInteger(e.sequence) || e.sequence <= seq || typeof e.eventId !== 'string' || typeof e.turnId !== 'string' || !Number.isFinite(Date.parse(e.timestamp))) throw new Error('Invalid history event.');
+        if (
+          e.schemaVersion !== 1 ||
+          e.sessionHandle !== handle ||
+          !Number.isSafeInteger(e.sequence) ||
+          e.sequence <= seq ||
+          typeof e.eventId !== 'string' ||
+          typeof e.turnId !== 'string' ||
+          !Number.isFinite(Date.parse(e.timestamp))
+        )
+          throw new Error('Invalid history event.');
         seq = e.sequence;
         validateEvent(e);
-        if (Buffer.byteLength(JSON.stringify(e.type === 'assistant_message' || e.type === 'assistant_delta' || e.type === 'user_message' ? { ...e, text: '' } : e)) > 8192) throw new Error('History event metadata exceeds storage limit.');
-        if (!validEventIdentifier(e.eventId) || !validEventIdentifier(e.turnId) || !PROVIDERS.includes(e.provider)) throw new Error('Invalid history event metadata.');
+        if (
+          Buffer.byteLength(
+            JSON.stringify(
+              e.type === 'assistant_message' || e.type === 'assistant_delta' || e.type === 'user_message' ? { ...e, text: '' } : e,
+            ),
+          ) > 8192
+        )
+          throw new Error('History event metadata exceeds storage limit.');
+        if (!validEventIdentifier(e.eventId) || !validEventIdentifier(e.turnId) || !PROVIDERS.includes(e.provider))
+          throw new Error('Invalid history event metadata.');
       }
       if (h.nextSequence <= seq) throw new Error('Invalid history sequence counter.');
 
@@ -182,9 +198,25 @@ export async function load(handle: string, forceLog = false): Promise<History | 
         } else {
           const e = item as unknown as ConversationEvent;
           validateEvent(e);
-          if (e.schemaVersion !== 1 || e.sessionHandle !== handle || !Number.isSafeInteger(e.sequence) || typeof e.eventId !== 'string' || typeof e.turnId !== 'string' || !Number.isFinite(Date.parse(e.timestamp))) throw new Error('Invalid history event.');
-          if (Buffer.byteLength(JSON.stringify(e.type === 'assistant_message' || e.type === 'assistant_delta' || e.type === 'user_message' ? { ...e, text: '' } : e)) > 8192) throw new Error('History event metadata exceeds storage limit.');
-          if (!validEventIdentifier(e.eventId) || !validEventIdentifier(e.turnId) || !PROVIDERS.includes(e.provider)) throw new Error('Invalid history event metadata.');
+          if (
+            e.schemaVersion !== 1 ||
+            e.sessionHandle !== handle ||
+            !Number.isSafeInteger(e.sequence) ||
+            typeof e.eventId !== 'string' ||
+            typeof e.turnId !== 'string' ||
+            !Number.isFinite(Date.parse(e.timestamp))
+          )
+            throw new Error('Invalid history event.');
+          if (
+            Buffer.byteLength(
+              JSON.stringify(
+                e.type === 'assistant_message' || e.type === 'assistant_delta' || e.type === 'user_message' ? { ...e, text: '' } : e,
+              ),
+            ) > 8192
+          )
+            throw new Error('History event metadata exceeds storage limit.');
+          if (!validEventIdentifier(e.eventId) || !validEventIdentifier(e.turnId) || !PROVIDERS.includes(e.provider))
+            throw new Error('Invalid history event metadata.');
 
           if (e.type === 'assistant_delta') {
             const idx = events.findIndex(x => x.turnId === e.turnId && x.type === 'assistant_message' && x.messageId === e.messageId);
@@ -293,7 +325,7 @@ export async function deleteHistory(handle: string, workspace: string): Promise<
     const jsonFile = fileFor(handle);
     const logFile = logFileFor(handle);
 
-    const removedBytes = await sizeIfExists(jsonFile) + await sizeIfExists(logFile);
+    const removedBytes = (await sizeIfExists(jsonFile)) + (await sizeIfExists(logFile));
 
     await fs.rm(jsonFile, { force: true });
     await fs.rm(logFile, { force: true });
@@ -332,4 +364,3 @@ export async function getTurnMapping(handle: string, workspace: string): Promise
   }
   return map;
 }
-

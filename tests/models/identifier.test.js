@@ -29,8 +29,15 @@ test('every adapter rejects an option-like model before it reaches argv (AUD-P1-
 test('the controller rejects an option-like model before any backend runs (AUD-P1-6)', async () => {
   const original = adapterRegistry.agy;
   let executed = false;
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
-    execute: async () => { executed = true; throw new Error('must not run'); } };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+    execute: async () => {
+      executed = true;
+      throw new Error('must not run');
+    },
+  };
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(executeTask('prompt', 'question', { backend: 'agy', model: '--yolo' }, tempDir), { code: 'INPUT_LIMIT' });

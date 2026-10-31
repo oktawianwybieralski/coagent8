@@ -22,13 +22,22 @@ export function object(value: unknown): Record<string, unknown> {
  * @returns The operation result after owned process cleanup.
  * @throws On malformed output, request deadline, process failure, or protocol errors.
  */
-export async function withStdioRpc<T>(command: string, args: string[], operation: (rpc: {
-  request: (method: string, params: unknown) => Promise<unknown>;
-  notify: (method: string, params?: unknown) => void;
-}) => Promise<T>, options: { env?: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number } = {}): Promise<T> {
+export async function withStdioRpc<T>(
+  command: string,
+  args: string[],
+  operation: (rpc: {
+    request: (method: string, params: unknown) => Promise<unknown>;
+    notify: (method: string, params?: unknown) => void;
+  }) => Promise<T>,
+  options: { env?: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number } = {},
+): Promise<T> {
   const resolved = resolveCliCommand(command, options);
   const proc = spawn(resolved.command, [...resolved.argsPrefix, ...args], {
-    cwd: options.cwd, env: options.env, stdio: 'pipe', windowsHide: true, detached: process.platform !== 'win32',
+    cwd: options.cwd,
+    env: options.env,
+    stdio: 'pipe',
+    windowsHide: true,
+    detached: process.platform !== 'win32',
   });
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   let next = 1;
@@ -59,18 +68,26 @@ export async function withStdioRpc<T>(command: string, args: string[], operation
       bytes += chunk.length;
       if (bytes > 512 * 1024) throw new Error('Probe output exceeds the byte limit.');
       decoder.push(chunk);
-    } catch { fail('Malformed or oversized probe output.'); }
+    } catch {
+      fail('Malformed or oversized probe output.');
+    }
   });
   proc.stderr.on('data', (chunk: Buffer) => {
     bytes += chunk.length;
     if (bytes > 512 * 1024) fail('Probe output exceeds the byte limit.');
   });
   proc.stdout.on('end', () => {
-    try { decoder.finish(); } catch { fail('Malformed probe output.'); }
+    try {
+      decoder.finish();
+    } catch {
+      fail('Malformed probe output.');
+    }
   });
   proc.on('error', () => fail('Probe process could not start.'));
   proc.stdin.on('error', () => fail('Probe input closed unexpectedly.'));
-  proc.on('exit', () => { if (!closing) fail('Probe process exited before completion.'); });
+  proc.on('exit', () => {
+    if (!closing) fail('Probe process exited before completion.');
+  });
   const deadline = setTimeout(() => fail('Probe deadline exceeded.'), options.timeoutMs ?? 30_000);
   const send = (value: unknown) => {
     if (failure) throw failure;
@@ -86,10 +103,16 @@ export async function withStdioRpc<T>(command: string, args: string[], operation
           const id = next++;
           const timer = setTimeout(() => fail('Probe request timed out.'), options.timeoutMs ?? 30_000);
           pending.set(id, { resolve, reject, timer });
-          try { send({ jsonrpc: '2.0', id, method, params }); } catch { fail('Probe request could not be sent.'); }
+          try {
+            send({ jsonrpc: '2.0', id, method, params });
+          } catch {
+            fail('Probe request could not be sent.');
+          }
         });
       },
-      notify(method, params) { send({ jsonrpc: '2.0', method, params }); },
+      notify(method, params) {
+        send({ jsonrpc: '2.0', method, params });
+      },
     });
   } finally {
     clearTimeout(deadline);
@@ -100,7 +123,11 @@ export async function withStdioRpc<T>(command: string, args: string[], operation
     }
     pending.clear();
     await terminateProcessTree(proc);
-    try { decoder.finish(); } catch { fail('Malformed probe output.'); }
+    try {
+      decoder.finish();
+    } catch {
+      fail('Malformed probe output.');
+    }
   }
   if (failure) throw failure;
   return result;

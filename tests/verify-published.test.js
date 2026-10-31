@@ -10,7 +10,11 @@ test('RELEASE-001f: published packages match only when every digest and next agr
   assert.match(vsix.sha256, /^[0-9a-f]{64}$/);
   assert.match(tarball.integrity, /^sha512-[A-Za-z0-9+/]+=*$/);
   const expected = { version: '0.7.0', tarball, vsixSha256: vsix.sha256 };
-  const good = { dist: { shasum: tarball.sha1, integrity: tarball.integrity }, distTags: { next: '0.7.0', latest: '0.6.1' }, vsixSha256: vsix.sha256 };
+  const good = {
+    dist: { shasum: tarball.sha1, integrity: tarball.integrity },
+    distTags: { next: '0.7.0', latest: '0.6.1' },
+    vsixSha256: vsix.sha256,
+  };
   assert.deepEqual(compare(expected, good), [], '`latest` may still point at the earlier stable version');
   assert.deepEqual(compare(expected, { ...good, dist: undefined }), ['npm has no coagent8@0.7.0.']);
   assert.equal(compare(expected, { ...good, dist: { shasum: 'x', integrity: tarball.integrity } }).length, 1);
@@ -33,12 +37,26 @@ test('RELEASE-001f: arguments need a numeric tag and the release folder', () => 
 test('RELEASE-001f: the Marketplace download is hashed chunk by chunk and cancelled above the limit', async () => {
   const { createHash } = require('node:crypto');
   const { sha256OfBoundedStream } = require('../scripts/verify-published.cjs');
-  const streamOf = (...chunks) => new ReadableStream({ pull(controller) { const next = chunks.shift(); if (next) controller.enqueue(next); else controller.close(); } });
+  const streamOf = (...chunks) =>
+    new ReadableStream({
+      pull(controller) {
+        const next = chunks.shift();
+        if (next) controller.enqueue(next);
+        else controller.close();
+      },
+    });
   const data = [Buffer.from('ab'), Buffer.from('cd')];
   assert.equal(await sha256OfBoundedStream(streamOf(...data), 4), createHash('sha256').update('abcd').digest('hex'));
   // No Content-Length is trusted: the running total stops the read.
   let cancelled = false;
-  const endless = new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(3)); }, cancel() { cancelled = true; } });
+  const endless = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new Uint8Array(3));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
   await assert.rejects(sha256OfBoundedStream(endless, 10), /exceeds the 10-byte limit/);
   assert.equal(cancelled, true, 'the download is cancelled');
 });

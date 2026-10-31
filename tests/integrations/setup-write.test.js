@@ -18,7 +18,11 @@ function withRenameFailures(failures, onFailure, run) {
     }
     return rename(from, to);
   };
-  try { return run(); } finally { fs.renameSync = rename; }
+  try {
+    return run();
+  } finally {
+    fs.renameSync = rename;
+  }
 }
 
 function fixture() {
@@ -36,17 +40,28 @@ test('AUDIT-001-A12: a transient sharing failure while replacing a client file i
     assert.equal(fs.readFileSync(file, 'utf8'), '{"manual":true,"coagent8":{}}\n');
     if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o640, 'existing mode bits are kept');
     assert.deepEqual(temps(), []);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('AUDIT-001-A12: an edit made while setup waits is never overwritten', () => {
   const { dir, file, temps } = fixture();
   try {
-    assert.throws(() => withRenameFailures(5, () => fs.writeFileSync(file, '{"edited":true}\n'),
-      () => writeChecked(file, '{"manual":true}\n', '{"manual":true,"coagent8":{}}\n')), /changed concurrently/);
+    assert.throws(
+      () =>
+        withRenameFailures(
+          5,
+          () => fs.writeFileSync(file, '{"edited":true}\n'),
+          () => writeChecked(file, '{"manual":true}\n', '{"manual":true,"coagent8":{}}\n'),
+        ),
+      /changed concurrently/,
+    );
     assert.equal(fs.readFileSync(file, 'utf8'), '{"edited":true}\n', 'the external edit survives');
     assert.deepEqual(temps(), []);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('AUDIT-001-A12: a lasting failure ends after a bounded wait with the original error', () => {
@@ -57,16 +72,27 @@ test('AUDIT-001-A12: a lasting failure ends after a bounded wait with the origin
     assert.ok(Date.now() - started < 3000, 'the wait is bounded');
     assert.equal(fs.readFileSync(file, 'utf8'), '{"manual":true}\n', 'the file is unchanged');
     assert.deepEqual(temps(), []);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('AUDIT-001-A12: a non-transient failure is not retried', () => {
   const { dir, file } = fixture();
   const rename = fs.renameSync;
   let calls = 0;
-  fs.renameSync = (from, to) => { if (String(from).endsWith('.tmp')) { calls++; throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }); } return rename(from, to); };
+  fs.renameSync = (from, to) => {
+    if (String(from).endsWith('.tmp')) {
+      calls++;
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    }
+    return rename(from, to);
+  };
   try {
     assert.throws(() => writeChecked(file, '{"manual":true}\n', '{}\n'), /ENOSPC/);
     assert.equal(calls, 1);
-  } finally { fs.renameSync = rename; fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.renameSync = rename;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

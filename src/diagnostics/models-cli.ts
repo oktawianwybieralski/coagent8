@@ -23,7 +23,7 @@ export async function runModelsCli(
   args: string[],
   out: NodeJS.WritableStream = process.stdout,
   err: NodeJS.WritableStream = process.stderr,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<number> {
   let json = false;
   let backend: ProviderId | undefined;
@@ -80,13 +80,12 @@ export async function runModelsCli(
       signal: effectiveSignal,
     });
     out.write(
-      `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatModelSummary({ ...report }), DOCTOR_SUMMARY_MAX_BYTES)}\n`
+      `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatModelSummary({ ...report }), DOCTOR_SUMMARY_MAX_BYTES)}\n`,
     );
     return 0;
   } catch (error: unknown) {
     const isAbort =
-      effectiveSignal.aborted ||
-      (error instanceof Error && (error.name === 'AbortError' || ('code' in error && error.code === 'ABORTED')));
+      effectiveSignal.aborted || (error instanceof Error && (error.name === 'AbortError' || ('code' in error && error.code === 'ABORTED')));
     if (isAbort) {
       return 130;
     }

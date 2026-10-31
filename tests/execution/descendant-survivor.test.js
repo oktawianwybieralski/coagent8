@@ -17,7 +17,13 @@ const { execute } = require('../../src/backends/agy/adapter.ts');
 const { activeProcesses } = require('../../src/execution/process.ts');
 const MODEL = 'gemini-3.8-flash-high';
 
-const heartbeat = marker => { try { return Number(fs.readFileSync(marker, 'utf8')) || 0; } catch { return 0; } };
+const heartbeat = marker => {
+  try {
+    return Number(fs.readFileSync(marker, 'utf8')) || 0;
+  } catch {
+    return 0;
+  }
+};
 
 /** Whether the descendant still advances its heartbeat after the cancelled turn returned. */
 async function observeDescendant(marker) {
@@ -41,37 +47,52 @@ const cases = [
   // A descendant inside the root's own kill-on-close job (Windows) or process group (POSIX).
   { name: 'in the root job or group', descendant: 'job-member', todo: false },
   // Windows only: a native, non-libuv root has no such job, so its child is outside any job.
-  { name: 'outside any job (native root model)', descendant: 'outside-job', win32Only: true,
-    todo: 'WINDOWS-001a REPRODUCED: proc.kill() ends only the owned root; containment is WINDOWS-001b-e' },
+  {
+    name: 'outside any job (native root model)',
+    descendant: 'outside-job',
+    win32Only: true,
+    todo: 'WINDOWS-001a REPRODUCED: proc.kill() ends only the owned root; containment is WINDOWS-001b-e',
+  },
 ];
 
 for (const scenario of cases) {
-  test(`cancelling an agy turn ends its native descendant ${scenario.name} (WINDOWS-001a)`, {
-    skip: scenario.win32Only && process.platform !== 'win32' ? 'Windows job model only' : false,
-    todo: process.platform === 'win32' ? scenario.todo : false,
-  }, async t => {
-    const marker = path.join(tempDir, `heartbeat-${scenario.descendant}`);
-    process.env.coagent8_FIXTURE_MODE = 'native-descendant';
-    process.env.coagent8_FIXTURE_MARKER = marker;
-    process.env.coagent8_FIXTURE_DESCENDANT = scenario.descendant;
-    t.after(async () => {
-      delete process.env.coagent8_FIXTURE_MODE;
-      delete process.env.coagent8_FIXTURE_MARKER;
-      delete process.env.coagent8_FIXTURE_DESCENDANT;
-      await stopDescendant(marker);
-    });
-    const controller = new AbortController();
-    const result = await execute('request', {
-      model: MODEL, cwd: tempDir, timeoutMs: 15000, abortSignal: controller.signal,
-      onEvent: event => { if (event.type === 'assistant_delta' && /descendant running/.test(event.text)) controller.abort(); },
-    });
-    assert.equal(result.status, 'cancelled', JSON.stringify(result));
-    assert.equal(activeProcesses.size, 0, 'the owned root was released');
-    assert.ok(heartbeat(marker) > 0, 'the descendant was running before the cancellation');
-    const survived = await observeDescendant(marker);
-    t.diagnostic(`WINDOWS-001a observation: platform=${process.platform} node=${process.version} descendant=${scenario.descendant} survivedCancel=${survived}`);
-    assert.equal(survived, false, 'the native descendant of a cancelled turn must not keep running');
-  });
+  test(
+    `cancelling an agy turn ends its native descendant ${scenario.name} (WINDOWS-001a)`,
+    {
+      skip: scenario.win32Only && process.platform !== 'win32' ? 'Windows job model only' : false,
+      todo: process.platform === 'win32' ? scenario.todo : false,
+    },
+    async t => {
+      const marker = path.join(tempDir, `heartbeat-${scenario.descendant}`);
+      process.env.coagent8_FIXTURE_MODE = 'native-descendant';
+      process.env.coagent8_FIXTURE_MARKER = marker;
+      process.env.coagent8_FIXTURE_DESCENDANT = scenario.descendant;
+      t.after(async () => {
+        delete process.env.coagent8_FIXTURE_MODE;
+        delete process.env.coagent8_FIXTURE_MARKER;
+        delete process.env.coagent8_FIXTURE_DESCENDANT;
+        await stopDescendant(marker);
+      });
+      const controller = new AbortController();
+      const result = await execute('request', {
+        model: MODEL,
+        cwd: tempDir,
+        timeoutMs: 15000,
+        abortSignal: controller.signal,
+        onEvent: event => {
+          if (event.type === 'assistant_delta' && /descendant running/.test(event.text)) controller.abort();
+        },
+      });
+      assert.equal(result.status, 'cancelled', JSON.stringify(result));
+      assert.equal(activeProcesses.size, 0, 'the owned root was released');
+      assert.ok(heartbeat(marker) > 0, 'the descendant was running before the cancellation');
+      const survived = await observeDescendant(marker);
+      t.diagnostic(
+        `WINDOWS-001a observation: platform=${process.platform} node=${process.version} descendant=${scenario.descendant} survivedCancel=${survived}`,
+      );
+      assert.equal(survived, false, 'the native descendant of a cancelled turn must not keep running');
+    },
+  );
 }
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));

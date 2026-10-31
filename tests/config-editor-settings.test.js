@@ -13,19 +13,27 @@ process.env.coagent8_CONFIG = file;
 const { loadConfig, loadConfigForDiagnostics, rememberApprovedModel, recordDefaultModel, setDefaultBackend } = require('../src/config.ts');
 const { EDITOR_SETTINGS, EDITOR_SETTINGS_ENV } = require('../src/config-overrides.ts');
 
-const fileBytes = JSON.stringify({
-  schemaVersion: 1,
-  defaultBackend: 'claude',
-  routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] },
-  backends: { codex: { defaultModel: 'file-codex' } },
-  governance: { priceMultiplier: 3, askAbovePrice: 30, models: { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] } },
-}, null, 2);
+const fileBytes = JSON.stringify(
+  {
+    schemaVersion: 1,
+    defaultBackend: 'claude',
+    routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude'] },
+    backends: { codex: { defaultModel: 'file-codex' } },
+    governance: { priceMultiplier: 3, askAbovePrice: 30, models: { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] } },
+  },
+  null,
+  2,
+);
 
 function withSettings(settings, action) {
   fs.writeFileSync(file, fileBytes);
   if (settings === undefined) delete process.env[EDITOR_SETTINGS_ENV];
   else process.env[EDITOR_SETTINGS_ENV] = typeof settings === 'string' ? settings : JSON.stringify(settings);
-  try { return action(); } finally { delete process.env[EDITOR_SETTINGS_ENV]; }
+  try {
+    return action();
+  } finally {
+    delete process.env[EDITOR_SETTINGS_ENV];
+  }
 }
 
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -39,17 +47,24 @@ test('without VS Code settings the file is the configuration', () => {
 });
 
 test('explicit settings replace file values; approval rules come only from the file', () => {
-  const config = withSettings({
-    defaultBackend: 'auto',
-    'routing.strategy': 'smart_quota',
-    'routing.allowedBackends': ['agy'],
-    'claude.defaultModel': 'opus',
-  }, loadConfig);
+  const config = withSettings(
+    {
+      defaultBackend: 'auto',
+      'routing.strategy': 'smart_quota',
+      'routing.allowedBackends': ['agy'],
+      'claude.defaultModel': 'opus',
+    },
+    loadConfig,
+  );
   assert.equal(config.defaultBackend, null, 'auto is automatic selection');
   assert.deepEqual(config.routing, { strategy: 'smart_quota', allowedBackends: ['agy'] });
   assert.deepEqual(config.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'opus' } });
   // Every client's server reads the file, so approval rules have no VS Code setting (2026-10-11).
-  assert.deepEqual(config.governance, { priceMultiplier: 3, askAbovePrice: 30, models: { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] } });
+  assert.deepEqual(config.governance, {
+    priceMultiplier: 3,
+    askAbovePrice: 30,
+    models: { allow: ['file-never'], ask: ['file-always'], deny: ['file-deny'] },
+  });
   assert.ok(!Object.keys(EDITOR_SETTINGS).some(key => key.startsWith('approval.')), 'no approval setting is passed from VS Code');
 });
 
@@ -63,7 +78,11 @@ test('an invalid or unknown setting refuses execution and names the VS Code sett
     ['{', /not valid JSON/],
   ];
   for (const [settings, message] of cases) {
-    assert.throws(() => withSettings(settings, loadConfig), error => error.code === 'POLICY_DENIED' && message.test(error.message), String(message));
+    assert.throws(
+      () => withSettings(settings, loadConfig),
+      error => error.code === 'POLICY_DENIED' && message.test(error.message),
+      String(message),
+    );
     assert.match(withSettings(settings, loadConfigForDiagnostics).error, message, 'doctor reports the setting');
   }
 });
@@ -82,7 +101,9 @@ test('writes keep VS Code settings out of the file; a remembered approval stays 
     assert.deepEqual(stored.backends, { codex: { defaultModel: 'file-codex' }, claude: { defaultModel: 'detected-claude' } });
     assert.deepEqual(stored.governance.models.ask, ['file-always']);
     assert.deepEqual(loadConfig().governance.models.allow, ['file-never', 'approved-model']);
-  } finally { delete process.env[EDITOR_SETTINGS_ENV]; }
+  } finally {
+    delete process.env[EDITOR_SETTINGS_ENV];
+  }
 });
 
 test('every runtime setting is contributed to VS Code under the same key, scoped to user settings', () => {
@@ -112,17 +133,29 @@ test('a cleared model field means no model chosen, not an invalid model', () => 
 test('a misspelt governance.models list refuses execution', () => {
   // A misspelt list would leave a model unrestricted.
   fs.writeFileSync(file, JSON.stringify({ governance: { models: { denny: ['gpt-6-astra'] } } }));
-  assert.throws(() => loadConfig(), error => error.code === 'POLICY_DENIED' && /governance\.models has unknown lists \(denny\); supported: allow, ask, deny/.test(error.message));
+  assert.throws(
+    () => loadConfig(),
+    error =>
+      error.code === 'POLICY_DENIED' && /governance\.models has unknown lists \(denny\); supported: allow, ask, deny/.test(error.message),
+  );
 });
 
 test('setModelRule keeps exactly one rule per model and setPriceRules keeps the other settings', async () => {
   const { setModelRule, setPriceRules, readGovernance } = require('../src/config.ts');
   fs.writeFileSync(file, fileBytes);
   await setModelRule('file-always', 'deny', file);
-  assert.deepEqual(readGovernance(file).models, { allow: ['file-never'], ask: [], deny: ['file-deny', 'file-always'] }, 'the model leaves its earlier list');
+  assert.deepEqual(
+    readGovernance(file).models,
+    { allow: ['file-never'], ask: [], deny: ['file-deny', 'file-always'] },
+    'the model leaves its earlier list',
+  );
   await setModelRule('new-model', 'allow', file);
   await setModelRule('file-never', null, file);
-  assert.deepEqual(readGovernance(file).models, { allow: ['new-model'], ask: [], deny: ['file-deny', 'file-always'] }, 'null leaves the model to the price rules');
+  assert.deepEqual(
+    readGovernance(file).models,
+    { allow: ['new-model'], ask: [], deny: ['file-deny', 'file-always'] },
+    'null leaves the model to the price rules',
+  );
   await assert.rejects(setModelRule('-bad model', 'allow', file), { code: 'INPUT_LIMIT' });
   await setPriceRules({ askAbovePrice: null }, file);
   await setPriceRules({ priceMultiplier: 4 }, file);

@@ -51,7 +51,10 @@ export interface PriceConstraint {
 
 /** Names a catalog's models as a turn may run them: each id and agy's `<id>-<effort>` forms. */
 export function catalogNames(catalog: ModelCatalog | undefined): string[] {
-  return (catalog?.models ?? []).flatMap(model => [model.id, ...(model.effortRequired ? model.efforts.map(effort => `${model.id}-${effort}`) : [])]);
+  return (catalog?.models ?? []).flatMap(model => [
+    model.id,
+    ...(model.effortRequired ? model.efforts.map(effort => `${model.id}-${effort}`) : []),
+  ]);
 }
 
 interface CandidateQuality {
@@ -86,7 +89,15 @@ function isBetter(candidate: CandidateQuality, currentBest: CandidateQuality): b
  * @param replacesSuffix - The CLI replaces a model's effort suffix with the call's effort (`EffortRun`).
  * @throws `PRICE_LIMIT` stating why neither the default nor a catalog model meets the limit.
  */
-export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, constraint: PriceConstraint, prices: PriceList | undefined, denied: readonly string[] = [], replacesSuffix = false): ModelSelection {
+export function choosePricedModel(
+  id: ProviderId,
+  catalog: ModelCatalog | undefined,
+  fallback: ModelSelection | undefined,
+  constraint: PriceConstraint,
+  prices: PriceList | undefined,
+  denied: readonly string[] = [],
+  replacesSuffix = false,
+): ModelSelection {
   const { below } = constraint;
   const effort = constraint.effort?.toLowerCase();
   const accepts = (entry: CatalogModel | undefined) => !effort || !entry || entry.efforts.includes(effort);
@@ -99,7 +110,8 @@ export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefi
   for (const entry of catalog?.models ?? []) {
     // The name the turn would run: agy's first permitted `<id>-<effort>` when an effort is required
     // and none is passed.
-    const names = entry.effortRequired && !effort && entry.efforts.length ? entry.efforts.map(variant => `${entry.id}-${variant}`) : [entry.id];
+    const names =
+      entry.effortRequired && !effort && entry.efforts.length ? entry.efforts.map(variant => `${entry.id}-${variant}`) : [entry.id];
     const model = names.find(name => !isDenied(name));
     if (!accepts(entry) || isDenied(entry.id) || model === undefined) continue;
     const evidence = priceEvidence(prices, entry.id);
@@ -116,12 +128,17 @@ export function choosePricedModel(id: ProviderId, catalog: ModelCatalog | undefi
   }
   if (best) return { model: best.model, source: 'price-limit' };
   const reasons = [
-    fallback ? `Default: ${defaultReason ?? (isDenied(fallback.model) ? `'${fallback.model}' is denied by the user.` : `'${fallback.model}' does not accept reasoning_effort '${effort}'.`)}` : 'No default model is known.',
+    fallback
+      ? `Default: ${defaultReason ?? (isDenied(fallback.model) ? `'${fallback.model}' is denied by the user.` : `'${fallback.model}' does not accept reasoning_effort '${effort}'.`)}`
+      : 'No default model is known.',
     catalog?.models.length
       ? `None of its ${catalog.models.length} listed models${effort ? ` accepting reasoning_effort '${effort}'` : ''}${denied.length ? ' and not denied by the user' : ''} has a verified price below the limit; doctor lists their prices.`
       : `${id} lists no models, so only its default or a named model can be checked.`,
   ];
-  throw new ToolError('PRICE_LIMIT', `No ${id} model has a verified price below ${Number(below.toFixed(4))} USD per million output tokens. ${reasons.join(' ')}`);
+  throw new ToolError(
+    'PRICE_LIMIT',
+    `No ${id} model has a verified price below ${Number(below.toFixed(4))} USD per million output tokens. ${reasons.join(' ')}`,
+  );
 }
 
 /** One model a backend offers, as doctor and the planned CLI models command list it (`AX-001`). */
@@ -155,7 +172,13 @@ export interface ModelCandidate {
  * an entry naming the id covers its effort variants, and one naming a single variant
  * (`<id>-<effort>`) applies when that variant runs.
  */
-export function listModelCandidates(id: ProviderId, catalog: ModelCatalog | undefined, fallback: ModelSelection | undefined, prices: PriceList | undefined, settings: GovernanceSettings): ModelCandidate[] {
+export function listModelCandidates(
+  id: ProviderId,
+  catalog: ModelCatalog | undefined,
+  fallback: ModelSelection | undefined,
+  prices: PriceList | undefined,
+  settings: GovernanceSettings,
+): ModelCandidate[] {
   const now = Date.now();
   const defaultEntry = fallback && catalog ? findCatalogEntry(catalog, fallback.model)?.entry : undefined;
   const row = (model: string, efforts: string[], effortRequired: boolean, isDefault: boolean): ModelCandidate => {
@@ -163,10 +186,20 @@ export function listModelCandidates(id: ProviderId, catalog: ModelCatalog | unde
     const consent = decideConsent(governed, fallback?.model, prices, settings);
     const ruleEntry = findModelRuleEntry(governed, settings.models)?.entry;
     return {
-      backend: id, model, efforts, ...(effortRequired ? { effortRequired } : {}),
+      backend: id,
+      model,
+      efforts,
+      ...(effortRequired ? { effortRequired } : {}),
       ...(isDefault && fallback ? { defaultSource: fallback.source } : {}),
       price: priceEvidence(prices, model, now),
-      approval: { required: consent.ask, denied: consent.deny, basis: consent.basis, reason: consent.reason, rememberable: consent.offerRemember, ...(ruleEntry ? { ruleEntry } : {}) },
+      approval: {
+        required: consent.ask,
+        denied: consent.deny,
+        basis: consent.basis,
+        reason: consent.reason,
+        rememberable: consent.offerRemember,
+        ...(ruleEntry ? { ruleEntry } : {}),
+      },
     };
   };
   const rows = (catalog?.models ?? []).map(entry => row(entry.id, entry.efforts, entry.effortRequired === true, entry === defaultEntry));

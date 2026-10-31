@@ -147,11 +147,13 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const isOwnedBudget = !options.budget;
-  const budget = options.budget ?? createExecutionBudget({
-    totalBudgetMs: DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
-    parentSignal: options.signal,
-    clock: options.clock,
-  });
+  const budget =
+    options.budget ??
+    createExecutionBudget({
+      totalBudgetMs: DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
+      parentSignal: options.signal,
+      clock: options.clock,
+    });
 
   const readContext: BackendReadContext = {
     abortSignal: combineSignals(options.signal, budget.executionSignal) ?? undefined,
@@ -201,10 +203,14 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       configNotes.push(`configuration: custom path active from coagent8_CONFIG (${configProvenance.path})`);
     }
     if (configProvenance.overrides.length) {
-      configNotes.push(`configuration: ${configProvenance.overrides.length} editor setting override(s) active (${configProvenance.overrides.join(', ')})`);
+      configNotes.push(
+        `configuration: ${configProvenance.overrides.length} editor setting override(s) active (${configProvenance.overrides.join(', ')})`,
+      );
     }
     if (configProvenance.attemptedOverrides?.length) {
-      configNotes.push(`configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`);
+      configNotes.push(
+        `configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`,
+      );
     }
     const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
     const probePromises = selected.map(async id => {
@@ -226,186 +232,246 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
     let prices: Awaited<ReturnType<typeof readPrices>>;
     try {
       const [c, cats, inh] = await Promise.all([
-        inspectQuotas(true, probes, { nativeQuota: options.quota !== false, only: selected, measuredNow,
+        inspectQuotas(true, probes, {
+          nativeQuota: options.quota !== false,
+          only: selected,
+          measuredNow,
           context: readContext,
-          onCacheError: error => cacheNotes.push(`Quota cache not updated: ${redactDiagnostic(error.message, 512)}`) }),
+          onCacheError: error => cacheNotes.push(`Quota cache not updated: ${redactDiagnostic(error.message, 512)}`),
+        }),
         Promise.all(selected.map(id => readModelCatalog(id, { fresh: true, context: readContext }))),
-        Promise.all(selected.map(id => probes[id]!.installed ? adapterRegistry[id].inheritedTools?.(readContext) : undefined)),
+        Promise.all(selected.map(id => (probes[id]!.installed ? adapterRegistry[id].inheritedTools?.(readContext) : undefined))),
       ]);
       cached = c;
       catalogs = cats;
       inherited = inh;
       // Prices of every listed and configured default model, read again when the list is a day old.
-      const configuredDefaults = selected.flatMap(id => [config.backends[id]?.defaultModel, probes[id]!.config?.defaultModel]).filter((model): model is string => typeof model === 'string');
-      prices = await readPrices({ refresh: true, models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...configuredDefaults], context: readContext });
+      const configuredDefaults = selected
+        .flatMap(id => [config.backends[id]?.defaultModel, probes[id]!.config?.defaultModel])
+        .filter((model): model is string => typeof model === 'string');
+      prices = await readPrices({
+        refresh: true,
+        models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...configuredDefaults],
+        context: readContext,
+      });
     } finally {
       modelSpan.end();
     }
-  const inheritedTools: DoctorReport['inheritedTools'] = {};
-  selected.forEach((id, index) => {
-    const tools = inherited[index];
-    if (tools && (tools.mcpServers.length || tools.plugins.length)) inheritedTools[id] = tools;
-  });
-
-  const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
-  // One decision table (AX-005a); a quota the CLI measured in this run (agy and Claude
-  // `/usage`) or a recent completed turn also proves a signed-in CLI.
-  const readiness: DoctorReport['readiness'] = {};
-  for (const id of selected) {
-    const b = probes[id]!;
-    const q = cached[id];
-    readiness[id] = decideReadiness({
-      installed: b.installed,
-      allowed: config.routing.allowedBackends.includes(id),
-      executionSupported: Boolean(b.executionSupported),
-      readOnlyVerified: Boolean(b.capabilities?.readOnlyVerified),
-      authStatus: b.authStatus,
-      quotaMeasuredNow: measuredNow.has(id),
-      ...(q ? { quota: { status: q.status, headroomPercent: q.headroomPercent, cooldownUntil: q.cooldownUntil, resetsAt: q.resetsAt } } : {}),
-      lastSuccess: readTurnSuccess(id, b),
+    const inheritedTools: DoctorReport['inheritedTools'] = {};
+    selected.forEach((id, index) => {
+      const tools = inherited[index];
+      if (tools && (tools.mcpServers.length || tools.plugins.length)) inheritedTools[id] = tools;
     });
-  }
-  const ready = active.filter(id => readiness[id]!.state === 'ready');
 
-  const effective = config.routing.strategy === 'smart_quota' ? 'smart_quota' : config.defaultBackend || (active.length === 1 ? active[0] : null);
+    const active = selected.filter(id => probes[id]!.installed && config.routing.allowedBackends.includes(id));
+    // One decision table (AX-005a); a quota the CLI measured in this run (agy and Claude
+    // `/usage`) or a recent completed turn also proves a signed-in CLI.
+    const readiness: DoctorReport['readiness'] = {};
+    for (const id of selected) {
+      const b = probes[id]!;
+      const q = cached[id];
+      readiness[id] = decideReadiness({
+        installed: b.installed,
+        allowed: config.routing.allowedBackends.includes(id),
+        executionSupported: Boolean(b.executionSupported),
+        readOnlyVerified: Boolean(b.capabilities?.readOnlyVerified),
+        authStatus: b.authStatus,
+        quotaMeasuredNow: measuredNow.has(id),
+        ...(q
+          ? { quota: { status: q.status, headroomPercent: q.headroomPercent, cooldownUntil: q.cooldownUntil, resetsAt: q.resetsAt } }
+          : {}),
+        lastSuccess: readTurnSuccess(id, b),
+      });
+    }
+    const ready = active.filter(id => readiness[id]!.state === 'ready');
 
-  const recommendations = selected.flatMap(id => {
-    const probe = probes[id]!;
-    if (!probe.installed) {
-      return [`${id} CLI missing; install it explicitly and authenticate with the provider.`];
-    }
-    const q = cached[id];
-    if (q?.status === 'rate_limited' || (q?.headroomPercent !== null && q?.headroomPercent === 0)) {
-      const resetTime = q.cooldownUntil || q.resetsAt;
-      return [`${id}: usage limit reached or rate limited${resetTime ? ` (resets at ${resetTime})` : ''}; request will be routed to other providers.`];
-    }
-    if (!ready.includes(id)) {
-      if (probe.authStatus === 'unauthenticated') {
-        return [`${id}: unauthenticated; run '${probe.loginHint || id}' to sign in.`];
+    const effective =
+      config.routing.strategy === 'smart_quota' ? 'smart_quota' : config.defaultBackend || (active.length === 1 ? active[0] : null);
+
+    const recommendations = selected.flatMap(id => {
+      const probe = probes[id]!;
+      if (!probe.installed) {
+        return [`${id} CLI missing; install it explicitly and authenticate with the provider.`];
       }
-      return [`${id}: installation detected; authentication/execution/read-only readiness has not been fully verified.`];
-    }
-    return [];
-  });
-  // A known limitation, not a configuration problem: it leaves the status unchanged.
-  const inheritedNotes = (Object.entries(inheritedTools) as [ProviderId, InheritedTools][]).map(([id, tools]) => {
-    const named = [tools.mcpServers.length ? `MCP servers ${tools.mcpServers.join(', ')}` : '', tools.plugins.length ? `plugins ${tools.plugins.join(', ')}` : ''].filter(Boolean).join(' and ');
-    return `${id}: turns run in the CLI's sandbox but can use ${named} from your ${id} configuration; CoAgent8 cannot disable them. Keep only servers you trust there.`;
-  });
-
-  // The default model of each installed backend. One the CLI does not state itself (the first
-  // model agy lists, the model Claude Code reports) is recorded in config.json once, so a later
-  // catalog order or account change cannot switch it silently (owner decision of 2026-10-07).
-  const defaultModels: DoctorReport['defaultModels'] = {};
-  const defaults: Partial<Record<ProviderId, ModelSelection>> = {};
-  if (!configError) {
-    await Promise.all(selected.filter(id => probes[id]!.installed).map(async id => {
-      let selection: ModelSelection;
-      try { selection = await selectModel(id, probes[id]!, {}, { observeAfresh: true, catalog: catalogs[selected.indexOf(id)], context: readContext }); }
-      catch (err) {
-        const code = (err as { code?: unknown })?.code;
-        if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
-        recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`);
-        return;
+      const q = cached[id];
+      if (q?.status === 'rate_limited' || (q?.headroomPercent !== null && q?.headroomPercent === 0)) {
+        const resetTime = q.cooldownUntil || q.resetsAt;
+        return [
+          `${id}: usage limit reached or rate limited${resetTime ? ` (resets at ${resetTime})` : ''}; request will be routed to other providers.`,
+        ];
       }
-      let recorded = false;
-      if (selection.source === 'first-listed' || selection.source === 'observed') {
-        try { recorded = await recordDefaultModel(id, selection.model); }
-        catch (err) {
-          const code = (err as { code?: unknown })?.code;
-          if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
-          recommendations.push(`${id}: default model ${selection.model} not recorded in config.json: ${redactDiagnostic((err as Error).message, 256)}`);
+      if (!ready.includes(id)) {
+        if (probe.authStatus === 'unauthenticated') {
+          return [`${id}: unauthenticated; run '${probe.loginHint || id}' to sign in.`];
         }
+        return [`${id}: installation detected; authentication/execution/read-only readiness has not been fully verified.`];
       }
-      defaults[id] = selection;
-      defaultModels[id] = { ...selection, ...(recorded ? { recorded } : {}), ...defaultApproval(selection.model, prices, config.governance) };
-    }));
-  }
+      return [];
+    });
+    // A known limitation, not a configuration problem: it leaves the status unchanged.
+    const inheritedNotes = (Object.entries(inheritedTools) as [ProviderId, InheritedTools][]).map(([id, tools]) => {
+      const named = [
+        tools.mcpServers.length ? `MCP servers ${tools.mcpServers.join(', ')}` : '',
+        tools.plugins.length ? `plugins ${tools.plugins.join(', ')}` : '',
+      ]
+        .filter(Boolean)
+        .join(' and ');
+      return `${id}: turns run in the CLI's sandbox but can use ${named} from your ${id} configuration; CoAgent8 cannot disable them. Keep only servers you trust there.`;
+    });
 
-  const selection = selected.filter(id => probes[id]!.installed)
-    .flatMap(id => listModelCandidates(id, catalogs[selected.indexOf(id)], defaults[id], prices, config.governance));
-  const backends: DoctorReport['backends'] = {};
-  const quotas: DoctorReport['quotas'] = {};
-  for (const id of selected) {
-    const { quota, ...probe } = probes[id]!;
-    const catalog = catalogs[selected.indexOf(id)];
-    backends[id] = catalog ? { ...probe, models: catalog.models, modelSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) } : probe;
-    if (cached[id]) quotas[id] = quota?.buckets ? { ...cached[id], buckets: quota.buckets } : cached[id];
-  }
-
-  const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
-  const observerNotes: string[] = [];
-  if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('TIMEOUT', `Diagnostic deadline exceeded (${budget.totalBudgetMs} ms).`);
-  }
-  if (budget.isCallerAborted() || options.signal?.aborted) {
-    if (isOwnedBudget) budget.dispose();
-    emitTimingOnEarlyExit();
-    throw new ToolError('ABORTED', 'Request cancelled during diagnostic execution.');
-  }
-
-  if (options.onTiming) {
-    const recordObserverError = (err: unknown) => {
-      let msg = 'Unknown observer error.';
-      try {
-        if (err instanceof Error) msg = err.message;
-        else if (typeof err === 'string') msg = err;
-        else msg = String(err);
-      } catch {
-        msg = 'Unstringifiable error thrown.';
-      }
-      const note = `Timing observer failure: ${redactDiagnostic(msg, 256)}`;
-      if (!observerNotes.includes(note)) observerNotes.push(note);
-    };
-
-    try {
-      const ret: unknown = options.onTiming(trace);
-      if (ret && typeof (ret as Promise<unknown>).then === 'function') {
-        let timer: NodeJS.Timeout | undefined;
-        let timedOut = false;
-        await Promise.race([
-          (ret as Promise<unknown>).catch(recordObserverError),
-          new Promise<void>(resolve => {
-            timer = setTimeout(() => {
-              timedOut = true;
-              resolve();
-            }, 500);
+    // The default model of each installed backend. One the CLI does not state itself (the first
+    // model agy lists, the model Claude Code reports) is recorded in config.json once, so a later
+    // catalog order or account change cannot switch it silently (owner decision of 2026-10-07).
+    const defaultModels: DoctorReport['defaultModels'] = {};
+    const defaults: Partial<Record<ProviderId, ModelSelection>> = {};
+    if (!configError) {
+      await Promise.all(
+        selected
+          .filter(id => probes[id]!.installed)
+          .map(async id => {
+            let selection: ModelSelection;
+            try {
+              selection = await selectModel(
+                id,
+                probes[id]!,
+                {},
+                { observeAfresh: true, catalog: catalogs[selected.indexOf(id)], context: readContext },
+              );
+            } catch (err) {
+              const code = (err as { code?: unknown })?.code;
+              if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
+              recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`);
+              return;
+            }
+            let recorded = false;
+            if (selection.source === 'first-listed' || selection.source === 'observed') {
+              try {
+                recorded = await recordDefaultModel(id, selection.model);
+              } catch (err) {
+                const code = (err as { code?: unknown })?.code;
+                if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
+                recommendations.push(
+                  `${id}: default model ${selection.model} not recorded in config.json: ${redactDiagnostic((err as Error).message, 256)}`,
+                );
+              }
+            }
+            defaults[id] = selection;
+            defaultModels[id] = {
+              ...selection,
+              ...(recorded ? { recorded } : {}),
+              ...defaultApproval(selection.model, prices, config.governance),
+            };
           }),
-        ]);
-        if (timer) clearTimeout(timer);
-        if (timedOut) {
-          observerNotes.push('Timing observer timed out after 500ms.');
-        }
-      }
-    } catch (err: unknown) {
-      recordObserverError(err);
+      );
     }
-  }
 
-  return {
-    status: configError ? 'configuration_error' : !active.length ? 'degraded_no_active_backends' : recommendations.length ? 'partially_configured' : 'operational',
-    active_backends: active,
-    installed_backends: selected.filter(id => probes[id]!.installed),
-    ready_backends: ready,
-    readiness,
-    server_version: BRAND.SERVER_VERSION,
-    runtime_path: redactDiagnostic(getRuntimePath()),
-    configuredDefault: config.defaultBackend,
-    effectiveDefault: effective,
-    default_backend: effective || 'auto',
-    backends,
-    quotas,
-    defaultModels,
-    prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
-    selection,
-    recommendations: [...(configError ? [configError] : []), ...recommendations, ...cacheNotes, ...inheritedNotes, ...configNotes, ...observerNotes],
-    ...(configError ? { configError } : {}),
-    configProvenance,
-    inheritedTools,
-    trace,
-  };
+    const selection = selected
+      .filter(id => probes[id]!.installed)
+      .flatMap(id => listModelCandidates(id, catalogs[selected.indexOf(id)], defaults[id], prices, config.governance));
+    const backends: DoctorReport['backends'] = {};
+    const quotas: DoctorReport['quotas'] = {};
+    for (const id of selected) {
+      const { quota, ...probe } = probes[id]!;
+      const catalog = catalogs[selected.indexOf(id)];
+      backends[id] = catalog
+        ? { ...probe, models: catalog.models, modelSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) }
+        : probe;
+      if (cached[id]) quotas[id] = quota?.buckets ? { ...cached[id], buckets: quota.buckets } : cached[id];
+    }
+
+    const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
+    const observerNotes: string[] = [];
+    if (budget.isTimedOut() || budget.isExecutionExpired() || budget.remainingExecutionMs() <= 0) {
+      if (isOwnedBudget) budget.dispose();
+      emitTimingOnEarlyExit();
+      throw new ToolError('TIMEOUT', `Diagnostic deadline exceeded (${budget.totalBudgetMs} ms).`);
+    }
+    if (budget.isCallerAborted() || options.signal?.aborted) {
+      if (isOwnedBudget) budget.dispose();
+      emitTimingOnEarlyExit();
+      throw new ToolError('ABORTED', 'Request cancelled during diagnostic execution.');
+    }
+
+    if (options.onTiming) {
+      const recordObserverError = (err: unknown) => {
+        let msg = 'Unknown observer error.';
+        try {
+          if (err instanceof Error) msg = err.message;
+          else if (typeof err === 'string') msg = err;
+          else msg = String(err);
+        } catch {
+          msg = 'Unstringifiable error thrown.';
+        }
+        const note = `Timing observer failure: ${redactDiagnostic(msg, 256)}`;
+        if (!observerNotes.includes(note)) observerNotes.push(note);
+      };
+
+      try {
+        const ret: unknown = options.onTiming(trace);
+        if (ret && typeof (ret as Promise<unknown>).then === 'function') {
+          let timer: NodeJS.Timeout | undefined;
+          let timedOut = false;
+          await Promise.race([
+            (ret as Promise<unknown>).catch(recordObserverError),
+            new Promise<void>(resolve => {
+              timer = setTimeout(() => {
+                timedOut = true;
+                resolve();
+              }, 500);
+            }),
+          ]);
+          if (timer) clearTimeout(timer);
+          if (timedOut) {
+            observerNotes.push('Timing observer timed out after 500ms.');
+          }
+        }
+      } catch (err: unknown) {
+        recordObserverError(err);
+      }
+    }
+
+    return {
+      status: configError
+        ? 'configuration_error'
+        : !active.length
+          ? 'degraded_no_active_backends'
+          : recommendations.length
+            ? 'partially_configured'
+            : 'operational',
+      active_backends: active,
+      installed_backends: selected.filter(id => probes[id]!.installed),
+      ready_backends: ready,
+      readiness,
+      server_version: BRAND.SERVER_VERSION,
+      runtime_path: redactDiagnostic(getRuntimePath()),
+      configuredDefault: config.defaultBackend,
+      effectiveDefault: effective,
+      default_backend: effective || 'auto',
+      backends,
+      quotas,
+      defaultModels,
+      prices: prices
+        ? {
+            source: prices.source,
+            fetchedAt: new Date(prices.fetchedAt).toISOString(),
+            models: Object.values(prices.models).filter(Boolean).length,
+            stale: isPriceListStale(prices),
+          }
+        : null,
+      selection,
+      recommendations: [
+        ...(configError ? [configError] : []),
+        ...recommendations,
+        ...cacheNotes,
+        ...inheritedNotes,
+        ...configNotes,
+        ...observerNotes,
+      ],
+      ...(configError ? { configError } : {}),
+      configProvenance,
+      inheritedTools,
+      trace,
+    };
   } finally {
     if (isOwnedBudget) {
       budget.dispose();
@@ -415,14 +481,24 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
 
 /** How the summary names where a default model came from. */
 const MODEL_SOURCE_LABELS: Record<ModelSource, string> = {
-  request: 'requested', session: 'session', config: 'config.json', 'cli-config': 'CLI config',
-  catalog: 'CLI default', 'first-listed': 'first listed', observed: 'CLI reports', 'price-limit': 'price limit',
+  request: 'requested',
+  session: 'session',
+  config: 'config.json',
+  'cli-config': 'CLI config',
+  catalog: 'CLI default',
+  'first-listed': 'first listed',
+  observed: 'CLI reports',
+  'price-limit': 'price limit',
 };
 
 /** Why a model asks, as the summary names the rule; the full report carries the sentence. */
 const APPROVAL_LABELS: Partial<Record<ConsentBasis, string>> = {
-  ask: 'user list', 'no-price-list': 'no price list', unpriced: 'no price', approximate: 'approximate price',
-  'above-limit': 'askAbovePrice', relative: 'priceMultiplier',
+  ask: 'user list',
+  'no-price-list': 'no price list',
+  unpriced: 'no price',
+  approximate: 'approximate price',
+  'above-limit': 'askAbovePrice',
+  relative: 'priceMultiplier',
 };
 
 /**
@@ -437,7 +513,11 @@ function approvalTag(approval: ModelCandidate['approval']): string {
 }
 
 /** Whether the default model asks each turn or is denied, as doctor records it. */
-function defaultApproval(model: string, prices: PriceList | undefined, governance: GovernanceSettings): Pick<DoctorDefaultModel, 'asks' | 'denied'> {
+function defaultApproval(
+  model: string,
+  prices: PriceList | undefined,
+  governance: GovernanceSettings,
+): Pick<DoctorDefaultModel, 'asks' | 'denied'> {
   const decision = decideConsent(model, model, prices, governance);
   return decision.deny ? { denied: true } : decision.ask ? { asks: true } : {};
 }
@@ -470,25 +550,31 @@ function formatCandidates(rows: ModelCandidate[], limit: number): string {
 
 function formatQuota(quota: DoctorQuota | undefined): string {
   if (!quota) return 'quota unknown';
-  if (quota.status === 'rate_limited') return `rate limited${quota.cooldownUntil || quota.resetsAt ? ` until ${quota.cooldownUntil || quota.resetsAt}` : ''}`;
+  if (quota.status === 'rate_limited')
+    return `rate limited${quota.cooldownUntil || quota.resetsAt ? ` until ${quota.cooldownUntil || quota.resetsAt}` : ''}`;
   if (!quota.measured || quota.headroomPercent === null) return 'quota not measured';
   return `${quota.window} ${quota.headroomPercent}% left${quota.resetsAt ? `, resets ${quota.resetsAt}` : ''}`;
 }
 
 function formatPrices(list: DoctorPrices | null): string {
-  return list ? `prices ${list.source} ${list.fetchedAt.slice(0, 10)} (${list.models} models priced${list.stale ? ', stale: meets no price limit' : ''})`
+  return list
+    ? `prices ${list.source} ${list.fetchedAt.slice(0, 10)} (${list.models} models priced${list.stale ? ', stale: meets no price limit' : ''})`
     : 'no price list: every model asks, none meets a price limit';
 }
 
 /** Names the default model and where it came from. */
 function formatDefault(selected: DoctorDefaultModel | undefined): string {
-  return selected ? ` - model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''}${selected.denied ? ', denied by the user' : ''})` : '';
+  return selected
+    ? ` - model ${selected.model} (${MODEL_SOURCE_LABELS[selected.source]}${selected.recorded ? ', recorded in config.json' : ''}${selected.asks ? ', asks each turn' : ''}${selected.denied ? ', denied by the user' : ''})`
+    : '';
 }
 
 /** What a backend accepts beyond the listed models: unlisted names, the probe's aliases, or any name. */
 function formatUnlisted(catalog: { listed: boolean; acceptsUnlisted?: boolean; availableModels?: string[] }): string | undefined {
   if (catalog.listed) return catalog.acceptsUnlisted ? '  also accepted: unlisted names the CLI resolves itself' : undefined;
-  return catalog.availableModels?.length ? `  also accepted: ${catalog.availableModels.join(', ')}, or a full model id` : '  also accepted: any model name the CLI accepts';
+  return catalog.availableModels?.length
+    ? `  also accepted: ${catalog.availableModels.join(', ')}, or a full model id`
+    : '  also accepted: any model name the CLI accepts';
 }
 
 /**
@@ -496,13 +582,19 @@ function formatUnlisted(catalog: { listed: boolean; acceptsUnlisted?: boolean; a
  * dropped whole, from the longest list first, because a cut row would misstate a price.
  * @param render - Renders the summary with at most the given number of rows per backend.
  */
-function fitSummary(selection: ModelCandidate[], render: (rows: (id: ProviderId) => ModelCandidate[], limits: Partial<Record<ProviderId, number>>) => string): string {
+function fitSummary(
+  selection: ModelCandidate[],
+  render: (rows: (id: ProviderId) => ModelCandidate[], limits: Partial<Record<ProviderId, number>>) => string,
+): string {
   const ids = [...new Set(selection.map(row => row.backend))];
   const rows = (id: ProviderId) => selection.filter(row => row.backend === id);
   const limits: Partial<Record<ProviderId, number>> = Object.fromEntries(ids.map(id => [id, rows(id).length]));
   let text = render(rows, limits);
   while (Buffer.byteLength(text) > DOCTOR_SUMMARY_MAX_BYTES) {
-    const longest = ids.reduce<ProviderId | undefined>((top, id) => top === undefined || limits[id]! > limits[top]! ? id : top, undefined);
+    const longest = ids.reduce<ProviderId | undefined>(
+      (top, id) => (top === undefined || limits[id]! > limits[top]! ? id : top),
+      undefined,
+    );
     if (!longest || limits[longest]! <= 1) break;
     limits[longest]!--;
     text = render(rows, limits);
@@ -521,19 +613,34 @@ export const DOCTOR_RUNTIME_PATH_MAX_BYTES = 256;
 export function formatDoctorSummary(report: DoctorReport): string {
   const ids = Object.keys(report.backends) as ProviderId[];
   const versionPart = report.server_version ? ` - v${report.server_version}` : '';
-  const boundedRuntime = report.runtime_path ? truncateToByteLength(report.runtime_path, DOCTOR_RUNTIME_PATH_MAX_BYTES, '...[truncated]') : '';
+  const boundedRuntime = report.runtime_path
+    ? truncateToByteLength(report.runtime_path, DOCTOR_RUNTIME_PATH_MAX_BYTES, '...[truncated]')
+    : '';
   const runtimePart = boundedRuntime ? ` - runtime: ${boundedRuntime}` : '';
   return fitSummary(report.selection, (rows, limits) => {
-    const lines = [`CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} - default backend: ${report.default_backend} - ${formatPrices(report.prices)}`];
+    const lines = [
+      `CoAgent8 doctor: ${report.status}${versionPart}${runtimePart} - default backend: ${report.default_backend} - ${formatPrices(report.prices)}`,
+    ];
     for (const id of ids) {
       const probe = report.backends[id]!;
-      if (!probe.installed) { lines.push(`${id}: not installed`); continue; }
+      if (!probe.installed) {
+        lines.push(`${id}: not installed`);
+        continue;
+      }
       const readiness = report.readiness?.[id];
       const state = readiness ? READINESS_LABEL[readiness.state] : report.ready_backends.includes(id) ? 'ready' : 'not ready';
-      const lastTurn = readiness?.lastSuccess ? ` - last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}` : '';
-      lines.push(`${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn}`);
+      const lastTurn = readiness?.lastSuccess
+        ? ` - last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}`
+        : '';
+      lines.push(
+        `${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn}`,
+      );
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
-      const unlisted = formatUnlisted({ listed: Boolean(probe.models?.length), acceptsUnlisted: probe.acceptsUnlisted, availableModels: probe.availableModels });
+      const unlisted = formatUnlisted({
+        listed: Boolean(probe.models?.length),
+        acceptsUnlisted: probe.acceptsUnlisted,
+        availableModels: probe.availableModels,
+      });
       if (unlisted) lines.push(unlisted);
     }
     if (report.recommendations.length) lines.push(...report.recommendations.map(text => `- ${text}`));
@@ -581,11 +688,13 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const isOwnedBudget = !options.budget;
-  const budget = options.budget ?? createExecutionBudget({
-    totalBudgetMs: DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
-    parentSignal: options.signal,
-    clock: options.clock,
-  });
+  const budget =
+    options.budget ??
+    createExecutionBudget({
+      totalBudgetMs: DEFAULT_DIAGNOSTIC_TIMEOUT_MS,
+      parentSignal: options.signal,
+      clock: options.clock,
+    });
 
   const readContext: BackendReadContext = {
     abortSignal: combineSignals(options.signal, budget.executionSignal) ?? undefined,
@@ -635,50 +744,72 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
       configNotes.push(`configuration: custom path active from coagent8_CONFIG (${configProvenance.path})`);
     }
     if (configProvenance.overrides.length) {
-      configNotes.push(`configuration: ${configProvenance.overrides.length} editor setting override(s) active (${configProvenance.overrides.join(', ')})`);
+      configNotes.push(
+        `configuration: ${configProvenance.overrides.length} editor setting override(s) active (${configProvenance.overrides.join(', ')})`,
+      );
     }
     if (configProvenance.attemptedOverrides?.length) {
-      configNotes.push(`configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`);
+      configNotes.push(
+        `configuration: ${configProvenance.attemptedOverrides.length} editor setting(s) present but inactive due to configuration error (${configProvenance.attemptedOverrides.join(', ')})`,
+      );
     }
     const selected: readonly ProviderId[] = options.backend ? [options.backend] : PROVIDERS;
-    const probes = await Promise.all(selected.map(async id => {
-      const span = tracker.startPhase('health_probes');
-      try {
-        return await probeBackend(id, { context: readContext });
-      } finally {
-        span.end();
-      }
-    }));
+    const probes = await Promise.all(
+      selected.map(async id => {
+        const span = tracker.startPhase('health_probes');
+        try {
+          return await probeBackend(id, { context: readContext });
+        } finally {
+          span.end();
+        }
+      }),
+    );
     const modelSpan = tracker.startPhase('model_report');
     let catalogs: (ModelCatalog | undefined)[];
     let defaults: (ModelSelection | undefined)[];
     let prices: Awaited<ReturnType<typeof readPrices>>;
     const recommendations: string[] = configError ? [configError] : [];
     try {
-      catalogs = await Promise.all(selected.map((id, index) => probes[index].installed ? readModelCatalog(id, { context: readContext }) : undefined));
-      defaults = await Promise.all(selected.map(async (id, index): Promise<ModelSelection | undefined> => {
-        if (!probes[index].installed || configError) return undefined;
-        try { return await selectModel(id, probes[index], {}, { context: readContext }); }
-        catch (err) {
-          const code = (err as { code?: unknown })?.code;
-          if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
-          recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`);
-          return undefined;
-        }
-      }));
-      prices = await readPrices({ models: [...catalogs.flatMap(catalog => catalogNames(catalog)), ...defaults.flatMap(selection => selection ? [selection.model] : [])], context: readContext });
+      catalogs = await Promise.all(
+        selected.map((id, index) => (probes[index].installed ? readModelCatalog(id, { context: readContext }) : undefined)),
+      );
+      defaults = await Promise.all(
+        selected.map(async (id, index): Promise<ModelSelection | undefined> => {
+          if (!probes[index].installed || configError) return undefined;
+          try {
+            return await selectModel(id, probes[index], {}, { context: readContext });
+          } catch (err) {
+            const code = (err as { code?: unknown })?.code;
+            if (code === 'ABORTED' || code === 'TIMEOUT') throw err;
+            recommendations.push(`${id}: ${redactDiagnostic((err as Error).message, 512)}`);
+            return undefined;
+          }
+        }),
+      );
+      prices = await readPrices({
+        models: [
+          ...catalogs.flatMap(catalog => catalogNames(catalog)),
+          ...defaults.flatMap(selection => (selection ? [selection.model] : [])),
+        ],
+        context: readContext,
+      });
       if (!prices) recommendations.push('No price list could be read: every model asks for approval and none meets a price limit.');
     } finally {
       modelSpan.end();
     }
     const backends: ModelReport['backends'] = {};
     selected.forEach((id, index) => {
-      const probe = probes[index], catalog = catalogs[index], fallback = defaults[index];
-      backends[id] = { installed: probe.installed, allowed: config.routing.allowedBackends.includes(id),
+      const probe = probes[index],
+        catalog = catalogs[index],
+        fallback = defaults[index];
+      backends[id] = {
+        installed: probe.installed,
+        allowed: config.routing.allowedBackends.includes(id),
         ...(probe.version ? { version: probe.version } : {}),
         ...(fallback ? { defaultModel: { ...fallback, ...defaultApproval(fallback.model, prices, config.governance) } } : {}),
         ...(catalog ? { catalogSource: catalog.source, ...(catalog.acceptsUnlisted ? { acceptsUnlisted: true } : {}) } : {}),
-        ...(!catalog && probe.availableModels?.length ? { availableModels: probe.availableModels } : {}) };
+        ...(!catalog && probe.availableModels?.length ? { availableModels: probe.availableModels } : {}),
+      };
     });
 
     const trace = isOwnedTracker ? tracker.complete() : tracker.getTrace();
@@ -734,9 +865,18 @@ export async function runModelReport(options: DoctorOptions = {}): Promise<Model
 
     return {
       scope: 'models',
-      prices: prices ? { source: prices.source, fetchedAt: new Date(prices.fetchedAt).toISOString(), models: Object.values(prices.models).filter(Boolean).length, stale: isPriceListStale(prices) } : null,
+      prices: prices
+        ? {
+            source: prices.source,
+            fetchedAt: new Date(prices.fetchedAt).toISOString(),
+            models: Object.values(prices.models).filter(Boolean).length,
+            stale: isPriceListStale(prices),
+          }
+        : null,
       backends,
-      selection: selected.flatMap((id, index) => probes[index].installed ? listModelCandidates(id, catalogs[index], defaults[index], prices, config.governance) : []),
+      selection: selected.flatMap((id, index) =>
+        probes[index].installed ? listModelCandidates(id, catalogs[index], defaults[index], prices, config.governance) : [],
+      ),
       recommendations: [...recommendations, ...configNotes, ...observerNotes],
       configProvenance,
       trace,
@@ -758,10 +898,19 @@ export function formatModelSummary(report: ModelReport): string {
     const lines = [`CoAgent8 models - ${formatPrices(report.prices)} - scope "health" diagnoses sign-in and quota`];
     for (const id of ids) {
       const backend = report.backends[id]!;
-      if (!backend.installed) { lines.push(`${id}: not installed`); continue; }
-      lines.push(`${id}${backend.allowed ? '' : ' (not allowed by routing.allowedBackends)'} - ${backend.version || 'unknown version'}${formatDefault(backend.defaultModel)}`);
+      if (!backend.installed) {
+        lines.push(`${id}: not installed`);
+        continue;
+      }
+      lines.push(
+        `${id}${backend.allowed ? '' : ' (not allowed by routing.allowedBackends)'} - ${backend.version || 'unknown version'}${formatDefault(backend.defaultModel)}`,
+      );
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
-      const unlisted = formatUnlisted({ listed: Boolean(backend.catalogSource), acceptsUnlisted: backend.acceptsUnlisted, availableModels: backend.availableModels });
+      const unlisted = formatUnlisted({
+        listed: Boolean(backend.catalogSource),
+        acceptsUnlisted: backend.acceptsUnlisted,
+        availableModels: backend.availableModels,
+      });
       if (unlisted) lines.push(unlisted);
     }
     if (report.recommendations.length) lines.push(...report.recommendations.map(text => `- ${text}`));

@@ -86,7 +86,9 @@ export async function readWorkspaceRepository(cwd: string, context?: BackendRead
  */
 async function listing(args: string[], cwd: string, context?: BackendReadContext): Promise<string[]> {
   let cut = false;
-  const output = await runGit(['-c', 'diff.relative=false', ...args], cwd, context, undefined, () => { cut = true; });
+  const output = await runGit(['-c', 'diff.relative=false', ...args], cwd, context, undefined, () => {
+    cut = true;
+  });
   if (cut) throw new Error('Git output exceeded its size limit, so the changes cannot be compared reliably.');
   return output.split('\0').filter(Boolean);
 }
@@ -114,7 +116,11 @@ function relativeToWorkspace(repo: WorkspaceRepository, file: string): string | 
 function signature(repo: WorkspaceRepository, file: string): string | null {
   const full = path.join(repo.root, file);
   let stat: fs.Stats;
-  try { stat = fs.lstatSync(full); } catch { return null; }
+  try {
+    stat = fs.lstatSync(full);
+  } catch {
+    return null;
+  }
   if (stat.isSymbolicLink()) return `link:${fs.readlinkSync(full)}`;
   if (!stat.isFile()) return `other:${stat.mode}`;
   // Git tracks the executable bit; Windows reports none.
@@ -131,12 +137,14 @@ export async function captureWorkspace(cwd: string, repo: WorkspaceRepository, c
   const paths = new Map<string, PathState>();
   for (let i = 0; i < status.length; i++) {
     const record = status[i]!;
-    const code = record.slice(0, 2), file = record.slice(3);
+    const code = record.slice(0, 2),
+      file = record.slice(3);
     // A rename or copy is followed by its source path, which the rename removed.
     if (code[0] === 'R' || code[0] === 'C') {
       const source = status[++i];
       const relative = source === undefined ? null : relativeToWorkspace(repo, source);
-      if (code[0] === 'R' && relative !== null && !paths.has(relative)) paths.set(relative, { status: 'D ', content: signature(repo, source!) });
+      if (code[0] === 'R' && relative !== null && !paths.has(relative))
+        paths.set(relative, { status: 'D ', content: signature(repo, source!) });
     }
     const relative = relativeToWorkspace(repo, file);
     if (relative !== null) paths.set(relative, { status: code, content: signature(repo, file) });
@@ -145,7 +153,8 @@ export async function captureWorkspace(cwd: string, repo: WorkspaceRepository, c
   // HEAD, `--cached` compares the index with the empty tree.
   const staged = await listing(['diff', '--cached', '--raw', '--no-renames', '-z', '--', '.'], cwd, context);
   for (let i = 0; i + 1 < staged.length; i += 2) {
-    const fields = staged[i]!.split(' '), relative = relativeToWorkspace(repo, staged[i + 1]!);
+    const fields = staged[i]!.split(' '),
+      relative = relativeToWorkspace(repo, staged[i + 1]!);
     const entry = relative === null ? undefined : paths.get(relative);
     if (entry) entry.staged = `${fields[1]} ${fields[3]}`;
   }
@@ -153,7 +162,12 @@ export async function captureWorkspace(cwd: string, repo: WorkspaceRepository, c
 }
 
 /** Workspace paths tracked in a commit; a clean path missing from a status listing exists exactly when tracked. */
-async function trackedPaths(cwd: string, repo: WorkspaceRepository, head: string | null, context?: BackendReadContext): Promise<Set<string>> {
+async function trackedPaths(
+  cwd: string,
+  repo: WorkspaceRepository,
+  head: string | null,
+  context?: BackendReadContext,
+): Promise<Set<string>> {
   if (!head) return new Set();
   const files = await listing(['ls-tree', '-r', '-z', '--full-name', '--name-only', head, '--', '.'], cwd, context);
   return new Set(files.map(file => relativeToWorkspace(repo, file)).filter((file): file is string => file !== null));
@@ -175,7 +189,8 @@ export async function compareWorkspace(
 ): Promise<WorkspaceChanges> {
   const changed = new Map<string, ObservedChange['kind']>();
   const differing = [...new Set([...before.paths.keys(), ...after.paths.keys()])].filter(file => {
-    const a = before.paths.get(file), b = after.paths.get(file);
+    const a = before.paths.get(file),
+      b = after.paths.get(file);
     return !(a && b && a.status === b.status && a.staged === b.staged && a.content === b.content);
   });
   // Read only when a differing path is missing from one listing, which makes it clean there.
@@ -183,7 +198,8 @@ export async function compareWorkspace(
   const trackedBefore = needsTree(before) ? await trackedPaths(cwd, repo, before.head, context) : new Set<string>();
   const trackedAfter = needsTree(after) ? await trackedPaths(cwd, repo, after.head, context) : new Set<string>();
   for (const file of differing) {
-    const a = before.paths.get(file), b = after.paths.get(file);
+    const a = before.paths.get(file),
+      b = after.paths.get(file);
     const was = a ? a.content !== null : trackedBefore.has(file);
     const is = b ? b.content !== null : trackedAfter.has(file);
     // Absent on both sides, the path's deletion moved, for example from the index into a commit.
@@ -196,23 +212,33 @@ export async function compareWorkspace(
       const range = before.head ? [`${before.head}..${after.head}`] : [after.head];
       commits = Number((await runGit(['rev-list', '--count', ...range], cwd, context)).trim()) || 0;
       // Files committed during the turn are changes even when the tree is clean again.
-      const committed = await listing(before.head
-        ? ['diff', '--name-status', '--no-renames', '-z', before.head, after.head, '--', '.']
-        : ['show', '--name-status', '--no-renames', '--format=', '-z', after.head, '--', '.'], cwd, context);
+      const committed = await listing(
+        before.head
+          ? ['diff', '--name-status', '--no-renames', '-z', before.head, after.head, '--', '.']
+          : ['show', '--name-status', '--no-renames', '--format=', '-z', after.head, '--', '.'],
+        cwd,
+        context,
+      );
       for (let i = 0; i + 1 < committed.length; i += 2) {
         const relative = relativeToWorkspace(repo, committed[i + 1]!);
-        if (relative !== null && !changed.has(relative)) changed.set(relative, committed[i] === 'A' ? 'added' : committed[i] === 'D' ? 'deleted' : 'modified');
+        if (relative !== null && !changed.has(relative))
+          changed.set(relative, committed[i] === 'A' ? 'added' : committed[i] === 'D' ? 'deleted' : 'modified');
       }
     }
     headMoved = { before: before.head, after: after.head, commits, branchBefore: before.branch, branchAfter: after.branch };
   }
   const all = [...changed.entries()].sort(([x], [y]) => x.localeCompare(y));
   const listed = all.slice(0, MAX_LISTED_CHANGES).map(([file, kind]) => ({ path: file, kind }));
-  const tracked = listed.filter(change => change.kind !== 'added' || after.paths.get(change.path)?.status !== '??').map(change => change.path);
+  const tracked = listed
+    .filter(change => change.kind !== 'added' || after.paths.get(change.path)?.status !== '??')
+    .map(change => change.path);
   // At most MAX_LISTED_CHANGES lines; the formatter redacts and bounds the whole text.
-  const diffStat = after.head && tracked.length
-    ? (await listing(['diff', '--stat=120', 'HEAD', '--', ...tracked.map(file => `:(literal)${file}`)], cwd, context)).join('').trimEnd() || undefined
-    : undefined;
+  const diffStat =
+    after.head && tracked.length
+      ? (await listing(['diff', '--stat=120', 'HEAD', '--', ...tracked.map(file => `:(literal)${file}`)], cwd, context))
+          .join('')
+          .trimEnd() || undefined
+      : undefined;
   return {
     changed: listed,
     outsideScope: listed.filter(change => !inScope(change.path, scope)).map(change => change.path),

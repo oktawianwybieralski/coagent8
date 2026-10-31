@@ -6,4 +6,3 @@
  */
 
 export { isValidModelIdentifier } from '../contracts/models.js';
-

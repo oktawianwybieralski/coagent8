@@ -18,7 +18,9 @@ function headerPath(tag) {
 function readHeader(root, tag) {
   const file = path.join(root, headerPath(tag));
   if (!fs.existsSync(file)) {
-    throw new Error(`${headerPath(tag).replace(/\\/g, '/')} is missing: the release PR adds the tester header (rule 12, section 5, step 9).`);
+    throw new Error(
+      `${headerPath(tag).replace(/\\/g, '/')} is missing: the release PR adds the tester header (rule 12, section 5, step 9).`,
+    );
   }
   const text = fs.readFileSync(file, 'utf8').trim();
   if (!text) throw new Error(`${headerPath(tag).replace(/\\/g, '/')} is empty.`);
@@ -59,7 +61,8 @@ function composeNotes({ header, changelog, sums, tag, repository, sha }) {
 function parseArgs(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i += 2) {
-    const name = argv[i], value = argv[i + 1];
+    const name = argv[i],
+      value = argv[i + 1];
     if (!['--tag', '--changelog', '--sums', '--repository', '--sha', '--out'].includes(name) || value === undefined) {
       throw new Error(`Unknown or incomplete argument: ${name}`);
     }

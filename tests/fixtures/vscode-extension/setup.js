@@ -15,7 +15,9 @@ export function clientSource(client, cli) {
     : { kind: 'standalone', executable: path.resolve(cli.command) };
 }
 export function resolveSetupClient(client) {
-  return scripted().found(client) ? { command: scripted().commands[client] ?? 'fixture-' + client, argsPrefix: [], source: 'native' } : null;
+  return scripted().found(client)
+    ? { command: scripted().commands[client] ?? 'fixture-' + client, argsPrefix: [], source: 'native' }
+    : null;
 }
 /** The installation in use, then the scripted others; one that `requires` an extension appears with it. */
 export function listInstallations(client) {
@@ -31,13 +33,24 @@ export function listInstallations(client) {
 export function configuredExecutable(client, home, env) {
   if (!fs.existsSync(env.coagent8_CONFIG)) return undefined;
   const value = JSON.parse(fs.readFileSync(env.coagent8_CONFIG, 'utf8')).backends?.[client]?.executable;
-  return value === undefined ? undefined : { value, found: !scripted().missingConfigured.includes(client) && !scripted().removedFile(client, value) && !(value === 'vscode-extension' && scripted().vendorGone(client)) };
+  return value === undefined
+    ? undefined
+    : {
+        value,
+        found:
+          !scripted().missingConfigured.includes(client) &&
+          !scripted().removedFile(client, value) &&
+          !(value === 'vscode-extension' && scripted().vendorGone(client)),
+      };
 }
 export async function checkExecutable(client, file) {
   scripted().recordEvent('check-executable');
   const failure = scripted().executableChecks[file];
   if (failure) throw new Error(failure);
-  return { source: { kind: 'standalone', executable: path.resolve(file) }, readiness: { version: '9.9.9', compatibility: 'supported', authentication: 'authenticated', ready: true, diagnostic: '' } };
+  return {
+    source: { kind: 'standalone', executable: path.resolve(file) },
+    readiness: { version: '9.9.9', compatibility: 'supported', authentication: 'authenticated', ready: true, diagnostic: '' },
+  };
 }
 export function readRegistrations(options) {
   scripted().recordEvent('registrations');
@@ -47,9 +60,14 @@ export function readRegistrations(options) {
     const isNewer = state === 'newer';
     return {
       client,
-      state: state === 'outdated' || isNewer ? 'owned' : state ?? 'absent',
+      state: state === 'outdated' || isNewer ? 'owned' : (state ?? 'absent'),
       current: state !== 'outdated' && !isNewer,
-      message: state === 'blocked' ? 'Malformed fixture configuration.' : isNewer ? 'Registered by setup for a newer CoAgent8 version (9.9.9); preserved.' : 'fixture',
+      message:
+        state === 'blocked'
+          ? 'Malformed fixture configuration.'
+          : isNewer
+            ? 'Registered by setup for a newer CoAgent8 version (9.9.9); preserved.'
+            : 'fixture',
       ...(isNewer ? { isNewer: true, version: '9.9.9' } : {}),
     };
   });
@@ -61,6 +79,11 @@ export async function setupClients(options) {
   scripted().recordClients(options.clients);
   return options.clients.map(client => ({
     ...scripted().statusOf(client),
-    action: scripted().registrationStates[client] === 'newer' ? 'preserved' : scripted().registrationStates[client] === 'outdated' ? 'updated' : 'installed',
+    action:
+      scripted().registrationStates[client] === 'newer'
+        ? 'preserved'
+        : scripted().registrationStates[client] === 'outdated'
+          ? 'updated'
+          : 'installed',
   }));
 }

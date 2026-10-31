@@ -1,10 +1,10 @@
 name: Bug report
 description: Report a reproducible CoAgent8 problem, including beta feedback.
-title: "[Bug]: "
+title: '[Bug]: '
 body:
   - type: markdown
     attributes:
-      value: "Include sanitized diagnostics. Review pasted output and remove any remaining credentials or private project content."
+      value: 'Include sanitized diagnostics. Review pasted output and remove any remaining credentials or private project content.'
   - type: textarea
     id: reproduction
     attributes:

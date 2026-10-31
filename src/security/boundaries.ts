@@ -26,19 +26,32 @@ export function isPotentialSecretPrefix(word: string): boolean {
   if ('aiza'.startsWith(w) || w.includes('aiza')) return true;
   if ('ya29.'.startsWith(w) || w.includes('ya29.')) return true;
   if (
-    'ghp_'.startsWith(w) || 'gho_'.startsWith(w) || 'ghu_'.startsWith(w) || 'ghs_'.startsWith(w) ||
-    'github_pat_'.startsWith(w) || 'glpat-'.startsWith(w) ||
-    w.includes('ghp_') || w.includes('gho_') || w.includes('ghu_') || w.includes('ghs_') ||
-    w.includes('github_pat_') || w.includes('glpat-')
-  ) return true;
+    'ghp_'.startsWith(w) ||
+    'gho_'.startsWith(w) ||
+    'ghu_'.startsWith(w) ||
+    'ghs_'.startsWith(w) ||
+    'github_pat_'.startsWith(w) ||
+    'glpat-'.startsWith(w) ||
+    w.includes('ghp_') ||
+    w.includes('gho_') ||
+    w.includes('ghu_') ||
+    w.includes('ghs_') ||
+    w.includes('github_pat_') ||
+    w.includes('glpat-')
+  )
+    return true;
   if ('npm_'.startsWith(w) || w.includes('npm_')) return true;
   if ('hf_'.startsWith(w) || w.includes('hf_')) return true;
   if ('eyj'.startsWith(w) || w.includes('eyj')) return true;
   if ('xox'.startsWith(w) || w.includes('xox')) return true;
   if (
-    w.includes('akia') || w.includes('asia') || w.includes('abia') || w.includes('acca') ||
+    w.includes('akia') ||
+    w.includes('asia') ||
+    w.includes('abia') ||
+    w.includes('acca') ||
     /^a(?:k(?:i(?:a)?)?|s(?:i(?:a)?)?|b(?:i(?:a)?)?|c(?:c(?:a)?)?)?$/i.test(w)
-  ) return true;
+  )
+    return true;
   return false;
 }
 
@@ -88,4 +101,3 @@ export function computeSafeCommitPoint(text: string, isFinished = false): number
 
   return text.length;
 }
-

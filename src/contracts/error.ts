@@ -37,7 +37,11 @@ export interface ExecutionError {
  * `code` as is; any other thrown value is reported as `PROCESS_ERROR`.
  */
 export class ToolError extends Error {
-  constructor(readonly code: ErrorCode, message: string, options?: ErrorOptions) {
+  constructor(
+    readonly code: ErrorCode,
+    message: string,
+    options?: ErrorOptions,
+  ) {
     super(message, options);
     this.name = 'ToolError';
   }
@@ -54,4 +58,3 @@ export class BufferLimitError extends ToolError {
     this.name = 'BufferLimitError';
   }
 }
-

@@ -34,12 +34,16 @@ function compare(expected, observed) {
   const problems = [];
   if (!observed.dist) problems.push(`npm has no ${PACKAGE}@${expected.version}.`);
   else {
-    if (observed.dist.shasum !== expected.tarball.sha1) problems.push(`npm dist.shasum ${observed.dist.shasum} is not the release tarball's ${expected.tarball.sha1}.`);
+    if (observed.dist.shasum !== expected.tarball.sha1)
+      problems.push(`npm dist.shasum ${observed.dist.shasum} is not the release tarball's ${expected.tarball.sha1}.`);
     if (observed.dist.integrity !== expected.tarball.integrity) problems.push('npm dist.integrity differs from the release tarball.');
   }
-  if (observed.distTags?.next !== expected.version) problems.push(`npm dist-tag next is ${observed.distTags?.next ?? 'missing'}, not ${expected.version}.`);
+  if (observed.distTags?.next !== expected.version)
+    problems.push(`npm dist-tag next is ${observed.distTags?.next ?? 'missing'}, not ${expected.version}.`);
   if (expected.vsixSha256 !== undefined && observed.vsixSha256 !== expected.vsixSha256) {
-    problems.push(`the Marketplace VSIX ${observed.vsixSha256 ?? 'is missing'}${observed.vsixSha256 ? ' differs from' : ', expected'} the release VSIX ${expected.vsixSha256}.`);
+    problems.push(
+      `the Marketplace VSIX ${observed.vsixSha256 ?? 'is missing'}${observed.vsixSha256 ? ' differs from' : ', expected'} the release VSIX ${expected.vsixSha256}.`,
+    );
   }
   return problems;
 }
@@ -115,7 +119,9 @@ async function main(argv = process.argv.slice(2)) {
   };
   const problems = compare(expected, observed);
   if (problems.length) throw new Error(problems.join('\n'));
-  console.log(`${PACKAGE}@${version}: npm shasum, integrity and next match the release tarball${options.skipMarketplace ? '' : '; the Marketplace VSIX matches the release VSIX'}.`);
+  console.log(
+    `${PACKAGE}@${version}: npm shasum, integrity and next match the release tarball${options.skipMarketplace ? '' : '; the Marketplace VSIX matches the release VSIX'}.`,
+  );
 }
 
 if (require.main === module) {

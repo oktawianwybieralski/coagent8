@@ -17,10 +17,21 @@ test('portable discovery supports nested tests, excludes executable fixtures/rep
     }
     throw err;
   }
-  t.after(() => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
+  t.after(() => {
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
   assert.throws(() => discoverTests(dir), /No.*discovered/);
-  for (const name of ['nested/real.test.js', 'fixtures/fixture.test.js', 'helpers/helper.test.js', 'consumer/smoke.test.js', 'artifacts/report.test.js', 'other.js']) {
-    const file = path.join(dir, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '');
+  for (const name of [
+    'nested/real.test.js',
+    'fixtures/fixture.test.js',
+    'helpers/helper.test.js',
+    'consumer/smoke.test.js',
+    'artifacts/report.test.js',
+    'other.js',
+  ]) {
+    const file = path.join(dir, name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '');
   }
   assert.deepEqual(discoverTests(dir), [path.join(dir, 'nested/real.test.js')]);
 });

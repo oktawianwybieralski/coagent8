@@ -16,4 +16,3 @@
  * @returns True if the session has an active running execution turn.
  */
 export type SessionActivityChecker = (handle: string) => boolean;
-

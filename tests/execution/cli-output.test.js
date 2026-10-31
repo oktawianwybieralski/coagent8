@@ -21,6 +21,12 @@ test('an answer that quotes npm notices or update banners reaches the caller unc
     '└──────────────────────────────────────────────┘',
     'A new version of npm is available; they are harmless.',
   ].join('\n');
-  const formatted = await formatExecutionResult('codex', { status: 'completed', isError: false, output: answer, truncated: false, continuationAvailable: false });
+  const formatted = await formatExecutionResult('codex', {
+    status: 'completed',
+    isError: false,
+    output: answer,
+    truncated: false,
+    continuationAvailable: false,
+  });
   assert.equal(readResult(formatted).answer, answer);
 });

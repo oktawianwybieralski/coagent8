@@ -315,4 +315,3 @@ export interface BackendReadContext {
   /** Optional execution budget phase indicating whether execution or teardown allowance applies. */
   phase?: 'execution' | 'teardown';
 }
-

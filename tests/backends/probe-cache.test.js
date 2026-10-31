@@ -23,8 +23,17 @@ test('routing reuses one probe per backend until its executable, configuration o
   fs.writeFileSync(executable, 'console.log("1.0.0")\n');
   fs.writeFileSync(config, '');
   let probes = 0;
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', execute: async () => { throw new Error('must not run'); },
-    probe: async () => { probes++; return { installed: true, executionSupported: true, command: executable, configPath: config }; } };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    execute: async () => {
+      throw new Error('must not run');
+    },
+    probe: async () => {
+      probes++;
+      return { installed: true, executionSupported: true, command: executable, configPath: config };
+    },
+  };
   const savedKey = process.env.GEMINI_API_KEY;
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
@@ -49,7 +58,8 @@ test('routing reuses one probe per backend until its executable, configuration o
     await resolveBackend();
     assert.equal(probes, 5, 'and refreshes the cached probe');
   } finally {
-    if (savedKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = savedKey;
+    if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = savedKey;
     adapterRegistry.agy = original;
   }
 });
@@ -60,10 +70,29 @@ test('CUR-006: concurrent misses share one probe, catalog read and model observa
   const counts = { probe: 0, catalog: 0, observe: 0 };
   let failProbe = false;
   const later = value => new Promise(resolve => setTimeout(() => resolve(value), 30));
-  adapterRegistry.codex = { id: 'codex', name: 'fixture', execute: async () => { throw new Error('must not run'); },
-    probe: async () => { counts.probe++; if (failProbe) { await later(); throw new Error('probe failed'); } return later({ installed: true, executionSupported: true }); },
-    listModels: async () => { counts.catalog++; return later({ models: [{ id: `model-${counts.catalog}` }], source: 'fixture' }); },
-    observeModel: async requested => { counts.observe++; return later(`${requested || 'default'}-${counts.observe}`); } };
+  adapterRegistry.codex = {
+    id: 'codex',
+    name: 'fixture',
+    execute: async () => {
+      throw new Error('must not run');
+    },
+    probe: async () => {
+      counts.probe++;
+      if (failProbe) {
+        await later();
+        throw new Error('probe failed');
+      }
+      return later({ installed: true, executionSupported: true });
+    },
+    listModels: async () => {
+      counts.catalog++;
+      return later({ models: [{ id: `model-${counts.catalog}` }], source: 'fixture' });
+    },
+    observeModel: async requested => {
+      counts.observe++;
+      return later(`${requested || 'default'}-${counts.observe}`);
+    },
+  };
   try {
     const probes = await Promise.all(Array.from({ length: 8 }, () => probeBackend('codex')));
     assert.equal(counts.probe, 1, 'eight concurrent misses, one probe');
@@ -100,8 +129,11 @@ test('CUR-006: probes stamp the Codex home configuration and the Claude settings
   const codexHome = path.join(tempDir, 'codex-home');
   const env = { ...process.env, CODEX_HOME: codexHome };
   delete env.CODEX_CONFIG_PATH;
-  const printed = execFileSync(process.execPath, ['-r', 'tsx/cjs', '-e', "process.stdout.write(require('./src/backends/codex/adapter.ts').CODEX_CONFIG_PATH)"],
-    { cwd: path.resolve(__dirname, '../..'), env, windowsHide: true, encoding: 'utf8' });
+  const printed = execFileSync(
+    process.execPath,
+    ['-r', 'tsx/cjs', '-e', "process.stdout.write(require('./src/backends/codex/adapter.ts').CODEX_CONFIG_PATH)"],
+    { cwd: path.resolve(__dirname, '../..'), env, windowsHide: true, encoding: 'utf8' },
+  );
   assert.equal(printed, path.join(codexHome, 'config.toml'));
 
   const claude = require('../../src/backends/claude/adapter.ts');
@@ -110,7 +142,8 @@ test('CUR-006: probes stamp the Codex home configuration and the Claude settings
   try {
     assert.equal((await claude.probe()).configPath, path.join(tempDir, 'claude-home', 'settings.json'));
   } finally {
-    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
   }
 });
 
@@ -126,7 +159,9 @@ test('EXEC-001-T05: catalog observations expire on key mismatch, replaced adapte
   adapterRegistry.agy = {
     id: 'agy',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => ({
       installed: true,
       executionSupported: true,
@@ -184,7 +219,8 @@ test('EXEC-001-T05: catalog observations expire on key mismatch, replaced adapte
     const cat9 = await readModelCatalog('agy', { fresh: true });
     assert.equal(catalogReads, 6, 'fresh read calls the replaced adapter function');
   } finally {
-    if (savedKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = savedKey;
+    if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = savedKey;
     adapterRegistry.agy = original;
   }
 });
@@ -203,8 +239,10 @@ test('EXEC-001-T08a: probeBackend, readModelCatalog and readObservedModel forwar
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
-    probe: async (context) => {
+    execute: async () => {
+      throw new Error('must not run');
+    },
+    probe: async context => {
       captured.probeCtx = context;
       return { installed: true, executionSupported: true };
     },
@@ -224,7 +262,11 @@ test('EXEC-001-T08a: probeBackend, readModelCatalog and readObservedModel forwar
     assert.equal(captured.probeCtx?.timeoutMs, undefined, 'waiter timeout is isolated and not forwarded to shared task');
     assert.ok(captured.probeCtx?.abortSignal);
     assert.equal(captured.probeCtx?.abortSignal.aborted, false);
-    assert.notEqual(captured.probeCtx?.abortSignal, dummyController.signal, 'adapter receives shared coordinator signal, isolating caller signal');
+    assert.notEqual(
+      captured.probeCtx?.abortSignal,
+      dummyController.signal,
+      'adapter receives shared coordinator signal, isolating caller signal',
+    );
 
     const catalog = await readModelCatalog('codex', { fresh: true, context: testContext });
     assert.ok(catalog);
@@ -257,15 +299,17 @@ test('EXEC-001-T08b: two waiters on shared read - cancelling first waiter does n
   let capturedContext = null;
   let resolveProbe;
 
-  const probePromise = new Promise((resolve) => {
+  const probePromise = new Promise(resolve => {
     resolveProbe = resolve;
   });
 
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
-    probe: async (context) => {
+    execute: async () => {
+      throw new Error('must not run');
+    },
+    probe: async context => {
       probeStarted++;
       capturedContext = context;
       await probePromise;
@@ -291,8 +335,8 @@ test('EXEC-001-T08b: two waiters on shared read - cancelling first waiter does n
     // Waiter 1 must reject immediately with ABORTED
     await assert.rejects(
       waiter1Promise,
-      (err) => err instanceof ToolError && err.code === 'ABORTED',
-      'waiter 1 rejects with ABORTED immediately'
+      err => err instanceof ToolError && err.code === 'ABORTED',
+      'waiter 1 rejects with ABORTED immediately',
     );
 
     // Shared abort signal is STILL NOT aborted because waiter 2 is active
@@ -317,15 +361,17 @@ test('EXEC-001-T08b: all waiters cancelled - last waiter aborts underlying task 
   let capturedContext = null;
   let finishProbe;
 
-  const probeGate = new Promise((resolve) => {
+  const probeGate = new Promise(resolve => {
     finishProbe = resolve;
   });
 
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
-    probe: async (context) => {
+    execute: async () => {
+      throw new Error('must not run');
+    },
+    probe: async context => {
       probeStarted++;
       capturedContext = context;
       await probeGate;
@@ -345,12 +391,12 @@ test('EXEC-001-T08b: all waiters cancelled - last waiter aborts underlying task 
 
     // Cancel waiter 1
     controller1.abort();
-    await assert.rejects(waiter1Promise, (err) => err instanceof ToolError && err.code === 'ABORTED');
+    await assert.rejects(waiter1Promise, err => err instanceof ToolError && err.code === 'ABORTED');
     assert.equal(capturedContext.abortSignal.aborted, false, 'shared read still running for waiter 2');
 
     // Cancel waiter 2 (last remaining waiter)
     controller2.abort();
-    await assert.rejects(waiter2Promise, (err) => err instanceof ToolError && err.code === 'ABORTED');
+    await assert.rejects(waiter2Promise, err => err instanceof ToolError && err.code === 'ABORTED');
 
     // Shared abort controller must be aborted immediately upon 0 active waiters
     assert.equal(capturedContext.abortSignal.aborted, true, 'shared abort controller aborted by last waiter');
@@ -380,13 +426,19 @@ test('EXEC-001-T08b: fresh: true replacement race - late settlement of old read 
   let finishOldProbe;
   let finishNewProbe;
 
-  const oldProbeGate = new Promise((resolve) => { finishOldProbe = resolve; });
-  const newProbeGate = new Promise((resolve) => { finishNewProbe = resolve; });
+  const oldProbeGate = new Promise(resolve => {
+    finishOldProbe = resolve;
+  });
+  const newProbeGate = new Promise(resolve => {
+    finishNewProbe = resolve;
+  });
 
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => {
       probeCount++;
       const current = probeCount;
@@ -442,12 +494,16 @@ test('EXEC-001-T08b: per-waiter timeout via timeoutMs isolates from other waiter
   let probeStarted = 0;
   let resolveProbe;
 
-  const probeGate = new Promise((resolve) => { resolveProbe = resolve; });
+  const probeGate = new Promise(resolve => {
+    resolveProbe = resolve;
+  });
 
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => {
       probeStarted++;
       await probeGate;
@@ -464,11 +520,7 @@ test('EXEC-001-T08b: per-waiter timeout via timeoutMs isolates from other waiter
     assert.equal(probeStarted, 1);
 
     // Waiter 1 should time out with ToolError('TIMEOUT')
-    await assert.rejects(
-      waiter1Promise,
-      (err) => err instanceof ToolError && err.code === 'TIMEOUT',
-      'waiter 1 rejected with TIMEOUT error'
-    );
+    await assert.rejects(waiter1Promise, err => err instanceof ToolError && err.code === 'TIMEOUT', 'waiter 1 rejected with TIMEOUT error');
 
     // Waiter 2 is still awaiting and resolves when probe finishes
     resolveProbe();
@@ -486,7 +538,9 @@ test('EXEC-001-T08b: pre-aborted signal rejects immediately without starting pro
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => {
       probeStarted++;
       return { installed: true, executionSupported: true };
@@ -499,7 +553,7 @@ test('EXEC-001-T08b: pre-aborted signal rejects immediately without starting pro
 
     await assert.rejects(
       probeBackend('codex', { fresh: true, context: { abortSignal: controller.signal } }),
-      (err) => err instanceof ToolError && err.code === 'ABORTED'
+      err => err instanceof ToolError && err.code === 'ABORTED',
     );
 
     assert.equal(probeStarted, 0, 'probe was never launched for pre-aborted caller');
@@ -513,13 +567,17 @@ test('EXEC-001-T08b: initiating waiter timeout/budget is not passed to shared co
   let sharedContext = null;
   let finishProbe;
 
-  const probeGate = new Promise((resolve) => { finishProbe = resolve; });
+  const probeGate = new Promise(resolve => {
+    finishProbe = resolve;
+  });
 
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
-    probe: async (context) => {
+    execute: async () => {
+      throw new Error('must not run');
+    },
+    probe: async context => {
       sharedContext = context;
       await probeGate;
       return { installed: true, executionSupported: true };
@@ -536,10 +594,7 @@ test('EXEC-001-T08b: initiating waiter timeout/budget is not passed to shared co
     const waiter2Promise = probeBackend('codex');
 
     // Waiter 1 must time out
-    await assert.rejects(
-      waiter1Promise,
-      (err) => err instanceof ToolError && err.code === 'TIMEOUT'
-    );
+    await assert.rejects(waiter1Promise, err => err instanceof ToolError && err.code === 'TIMEOUT');
 
     // Shared context given to probe did NOT receive waiter 1's timeoutMs or budget
     assert.equal(sharedContext?.timeoutMs, undefined, 'shared task has no caller timeoutMs');
@@ -559,12 +614,16 @@ test('EXEC-001-T08b: initiating waiter timeout/budget is not passed to shared co
 test('EXEC-001-T08f: probeBackend waiter detaches with TIMEOUT when budget executionSignal expires', async () => {
   const original = adapterRegistry.codex;
   let finishProbe;
-  const probeGate = new Promise(resolve => { finishProbe = resolve; });
+  const probeGate = new Promise(resolve => {
+    finishProbe = resolve;
+  });
 
   adapterRegistry.codex = {
     id: 'codex',
     name: 'fixture',
-    execute: async () => { throw new Error('must not run'); },
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => {
       await probeGate;
       return { installed: true, executionSupported: true };
@@ -579,10 +638,7 @@ test('EXEC-001-T08f: probeBackend waiter detaches with TIMEOUT when budget execu
       context: { budget: testBudget },
     });
 
-    await assert.rejects(
-      waiterPromise,
-      (err) => err instanceof ToolError && err.code === 'TIMEOUT'
-    );
+    await assert.rejects(waiterPromise, err => err instanceof ToolError && err.code === 'TIMEOUT');
     finishProbe();
   } finally {
     if (testBudget) testBudget.dispose();
@@ -597,7 +653,7 @@ test('EXEC-001-T08f: inspectQuotas forwards BackendReadContext and enforces pre-
 
   await assert.rejects(
     inspectQuotas(false, null, { context: { abortSignal: preAborted.signal } }),
-    (err) => err instanceof ToolError && err.code === 'ABORTED'
+    err => err instanceof ToolError && err.code === 'ABORTED',
   );
 
   let budget;
@@ -605,10 +661,7 @@ test('EXEC-001-T08f: inspectQuotas forwards BackendReadContext and enforces pre-
     budget = createExecutionBudget({ totalBudgetMs: 50, teardownAllowanceMs: 50 });
     assert.equal(budget.isExecutionExpired(), true);
 
-    await assert.rejects(
-      inspectQuotas(false, null, { context: { budget } }),
-      (err) => err instanceof ToolError && err.code === 'TIMEOUT'
-    );
+    await assert.rejects(inspectQuotas(false, null, { context: { budget } }), err => err instanceof ToolError && err.code === 'TIMEOUT');
   } finally {
     if (budget) budget.dispose();
   }
@@ -617,14 +670,22 @@ test('EXEC-001-T08f: inspectQuotas forwards BackendReadContext and enforces pre-
 test('a probe without a command (an unresolved configured executable) is not reused, so a CLI that appears is seen (FEEDBACK-060c, #4)', async () => {
   const original = adapterRegistry.agy;
   const executable = path.join(tempDir, 'agy-appears.cjs');
-  let probes = 0, available = false;
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', execute: async () => { throw new Error('must not run'); },
+  let probes = 0,
+    available = false;
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => {
       probes++;
       // As `probeCommand` reports `backends.agy.executable: "vscode-extension"` before the extension provides agy.
-      return available ? { id: 'agy', name: 'fixture', installed: true, executionSupported: true, command: executable }
+      return available
+        ? { id: 'agy', name: 'fixture', installed: true, executionSupported: true, command: executable }
         : { id: 'agy', name: 'fixture', installed: false, executionSupported: false, authStatus: 'unknown', authEvidence: ['no copy yet'] };
-    } };
+    },
+  };
   try {
     assert.equal((await probeBackend('agy')).installed, false);
     fs.writeFileSync(executable, 'console.log("1.3.3")\n');
@@ -643,14 +704,22 @@ test('AUDIT-001-A13-A15: observations stay bounded, evicted names are read again
   const original = adapterRegistry.claude;
   const observed = new Map();
   let release;
-  const slow = new Promise(resolve => { release = resolve; });
-  adapterRegistry.claude = { id: 'claude', name: 'fixture', execute: async () => { throw new Error('must not run'); },
+  const slow = new Promise(resolve => {
+    release = resolve;
+  });
+  adapterRegistry.claude = {
+    id: 'claude',
+    name: 'fixture',
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => ({ installed: true, executionSupported: true, version: `fixture-${Date.now()}` }),
     observeModel: async requested => {
       observed.set(requested, (observed.get(requested) || 0) + 1);
       if (requested === 'shared') await slow;
       return `${requested}-resolved`;
-    } };
+    },
+  };
   try {
     // A13: any distinct name a caller passes is reachable (Claude Code accepts unlisted names).
     const shared = Promise.all([readObservedModel('claude', 'shared'), readObservedModel('claude', 'shared')]);
@@ -677,9 +746,18 @@ test('AUDIT-001-A14: a hit makes an observation the most recently used, so the o
   const original = adapterRegistry.claude;
   const calls = new Map();
   // An unobserved model (undefined) is not written to models.json, so a miss always asks the CLI.
-  adapterRegistry.claude = { id: 'claude', name: 'fixture', execute: async () => { throw new Error('must not run'); },
+  adapterRegistry.claude = {
+    id: 'claude',
+    name: 'fixture',
+    execute: async () => {
+      throw new Error('must not run');
+    },
     probe: async () => ({ installed: true, executionSupported: true, version: 'fixture-lru' }),
-    observeModel: async requested => { calls.set(requested, (calls.get(requested) || 0) + 1); return undefined; } };
+    observeModel: async requested => {
+      calls.set(requested, (calls.get(requested) || 0) + 1);
+      return undefined;
+    },
+  };
   try {
     const names = Array.from({ length: MAX_OBSERVATIONS }, (_, i) => `lru-${i}`);
     for (const name of names) await readObservedModel('claude', name);
