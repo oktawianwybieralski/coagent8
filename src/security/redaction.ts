@@ -46,8 +46,9 @@ function homeSpellings(home: string): string[] {
  * @returns Redacted text with credentials replaced by placeholders.
  */
 export function redactCredentialFormats(text: string): string {
-  // PEM private keys
-  text = text.replace(/-----BEGIN [A-Z0-9 _-]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 _-]*PRIVATE KEY-----|$)/gi, '-----BEGIN PRIVATE KEY-----\n***[REDACTED]***\n-----END PRIVATE KEY-----');
+  // PEM private keys. The key type holds no hyphen, so the type cannot run into the next
+  // dashes and repeated BEGIN or END markers stay linear (CodeQL js/polynomial-redos).
+  text = text.replace(/-----BEGIN [A-Z0-9 _]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 _]*PRIVATE KEY-----|$)/gi, '-----BEGIN PRIVATE KEY-----\n***[REDACTED]***\n-----END PRIVATE KEY-----');
 
   // Authorization headers with specific scheme and high-entropy credential tokens (at least 16 chars with digits)
   text = text.replace(/\bAuthorization\s*:\s*(Bearer|Token)\s+(?=[A-Za-z0-9._~+/-]*\d)([A-Za-z0-9._~+/-]{16,}={0,2})(?![A-Za-z0-9._~+/=-])/gi, 'Authorization: $1 ***[REDACTED]***');
