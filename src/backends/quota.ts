@@ -24,8 +24,14 @@ export interface QuotaWindow {
 export function summarizeQuotaWindows(windows: readonly QuotaWindow[]): NativeQuota | undefined {
   const buckets = windows.filter(window => Number.isFinite(window.remainingFraction));
   if (!buckets.length) return undefined;
-  const bottleneck = buckets.reduce((min, window) => window.remainingFraction < min.remainingFraction ? window : min);
+  const bottleneck = buckets.reduce((min, window) => (window.remainingFraction < min.remainingFraction ? window : min));
   const headroomPercent = Math.max(0, Math.min(100, Math.round(bottleneck.remainingFraction * 100)));
-  return { measured: true, headroomPercent, usedPercent: 100 - headroomPercent, resetsAt: bottleneck.resetTime || null,
-    window: bottleneck.window, buckets: buckets.map(window => ({ ...window })) };
+  return {
+    measured: true,
+    headroomPercent,
+    usedPercent: 100 - headroomPercent,
+    resetsAt: bottleneck.resetTime || null,
+    window: bottleneck.window,
+    buckets: buckets.map(window => ({ ...window })),
+  };
 }

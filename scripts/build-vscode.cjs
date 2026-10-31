@@ -45,13 +45,22 @@ async function buildExtension(serverRoot) {
   await esbuild.build({
     entryPoints: [path.join(root, 'extensions/vscode/src/extension.ts')],
     outfile: path.join(output, 'dist/extension.cjs'),
-    bundle: true, platform: 'node', target: 'node24', format: 'cjs', external: ['vscode'], mainFields: ['module', 'main'],
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'cjs',
+    external: ['vscode'],
+    mainFields: ['module', 'main'],
   });
   // `vscode:uninstall` runs without the VS Code API, so the hook is a separate bundle.
   await esbuild.build({
     entryPoints: [path.join(root, 'extensions/vscode/src/uninstall.ts')],
     outfile: path.join(output, 'dist/uninstall.cjs'),
-    bundle: true, platform: 'node', target: 'node24', format: 'cjs', mainFields: ['module', 'main'],
+    bundle: true,
+    platform: 'node',
+    target: 'node24',
+    format: 'cjs',
+    mainFields: ['module', 'main'],
   });
   console.log(`VS Code development extension staged for MCP ${server.version}.`);
   return output;

@@ -47,7 +47,10 @@ test('S6 SDK boundaries: rejects transport SDK dependencies in every supported d
   const result = checkFixture(sources);
   assert.equal(result.valid, false);
   for (const file of Object.keys(sources)) {
-    assert.ok(result.violations.some(v => v.from === file && v.spec === sdk), `SDK dependency must be rejected: ${file}`);
+    assert.ok(
+      result.violations.some(v => v.from === file && v.spec === sdk),
+      `SDK dependency must be rejected: ${file}`,
+    );
   }
 });
 
@@ -148,22 +151,16 @@ test('S6 fixtures: detects forbidden architectural boundary edges', () => {
     fs.writeFileSync(path.join(srcDir, 'backends', 'adapter.ts'), 'export const adapter = true;\n');
     fs.writeFileSync(
       path.join(srcDir, 'models', 'bad.ts'),
-      "import { adapter } from '../backends/adapter.js';\nexport const m = adapter;\n"
+      "import { adapter } from '../backends/adapter.js';\nexport const m = adapter;\n",
     );
 
     // 2. execution importing mcp (forbidden)
     fs.writeFileSync(path.join(srcDir, 'mcp', 'view.ts'), 'export const view = true;\n');
-    fs.writeFileSync(
-      path.join(srcDir, 'execution', 'bad.ts'),
-      "import { view } from '../mcp/view.js';\nexport const e = view;\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'execution', 'bad.ts'), "import { view } from '../mcp/view.js';\nexport const e = view;\n");
 
     // 3. contracts importing storage (forbidden)
     fs.writeFileSync(path.join(srcDir, 'storage', 'disk.ts'), 'export const disk = true;\n');
-    fs.writeFileSync(
-      path.join(srcDir, 'contracts', 'bad.ts'),
-      "import { disk } from '../storage/disk.js';\nexport const c = disk;\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'contracts', 'bad.ts'), "import { disk } from '../storage/disk.js';\nexport const c = disk;\n");
 
     const files = [
       'src/backends/adapter.ts',
@@ -178,19 +175,13 @@ test('S6 fixtures: detects forbidden architectural boundary edges', () => {
     assert.equal(result.valid, false, 'Fixture with boundary violations must be invalid');
     assert.ok(result.violations.length >= 3, `Expected at least 3 violations, got: ${result.violations.length}`);
 
-    const hasModelsToBackends = result.violations.some(
-      v => v.fromOwner === 'models' && v.toOwner === 'backends'
-    );
+    const hasModelsToBackends = result.violations.some(v => v.fromOwner === 'models' && v.toOwner === 'backends');
     assert.equal(hasModelsToBackends, true, 'Must detect models -> backends violation');
 
-    const hasExecToMcp = result.violations.some(
-      v => v.fromOwner === 'execution' && v.toOwner === 'mcp'
-    );
+    const hasExecToMcp = result.violations.some(v => v.fromOwner === 'execution' && v.toOwner === 'mcp');
     assert.equal(hasExecToMcp, true, 'Must detect execution -> mcp violation');
 
-    const hasContractsToStorage = result.violations.some(
-      v => v.fromOwner === 'contracts' && v.toOwner === 'storage'
-    );
+    const hasContractsToStorage = result.violations.some(v => v.fromOwner === 'contracts' && v.toOwner === 'storage');
     assert.equal(hasContractsToStorage, true, 'Must detect contracts -> storage violation');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -203,14 +194,8 @@ test('S6 fixtures: detects runtime dependency cycles', () => {
     const srcDir = path.join(tmpDir, 'src', 'cycle');
     fs.mkdirSync(srcDir, { recursive: true });
 
-    fs.writeFileSync(
-      path.join(srcDir, 'a.ts'),
-      "import { b } from './b.js';\nexport const a = () => b();\n"
-    );
-    fs.writeFileSync(
-      path.join(srcDir, 'b.ts'),
-      "import { a } from './a.js';\nexport const b = () => a();\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'a.ts'), "import { b } from './b.js';\nexport const a = () => b();\n");
+    fs.writeFileSync(path.join(srcDir, 'b.ts'), "import { a } from './a.js';\nexport const b = () => a();\n");
 
     const files = ['src/cycle/a.ts', 'src/cycle/b.ts'];
     const result = checkDependencies({ rootDir: tmpDir, files });
@@ -229,14 +214,8 @@ test('S6 fixtures: detects type-only dependency cycles', () => {
     const srcDir = path.join(tmpDir, 'src', 'typecycle');
     fs.mkdirSync(srcDir, { recursive: true });
 
-    fs.writeFileSync(
-      path.join(srcDir, 'foo.ts'),
-      "import type { Bar } from './bar.js';\nexport interface Foo { bar: Bar; }\n"
-    );
-    fs.writeFileSync(
-      path.join(srcDir, 'bar.ts'),
-      "import type { Foo } from './foo.js';\nexport interface Bar { foo: Foo; }\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'foo.ts'), "import type { Bar } from './bar.js';\nexport interface Foo { bar: Bar; }\n");
+    fs.writeFileSync(path.join(srcDir, 'bar.ts'), "import type { Foo } from './foo.js';\nexport interface Bar { foo: Foo; }\n");
 
     const files = ['src/typecycle/foo.ts', 'src/typecycle/bar.ts'];
     const result = checkDependencies({ rootDir: tmpDir, files });
@@ -256,10 +235,7 @@ test('S6 fixtures: detects unresolved relative imports', () => {
     const srcDir = path.join(tmpDir, 'src', 'broken');
     fs.mkdirSync(srcDir, { recursive: true });
 
-    fs.writeFileSync(
-      path.join(srcDir, 'main.ts'),
-      "import { missing } from './does-not-exist.js';\nexport const x = missing;\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'main.ts'), "import { missing } from './does-not-exist.js';\nexport const x = missing;\n");
 
     const files = ['src/broken/main.ts'];
     const result = checkDependencies({ rootDir: tmpDir, files });
@@ -318,16 +294,14 @@ test('S6 fixtures: discovers untracked source files and detects their forbidden 
     // Untracked new model module with forbidden dependency to backends
     fs.writeFileSync(
       path.join(srcDir, 'models', 'untracked-forbidden.ts'),
-      "import { adapter } from '../backends/adapter.js';\nexport const val = adapter;\n"
+      "import { adapter } from '../backends/adapter.js';\nexport const val = adapter;\n",
     );
 
     // Run without passing explicit files array (relies on directory crawling)
     const result = checkDependencies({ rootDir: tmpDir });
 
     assert.equal(result.valid, false, 'Untracked module with forbidden edge must fail verification');
-    const hasViolation = result.violations.some(
-      v => v.fromOwner === 'models' && v.toOwner === 'backends'
-    );
+    const hasViolation = result.violations.some(v => v.fromOwner === 'models' && v.toOwner === 'backends');
     assert.equal(hasViolation, true, 'Must detect models -> backends violation from untracked file');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -342,7 +316,7 @@ test('S6 fixtures: rejects unallowed computed require/import calls in source mod
 
     fs.writeFileSync(
       path.join(srcDir, 'sneaky.ts'),
-      "const pkg = '../backends/adapter.js';\nconst mod = require(pkg);\nexport const x = mod;\n"
+      "const pkg = '../backends/adapter.js';\nconst mod = require(pkg);\nexport const x = mod;\n",
     );
 
     const files = ['src/models/sneaky.ts'];
@@ -362,14 +336,8 @@ test('S6 fixtures: correctly classifies runtime dependencies and cycles under ES
     const srcDir = path.join(tmpDir, 'src', 'esm');
     fs.mkdirSync(srcDir, { recursive: true });
 
-    fs.writeFileSync(
-      path.join(srcDir, 'a.ts'),
-      "import { b } from './b.js';\nexport const a = () => b();\n"
-    );
-    fs.writeFileSync(
-      path.join(srcDir, 'b.ts'),
-      "import { a } from './a.js';\nexport const b = () => a();\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'a.ts'), "import { b } from './b.js';\nexport const a = () => b();\n");
+    fs.writeFileSync(path.join(srcDir, 'b.ts'), "import { a } from './a.js';\nexport const b = () => a();\n");
 
     const ts = resolveTypeScript(tmpDir);
     const compilerOptions = {
@@ -398,7 +366,7 @@ test('S6 fixtures: rejects arbitrary root targets containing setup.cjs in src/in
     // Arbitrary dynamic target in src/index.ts that mentions setup.cjs but is not the exact AST path.join(__dirname, 'setup.cjs')
     fs.writeFileSync(
       path.join(srcDir, 'index.ts'),
-      "const target = 'bad';\nconst mod = require(target || './setup.cjs');\nexport const x = mod;\n"
+      "const target = 'bad';\nconst mod = require(target || './setup.cjs');\nexport const x = mod;\n",
     );
 
     const files = ['src/index.ts'];
@@ -424,31 +392,20 @@ test('S6 fixtures: discovers .mts and .cts modules and detects their forbidden e
     fs.writeFileSync(path.join(srcDir, 'backends', 'adapter.cts'), 'export const adapter = 1;\n');
     fs.writeFileSync(
       path.join(srcDir, 'models', 'bad.mts'),
-      "import { adapter } from '../backends/adapter.cjs';\nexport const x = adapter;\n"
+      "import { adapter } from '../backends/adapter.cjs';\nexport const x = adapter;\n",
     );
 
     // 2. .cts files in cycle
-    fs.writeFileSync(
-      path.join(srcDir, 'cycle', 'c1.cts'),
-      "import { c2 } from './c2.cjs';\nexport const c1 = () => c2();\n"
-    );
-    fs.writeFileSync(
-      path.join(srcDir, 'cycle', 'c2.cts'),
-      "import { c1 } from './c1.cjs';\nexport const c2 = () => c1();\n"
-    );
+    fs.writeFileSync(path.join(srcDir, 'cycle', 'c1.cts'), "import { c2 } from './c2.cjs';\nexport const c1 = () => c2();\n");
+    fs.writeFileSync(path.join(srcDir, 'cycle', 'c2.cts'), "import { c1 } from './c1.cjs';\nexport const c2 = () => c1();\n");
 
     const result = checkDependencies({ rootDir: tmpDir });
 
     assert.equal(result.valid, false, 'mts and cts modules with violations/cycles must fail');
-    const hasModelsToBackends = result.violations.some(
-      v => v.fromOwner === 'models' && v.toOwner === 'backends'
-    );
+    const hasModelsToBackends = result.violations.some(v => v.fromOwner === 'models' && v.toOwner === 'backends');
     assert.equal(hasModelsToBackends, true, 'Must detect forbidden edge in .mts file');
     assert.ok(result.cycles.runtime.length > 0, 'Must detect cycle in .cts files');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
-
-
-

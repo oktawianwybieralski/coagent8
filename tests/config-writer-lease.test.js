@@ -38,19 +38,39 @@ const helperScript = `
 
 function startHelper(t, file) {
   const child = spawn(process.execPath, ['--require', 'tsx/cjs', '-e', helperScript, lockModule, file], {
-    stdio: ['ignore', 'ignore', 'pipe', 'ipc'], windowsHide: true,
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    windowsHide: true,
   });
   let stderr = '';
-  child.stderr.on('data', chunk => { stderr += chunk; });
-  const exited = new Promise(resolve => child.once('exit', code => resolve(code)));
-  t.after(async () => { if (child.exitCode === null && child.signalCode === null) { child.kill(); await exited; } });
-  const message = expected => new Promise((resolve, reject) => {
-    const onMessage = value => { if (value === expected) { cleanup(); resolve(); } };
-    const onExit = code => { cleanup(); reject(new Error(`helper exited (${code}) before '${expected}': ${stderr}`)); };
-    const cleanup = () => { child.off('message', onMessage); child.off('exit', onExit); };
-    child.on('message', onMessage);
-    child.once('exit', onExit);
+  child.stderr.on('data', chunk => {
+    stderr += chunk;
   });
+  const exited = new Promise(resolve => child.once('exit', code => resolve(code)));
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+      await exited;
+    }
+  });
+  const message = expected =>
+    new Promise((resolve, reject) => {
+      const onMessage = value => {
+        if (value === expected) {
+          cleanup();
+          resolve();
+        }
+      };
+      const onExit = code => {
+        cleanup();
+        reject(new Error(`helper exited (${code}) before '${expected}': ${stderr}`));
+      };
+      const cleanup = () => {
+        child.off('message', onMessage);
+        child.off('exit', onExit);
+      };
+      child.on('message', onMessage);
+      child.once('exit', onExit);
+    });
   return { child, message, exited, stderr: () => stderr };
 }
 
@@ -58,7 +78,7 @@ function seed(file) {
   fs.writeFileSync(file, JSON.stringify(validateConfig({}), null, 2));
 }
 
-test('saveConfig waits for the configuration lease and keeps the other writer\'s field', async t => {
+test("saveConfig waits for the configuration lease and keeps the other writer's field", async t => {
   const file = process.env.coagent8_CONFIG;
   seed(file);
   const helper = startHelper(t, file);
@@ -72,7 +92,7 @@ test('saveConfig waits for the configuration lease and keeps the other writer\'s
   assert.equal(await helper.exited, 0, helper.stderr());
   const final = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(final.defaultBackend, 'claude', 'the saveConfig update survives');
-  assert.deepEqual(final.governance.models.allow, ['helper-model'], 'the lease holder\'s update survives');
+  assert.deepEqual(final.governance.models.allow, ['helper-model'], "the lease holder's update survives");
 });
 
 test('control: a lease-respecting writer keeps both updates', async t => {
@@ -94,7 +114,10 @@ test('saveConfig still fails closed on a malformed configuration and leaves its 
   const file = process.env.coagent8_CONFIG;
   const malformed = '{"routing": {"allowedBackends": ["claude"]';
   fs.writeFileSync(file, malformed);
-  await assert.rejects(saveConfig({ defaultBackend: 'codex' }), error => error.code === 'POLICY_DENIED' && /Configuration Error/.test(error.message));
+  await assert.rejects(
+    saveConfig({ defaultBackend: 'codex' }),
+    error => error.code === 'POLICY_DENIED' && /Configuration Error/.test(error.message),
+  );
   assert.equal(fs.readFileSync(file, 'utf8'), malformed);
   assert.equal(fs.existsSync(`${file}.lease`), false, 'the lease is released after the refusal');
 });

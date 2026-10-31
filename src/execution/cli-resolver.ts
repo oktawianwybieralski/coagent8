@@ -3,7 +3,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { readBoundedFileSync } from '../storage/read.js';
 import { ToolError } from '../contracts/index.js';
-export interface CliCommand { command: string; argsPrefix: string[]; source: 'native' | 'node' | 'npm-shim' }
+export interface CliCommand {
+  command: string;
+  argsPrefix: string[];
+  source: 'native' | 'node' | 'npm-shim';
+}
 export class CliResolutionError extends ToolError {
   constructor(code: 'CLI_NOT_FOUND' | 'CLI_UNSUPPORTED', message: string) {
     super(code, message);
@@ -49,7 +53,10 @@ function extractNativeArgsPrefix(content: string, exePath: string): string[] {
       if (afterForward) {
         const nonRedir = afterForward.replace(/(?:[0-9]*>>?(?:&[0-9]+|\s*[\w.-]+)|<[\w.-]+)/g, '').trim();
         if (nonRedir.length > 0) {
-          throw new CliResolutionError('CLI_UNSUPPORTED', `Unsupported Windows shim: arguments after %* ('${nonRedir}') are not supported.`);
+          throw new CliResolutionError(
+            'CLI_UNSUPPORTED',
+            `Unsupported Windows shim: arguments after %* ('${nonRedir}') are not supported.`,
+          );
         }
       }
 
@@ -83,8 +90,11 @@ function extractNativeArgsPrefix(content: string, exePath: string): string[] {
 }
 function resolveShim(file: string, nodePath: string): CliCommand {
   let content: string;
-  try { content = readBoundedFileSync(file, 64 * 1024); }
-  catch { throw new CliResolutionError('CLI_UNSUPPORTED', 'Windows npm shim exceeds the byte limit or cannot be read.'); }
+  try {
+    content = readBoundedFileSync(file, 64 * 1024);
+  } catch {
+    throw new CliResolutionError('CLI_UNSUPPORTED', 'Windows npm shim exceeds the byte limit or cannot be read.');
+  }
   const dir = path.dirname(file);
   const jsEntrypoints = extractEntrypoints(content, dir, /\.(?:js|cjs|mjs)$/i);
   if (jsEntrypoints.length === 1) {
@@ -97,7 +107,10 @@ function resolveShim(file: string, nodePath: string): CliCommand {
     const argsPrefix = extractNativeArgsPrefix(content, targetExes[0]);
     return { command: targetExes[0], argsPrefix, source: 'native' };
   }
-  throw new CliResolutionError('CLI_UNSUPPORTED', 'Unsupported Windows shim: expected an existing npm JavaScript or native executable entrypoint.');
+  throw new CliResolutionError(
+    'CLI_UNSUPPORTED',
+    'Unsupported Windows shim: expected an existing npm JavaScript or native executable entrypoint.',
+  );
 }
 
 interface CachedResolution {
@@ -141,38 +154,58 @@ export function resolveBundledCodex(home = os.homedir(), env = process.env): Cli
  */
 export function resolveManagedAgy(home = os.homedir(), env = process.env): CliCommand | null {
   const file = path.join(home, '.gemini', 'bin', process.platform === 'win32' ? 'agy.exe' : 'agy');
-  try { return resolveCliCommand(file, { env }); }
-  catch (error) { if (!(error instanceof CliResolutionError)) throw error; return null; }
+  try {
+    return resolveCliCommand(file, { env });
+  } catch (error) {
+    if (!(error instanceof CliResolutionError)) throw error;
+    return null;
+  }
 }
 
 function resolveBundledExtension(client: 'codex' | 'claude', home: string, env: NodeJS.ProcessEnv): CliCommand | null {
-  const family = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : null;
+  const family =
+    process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform === 'linux' ? 'linux' : null;
   const arch = process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : null;
   if (client === 'codex' && (!family || !arch)) return null;
   const pattern = client === 'codex' ? /^openai\.chatgpt-(\d+)\.(\d+)\.(\d+)(?:-|$)/ : /^anthropic\.claude-code-(\d+)\.(\d+)\.(\d+)(?:-|$)/;
   const executable = process.platform === 'win32' ? `${client}.exe` : client;
-  const relative = client === 'codex' ? path.join('bin', `${family}-${arch}`, executable) : path.join('resources', 'native-binary', executable);
+  const relative =
+    client === 'codex' ? path.join('bin', `${family}-${arch}`, executable) : path.join('resources', 'native-binary', executable);
   const candidates: { file: string; version: number[] }[] = [];
   // The editor supplies its actual installed paths, including custom roots. This
   // environment contract also works in a standalone runtime without editor APIs.
   if (env.coagent8_EXTENSION_PATHS !== undefined) {
     let locations: unknown;
-    try { locations = JSON.parse(env.coagent8_EXTENSION_PATHS); }
-    catch { throw new CliResolutionError('CLI_UNSUPPORTED', 'Invalid extension discovery paths.'); }
-    if (!locations || typeof locations !== 'object' || Array.isArray(locations)
-        || Object.entries(locations).some(([key, value]) => !['codex', 'claude'].includes(key) || typeof value !== 'string' || !path.isAbsolute(value))) {
+    try {
+      locations = JSON.parse(env.coagent8_EXTENSION_PATHS);
+    } catch {
+      throw new CliResolutionError('CLI_UNSUPPORTED', 'Invalid extension discovery paths.');
+    }
+    if (
+      !locations ||
+      typeof locations !== 'object' ||
+      Array.isArray(locations) ||
+      Object.entries(locations).some(
+        ([key, value]) => !['codex', 'claude'].includes(key) || typeof value !== 'string' || !path.isAbsolute(value),
+      )
+    ) {
       throw new CliResolutionError('CLI_UNSUPPORTED', 'Invalid extension discovery paths.');
     }
     const root = (locations as Record<string, string>)[client];
     if (!root) return null;
-    try { return resolveCliCommand(path.join(root, relative), { env }); }
-    catch (error) { if (!(error instanceof CliResolutionError)) throw error; return null; }
+    try {
+      return resolveCliCommand(path.join(root, relative), { env });
+    } catch (error) {
+      if (!(error instanceof CliResolutionError)) throw error;
+      return null;
+    }
   }
   for (const profile of ['.vscode', '.vscode-insiders']) {
     const dir = path.join(home, profile, 'extensions');
     let names: string[];
-    try { names = fs.readdirSync(dir); }
-    catch (error) {
+    try {
+      names = fs.readdirSync(dir);
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw new CliResolutionError('CLI_UNSUPPORTED', 'Coding CLI extension directory is unreadable.');
     }
@@ -185,8 +218,9 @@ function resolveBundledExtension(client: 'codex' | 'claude', home: string, env: 
   }
   candidates.sort((a, b) => b.version[0] - a.version[0] || b.version[1] - a.version[1] || b.version[2] - a.version[2]);
   for (const candidate of candidates) {
-    try { return resolveCliCommand(candidate.file, { env }); }
-    catch (error) {
+    try {
+      return resolveCliCommand(candidate.file, { env });
+    } catch (error) {
       if (!(error instanceof CliResolutionError)) throw error;
       // An older installed version may be executable while the newest is unusable.
     }
@@ -202,9 +236,14 @@ export function clearCliResolverCache(): void {
   cliCache.clear();
 }
 
-export function resolveCliCommand(command: string, options: { env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform; cwd?: string; nodePath?: string } = {}): CliCommand {
+export function resolveCliCommand(
+  command: string,
+  options: { env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform; cwd?: string; nodePath?: string } = {},
+): CliCommand {
   const nodePath = options.nodePath || process.execPath;
-  const env = options.env || process.env, platform = options.platform || process.platform, cwd = options.cwd || process.cwd();
+  const env = options.env || process.env,
+    platform = options.platform || process.platform,
+    cwd = options.cwd || process.cwd();
   if (!command || command.includes('\0')) throw new CliResolutionError('CLI_NOT_FOUND', 'CLI command is empty or invalid.');
   const explicit = path.isAbsolute(command) || /[\\/]/.test(command);
   const envPath = Object.entries(env).find(([k]) => k.toLowerCase() === 'path')?.[1] || '';
@@ -214,8 +253,11 @@ export function resolveCliCommand(command: string, options: { env?: NodeJS.Proce
   const now = Date.now();
   const cached = cliCache.get(cacheKey);
   if (cached) {
-    if (now < cached.expiresAt && fs.statSync(cached.result.command, { throwIfNoEntry: false })?.isFile()
-        && (cached.result.source === 'native' || fs.statSync(cached.result.argsPrefix[0], { throwIfNoEntry: false })?.isFile())) {
+    if (
+      now < cached.expiresAt &&
+      fs.statSync(cached.result.command, { throwIfNoEntry: false })?.isFile() &&
+      (cached.result.source === 'native' || fs.statSync(cached.result.argsPrefix[0], { throwIfNoEntry: false })?.isFile())
+    ) {
       cliCache.delete(cacheKey);
       cliCache.set(cacheKey, cached);
       return { command: cached.result.command, argsPrefix: [...cached.result.argsPrefix], source: cached.result.source };
@@ -224,37 +266,52 @@ export function resolveCliCommand(command: string, options: { env?: NodeJS.Proce
   }
 
   const dirs = explicit ? [''] : envPath.split(platform === 'win32' ? ';' : ':').filter(Boolean);
-  const extensions = platform === 'win32' && !path.extname(command)
-    ? [...(pathext || '.COM;.EXE;.BAT;.CMD').split(';').map(s => s.toLowerCase()), ''] : [''];
-  for (const dir of dirs) for (const extension of extensions) {
-    const file = explicit ? path.resolve(cwd, command + extension) : path.resolve(dir.replace(/^"|"$/g, ''), command + extension);
-    if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
-    const realFile = fs.realpathSync(file);
-    let resolved: CliCommand;
-    if (/\.(js|cjs|mjs)$/i.test(realFile)) resolved = { command: nodePath, argsPrefix: [realFile], source: 'node' };
-    else if (/\.(cmd|bat)$/i.test(file)) resolved = resolveShim(file, nodePath);
-    else if (platform !== 'win32') {
-      try { fs.accessSync(file, fs.constants.X_OK); } catch { continue; }
-      resolved = { command: file, argsPrefix: [], source: 'native' };
-    } else {
-      resolved = { command: file, argsPrefix: [], source: 'native' };
-    }
+  const extensions =
+    platform === 'win32' && !path.extname(command)
+      ? [...(pathext || '.COM;.EXE;.BAT;.CMD').split(';').map(s => s.toLowerCase()), '']
+      : [''];
+  for (const dir of dirs)
+    for (const extension of extensions) {
+      const file = explicit ? path.resolve(cwd, command + extension) : path.resolve(dir.replace(/^"|"$/g, ''), command + extension);
+      if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) continue;
+      const realFile = fs.realpathSync(file);
+      let resolved: CliCommand;
+      if (/\.(js|cjs|mjs)$/i.test(realFile)) resolved = { command: nodePath, argsPrefix: [realFile], source: 'node' };
+      else if (/\.(cmd|bat)$/i.test(file)) resolved = resolveShim(file, nodePath);
+      else if (platform !== 'win32') {
+        try {
+          fs.accessSync(file, fs.constants.X_OK);
+        } catch {
+          continue;
+        }
+        resolved = { command: file, argsPrefix: [], source: 'native' };
+      } else {
+        resolved = { command: file, argsPrefix: [], source: 'native' };
+      }
 
-    cliCache.delete(cacheKey);
-    if (cliCache.size >= MAX_CLI_CACHE_ENTRIES) {
-      const oldestKey = cliCache.keys().next().value;
-      if (oldestKey) cliCache.delete(oldestKey);
+      cliCache.delete(cacheKey);
+      if (cliCache.size >= MAX_CLI_CACHE_ENTRIES) {
+        const oldestKey = cliCache.keys().next().value;
+        if (oldestKey) cliCache.delete(oldestKey);
+      }
+      cliCache.set(cacheKey, {
+        result: { command: resolved.command, argsPrefix: [...resolved.argsPrefix], source: resolved.source },
+        expiresAt: now + CLI_CACHE_TTL_MS,
+      });
+      return resolved;
     }
-    cliCache.set(cacheKey, {
-      result: { command: resolved.command, argsPrefix: [...resolved.argsPrefix], source: resolved.source },
-      expiresAt: now + CLI_CACHE_TTL_MS,
-    });
-    return resolved;
-  }
   if (!explicit && (command === 'claude' || command === 'codex' || command === 'agy') && platform === process.platform) {
     const home = platform === 'win32' ? env.USERPROFILE || os.homedir() : env.HOME || os.homedir();
-    const bundled = command === 'claude' ? resolveBundledClaude(home, env) : command === 'codex' ? resolveBundledCodex(home, env) : resolveManagedAgy(home, env);
+    const bundled =
+      command === 'claude'
+        ? resolveBundledClaude(home, env)
+        : command === 'codex'
+          ? resolveBundledCodex(home, env)
+          : resolveManagedAgy(home, env);
     if (bundled) return bundled;
   }
-  throw new CliResolutionError('CLI_NOT_FOUND', `CLI '${path.basename(command)}' is not installed or executable; configure its *_PATH or PATH.`);
+  throw new CliResolutionError(
+    'CLI_NOT_FOUND',
+    `CLI '${path.basename(command)}' is not installed or executable; configure its *_PATH or PATH.`,
+  );
 }

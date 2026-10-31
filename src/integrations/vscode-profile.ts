@@ -30,7 +30,10 @@ import { EXTENSION_STORAGE_NAME, hash, json, newerVersion, read, writeChecked } 
 /** The entry's name, which VS Code shows in its MCP server lists. */
 export const VSCODE_SERVER_NAME = 'CoAgent8';
 /** The stdio server the extension starts: the command and environment of its definition. */
-export interface VscodeServer { command: string; env: Record<string, string> }
+export interface VscodeServer {
+  command: string;
+  env: Record<string, string>;
+}
 /**
  * Result of a synchronization: the entry was written (`registered`) or already matched
  * (`current`), another CoAgent8 entry in the profile is the user's (`manual`), or the user
@@ -45,10 +48,20 @@ export type VscodeRegistration = 'registered' | 'current' | 'manual' | 'declined
  * Per profile `mcp.json`: the entry written, the user's removal, or only the digest pending
  * while a first write is under way.
  */
-type RegistrationRecord = Record<string, ({ entry: string; version?: string } | { declined: true } | { pending: string }) & { pending?: string; pendingVersion?: string; installation: string }>;
+type RegistrationRecord = Record<
+  string,
+  ({ entry: string; version?: string } | { declined: true } | { pending: string }) & {
+    pending?: string;
+    pendingVersion?: string;
+    installation: string;
+  }
+>;
 
 const FORMATTING = { insertSpaces: true, tabSize: 2 };
-const RUNTIME_SHAPE = new RegExp(`[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE_NAME.replace('.', '\\.')}[\\\\/]runtime[\\\\/][a-f0-9]{64}[\\\\/]index\\.cjs$`, 'i');
+const RUNTIME_SHAPE = new RegExp(
+  `[\\\\/]globalStorage[\\\\/]${EXTENSION_STORAGE_NAME.replace('.', '\\.')}[\\\\/]runtime[\\\\/][a-f0-9]{64}[\\\\/]index\\.cjs$`,
+  'i',
+);
 
 /** The `mcp.json` of the profile whose global storage is `storagePath`. */
 export function profileMcpFile(storagePath: string): string {
@@ -67,7 +80,7 @@ function recordFile(home: string): string {
 }
 function readRecord(home: string): { text: string | null; record: RegistrationRecord } {
   const text = read(recordFile(home));
-  return { text, record: text === null ? {} : json(text) as RegistrationRecord };
+  return { text, record: text === null ? {} : (json(text) as RegistrationRecord) };
 }
 /** Writes the record, or removes its file when it is empty; returns the text now on disk. */
 function writeRecord(home: string, before: string | null, record: RegistrationRecord): string | null {
@@ -108,7 +121,7 @@ function canonicalFolder(value: string): string {
 /** Whether two installation folders are the same; Windows paths ignore case. */
 function sameInstallation(a: string | undefined, b: string): boolean {
   if (a === undefined) return false;
-  const normal = (value: string) => process.platform === 'win32' ? canonicalFolder(value).toLowerCase() : canonicalFolder(value);
+  const normal = (value: string) => (process.platform === 'win32' ? canonicalFolder(value).toLowerCase() : canonicalFolder(value));
   return normal(a) === normal(b);
 }
 /** Whether an entry has the shape only this extension writes: its bundle copy in global storage. */
@@ -171,7 +184,8 @@ function fileProvidesCoagent(file: string): boolean {
 /** Copies the bundle to `<storage>/runtime/<sha256>/index.cjs` once and returns the copy. */
 function runtimeCopy(storagePath: string, bundle: string): string {
   const content = fs.readFileSync(bundle);
-  const directory = path.join(storagePath, 'runtime', hash(content)), target = path.join(directory, 'index.cjs');
+  const directory = path.join(storagePath, 'runtime', hash(content)),
+    target = path.join(directory, 'index.cjs');
   if (fs.existsSync(target) && hash(fs.readFileSync(target)) === path.basename(directory)) return target;
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const temp = `${target}.${randomUUID()}.tmp`;
@@ -188,7 +202,8 @@ function pruneRuntimes(storagePath: string, keep: string): void {
   const root = path.join(storagePath, 'runtime');
   if (!fs.existsSync(root)) return;
   for (const name of fs.readdirSync(root)) {
-    if (/^[a-f0-9]{64}$/.test(name) && path.join(root, name) !== path.dirname(keep)) fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    if (/^[a-f0-9]{64}$/.test(name) && path.join(root, name) !== path.dirname(keep))
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
   }
 }
 
@@ -208,8 +223,9 @@ function pruneRuntimes(storagePath: string, keep: string): void {
 export async function syncVscodeRegistration(options: VscodeSyncOptions): Promise<VscodeRegistration> {
   return withFileLock(leaseResource(options.home), async () => {
     for (let attempt = 0; ; attempt++) {
-      try { return syncOnce(options); }
-      catch (error) {
+      try {
+        return syncOnce(options);
+      } catch (error) {
         // VS Code or the user wrote mcp.json at the same time; read their result again.
         if (attempt < 2 && error instanceof Error && /changed concurrently/.test(error.message)) continue;
         throw error;
@@ -219,7 +235,10 @@ export async function syncVscodeRegistration(options: VscodeSyncOptions): Promis
 }
 /** Inputs of {@link syncVscodeRegistration}. */
 export interface VscodeSyncOptions {
-  storagePath: string; bundle: string; server: VscodeServer; home: string;
+  storagePath: string;
+  bundle: string;
+  server: VscodeServer;
+  home: string;
   /** The extensions folder of this VS Code installation; its uninstall removes only its entries. */
   installation: string;
   /** The running extension's version; an older one never replaces a newer one's entry. */
@@ -229,9 +248,20 @@ export interface VscodeSyncOptions {
    * recorded is kept, so windows whose environments differ never rewrite it in turn.
    */
   adopt?: boolean;
-  folders?: string[]; restore?: boolean;
+  folders?: string[];
+  restore?: boolean;
 }
-function syncOnce({ storagePath, bundle, server, home, installation, version, adopt = false, folders = [], restore = false }: VscodeSyncOptions): VscodeRegistration {
+function syncOnce({
+  storagePath,
+  bundle,
+  server,
+  home,
+  installation,
+  version,
+  adopt = false,
+  folders = [],
+  restore = false,
+}: VscodeSyncOptions): VscodeRegistration {
   const file = profileMcpFile(storagePath);
   const { text: recordText, record } = readRecord(home);
   const text = read(file);
@@ -243,7 +273,11 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
   if (Object.entries(servers).some(entry => entry[0] !== VSCODE_SERVER_NAME && mentionsCoagent(entry))) {
     // The user's own entry provides CoAgent8; a second one would list every tool twice.
     if (ours) {
-      writeChecked(file, text, applyEdits(text!, modify(text!, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })));
+      writeChecked(
+        file,
+        text,
+        applyEdits(text!, modify(text!, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })),
+      );
       writeRecord(home, recordText, Object.fromEntries(Object.entries(record).filter(([key]) => key !== file)));
     }
     return 'manual';
@@ -251,7 +285,8 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
   // A record of only a pending digest is a first write that did not finish, not a removal.
   if (!restore && current === undefined && recorded !== undefined && ('entry' in recorded || 'declined' in recorded)) {
     // The user removed the entry in VS Code: remember it, never add it back unasked.
-    if (!('declined' in recorded) || !sameInstallation(recorded.installation, installation)) writeRecord(home, recordText, { ...record, [file]: { declined: true, installation } });
+    if (!('declined' in recorded) || !sameInstallation(recorded.installation, installation))
+      writeRecord(home, recordText, { ...record, [file]: { declined: true, installation } });
     return 'declined';
   }
   // This window's workspace provides CoAgent8; nothing is recorded, so other windows add the entry.
@@ -264,21 +299,38 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
   const runtime = runtimeCopy(storagePath, bundle);
   const desired = { type: 'stdio', command: server.command, args: [runtime, 'mcp'], env: server.env };
   if (ours && JSON.stringify(current) === JSON.stringify(desired)) {
-    if (!recorded || !('entry' in recorded) || recorded.entry !== hash(JSON.stringify(current)) || recorded.pending !== undefined || recorded.version !== version || !sameInstallation(recorded.installation, installation)) {
+    if (
+      !recorded ||
+      !('entry' in recorded) ||
+      recorded.entry !== hash(JSON.stringify(current)) ||
+      recorded.pending !== undefined ||
+      recorded.version !== version ||
+      !sameInstallation(recorded.installation, installation)
+    ) {
       writeRecord(home, recordText, { ...record, [file]: { entry: hash(JSON.stringify(current)), version, installation } });
     }
     pruneRuntimes(storagePath, runtime);
     return 'current';
   }
   const base = text ?? '{}\n';
-  const after = applyEdits(base, modify(base, ['servers', VSCODE_SERVER_NAME], desired, { formattingOptions: { ...FORMATTING, eol: base.includes('\r\n') ? '\r\n' : '\n' } }));
+  const after = applyEdits(
+    base,
+    modify(base, ['servers', VSCODE_SERVER_NAME], desired, {
+      formattingOptions: { ...FORMATTING, eol: base.includes('\r\n') ? '\r\n' : '\n' },
+    }),
+  );
   const digest = hash(JSON.stringify(profileServers(after)[VSCODE_SERVER_NAME]));
   // Record the digest being written first, the first write included: should the write below be
   // interrupted, the entry, old or new, is still ours and the uninstall finds it, while an edit or
   // removal racing it stays the user's. The entry on disk, when ours, is the one recorded as
   // written, whichever digest identified it.
-  const written = ours ? { entry: hash(JSON.stringify(current)), ...(writer?.version ? { version: writer.version } : {}) } : recorded ?? {};
-  const marked = writeRecord(home, recordText, { ...record, [file]: { ...written, pending: digest, pendingVersion: version, installation } });
+  const written = ours
+    ? { entry: hash(JSON.stringify(current)), ...(writer?.version ? { version: writer.version } : {}) }
+    : (recorded ?? {});
+  const marked = writeRecord(home, recordText, {
+    ...record,
+    [file]: { ...written, pending: digest, pendingVersion: version, installation },
+  });
   writeChecked(file, text, after);
   writeRecord(home, marked, { ...record, [file]: { entry: digest, version, installation } });
   pruneRuntimes(storagePath, runtime);
@@ -289,7 +341,11 @@ function syncOnce({ storagePath, bundle, server, home, installation, version, ad
  * Outcome of the uninstall cleanup for one profile `mcp.json`; `blocked` keeps the file
  * unchanged and its record, with the reason in `message`.
  */
-export interface VscodeRemoval { file: string; action: 'removed' | 'preserved' | 'missing' | 'blocked'; message?: string }
+export interface VscodeRemoval {
+  file: string;
+  action: 'removed' | 'preserved' | 'missing' | 'blocked';
+  message?: string;
+}
 /**
  * Removes every entry this installation recorded that is still exactly as the extension wrote
  * it, then its records. Runs from the `vscode:uninstall` hook, without the VS Code API.
@@ -310,21 +366,37 @@ function removeOwned(home: string, installation: string): VscodeRemoval[] {
   const results: VscodeRemoval[] = [];
   // A record naming no installation was written by an unreleased build before 0.6.0; it is left
   // alone like another installation's (owner decision 2026-10-11: no migration before 0.6.0).
-  const others = Object.fromEntries(Object.entries(record).filter(([, recorded]) => !sameInstallation(recorded.installation, installation)));
+  const others = Object.fromEntries(
+    Object.entries(record).filter(([, recorded]) => !sameInstallation(recorded.installation, installation)),
+  );
   const kept = { ...others };
   for (const [file, recorded] of Object.entries(record)) {
     if (file in others) continue;
     try {
       const text = read(file);
       const current = profileServers(text)[VSCODE_SERVER_NAME];
-      if (text === null || current === undefined) { results.push({ file, action: 'missing' }); continue; }
-      if (!owned(current, recorded)) { results.push({ file, action: 'preserved' }); continue; }
-      writeChecked(file, text, applyEdits(text, modify(text, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })));
+      if (text === null || current === undefined) {
+        results.push({ file, action: 'missing' });
+        continue;
+      }
+      if (!owned(current, recorded)) {
+        results.push({ file, action: 'preserved' });
+        continue;
+      }
+      writeChecked(
+        file,
+        text,
+        applyEdits(text, modify(text, ['servers', VSCODE_SERVER_NAME], undefined, { formattingOptions: FORMATTING })),
+      );
       results.push({ file, action: 'removed' });
     } catch (error) {
       // One malformed or locked profile does not keep the entries of the others; its record stays.
       kept[file] = recorded;
-      results.push({ file, action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : 'Profile cleanup failed.') });
+      results.push({
+        file,
+        action: 'blocked',
+        message: redactDiagnostic(error instanceof Error ? error.message : 'Profile cleanup failed.'),
+      });
     }
   }
   writeRecord(home, recordText, kept);

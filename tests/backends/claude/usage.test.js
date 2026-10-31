@@ -14,14 +14,23 @@ test('Claude /usage parser reads the recorded session and weekly limits and pick
   assert.equal(quota.headroomPercent, 60);
   assert.equal(quota.window, 'session');
   assert.equal(quota.resetsAt, '2026-10-05T23:20:00.000Z');
-  assert.deepEqual(quota.buckets.map(b => [b.id, b.window, b.remainingFraction, b.resetTime]),
-    [['session', 'session', 0.6, '2026-10-05T23:20:00.000Z'], ['week', 'weekly', 0.85, '2026-10-06T18:15:00.000Z']]);
+  assert.deepEqual(
+    quota.buckets.map(b => [b.id, b.window, b.remainingFraction, b.resetTime]),
+    [
+      ['session', 'session', 0.6, '2026-10-05T23:20:00.000Z'],
+      ['week', 'weekly', 0.85, '2026-10-06T18:15:00.000Z'],
+    ],
+  );
 });
 
 test('Claude /usage parser ignores model-specific weekly limits, API billing text and malformed lines', () => {
-  const text = 'Current session: 10% used - resets 9:30pm (America/New_York)\nCurrent week (Opus): 100% used - resets Oct 9, 1:00am (America/New_York)\nCurrent week (all models): 140% used';
+  const text =
+    'Current session: 10% used - resets 9:30pm (America/New_York)\nCurrent week (Opus): 100% used - resets Oct 9, 1:00am (America/New_York)\nCurrent week (all models): 140% used';
   const quota = parseClaudeUsage(text, NOW);
-  assert.deepEqual(quota.buckets.map(b => b.id), ['session']);
+  assert.deepEqual(
+    quota.buckets.map(b => b.id),
+    ['session'],
+  );
   assert.equal(quota.headroomPercent, 90);
   assert.equal(parseClaudeUsage('You are currently using API billing.', NOW), undefined);
   assert.equal(parseClaudeUsage('The model said: Current session: 50% used', NOW), undefined, 'lines must be anchored');

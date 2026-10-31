@@ -14,7 +14,14 @@ import { isDeepStrictEqual } from 'node:util';
 import { modify, applyEdits } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { runCommand } from '../execution/process.js';
-import { CliResolutionError, resolveBundledClaude, resolveBundledCodex, resolveCliCommand, resolveManagedAgy, type CliCommand } from '../execution/cli-resolver.js';
+import {
+  CliResolutionError,
+  resolveBundledClaude,
+  resolveBundledCodex,
+  resolveCliCommand,
+  resolveManagedAgy,
+  type CliCommand,
+} from '../execution/cli-resolver.js';
 import { backendCommand, environmentOverride, VSCODE_EXTENSION_EXECUTABLE } from '../backends/executable.js';
 import { readBackendExecutable, recordBackendExecutable, readBackendSkills } from '../config.js';
 import type { ProviderId } from '../contracts/index.js';
@@ -26,7 +33,26 @@ import { errorCodeOf } from '../contracts/index.js';
 import { BRAND } from '../brand.js';
 import { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
 export { SETUP_CLIENTS, type SetupClient } from './setup-clients.js';
-import { read, hash, document, servers, registration, configPath, writeChecked, readSelection, serializeSelection, backupDirectory, entryOwnership, extractRuntimePath, extractRuntimeVersion, newerVersion, CODEX_TOOL_TIMEOUT_SEC, setupConfigFile, type Registration, type RegistrationOrigin } from './setup-storage.js';
+import {
+  read,
+  hash,
+  document,
+  servers,
+  registration,
+  configPath,
+  writeChecked,
+  readSelection,
+  serializeSelection,
+  backupDirectory,
+  entryOwnership,
+  extractRuntimePath,
+  extractRuntimeVersion,
+  newerVersion,
+  CODEX_TOOL_TIMEOUT_SEC,
+  setupConfigFile,
+  type Registration,
+  type RegistrationOrigin,
+} from './setup-storage.js';
 export { extractRuntimePath } from './setup-storage.js';
 import { inspectCli, type CliReadiness } from './cli-readiness.js';
 import { assertSkillRoot, describeSkills, readSkillCatalog, type SkillPackage, type SkillStatus } from './skills.js';
@@ -91,15 +117,24 @@ export { setupConfigFile } from './setup-storage.js';
  * @returns A shell-free command, or null when no supported executable is installed,
  * including a missing copy selected with `vscode-extension`. Other explicit choices fail closed.
  */
-export function resolveSetupClient(client: SetupClient, home = os.homedir(), env = process.env, nodePath = process.execPath): CliCommand | null {
+export function resolveSetupClient(
+  client: SetupClient,
+  home = os.homedir(),
+  env = process.env,
+  nodePath = process.execPath,
+): CliCommand | null {
   const id = SETUP_PROVIDERS[client];
   const override = environmentOverride(id, env);
   const configured = override ? undefined : readBackendExecutable(id, setupConfigFile(home, env));
-  try { return resolveCliCommand(backendCommand(id, configured, env, home), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
-  catch (error) {
+  try {
+    return resolveCliCommand(backendCommand(id, configured, env, home), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath });
+  } catch (error) {
     if (override) throw new Error('Configured client executable cannot be resolved.');
     if (configured === VSCODE_EXTENSION_EXECUTABLE && errorCodeOf(error) === 'CLI_NOT_FOUND') return null;
-    if (configured) throw new Error(`backends.${id}.executable (${configured === VSCODE_EXTENSION_EXECUTABLE ? configured : 'configured path'}) cannot be resolved; change or remove it in config.json.`);
+    if (configured)
+      throw new Error(
+        `backends.${id}.executable (${configured === VSCODE_EXTENSION_EXECUTABLE ? configured : 'configured path'}) cannot be resolved; change or remove it in config.json.`,
+      );
     if (errorCodeOf(error) !== 'CLI_NOT_FOUND') throw new Error('Configured client executable cannot be resolved.');
   }
   return null;
@@ -117,7 +152,11 @@ export interface ClientInstallation extends ClientSource {
 }
 /** The copy the vendor's VS Code extension provides; for agy, the binary in `~/.gemini/bin`. */
 function extensionCopy(client: SetupClient, home: string, env: NodeJS.ProcessEnv): CliCommand | null {
-  return client === 'codex' ? resolveBundledCodex(home, env) : client === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
+  return client === 'codex'
+    ? resolveBundledCodex(home, env)
+    : client === 'claude'
+      ? resolveBundledClaude(home, env)
+      : resolveManagedAgy(home, env);
 }
 /**
  * Identifies a file for comparison: a link, such as the agy installer's junction to
@@ -126,14 +165,21 @@ function extensionCopy(client: SetupClient, home: string, env: NodeJS.ProcessEnv
  */
 function fileIdentity(file: string): string {
   let real: string;
-  try { real = fs.realpathSync.native(file); } catch { real = path.resolve(file); }
+  try {
+    real = fs.realpathSync.native(file);
+  } catch {
+    real = path.resolve(file);
+  }
   return process.platform === 'win32' ? real.toLowerCase() : real;
 }
 /** Classifies a client that {@link resolveSetupClient} resolved. */
 export function clientSource(client: SetupClient, cli: CliCommand, home = os.homedir(), env = process.env): ClientSource {
   const bundled = extensionCopy(client, home, env);
-  if (bundled && fileIdentity(bundled.command) === fileIdentity(cli.command)) return { kind: 'vscode-extension', executable: VSCODE_EXTENSION_EXECUTABLE };
-  return cli.source === 'native' ? { kind: 'standalone', executable: path.resolve(cli.command) } : { kind: 'npm', executable: path.resolve(cli.argsPrefix[0] ?? cli.command) };
+  if (bundled && fileIdentity(bundled.command) === fileIdentity(cli.command))
+    return { kind: 'vscode-extension', executable: VSCODE_EXTENSION_EXECUTABLE };
+  return cli.source === 'native'
+    ? { kind: 'standalone', executable: path.resolve(cli.command) }
+    : { kind: 'npm', executable: path.resolve(cli.argsPrefix[0] ?? cli.command) };
 }
 /**
  * Folders that official installers and package managers use and that may be missing from
@@ -158,7 +204,12 @@ function installerFolders(home: string, env: NodeJS.ProcessEnv): string[] {
  * @remarks A folder whose launcher cannot be resolved, such as an unsupported shim, holds no
  * usable installation and is left out; other failures propagate.
  */
-export function listInstallations(client: SetupClient, home = os.homedir(), env = process.env, nodePath = process.execPath): ClientInstallation[] {
+export function listInstallations(
+  client: SetupClient,
+  home = os.homedir(),
+  env = process.env,
+  nodePath = process.execPath,
+): ClientInstallation[] {
   const lookup = { env: { ...env, HOME: home, USERPROFILE: home }, nodePath };
   const found: ClientInstallation[] = [];
   const seen = new Set<string>();
@@ -175,13 +226,21 @@ export function listInstallations(client: SetupClient, home = os.homedir(), env 
   const searchPath = Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? '';
   const configured = configuredExecutable(client, home, env, nodePath);
   const candidates = [
-    ...[...searchPath.split(path.delimiter), ...installerFolders(home, env)].filter(Boolean).map(folder => path.join(folder.replace(/^"|"$/g, ''), client)),
-    ...(configured?.found && configured.value !== VSCODE_EXTENSION_EXECUTABLE ? [backendCommand(SETUP_PROVIDERS[client], configured.value, env, home)] : []),
+    ...[...searchPath.split(path.delimiter), ...installerFolders(home, env)]
+      .filter(Boolean)
+      .map(folder => path.join(folder.replace(/^"|"$/g, ''), client)),
+    ...(configured?.found && configured.value !== VSCODE_EXTENSION_EXECUTABLE
+      ? [backendCommand(SETUP_PROVIDERS[client], configured.value, env, home)]
+      : []),
   ];
   for (const candidate of candidates) {
     let cli: CliCommand;
-    try { cli = resolveCliCommand(candidate, lookup); }
-    catch (error) { if (error instanceof CliResolutionError) continue; throw error; }
+    try {
+      cli = resolveCliCommand(candidate, lookup);
+    } catch (error) {
+      if (error instanceof CliResolutionError) continue;
+      throw error;
+    }
     add(cli);
   }
   return found;
@@ -190,13 +249,22 @@ export function listInstallations(client: SetupClient, home = os.homedir(), env 
  * The executable set in `backends.<id>.executable`, and whether it can be started.
  * @returns Undefined when none is set or an environment override replaces it.
  */
-export function configuredExecutable(client: SetupClient, home = os.homedir(), env = process.env, nodePath = process.execPath): { value: string; found: boolean } | undefined {
+export function configuredExecutable(
+  client: SetupClient,
+  home = os.homedir(),
+  env = process.env,
+  nodePath = process.execPath,
+): { value: string; found: boolean } | undefined {
   const id = SETUP_PROVIDERS[client];
   if (environmentOverride(id, env)) return undefined;
   const value = readBackendExecutable(id, setupConfigFile(home, env));
   if (value === undefined) return undefined;
-  try { resolveCliCommand(backendCommand(id, value, env, home), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
-  catch (error) { if (error instanceof CliResolutionError) return { value, found: false }; throw error; }
+  try {
+    resolveCliCommand(backendCommand(id, value, env, home), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath });
+  } catch (error) {
+    if (error instanceof CliResolutionError) return { value, found: false };
+    throw error;
+  }
   return { value, found: true };
 }
 /**
@@ -205,15 +273,24 @@ export function configuredExecutable(client: SetupClient, home = os.homedir(), e
  * @returns The `backends.<id>.executable` value that selects the file, and the CLI evidence.
  * @throws When the file cannot be started or is not a compatible CLI of this client.
  */
-export async function checkExecutable(client: SetupClient, file: string, home = os.homedir(), env = process.env, nodePath = process.execPath, cwd = home): Promise<{ source: ClientSource; readiness: CliReadiness }> {
+export async function checkExecutable(
+  client: SetupClient,
+  file: string,
+  home = os.homedir(),
+  env = process.env,
+  nodePath = process.execPath,
+  cwd = home,
+): Promise<{ source: ClientSource; readiness: CliReadiness }> {
   let cli: CliCommand;
-  try { cli = resolveCliCommand(path.resolve(file), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath }); }
-  catch (error) {
+  try {
+    cli = resolveCliCommand(path.resolve(file), { env: { ...env, HOME: home, USERPROFILE: home }, nodePath });
+  } catch (error) {
     if (error instanceof CliResolutionError) throw new Error(`${path.basename(file)} cannot be started: ${error.message}`);
     throw error;
   }
   const readiness = await inspectCli(client, cli, env, cwd);
-  if (readiness.compatibility !== 'supported') throw new Error(`${path.basename(file)} is not a compatible ${client} CLI: ${readiness.diagnostic}`);
+  if (readiness.compatibility !== 'supported')
+    throw new Error(`${path.basename(file)} is not a compatible ${client} CLI: ${readiness.diagnostic}`);
   return { source: clientSource(client, cli, home, env), readiness };
 }
 
@@ -221,9 +298,13 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
   const entries = servers(client, config);
   for (const [name, value] of Object.entries(entries)) {
     if (name === 'coagent8') continue;
-    if (/coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value))) throw new Error('Possible duplicate CoAgent8 definition; resolve it in the host before setup.');
+    if (/coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value)))
+      throw new Error('Possible duplicate CoAgent8 definition; resolve it in the host before setup.');
   }
-  if (config.plugins && Object.entries(object(config.plugins)).some(([name, value]) => /coagent8/i.test(name) && object(value).enabled !== false)) {
+  if (
+    config.plugins &&
+    Object.entries(object(config.plugins)).some(([name, value]) => /coagent8/i.test(name) && object(value).enabled !== false)
+  ) {
     throw new Error('CoAgent8 plugin is configured; preserve native plugin ownership and verify it in the host.');
   }
   if (client === 'claude' && config.projects) {
@@ -233,10 +314,19 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
     }
   }
   for (let dir = cwd; ; dir = path.dirname(dir)) {
-    const file = client === 'codex' ? path.join(dir, '.codex', 'config.toml')
-      : client === 'claude' ? path.join(dir, '.mcp.json') : path.join(dir, '.agents', 'mcp_config.json');
+    const file =
+      client === 'codex'
+        ? path.join(dir, '.codex', 'config.toml')
+        : client === 'claude'
+          ? path.join(dir, '.mcp.json')
+          : path.join(dir, '.agents', 'mcp_config.json');
     const content = file === globalFile ? null : read(file);
-    if (content && Object.entries(servers(client, document(client, content))).some(([name, value]) => /coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value)))) {
+    if (
+      content &&
+      Object.entries(servers(client, document(client, content))).some(
+        ([name, value]) => /coagent8/i.test(name) || /coagent8/i.test(JSON.stringify(value)),
+      )
+    ) {
       throw new Error('Workspace/profile CoAgent8 registration conflicts with local default scope.');
     }
     if (dir === home || fs.existsSync(path.join(dir, '.git')) || path.dirname(dir) === dir) break;
@@ -249,32 +339,48 @@ function checkScopes(client: SetupClient, config: Record<string, unknown>, cwd: 
  * once per registered client. A tool call is first exercised on actual use.
  */
 async function probeRuntime(entry: Registration, env: NodeJS.ProcessEnv, cwd: string): Promise<string[]> {
-  return withStdioRpc(entry.command, entry.args, async rpc => {
-    const init = object(await rpc.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'coagent8-setup', version: '1' } }));
-    if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');
-    rpc.notify('notifications/initialized');
-    const tools = object(await rpc.request('tools/list', {})).tools;
-    if (!Array.isArray(tools)) throw new Error('Invalid tool catalog.');
-    const names = tools.map(tool => object(tool).name);
-    if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) throw new Error('CoAgent8 doctor is unavailable.');
-    return names as string[];
-  }, { env: { ...env, ...entry.env }, cwd });
+  return withStdioRpc(
+    entry.command,
+    entry.args,
+    async rpc => {
+      const init = object(
+        await rpc.request('initialize', {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'coagent8-setup', version: '1' },
+        }),
+      );
+      if (object(init.serverInfo).name !== 'coagent8') throw new Error('Configured process is not CoAgent8.');
+      rpc.notify('notifications/initialized');
+      const tools = object(await rpc.request('tools/list', {})).tools;
+      if (!Array.isArray(tools)) throw new Error('Invalid tool catalog.');
+      const names = tools.map(tool => object(tool).name);
+      if (!names.every(name => typeof name === 'string') || !names.includes('doctor')) throw new Error('CoAgent8 doctor is unavailable.');
+      return names as string[];
+    },
+    { env: { ...env, ...entry.env }, cwd },
+  );
 }
 
 /** Verifies that Codex itself starts the registered server and discovers its tools, without a model turn. */
 async function probeCodex(cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<boolean> {
-  return withStdioRpc(cli.command, [...cli.argsPrefix, 'app-server'], async rpc => {
-    await rpc.request('initialize', { clientInfo: { name: 'coagent8_setup', version: '1' }, capabilities: { experimentalApi: true } });
-    rpc.notify('initialized');
-    const started = object(await rpc.request('thread/start', { cwd, sandbox: 'read-only', approvalPolicy: 'never', ephemeral: true }));
-    const threadId = object(started.thread).id;
-    if (typeof threadId !== 'string') throw new Error('Codex omitted the probe thread.');
-    const status = object(await rpc.request('mcpServerStatus/list', { threadId, serverName: 'coagent8' }));
-    if (!Array.isArray(status.data)) throw new Error('Codex MCP discovery is unavailable.');
-    const server = status.data.map(object).find(item => item.name === 'coagent8');
-    if (!server || !object(server.tools).doctor) throw new Error('Codex did not discover CoAgent8 doctor.');
-    return true;
-  }, { env, cwd });
+  return withStdioRpc(
+    cli.command,
+    [...cli.argsPrefix, 'app-server'],
+    async rpc => {
+      await rpc.request('initialize', { clientInfo: { name: 'coagent8_setup', version: '1' }, capabilities: { experimentalApi: true } });
+      rpc.notify('initialized');
+      const started = object(await rpc.request('thread/start', { cwd, sandbox: 'read-only', approvalPolicy: 'never', ephemeral: true }));
+      const threadId = object(started.thread).id;
+      if (typeof threadId !== 'string') throw new Error('Codex omitted the probe thread.');
+      const status = object(await rpc.request('mcpServerStatus/list', { threadId, serverName: 'coagent8' }));
+      if (!Array.isArray(status.data)) throw new Error('Codex MCP discovery is unavailable.');
+      const server = status.data.map(object).find(item => item.name === 'coagent8');
+      if (!server || !object(server.tools).doctor) throw new Error('Codex did not discover CoAgent8 doctor.');
+      return true;
+    },
+    { env, cwd },
+  );
 }
 /**
  * Clients whose host can call CoAgent8 under setup's control; only their failed check is
@@ -284,8 +390,11 @@ async function probeCodex(cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string):
 const HOST_CHECKED_CLIENTS: readonly SetupClient[] = ['codex'];
 async function hostCallable(client: SetupClient, cli: CliCommand, env: NodeJS.ProcessEnv, cwd: string): Promise<boolean> {
   if (!HOST_CHECKED_CLIENTS.includes(client)) return false;
-  try { return await probeCodex(cli, env, cwd); }
-  catch { return false; } // Host versions without the direct-call API remain explicitly unverified.
+  try {
+    return await probeCodex(cli, env, cwd);
+  } catch {
+    return false;
+  } // Host versions without the direct-call API remain explicitly unverified.
 }
 export { CODEX_TOOL_TIMEOUT_SEC } from './setup-storage.js';
 
@@ -307,14 +416,24 @@ export function withCodexToolTimeout(config: string): string {
   const added = object(servers('codex', parsed).coagent8);
   const { tool_timeout_sec: timeout, ...rest } = added;
   // Spread both sides: TOML tables have no prototype, the destructured rest has one.
-  if (timeout !== CODEX_TOOL_TIMEOUT_SEC || !isDeepStrictEqual(rest, { ...entry })
-      || !isDeepStrictEqual({ ...parsed, mcp_servers: undefined }, { ...document('codex', config), mcp_servers: undefined })) {
+  if (
+    timeout !== CODEX_TOOL_TIMEOUT_SEC ||
+    !isDeepStrictEqual(rest, { ...entry }) ||
+    !isDeepStrictEqual({ ...parsed, mcp_servers: undefined }, { ...document('codex', config), mcp_servers: undefined })
+  ) {
     throw new Error('Adding the Codex tool timeout changed other settings.');
   }
   return edited;
 }
 
-async function nativeCodexEdit(before: string | null, target: Registration | null, cli: CliCommand, backup: string, env: NodeJS.ProcessEnv, cwd: string): Promise<string> {
+async function nativeCodexEdit(
+  before: string | null,
+  target: Registration | null,
+  cli: CliCommand,
+  backup: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<string> {
   const staging = path.join(backup, 'codex-staging-' + randomUUID());
   fs.mkdirSync(staging, { mode: 0o700 });
   let edited: Awaited<ReturnType<typeof runCommand>>, written: string | null;
@@ -333,22 +452,39 @@ async function nativeCodexEdit(before: string | null, target: Registration | nul
   const oldDoc = before === null ? {} : document('codex', before);
   const newDoc = document('codex', after);
   const strip = (data: Record<string, unknown>) => Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'coagent8'));
-  if (!isDeepStrictEqual(strip(servers('codex', oldDoc)), strip(servers('codex', newDoc))) ||
-      !isDeepStrictEqual({ ...oldDoc, mcp_servers: undefined }, { ...newDoc, mcp_servers: undefined })) {
+  if (
+    !isDeepStrictEqual(strip(servers('codex', oldDoc)), strip(servers('codex', newDoc))) ||
+    !isDeepStrictEqual({ ...oldDoc, mcp_servers: undefined }, { ...newDoc, mcp_servers: undefined })
+  ) {
     throw new Error('Native registration changed unrelated settings.');
   }
   return after;
 }
-async function restoreOwnedEntry(client: SetupClient, file: string, before: string | null, installed: unknown, cli: CliCommand, backup: string, env: NodeJS.ProcessEnv, cwd: string): Promise<void> {
+async function restoreOwnedEntry(
+  client: SetupClient,
+  file: string,
+  before: string | null,
+  installed: unknown,
+  cli: CliCommand,
+  backup: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Promise<void> {
   const current = read(file);
   if (current === null) throw new Error('Configuration was removed concurrently; backup retained.');
   const currentEntry = servers(client, document(client, current)).coagent8;
-  if (!isDeepStrictEqual(currentEntry, installed)) throw new Error('CoAgent8 entry changed independently; rollback preserves it and retains the private backup.');
+  if (!isDeepStrictEqual(currentEntry, installed))
+    throw new Error('CoAgent8 entry changed independently; rollback preserves it and retains the private backup.');
   const original = before === null ? undefined : servers(client, document(client, before)).coagent8;
-  const updated = client === 'codex'
-    ? await nativeCodexEdit(current, original === undefined ? null : registration(original), cli, backup, env, cwd)
-    : applyEdits(current, modify(current, ['mcpServers', 'coagent8'], original, { formattingOptions: { insertSpaces: true, tabSize: 2 } }));
-  if (!isDeepStrictEqual(servers(client, document(client, updated)).coagent8, original)) throw new Error('Native rollback could not preserve original entry options; private backup retained.');
+  const updated =
+    client === 'codex'
+      ? await nativeCodexEdit(current, original === undefined ? null : registration(original), cli, backup, env, cwd)
+      : applyEdits(
+          current,
+          modify(current, ['mcpServers', 'coagent8'], original, { formattingOptions: { insertSpaces: true, tabSize: 2 } }),
+        );
+  if (!isDeepStrictEqual(servers(client, document(client, updated)).coagent8, original))
+    throw new Error('Native rollback could not preserve original entry options; private backup retained.');
   writeChecked(file, current, updated);
 }
 
@@ -357,7 +493,12 @@ function localProfile(options: Pick<SetupOptions, 'home' | 'cwd' | 'env'>) {
   const home = path.resolve(options.home || os.homedir());
   const cwd = path.resolve(options.cwd || process.cwd());
   const env = options.env || process.env;
-  if (env.CODEX_CONFIG_PATH || env.CLAUDE_CONFIG_DIR || env.GEMINI_CLI_HOME || (env.CODEX_HOME && path.resolve(env.CODEX_HOME) !== path.join(home, '.codex'))) {
+  if (
+    env.CODEX_CONFIG_PATH ||
+    env.CLAUDE_CONFIG_DIR ||
+    env.GEMINI_CLI_HOME ||
+    (env.CODEX_HOME && path.resolve(env.CODEX_HOME) !== path.join(home, '.codex'))
+  ) {
     throw new Error('Custom client/profile roots are unsupported; run setup in the local default profile.');
   }
   const root = path.join(home, '.coagent8');
@@ -365,7 +506,13 @@ function localProfile(options: Pick<SetupOptions, 'home' | 'cwd' | 'env'>) {
   return { home, cwd, env, root, stateFile: path.join(root, 'setup.json') };
 }
 /** The entry setup writes for this bundle, Node executable, configuration file and data directory. */
-function candidateRegistration(bundle: string, root: string, options: Pick<SetupOptions, 'nodePath' | 'dataDirectory'>, env: NodeJS.ProcessEnv, cwd: string): Registration {
+function candidateRegistration(
+  bundle: string,
+  root: string,
+  options: Pick<SetupOptions, 'nodePath' | 'dataDirectory'>,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): Registration {
   const runtime = path.join(root, 'runtime', hash(bundle), 'index.cjs');
   const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
   const variables = {
@@ -397,7 +544,9 @@ export interface RegistrationStatus {
  * else the shape only setup writes.
  * @throws On a custom profile root or an unreadable setup state.
  */
-export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env' | 'version'>): RegistrationStatus[] {
+export function readRegistrations(
+  options: Pick<SetupOptions, 'runtimeSource' | 'nodePath' | 'dataDirectory' | 'home' | 'cwd' | 'env' | 'version'>,
+): RegistrationStatus[] {
   const { home, cwd, env, root, stateFile } = localProfile(options);
   const saved = readSelection(stateFile);
   const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
@@ -412,12 +561,12 @@ export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 
       const isFingerprintMatch = saved.owned[client] === hash(JSON.stringify(entry));
       const entryObj = entry as { args?: unknown };
       const existingPrefix = isFingerprintMatch
-        ? (Array.isArray(entryObj.args) && (entryObj.args as string[]).at(-1) === 'mcp'
+        ? Array.isArray(entryObj.args) && (entryObj.args as string[]).at(-1) === 'mcp'
           ? (entryObj.args as string[]).slice(0, -2)
-          : (entryObj.args as string[])?.slice(0, -1))
+          : (entryObj.args as string[])?.slice(0, -1)
         : node.argsPrefix;
       const registeredPath = extractRuntimePath(entry, root, existingPrefix);
-      const registeredVersion = registeredPath ? extractRuntimeVersion(registeredPath) ?? undefined : undefined;
+      const registeredVersion = registeredPath ? (extractRuntimeVersion(registeredPath) ?? undefined) : undefined;
       const isNewer = registeredVersion ? newerVersion(registeredVersion, candidateVersion) : false;
       if (!entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix).owned) {
         return {
@@ -442,7 +591,12 @@ export function readRegistrations(options: Pick<SetupOptions, 'runtimeSource' | 
         ...(isNewer ? { isNewer: true } : {}),
       };
     } catch (error) {
-      return { client, state: 'blocked', current: false, message: redactDiagnostic(error instanceof Error ? error.message : 'Configuration is unreadable.') };
+      return {
+        client,
+        state: 'blocked',
+        current: false,
+        message: redactDiagnostic(error instanceof Error ? error.message : 'Configuration is unreadable.'),
+      };
     }
   });
 }
@@ -479,7 +633,9 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       const bundle = readBoundedFileSync(options.runtimeSource, 8 * 1024 * 1024);
       const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
       candidate = candidateRegistration(bundle, root, options, env, cwd);
-      const runtime = extractRuntimePath(candidate, root, node.argsPrefix) ?? (candidate.args.at(-1) === 'mcp' ? candidate.args.at(-2)! : candidate.args.at(-1)!);
+      const runtime =
+        extractRuntimePath(candidate, root, node.argsPrefix) ??
+        (candidate.args.at(-1) === 'mcp' ? candidate.args.at(-2)! : candidate.args.at(-1)!);
       fs.mkdirSync(path.dirname(runtime), { recursive: true, mode: 0o700 });
       if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
       const versionFile = path.join(path.dirname(runtime), 'version.json');
@@ -490,17 +646,31 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       if (hash(readBoundedFileSync(runtime, 8 * 1024 * 1024)) !== hash(bundle)) throw new Error('Owned runtime hash mismatch.');
       await probeRuntime(candidate, env, cwd);
     }
-    const results: SetupStatus[] = (selected.length ? selected : SETUP_CLIENTS).map(client => (
-      { client, version: null, compatibility: 'unknown', authentication: 'unknown', ready: false, diagnostic: '', installed: false, registered: false, runtimeCallable: false, hostCallable: false, tools: [], action: 'blocked', message: '' }));
+    const results: SetupStatus[] = (selected.length ? selected : SETUP_CLIENTS).map(client => ({
+      client,
+      version: null,
+      compatibility: 'unknown',
+      authentication: 'unknown',
+      ready: false,
+      diagnostic: '',
+      installed: false,
+      registered: false,
+      runtimeCallable: false,
+      hostCallable: false,
+      tools: [],
+      action: 'blocked',
+      message: '',
+    }));
     // Status checks only read, so clients run in parallel; setup writes stay serial under the lease.
     if (options.statusOnly) await Promise.all(results.map(check));
-    else for (const result of results) {
-      await check(result);
-      if (catalog && ['installed', 'updated', 'preserved'].includes(result.action)) {
-        syncSkills(result, catalog);
-        stateBefore = read(stateFile);
+    else
+      for (const result of results) {
+        await check(result);
+        if (catalog && ['installed', 'updated', 'preserved'].includes(result.action)) {
+          syncSkills(result, catalog);
+          stateBefore = read(stateFile);
+        }
       }
-    }
     if (!options.statusOnly) {
       saved.clients = selected;
       writeChecked(stateFile, stateBefore, serializeSelection(saved));
@@ -509,7 +679,15 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
     /** Installs the catalog for a client whose registration works; skills never change the registration outcome. */
     function syncSkills(result: SetupStatus, packages: SkillPackage[]): void {
       const client = result.client;
-      result.skills = reconcileSkills(client, home, packages, saved, selectedSkills(packages, readBackendSkills(client, setupConfigFile(home, env))), options.origin, stateBefore);
+      result.skills = reconcileSkills(
+        client,
+        home,
+        packages,
+        saved,
+        selectedSkills(packages, readBackendSkills(client, setupConfigFile(home, env))),
+        options.origin,
+        stateBefore,
+      );
       result.message += ' ' + describeSkills(client, result.skills);
     }
     async function check(result: SetupStatus): Promise<void> {
@@ -517,8 +695,11 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
       try {
         let cli: CliCommand | null = null;
         let resolutionError: unknown;
-        try { cli = resolveSetupClient(client, home, env, options.nodePath || process.execPath); }
-        catch (error) { resolutionError = error; }
+        try {
+          cli = resolveSetupClient(client, home, env, options.nodePath || process.execPath);
+        } catch (error) {
+          resolutionError = error;
+        }
         if (cli) {
           result.installed = true;
           Object.assign(result, await inspectCli(client, cli, env, cwd));
@@ -530,15 +711,24 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
         result.registered = entry !== undefined;
         if (resolutionError) throw resolutionError;
         if (!cli) {
-          result.action = 'missing'; result.message = 'CLI missing; any external registration is retained. Install/authenticate explicitly.'; return;
+          result.action = 'missing';
+          result.message = 'CLI missing; any external registration is retained. Install/authenticate explicitly.';
+          return;
         }
-        if (!options.statusOnly && result.compatibility !== 'supported') { result.message = result.diagnostic; return; }
+        if (!options.statusOnly && result.compatibility !== 'supported') {
+          result.message = result.diagnostic;
+          return;
+        }
         checkScopes(client, config, cwd, file, home);
         if (entry !== undefined) {
           const existing = registration(entry);
           result.action = 'preserved';
           // Status reads the host files only; starting the runtime and the host is setup/repair work.
-          if (options.statusOnly) { result.message = 'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.'; return; }
+          if (options.statusOnly) {
+            result.message =
+              'Registered. Status reads the host configuration only; CoAgent8: Manage Coding CLIs or npx -y coagent8@next repair (coagent8 repair when installed globally) verifies the connection.';
+            return;
+          }
           const node = resolveCliCommand(options.nodePath || process.execPath, { env, cwd });
           const ownership = entryOwnership(client, entry, saved, root, options.nodePath, node.argsPrefix);
           const owned = ownership.owned;
@@ -547,7 +737,9 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           // For fingerprint-owned entries, validate using the entry's own args layout.
           const isFingerprintMatch = saved.owned[client] === hash(JSON.stringify(entry));
           const existingPrefix = isFingerprintMatch
-            ? (existing.args.at(-1) === 'mcp' ? existing.args.slice(0, -2) : existing.args.slice(0, -1))
+            ? existing.args.at(-1) === 'mcp'
+              ? existing.args.slice(0, -2)
+              : existing.args.slice(0, -1)
             : node.argsPrefix;
           const existingRuntime = extractRuntimePath(existing, root, existingPrefix);
           const broken = owned && (!existingRuntime || !fs.existsSync(existingRuntime));
@@ -570,13 +762,15 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
             return;
           }
           if (!broken && HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) {
-            result.message = 'Managed runtime update deferred: the native host did not call the current registration; old connection retained.';
+            result.message =
+              'Managed runtime update deferred: the native host did not call the current registration; old connection retained.';
             return;
           }
         } else if (options.statusOnly) {
           // Registration in the CLI's own configuration is optional; the CLI itself is present.
           result.action = 'not-registered';
-          result.message = 'CLI found; CoAgent8 is not registered in this client. Optional: CoAgent8: Manage Coding CLIs, or coagent8 setup.';
+          result.message =
+            'CLI found; CoAgent8 is not registered in this client. Optional: CoAgent8: Manage Coding CLIs, or coagent8 setup.';
           return;
         }
         if (!candidate) throw new Error('Setup runtime is unavailable.');
@@ -584,7 +778,12 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
         fs.writeFileSync(path.join(backup, client + '.config'), before ?? '', { flag: 'wx', mode: 0o600 });
         let after: string | null = null;
         let liveWritten = false;
-        const previousEvidence = { registered: result.registered, runtimeCallable: result.runtimeCallable, hostCallable: result.hostCallable, tools: result.tools };
+        const previousEvidence = {
+          registered: result.registered,
+          runtimeCallable: result.runtimeCallable,
+          hostCallable: result.hostCallable,
+          tools: result.tools,
+        };
         try {
           if (client === 'codex') {
             // Let the native CLI edit an isolated copy, then commit it with a conflict check.
@@ -593,15 +792,28 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
             if (entry !== undefined) {
               const otherFields = (value: unknown) => {
                 const entryObject = object(value);
-                const remainingEnv = Object.fromEntries(Object.entries(entryObject.env === undefined ? {} : object(entryObject.env)).filter(([key]) => key !== 'coagent8_CONFIG' && key !== 'coagent8_DIR'));
-                return { ...Object.fromEntries(Object.entries(entryObject).filter(([key]) => !['command', 'args', 'env'].includes(key))), env: remainingEnv };
+                const remainingEnv = Object.fromEntries(
+                  Object.entries(entryObject.env === undefined ? {} : object(entryObject.env)).filter(
+                    ([key]) => key !== 'coagent8_CONFIG' && key !== 'coagent8_DIR',
+                  ),
+                );
+                return {
+                  ...Object.fromEntries(Object.entries(entryObject).filter(([key]) => !['command', 'args', 'env'].includes(key))),
+                  env: remainingEnv,
+                };
               };
-              if (!isDeepStrictEqual(otherFields(entry), otherFields(servers(client, document(client, after)).coagent8))) throw new Error('Native update would change existing registration options; preserve it.');
+              if (!isDeepStrictEqual(otherFields(entry), otherFields(servers(client, document(client, after)).coagent8)))
+                throw new Error('Native update would change existing registration options; preserve it.');
             }
             writeChecked(file, before, after);
           } else {
             const text = before ?? '{}\n';
-            after = applyEdits(text, modify(text, ['mcpServers', 'coagent8'], candidate, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: text.includes('\r\n') ? '\r\n' : '\n' } }));
+            after = applyEdits(
+              text,
+              modify(text, ['mcpServers', 'coagent8'], candidate, {
+                formattingOptions: { insertSpaces: true, tabSize: 2, eol: text.includes('\r\n') ? '\r\n' : '\n' },
+              }),
+            );
             writeChecked(file, before, after);
           }
           liveWritten = true;
@@ -609,23 +821,35 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
           result.tools = await probeRuntime(installed, env, cwd);
           result.runtimeCallable = true;
           result.hostCallable = await hostCallable(client, cli, env, cwd);
-          if (entry !== undefined && HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable) throw new Error('Replacement failed native-host acceptance.');
+          if (entry !== undefined && HOST_CHECKED_CLIENTS.includes(client) && !result.hostCallable)
+            throw new Error('Replacement failed native-host acceptance.');
           const current = read(file);
-          if (current === null || !isDeepStrictEqual(servers(client, document(client, current)).coagent8, servers(client, document(client, after)).coagent8)) {
+          if (
+            current === null ||
+            !isDeepStrictEqual(servers(client, document(client, current)).coagent8, servers(client, document(client, after)).coagent8)
+          ) {
             throw new Error('CoAgent8 entry changed during verification; ownership was not transferred.');
           }
           result.registered = true;
           result.action = entry === undefined ? 'installed' : 'updated';
-          result.message = result.hostCallable ? 'Native host discovered the CoAgent8 tools. Start a new chat to refresh existing catalogs.'
+          result.message = result.hostCallable
+            ? 'Native host discovered the CoAgent8 tools. Start a new chat to refresh existing catalogs.'
             : 'Registered; the runtime starts and lists its tools. Native host discovery and icon presentation still need acceptance in a new chat.';
-          if (entry !== undefined && !result.hostCallable) result.message += ' The previous runtime stays until cleanup; restart running chats to use this one.';
+          if (entry !== undefined && !result.hostCallable)
+            result.message += ' The previous runtime stays until cleanup; restart running chats to use this one.';
           saved.owned[client] = hash(JSON.stringify(servers(client, document(client, after)).coagent8));
           if (options.origin) saved.origin[client] = options.origin;
           else delete saved.origin[client];
           // The first registration records the CLI it found; the user may change it afterwards.
           if (entry === undefined) {
             try {
-              if (await recordBackendExecutable(SETUP_PROVIDERS[client], clientSource(client, cli, home, env).executable, setupConfigFile(home, env))) {
+              if (
+                await recordBackendExecutable(
+                  SETUP_PROVIDERS[client],
+                  clientSource(client, cli, home, env).executable,
+                  setupConfigFile(home, env),
+                )
+              ) {
                 result.message += ` Recorded backends.${SETUP_PROVIDERS[client]}.executable in the configuration.`;
               }
             } catch (error) {

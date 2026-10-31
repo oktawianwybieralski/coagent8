@@ -92,14 +92,14 @@ test('S2 review module: review gate and verdict policy evaluate properly', () =>
   const blockedResult = evaluateStateEnvelopeGate(blockedEnvelope, false, true);
   assert.equal(blockedResult.verdict, 'BLOCKED');
   assert.equal(blockedResult.reason, 'Review coverage is partial; the reviewer answered READY');
-
 });
 
 test('S2 boundaries: execution and review have zero imports from mcp or sdk', () => {
   const root = path.resolve(__dirname, '..');
-  const checkDir = (dirRel) => {
+  const checkDir = dirRel => {
     const dirAbs = path.join(root, dirRel);
-    const files = fs.readdirSync(dirAbs, { recursive: true })
+    const files = fs
+      .readdirSync(dirAbs, { recursive: true })
       .filter(f => typeof f === 'string' && f.endsWith('.ts'))
       .map(f => path.join(dirAbs, f));
 
@@ -110,7 +110,7 @@ test('S2 boundaries: execution and review have zero imports from mcp or sdk', ()
         const specifier = match[1];
         assert.ok(
           !specifier.includes('/mcp/') && !specifier.includes('@modelcontextprotocol'),
-          `Forbidden MCP import in ${path.relative(root, file)}: ${specifier}`
+          `Forbidden MCP import in ${path.relative(root, file)}: ${specifier}`,
         );
       }
     }
@@ -119,9 +119,10 @@ test('S2 boundaries: execution and review have zero imports from mcp or sdk', ()
   checkDir('src/execution');
   checkDir('src/review');
 
-  const checkNoMcpOrConstants = (dirRel) => {
+  const checkNoMcpOrConstants = dirRel => {
     const dirAbs = path.join(root, dirRel);
-    const files = fs.readdirSync(dirAbs, { recursive: true })
+    const files = fs
+      .readdirSync(dirAbs, { recursive: true })
       .filter(f => typeof f === 'string' && f.endsWith('.ts'))
       .map(f => path.join(dirAbs, f));
 
@@ -132,7 +133,7 @@ test('S2 boundaries: execution and review have zero imports from mcp or sdk', ()
         const specifier = match[1];
         assert.ok(
           !specifier.includes('/mcp/') && !specifier.includes('@modelcontextprotocol') && !specifier.includes('constants.js'),
-          `Forbidden MCP/constants import in ${path.relative(root, file)}: ${specifier}`
+          `Forbidden MCP/constants import in ${path.relative(root, file)}: ${specifier}`,
         );
       }
     }
@@ -141,4 +142,3 @@ test('S2 boundaries: execution and review have zero imports from mcp or sdk', ()
   checkNoMcpOrConstants('src/backends');
   checkNoMcpOrConstants('src/diagnostics');
 });
-

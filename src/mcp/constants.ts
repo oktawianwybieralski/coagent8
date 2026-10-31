@@ -38,12 +38,13 @@ export const CORE_CANONICAL_TOOL_NAMES = [
  * Codex reads the first 512 characters on their own, so it stays within them; call-time rules
  * live in the parameter descriptions (`schema.ts`).
  */
-export const SERVER_INSTRUCTIONS = 'Asks another local coding agent (Codex, Claude Code or Antigravity). '
-  + 'Read-only: consult for a second opinion on a question, design, bug or plan; review for an independent review of Git changes. '
-  + 'delegate: it makes a code change, then you review it. '
-  + 'Not for what you can read or run yourself. '
-  + 'Answers are another model\'s opinion: verify facts before acting on them. '
-  + 'Leave backend and model unset unless the user names one or a price limit; doctor lists the models, efforts and prices each backend accepts.';
+export const SERVER_INSTRUCTIONS =
+  'Asks another local coding agent (Codex, Claude Code or Antigravity). ' +
+  'Read-only: consult for a second opinion on a question, design, bug or plan; review for an independent review of Git changes. ' +
+  'delegate: it makes a code change, then you review it. ' +
+  'Not for what you can read or run yourself. ' +
+  "Answers are another model's opinion: verify facts before acting on them. " +
+  'Leave backend and model unset unless the user names one or a price limit; doctor lists the models, efforts and prices each backend accepts.';
 
 /**
  * Read-only tool guidance shared by `review` and structured `consult` prompts (`task_type` or `context_files`).

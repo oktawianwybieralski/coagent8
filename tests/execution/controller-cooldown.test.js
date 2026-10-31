@@ -25,7 +25,12 @@ async function rateLimitedTurn(message) {
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async () => ({
-      status: 'failed', isError: true, output: '', model: 'gemini-test', truncated: false, continuationAvailable: false,
+      status: 'failed',
+      isError: true,
+      output: '',
+      model: 'gemini-test',
+      truncated: false,
+      continuationAvailable: false,
       error: { code: 'RATE_LIMITED', message, retryable: true },
     }),
   };
@@ -45,7 +50,10 @@ async function rateLimitedTurn(message) {
 test('a parsed provider reset survives the controller sequence (AUD-P1-1)', async () => {
   const { entry, cooldownMs } = await rateLimitedTurn('You hit your usage limit. Try again in 3 days.');
   const threeDaysMs = 3 * 24 * 60 * MINUTE_MS;
-  assert.ok(cooldownMs >= threeDaysMs - MINUTE_MS && cooldownMs <= threeDaysMs + MINUTE_MS, `cooldown is the parsed 3 days, got ${cooldownMs} ms`);
+  assert.ok(
+    cooldownMs >= threeDaysMs - MINUTE_MS && cooldownMs <= threeDaysMs + MINUTE_MS,
+    `cooldown is the parsed 3 days, got ${cooldownMs} ms`,
+  );
   assert.equal(entry.cooldownLevel, 0, 'a parsed reset does not advance the backoff tier');
 });
 
@@ -59,12 +67,23 @@ test('CUR-004: an unwritable quota cache does not block an auto call; the answer
   const original = { codex: adapterRegistry.codex, agy: adapterRegistry.agy };
   const blocker = path.join(tempDir, 'quota-parent-is-a-file');
   fs.writeFileSync(blocker, 'not a directory');
-  t.after(() => { process.env.coagent8_QUOTA_CACHE = quotaCache; Object.assign(adapterRegistry, original); });
+  t.after(() => {
+    process.env.coagent8_QUOTA_CACHE = quotaCache;
+    Object.assign(adapterRegistry, original);
+  });
   for (const id of ['codex', 'agy']) {
     adapterRegistry[id] = {
-      id, name: 'fixture',
+      id,
+      name: 'fixture',
       probe: async () => ({ installed: true, executionSupported: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
-      execute: async () => ({ status: 'completed', isError: false, output: `answer from ${id}`, model: 'fixture-model', truncated: false, continuationAvailable: false }),
+      execute: async () => ({
+        status: 'completed',
+        isError: false,
+        output: `answer from ${id}`,
+        model: 'fixture-model',
+        truncated: false,
+        continuationAvailable: false,
+      }),
     };
   }
   await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'agy'] } });

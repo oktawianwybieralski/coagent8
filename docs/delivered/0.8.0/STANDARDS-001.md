@@ -4,16 +4,14 @@ title: STANDARDS-001 in 0.8.0
 
 # STANDARDS-001 in 0.8.0: shared agent standards
 
-Card at closure: [ROADMAP STANDARDS-001](../../ROADMAP.md#standards-001-shared-agent-standards).
-The adoption PR's squash commit, which fixes the card text at closure, is filled
-in by the next PR ([rules](../README.md#rules)).
+Card at closure: [ROADMAP STANDARDS-001 at `ca9c793`](https://github.com/oktawianwybieralski/coagent8/blob/ca9c793a84f851aa3fcf4d432bed88875f8fbd4e/docs/ROADMAP.md#standards-001-shared-agent-standards).
 
 ## Merges
 
 | PR | Squash | Merged | Title |
 | --- | --- | --- | --- |
 | [#96](https://github.com/oktawianwybieralski/coagent8/pull/96) | `55b0785` | 2026-10-31 | fix(output): use keyboard characters in CoAgent8 output |
-| Adoption PR | pending | pending | chore(rules): adopt the shared agent standards v0.1.0 |
+| [#97](https://github.com/oktawianwybieralski/coagent8/pull/97) | `ca9c793` | 2026-10-31 | chore(rules): adopt the shared agent standards v0.1.0 |
 
 ## Scope at closure
 
@@ -73,5 +71,23 @@ Final independent review of #96, base `origin/develop`, scope
 | codex | `f312726` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_edfebb71cb4e412b4cf2e39c` |
 | agy | `f312726` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_04b995d977abaeb1769a2b5a` |
 
-The adoption PR's author checks and final reviews are in its PR body; the next
-PR moves them here with its squash commit.
+[#97](https://github.com/oktawianwybieralski/coagent8/pull/97), author checks
+on Windows 11, Node 24.21.0, base `55b0785`:
+
+- At `8078cad`: the agent standards check, the keyboard-characters check,
+  `git diff --check`, the link check (0 broken of 231) and
+  `npm run changelog:check -- --with-commit "<title>"`: PASS.
+- At `48f9896` (the later commits are prose only): `npm run typecheck`,
+  `lint:docs`, `docs` (no warning), `build`, `test` (936 tests: 932 pass,
+  0 fail, 3 skipped, 1 todo), `test:consumer` and `package:vscode`: PASS.
+- CI: the six test jobs, Analyze and CodeQL passed.
+- Review rounds: Codex BLOCKED in round 1 (missing delivered record) and
+  round 2 (rule 12 section 9 against core rule 02; #96 evidence without its
+  head), both fixed; agy READY in both.
+
+Final independent review of #97, base `55b0785`, scope `origin/develop...HEAD`:
+
+| Reviewer | Head | Verdict | Handle |
+| --- | --- | --- | --- |
+| codex | `8078cad` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_52e66de45a2cef9f2941d5bd` |
+| agy | `8078cad` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_3f81acd00311bb97a750d4c4` |

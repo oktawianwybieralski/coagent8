@@ -6,14 +6,23 @@
 
 import { redactDiagnostic } from '../security/redaction.js';
 
-export type ProgressCallback = ((message: string | { message?: string }, progress?: number | null, total?: number | null) => void) & { close: () => void };
+export type ProgressCallback = ((message: string | { message?: string }, progress?: number | null, total?: number | null) => void) & {
+  close: () => void;
+};
 
 export function createProgressReporter(
-  server: { notification: (notification: { method: string; params: { progressToken: string | number; progress: number; message: string } }) => Promise<unknown> },
+  server: {
+    notification: (notification: {
+      method: string;
+      params: { progressToken: string | number; progress: number; message: string };
+    }) => Promise<unknown>;
+  },
   progressToken?: string | number | null,
-  minIntervalMs = 500
+  minIntervalMs = 500,
 ): ProgressCallback {
-  let count = 0, closed = false, lastSent = 0;
+  let count = 0,
+    closed = false,
+    lastSent = 0;
   let lastMessage = '';
   let pendingTimeout: NodeJS.Timeout | undefined;
   let pendingMessage: string | null = null;
@@ -24,10 +33,12 @@ export function createProgressReporter(
     if (clean === lastMessage) return;
     lastSent = Date.now();
     lastMessage = clean;
-    void server.notification({
-      method: 'notifications/progress',
-      params: { progressToken, progress: ++count, message: clean }
-    }).catch(() => {});
+    void server
+      .notification({
+        method: 'notifications/progress',
+        params: { progressToken, progress: ++count, message: clean },
+      })
+      .catch(() => {});
   }
 
   const report = ((info: string | { message?: string }) => {
@@ -50,14 +61,17 @@ export function createProgressReporter(
     } else {
       pendingMessage = msg;
       if (!pendingTimeout) {
-        pendingTimeout = setTimeout(() => {
-          pendingTimeout = undefined;
-          if (!closed && pendingMessage) {
-            const next = pendingMessage;
-            pendingMessage = null;
-            dispatch(next);
-          }
-        }, Math.max(10, minIntervalMs - elapsed));
+        pendingTimeout = setTimeout(
+          () => {
+            pendingTimeout = undefined;
+            if (!closed && pendingMessage) {
+              const next = pendingMessage;
+              pendingMessage = null;
+              dispatch(next);
+            }
+          },
+          Math.max(10, minIntervalMs - elapsed),
+        );
       }
     }
   }) as ProgressCallback;
@@ -77,4 +91,3 @@ export function createProgressReporter(
 
   return report;
 }
-

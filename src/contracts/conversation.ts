@@ -60,6 +60,7 @@ export type AdapterEvent = ConversationPayload & { nativeEventId?: string };
 const EVENT_METADATA_BYTES = 256;
 
 export function validEventIdentifier(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && Buffer.byteLength(value) <= EVENT_METADATA_BYTES && !/[\x00-\x1f\x7f]/.test(value);
+  return (
+    typeof value === 'string' && value.length > 0 && Buffer.byteLength(value) <= EVENT_METADATA_BYTES && !/[\x00-\x1f\x7f]/.test(value)
+  );
 }
-

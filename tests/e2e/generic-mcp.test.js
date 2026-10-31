@@ -9,29 +9,28 @@ const { connect: connectStdio } = require('../helpers/stdio.cjs');
 const { readResult } = require('../helpers/result.cjs');
 
 function createClient(dir, extraEnv = {}, args = []) {
-  return connectStdio(
-    process.execPath,
-    ['--require', 'tsx/cjs', path.resolve(__dirname, '../../src/index.ts'), ...args],
-    {
-      env: {
-        ...process.env,
-        coagent8_DIR: dir,
-        ...extraEnv,
-      },
-    }
-  );
+  return connectStdio(process.execPath, ['--require', 'tsx/cjs', path.resolve(__dirname, '../../src/index.ts'), ...args], {
+    env: {
+      ...process.env,
+      coagent8_DIR: dir,
+      ...extraEnv,
+    },
+  });
 }
 
 test('unknown host startup arguments do not hide the MCP surface', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-host-args-'));
   const c = createClient(dir, {}, ['--host-specific-argument']);
-  t.after(async () => { await c.cleanup(); fs.rmSync(dir, { recursive: true, force: true }); });
+  t.after(async () => {
+    await c.cleanup();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   await c.request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'arbitrary-host', version: '1' } });
   const tools = await c.request('tools/list', {});
   assert.ok(tools.result.tools.some(tool => tool.name === 'doctor'));
 });
 
-test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools without backend or host mutation', async (t) => {
+test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools without backend or host mutation', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-generic-mcp-'));
   const configPath = path.join(dir, 'config.json');
   // Create minimal isolated config with no default backend set
@@ -85,7 +84,7 @@ test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools withou
   await c.waitForExit(5000);
 });
 
-test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict without synthetic State Envelope', async (t) => {
+test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict without synthetic State Envelope', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-consult-plain-'));
   const fixturePath = path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs');
   const captureFile = path.join(dir, 'fixture-capture.json');
@@ -130,7 +129,10 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
   const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
   // A plain consult passes the question on as asked (CONTEXT-001): Gemini added trade-off and
   // recommendation sections to plain questions while the prompt asked for "trade-offs and technical advice".
-  assert.equal(captured.prompt, 'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?');
+  assert.equal(
+    captured.prompt,
+    'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?',
+  );
   assert.ok(!captured.prompt.includes('FORMAT REQUIREMENTS:'), 'Prompt must not contain State Envelope FORMAT REQUIREMENTS');
   assert.ok(!captured.prompt.includes('State Envelope protocol'), 'Prompt must not mention State Envelope protocol');
   assert.ok(!captured.prompt.includes('END_REVIEW'), 'Prompt must not contain END_REVIEW header');
@@ -139,14 +141,17 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
   await c.waitForExit(5000);
 });
 
-test('STARTUP-001 & SHUTDOWN: graceful shutdown cleanly awaits pending background maintenance', async (t) => {
+test('STARTUP-001 & SHUTDOWN: graceful shutdown cleanly awaits pending background maintenance', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-shutdown-delay-'));
   const gateFile = path.join(dir, 'gate');
   // The maintenance dependency is injected by a test launcher; production has no gate.
-  const c = connectStdio(process.execPath, [path.resolve(__dirname, '../fixtures/gated-maintenance-server.cjs'), gateFile],
-    { env: { ...process.env, coagent8_DIR: dir } });
+  const c = connectStdio(process.execPath, [path.resolve(__dirname, '../fixtures/gated-maintenance-server.cjs'), gateFile], {
+    env: { ...process.env, coagent8_DIR: dir },
+  });
   t.after(async () => {
-    try { fs.writeFileSync(gateFile + '.release', 'release'); } catch {}
+    try {
+      fs.writeFileSync(gateFile + '.release', 'release');
+    } catch {}
     await c.cleanup();
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -182,7 +187,7 @@ test('STARTUP-001 & SHUTDOWN: graceful shutdown cleanly awaits pending backgroun
   assert.equal(c.proc.exitCode, 0, 'Process must exit cleanly with code 0 after maintenance completes');
 });
 
-test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and states the verdict in the footer', async (t) => {
+test('CONSULT-001 & REVIEW: review evaluates State Envelope gate and states the verdict in the footer', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-review-envelope-'));
   execFileSync('git', ['init', '-q'], { cwd: dir, windowsHide: true });
   execFileSync('git', ['config', 'user.name', 'AuditFixture'], { cwd: dir, windowsHide: true });

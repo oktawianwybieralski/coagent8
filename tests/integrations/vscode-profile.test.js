@@ -4,7 +4,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { parse } = require('jsonc-parser');
-const { hasManualVscodeRegistration, profileMcpFile, removeVscodeRegistrations, syncVscodeRegistration, VSCODE_SERVER_NAME } = require('../../src/integrations/vscode-profile.ts');
+const {
+  hasManualVscodeRegistration,
+  profileMcpFile,
+  removeVscodeRegistrations,
+  syncVscodeRegistration,
+  VSCODE_SERVER_NAME,
+} = require('../../src/integrations/vscode-profile.ts');
 
 /**
  * A VS Code profile with the extension's global storage, a bundle and a separate home;
@@ -22,16 +28,20 @@ function profile(t, { product = 'Code', home: sharedHome } = {}) {
   const home = sharedHome ?? path.join(root, 'home');
   const file = profileMcpFile(storagePath);
   const server = { command: 'node', env: { coagent8_DIR: storagePath, coagent8_EDITOR_SETTINGS: '{}' } };
-  const sync = (overrides = {}) => syncVscodeRegistration({ storagePath, bundle, server, home, installation, version: '0.6.0', ...overrides });
+  const sync = (overrides = {}) =>
+    syncVscodeRegistration({ storagePath, bundle, server, home, installation, version: '0.6.0', ...overrides });
   const entries = () => parse(fs.readFileSync(file, 'utf8')).servers;
   const remove = () => removeVscodeRegistrations(home, installation, 5000);
   return { root, storagePath, bundle, home, installation, file, server, sync, entries, remove };
 }
 
-test('the extension keeps one CoAgent8 entry in the profile mcp.json beside the user\'s servers', async t => {
+test("the extension keeps one CoAgent8 entry in the profile mcp.json beside the user's servers", async t => {
   const p = profile(t);
   fs.mkdirSync(path.dirname(p.file), { recursive: true });
-  fs.writeFileSync(p.file, '{\n  // keep\n  "servers": { "context7": { "type": "http", "url": "https://example.test/mcp" } },\n  "inputs": []\n}\n');
+  fs.writeFileSync(
+    p.file,
+    '{\n  // keep\n  "servers": { "context7": { "type": "http", "url": "https://example.test/mcp" } },\n  "inputs": []\n}\n',
+  );
   assert.equal(await p.sync(), 'registered');
   const text = fs.readFileSync(p.file, 'utf8');
   assert.match(text, /\/\/ keep/, 'comments survive');
@@ -61,7 +71,10 @@ test('a user entry is preserved and suppresses the extension entry', async t => 
   const p = profile(t);
   assert.equal(await p.sync(), 'registered');
   const text = fs.readFileSync(p.file, 'utf8');
-  const withManual = text.replace('"servers": {', '"servers": {\n    "my-coagent8": { "command": "node", "args": ["C:/tools/coagent8/index.cjs"] },');
+  const withManual = text.replace(
+    '"servers": {',
+    '"servers": {\n    "my-coagent8": { "command": "node", "args": ["C:/tools/coagent8/index.cjs"] },',
+  );
   fs.writeFileSync(p.file, withManual);
   assert.equal(await p.sync(), 'manual');
   assert.equal(p.entries()[VSCODE_SERVER_NAME], undefined, 'no second server lists every tool twice');
@@ -73,12 +86,16 @@ test('a user entry is preserved and suppresses the extension entry', async t => 
   servers[VSCODE_SERVER_NAME] = { command: 'node', args: ['C:/elsewhere/index.cjs'] };
   fs.writeFileSync(edited.file, JSON.stringify({ servers }));
   assert.equal(await edited.sync(), 'manual');
-  assert.deepEqual(edited.entries()[VSCODE_SERVER_NAME], { command: 'node', args: ['C:/elsewhere/index.cjs'] }, 'an edited entry is the user\'s');
+  assert.deepEqual(
+    edited.entries()[VSCODE_SERVER_NAME],
+    { command: 'node', args: ['C:/elsewhere/index.cjs'] },
+    "an edited entry is the user's",
+  );
   assert.deepEqual(await edited.remove(), [{ file: edited.file, action: 'preserved' }]);
   assert.ok(edited.entries()[VSCODE_SERVER_NAME]);
 });
 
-test('an entry the user edited keeps the runtime copy but is no longer the extension\'s', async t => {
+test("an entry the user edited keeps the runtime copy but is no longer the extension's", async t => {
   for (const edit of [{ command: 'C:/tools/node.exe' }, { env: { coagent8_DIR: 'C:/mine' } }]) {
     const p = profile(t);
     assert.equal(await p.sync(), 'registered');
@@ -93,7 +110,7 @@ test('an entry the user edited keeps the runtime copy but is no longer the exten
   }
 });
 
-test('an interrupted rewrite leaves the entry, old or new, the extension\'s', async t => {
+test("an interrupted rewrite leaves the entry, old or new, the extension's", async t => {
   const p = profile(t);
   await p.sync();
   const record = path.join(p.home, '.coagent8/vscode-mcp.json');
@@ -107,12 +124,12 @@ test('an interrupted rewrite leaves the entry, old or new, the extension\'s', as
   await assert.rejects(p.sync({ server: { ...p.server, command: 'C:/tools/node.exe' } }), /interrupted/);
   t.mock.restoreAll();
   assert.ok(JSON.parse(fs.readFileSync(record, 'utf8'))[p.file].pending, 'the record names the entry being written');
-  assert.equal(await p.sync(), 'registered', 'the old entry is still the extension\'s');
+  assert.equal(await p.sync(), 'registered', "the old entry is still the extension's");
   assert.equal(await p.sync(), 'current');
   assert.equal(JSON.parse(fs.readFileSync(record, 'utf8'))[p.file].pending, undefined, 'a completed write clears it');
 });
 
-test('consecutive interrupted rewrites keep the entry on disk the extension\'s', async t => {
+test("consecutive interrupted rewrites keep the entry on disk the extension's", async t => {
   const p = profile(t);
   await p.sync();
   const record = path.join(p.home, '.coagent8/vscode-mcp.json');
@@ -133,21 +150,30 @@ test('consecutive interrupted rewrites keep the entry on disk the extension\'s',
   });
   await assert.rejects(p.sync({ server: { ...p.server, command: 'C:/tools/c.exe' } }), /interrupted/);
   t.mock.restoreAll();
-  assert.equal(await p.sync(), 'registered', 'the entry left by the first rewrite is still the extension\'s');
+  assert.equal(await p.sync(), 'registered', "the entry left by the first rewrite is still the extension's");
 });
 
-test('an edit or removal racing a rewrite stays the user\'s when synchronization retries', async t => {
-  for (const [race, expected] of [['edit', 'manual'], ['remove', 'declined']]) {
+test("an edit or removal racing a rewrite stays the user's when synchronization retries", async t => {
+  for (const [race, expected] of [
+    ['edit', 'manual'],
+    ['remove', 'declined'],
+  ]) {
     const p = profile(t);
     await p.sync();
     fs.writeFileSync(p.bundle, 'bundle v2');
     const servers = p.entries();
-    const user = race === 'edit' ? { servers: { [VSCODE_SERVER_NAME]: { ...servers[VSCODE_SERVER_NAME], command: 'C:/tools/node.exe' } } } : { servers: {} };
+    const user =
+      race === 'edit'
+        ? { servers: { [VSCODE_SERVER_NAME]: { ...servers[VSCODE_SERVER_NAME], command: 'C:/tools/node.exe' } } }
+        : { servers: {} };
     // The user saves mcp.json while the extension prepares its write, as another window would.
     const writeFileSync = fs.writeFileSync;
     let raced = false;
     t.mock.method(fs, 'writeFileSync', (target, ...rest) => {
-      if (!raced && String(target).startsWith(p.file + '.')) { raced = true; writeFileSync(p.file, JSON.stringify(user)); }
+      if (!raced && String(target).startsWith(p.file + '.')) {
+        raced = true;
+        writeFileSync(p.file, JSON.stringify(user));
+      }
       return writeFileSync(target, ...rest);
     });
     assert.equal(await p.sync(), expected, race);
@@ -161,7 +187,10 @@ test('a workspace that registers CoAgent8 gets no second profile entry; an exist
   const p = profile(t);
   const workspace = path.join(p.root, 'workspace');
   fs.mkdirSync(path.join(workspace, '.vscode'), { recursive: true });
-  fs.writeFileSync(path.join(workspace, '.vscode/mcp.json'), JSON.stringify({ servers: { coagent8: { command: 'node', args: ['C:/tools/coagent8/index.cjs'] } } }));
+  fs.writeFileSync(
+    path.join(workspace, '.vscode/mcp.json'),
+    JSON.stringify({ servers: { coagent8: { command: 'node', args: ['C:/tools/coagent8/index.cjs'] } } }),
+  );
   const record = path.join(p.home, '.coagent8/vscode-mcp.json');
   assert.equal(await p.sync({ folders: [workspace] }), 'manual', 'the workspace provides CoAgent8');
   assert.equal(fs.existsSync(p.file), false, 'no profile entry duplicates it');
@@ -192,7 +221,7 @@ test('windows running different builds never rewrite the shared entry in turn', 
   assert.equal(await p.sync({ version: '0.6.0', adopt: true }), 'current');
 });
 
-test('an older window keeps a newer build\'s entry while that build\'s rewrite is interrupted', async t => {
+test("an older window keeps a newer build's entry while that build's rewrite is interrupted", async t => {
   const record = home => path.join(home, '.coagent8/vscode-mcp.json');
   const older = p => {
     const bundle = path.join(p.root, 'older/dist/index.cjs');
@@ -203,7 +232,10 @@ test('an older window keeps a newer build\'s entry while that build\'s rewrite i
   const rename = fs.renameSync;
   // Interrupted before mcp.json is written: the entry on disk is the newer build's earlier one.
   // Interrupted after it: the entry on disk is the one the record names as pending.
-  for (const [moment, failing] of [['before', p => p.file], ['after', p => record(p.home)]]) {
+  for (const [moment, failing] of [
+    ['before', p => p.file],
+    ['after', p => record(p.home)],
+  ]) {
     const p = profile(t);
     assert.equal(await p.sync(), 'registered');
     let writes = 0;
@@ -299,7 +331,10 @@ test('an interrupted first registration is recorded before its entry is written,
   });
   // The entry is written; the record that it was written is not.
   let entryWritten = false;
-  failing = to => { if (to === p.file) entryWritten = true; return to === record && entryWritten; };
+  failing = to => {
+    if (to === p.file) entryWritten = true;
+    return to === record && entryWritten;
+  };
   await assert.rejects(p.sync(), /interrupted/);
   assert.ok(p.entries()[VSCODE_SERVER_NAME], 'the entry is on disk');
   failing = () => false;
@@ -356,9 +391,16 @@ test('a synchronization waits while another window holds the lease, so no copy i
   const { withFileLock } = require('../../src/storage/lock.ts');
   const p = profile(t);
   let release, acquired;
-  const held = new Promise(resolve => { release = resolve; });
-  const leased = new Promise(resolve => { acquired = resolve; });
-  const holder = withFileLock(path.join(p.home, '.coagent8', 'vscode-mcp'), async () => { acquired(); await held; });
+  const held = new Promise(resolve => {
+    release = resolve;
+  });
+  const leased = new Promise(resolve => {
+    acquired = resolve;
+  });
+  const holder = withFileLock(path.join(p.home, '.coagent8', 'vscode-mcp'), async () => {
+    acquired();
+    await held;
+  });
   await leased;
   const syncing = p.sync();
   await new Promise(resolve => setTimeout(resolve, 200));

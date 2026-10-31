@@ -7,7 +7,8 @@ const esbuild = require('esbuild');
 // Owner decision of 2026-10-07 ("hardcoding is bad", EXEC-001): models, defaults and aliases
 // come from the CLIs and the user's configuration, never from the bridge's source. Comments
 // may quote recorded CLI output; the code itself may not name a model.
-const MODEL_NAME = /\b(?:gpt-\d[\w.-]*|gemini-\d[\w.-]*|claude-(?:\d|opus|sonnet|haiku|fable)[\w.-]*|sonnet|haiku|opus|astra|luna|fable)\b/gi;
+const MODEL_NAME =
+  /\b(?:gpt-\d[\w.-]*|gemini-\d[\w.-]*|claude-(?:\d|opus|sonnet|haiku|fable)[\w.-]*|sonnet|haiku|opus|astra|luna|fable)\b/gi;
 
 function sourceFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {

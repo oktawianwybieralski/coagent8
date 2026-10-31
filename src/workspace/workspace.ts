@@ -79,7 +79,7 @@ function isUnsuitableImplicitWorkspace(directory: string, env: NodeJS.ProcessEnv
 export function chooseWorkspace(
   rawPath: string | null | undefined,
   roots: readonly string[] | null,
-  serverDirectory = process.cwd()
+  serverDirectory = process.cwd(),
 ): ResolvedWorkspace {
   if (typeof rawPath === 'string' && rawPath.trim()) return { path: resolveWorkspacePath(rawPath), source: 'argument' };
   const directories = (roots || []).map(root => path.resolve(root)).filter(root => fs.existsSync(root) && fs.statSync(root).isDirectory());
@@ -90,8 +90,10 @@ export function chooseWorkspace(
     throw new ToolError('INPUT_LIMIT', `Validation Error: The client reports ${directories.length} workspace roots; pass workspace_path.`);
   }
   if (isUnsuitableImplicitWorkspace(serverDirectory)) {
-    throw new ToolError('INPUT_LIMIT', 'Validation Error: No client workspace root and the server directory is the home or a system directory; pass workspace_path.');
+    throw new ToolError(
+      'INPUT_LIMIT',
+      'Validation Error: No client workspace root and the server directory is the home or a system directory; pass workspace_path.',
+    );
   }
   return { path: path.resolve(serverDirectory), source: 'server_directory' };
 }
-

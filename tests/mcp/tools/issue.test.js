@@ -21,17 +21,27 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 test('canonical issue tool formats bug report, executes doctor by default, and supports opting out', async () => {
   assert.equal(issueToolDefinition.name, 'issue');
   assert.ok(issueToolDefinition.description.includes('Sanitized bug report'));
-  for (const instruction of ['Be concise and actionable', 'reproduction steps', 'expected/actual behavior', 'impact', 'sanitized telemetry', 'tool/backend/model', 'CLI versions', 'errors', 'timing', 'scope/check evidence', 'Mark unknown facts; never invent them', 'Keep issueUrl verbatim; do not decode or re-escape it']) {
+  for (const instruction of [
+    'Be concise and actionable',
+    'reproduction steps',
+    'expected/actual behavior',
+    'impact',
+    'sanitized telemetry',
+    'tool/backend/model',
+    'CLI versions',
+    'errors',
+    'timing',
+    'scope/check evidence',
+    'Mark unknown facts; never invent them',
+    'Keep issueUrl verbatim; do not decode or re-escape it',
+  ]) {
     assert.ok(issueToolDefinition.description.includes(instruction), instruction);
   }
   assert.equal(
     issueToolDefinition.inputSchema.properties.include_doctor.description,
-    'Default true: CLI versions only, no readiness/quota.'
+    'Default true: CLI versions only, no readiness/quota.',
   );
-  assert.match(
-    runToolDefinition.inputSchema.properties.include_doctor.description,
-    /detected CLI versions only \(no readiness or quota\)/
-  );
+  assert.match(runToolDefinition.inputSchema.properties.include_doctor.description, /detected CLI versions only \(no readiness or quota\)/);
 
   // Default with doctor (must probe CLI versions without running native quota inspection)
   const originalCodex = adapterRegistry.codex;
@@ -41,17 +51,26 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   adapterRegistry.codex = {
     ...originalCodex,
     probe: async () => ({ id: 'codex', name: 'OpenAI Codex CLI', installed: true, version: 'codex-cli 0.162.0-alpha.17.2' }),
-    inspectQuota: async () => { quotaCalls++; return undefined; },
+    inspectQuota: async () => {
+      quotaCalls++;
+      return undefined;
+    },
   };
   adapterRegistry.claude = {
     ...originalClaude,
     probe: async () => ({ id: 'claude', name: 'Claude Code CLI', installed: true, version: '2.1.296 (Claude Code)' }),
-    inspectQuota: async () => { quotaCalls++; return undefined; },
+    inspectQuota: async () => {
+      quotaCalls++;
+      return undefined;
+    },
   };
   adapterRegistry.agy = {
     ...originalAgy,
     probe: async () => ({ id: 'agy', name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.3' }),
-    inspectQuota: async () => { quotaCalls++; return undefined; },
+    inspectQuota: async () => {
+      quotaCalls++;
+      return undefined;
+    },
   };
   let resWithDoc;
   try {
@@ -69,12 +88,14 @@ test('canonical issue tool formats bug report, executes doctor by default, and s
   assert.ok(resWithDoc.content[0].text.includes(GITHUB_NEW_ISSUE_BASE));
   assert.ok(resWithDoc.structuredContent.issueUrl.includes('?template=bug_report.yml'));
   assert.ok(resWithDoc.structuredContent.body.includes('Spawn failed with ENOENT'));
-  assert.ok(resWithDoc.structuredContent.body.includes(
-    '- **Detected CLIs**:\n' +
-    '  - **OpenAI Codex CLI**: codex-cli 0.162.0-alpha.17.2\n' +
-    '  - **Google Gemini (Antigravity agy)**: 1.3.3\n' +
-    '  - **Claude Code CLI**: 2.1.296 (Claude Code)'
-  ));
+  assert.ok(
+    resWithDoc.structuredContent.body.includes(
+      '- **Detected CLIs**:\n' +
+        '  - **OpenAI Codex CLI**: codex-cli 0.162.0-alpha.17.2\n' +
+        '  - **Google Gemini (Antigravity agy)**: 1.3.3\n' +
+        '  - **Claude Code CLI**: 2.1.296 (Claude Code)',
+    ),
+  );
   assert.ok(!resWithDoc.structuredContent.body.includes('vcodex-cli'));
 
   // Opting out of doctor
@@ -126,7 +147,7 @@ test('server advertises issue tool and dispatches tools/call issue cleanly', asy
   const callHandler = server._requestHandlers.get('tools/call');
   const callRes = await callHandler(
     { method: 'tools/call', params: { name: 'issue', arguments: { error_message: 'Test crash', include_doctor: false } } },
-    { signal: null }
+    { signal: null },
   );
   assert.equal(callRes.isError, undefined);
   assert.ok(callRes.content[0].text.includes('Submit Bug Report on GitHub'));
@@ -143,7 +164,7 @@ test('run gateway dispatches action: "issue" to handleIssue cleanly', async () =
       context: 'Gateway invocation smoke test',
       include_doctor: false,
     },
-    tempDir
+    tempDir,
   );
   assert.ok(result.content[0].text.includes('Submit Bug Report on GitHub'));
   assert.ok(result.structuredContent.body.includes('Command exited with 127'));

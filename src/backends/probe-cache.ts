@@ -24,7 +24,13 @@ const PROBE_ENVIRONMENT = ['PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE'] as 
  */
 const PROVIDER_ENVIRONMENT_PREFIXES = ['ANTHROPIC_', 'CLAUDE_', 'CODEX_', 'OPENAI_', 'GEMINI_', 'AGY_'] as const;
 
-interface CachedProbe { adapter: CliAdapter; probeFn: CliAdapter['probe']; probe: AdapterProbeResult; key: string; at: number }
+interface CachedProbe {
+  adapter: CliAdapter;
+  probeFn: CliAdapter['probe'];
+  probe: AdapterProbeResult;
+  key: string;
+  at: number;
+}
 const cache = new Map<ProviderId, CachedProbe>();
 
 interface InflightWaiter<T> {
@@ -101,7 +107,7 @@ function coalesce<T>(
   owner: unknown,
   join: boolean,
   start: (context?: BackendReadContext) => Promise<T>,
-  context?: BackendReadContext
+  context?: BackendReadContext,
 ): Promise<T> {
   const preAbort = getPreAbortError(context);
   if (preAbort) {
@@ -137,30 +143,38 @@ function coalesce<T>(
 
     startPromise
       .then(
-        (value) => {
+        value => {
           newEntry.settled = true;
           newEntry.result = { ok: true, value };
           for (const waiter of newEntry.waiters) {
             if (waiter.active) {
               waiter.active = false;
-              try { waiter.cleanup(); } catch { /* ignore */ }
+              try {
+                waiter.cleanup();
+              } catch {
+                /* ignore */
+              }
               waiter.resolve(value);
             }
           }
           newEntry.waiters.clear();
         },
-        (error) => {
+        error => {
           newEntry.settled = true;
           newEntry.result = { ok: false, error };
           for (const waiter of newEntry.waiters) {
             if (waiter.active) {
               waiter.active = false;
-              try { waiter.cleanup(); } catch { /* ignore */ }
+              try {
+                waiter.cleanup();
+              } catch {
+                /* ignore */
+              }
               waiter.reject(error);
             }
           }
           newEntry.waiters.clear();
-        }
+        },
       )
       .finally(() => {
         if (inflight.get(key) === (newEntry as InflightEntry<unknown>)) {
@@ -191,7 +205,11 @@ function coalesce<T>(
     function detachWaiter(error: unknown): void {
       if (!waiter.active) return;
       waiter.active = false;
-      try { waiter.cleanup(); } catch { /* ignore */ }
+      try {
+        waiter.cleanup();
+      } catch {
+        /* ignore */
+      }
       currentEntry.waiters.delete(waiter);
       waiter.reject(error);
 
@@ -209,11 +227,12 @@ function coalesce<T>(
     };
     const onBudgetAbort = () => {
       const budgetReason = context?.budget?.abortReason();
-      const reason = budgetReason instanceof ToolError
-        ? budgetReason
-        : (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired())
-          ? new ToolError('TIMEOUT', 'Execution budget expired.')
-          : toAbortError(budgetReason);
+      const reason =
+        budgetReason instanceof ToolError
+          ? budgetReason
+          : context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()
+            ? new ToolError('TIMEOUT', 'Execution budget expired.')
+            : toAbortError(budgetReason);
       detachWaiter(reason);
     };
 
@@ -277,7 +296,9 @@ function fileStamp(file: string): string {
  * @returns A SHA-256 hash, so a key never holds a credential.
  */
 function probeKey(probe: AdapterProbeResult): string {
-  const providerVariables = Object.keys(process.env).filter(name => PROVIDER_ENVIRONMENT_PREFIXES.some(prefix => name.startsWith(prefix))).sort();
+  const providerVariables = Object.keys(process.env)
+    .filter(name => PROVIDER_ENVIRONMENT_PREFIXES.some(prefix => name.startsWith(prefix)))
+    .sort();
   const parts: string[] = [...PROBE_ENVIRONMENT, ...providerVariables].map(name => `${name}=${process.env[name] ?? ''}`);
   if (probe.command) {
     let files: string[];
@@ -287,7 +308,7 @@ function probeKey(probe: AdapterProbeResult): string {
     } catch (err) {
       files = [`unresolved:${(err as Error).message}`];
     }
-    parts.push(...files.map(file => file.startsWith('unresolved:') ? file : fileStamp(file)));
+    parts.push(...files.map(file => (file.startsWith('unresolved:') ? file : fileStamp(file))));
   }
   if (probe.configPath) parts.push(fileStamp(probe.configPath));
   return createHash('sha256').update(parts.join('\n')).digest('hex');
@@ -314,22 +335,35 @@ export interface ProbeBackendOptions {
 export async function probeBackend(id: ProviderId, options: ProbeBackendOptions = {}): Promise<AdapterProbeResult> {
   const adapter = adapterRegistry[id];
   const cached = cache.get(id);
-  if (!options.fresh && cached && cached.adapter === adapter && cached.probeFn === adapter.probe && Date.now() - cached.at < PROBE_TTL_MS && cached.key === probeKey(cached.probe)) {
+  if (
+    !options.fresh &&
+    cached &&
+    cached.adapter === adapter &&
+    cached.probeFn === adapter.probe &&
+    Date.now() - cached.at < PROBE_TTL_MS &&
+    cached.key === probeKey(cached.probe)
+  ) {
     return cached.probe;
   }
   const probeFn = adapter.probe;
   const inflightKey = `probe:${id}`;
-  return coalesce(inflightKey, probeFn, !options.fresh, async (readContext) => {
-    const probe = await probeFn.call(adapter, readContext);
-    // An uninstalled probe without a command reports a configured executable that is not there
-    // yet (for example a vendor extension still installing its CLI). Its key cannot see the
-    // file appear, and repeating that check launches nothing, so it is never reused.
-    if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
-      if (probe.installed || probe.command) cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
-      else cache.delete(id);
-    }
-    return probe;
-  }, options.context);
+  return coalesce(
+    inflightKey,
+    probeFn,
+    !options.fresh,
+    async readContext => {
+      const probe = await probeFn.call(adapter, readContext);
+      // An uninstalled probe without a command reports a configured executable that is not there
+      // yet (for example a vendor extension still installing its CLI). Its key cannot see the
+      // file appear, and repeating that check launches nothing, so it is never reused.
+      if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
+        if (probe.installed || probe.command) cache.set(id, { adapter, probeFn, probe, key: probeKey(probe), at: Date.now() });
+        else cache.delete(id);
+      }
+      return probe;
+    },
+    options.context,
+  );
 }
 
 /**
@@ -358,7 +392,12 @@ export interface ReadObservedModelOptions {
   context?: BackendReadContext;
 }
 
-interface CachedCatalog { listFn: CliAdapter['listModels']; catalog: ModelCatalog | undefined; key: string; at: number }
+interface CachedCatalog {
+  listFn: CliAdapter['listModels'];
+  catalog: ModelCatalog | undefined;
+  key: string;
+  at: number;
+}
 const catalogs = new Map<ProviderId, CachedCatalog>();
 
 /**
@@ -374,13 +413,20 @@ const catalogs = new Map<ProviderId, CachedCatalog>();
 export async function readModelCatalog(id: ProviderId, options: ReadModelCatalogOptions = {}): Promise<ModelCatalog | undefined> {
   const adapter = adapterRegistry[id];
   if (!adapter.listModels) return undefined;
-  const probe = options.probe ?? await probeBackend(id, { context: options.context });
+  const probe = options.probe ?? (await probeBackend(id, { context: options.context }));
   if (!probe.installed) return undefined;
   const key = probeKey(probe);
   const cached = catalogs.get(id);
 
   if (!options.fresh) {
-    if (options.catalog && cached && cached.catalog === options.catalog && cached.key === key && cached.listFn === adapter.listModels && Date.now() - cached.at < PROBE_TTL_MS) {
+    if (
+      options.catalog &&
+      cached &&
+      cached.catalog === options.catalog &&
+      cached.key === key &&
+      cached.listFn === adapter.listModels &&
+      Date.now() - cached.at < PROBE_TTL_MS
+    ) {
       return cached.catalog;
     }
     if (cached && cached.listFn === adapter.listModels && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) {
@@ -390,23 +436,38 @@ export async function readModelCatalog(id: ProviderId, options: ReadModelCatalog
 
   const stored = options.fresh ? undefined : readObservedModels(id, key)?.catalog;
   if (stored && Date.now() - stored.observedAt < STORED_TTL_MS) {
-    const catalog: ModelCatalog = { models: stored.models, source: stored.source, ...(stored.acceptsUnlisted ? { acceptsUnlisted: true } : {}) };
+    const catalog: ModelCatalog = {
+      models: stored.models,
+      source: stored.source,
+      ...(stored.acceptsUnlisted ? { acceptsUnlisted: true } : {}),
+    };
     catalogs.set(id, { listFn: adapter.listModels, catalog, key, at: Date.now() });
     return catalog;
   }
   const listFn = adapter.listModels;
   const inflightKey = `catalog:${id}:${key}`;
-  return coalesce(inflightKey, listFn, !options.fresh, async (readContext) => {
-    const catalog = await listFn.call(adapter, probe, readContext);
-    if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
-      catalogs.set(id, { listFn, catalog, key, at: Date.now() });
-      if (catalog) await recordObservedModels(id, key, { catalog });
-    }
-    return catalog;
-  }, options.context);
+  return coalesce(
+    inflightKey,
+    listFn,
+    !options.fresh,
+    async readContext => {
+      const catalog = await listFn.call(adapter, probe, readContext);
+      if (!readContext?.abortSignal?.aborted && isCurrentInflight(inflightKey, readContext)) {
+        catalogs.set(id, { listFn, catalog, key, at: Date.now() });
+        if (catalog) await recordObservedModels(id, key, { catalog });
+      }
+      return catalog;
+    },
+    options.context,
+  );
 }
 
-interface CachedObservation { observeFn: CliAdapter['observeModel']; model: string | undefined; key: string; at: number }
+interface CachedObservation {
+  observeFn: CliAdapter['observeModel'];
+  model: string | undefined;
+  key: string;
+  at: number;
+}
 /**
  * Most observations kept in memory (AUDIT-001-A14). A requested name is any string a caller
  * passes (Claude Code accepts unlisted names), so a long-running server would otherwise keep
@@ -440,17 +501,23 @@ export function observationCacheSize(): number {
 export async function readObservedModel(
   id: ProviderId,
   requested?: string,
-  options: ReadObservedModelOptions = {}
+  options: ReadObservedModelOptions = {},
 ): Promise<string | undefined> {
   const adapter = adapterRegistry[id];
   if (!adapter.observeModel) return undefined;
-  const probe = options.probe ?? await probeBackend(id, { context: options.context });
+  const probe = options.probe ?? (await probeBackend(id, { context: options.context }));
   if (!probe.installed) return undefined;
   const key = probeKey(probe);
   const name = requested ?? '';
   const memoryKey = `${id}:${name}`;
   const cached = observations.get(memoryKey);
-  if (!options.fresh && cached && cached.observeFn === adapter.observeModel && cached.key === key && Date.now() - cached.at < PROBE_TTL_MS) {
+  if (
+    !options.fresh &&
+    cached &&
+    cached.observeFn === adapter.observeModel &&
+    cached.key === key &&
+    Date.now() - cached.at < PROBE_TTL_MS
+  ) {
     rememberObservation(memoryKey, cached);
     return cached.model;
   }
@@ -463,14 +530,20 @@ export async function readObservedModel(
   }
   const observeFn = adapter.observeModel;
   const observeInflightKey = `observe:${memoryKey}:${key}`;
-  return coalesce(observeInflightKey, observeFn, !options.fresh, async (readContext) => {
-    const model = await observeFn.call(adapter, requested, probe, readContext);
-    if (!readContext?.abortSignal?.aborted && isCurrentInflight(observeInflightKey, readContext)) {
-      rememberObservation(memoryKey, { observeFn, model, key, at: Date.now() });
-      if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
-    }
-    return model;
-  }, options.context);
+  return coalesce(
+    observeInflightKey,
+    observeFn,
+    !options.fresh,
+    async readContext => {
+      const model = await observeFn.call(adapter, requested, probe, readContext);
+      if (!readContext?.abortSignal?.aborted && isCurrentInflight(observeInflightKey, readContext)) {
+        rememberObservation(memoryKey, { observeFn, model, key, at: Date.now() });
+        if (model) await recordObservedModels(id, key, { resolved: { [name]: model } });
+      }
+      return model;
+    },
+    options.context,
+  );
 }
 
 /**

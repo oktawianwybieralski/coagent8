@@ -23,7 +23,11 @@ const SKILL_FILE = 'SKILL.md';
 const SKILL_LIMIT = 64 * 1024;
 
 /** One catalog package as shipped in the npm package and the VSIX. */
-export interface SkillPackage { name: string; content: string; digest: string }
+export interface SkillPackage {
+  name: string;
+  content: string;
+  digest: string;
+}
 /** Outcome for one package; `remove` is a cleanup preview, the other actions are final. */
 export interface SkillStatus {
   name: string;
@@ -54,12 +58,16 @@ export function disabledSkillRoot(client: SetupClient, home: string): string {
 /** Refuses redirected ancestors before reading or writing a managed skill root. */
 export function assertSkillRoot(root: string, home: string): void {
   const relative = path.relative(home, root);
-  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Skill root must stay inside the local profile.');
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative))
+    throw new Error('Skill root must stay inside the local profile.');
   let current = path.resolve(home);
   for (const part of ['', ...relative.split(path.sep)]) {
     if (part) current = path.join(current, part);
-    try { if (!fs.lstatSync(current).isDirectory()) throw new Error('Linked skill root or invalid ancestor preserved.'); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    try {
+      if (!fs.lstatSync(current).isDirectory()) throw new Error('Linked skill root or invalid ancestor preserved.');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
   }
 }
 
@@ -71,7 +79,9 @@ export function pruneDisabledSkillRoot(client: SetupClient, home: string): void 
     try {
       if (fs.readdirSync(directory).length) return;
       fs.rmdirSync(directory);
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
   }
 }
 
@@ -83,7 +93,8 @@ export function pruneDisabledSkillRoot(client: SetupClient, home: string): void 
  */
 export function readSkillCatalog(source: string): SkillPackage[] {
   const packages = fs.readdirSync(source, { withFileTypes: true }).map(entry => {
-    if (!entry.isDirectory() || !SKILL_NAME.test(entry.name)) throw new Error(`Skill catalog entry ${entry.name} is not a CoAgent8 skill directory.`);
+    if (!entry.isDirectory() || !SKILL_NAME.test(entry.name))
+      throw new Error(`Skill catalog entry ${entry.name} is not a CoAgent8 skill directory.`);
     const directory = path.join(source, entry.name);
     const files = fs.readdirSync(directory);
     if (files.length !== 1 || files[0] !== SKILL_FILE) throw new Error(`Skill ${entry.name} must contain only ${SKILL_FILE}.`);
@@ -104,16 +115,21 @@ type Observed = SkillObserved;
 /** Reads an installed package without following links: only a real directory holding one regular SKILL.md qualifies. */
 export function observeSkill(directory: string): Observed {
   let stat: fs.Stats;
-  try { stat = fs.lstatSync(directory); }
-  catch (error) {
+  try {
+    stat = fs.lstatSync(directory);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { state: 'absent' };
     throw error;
   }
   if (!stat.isDirectory()) return { state: 'foreign' };
-  const files = fs.readdirSync(directory), file = path.join(directory, SKILL_FILE);
+  const files = fs.readdirSync(directory),
+    file = path.join(directory, SKILL_FILE);
   if (files.length !== 1 || files[0] !== SKILL_FILE || !fs.lstatSync(file).isFile()) return { state: 'foreign' };
-  try { return { state: 'file', digest: hash(readBoundedFileSync(file, SKILL_LIMIT)) }; }
-  catch { return { state: 'foreign' }; } // A file beyond the limit is not one setup wrote.
+  try {
+    return { state: 'file', digest: hash(readBoundedFileSync(file, SKILL_LIMIT)) };
+  } catch {
+    return { state: 'foreign' };
+  } // A file beyond the limit is not one setup wrote.
 }
 const observe = observeSkill;
 const same = (a: Observed, b: Observed) => a.state === b.state && (a.state !== 'file' || a.digest === (b as { digest: string }).digest);
@@ -135,9 +151,11 @@ function writePackage(directory: string, seen: Observed, content: string): void 
 
 /** Removes an unchanged recorded package; anything else stays where it is. */
 function removePackage(root: string, name: string, digest: string): SkillStatus {
-  const directory = path.join(root, name), seen = observe(directory);
+  const directory = path.join(root, name),
+    seen = observe(directory);
   if (seen.state === 'absent') return { name, action: 'absent', message: 'Not installed.' };
-  if (seen.state !== 'file' || seen.digest !== digest) return { name, action: 'preserved', message: 'Changed since setup installed it; preserved.' };
+  if (seen.state !== 'file' || seen.digest !== digest)
+    return { name, action: 'preserved', message: 'Changed since setup installed it; preserved.' };
   fs.rmSync(path.join(directory, SKILL_FILE));
   fs.rmdirSync(directory);
   return { name, action: 'removed', message: 'Removed.' };
@@ -151,7 +169,13 @@ function failure(name: string, error: unknown): SkillStatus {
  * @param owned - Digests setup recorded for this client.
  * @returns Outcomes, the new record and whether a file was written. A failed package keeps its previous record.
  */
-export function installSkills(client: SetupClient, home: string, catalog: SkillPackage[], owned: SkillRecord, root = skillRoot(client, home)): { statuses: SkillStatus[]; owned: SkillRecord; written: boolean } {
+export function installSkills(
+  client: SetupClient,
+  home: string,
+  catalog: SkillPackage[],
+  owned: SkillRecord,
+  root = skillRoot(client, home),
+): { statuses: SkillStatus[]; owned: SkillRecord; written: boolean } {
   assertSkillRoot(root, home);
   const next: SkillRecord = {};
   let written = false;
@@ -167,7 +191,9 @@ export function installSkills(client: SetupClient, home: string, catalog: SkillP
         writePackage(path.join(root, name), seen, item.content);
         next[name] = item.digest;
         written = true;
-        return seen.state === 'absent' ? { name, action: 'installed', message: 'Installed.' } : { name, action: 'updated', message: 'Updated to this version.' };
+        return seen.state === 'absent'
+          ? { name, action: 'installed', message: 'Installed.' }
+          : { name, action: 'updated', message: 'Updated to this version.' };
       }
       return { name, action: 'preserved', message: 'Another skill with this name exists; preserved.' };
     } catch (error) {
@@ -197,8 +223,11 @@ export function describeSkills(client: SetupClient, statuses: SkillStatus[]): st
   if (!statuses.length) return 'No skills.';
   const counts = new Map<string, number>();
   for (const status of statuses) counts.set(status.action, (counts.get(status.action) ?? 0) + 1);
-  const notable = statuses.filter(status => status.action === 'preserved' || status.action === 'blocked').map(status => `${status.name} ${status.action}`);
-  const invoke = client === 'codex' ? 'mention one as $coagent8-review or open /skills' : 'type /coagent8-review or another /coagent8- command';
+  const notable = statuses
+    .filter(status => status.action === 'preserved' || status.action === 'blocked')
+    .map(status => `${status.name} ${status.action}`);
+  const invoke =
+    client === 'codex' ? 'mention one as $coagent8-review or open /skills' : 'type /coagent8-review or another /coagent8- command';
   return `Skills: ${[...counts].map(([action, count]) => `${count} ${action}`).join(', ')}${notable.length ? ` (${notable.join(', ')})` : ''}; ${invoke} in a new chat.`;
 }
 
@@ -209,7 +238,8 @@ export function previewSkillRemoval(client: SetupClient, home: string, owned: Sk
     try {
       const seen = observe(path.join(root, name));
       if (seen.state === 'absent') return { name, action: 'absent', message: 'Not installed.' };
-      if (seen.state !== 'file' || seen.digest !== digest) return { name, action: 'preserved', message: 'Changed since setup installed it; preserved.' };
+      if (seen.state !== 'file' || seen.digest !== digest)
+        return { name, action: 'preserved', message: 'Changed since setup installed it; preserved.' };
       return { name, action: 'remove', message: 'Unchanged skill setup installed.' };
     } catch (error) {
       return failure(name, error);
@@ -221,7 +251,13 @@ export function previewSkillRemoval(client: SetupClient, home: string, owned: Sk
  * Applies a removal preview.
  * @returns Final outcomes and the remaining record: only a package whose removal failed stays recorded.
  */
-export function removeSkills(client: SetupClient, home: string, owned: SkillRecord, preview: SkillStatus[], root = skillRoot(client, home)): { statuses: SkillStatus[]; owned: SkillRecord } {
+export function removeSkills(
+  client: SetupClient,
+  home: string,
+  owned: SkillRecord,
+  preview: SkillStatus[],
+  root = skillRoot(client, home),
+): { statuses: SkillStatus[]; owned: SkillRecord } {
   assertSkillRoot(root, home);
   const remaining: SkillRecord = {};
   const statuses = preview.map((planned): SkillStatus => {
@@ -230,8 +266,9 @@ export function removeSkills(client: SetupClient, home: string, owned: SkillReco
       if (planned.action === 'blocked' && digest !== undefined) remaining[planned.name] = digest;
       return planned;
     }
-    try { return removePackage(root, planned.name, digest); }
-    catch (error) {
+    try {
+      return removePackage(root, planned.name, digest);
+    } catch (error) {
       remaining[planned.name] = digest;
       return failure(planned.name, error);
     }

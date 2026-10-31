@@ -28,12 +28,21 @@ function extractPackage(entries, target) {
 /** Checks that the plugin manifests point at files the package contains. */
 function verifyPlugin(dir) {
   const read = name => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
-  const manifest = read('package.json'), plugin = read('plugin.json'), mcp = read('mcp.json');
-  if (plugin.version !== manifest.version) throw new Error(`plugin.json version ${plugin.version} differs from the package ${manifest.version}.`);
+  const manifest = read('package.json'),
+    plugin = read('plugin.json'),
+    mcp = read('mcp.json');
+  if (plugin.version !== manifest.version)
+    throw new Error(`plugin.json version ${plugin.version} differs from the package ${manifest.version}.`);
   const server = mcp.mcpServers?.coagent8;
   const entry = server?.args?.[0];
-  if (server?.command !== 'node' || entry !== '${PLUGIN_ROOT}/dist/index.cjs') throw new Error('mcp.json must start ${PLUGIN_ROOT}/dist/index.cjs with node.');
-  for (const file of [entry.replace('${PLUGIN_ROOT}/', ''), ...Object.values(plugin.extensions['com.openai'].interface).filter(v => typeof v === 'string' && v.startsWith('./')), manifest.main, ...Object.values(manifest.bin)]) {
+  if (server?.command !== 'node' || entry !== '${PLUGIN_ROOT}/dist/index.cjs')
+    throw new Error('mcp.json must start ${PLUGIN_ROOT}/dist/index.cjs with node.');
+  for (const file of [
+    entry.replace('${PLUGIN_ROOT}/', ''),
+    ...Object.values(plugin.extensions['com.openai'].interface).filter(v => typeof v === 'string' && v.startsWith('./')),
+    manifest.main,
+    ...Object.values(manifest.bin),
+  ]) {
     if (!fs.existsSync(path.join(dir, file))) throw new Error(`The plugin references ${file}, which the package does not contain.`);
   }
 }
@@ -41,7 +50,12 @@ function verifyPlugin(dir) {
 function main() {
   fs.rmSync(output, { recursive: true, force: true });
   fs.mkdirSync(output, { recursive: true });
-  const pack = spawnSync(process.execPath, [npm, 'pack', '--json', '--pack-destination', output], { cwd: root, encoding: 'utf8', windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+  const pack = spawnSync(process.execPath, [npm, 'pack', '--json', '--pack-destination', output], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 4 * 1024 * 1024,
+  });
   if (pack.status !== 0) throw new Error(`npm pack failed: ${pack.stderr}`);
   const { filename } = JSON.parse(pack.stdout)[0];
   const tarball = path.join(output, filename);
@@ -65,7 +79,12 @@ function main() {
 }
 
 if (require.main === module) {
-  Promise.resolve().then(main).catch(error => { console.error(error.message); process.exitCode = 1; });
+  Promise.resolve()
+    .then(main)
+    .catch(error => {
+      console.error(error.message);
+      process.exitCode = 1;
+    });
 }
 
 module.exports = { extractPackage, verifyPlugin };

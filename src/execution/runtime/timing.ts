@@ -12,11 +12,7 @@
  * @packageDocumentation
  */
 
-import type {
-  MonotonicClock,
-  PhaseSpan,
-  ExecutionTrace,
-} from '../../contracts/execution.js';
+import type { MonotonicClock, PhaseSpan, ExecutionTrace } from '../../contracts/execution.js';
 
 export type { MonotonicClock, PhaseSpan, ExecutionTrace };
 
@@ -71,14 +67,12 @@ function sanitizeLimit(val: unknown, fallback: number): number {
  * @param intervals - List of intervals with start and end times in milliseconds.
  * @returns Total non-overlapping active wall duration in rounded milliseconds.
  */
-export function computeMergedIntervalsDuration(
-  intervals: Array<{ start: number; end: number }>
-): number {
+export function computeMergedIntervalsDuration(intervals: Array<{ start: number; end: number }>): number {
   if (intervals.length === 0) return 0;
 
   // Filter out invalid intervals and sort by start ascending, then end ascending
   const valid = intervals
-    .filter((inv) => Number.isFinite(inv.start) && Number.isFinite(inv.end) && inv.end >= inv.start)
+    .filter(inv => Number.isFinite(inv.start) && Number.isFinite(inv.end) && inv.end >= inv.start)
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
   if (valid.length === 0) return 0;
@@ -271,7 +265,7 @@ export class PhaseTracker {
       phases[phaseName] = computeMergedIntervalsDuration(intervals);
     }
 
-    const readOnlySpans: PhaseSpan[] = this.spans.map((s) => ({
+    const readOnlySpans: PhaseSpan[] = this.spans.map(s => ({
       name: s.name,
       startMs: Math.round(s.startMs),
       endMs: s.endMs !== undefined ? Math.round(s.endMs) : undefined,
@@ -292,4 +286,3 @@ export class PhaseTracker {
 export function createPhaseTracker(options?: PhaseTrackerOptions): PhaseTracker {
   return new PhaseTracker(options);
 }
-

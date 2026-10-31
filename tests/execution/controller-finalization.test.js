@@ -27,11 +27,7 @@ const quotaCache = path.join(tempDir, 'quota-cache.json');
 process.env.coagent8_QUOTA_CACHE = quotaCache;
 
 const { adapterRegistry } = require('../../src/backends/registry.ts');
-const {
-  executeTask,
-  composeExecutionCancellation,
-  waitForActiveExecutionTasks,
-} = require('../../src/execution/controller.ts');
+const { executeTask, composeExecutionCancellation, waitForActiveExecutionTasks } = require('../../src/execution/controller.ts');
 const {
   createSession,
   getSession,
@@ -40,7 +36,13 @@ const {
   releaseSessionTurn,
   cancelSession,
 } = require('../../src/sessions/session.ts');
-const { getHistoryDir, readCapacityMeta, calculateDirectoryBytes, createHistoryWriter, reserveCapacity } = require('../../src/sessions/history/index.ts');
+const {
+  getHistoryDir,
+  readCapacityMeta,
+  calculateDirectoryBytes,
+  createHistoryWriter,
+  reserveCapacity,
+} = require('../../src/sessions/history/index.ts');
 const { ToolError } = require('../../src/contracts/error.ts');
 const { saveConfig } = require('../../src/config.ts');
 const { readResult } = require('../helpers/result.cjs');
@@ -103,16 +105,13 @@ test('T06a: injected writer creation failure releases turn lease and settles wai
   assert.equal(getSession(handle).activePid, null);
 
   // Injected writer creation failure
-  await assert.rejects(
-    async () => {
-      await executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir, null, null, {
-        createHistoryWriter: () => {
-          throw new Error('Injected writer creation failure');
-        },
-      });
-    },
-    /Injected writer creation failure/
-  );
+  await assert.rejects(async () => {
+    await executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir, null, null, {
+      createHistoryWriter: () => {
+        throw new Error('Injected writer creation failure');
+      },
+    });
+  }, /Injected writer creation failure/);
 
   // Assert that turn lease was released immediately (activePid is null, turn can be acquired)
   const sessionAfter = getSession(handle);
@@ -131,16 +130,13 @@ test('T06a: injected registration failure releases turn lease and settles waiter
   const session = await createTestSession();
   const handle = session.sessionHandle;
 
-  await assert.rejects(
-    async () => {
-      await executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir, null, null, {
-        simulateRegistrationFault: () => {
-          throw new Error('Injected registration fault');
-        },
-      });
-    },
-    /Injected registration fault/
-  );
+  await assert.rejects(async () => {
+    await executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir, null, null, {
+      simulateRegistrationFault: () => {
+        throw new Error('Injected registration fault');
+      },
+    });
+  }, /Injected registration fault/);
 
   const sessionAfter = getSession(handle);
   assert.equal(sessionAfter.activePid, null, 'Session activePid must be null after registration fault');
@@ -350,11 +346,13 @@ test('T06b: failed review snapshot recheck cannot yield READY', async () => {
 test('T06c: cancelSessionExecution during execution settles and releases turn lease', async () => {
   let executionAborted = false;
   let adapterEntered;
-  const enteredPromise = new Promise(resolve => { adapterEntered = resolve; });
+  const enteredPromise = new Promise(resolve => {
+    adapterEntered = resolve;
+  });
 
   setupMockAdapter(async (_prompt, options) => {
     adapterEntered();
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       options.abortSignal?.addEventListener('abort', () => {
         executionAborted = true;
         resolve({
@@ -391,7 +389,9 @@ test('T06c: cancelSessionExecution during execution settles and releases turn le
 
 test('T06c: waitForActiveExecutionTasks awaits background task completion', async () => {
   let finishTask;
-  const blocker = new Promise(resolve => { finishTask = resolve; });
+  const blocker = new Promise(resolve => {
+    finishTask = resolve;
+  });
 
   setupMockAdapter(async () => {
     await blocker;
@@ -410,12 +410,15 @@ test('T06c: waitForActiveExecutionTasks awaits background task completion', asyn
   const handle = session.sessionHandle;
 
   let taskCompleted = false;
-  executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir)
-    .finally(() => { taskCompleted = true; });
+  executeTask('prompt', 'public', { backend: 'agy', session_handle: handle }, tempDir).finally(() => {
+    taskCompleted = true;
+  });
 
   // Start waiting in the background
   let waitFinished = false;
-  const waitPromise = waitForActiveExecutionTasks().then(() => { waitFinished = true; });
+  const waitPromise = waitForActiveExecutionTasks().then(() => {
+    waitFinished = true;
+  });
 
   await new Promise(r => setTimeout(r, 20));
   assert.equal(waitFinished, false, 'waitForActiveExecutionTasks must not resolve while task is active');
@@ -429,9 +432,13 @@ test('T06c: waitForActiveExecutionTasks awaits background task completion', asyn
 
 test('T06c: cancelSessionExecution during finalization settles after cleanup and releases turn lease', async () => {
   let finalizationEntered;
-  const enterPromise = new Promise(resolve => { finalizationEntered = resolve; });
+  const enterPromise = new Promise(resolve => {
+    finalizationEntered = resolve;
+  });
   let continueFinalization;
-  const continuePromise = new Promise(resolve => { continueFinalization = resolve; });
+  const continuePromise = new Promise(resolve => {
+    continueFinalization = resolve;
+  });
 
   setupMockAdapter(async () => {
     return {
@@ -480,9 +487,13 @@ test('T06c: cancelSessionExecution during finalization settles after cleanup and
 
 test('T06c: finishing turn does not delete replacement turn registration in activeSessionAborts', async () => {
   let turn1Finalizing;
-  const turn1FinalizingPromise = new Promise(resolve => { turn1Finalizing = resolve; });
+  const turn1FinalizingPromise = new Promise(resolve => {
+    turn1Finalizing = resolve;
+  });
   let allowTurn1Complete;
-  const allowTurn1Promise = new Promise(resolve => { allowTurn1Complete = resolve; });
+  const allowTurn1Promise = new Promise(resolve => {
+    allowTurn1Complete = resolve;
+  });
 
   setupMockAdapter(async () => {
     return {
@@ -512,7 +523,9 @@ test('T06c: finishing turn does not delete replacement turn registration in acti
 
   // Turn 1 has released its lease, so Turn 2 can now execute and register its own abortEntry
   let turn2Entered;
-  const turn2EnteredPromise = new Promise(resolve => { turn2Entered = resolve; });
+  const turn2EnteredPromise = new Promise(resolve => {
+    turn2Entered = resolve;
+  });
   let turn2Cancelled = false;
 
   setupMockAdapter(async (_prompt, options) => {
@@ -577,7 +590,7 @@ test('EXEC-001-T09c: cancellation during history writer initialization releases 
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
 
   // Assert that turn lease was released immediately (activePid is null, turn can be acquired)
@@ -617,7 +630,7 @@ test('EXEC-001-T09c: real history writer with cancelled context rejects reserveC
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
 
   let metaAfter = await readCapacityMeta(metaFile);
@@ -639,7 +652,7 @@ test('EXEC-001-T09c: real history writer with cancelled context rejects reserveC
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
 
   metaAfter = await readCapacityMeta(metaFile);
@@ -647,4 +660,3 @@ test('EXEC-001-T09c: real history writer with cancelled context rejects reserveC
   assert.equal(metaAfter, initialMeta, 'Capacity meta must remain unchanged after aborted writer flush');
   assert.equal(bytesAfter, initialBytes, 'Directory bytes must remain unchanged');
 });
-

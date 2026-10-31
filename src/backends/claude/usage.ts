@@ -8,15 +8,23 @@ import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../qu
  * pattern accepts any one separator character there, because core rule 00 keeps that character out
  * of authored files (the recordings in `tests/fixtures/claude-cli/recordings/` keep it verbatim).
  */
-const LIMIT_LINE = /^Current (session|week)(?: \(([^)\n]+)\))?: (\d{1,3})% used(?: \S resets ([^(\n]+?) \(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?[ \t]*$/gm;
+const LIMIT_LINE =
+  /^Current (session|week)(?: \(([^)\n]+)\))?: (\d{1,3})% used(?: \S resets ([^(\n]+?) \(([A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)*)\))?[ \t]*$/gm;
 const RESET_TIME = /^(?:([A-Z][a-z]{2}) (\d{1,2}), )?(\d{1,2})(?::(\d{2}))?(am|pm)$/i;
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 /** Week scopes that limit every model; model-specific weekly limits do not block the backend. */
 const GENERAL_WEEK_SCOPES = new Set(['', 'all models']);
 
 function zonedParts(epochMs: number, timeZone: string): number[] {
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
-    .formatToParts(new Date(epochMs));
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  }).formatToParts(new Date(epochMs));
   return ['year', 'month', 'day', 'hour', 'minute'].map(type => Number(parts.find(part => part.type === type)?.value));
 }
 /** Converts a wall-clock time in an IANA time zone to epoch milliseconds. */
@@ -75,8 +83,13 @@ export function parseClaudeUsage(text: string, now = Date.now()): NativeQuota | 
     if (kind === 'week' && !GENERAL_WEEK_SCOPES.has(scope.toLowerCase())) continue;
     const usedPercent = Number(used);
     if (usedPercent > 100) continue;
-    windows.push({ id: kind === 'session' ? 'session' : 'week', name: line.split(':')[0], window: kind === 'session' ? 'session' : 'weekly',
-      remainingFraction: (100 - usedPercent) / 100, resetTime: resetLabel && timeZone ? resolveUsageReset(resetLabel, timeZone, now) ?? '' : '' });
+    windows.push({
+      id: kind === 'session' ? 'session' : 'week',
+      name: line.split(':')[0],
+      window: kind === 'session' ? 'session' : 'weekly',
+      remainingFraction: (100 - usedPercent) / 100,
+      resetTime: resetLabel && timeZone ? (resolveUsageReset(resetLabel, timeZone, now) ?? '') : '',
+    });
   }
   return summarizeQuotaWindows(windows);
 }

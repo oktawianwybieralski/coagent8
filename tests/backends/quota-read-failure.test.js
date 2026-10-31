@@ -4,10 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const {
-  recordQuotaCooldown,
-  inspectQuotas,
-} = require('../../src/backends/availability.ts');
+const { recordQuotaCooldown, inspectQuotas } = require('../../src/backends/availability.ts');
 
 // AUDIT-001-A01: an I/O failure reading an existing quota cache inside the locked
 // update must not replace other providers' persisted cooldowns.
@@ -21,14 +18,25 @@ function seedCache(t) {
   process.env.coagent8_DIR = dir;
   process.env.coagent8_QUOTA_CACHE = file;
   t.after(() => {
-    if (previousDir === undefined) delete process.env.coagent8_DIR; else process.env.coagent8_DIR = previousDir;
-    if (previousFile === undefined) delete process.env.coagent8_QUOTA_CACHE; else process.env.coagent8_QUOTA_CACHE = previousFile;
+    if (previousDir === undefined) delete process.env.coagent8_DIR;
+    else process.env.coagent8_DIR = previousDir;
+    if (previousFile === undefined) delete process.env.coagent8_QUOTA_CACHE;
+    else process.env.coagent8_QUOTA_CACHE = previousFile;
   });
   const until = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   const cooldown = reason => ({
-    installed: true, status: 'rate_limited', window: 'unknown', usedPercent: null, headroomPercent: 0,
-    measured: false, measuredAt: null, resetsAt: until, cooldownUntil: until, cooldownReason: reason,
-    cooldownLevel: 0, lastCooldownAt: new Date().toISOString(),
+    installed: true,
+    status: 'rate_limited',
+    window: 'unknown',
+    usedPercent: null,
+    headroomPercent: 0,
+    measured: false,
+    measuredAt: null,
+    resetsAt: until,
+    cooldownUntil: until,
+    cooldownReason: reason,
+    cooldownLevel: 0,
+    lastCooldownAt: new Date().toISOString(),
   });
   const seeded = JSON.stringify({ timestamp: Date.now(), data: { codex: cooldown('codex seeded'), claude: cooldown('claude seeded') } });
   fs.writeFileSync(file, seeded);
@@ -61,8 +69,11 @@ test('inspectQuotas for one provider keeps other providers when reading the cach
   const { file, seeded } = seedCache(t);
   failCacheReads(t, file, 'EBUSY');
   const errors = [];
-  const report = await inspectQuotas(true, { agy: { installed: true, executionSupported: true } },
-    { only: ['agy'], nativeQuota: false, onCacheError: error => errors.push(error) });
+  const report = await inspectQuotas(
+    true,
+    { agy: { installed: true, executionSupported: true } },
+    { only: ['agy'], nativeQuota: false, onCacheError: error => errors.push(error) },
+  );
   t.mock.restoreAll();
   assert.equal(fs.readFileSync(file, 'utf8'), seeded, 'the existing cache bytes are unchanged');
   assert.equal(errors.length, 1, 'the skipped write is reported as a cache error');
@@ -75,7 +86,8 @@ test('inspectQuotas without onCacheError propagates a failed read of an existing
   failCacheReads(t, file, 'EPERM');
   await assert.rejects(
     inspectQuotas(true, { agy: { installed: true, executionSupported: true } }, { only: ['agy'], nativeQuota: false }),
-    error => error.code === 'EPERM');
+    error => error.code === 'EPERM',
+  );
   t.mock.restoreAll();
   assert.equal(fs.readFileSync(file, 'utf8'), seeded);
 });

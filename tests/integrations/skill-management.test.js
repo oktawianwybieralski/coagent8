@@ -16,7 +16,18 @@ const names = readSkillCatalog(catalog).map(item => item.name);
 function profile(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-management-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const env = { ...process.env, HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, '.codex'), coagent8_DIR: path.join(home, '.coagent8'), coagent8_CONFIG: path.join(home, '.coagent8/config.json'), CODEX_CONFIG_PATH: undefined, CLAUDE_CONFIG_DIR: undefined, GEMINI_CLI_HOME: undefined, SETUP_FIXTURE_HOME: home };
+  const env = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    CODEX_HOME: path.join(home, '.codex'),
+    coagent8_DIR: path.join(home, '.coagent8'),
+    coagent8_CONFIG: path.join(home, '.coagent8/config.json'),
+    CODEX_CONFIG_PATH: undefined,
+    CLAUDE_CONFIG_DIR: undefined,
+    GEMINI_CLI_HOME: undefined,
+    SETUP_FIXTURE_HOME: home,
+  };
   const options = { home, env, skillsSource: catalog, client: 'agy' };
   const state = path.join(home, '.coagent8/setup.json');
   return { home, env, options, state };
@@ -27,10 +38,13 @@ async function apply(options, action, chosen = names) {
   const preview = await manageSkills({ ...options, selection });
   return manageSkills({ ...options, selection, apply: preview.token });
 }
-function file(home, client, name, disabled = false) { return path.join(disabled ? disabledSkillRoot(client, home) : skillRoot(client, home), name, 'SKILL.md'); }
+function file(home, client, name, disabled = false) {
+  return path.join(disabled ? disabledSkillRoot(client, home) : skillRoot(client, home), name, 'SKILL.md');
+}
 
 test('independent install/disable/enable/uninstall preserves MCP bytes, other clients and native overrides', async t => {
-  const p = profile(t), name = names[0];
+  const p = profile(t),
+    name = names[0];
   const mcp = path.join(p.home, '.gemini/config/mcp_config.json');
   fs.mkdirSync(path.dirname(mcp), { recursive: true });
   fs.writeFileSync(mcp, '{"mcpServers":{"coagent8":{"command":"keep"}},"token":"fixture"}');
@@ -62,8 +76,16 @@ test('independent install/disable/enable/uninstall preserves MCP bytes, other cl
 });
 
 test('repair preserves explicit disabled and removed selections, and cleanup removes archived packages', async t => {
-  const p = profile(t), fixture = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
-  const options = { ...p.options, env: { ...p.env, AGY_PATH: fixture }, cwd: p.home, runtimeSource: path.resolve(__dirname, '../../dist/index.cjs'), clients: ['agy'], origin: 'vscode-extension' };
+  const p = profile(t),
+    fixture = path.resolve(__dirname, '../fixtures/setup-cli/client.cjs');
+  const options = {
+    ...p.options,
+    env: { ...p.env, AGY_PATH: fixture },
+    cwd: p.home,
+    runtimeSource: path.resolve(__dirname, '../../dist/index.cjs'),
+    clients: ['agy'],
+    origin: 'vscode-extension',
+  };
   await setupClients(options);
   await apply({ ...p.options, origin: 'vscode-extension' }, 'disable', [names[0]]);
   await apply(p.options, 'uninstall', names.slice(1));
@@ -82,7 +104,8 @@ test('repair preserves explicit disabled and removed selections, and cleanup rem
 test('previews bind package bytes and configuration; edits and unknown names are preserved', async t => {
   const p = profile(t);
   await apply(p.options, 'install');
-  const current = await manageSkills(p.options), selection = skillSelectionForAction(current.selection, [names[0]], 'disable');
+  const current = await manageSkills(p.options),
+    selection = skillSelectionForAction(current.selection, [names[0]], 'disable');
   const preview = await manageSkills({ ...p.options, selection });
   fs.writeFileSync(file(p.home, 'agy', names[0]), 'user edit');
   await assert.rejects(manageSkills({ ...p.options, selection, apply: preview.token }), /preview changed/);
@@ -109,7 +132,8 @@ test('package origins coexist within one client and survive toggles; extension c
 });
 
 test('emptied disabled storage is removed after enable and uninstall cleanup', async t => {
-  const p = profile(t), storage = path.join(p.home, '.coagent8/disabled-skills');
+  const p = profile(t),
+    storage = path.join(p.home, '.coagent8/disabled-skills');
   await apply(p.options, 'install');
   await apply(p.options, 'disable');
   await apply({ ...p.options, client: 'claude' }, 'install', [names[0]]);
@@ -131,21 +155,49 @@ test('emptied disabled storage is removed after enable and uninstall cleanup', a
 test('a package transaction rolls back failure and recovers an interrupted transition', async t => {
   const p = profile(t);
   await apply(p.options, 'install', [names[0]]);
-  const before = fs.readFileSync(p.state, 'utf8'), content = fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8');
-  const targets = [{ name: names[0], disabled: false, content: null }, { name: names[0], disabled: true, content }];
-  assert.throws(() => transactSkills(p.home, 'agy', targets, before, () => {
-    fs.unlinkSync(file(p.home, 'agy', names[0])); fs.rmdirSync(path.dirname(file(p.home, 'agy', names[0])));
-    throw new Error('measured failure after package removal');
-  }), /measured failure/);
+  const before = fs.readFileSync(p.state, 'utf8'),
+    content = fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8');
+  const targets = [
+    { name: names[0], disabled: false, content: null },
+    { name: names[0], disabled: true, content },
+  ];
+  assert.throws(
+    () =>
+      transactSkills(p.home, 'agy', targets, before, () => {
+        fs.unlinkSync(file(p.home, 'agy', names[0]));
+        fs.rmdirSync(path.dirname(file(p.home, 'agy', names[0])));
+        throw new Error('measured failure after package removal');
+      }),
+    /measured failure/,
+  );
   assert.equal(fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8'), content);
   assert.equal(fs.readFileSync(p.state, 'utf8'), before);
-  fs.unlinkSync(file(p.home, 'agy', names[0])); fs.rmdirSync(path.dirname(file(p.home, 'agy', names[0])));
+  fs.unlinkSync(file(p.home, 'agy', names[0]));
+  fs.rmdirSync(path.dirname(file(p.home, 'agy', names[0])));
   const journal = path.join(p.home, '.coagent8/skill-transaction.json');
-  fs.writeFileSync(journal, JSON.stringify({ client: 'agy', stateBefore: before, stateAfter: null, committed: false, packages: [{ name: names[0], disabled: false, before: content, after: null }] }));
+  fs.writeFileSync(
+    journal,
+    JSON.stringify({
+      client: 'agy',
+      stateBefore: before,
+      stateAfter: null,
+      committed: false,
+      packages: [{ name: names[0], disabled: false, before: content, after: null }],
+    }),
+  );
   recoverSkillTransaction(p.home);
   assert.equal(fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8'), content);
   assert.equal(fs.existsSync(journal), false);
-  fs.writeFileSync(journal, JSON.stringify({ client: 'agy', stateBefore: before, stateAfter: null, committed: false, packages: [{ name: names[0], disabled: false, before: content, after: null }] }));
+  fs.writeFileSync(
+    journal,
+    JSON.stringify({
+      client: 'agy',
+      stateBefore: before,
+      stateAfter: null,
+      committed: false,
+      packages: [{ name: names[0], disabled: false, before: content, after: null }],
+    }),
+  );
   fs.writeFileSync(file(p.home, 'agy', names[0]), 'concurrent user edit');
   assert.throws(() => recoverSkillTransaction(p.home), /rollback stopped/);
   assert.equal(fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8'), 'concurrent user edit');
@@ -154,9 +206,16 @@ test('a package transaction rolls back failure and recovers an interrupted trans
 
 test('native configuration schema validates selections and no-op apply preserves persisted bytes', async t => {
   const p = profile(t);
-  for (const skills of [{ installed: [names[0], names[0]], disabled: [] }, { installed: [], disabled: [names[0]] }, { installed: ['../bad'], disabled: [] }, { installed: [], disabled: [], unknown: true }]) assert.throws(() => validateConfig({ backends: { agy: { skills } } }), /skills/);
+  for (const skills of [
+    { installed: [names[0], names[0]], disabled: [] },
+    { installed: [], disabled: [names[0]] },
+    { installed: ['../bad'], disabled: [] },
+    { installed: [], disabled: [], unknown: true },
+  ])
+    assert.throws(() => validateConfig({ backends: { agy: { skills } } }), /skills/);
   await apply(p.options, 'install');
-  const config = fs.readFileSync(p.env.coagent8_CONFIG), state = fs.readFileSync(p.state);
+  const config = fs.readFileSync(p.env.coagent8_CONFIG),
+    state = fs.readFileSync(p.state);
   await apply(p.options, 'install');
   assert.deepEqual(fs.readFileSync(p.env.coagent8_CONFIG), config);
   assert.deepEqual(fs.readFileSync(p.state), state);
@@ -169,9 +228,15 @@ test('all client roots support full-set toggles and linked ancestors cannot redi
     const options = { ...p.options, client };
     await apply(options, 'install');
     await apply(options, 'disable');
-    for (const name of names) { assert.equal(fs.existsSync(file(p.home, client, name)), false); assert.equal(fs.existsSync(file(p.home, client, name, true)), true); }
+    for (const name of names) {
+      assert.equal(fs.existsSync(file(p.home, client, name)), false);
+      assert.equal(fs.existsSync(file(p.home, client, name, true)), true);
+    }
     await apply(options, 'enable');
-    for (const name of names) { assert.equal(fs.existsSync(file(p.home, client, name)), true); assert.equal(fs.existsSync(file(p.home, client, name, true)), false); }
+    for (const name of names) {
+      assert.equal(fs.existsSync(file(p.home, client, name)), true);
+      assert.equal(fs.existsSync(file(p.home, client, name, true)), false);
+    }
     await apply(options, 'uninstall');
   }
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-outside-'));
@@ -202,9 +267,15 @@ test('catalog updates refresh disabled bytes without enabling them or installing
 });
 
 test('bundled CLI skills preview/apply changes files without starting a backend', async t => {
-  const p = profile(t), executable = path.resolve(__dirname, '../../dist/index.cjs');
+  const p = profile(t),
+    executable = path.resolve(__dirname, '../../dist/index.cjs');
   const run = args => {
-    const result = spawnSync(process.execPath, [executable, 'skills', ...args], { env: p.env, encoding: 'utf8', timeout: 15000, windowsHide: true });
+    const result = spawnSync(process.execPath, [executable, 'skills', ...args], {
+      env: p.env,
+      encoding: 'utf8',
+      timeout: 15000,
+      windowsHide: true,
+    });
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
   };
@@ -241,25 +312,50 @@ test('configuration apply refuses a changed snapshot and committed recovery reta
   await apply(p.options, 'install', [names[0]]);
   const configBefore = fs.readFileSync(p.env.coagent8_CONFIG, 'utf8');
   fs.appendFileSync(p.env.coagent8_CONFIG, '\n');
-  await assert.rejects(setBackendSkills('agy', { installed: [], disabled: [] }, p.env.coagent8_CONFIG, configBefore), /changed concurrently/);
+  await assert.rejects(
+    setBackendSkills('agy', { installed: [], disabled: [] }, p.env.coagent8_CONFIG, configBefore),
+    /changed concurrently/,
+  );
   assert.equal(fs.readFileSync(p.env.coagent8_CONFIG, 'utf8'), configBefore + '\n');
   const stateAfter = fs.readFileSync(p.state, 'utf8');
   const content = fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8');
   const journal = path.join(p.home, '.coagent8/skill-transaction.json');
-  fs.writeFileSync(journal, JSON.stringify({ client: 'agy', stateBefore: null, stateAfter, committed: true, packages: [{ name: names[0], disabled: false, before: null, after: content }] }));
+  fs.writeFileSync(
+    journal,
+    JSON.stringify({
+      client: 'agy',
+      stateBefore: null,
+      stateAfter,
+      committed: true,
+      packages: [{ name: names[0], disabled: false, before: null, after: content }],
+    }),
+  );
   recoverSkillTransaction(p.home);
   assert.equal(fs.readFileSync(file(p.home, 'agy', names[0]), 'utf8'), content);
   assert.equal(fs.existsSync(journal), false);
-  assert.throws(() => transactSkills(p.home, 'agy', [{ name: names[0], disabled: false, content: 'x'.repeat(65537) }], stateAfter, () => stateAfter), /Invalid skill transaction package/);
+  assert.throws(
+    () => transactSkills(p.home, 'agy', [{ name: names[0], disabled: false, content: 'x'.repeat(65537) }], stateAfter, () => stateAfter),
+    /Invalid skill transaction package/,
+  );
   assert.equal(fs.existsSync(journal), false);
 });
 
 test('a redirected ownership directory is rejected before any setup or cleanup lease writes', async t => {
-  const p = profile(t), outside = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ownership-outside-'));
+  const p = profile(t),
+    outside = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-ownership-outside-'));
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
   fs.symlinkSync(outside, path.join(p.home, '.coagent8'), process.platform === 'win32' ? 'junction' : 'dir');
   await assert.rejects(manageSkills({ ...p.options, selection: { installed: [], disabled: [] }, apply: 'invalid' }), /Linked skill root/);
-  await assert.rejects(setupClients({ home: p.home, env: p.env, clients: ['agy'], runtimeSource: path.resolve(__dirname, '../../dist/index.cjs'), skillsSource: catalog }), /Linked skill root/);
+  await assert.rejects(
+    setupClients({
+      home: p.home,
+      env: p.env,
+      clients: ['agy'],
+      runtimeSource: path.resolve(__dirname, '../../dist/index.cjs'),
+      skillsSource: catalog,
+    }),
+    /Linked skill root/,
+  );
   await assert.rejects(cleanupClients({ home: p.home, env: p.env, apply: 'invalid' }), /Linked skill root/);
   assert.deepEqual(fs.readdirSync(outside), [], 'no lease, journal, state or runtime is written through the junction');
 });

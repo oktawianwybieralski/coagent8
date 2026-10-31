@@ -59,7 +59,7 @@ export function formatSessionListText(sessions: SessionRecord[]): string {
 export function formatSessionHistoryText(
   handle: string,
   history: { events: ConversationEvent[]; nextCursor?: string | null },
-  turnNumberMap: Map<string, number>
+  turnNumberMap: Map<string, number>,
 ): string {
   if (!history.events.length) {
     return 'No public events found on this page.';
@@ -121,7 +121,7 @@ export async function runSessionCli(
   out: NodeJS.WritableStream = process.stdout,
   err: NodeJS.WritableStream = process.stderr,
   signal?: AbortSignal,
-  workspace?: string
+  workspace?: string,
 ): Promise<number> {
   if (args.length === 0) {
     err.write(`Unknown command or missing subcommand. ${USAGE}\n`);

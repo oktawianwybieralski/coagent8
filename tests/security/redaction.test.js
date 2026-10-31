@@ -4,7 +4,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
-const { redactCredentialFormats, redactDiagnostic, redactDiagnosticData, redactHomePath, redactPublicContent, redactPublicData, redactSecrets, stripTerminalSequences } = require('../../src/security/redaction.ts');
+const {
+  redactCredentialFormats,
+  redactDiagnostic,
+  redactDiagnosticData,
+  redactHomePath,
+  redactPublicContent,
+  redactPublicData,
+  redactSecrets,
+  stripTerminalSequences,
+} = require('../../src/security/redaction.ts');
 // Provider key prefixes are joined at run time, so the source holds no literal token that
 // GitHub push protection reports (FEEDBACK-060j).
 const STRIPE_LIVE = ['sk', 'live', ''].join('_');
@@ -126,7 +135,8 @@ test('REDACTION-002: high-confidence credential formats are individually redacte
     },
     {
       name: 'Bare JWT',
-      input: 'jwt: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
+      input:
+        'jwt: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
       expectedRedacted: 'eyJ***[REDACTED]***',
       expectedAbsent: 'SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
     },
@@ -279,12 +289,18 @@ test('REDACTION-002: high-confidence credential formats are individually redacte
   for (const c of cases) {
     const result = redactCredentialFormats(c.input);
     assert.ok(result.includes(c.expectedRedacted), `Test "${c.name}": expected result to contain "${c.expectedRedacted}", got "${result}"`);
-    assert.ok(!result.includes(c.expectedAbsent), `Test "${c.name}": expected result NOT to contain "${c.expectedAbsent}", got "${result}"`);
+    assert.ok(
+      !result.includes(c.expectedAbsent),
+      `Test "${c.name}": expected result NOT to contain "${c.expectedAbsent}", got "${result}"`,
+    );
   }
 });
 
 test('REDACTION-002: diagnostic redaction strips keyword=value rules, Authorization catch-all, and home directory', () => {
-  const diagInput = 'Error connecting to database: password="superSecretPassword" token=anotherSecret api_key=12345 auth=jwtVal Authorization: custom-token at ' + os.homedir() + '/workspace/app.js';
+  const diagInput =
+    'Error connecting to database: password="superSecretPassword" token=anotherSecret api_key=12345 auth=jwtVal Authorization: custom-token at ' +
+    os.homedir() +
+    '/workspace/app.js';
   const diagResult = redactDiagnostic(diagInput);
 
   assert.ok(!diagResult.includes('superSecretPassword'));
@@ -330,7 +346,9 @@ test('diagnostics redact raw, structured and repeatedly JSON-escaped Windows hom
     }
     assert.ok(redactDiagnostic('C:\\Users\\Synthetic User2\\public').includes('Synthetic User2'));
     assert.ok(!redactDiagnostic(home.replace(/\\/g, '/') + '/private').includes('Synthetic User'));
-  } finally { os.homedir = original; }
+  } finally {
+    os.homedir = original;
+  }
 });
 
 test('diagnostics redact the canonical path of a home reached through a link or short name', () => {
@@ -359,13 +377,18 @@ test('diagnostic redaction does not throw or print the home when its canonical p
   const fs = require('node:fs');
   const path = require('node:path');
   const home = path.join(os.tmpdir(), 'coagent8-unreadable-home-' + process.pid);
-  const originalHome = os.homedir, originalRealpath = fs.realpathSync.native, originalWrite = process.stderr.write;
+  const originalHome = os.homedir,
+    originalRealpath = fs.realpathSync.native,
+    originalWrite = process.stderr.write;
   const warnings = [];
   os.homedir = () => home;
   fs.realpathSync.native = target => {
     throw Object.assign(new Error(`EIO: i/o error, realpath '${target}'`), { code: 'EIO' });
   };
-  process.stderr.write = chunk => { warnings.push(String(chunk)); return true; };
+  process.stderr.write = chunk => {
+    warnings.push(String(chunk));
+    return true;
+  };
   try {
     assert.equal(redactDiagnostic(path.join(home, 'project')), `~${path.sep}project`);
   } finally {
@@ -417,7 +440,10 @@ test('redactDiagnosticData recursively redacts home directory paths and credenti
         count: 42,
         active: true,
       },
-      list: [path.join(home, 'file.txt'), 'sk-ant-api03-abcdef1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890'],
+      list: [
+        path.join(home, 'file.txt'),
+        'sk-ant-api03-abcdef1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890',
+      ],
       nullable: null,
     };
     const redacted = redactDiagnosticData(data);

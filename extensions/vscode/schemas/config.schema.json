@@ -11,7 +11,13 @@
       "enum": [null, "codex", "claude", "agy", "smart_quota"],
       "default": null,
       "description": "Backend used when a request does not name one. null chooses among routing.allowedBackends by routing.strategy. gemini is Antigravity. VS Code setting: coagent8.defaultBackend.",
-      "markdownEnumDescriptions": ["Automatic: choose among the allowed backends.", "Codex CLI.", "Claude Code CLI.", "Antigravity CLI (agy).", "Compatibility alias for routing.strategy smart_quota."]
+      "markdownEnumDescriptions": [
+        "Automatic: choose among the allowed backends.",
+        "Codex CLI.",
+        "Claude Code CLI.",
+        "Antigravity CLI (agy).",
+        "Compatibility alias for routing.strategy smart_quota."
+      ]
     },
     "routing": {
       "type": "object",
@@ -38,9 +44,18 @@
       "additionalProperties": false,
       "description": "Per-backend settings.",
       "properties": {
-        "codex": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Codex CLI. VS Code setting: coagent8.codex.defaultModel." },
-        "claude": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Claude Code CLI. VS Code setting: coagent8.claude.defaultModel." },
-        "agy": { "allOf": [{ "$ref": "#/definitions/backend" }], "description": "Antigravity CLI (agy). VS Code setting: coagent8.agy.defaultModel." }
+        "codex": {
+          "allOf": [{ "$ref": "#/definitions/backend" }],
+          "description": "Codex CLI. VS Code setting: coagent8.codex.defaultModel."
+        },
+        "claude": {
+          "allOf": [{ "$ref": "#/definitions/backend" }],
+          "description": "Claude Code CLI. VS Code setting: coagent8.claude.defaultModel."
+        },
+        "agy": {
+          "allOf": [{ "$ref": "#/definitions/backend" }],
+          "description": "Antigravity CLI (agy). VS Code setting: coagent8.agy.defaultModel."
+        }
       }
     },
     "governance": {
@@ -95,21 +110,46 @@
     }
   },
   "definitions": {
-    "model": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$", "description": "Model identifier or CLI alias, for example opus." },
+    "model": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/\\[\\]\\-]{0,127}$",
+      "description": "Model identifier or CLI alias, for example opus."
+    },
     "backend": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "defaultModel": { "allOf": [{ "$ref": "#/definitions/model" }], "description": "Model used when a request names none. Recorded by doctor when missing." },
+        "defaultModel": {
+          "allOf": [{ "$ref": "#/definitions/model" }],
+          "description": "Model used when a request names none. Recorded by doctor when missing."
+        },
         "skills": {
-          "type": "object", "additionalProperties": false, "required": ["installed", "disabled"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["installed", "disabled"],
           "description": "Explicit package selection. Omitted installs all catalog skills. An empty installed list installs none. Disabled packages stay outside client discovery; disabled must be a subset of installed.",
           "properties": {
-            "installed": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^coagent8-[a-z]+(?:-[a-z]+)*$" } },
-            "disabled": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "pattern": "^coagent8-[a-z]+(?:-[a-z]+)*$" } }
+            "installed": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^coagent8-[a-z]+(?:-[a-z]+)*$" }
+            },
+            "disabled": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^coagent8-[a-z]+(?:-[a-z]+)*$" }
+            }
           }
         },
-        "executable": {"type": "string", "minLength": 1, "maxLength": 1024, "anyOf": [{"const": "vscode-extension"}, {"pattern": "^~[\\\\/]."}, {"pattern": "^([A-Za-z]:[\\\\/]|\\\\\\\\|/)"}], "description": "CLI to run: an absolute path, a path starting with ~/, or \"vscode-extension\" for the newest copy the vendor's VS Code extension provides (it survives extension updates). Omitted, the CLI is found on PATH, then in the vendor's VS Code extension. Setup records the CLI it finds at the first registration; change it at any time. The CODEX_PATH, CLAUDE_PATH and AGY_PATH environment variables take precedence."}
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "anyOf": [{ "const": "vscode-extension" }, { "pattern": "^~[\\\\/]." }, { "pattern": "^([A-Za-z]:[\\\\/]|\\\\\\\\|/)" }],
+          "description": "CLI to run: an absolute path, a path starting with ~/, or \"vscode-extension\" for the newest copy the vendor's VS Code extension provides (it survives extension updates). Omitted, the CLI is found on PATH, then in the vendor's VS Code extension. Setup records the CLI it finds at the first registration; change it at any time. The CODEX_PATH, CLAUDE_PATH and AGY_PATH environment variables take precedence."
+        }
       }
     }
   }

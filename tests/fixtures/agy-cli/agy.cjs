@@ -1,7 +1,10 @@
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (process.env.coagent8_FIXTURE_LAUNCH_LOG) {
-  fs.appendFileSync(process.env.coagent8_FIXTURE_LAUNCH_LOG, JSON.stringify({ args, autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null }) + '\n');
+  fs.appendFileSync(
+    process.env.coagent8_FIXTURE_LAUNCH_LOG,
+    JSON.stringify({ args, autoUpdate: process.env.AGY_CLI_DISABLE_AUTO_UPDATE ?? null }) + '\n',
+  );
 }
 const mode = process.env.AGY_FIXTURE_MODE || process.env.coagent8_FIXTURE_MODE || 'success';
 if (args.includes('--version')) {
@@ -19,8 +22,16 @@ if (args[0] === 'mcp' && args[1] === 'list') {
   }
   // `agy mcp list` of agy 1.3.1 (2026-10-07); coagent8_FIXTURE_AGY_MCP lists [name, status] rows.
   const rows = JSON.parse(process.env.coagent8_FIXTURE_AGY_MCP || '[]');
-  if (!rows.length) { console.log('No MCP servers configured.'); process.exit(0); }
-  console.log(['NAME          TYPE   STATUS    COMMAND/URL', ...rows.map(([name, status]) => `${name.padEnd(12)}  stdio  ${status.padEnd(8)}  npx.cmd -y ${name}`)].join('\n'));
+  if (!rows.length) {
+    console.log('No MCP servers configured.');
+    process.exit(0);
+  }
+  console.log(
+    [
+      'NAME          TYPE   STATUS    COMMAND/URL',
+      ...rows.map(([name, status]) => `${name.padEnd(12)}  stdio  ${status.padEnd(8)}  npx.cmd -y ${name}`),
+    ].join('\n'),
+  );
   process.exit(0);
 }
 if (args.includes('models')) {
@@ -29,9 +40,19 @@ if (args.includes('models')) {
     return;
   }
   // `agy models` of agy 1.3.1 (2026-10-07), abridged: a progress line, then `<id>\t<name>`.
-  console.log(['Fetching available models...', 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)', 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
-    'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)', 'gemini-3.1-pro-high\tGemini 3.1 Pro (High)', 'gemini-3.1-pro-low\tGemini 3.1 Pro (Low)',
-    'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)', 'claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)', 'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)'].join('\n'));
+  console.log(
+    [
+      'Fetching available models...',
+      'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+      'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)',
+      'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)',
+      'gemini-3.1-pro-high\tGemini 3.1 Pro (High)',
+      'gemini-3.1-pro-low\tGemini 3.1 Pro (Low)',
+      'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+      'claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)',
+      'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)',
+    ].join('\n'),
+  );
   process.exit(0);
 }
 
@@ -44,7 +65,9 @@ if (args.includes('-p')) {
   run();
 } else {
   process.stdin.setEncoding('utf8');
-  process.stdin.on('data', chunk => { prompt += chunk; });
+  process.stdin.on('data', chunk => {
+    prompt += chunk;
+  });
   process.stdin.on('end', () => run());
 }
 
@@ -54,7 +77,10 @@ function run() {
   if (mode === 'sigterm-cleanup') {
     process.on('SIGTERM', () => {
       fs.writeFileSync(`${process.env.coagent8_FIXTURE_MARKER}.received`, '1');
-      setTimeout(() => { fs.writeFileSync(process.env.coagent8_FIXTURE_MARKER, 'clean'); process.exit(0); }, 1000);
+      setTimeout(() => {
+        fs.writeFileSync(process.env.coagent8_FIXTURE_MARKER, 'clean');
+        process.exit(0);
+      }, 1000);
     });
   }
   if (prompt === '/usage') {
@@ -62,51 +88,65 @@ function run() {
       setInterval(() => {}, 1000);
       return;
     }
-    if (process.env.coagent8_FIXTURE_CAPTURE) fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }));
+    if (process.env.coagent8_FIXTURE_CAPTURE)
+      fs.writeFileSync(
+        process.env.coagent8_FIXTURE_CAPTURE,
+        JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }),
+      );
     if (mode === 'unauthenticated' || mode === 'auth') {
       console.log(JSON.stringify({ status: 'ERROR', error: 'Authentication required' }));
       return;
     }
     // Shape of agy 1.3.1 `/usage` (2026-10-05) with synthetic usage and reset values.
-    console.log(JSON.stringify({
-      status: 'SUCCESS',
-      command: {
-        name: 'usage',
-        data: {
-          groups: [
-            {
-              name: 'Gemini Models',
-              buckets: [
-                {
-                  id: 'gemini-weekly',
-                  name: 'Weekly Limit Remaining',
-                  window: 'weekly',
-                  remaining_fraction: 0.6,
-                  reset_time: '2026-10-05T18:00:00Z'
-                },
-                {
-                  id: 'gemini-5h',
-                  name: 'Five Hour Limit Remaining',
-                  window: '5h',
-                  remaining_fraction: 0.8,
-                  reset_time: '2026-10-05T16:00:00Z'
-                }
-              ]
-            }
-          ]
-        }
-      }
-    }));
+    console.log(
+      JSON.stringify({
+        status: 'SUCCESS',
+        command: {
+          name: 'usage',
+          data: {
+            groups: [
+              {
+                name: 'Gemini Models',
+                buckets: [
+                  {
+                    id: 'gemini-weekly',
+                    name: 'Weekly Limit Remaining',
+                    window: 'weekly',
+                    remaining_fraction: 0.6,
+                    reset_time: '2026-10-05T18:00:00Z',
+                  },
+                  {
+                    id: 'gemini-5h',
+                    name: 'Five Hour Limit Remaining',
+                    window: '5h',
+                    remaining_fraction: 0.8,
+                    reset_time: '2026-10-05T16:00:00Z',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    );
     return;
   }
   if (process.env.coagent8_FIXTURE_CAPTURE) {
-    fs.writeFileSync(process.env.coagent8_FIXTURE_CAPTURE, JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }));
+    fs.writeFileSync(
+      process.env.coagent8_FIXTURE_CAPTURE,
+      JSON.stringify({ args, prompt, nested: process.env.COAGENT8_NESTED_TURN ?? null }),
+    );
   }
   const send = event => console.log(JSON.stringify(event));
-  if (mode === 'malformed') { console.log('{invalid}'); return; }
+  if (mode === 'malformed') {
+    console.log('{invalid}');
+    return;
+  }
   const native = args.includes('--conversation')
     ? args[args.indexOf('--conversation') + 1]
-    : (args.includes('--resume') ? args[args.indexOf('--resume') + 1] : '11111111-aaaa-bbbb-cccc-123456789012');
+    : args.includes('--resume')
+      ? args[args.indexOf('--resume') + 1]
+      : '11111111-aaaa-bbbb-cccc-123456789012';
   const model = args.includes('--model') ? args[args.indexOf('--model') + 1] : 'gemini-3.8-flash-high';
 
   if (mode === 'rate-before-init') {
@@ -114,12 +154,17 @@ function run() {
     return;
   }
 
-  const isRecoveryTurn = args.includes('--conversation')
-    && (prompt.includes('Your sandbox denied a shell command') || prompt.includes('your previous turn ended without an answer. Continue the previous task'));
+  const isRecoveryTurn =
+    args.includes('--conversation') &&
+    (prompt.includes('Your sandbox denied a shell command') ||
+      prompt.includes('your previous turn ended without an answer. Continue the previous task'));
   const omitConversationId = mode === 'resume-without-conversation-id';
-  const sid = mode === 'wrong-session' || (isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION === '1')
-    ? '99999999-aaaa-bbbb-cccc-123456789012'
-    : (omitConversationId ? undefined : native);
+  const sid =
+    mode === 'wrong-session' || (isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION === '1')
+      ? '99999999-aaaa-bbbb-cccc-123456789012'
+      : omitConversationId
+        ? undefined
+        : native;
   if (omitConversationId) {
     send({ event: 'init', model });
   } else {
@@ -127,7 +172,16 @@ function run() {
   }
 
   if (mode === 'secret-hang') {
-    send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'sk-fixtureSecret1234567890abcdef' } });
+    send({
+      event: 'step_update',
+      step_update: {
+        ...(sid ? { conversation_id: sid } : {}),
+        step_index: 1,
+        state: 'ACTIVE',
+        step_type: 'agent_response',
+        text_delta: 'sk-fixtureSecret1234567890abcdef',
+      },
+    });
     setInterval(() => {}, 1000);
     return;
   }
@@ -136,19 +190,48 @@ function run() {
   // A finish reason MAX_TOKENS as agy's consultation described it: a success without an
   // answer, or a partial answer followed by an unrelated failure.
   if (mode === 'max-tokens-empty' || mode === 'max-tokens-failure') {
-    send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'DONE', step_type: 'agent_response', finish_reason: 'MAX_TOKENS',
-      ...(mode === 'max-tokens-failure' ? { text_delta: 'partial' } : {}) } });
-    send({ event: 'result', result: mode === 'max-tokens-empty'
-      ? { conversation_id: sid, status: 'SUCCESS', response: '' }
-      : { conversation_id: sid, status: 'ERROR', error: 'internal backend crash' } });
+    send({
+      event: 'step_update',
+      step_update: {
+        conversation_id: sid,
+        step_index: 1,
+        state: 'DONE',
+        step_type: 'agent_response',
+        finish_reason: 'MAX_TOKENS',
+        ...(mode === 'max-tokens-failure' ? { text_delta: 'partial' } : {}),
+      },
+    });
+    send({
+      event: 'result',
+      result:
+        mode === 'max-tokens-empty'
+          ? { conversation_id: sid, status: 'SUCCESS', response: '' }
+          : { conversation_id: sid, status: 'ERROR', error: 'internal backend crash' },
+    });
     return;
   }
   if (mode === 'output-limit' || mode === 'output-limit-empty') {
     if (mode === 'output-limit') {
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'D1: first part of a long answer' } });
+      send({
+        event: 'step_update',
+        step_update: {
+          conversation_id: sid,
+          step_index: 1,
+          state: 'ACTIVE',
+          step_type: 'agent_response',
+          text_delta: 'D1: first part of a long answer',
+        },
+      });
     }
-    send({ event: 'result', result: { conversation_id: sid, status: 'ERROR',
-      error: 'Your previous response was cut off because it exceeded the output token limit\nPlease continue from where you left off, keeping your response shorter\nRetries remaining: 3' } });
+    send({
+      event: 'result',
+      result: {
+        conversation_id: sid,
+        status: 'ERROR',
+        error:
+          'Your previous response was cut off because it exceeded the output token limit\nPlease continue from where you left off, keeping your response shorter\nRetries remaining: 3',
+      },
+    });
     return;
   }
 
@@ -159,9 +242,18 @@ function run() {
         return;
       }
       const recoveredText = process.env.coagent8_FIXTURE_RECOVER_RESPONSE || 'Recovered answer from read_file without shell commands.';
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' } });
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' } });
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: recoveredText } });
+      send({
+        event: 'step_update',
+        step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' },
+      });
+      send({
+        event: 'step_update',
+        step_update: { conversation_id: sid, step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' },
+      });
+      send({
+        event: 'step_update',
+        step_update: { conversation_id: sid, step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: recoveredText },
+      });
       send({
         event: 'result',
         result: {
@@ -176,9 +268,18 @@ function run() {
       return;
     }
     if (mode === 'sandbox-denied-recover') {
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command' } });
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ERROR', step_type: 'tool', tool_name: 'run_command' } });
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: '   ' } });
+      send({
+        event: 'step_update',
+        step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command' },
+      });
+      send({
+        event: 'step_update',
+        step_update: { conversation_id: sid, step_index: 1, state: 'ERROR', step_type: 'tool', tool_name: 'run_command' },
+      });
+      send({
+        event: 'step_update',
+        step_update: { conversation_id: sid, step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: '   ' },
+      });
     }
     const terminal = {
       event: 'result',
@@ -193,31 +294,72 @@ function run() {
         // coagent8_FIXTURE_DENIED_ACTION=read_file: agy 1.4.12 (2026-10-31) denying a file outside the workspace (#92).
         // Its stderr line below is verbatim except the em dash after "produced", written as "-" (core rule 00).
         // A comma list names several actions; coagent8_FIXTURE_RETRY_DENIED_ACTION replaces it on the recovery turn.
-        denied_actions: ((isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_DENIED_ACTION) || process.env.coagent8_FIXTURE_DENIED_ACTION || 'command')
-          .split(',').map(action => ({ action, display_name: 'RunCommand' })),
+        denied_actions: (
+          (isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_DENIED_ACTION) ||
+          process.env.coagent8_FIXTURE_DENIED_ACTION ||
+          'command'
+        )
+          .split(',')
+          .map(action => ({ action, display_name: 'RunCommand' })),
       },
     };
-    const denial = () => process.stderr.write(process.env.coagent8_FIXTURE_DENIED_ACTION === 'read_file'
-      ? 'jetski: no output produced - a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.\n'
-      : 'jetski: RunCommand auto-denied by sandbox policy\n');
+    const denial = () =>
+      process.stderr.write(
+        process.env.coagent8_FIXTURE_DENIED_ACTION === 'read_file'
+          ? 'jetski: no output produced - a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.\n'
+          : 'jetski: RunCommand auto-denied by sandbox policy\n',
+      );
     if (mode === 'sandbox-denied-stderr-first') {
       process.stderr.write('jetski: RunCommand auto-denied by sandbox policy\n', () => setTimeout(() => send(terminal), 100));
     } else {
       send(terminal);
       if (mode === 'sandbox-denied-stdout-first') setTimeout(denial, 100);
-      if (mode === 'sandbox-denied-duplicate') { denial(); send(terminal); }
+      if (mode === 'sandbox-denied-duplicate') {
+        denial();
+        send(terminal);
+      }
     }
     return;
   }
 
-  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 0, state: 'DONE', step_type: 'user_input' } });
-  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' } });
-  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' } });
-  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Draft ' } });
-  send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 2, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'Final **Markdown**\n```js\nconst value = 42;\n```' } });
+  send({
+    event: 'step_update',
+    step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 0, state: 'DONE', step_type: 'user_input' },
+  });
+  send({
+    event: 'step_update',
+    step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'ACTIVE', step_type: 'tool', tool_name: 'read_file' },
+  });
+  send({
+    event: 'step_update',
+    step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'DONE', step_type: 'tool', tool_name: 'read_file' },
+  });
+  send({
+    event: 'step_update',
+    step_update: {
+      ...(sid ? { conversation_id: sid } : {}),
+      step_index: 2,
+      state: 'ACTIVE',
+      step_type: 'agent_response',
+      text_delta: 'Draft ',
+    },
+  });
+  send({
+    event: 'step_update',
+    step_update: {
+      ...(sid ? { conversation_id: sid } : {}),
+      step_index: 2,
+      state: 'ACTIVE',
+      step_type: 'agent_response',
+      text_delta: 'Final **Markdown**\n```js\nconst value = 42;\n```',
+    },
+  });
 
   if (mode === 'no-terminal') return;
-  if (mode === 'hang') { setInterval(() => {}, 1000); return; }
+  if (mode === 'hang') {
+    setInterval(() => {}, 1000);
+    return;
+  }
   // WINDOWS-001a: a turn that started a native descendant (like an MCP server or a build) and
   // then hangs. The descendant increments a heartbeat file, never selected by PID by the test,
   // and exits on its own when `<marker>.stop` appears or after 20 s. This Node root puts a
@@ -227,12 +369,26 @@ function run() {
     const marker = process.env.coagent8_FIXTURE_MARKER;
     const descendant = `const fs=require('node:fs');const m=process.argv[1];let n=0;const end=Date.now()+20000;
       const timer=setInterval(()=>{if(fs.existsSync(m+'.stop')||Date.now()>end){clearInterval(timer);fs.writeFileSync(m+'.exited','1');return;}fs.writeFileSync(m,String(++n));},50);`;
-    require('node:child_process').spawn(process.execPath, ['-e', descendant, marker], { stdio: 'ignore', windowsHide: true, detached: process.env.coagent8_FIXTURE_DESCENDANT === 'outside-job' })
+    require('node:child_process')
+      .spawn(process.execPath, ['-e', descendant, marker], {
+        stdio: 'ignore',
+        windowsHide: true,
+        detached: process.env.coagent8_FIXTURE_DESCENDANT === 'outside-job',
+      })
       .unref();
     const started = setInterval(() => {
       if (!fs.existsSync(marker)) return;
       clearInterval(started);
-      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 3, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'descendant running' } });
+      send({
+        event: 'step_update',
+        step_update: {
+          conversation_id: sid,
+          step_index: 3,
+          state: 'ACTIVE',
+          step_type: 'agent_response',
+          text_delta: 'descendant running',
+        },
+      });
       setInterval(() => {}, 1000);
     }, 20);
     return;

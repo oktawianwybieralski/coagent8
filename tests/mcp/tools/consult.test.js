@@ -64,7 +64,7 @@ test('handleConsult with expired budget stops before execution and throws TIMEOU
         assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
         assert.equal(err.code, 'TIMEOUT');
         return true;
-      }
+      },
     );
     assert.equal(executeCalled, false, 'No model turn should be started when budget expired');
   } finally {
@@ -88,14 +88,11 @@ test('handleConsult with pre-aborted signal stops before turn and throws ABORTED
   };
 
   await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
-  await assert.rejects(
-    handleConsult('consult', { proposal: 'Design question' }, tempDir, controller.signal),
-    err => {
-      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-      assert.equal(err.code, 'ABORTED');
-      return true;
-    }
-  );
+  await assert.rejects(handleConsult('consult', { proposal: 'Design question' }, tempDir, controller.signal), err => {
+    assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+    assert.equal(err.code, 'ABORTED');
+    return true;
+  });
   assert.equal(executeCalled, false, 'No model turn should be started when pre-aborted');
 });
 
@@ -134,14 +131,7 @@ test('handleConsult passes remaining monotonic time to adapter', async () => {
   const budget = createExecutionBudget({ totalBudgetMs: 5000, teardownAllowanceMs: 1000, clock });
 
   try {
-    const result = await handleConsult(
-      'consult',
-      { proposal: 'Refactoring check' },
-      tempDir,
-      null,
-      null,
-      { budget, clock }
-    );
+    const result = await handleConsult('consult', { proposal: 'Refactoring check' }, tempDir, null, null, { budget, clock });
     assert.ok(receivedTimeoutMs !== null, 'Adapter execute should have been called');
     assert.ok(receivedTimeoutMs <= 3800, `Expected remaining timeoutMs <= 3800, got ${receivedTimeoutMs}`);
     assert.ok(receivedTimeoutMs > 0, `Expected positive timeoutMs, got ${receivedTimeoutMs}`);
@@ -192,7 +182,7 @@ test('MCP server callTool creates root budget and formats TIMEOUT on expired bud
         },
       },
     },
-    { signal: ac.signal }
+    { signal: ac.signal },
   );
 
   assert.equal(response.isError, true);
@@ -230,7 +220,7 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
   assert.equal(
     receivedPrompts[0],
     'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nPlain question',
-    'plain consult without task_type or context_files stays byte-for-byte neutral'
+    'plain consult without task_type or context_files stays byte-for-byte neutral',
   );
   assert.ok(!receivedPrompts[0].includes(READ_ONLY_FILE_TOOL_GUIDANCE));
 
@@ -247,11 +237,28 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
 test('AX-001g: the footer shows the turn usage with the list price of the exact-matched model, and no price for another model', async () => {
   const original = adapterRegistry.agy;
   let ran = 'fixture-model';
-  adapterRegistry.agy = { id: 'agy', name: 'fixture',
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
-    execute: async () => ({ status: 'completed', isError: false, output: 'Consult answer', nativeSessionId: randomUUID(), model: ran,
-      truncated: false, continuationAvailable: true,
-      usage: { source: 'provider', inputTokens: 200_000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 20_000, totalTokens: 220_000 } }) };
+    execute: async () => ({
+      status: 'completed',
+      isError: false,
+      output: 'Consult answer',
+      nativeSessionId: randomUUID(),
+      model: ran,
+      truncated: false,
+      continuationAvailable: true,
+      usage: {
+        source: 'provider',
+        inputTokens: 200_000,
+        cachedInputTokens: 0,
+        cacheWriteInputTokens: 0,
+        outputTokens: 20_000,
+        totalTokens: 220_000,
+      },
+    }),
+  };
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const result = readResult(await handleConsult('consult', { proposal: 'usage?' }, tempDir));

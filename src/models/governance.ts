@@ -62,7 +62,11 @@ export function findModelRule(model: string, rules: ModelRules, run?: EffortRun)
  * Returns the rule that decides `model` as {@link findModelRule} does, with the entry that
  * names it: the id, or the effort variant the turn runs, which is the entry to change.
  */
-export function findModelRuleEntry(model: string, rules: ModelRules, run?: EffortRun): { rule: keyof ModelRules; entry: string } | undefined {
+export function findModelRuleEntry(
+  model: string,
+  rules: ModelRules,
+  run?: EffortRun,
+): { rule: keyof ModelRules; entry: string } | undefined {
   for (const rule of MODEL_RULES) {
     const entry = rules[rule].find(listed => namesModelRun(listed, model, run));
     if (entry !== undefined) return { rule, entry };
@@ -93,25 +97,44 @@ function priceSentence(model: string, prices: PriceList | undefined): string {
  * @param settings - The user's governance settings.
  * @param run - The reasoning effort the turn passes separately and how the CLI applies it.
  */
-export function decideConsent(model: string, defaultModel: string | undefined, prices: PriceList | undefined, settings: GovernanceSettings, run?: EffortRun): ConsentDecision {
+export function decideConsent(
+  model: string,
+  defaultModel: string | undefined,
+  prices: PriceList | undefined,
+  settings: GovernanceSettings,
+  run?: EffortRun,
+): ConsentDecision {
   const rule = findModelRule(model, settings.models, run);
   if (rule) {
     // The user's own rule decides whatever the model costs; the price is still stated.
     const listed = `${modelLabel(model, run)} is on the user's ${rule} list, ${MODEL_RULE_SETTINGS[rule]}. ${priceSentence(model, prices)}`;
     return { ask: rule === 'ask', deny: rule === 'deny', basis: rule, offerRemember: false, reason: listed };
   }
-  const decided = (ask: boolean, basis: ConsentBasis, reason: string, offerRemember = false): ConsentDecision => ({ ask, deny: false, basis, offerRemember, reason });
+  const decided = (ask: boolean, basis: ConsentBasis, reason: string, offerRemember = false): ConsentDecision => ({
+    ask,
+    deny: false,
+    basis,
+    offerRemember,
+    reason,
+  });
   if (!prices) return decided(true, 'no-price-list', priceSentence(model, prices), true);
   const price = findPrice(prices, model);
   if (!price) return decided(true, 'unpriced', priceSentence(model, prices), true);
   if (!price.exact) return decided(true, 'approximate', priceSentence(model, prices), true);
   if (settings.askAbovePrice !== null && price.output >= settings.askAbovePrice) {
-    return decided(true, 'above-limit', `Its output costs ${usd(price.output)} per million tokens, at or above the ${usd(settings.askAbovePrice)} limit.`);
+    return decided(
+      true,
+      'above-limit',
+      `Its output costs ${usd(price.output)} per million tokens, at or above the ${usd(settings.askAbovePrice)} limit.`,
+    );
   }
   const reference = defaultModel && defaultModel !== model ? findPrice(prices, defaultModel) : undefined;
   if (reference && reference.output > 0 && price.output >= settings.priceMultiplier * reference.output) {
-    return decided(true, 'relative',
-      `Its output costs ${usd(price.output)} per million tokens, ${Number((price.output / reference.output).toFixed(1))} times the default ${defaultModel}'s ${usd(reference.output)}.`);
+    return decided(
+      true,
+      'relative',
+      `Its output costs ${usd(price.output)} per million tokens, ${Number((price.output / reference.output).toFixed(1))} times the default ${defaultModel}'s ${usd(reference.output)}.`,
+    );
   }
   return decided(false, 'priced', priceSentence(model, prices));
 }
@@ -179,7 +202,7 @@ export function describeGovernanceChange(
   previous: GovernanceSettings,
   current: GovernanceSettings,
   model?: string,
-  run?: EffortRun
+  run?: EffortRun,
 ): string | undefined {
   if (model) {
     const before = findModelRule(model, previous.models, run);
@@ -193,10 +216,7 @@ export function describeGovernanceChange(
   }
 
   // Threshold changes that make policy stricter
-  if (
-    current.askAbovePrice !== null &&
-    (previous.askAbovePrice === null || current.askAbovePrice < previous.askAbovePrice)
-  ) {
+  if (current.askAbovePrice !== null && (previous.askAbovePrice === null || current.askAbovePrice < previous.askAbovePrice)) {
     const prevStr = previous.askAbovePrice === null ? 'none' : `${previous.askAbovePrice} USD`;
     const currStr = `${current.askAbovePrice} USD`;
     return `governance.askAbovePrice was lowered from ${prevStr} to ${currStr}.`;
@@ -208,4 +228,3 @@ export function describeGovernanceChange(
 
   return undefined;
 }
-

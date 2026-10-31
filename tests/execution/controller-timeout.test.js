@@ -70,7 +70,7 @@ test('early phase budget expiry during prepareTask blocks execution and throws T
         assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
         assert.equal(err.code, 'TIMEOUT');
         return true;
-      }
+      },
     );
     assert.equal(executeCalled, false, 'Adapter execution must be blocked');
   } finally {
@@ -119,7 +119,7 @@ test('early phase budget expiry during consent blocks execution and throws TIMEO
         assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
         assert.equal(err.code, 'TIMEOUT');
         return true;
-      }
+      },
     );
     assert.equal(executeCalled, false, 'Adapter execution must be blocked after expired consent');
   } finally {
@@ -167,25 +167,11 @@ test('adapter receives remainingExecutionMs for every backend (codex, claude, ag
     const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
 
     try {
-      const outcome = await executeTask(
-        'test prompt',
-        'public',
-        { backend: backendId },
-        tempDir,
-        null,
-        null,
-        { budget, clock }
-      );
+      const outcome = await executeTask('test prompt', 'public', { backend: backendId }, tempDir, null, null, { budget, clock });
       assert.equal(outcome.isError, false, `Backend ${backendId} should succeed`);
       assert.ok(receivedTimeoutMs !== null, `Backend ${backendId} adapter.execute must be called`);
-      assert.ok(
-        receivedTimeoutMs <= 7700,
-        `Backend ${backendId}: expected timeoutMs <= 7700, got ${receivedTimeoutMs}`
-      );
-      assert.ok(
-        receivedTimeoutMs > 0,
-        `Backend ${backendId}: expected positive timeoutMs, got ${receivedTimeoutMs}`
-      );
+      assert.ok(receivedTimeoutMs <= 7700, `Backend ${backendId}: expected timeoutMs <= 7700, got ${receivedTimeoutMs}`);
+      assert.ok(receivedTimeoutMs > 0, `Backend ${backendId}: expected positive timeoutMs, got ${receivedTimeoutMs}`);
     } finally {
       budget.dispose();
     }

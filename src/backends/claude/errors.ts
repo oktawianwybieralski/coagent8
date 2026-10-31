@@ -2,7 +2,10 @@
 import { redactDiagnostic } from '../../security/redaction.js';
 import type { ErrorCode, ExecutionError } from '../../contracts/index.js';
 
-export interface ClaudeErrorMapping { code: ErrorCode; retryable: boolean }
+export interface ClaudeErrorMapping {
+  code: ErrorCode;
+  retryable: boolean;
+}
 
 /**
  * Claude Code error categories, as reported in `assistant.error` and
@@ -83,8 +86,10 @@ function lookup(evidence: ClaudeFailureEvidence): ClaudeErrorMapping {
 export function classifyClaudeFailure(evidence: ClaudeFailureEvidence): ExecutionError {
   const mapping = lookup(evidence);
   const detail = evidence.message?.trim() || evidence.errors?.join('; ') || evidence.subtype || 'Claude Code reported an error.';
-  const reset = mapping.code === 'RATE_LIMITED' && typeof evidence.rateLimitResetsAt === 'number' && Number.isFinite(evidence.rateLimitResetsAt)
-    ? ` Limit resets at ${new Date(evidence.rateLimitResetsAt * 1000).toISOString()}.` : '';
+  const reset =
+    mapping.code === 'RATE_LIMITED' && typeof evidence.rateLimitResetsAt === 'number' && Number.isFinite(evidence.rateLimitResetsAt)
+      ? ` Limit resets at ${new Date(evidence.rateLimitResetsAt * 1000).toISOString()}.`
+      : '';
   // ERRORS-001 will replace ExecutionError with a ToolError type; this mapping table stays the single source.
   return { code: mapping.code, message: redactDiagnostic(detail + reset), retryable: mapping.retryable };
 }

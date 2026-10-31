@@ -56,8 +56,15 @@ test('collectGitScope names the reason when Git refuses the repository or there 
   fs.mkdirSync(repo);
   execFileSync('git', ['init', '-q'], { cwd: repo, windowsHide: true });
   for (const scope of ['staged', 'uncommitted']) {
-    await assert.rejects(collectGitScope(scope, plain), err => err instanceof ToolError && err.code === 'INPUT_LIMIT'
-      && /Review needs a Git repository/.test(err.message) && /not a git repository/i.test(err.message) && !/cached/.test(err.message));
+    await assert.rejects(
+      collectGitScope(scope, plain),
+      err =>
+        err instanceof ToolError &&
+        err.code === 'INPUT_LIMIT' &&
+        /Review needs a Git repository/.test(err.message) &&
+        /not a git repository/i.test(err.message) &&
+        !/cached/.test(err.message),
+    );
   }
   // Git's own test switch reproduces a repository owned by another account (dubious ownership).
   // CI runners trust every directory (safe.directory=*) in their system or global Git
@@ -68,8 +75,10 @@ test('collectGitScope names the reason when Git refuses the repository or there 
   const saved = Object.fromEntries(Object.keys(isolated).map(key => [key, process.env[key]]));
   Object.assign(process.env, isolated);
   try {
-    await assert.rejects(collectGitScope('staged', repo), err => err instanceof ToolError && err.code === 'INPUT_LIMIT'
-      && /dubious ownership/.test(err.message) && !/cached/.test(err.message));
+    await assert.rejects(
+      collectGitScope('staged', repo),
+      err => err instanceof ToolError && err.code === 'INPUT_LIMIT' && /dubious ownership/.test(err.message) && !/cached/.test(err.message),
+    );
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
@@ -169,15 +178,12 @@ test('runGit pre-flight abortion rejects immediately with ToolError(ABORTED) and
   const controller = new AbortController();
   controller.abort();
 
-  await assert.rejects(
-    runGit(['status'], process.cwd(), controller.signal),
-    err => {
-      assert.ok(err instanceof ToolError, 'Expected ToolError');
-      assert.equal(err.code, 'ABORTED');
-      assert.match(err.message, /cancelled before launch/i);
-      return true;
-    }
-  );
+  await assert.rejects(runGit(['status'], process.cwd(), controller.signal), err => {
+    assert.ok(err instanceof ToolError, 'Expected ToolError');
+    assert.equal(err.code, 'ABORTED');
+    assert.match(err.message, /cancelled before launch/i);
+    return true;
+  });
   assert.equal(activeProcesses.size, initialActive);
 });
 
@@ -192,15 +198,12 @@ test('runGit pre-flight budget expiry rejects with ToolError(TIMEOUT) and spawns
   simulatedTime = 60; // Advance clock beyond deadline
 
   try {
-    await assert.rejects(
-      runGit(['status'], process.cwd(), null, 15000, undefined, { budget }),
-      err => {
-        assert.ok(err instanceof ToolError, 'Expected ToolError');
-        assert.equal(err.code, 'TIMEOUT');
-        assert.match(err.message, /Execution budget expired/i);
-        return true;
-      }
-    );
+    await assert.rejects(runGit(['status'], process.cwd(), null, 15000, undefined, { budget }), err => {
+      assert.ok(err instanceof ToolError, 'Expected ToolError');
+      assert.equal(err.code, 'TIMEOUT');
+      assert.match(err.message, /Execution budget expired/i);
+      return true;
+    });
     assert.equal(activeProcesses.size, initialActive);
   } finally {
     budget.dispose();
@@ -214,14 +217,11 @@ test('runGit abort during execution terminates process tree and cleans up withou
   const promise = runGit(['status'], process.cwd(), controller.signal);
   controller.abort();
 
-  await assert.rejects(
-    promise,
-    err => {
-      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-      assert.equal(err.code, 'ABORTED');
-      return true;
-    }
-  );
+  await assert.rejects(promise, err => {
+    assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+    assert.equal(err.code, 'ABORTED');
+    return true;
+  });
   // Ensure child process was terminated and activeProcesses is clean
   assert.equal(activeProcesses.size, initialActive);
 });
@@ -237,14 +237,11 @@ test('runGit budget executionSignal aborts Git command, cleans up process tree, 
 
   try {
     now = 15; // Primary execution deadline has expired!
-    await assert.rejects(
-      runGit(['status'], process.cwd(), null, 15000, undefined, { budget }),
-      err => {
-        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-        assert.equal(err.code, 'TIMEOUT');
-        return true;
-      }
-    );
+    await assert.rejects(runGit(['status'], process.cwd(), null, 15000, undefined, { budget }), err => {
+      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    });
     assert.equal(activeProcesses.size, initialActive);
   } finally {
     budget.dispose();
@@ -256,14 +253,11 @@ test('collectGitScope with abortSignal cancels promptly and leaves no active pro
   const controller = new AbortController();
   controller.abort();
 
-  await assert.rejects(
-    collectGitScope('uncommitted', process.cwd(), controller.signal),
-    err => {
-      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-      assert.equal(err.code, 'ABORTED');
-      return true;
-    }
-  );
+  await assert.rejects(collectGitScope('uncommitted', process.cwd(), controller.signal), err => {
+    assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+    assert.equal(err.code, 'ABORTED');
+    return true;
+  });
   assert.equal(activeProcesses.size, initialActive);
 });
 
@@ -278,14 +272,11 @@ test('collectGitScope with expired budget rejects with ToolError(TIMEOUT) and le
   now = 15;
 
   try {
-    await assert.rejects(
-      collectGitScope('uncommitted', process.cwd(), null, { budget }),
-      err => {
-        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-        assert.equal(err.code, 'TIMEOUT');
-        return true;
-      }
-    );
+    await assert.rejects(collectGitScope('uncommitted', process.cwd(), null, { budget }), err => {
+      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    });
     assert.equal(activeProcesses.size, initialActive);
   } finally {
     budget.dispose();
@@ -298,28 +289,30 @@ test('snapshotId rethrows ToolError(ABORTED) / ToolError(TIMEOUT) and does not f
   controller.abort();
 
   try {
-    const fakeScope = { type: 'uncommitted', label: 'test', diff: '', nativeArgs: null, inputComplete: true, omissions: [], changedPaths: [] };
-    await assert.rejects(
-      snapshotId(fakeScope, root, controller.signal),
-      err => {
-        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-        assert.equal(err.code, 'ABORTED');
-        return true;
-      }
-    );
+    const fakeScope = {
+      type: 'uncommitted',
+      label: 'test',
+      diff: '',
+      nativeArgs: null,
+      inputComplete: true,
+      omissions: [],
+      changedPaths: [],
+    };
+    await assert.rejects(snapshotId(fakeScope, root, controller.signal), err => {
+      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    });
 
     let now = 0;
     const budget = createExecutionBudget({ totalBudgetMs: 10, teardownAllowanceMs: 10, clock: () => now });
     now = 15;
     try {
-      await assert.rejects(
-        snapshotId(fakeScope, root, null, { budget }),
-        err => {
-          assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-          assert.equal(err.code, 'TIMEOUT');
-          return true;
-        }
-      );
+      await assert.rejects(snapshotId(fakeScope, root, null, { budget }), err => {
+        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+        assert.equal(err.code, 'TIMEOUT');
+        return true;
+      });
     } finally {
       budget.dispose();
     }
@@ -342,29 +335,32 @@ test('assertReviewWorkspace propagates cancellation and preserves foreign-tree r
     git('add', '.');
     git('commit', '-qm', 'initial');
 
-    const fakeScope = { type: 'commit', revision: 'HEAD', label: 'commit HEAD', diff: '', nativeArgs: null, inputComplete: true, omissions: [], changedPaths: [] };
+    const fakeScope = {
+      type: 'commit',
+      revision: 'HEAD',
+      label: 'commit HEAD',
+      diff: '',
+      nativeArgs: null,
+      inputComplete: true,
+      omissions: [],
+      changedPaths: [],
+    };
 
     // 1. Cancellation propagation
-    await assert.rejects(
-      assertReviewWorkspace(fakeScope, root, controller.signal),
-      err => {
-        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-        assert.equal(err.code, 'ABORTED');
-        return true;
-      }
-    );
+    await assert.rejects(assertReviewWorkspace(fakeScope, root, controller.signal), err => {
+      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    });
 
     // 2. Foreign-tree rejection preserves POLICY_DENIED
     fs.writeFileSync(path.join(root, 'untracked.txt'), 'dirty\n');
-    await assert.rejects(
-      assertReviewWorkspace(fakeScope, root, null),
-      err => {
-        assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
-        assert.equal(err.code, 'POLICY_DENIED');
-        assert.match(err.message, /Review target does not match the files in the current workspace/);
-        return true;
-      }
-    );
+    await assert.rejects(assertReviewWorkspace(fakeScope, root, null), err => {
+      assert.ok(err instanceof ToolError, `Expected ToolError, got ${err}`);
+      assert.equal(err.code, 'POLICY_DENIED');
+      assert.match(err.message, /Review target does not match the files in the current workspace/);
+      return true;
+    });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

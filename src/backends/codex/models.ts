@@ -8,12 +8,7 @@
 import { BRAND } from '../../brand.js';
 import { runCommand, type StdinChannel } from '../../execution/process.js';
 import { ToolError } from '../../contracts/index.js';
-import {
-  DEFAULT_MODEL_LIST_TIMEOUT_MS,
-  type CatalogModel,
-  type ModelCatalog,
-  type BackendReadContext,
-} from '../types.js';
+import { DEFAULT_MODEL_LIST_TIMEOUT_MS, type CatalogModel, type ModelCatalog, type BackendReadContext } from '../types.js';
 import { summarizeQuotaWindows, type NativeQuota, type QuotaWindow } from '../quota.js';
 import { codexAppServerArgs } from './app-server.js';
 
@@ -23,7 +18,7 @@ const MODEL_LIST_TIMEOUT_MS = DEFAULT_MODEL_LIST_TIMEOUT_MS;
 const MAX_PAGES = 5;
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 /**
@@ -31,14 +26,20 @@ function record(value: unknown): Record<string, unknown> | null {
  * @param acceptedEfforts - Efforts the adapter passes on; others (such as `ultra`) are not offered.
  * @returns The models, and the cursor of the next page when there is one.
  */
-export function parseCodexModelPage(result: unknown, acceptedEfforts: readonly string[]): { models: CatalogModel[]; nextCursor: string | null } {
+export function parseCodexModelPage(
+  result: unknown,
+  acceptedEfforts: readonly string[],
+): { models: CatalogModel[]; nextCursor: string | null } {
   const page = record(result);
   const data = Array.isArray(page?.data) ? page.data : [];
-  const models = data.map(record).filter((entry): entry is Record<string, unknown> => entry !== null && entry.hidden !== true && typeof entry.id === 'string')
+  const models = data
+    .map(record)
+    .filter((entry): entry is Record<string, unknown> => entry !== null && entry.hidden !== true && typeof entry.id === 'string')
     .map(entry => ({
       id: entry.id as string,
       efforts: (Array.isArray(entry.supportedReasoningEfforts) ? entry.supportedReasoningEfforts : [])
-        .map(option => record(option)?.reasoningEffort).filter((effort): effort is string => typeof effort === 'string' && acceptedEfforts.includes(effort)),
+        .map(option => record(option)?.reasoningEffort)
+        .filter((effort): effort is string => typeof effort === 'string' && acceptedEfforts.includes(effort)),
       ...(entry.isDefault === true ? { isDefault: true } : {}),
     }));
   return { models, nextCursor: typeof page?.nextCursor === 'string' && page.nextCursor ? page.nextCursor : null };
@@ -54,7 +55,7 @@ export function parseCodexModelPage(result: unknown, acceptedEfforts: readonly s
 export async function listCodexModels(
   command: string,
   acceptedEfforts: readonly string[],
-  context?: BackendReadContext
+  context?: BackendReadContext,
 ): Promise<ModelCatalog | undefined> {
   const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
   if (abortSignal?.aborted) {
@@ -64,32 +65,52 @@ export async function listCodexModels(
     throw new ToolError('TIMEOUT', 'Execution budget expired before reading Codex models.');
   }
   const models: CatalogModel[] = [];
-  let failed = false, pages = 0;
+  let failed = false,
+    pages = 0;
   let channel: StdinChannel | undefined;
   const request = (cursor: string | null) => channel?.send({ id: 2 + pages, method: 'model/list', params: cursor ? { cursor } : {} });
   // No thread is started; the overrides keep the server's defaults as read-only as a turn's.
   try {
     const result = await runCommand(command, codexAppServerArgs(), {
-      timeoutMs: (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0)
-        ? context.timeoutMs
-        : MODEL_LIST_TIMEOUT_MS,
+      timeoutMs:
+        context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0
+          ? context.timeoutMs
+          : MODEL_LIST_TIMEOUT_MS,
       maxBufferBytes: 512 * 1024,
       maxLineBytes: 512 * 1024,
       abortSignal,
       session: {
         start(opened) {
           channel = opened;
-          opened.send({ id: 1, method: 'initialize', params: { clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION } } });
+          opened.send({
+            id: 1,
+            method: 'initialize',
+            params: { clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION } },
+          });
         },
-        interrupt(opened) { opened.close(); },
+        interrupt(opened) {
+          opened.close();
+        },
       },
       onStdoutLine(line) {
         let message: Record<string, unknown> | null;
-        try { message = record(JSON.parse(line)); } catch { message = null; }
+        try {
+          message = record(JSON.parse(line));
+        } catch {
+          message = null;
+        }
         // Notifications and server requests carry no answer to these two requests.
         if (!message || typeof message.id !== 'number' || typeof message.method === 'string') return;
-        if (message.error !== undefined) { failed = true; channel?.close(); return; }
-        if (message.id === 1) { channel?.send({ method: 'initialized' }); request(null); return; }
+        if (message.error !== undefined) {
+          failed = true;
+          channel?.close();
+          return;
+        }
+        if (message.id === 1) {
+          channel?.send({ method: 'initialized' });
+          request(null);
+          return;
+        }
         const page = parseCodexModelPage(message.result, acceptedEfforts);
         models.push(...page.models);
         pages++;
@@ -123,17 +144,25 @@ function windowLabel(minutes: number): string {
 export function parseCodexRateLimits(result: unknown): NativeQuota | undefined {
   const answer = record(result);
   const byId = record(answer?.rateLimitsByLimitId);
-  const buckets = (byId ? Object.values(byId) : [answer?.rateLimits]).map(record).filter((bucket): bucket is Record<string, unknown> => bucket !== null);
+  const buckets = (byId ? Object.values(byId) : [answer?.rateLimits])
+    .map(record)
+    .filter((bucket): bucket is Record<string, unknown> => bucket !== null);
   const windows: QuotaWindow[] = [];
   for (const bucket of buckets) {
     const limit = typeof bucket.limitId === 'string' ? bucket.limitId : 'codex';
     for (const slot of ['primary', 'secondary'] as const) {
       const window = record(bucket[slot]);
-      const used = window?.usedPercent, minutes = window?.windowDurationMins, resets = window?.resetsAt;
+      const used = window?.usedPercent,
+        minutes = window?.windowDurationMins,
+        resets = window?.resetsAt;
       if (typeof used !== 'number' || !Number.isFinite(used) || typeof minutes !== 'number' || !(minutes > 0)) continue;
-      windows.push({ id: `${limit}:${slot}`, name: typeof bucket.limitName === 'string' ? bucket.limitName : limit, window: windowLabel(minutes),
+      windows.push({
+        id: `${limit}:${slot}`,
+        name: typeof bucket.limitName === 'string' ? bucket.limitName : limit,
+        window: windowLabel(minutes),
         remainingFraction: Math.max(0, Math.min(1, (100 - used) / 100)),
-        resetTime: typeof resets === 'number' && Number.isFinite(resets) ? new Date(resets * 1000).toISOString() : '' });
+        resetTime: typeof resets === 'number' && Number.isFinite(resets) ? new Date(resets * 1000).toISOString() : '',
+      });
     }
   }
   return summarizeQuotaWindows(windows);
@@ -146,10 +175,7 @@ export function parseCodexRateLimits(result: unknown): NativeQuota | undefined {
  * @returns The measured quota, or undefined when the server answers with an error (for
  * example API-key sign-in without ChatGPT limits) or does not answer in time.
  */
-export async function readCodexRateLimits(
-  command: string,
-  context?: BackendReadContext
-): Promise<NativeQuota | undefined> {
+export async function readCodexRateLimits(command: string, context?: BackendReadContext): Promise<NativeQuota | undefined> {
   const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
   if (abortSignal?.aborted) {
     throw new ToolError('ABORTED', 'Codex rate limits read cancelled before launch.');
@@ -160,24 +186,39 @@ export async function readCodexRateLimits(
   let channel: StdinChannel | undefined, quota: NativeQuota | undefined;
   try {
     const result = await runCommand(command, codexAppServerArgs(), {
-      timeoutMs: (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0)
-        ? context.timeoutMs
-        : MODEL_LIST_TIMEOUT_MS,
+      timeoutMs:
+        context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0
+          ? context.timeoutMs
+          : MODEL_LIST_TIMEOUT_MS,
       maxBufferBytes: 512 * 1024,
       maxLineBytes: 512 * 1024,
       abortSignal,
       session: {
         start(opened) {
           channel = opened;
-          opened.send({ id: 1, method: 'initialize', params: { clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION } } });
+          opened.send({
+            id: 1,
+            method: 'initialize',
+            params: { clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION } },
+          });
         },
-        interrupt(opened) { opened.close(); },
+        interrupt(opened) {
+          opened.close();
+        },
       },
       onStdoutLine(line) {
         let message: Record<string, unknown> | null;
-        try { message = record(JSON.parse(line)); } catch { message = null; }
+        try {
+          message = record(JSON.parse(line));
+        } catch {
+          message = null;
+        }
         if (!message || typeof message.id !== 'number' || typeof message.method === 'string') return;
-        if (message.id === 1 && message.error === undefined) { channel?.send({ method: 'initialized' }); channel?.send({ id: 2, method: 'account/rateLimits/read' }); return; }
+        if (message.id === 1 && message.error === undefined) {
+          channel?.send({ method: 'initialized' });
+          channel?.send({ id: 2, method: 'account/rateLimits/read' });
+          return;
+        }
         if (message.id === 2 && message.error === undefined) quota = parseCodexRateLimits(message.result);
         channel?.close();
       },

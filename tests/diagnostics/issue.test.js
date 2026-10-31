@@ -13,13 +13,21 @@ const {
 } = require('../../src/diagnostics/issue.ts');
 
 test('issue link points to bug_report.yml template and provides copyable report block', () => {
-  const errorMessage = 'No file-reading tools or filesystem resources are available, so I could not verify the surrounding syncPage code or authorization call site to confirm rejection precedes every side effect; shell commands were prohibited.';
-  const context = 'Review of card RC26-01-06a3 with backend codex and model gpt-6.1-sol returned BLOCKED with PARTIAL coverage because no file-reading tools or filesystem resources were available to read workspace files outside the diff.';
-  const report = generateBugReport({ errorMessage, context, doctorReport: { backends: {
-    codex: { name: 'OpenAI Codex CLI', installed: true, version: 'codex-cli 0.162.0-alpha.17.2' },
-    agy: { name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.2' },
-    claude: { name: 'Claude Code CLI', installed: true, version: '2.1.296 (Claude Code)' },
-  } } });
+  const errorMessage =
+    'No file-reading tools or filesystem resources are available, so I could not verify the surrounding syncPage code or authorization call site to confirm rejection precedes every side effect; shell commands were prohibited.';
+  const context =
+    'Review of card RC26-01-06a3 with backend codex and model gpt-6.1-sol returned BLOCKED with PARTIAL coverage because no file-reading tools or filesystem resources were available to read workspace files outside the diff.';
+  const report = generateBugReport({
+    errorMessage,
+    context,
+    doctorReport: {
+      backends: {
+        codex: { name: 'OpenAI Codex CLI', installed: true, version: 'codex-cli 0.162.0-alpha.17.2' },
+        agy: { name: 'Google Gemini (Antigravity agy)', installed: true, version: '1.3.2' },
+        claude: { name: 'Claude Code CLI', installed: true, version: '2.1.296 (Claude Code)' },
+      },
+    },
+  });
   const link = report.prompt.match(/\[Submit Bug Report on GitHub\]\(<([^>]+)>\)/)[1];
   const copiedLink = report.prompt.match(/Link URL:\n\n```text\n([^\n]+)\n```/)[1];
   assert.equal(link, report.issueUrl);
@@ -31,23 +39,29 @@ test('issue link points to bug_report.yml template and provides copyable report 
   assert.ok(!/[\\()\s]/.test(link), 'URL must not contain Markdown escapes or delimiters');
 
   // Verify CommonMark rendering: outer code fence must be at least 4 backticks (longer than body's ```)
-  const copyBlockMatch = report.prompt.match(/Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1$/);
+  const copyBlockMatch = report.prompt.match(
+    /Review the sanitized report below, copy it, paste it into the "CoAgent8 issue output" field of the bug report form, complete the required fields and submit:\n\n(`{4,})text\n([\s\S]*?)\n\1$/,
+  );
   assert.ok(copyBlockMatch, 'prompt must contain separate copy block enclosed in safe outer code fence');
-  assert.equal(copyBlockMatch[2], report.body, 'copy block content must strictly match the complete report body including nested code blocks and environment details');
+  assert.equal(
+    copyBlockMatch[2],
+    report.body,
+    'copy block content must strictly match the complete report body including nested code blocks and environment details',
+  );
 
   assert.ok(report.body.includes(context));
   assert.ok(report.body.includes(errorMessage));
-  assert.ok(report.body.includes(
-    '- **Detected CLIs**:\n' +
-    '  - **OpenAI Codex CLI**: codex-cli 0.162.0-alpha.17.2\n' +
-    '  - **Google Gemini (Antigravity agy)**: 1.3.2\n' +
-    '  - **Claude Code CLI**: 2.1.296 (Claude Code)'
-  ));
+  assert.ok(
+    report.body.includes(
+      '- **Detected CLIs**:\n' +
+        '  - **OpenAI Codex CLI**: codex-cli 0.162.0-alpha.17.2\n' +
+        '  - **Google Gemini (Antigravity agy)**: 1.3.2\n' +
+        '  - **Claude Code CLI**: 2.1.296 (Claude Code)',
+    ),
+  );
   assert.ok(!report.body.includes('vcodex-cli'));
   assert.ok(!report.body.includes('v1.3.2'));
-  assert.ok(report.body.includes(
-    'For setup, sign-in or quota problems, paste the output of doctor (scope: health).'
-  ));
+  assert.ok(report.body.includes('For setup, sign-in or quota problems, paste the output of doctor (scope: health).'));
   assert.ok(!/[\r\n]/.test(report.title));
   assert.ok(!report.title.includes('[truncated]'));
   assert.ok(Array.from(report.title).length <= 120);
@@ -67,17 +81,19 @@ test('issue link points to bug_report.yml template and provides copyable report 
       },
     },
   });
-  assert.ok(unknownVersionReport.body.includes(
-    '- **Detected CLIs**:\n' +
-    '  - **OpenAI Codex CLI**: unknown\n' +
-    '  - **Google Gemini (Antigravity agy)**: 1.3.3 build 2026-10\n' +
-    '  - **Claude Code CLI**: Not installed'
-  ));
+  assert.ok(
+    unknownVersionReport.body.includes(
+      '- **Detected CLIs**:\n' +
+        '  - **OpenAI Codex CLI**: unknown\n' +
+        '  - **Google Gemini (Antigravity agy)**: 1.3.3 build 2026-10\n' +
+        '  - **Claude Code CLI**: Not installed',
+    ),
+  );
   assert.ok(!unknownVersionReport.body.includes('vunknown'));
 });
 
 test('the issue URL carries no report data and stays below the length ceiling', () => {
-  const errorMessage = "Failure (worker's task)! *retry* & body=injected #fragment %23 + / \\ \"quoted\" \u{1f680} \u0142";
+  const errorMessage = 'Failure (worker\'s task)! *retry* & body=injected #fragment %23 + / \\ "quoted" \u{1f680} \u0142';
   const context = 'Keep literal %26 and &#x20; and ?title=other&body=other in diagnostics.';
   const report = generateBugReport({ errorMessage, context });
   assert.equal(report.issueUrl, GITHUB_BUG_REPORT_TEMPLATE_URL);
@@ -85,7 +101,18 @@ test('the issue URL carries no report data and stays below the length ceiling', 
   assert.ok(report.body.includes(errorMessage));
   assert.ok(report.body.includes(context));
 
-  for (const error of ['Short error', 'x'.repeat(110), 'x'.repeat(111), 'x'.repeat(200), 'x'.repeat(109) + '\u{1f680}'.repeat(4), 'First\rSecond', 'First\u2028Second', 'First\u2029Second', 'First\nSecond', '  First\t  Second  ']) {
+  for (const error of [
+    'Short error',
+    'x'.repeat(110),
+    'x'.repeat(111),
+    'x'.repeat(200),
+    'x'.repeat(109) + '\u{1f680}'.repeat(4),
+    'First\rSecond',
+    'First\u2028Second',
+    'First\u2029Second',
+    'First\nSecond',
+    '  First\t  Second  ',
+  ]) {
     const generated = generateBugReport({ errorMessage: error });
     assert.ok(Array.from(generated.title).length <= 120);
     assert.ok(!/[\r\n\u2028\u2029]/.test(generated.title));
@@ -126,7 +153,7 @@ test('issue reporting generates sanitized GitHub issue template URL and redacts 
   const sanitizedEdge = sanitizeText(edgeSecretText);
   assert.equal(
     sanitizedEdge,
-    `Config: {"api_key":"***[REDACTED]***"}, env: password=***[REDACTED]***, header: Authorization: Bearer ***[REDACTED]***, json: {"password":"***[REDACTED]***"}, git: https://***[REDACTED]***@host.com/repo.git, token_url: https://***[REDACTED]***@api.com, user_url: https://***[REDACTED]***@host.com`
+    `Config: {"api_key":"***[REDACTED]***"}, env: password=***[REDACTED]***, header: Authorization: Bearer ***[REDACTED]***, json: {"password":"***[REDACTED]***"}, git: https://***[REDACTED]***@host.com/repo.git, token_url: https://***[REDACTED]***@api.com, user_url: https://***[REDACTED]***@host.com`,
   );
 
   // Test safe surrogate handling with emojis
@@ -157,28 +184,37 @@ test('issue reporting generates sanitized GitHub issue template URL and redacts 
 });
 
 test('diagnostic and issue truncation cannot expose recognized credential prefixes', () => {
-  const {redactDiagnostic}=require('../../src/security/redaction.ts');
-  const {truncateToByteLength}=require('../../src/execution/runtime/stream.ts');
-  const key='sk-'+'A'.repeat(40);
-  for(const input of ['{"api_key":"fixtureSecret','password=\'fixtureSecret','{"token":"fixtureSecret\\','{"secret":"fixtureSecret\\\n']) {
-    assert.ok(!redactDiagnostic(input).includes('fixtureSecret'));assert.ok(!sanitizeText(input).includes('fixtureSecret'));
+  const { redactDiagnostic } = require('../../src/security/redaction.ts');
+  const { truncateToByteLength } = require('../../src/execution/runtime/stream.ts');
+  const key = 'sk-' + 'A'.repeat(40);
+  for (const input of [
+    '{"api_key":"fixtureSecret',
+    "password='fixtureSecret",
+    '{"token":"fixtureSecret\\',
+    '{"secret":"fixtureSecret\\\n',
+  ]) {
+    assert.ok(!redactDiagnostic(input).includes('fixtureSecret'));
+    assert.ok(!sanitizeText(input).includes('fixtureSecret'));
   }
-  for(const budget of [64,512,4096,512*1024]){
-    const input='x'.repeat(budget-16)+' '+key;
-    for(const value of [redactDiagnostic(input,budget),redactDiagnostic(truncateToByteLength(input,budget),budget)]){
-      assert.ok(!value.includes('sk-A'),value.slice(-80));assert.ok(Buffer.byteLength(value)<=budget);
+  for (const budget of [64, 512, 4096, 512 * 1024]) {
+    const input = 'x'.repeat(budget - 16) + ' ' + key;
+    for (const value of [redactDiagnostic(input, budget), redactDiagnostic(truncateToByteLength(input, budget), budget)]) {
+      assert.ok(!value.includes('sk-A'), value.slice(-80));
+      assert.ok(Buffer.byteLength(value) <= budget);
     }
   }
-  assert.ok(!sanitizeText('x'.repeat(4080)+' '+key).includes('sk-A'));
+  assert.ok(!sanitizeText('x'.repeat(4080) + ' ' + key).includes('sk-A'));
 });
 
 test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquoted passwords, and resists ReDoS', async () => {
-  const {redactDiagnostic, redactCredentialFormats}=require('../../src/security/redaction.ts');
-  const keys='-----BEGIN PRIVATE KEY-----\nPRIVATE_DER_SECRET\n-----END PRIVATE KEY-----\n{"aws_access_key_id":"QUOTED_ID_SECRET","aws_secret_access_key":"QUOTED_AWS_SECRET"}';
+  const { redactDiagnostic, redactCredentialFormats } = require('../../src/security/redaction.ts');
+  const keys =
+    '-----BEGIN PRIVATE KEY-----\nPRIVATE_DER_SECRET\n-----END PRIVATE KEY-----\n{"aws_access_key_id":"QUOTED_ID_SECRET","aws_secret_access_key":"QUOTED_AWS_SECRET"}';
   assert.ok(!redactCredentialFormats(keys).includes('PRIVATE_DER_SECRET'));
-  for(const secret of ['PRIVATE_DER_SECRET','QUOTED_ID_SECRET','QUOTED_AWS_SECRET'])assert.ok(!redactDiagnostic(keys).includes(secret));
+  for (const secret of ['PRIVATE_DER_SECRET', 'QUOTED_ID_SECRET', 'QUOTED_AWS_SECRET']) assert.ok(!redactDiagnostic(keys).includes(secret));
   // Test Basic auth, temporary AWS keys (ASIA), and complex passwords with semicolons and equals
-  const leakedText = 'Authorization: Basic dXNlcjpwYXNzd29yZA== and AWS_ACCESS_KEY_ID=ASIA1234567890ABCDEF and AWS_SECRET_ACCESS_KEY=superSecretValue and password=abc;def=ghi and aws_session_token=xyz123';
+  const leakedText =
+    'Authorization: Basic dXNlcjpwYXNzd29yZA== and AWS_ACCESS_KEY_ID=ASIA1234567890ABCDEF and AWS_SECRET_ACCESS_KEY=superSecretValue and password=abc;def=ghi and aws_session_token=xyz123';
   const sanitized = sanitizeText(leakedText);
   assert.ok(!sanitized.includes('dXNlcjpwYXNzd29yZA=='));
   assert.ok(!sanitized.includes('ASIA1234567890ABCDEF'));
@@ -193,7 +229,8 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
   assert.ok(sanitized.includes('aws_session_token=***[REDACTED]***'));
 
   // Test code confidentiality: raw code blocks, unterminated blocks, tildes, and git diffs
-  const codeText = 'Error occurred during test:\n```typescript\nconst proprietarySecret = "internal_secret_value";\n```\n~~~python\nsecret_python = 42\n~~~\ndiff --git a/src/secret.js b/src/secret.js\n+ secret diff\n';
+  const codeText =
+    'Error occurred during test:\n```typescript\nconst proprietarySecret = "internal_secret_value";\n```\n~~~python\nsecret_python = 42\n~~~\ndiff --git a/src/secret.js b/src/secret.js\n+ secret diff\n';
   const sanitizedCode = sanitizeText(codeText);
   assert.ok(!sanitizedCode.includes('proprietarySecret'));
   assert.ok(!sanitizedCode.includes('secret_python'));
@@ -208,7 +245,8 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
   assert.ok(sanitizedUnterminated.includes('[code block redacted for privacy]'));
 
   // Embedded fence delimiter test: tilde block containing ``` must not terminate early
-  const embeddedFenceCode = '~~~markdown\ncode here:\n```javascript\nconst leakedInner = "secret123";\n```\nconst leakedAfter = "secret456";\n~~~';
+  const embeddedFenceCode =
+    '~~~markdown\ncode here:\n```javascript\nconst leakedInner = "secret123";\n```\nconst leakedAfter = "secret456";\n~~~';
   const sanitizedEmbedded = sanitizeText(embeddedFenceCode);
   assert.ok(!sanitizedEmbedded.includes('leakedInner'));
   assert.ok(!sanitizedEmbedded.includes('leakedAfter'));
@@ -227,8 +265,12 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
     }
     return best;
   };
-  const small = bestOf3(400_000), large = bestOf3(1_600_000);
-  assert.ok(large < small * 8 + 10, `sanitizing grew from ${small.toFixed(1)} ms to ${large.toFixed(1)} ms for 4x the input, possible ReDoS`);
+  const small = bestOf3(400_000),
+    large = bestOf3(1_600_000);
+  assert.ok(
+    large < small * 8 + 10,
+    `sanitizing grew from ${small.toFixed(1)} ms to ${large.toFixed(1)} ms for 4x the input, possible ReDoS`,
+  );
   assert.ok(sanitizeText('a'.repeat(40000)).length <= 4096, 'Bounded length should be enforced');
 });
 

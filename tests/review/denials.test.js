@@ -24,89 +24,100 @@ test('createCodexStreamCollector captures filesystem permission denials only on 
   collector.beginTurn('turn_1');
 
   // 1. Failed tool execution with PowerShell UnauthorizedAccessException and leading switches in Get-Content
-  collector.line(JSON.stringify({
-    method: 'item/completed',
-    params: {
-      threadId: 'thread_denial',
-      turnId: 'turn_1',
-      item: {
-        id: 'cmd_1',
-        type: 'commandExecution',
-        command: '"pwsh.exe" -Command "Get-Content -Raw \'docs/ARCHITECTURE.md\'"',
-        aggregatedOutput: 'Get-Content : Odmowa dostępu\nCategoryInfo : PermissionDenied: (C:\\repo\\docs\\ARCHITECTURE.md:String) [Get-Content], UnauthorizedAccessException',
-        exitCode: 1,
-        status: 'failed',
+  collector.line(
+    JSON.stringify({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread_denial',
+        turnId: 'turn_1',
+        item: {
+          id: 'cmd_1',
+          type: 'commandExecution',
+          command: '"pwsh.exe" -Command "Get-Content -Raw \'docs/ARCHITECTURE.md\'"',
+          aggregatedOutput:
+            'Get-Content : Odmowa dostępu\nCategoryInfo : PermissionDenied: (C:\\repo\\docs\\ARCHITECTURE.md:String) [Get-Content], UnauthorizedAccessException',
+          exitCode: 1,
+          status: 'failed',
+        },
       },
-    },
-  }));
+    }),
+  );
 
   // 2. Failed Git command with permission denial
-  collector.line(JSON.stringify({
-    method: 'item/completed',
-    params: {
-      threadId: 'thread_denial',
-      turnId: 'turn_1',
-      item: {
-        id: 'cmd_2',
-        type: 'commandExecution',
-        command: 'git -C "C:/repo" show HEAD:docs/HANDOFF.md',
-        aggregatedOutput: "fatal: failed to stat 'C:/repo/parent': Permission denied",
-        exitCode: 1,
-        status: 'failed',
+  collector.line(
+    JSON.stringify({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread_denial',
+        turnId: 'turn_1',
+        item: {
+          id: 'cmd_2',
+          type: 'commandExecution',
+          command: 'git -C "C:/repo" show HEAD:docs/HANDOFF.md',
+          aggregatedOutput: "fatal: failed to stat 'C:/repo/parent': Permission denied",
+          exitCode: 1,
+          status: 'failed',
+        },
       },
-    },
-  }));
+    }),
+  );
 
   // 3. Successful command whose output happens to contain "Permission denied" text (e.g. reading docs discussing permissions)
-  collector.line(JSON.stringify({
-    method: 'item/completed',
-    params: {
-      threadId: 'thread_denial',
-      turnId: 'turn_1',
-      item: {
-        id: 'cmd_3',
-        type: 'commandExecution',
-        command: '"pwsh.exe" -Command "Get-Content -LiteralPath \'docs/SECURITY.md\' -Raw"',
-        aggregatedOutput: 'When access is refused, the OS returns Permission denied.',
-        exitCode: 0,
-        status: 'completed',
+  collector.line(
+    JSON.stringify({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread_denial',
+        turnId: 'turn_1',
+        item: {
+          id: 'cmd_3',
+          type: 'commandExecution',
+          command: '"pwsh.exe" -Command "Get-Content -LiteralPath \'docs/SECURITY.md\' -Raw"',
+          aggregatedOutput: 'When access is refused, the OS returns Permission denied.',
+          exitCode: 0,
+          status: 'completed',
+        },
       },
-    },
-  }));
+    }),
+  );
 
   // 4. Failed search (exit 1) whose command line contained "blocked by policy", but whose output has no denial
-  collector.line(JSON.stringify({
-    method: 'item/completed',
-    params: {
-      threadId: 'thread_denial',
-      turnId: 'turn_1',
-      item: {
-        id: 'cmd_4',
-        type: 'commandExecution',
-        command: 'rg "blocked by policy" src',
-        aggregatedOutput: '',
-        exitCode: 1,
-        status: 'failed',
+  collector.line(
+    JSON.stringify({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread_denial',
+        turnId: 'turn_1',
+        item: {
+          id: 'cmd_4',
+          type: 'commandExecution',
+          command: 'rg "blocked by policy" src',
+          aggregatedOutput: '',
+          exitCode: 1,
+          status: 'failed',
+        },
       },
-    },
-  }));
+    }),
+  );
 
   // 5. Failed Test-Path command (Test-Path must not match -Path parameter regex)
-  collector.line(JSON.stringify({
-    method: 'item/completed',
-    params: {
-      threadId: 'thread_denial',
-      turnId: 'turn_1',
-      item: {
-        id: 'cmd_5',
-        type: 'commandExecution',
-        command: 'Test-Path docs/foo.md',
-        aggregatedOutput: 'Access is denied',
-        exitCode: 1,
-        status: 'failed',
+  collector.line(
+    JSON.stringify({
+      method: 'item/completed',
+      params: {
+        threadId: 'thread_denial',
+        turnId: 'turn_1',
+        item: {
+          id: 'cmd_5',
+          type: 'commandExecution',
+          command: 'Test-Path docs/foo.md',
+          aggregatedOutput: 'Access is denied',
+          exitCode: 1,
+          status: 'failed',
+        },
       },
-    },
-  }));
+    }),
+  );
 
   const snapshot = collector.snapshot();
   assert.ok(Array.isArray(snapshot.denials), 'snapshot contains denials array');
@@ -139,9 +150,7 @@ test('evaluateStateEnvelopeGate enforces COVERAGE: PARTIAL and BLOCKED on file, 
     requiredChecks: [],
     requiredFiles: ['docs/ARCHITECTURE.md', 'src/index.ts'],
     workspaceRoot: 'C:/repo',
-    observedDenials: [
-      { path: 'docs/ARCHITECTURE.md', operation: 'read', reason: 'Permission denied' },
-    ],
+    observedDenials: [{ path: 'docs/ARCHITECTURE.md', operation: 'read', reason: 'Permission denied' }],
   });
   assert.equal(evalFile.coverage, 'PARTIAL');
   assert.equal(evalFile.verdict, 'BLOCKED');
@@ -154,9 +163,7 @@ test('evaluateStateEnvelopeGate enforces COVERAGE: PARTIAL and BLOCKED on file, 
     requiredChecks: [],
     requiredFiles: ['docs/ARCHITECTURE.md', 'src/index.ts'],
     workspaceRoot: 'C:/repo',
-    observedDenials: [
-      { path: 'C:/repo/docs', operation: 'read', reason: 'Permission denied' },
-    ],
+    observedDenials: [{ path: 'C:/repo/docs', operation: 'read', reason: 'Permission denied' }],
   });
   assert.equal(evalDir.coverage, 'PARTIAL');
   assert.equal(evalDir.verdict, 'BLOCKED');
@@ -169,9 +176,7 @@ test('evaluateStateEnvelopeGate enforces COVERAGE: PARTIAL and BLOCKED on file, 
     requiredChecks: [],
     requiredFiles: ['src/index.ts'],
     workspaceRoot: 'C:/repo',
-    observedDenials: [
-      { path: 'C:/Temp/src', operation: 'read', reason: 'Permission denied' },
-    ],
+    observedDenials: [{ path: 'C:/Temp/src', operation: 'read', reason: 'Permission denied' }],
   });
   assert.equal(evalUnrelated.verdict, 'READY');
 
@@ -182,9 +187,7 @@ test('evaluateStateEnvelopeGate enforces COVERAGE: PARTIAL and BLOCKED on file, 
     requiredChecks: [],
     requiredFiles: ['src/index.ts'],
     workspaceRoot: 'C:/repo',
-    observedDenials: [
-      { operation: 'commandExecution', reason: 'Blocked by policy' },
-    ],
+    observedDenials: [{ operation: 'commandExecution', reason: 'Blocked by policy' }],
   });
   assert.equal(evalPolicy.coverage, 'PARTIAL');
   assert.equal(evalPolicy.verdict, 'BLOCKED');
@@ -197,9 +200,7 @@ test('evaluateStateEnvelopeGate enforces COVERAGE: PARTIAL and BLOCKED on file, 
     requiredChecks: [],
     requiredFiles: ['src/index.ts'],
     workspaceRoot: 'C:/repo',
-    observedDenials: [
-      { operation: 'command', reason: 'Permission denied' },
-    ],
+    observedDenials: [{ operation: 'command', reason: 'Permission denied' }],
   });
   assert.equal(evalPathless.coverage, 'PARTIAL');
   assert.equal(evalPathless.verdict, 'BLOCKED');
@@ -228,9 +229,7 @@ test('formatExecutionResult reports observed tool denials in footer distinctly a
       output: answer,
       truncated: false,
       continuationAvailable: true,
-      denials: [
-        { path: absoluteHomePath, operation: 'read', reason: 'Permission denied' },
-      ],
+      denials: [{ path: absoluteHomePath, operation: 'read', reason: 'Permission denied' }],
     },
     '',
     'syn_sess_123',
@@ -242,12 +241,16 @@ test('formatExecutionResult reports observed tool denials in footer distinctly a
         inputComplete: true,
         requiredChecks: [],
       },
-    }
+    },
   );
 
   const text = formatted.content[0].text;
   assert.ok(!text.includes(os.homedir()), 'raw user home directory is redacted from denial footer');
-  assert.match(text, /Denied \(observed from tool events\): read (~|\[HOME\])[/\\]workspace[/\\]docs[/\\]ARCHITECTURE\.md \(Permission denied\)/, 'footer carries redacted denial path');
+  assert.match(
+    text,
+    /Denied \(observed from tool events\): read (~|\[HOME\])[/\\]workspace[/\\]docs[/\\]ARCHITECTURE\.md \(Permission denied\)/,
+    'footer carries redacted denial path',
+  );
   assert.ok(text.includes('Verdict: BLOCKED'), 'verdict line retained');
 });
 
@@ -270,7 +273,11 @@ test('classifyCodexError classifies sandbox provisioning and backend failures as
 
 test('codexLaunchEnvironment drops only the Windows app execution alias directory from PATH', () => {
   const { codexLaunchEnvironment } = require('../../src/backends/codex/app-server.ts');
-  const env = { Path: String.raw`C:\Dev\scoop\shims;C:\Users\u\AppData\Local\Microsoft\WindowsApps\;C:\Windows\System32`, LOCALAPPDATA: String.raw`C:\Users\u\AppData\Local`, OTHER: 'x' };
+  const env = {
+    Path: String.raw`C:\Dev\scoop\shims;C:\Users\u\AppData\Local\Microsoft\WindowsApps\;C:\Windows\System32`,
+    LOCALAPPDATA: String.raw`C:\Users\u\AppData\Local`,
+    OTHER: 'x',
+  };
   const windows = codexLaunchEnvironment(env, 'win32');
   assert.equal(windows.Path, String.raw`C:\Dev\scoop\shims;C:\Windows\System32`);
   assert.equal(windows.OTHER, 'x');

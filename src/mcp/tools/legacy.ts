@@ -16,7 +16,8 @@ import { ToolError } from '../../contracts/index.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 
-export type LegacyAliasName = typeof CANONICAL_TOOL_NAMES.ANALYZE | typeof CANONICAL_TOOL_NAMES.DEBUG | typeof CANONICAL_TOOL_NAMES.IMPLEMENT;
+export type LegacyAliasName =
+  typeof CANONICAL_TOOL_NAMES.ANALYZE | typeof CANONICAL_TOOL_NAMES.DEBUG | typeof CANONICAL_TOOL_NAMES.IMPLEMENT;
 
 /** Mapping contract exposed by LEGACY_ALIASES for deprecated tool compatibility. */
 export interface LegacyAlias {
@@ -37,7 +38,8 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     input: 'task',
     taskType: 'architecture',
     contextAsQuestions: false,
-    description: '[Deprecated: Use consult with task_type="architecture" instead] Perform deep architectural, dependency, and structural code analysis in read-only mode using local CLI reasoning agents.',
+    description:
+      '[Deprecated: Use consult with task_type="architecture" instead] Perform deep architectural, dependency, and structural code analysis in read-only mode using local CLI reasoning agents.',
     properties: {
       task: { type: 'string', description: 'The specific question, architectural aspect, or focus area to analyze.' },
       file_paths: { ...FILE_LIST, description: 'Optional list of files or directories to inspect.' },
@@ -47,7 +49,8 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     input: 'error_message',
     taskType: 'debug',
     contextAsQuestions: true,
-    description: '[Deprecated: Use consult with task_type="debug" instead] Diagnose an error or stack trace using local CLI reasoning agents in read-only sandbox mode. Returns root cause analysis and a step-by-step fix recommendation.',
+    description:
+      '[Deprecated: Use consult with task_type="debug" instead] Diagnose an error or stack trace using local CLI reasoning agents in read-only sandbox mode. Returns root cause analysis and a step-by-step fix recommendation.',
     properties: {
       error_message: { type: 'string', description: 'The complete error message or stack trace to diagnose.' },
       context: { type: 'string', description: 'What you were doing when the error occurred, relevant inputs, or recent changes.' },
@@ -58,7 +61,8 @@ export const LEGACY_ALIASES: Readonly<Record<LegacyAliasName, LegacyAlias>> = {
     input: 'specification',
     taskType: 'implementation',
     contextAsQuestions: true,
-    description: '[Deprecated: Use consult with task_type="implementation" instead] Implement a well-specified component, complex algorithm, or class in read-only sandbox mode without writing to disk.',
+    description:
+      '[Deprecated: Use consult with task_type="implementation" instead] Implement a well-specified component, complex algorithm, or class in read-only sandbox mode without writing to disk.',
     properties: {
       specification: { type: 'string', description: 'Detailed description of what to implement, including interface requirements.' },
       context_files: { ...FILE_LIST, description: 'Optional list of files that provide relevant types, interfaces, or context.' },
@@ -102,33 +106,29 @@ export async function handleLegacyAlias(
     budget?: ExecutionBudget;
     context?: BackendReadContext;
   } = {},
-  via: 'tool' | 'run' = 'tool'
+  via: 'tool' | 'run' = 'tool',
 ) {
   const alias = LEGACY_ALIASES[name];
   const request = args[alias.input];
   if (typeof request !== 'string' || !request.trim()) {
-    throw new ToolError('INPUT_LIMIT', `Validation Error: ${alias.input} must be a non-empty string${via === 'run' ? ` for action "${name}"` : ''}.`);
+    throw new ToolError(
+      'INPUT_LIMIT',
+      `Validation Error: ${alias.input} must be a non-empty string${via === 'run' ? ` for action "${name}"` : ''}.`,
+    );
   }
-  const warning = via === 'run'
-    ? `Subcommand '${name}' in run gateway is deprecated. Use action 'consult' with task_type='${alias.taskType}' instead.`
-    : `Tool '${name}' is deprecated and will be removed in v1.1.0. Use 'consult' with task_type='${alias.taskType}' instead.`;
+  const warning =
+    via === 'run'
+      ? `Subcommand '${name}' in run gateway is deprecated. Use action 'consult' with task_type='${alias.taskType}' instead.`
+      : `Tool '${name}' is deprecated and will be removed in v1.1.0. Use 'consult' with task_type='${alias.taskType}' instead.`;
   const mapped: ToolArguments = {
     ...args,
     proposal: request,
     task_type: alias.taskType,
     specific_questions: alias.contextAsQuestions ? args.context : args.specific_questions,
   };
-  return handleConsult(
-    CANONICAL_TOOL_NAMES.CONSULT,
-    mapped,
-    workspaceCwd,
-    abortSignal,
-    onProgress,
-    {
-      ...options,
-      warnings: [warning],
-      askConsent: options.askConsent,
-    }
-  );
+  return handleConsult(CANONICAL_TOOL_NAMES.CONSULT, mapped, workspaceCwd, abortSignal, onProgress, {
+    ...options,
+    warnings: [warning],
+    askConsent: options.askConsent,
+  });
 }
-

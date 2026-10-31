@@ -14,7 +14,8 @@ import { ToolError } from '../../contracts/error.js';
 export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
-    description: 'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only: runs no checks; an unchanged complete repeat cannot help.',
+    description:
+      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only: runs no checks; an unchanged complete repeat cannot help.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -48,16 +49,19 @@ export async function handleReview(
     clock?: MonotonicClock;
     budget?: ExecutionBudget;
     context?: BackendReadContext;
-  } = {}
+  } = {},
 ) {
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const isOwnedBudget = !options.budget && !options.context?.budget;
-  const budget = options.budget ?? options.context?.budget ?? createExecutionBudget({
-    totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
-    parentSignal: abortSignal ?? undefined,
-    clock: options.clock,
-  });
+  const budget =
+    options.budget ??
+    options.context?.budget ??
+    createExecutionBudget({
+      totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
+      parentSignal: abortSignal ?? undefined,
+      clock: options.clock,
+    });
 
   const reviewReadContext: BackendReadContext = {
     ...options.context,
@@ -142,12 +146,22 @@ export async function handleReview(
     'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix. Any other BLOCKED states its cause on the Blocked line.',
     // A round that reports a few findings and stops lets each fix batch reveal the next (#62).
     'Report every P1 and P2 finding in the whole diff, not the first few. COVERAGE: COMPLETE means you checked every changed file; otherwise PARTIAL.',
-    ...(args.session_handle ? ['This is a follow-up round: review the whole diff below again, including code an earlier round already saw. An earlier round covers no part of it.'] : []),
+    ...(args.session_handle
+      ? [
+          'This is a follow-up round: review the whole diff below again, including code an earlier round already saw. An earlier round covers no part of it.',
+        ]
+      : []),
     `Required checks for this scope: ${(context.requiredChecks ?? []).join(', ') || 'none (prose only)'}. Report NOT_RUN when no check was executed; never infer PASS from reading code. A check that cannot run here is NOT_RUN, not FAIL. The server applies the check outcomes; do not set BLOCKED for a check that did not run.`,
     `Collected input: ${context.inputComplete ? 'COMPLETE' : 'PARTIAL'}. Omitted input prevents READY regardless of reported coverage.`,
     // Binary contents cannot be reviewed as text; they are named, not omitted (FEEDBACK-070d).
-    ...(scopeInfo.binaryFiles.length ? [`Binary files changed (contents not collected; they do not make the input PARTIAL; check only their paths and references): ${
-      scopeInfo.binaryFiles.slice(0, 20).map(file => `${file.path} (${file.status})`).join(', ')}${scopeInfo.binaryFiles.length > 20 ? `, and ${scopeInfo.binaryFiles.length - 20} more` : ''}.`] : []),
+    ...(scopeInfo.binaryFiles.length
+      ? [
+          `Binary files changed (contents not collected; they do not make the input PARTIAL; check only their paths and references): ${scopeInfo.binaryFiles
+            .slice(0, 20)
+            .map(file => `${file.path} (${file.status})`)
+            .join(', ')}${scopeInfo.binaryFiles.length > 20 ? `, and ${scopeInfo.binaryFiles.length - 20} more` : ''}.`,
+        ]
+      : []),
     // The envelope ends with CHECKS; the server owns END_REVIEW (ENVELOPE-001).
     'Answer with exactly this envelope and nothing before or after it. Put every finding and any Blocked line before CHECKS; CHECKS is the last line:',
     'REVIEW: <turn>',
@@ -199,12 +213,14 @@ export async function handleReview(
             await assertReviewWorkspace(after.info, workspaceCwd, abortSignal, teardownReadContext);
             // Input that was incomplete before the turn already blocks READY with its own reason;
             // only a different snapshot or a change in completeness shows a change.
-            return after.context.expectedSnapshot !== snapshot || after.context.inputComplete !== context.inputComplete ? 'Review workspace or input changed during the turn' : undefined;
+            return after.context.expectedSnapshot !== snapshot || after.context.inputComplete !== context.inputComplete
+              ? 'Review workspace or input changed during the turn'
+              : undefined;
           } finally {
             verifyHandle.end();
           }
-        }
-      }
+        },
+      },
     );
     return formatExecutionResult(outcome);
   } finally {
@@ -213,4 +229,3 @@ export async function handleReview(
     }
   }
 }
-

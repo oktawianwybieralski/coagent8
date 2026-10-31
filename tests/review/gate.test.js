@@ -8,26 +8,52 @@ const { readResult } = require('../helpers/result.cjs');
 
 test('CUR-001 rejects incomplete input, mismatched snapshots, invalid and failed checks', () => {
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
-  const envelope = (snapshot, checks) => `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW`;
+  const envelope = (snapshot, checks) =>
+    `REVIEW: 1\nSNAPSHOT: ${snapshot}\nCOVERAGE: COMPLETE\nVERDICT: READY\nCHECKS: ${checks}\nEND_REVIEW`;
   for (const [snapshot, checks, binding] of [
     ['wrong', 'typecheck=PASS; tests=PASS', context],
     ['fixture#digest', 'typecheck=PASS; tests=PASS', { ...context, inputComplete: false }],
     ['fixture#digest', 'typecheck=FAIL; tests=PASS', context],
     ['fixture#digest', 'typecheck=PASS; tests=FAIL', context],
     ['fixture#digest', 'all good', context],
-  ]) assert.equal(evaluateStateEnvelopeGate(envelope(snapshot, checks), false, true, binding).verdict, 'BLOCKED');
-  assert.equal(evaluateStateEnvelopeGate(envelope('fixture#digest', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true,
-    { ...context, requiredChecks: [] }).verdict, 'READY', 'prose checks remain honestly NOT_RUN');
+  ])
+    assert.equal(evaluateStateEnvelopeGate(envelope(snapshot, checks), false, true, binding).verdict, 'BLOCKED');
+  assert.equal(
+    evaluateStateEnvelopeGate(envelope('fixture#digest', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, {
+      ...context,
+      requiredChecks: [],
+    }).verdict,
+    'READY',
+    'prose checks remain honestly NOT_RUN',
+  );
 });
 
 test('a blocked verdict names every cause, the unrun checks and the reviewer reason', () => {
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
-  const envelope = (...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', 'VERDICT: BLOCKED', ...extra, 'CHECKS: typecheck=PASS; tests=NOT_RUN', 'END_REVIEW'].join('\n');
-  assert.equal(evaluateStateEnvelopeGate(envelope(), true, true, context).reason,
-    'Output was truncated; Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason');
-  assert.equal(evaluateStateEnvelopeGate(envelope('Blocked: The diff omits src/review/gate.ts.'), false, true, context).reason,
-    'Reviewer reported BLOCKED: The diff omits src/review/gate.ts.');
-  const failed = evaluateStateEnvelopeGate(envelope().replace('typecheck=PASS', 'typecheck=FAIL').replace('VERDICT: BLOCKED', 'VERDICT: READY'), false, true, context);
+  const envelope = (...extra) =>
+    [
+      'REVIEW: 1',
+      'SNAPSHOT: fixture#digest',
+      'COVERAGE: COMPLETE',
+      'VERDICT: BLOCKED',
+      ...extra,
+      'CHECKS: typecheck=PASS; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\n');
+  assert.equal(
+    evaluateStateEnvelopeGate(envelope(), true, true, context).reason,
+    'Output was truncated; Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason',
+  );
+  assert.equal(
+    evaluateStateEnvelopeGate(envelope('Blocked: The diff omits src/review/gate.ts.'), false, true, context).reason,
+    'Reviewer reported BLOCKED: The diff omits src/review/gate.ts.',
+  );
+  const failed = evaluateStateEnvelopeGate(
+    envelope().replace('typecheck=PASS', 'typecheck=FAIL').replace('VERDICT: BLOCKED', 'VERDICT: READY'),
+    false,
+    true,
+    context,
+  );
   assert.equal(failed.reason, 'A reported check failed (typecheck=FAIL); the reviewer answered READY');
   assert.equal(evaluateStateEnvelopeGate('', false, true, context).reason, 'Reviewer returned no answer');
   assert.equal(evaluateStateEnvelopeGate('Looks fine to me.', false, true, context).reason, 'Answer has no State Envelope');
@@ -35,10 +61,27 @@ test('a blocked verdict names every cause, the unrun checks and the reviewer rea
 
 test('the review answer is shown verbatim in a code block; the server verdict and its override are in the footer', () => {
   const { formatExecutionResult } = require('../../src/mcp/result.ts');
-  const answer = ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: src/review/gate.ts verdict reasons.', 'Example: ```ts', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\n');
-  const formatted = formatExecutionResult('codex', { status: 'completed', isError: false, output: answer, truncated: false, continuationAvailable: false },
-    '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
-    { requireEnvelope: true, reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] } });
+  const answer = [
+    'REVIEW: 1',
+    'SNAPSHOT: fixture#digest',
+    'COVERAGE: COMPLETE',
+    'VERDICT: READY',
+    'Reviewed: src/review/gate.ts verdict reasons.',
+    'Example: ```ts',
+    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+    'END_REVIEW',
+  ].join('\n');
+  const formatted = formatExecutionResult(
+    'codex',
+    { status: 'completed', isError: false, output: answer, truncated: false, continuationAvailable: false },
+    '',
+    null,
+    { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
+    {
+      requireEnvelope: true,
+      reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] },
+    },
+  );
   const text = formatted.content[0].text;
   assert.ok(text.startsWith('````plaintext\n' + answer + '\n````\n'), "verbatim, fenced longer than the answer's own fence");
   assert.equal(readResult(formatted).answer, answer, 'the caller reads the answer unchanged inside the frame');
@@ -51,38 +94,106 @@ test('the review answer is shown verbatim in a code block; the server verdict an
 
 test('unrun checks of a read-only reviewer do not block READY; they are named, and failures and findings still block', () => {
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: ['typecheck', 'tests'] };
-  const envelope = (verdict, checks, ...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, ...extra, `CHECKS: ${checks}`, 'END_REVIEW'].join('\n');
-  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, context),
-    { verdict: 'READY', judged: true, coverage: 'COMPLETE', reason: 'typecheck and tests not run' });
-  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=NOT_RUN'), false, true, context),
-    { verdict: 'READY', judged: true, coverage: 'COMPLETE', reason: 'tests not run' });
-  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=PASS'), false, true, context), { verdict: 'READY', judged: true, coverage: 'COMPLETE' });
-  const withFinding = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN', '[P2] src/review/gate.ts:1'), false, true, context);
+  const envelope = (verdict, checks, ...extra) =>
+    [
+      'REVIEW: 1',
+      'SNAPSHOT: fixture#digest',
+      'COVERAGE: COMPLETE',
+      `VERDICT: ${verdict}`,
+      ...extra,
+      `CHECKS: ${checks}`,
+      'END_REVIEW',
+    ].join('\n');
+  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, context), {
+    verdict: 'READY',
+    judged: true,
+    coverage: 'COMPLETE',
+    reason: 'typecheck and tests not run',
+  });
+  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=NOT_RUN'), false, true, context), {
+    verdict: 'READY',
+    judged: true,
+    coverage: 'COMPLETE',
+    reason: 'tests not run',
+  });
+  assert.deepEqual(evaluateStateEnvelopeGate(envelope('READY', 'typecheck=PASS; tests=PASS'), false, true, context), {
+    verdict: 'READY',
+    judged: true,
+    coverage: 'COMPLETE',
+  });
+  const withFinding = evaluateStateEnvelopeGate(
+    envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN', '[P2] src/review/gate.ts:1'),
+    false,
+    true,
+    context,
+  );
   assert.equal(withFinding.verdict, 'BLOCKED');
   assert.equal(withFinding.reason, 'Blocker issue [P1/P2] reported; the reviewer answered READY');
-  const reviewerBlocked = evaluateStateEnvelopeGate(envelope('BLOCKED', 'typecheck=NOT_RUN; tests=NOT_RUN', 'Blocked: tests are missing.'), false, true, context);
+  const reviewerBlocked = evaluateStateEnvelopeGate(
+    envelope('BLOCKED', 'typecheck=NOT_RUN; tests=NOT_RUN', 'Blocked: tests are missing.'),
+    false,
+    true,
+    context,
+  );
   assert.equal(reviewerBlocked.reason, 'Reviewer reported BLOCKED: tests are missing.');
   const failed = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=FAIL'), false, true, context);
   assert.equal(failed.reason, 'A reported check failed (tests=FAIL); the reviewer answered READY');
-  const otherCause = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, { ...context, inputComplete: false });
+  const otherCause = evaluateStateEnvelopeGate(envelope('READY', 'typecheck=NOT_RUN; tests=NOT_RUN'), false, true, {
+    ...context,
+    inputComplete: false,
+  });
   assert.equal(otherCause.reason, 'Review input is incomplete; the reviewer answered READY');
 });
 
 test('a P1/P2 finding header without brackets blocks; prose, P3 and P20 do not', () => {
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] };
-  const envelope = (verdict, ...extra) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, ...extra, 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN', 'END_REVIEW'].join('\r\n');
+  const envelope = (verdict, ...extra) =>
+    [
+      'REVIEW: 1',
+      'SNAPSHOT: fixture#digest',
+      'COVERAGE: COMPLETE',
+      `VERDICT: ${verdict}`,
+      ...extra,
+      'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+      'END_REVIEW',
+    ].join('\r\n');
   // Antigravity wrote this header in native 0.7.0 acceptance; its BLOCKED named no finding.
-  for (const header of ['P2 sum.js:4', '  p1 src/auth.ts:42  ', '- **P2** src/a.ts:10-12', '1. P1: src/b.ts:3', '**P2 sum.js:4**', '- **P1 src/a.ts:10-12**',
-    '+ P2 sum.js:4', '**P1:** src/a.ts:10', '* __P2__: src/a.ts:3', '### P1 src/a.ts:7',
-    'P2 `src/a.ts:10`', 'P2 src/a.ts:10: missing validation', '> P1 src/a.ts:2', '`P2` C:\\repo\\a.ts:5']) {
+  for (const header of [
+    'P2 sum.js:4',
+    '  p1 src/auth.ts:42  ',
+    '- **P2** src/a.ts:10-12',
+    '1. P1: src/b.ts:3',
+    '**P2 sum.js:4**',
+    '- **P1 src/a.ts:10-12**',
+    '+ P2 sum.js:4',
+    '**P1:** src/a.ts:10',
+    '* __P2__: src/a.ts:3',
+    '### P1 src/a.ts:7',
+    'P2 `src/a.ts:10`',
+    'P2 src/a.ts:10: missing validation',
+    '> P1 src/a.ts:2',
+    '`P2` C:\\repo\\a.ts:5',
+  ]) {
     const blocked = evaluateStateEnvelopeGate(envelope('BLOCKED', header, 'Problem: off by one.'), false, true, context);
     assert.equal(blocked.reason, 'Blocker issue [P1/P2] reported', header);
     const ready = evaluateStateEnvelopeGate(envelope('READY', header), false, true, context);
     assert.equal(ready.verdict, 'BLOCKED', `${header} overrides READY`);
     assert.equal(ready.reason, 'Blocker issue [P1/P2] reported; the reviewer answered READY');
   }
-  for (const line of ['P3 sum.js:4', 'P20 sum.js:4', 'Reviewed: no P2 sum.js:4 issue remains.', 'P2 findings: none', 'P2 sum.js', '**P3 sum.js:4**', '**P2** findings: none',
-    '+ P3 sum.js:4', '**P1:** none', '### P2 findings', 'P2: none at 10:30', 'P1P2 sum.js:4']) {
+  for (const line of [
+    'P3 sum.js:4',
+    'P20 sum.js:4',
+    'Reviewed: no P2 sum.js:4 issue remains.',
+    'P2 findings: none',
+    'P2 sum.js',
+    '**P3 sum.js:4**',
+    '**P2** findings: none',
+    '+ P3 sum.js:4',
+    '**P1:** none',
+    '### P2 findings',
+    'P2: none at 10:30',
+    'P1P2 sum.js:4',
+  ]) {
     assert.equal(evaluateStateEnvelopeGate(envelope('READY', line), false, true, context).verdict, 'READY', line);
   }
 });
@@ -104,7 +215,11 @@ test('the server blocks a READY answer if a P1 issue is reported', () => {
   ].join('\n');
 
   assert.equal(verdictOf(reviewOutput, false), 'BLOCKED', 'P1 defect must block');
-  assert.match(evaluateStateEnvelopeGate(reviewOutput, false).reason, /the reviewer answered READY/, 'the override of the visible READY is named');
+  assert.match(
+    evaluateStateEnvelopeGate(reviewOutput, false).reason,
+    /the reviewer answered READY/,
+    'the override of the visible READY is named',
+  );
 });
 
 test('the server blocks a READY answer if a P2 issue is reported', () => {
@@ -187,14 +302,7 @@ test('the server verdict handles case variations, partial coverage, and missing 
   assert.equal(verdictOf('Plain text truncated unexpectedly', true, true), 'BLOCKED', 'Truncated response with requireEnvelope must block');
 
   // Empty header values are forced to BLOCKED
-  const emptyHeaderEnvelope = [
-    'REVIEW:',
-    'SNAPSHOT:',
-    'COVERAGE: COMPLETE',
-    'VERDICT: READY',
-    'CHECKS:',
-    'END_REVIEW',
-  ].join('\n');
+  const emptyHeaderEnvelope = ['REVIEW:', 'SNAPSHOT:', 'COVERAGE: COMPLETE', 'VERDICT: READY', 'CHECKS:', 'END_REVIEW'].join('\n');
   assert.equal(verdictOf(emptyHeaderEnvelope, false), 'BLOCKED', 'Empty header fields must block');
 
   // Multi-token verdict line is forced to BLOCKED
@@ -244,13 +352,20 @@ test('CONSULT-001 & REVIEW: READY envelope with prose containing "VERDICT: BLOCK
   const evalResult = evaluateStateEnvelopeGate(reviewOutput, false, true);
   assert.equal(evalResult.verdict, 'READY', 'Quoted verdict in prose must not override header VERDICT: READY');
 
-  const formatted = await formatExecutionResult('agy', {
-    status: 'completed',
-    isError: false,
-    output: reviewOutput,
-    truncated: false,
-    continuationAvailable: false,
-  }, '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false }, { requireEnvelope: true });
+  const formatted = await formatExecutionResult(
+    'agy',
+    {
+      status: 'completed',
+      isError: false,
+      output: reviewOutput,
+      truncated: false,
+      continuationAvailable: false,
+    },
+    '',
+    null,
+    { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
+    { requireEnvelope: true },
+  );
 
   const { verdict, reason } = readResult(formatted);
   assert.equal(verdict, 'READY');
@@ -269,13 +384,20 @@ test('FEEDBACK-061e: returned envelope carries server turn number, ignoring mode
   ].join('\n');
 
   // Turn 2 execution where model returned REVIEW: 1
-  const formatted = await formatExecutionResult('codex', {
-    status: 'completed',
-    isError: false,
-    output: reviewOutput,
-    truncated: false,
-    continuationAvailable: false,
-  }, '', 'syn_sess_test', { turn: 2, toolCount: 0, durationMs: 10, historyAvailable: false }, { requireEnvelope: true });
+  const formatted = await formatExecutionResult(
+    'codex',
+    {
+      status: 'completed',
+      isError: false,
+      output: reviewOutput,
+      truncated: false,
+      continuationAvailable: false,
+    },
+    '',
+    'syn_sess_test',
+    { turn: 2, toolCount: 0, durationMs: 10, historyAvailable: false },
+    { requireEnvelope: true },
+  );
 
   const { answer } = readResult(formatted);
   assert.match(answer, /^REVIEW: 2\r?\n/, 'envelope must carry server turn number 2');
@@ -290,44 +412,102 @@ test('FEEDBACK-061e: returned envelope carries server turn number, ignoring mode
 
 test('ENVELOPE-001: the server owns END_REVIEW and accepts an envelope without it only on completion evidence', () => {
   const context = { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] };
-  const lines = (verdict, ...findings) => ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', `VERDICT: ${verdict}`, 'Reviewed: notes.md.', ...findings, 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'];
+  const lines = (verdict, ...findings) => [
+    'REVIEW: 1',
+    'SNAPSHOT: fixture#digest',
+    'COVERAGE: COMPLETE',
+    `VERDICT: ${verdict}`,
+    'Reviewed: notes.md.',
+    ...findings,
+    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+  ];
   const ready = lines('READY').join('\n');
   const completed = { completed: true };
   // A complete answer without the terminator: judged, and the formatter appends it.
   const accepted = evaluateStateEnvelopeGate(ready, false, true, context, completed);
-  assert.deepEqual({ verdict: accepted.verdict, judged: accepted.judged, appendTerminator: accepted.appendTerminator }, { verdict: 'READY', judged: true, appendTerminator: true });
-  const blocked = evaluateStateEnvelopeGate(lines('BLOCKED', '[P2] notes.md:5', 'Problem: Contradicts line 3.').join('\n'), false, true, context, completed);
-  assert.deepEqual({ verdict: blocked.verdict, judged: blocked.judged, appendTerminator: blocked.appendTerminator }, { verdict: 'BLOCKED', judged: true, appendTerminator: true }, 'a complete BLOCKED review is judged too');
+  assert.deepEqual(
+    { verdict: accepted.verdict, judged: accepted.judged, appendTerminator: accepted.appendTerminator },
+    { verdict: 'READY', judged: true, appendTerminator: true },
+  );
+  const blocked = evaluateStateEnvelopeGate(
+    lines('BLOCKED', '[P2] notes.md:5', 'Problem: Contradicts line 3.').join('\n'),
+    false,
+    true,
+    context,
+    completed,
+  );
+  assert.deepEqual(
+    { verdict: blocked.verdict, judged: blocked.judged, appendTerminator: blocked.appendTerminator },
+    { verdict: 'BLOCKED', judged: true, appendTerminator: true },
+    'a complete BLOCKED review is judged too',
+  );
   // Without completion evidence, or with the turn not completed, only a model-written terminator ends it.
-  for (const [completion, label] of [[undefined, 'no evidence'], [{ completed: false }, 'not completed']]) {
+  for (const [completion, label] of [
+    [undefined, 'no evidence'],
+    [{ completed: false }, 'not completed'],
+  ]) {
     const result = evaluateStateEnvelopeGate(ready, false, true, context, completion);
-    assert.deepEqual({ verdict: result.verdict, judged: result.judged, appendTerminator: result.appendTerminator }, { verdict: 'BLOCKED', judged: false, appendTerminator: undefined }, label);
+    assert.deepEqual(
+      { verdict: result.verdict, judged: result.judged, appendTerminator: result.appendTerminator },
+      { verdict: 'BLOCKED', judged: false, appendTerminator: undefined },
+      label,
+    );
     assert.match(result.reason, /Incomplete State Envelope/, label);
   }
   // Text after CHECKS, or CHECKS before a finding, is not a complete envelope.
   assert.equal(evaluateStateEnvelopeGate(`${ready}\nLet me know if you need more.`, false, true, context, completed).verdict, 'BLOCKED');
-  assert.equal(evaluateStateEnvelopeGate([...lines('READY'), '[P3] notes.md:1'].join('\n'), false, true, context, completed).verdict, 'BLOCKED');
+  assert.equal(
+    evaluateStateEnvelopeGate([...lines('READY'), '[P3] notes.md:1'].join('\n'), false, true, context, completed).verdict,
+    'BLOCKED',
+  );
   // Truncation or an observed length stop blocks and stays retryable, with or without a model terminator.
   for (const answer of [ready, `${ready}\nEND_REVIEW`]) {
     const truncated = evaluateStateEnvelopeGate(answer, true, true, context, completed);
     assert.equal(truncated.judged, false);
     const limited = evaluateStateEnvelopeGate(answer, false, true, context, { completed: true, lengthLimited: true });
-    assert.deepEqual({ verdict: limited.verdict, judged: limited.judged, appendTerminator: limited.appendTerminator }, { verdict: 'BLOCKED', judged: false, appendTerminator: undefined });
+    assert.deepEqual(
+      { verdict: limited.verdict, judged: limited.judged, appendTerminator: limited.appendTerminator },
+      { verdict: 'BLOCKED', judged: false, appendTerminator: undefined },
+    );
     assert.match(limited.reason, /stopped at its output length limit/);
   }
   // A model-written terminator is still accepted, once and last, and nothing is appended to it.
   const modelTerminated = evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW`, false, true, context, completed);
-  assert.deepEqual({ verdict: modelTerminated.verdict, appendTerminator: modelTerminated.appendTerminator }, { verdict: 'READY', appendTerminator: undefined });
-  assert.equal(evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW\nEND_REVIEW`, false, true, context, completed).verdict, 'BLOCKED', 'duplicate terminator');
-  assert.equal(evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW\nMore text.`, false, true, context, completed).verdict, 'BLOCKED', 'misplaced terminator');
+  assert.deepEqual(
+    { verdict: modelTerminated.verdict, appendTerminator: modelTerminated.appendTerminator },
+    { verdict: 'READY', appendTerminator: undefined },
+  );
+  assert.equal(
+    evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW\nEND_REVIEW`, false, true, context, completed).verdict,
+    'BLOCKED',
+    'duplicate terminator',
+  );
+  assert.equal(
+    evaluateStateEnvelopeGate(`${ready}\nEND_REVIEW\nMore text.`, false, true, context, completed).verdict,
+    'BLOCKED',
+    'misplaced terminator',
+  );
 });
 
 test('ENVELOPE-001: the returned envelope ends with the server terminator; a failed or incomplete one gets none', () => {
   const { formatExecutionResult } = require('../../src/mcp/result.ts');
-  const answer = ['REVIEW: 1', 'SNAPSHOT: fixture#digest', 'COVERAGE: COMPLETE', 'VERDICT: READY', 'Reviewed: notes.md.', 'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN'].join('\n');
-  const format = res => formatExecutionResult('claude', { isError: false, truncated: false, continuationAvailable: false, ...res },
-    '', null, { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
-    { requireEnvelope: true, reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] } }).content[0].text;
+  const answer = [
+    'REVIEW: 1',
+    'SNAPSHOT: fixture#digest',
+    'COVERAGE: COMPLETE',
+    'VERDICT: READY',
+    'Reviewed: notes.md.',
+    'CHECKS: typecheck=NOT_RUN; tests=NOT_RUN',
+  ].join('\n');
+  const format = res =>
+    formatExecutionResult(
+      'claude',
+      { isError: false, truncated: false, continuationAvailable: false, ...res },
+      '',
+      null,
+      { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
+      { requireEnvelope: true, reviewContext: { expectedSnapshot: 'fixture#digest', inputComplete: true, requiredChecks: [] } },
+    ).content[0].text;
   const completed = format({ status: 'completed', output: answer });
   assert.match(completed, /CHECKS: typecheck=NOT_RUN; tests=NOT_RUN\nEND_REVIEW\n/);
   assert.match(completed, /^Verdict: READY$/m);

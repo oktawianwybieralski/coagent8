@@ -15,4 +15,3 @@ export function supportsClaudeVersion(versionOutput: string): boolean {
   for (let i = 0; i < 3; i++) if (actual[i] !== MIN_CLAUDE_VERSION[i]) return actual[i] > MIN_CLAUDE_VERSION[i];
   return true;
 }
-

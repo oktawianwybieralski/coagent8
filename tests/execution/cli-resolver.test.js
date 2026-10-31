@@ -12,7 +12,9 @@ test('Windows shim resolves native .exe entrypoints and preserves wrapper flags'
 
   const exePath = path.join(dir, 'agy.exe');
   fs.writeFileSync(exePath, 'BINARY_EXE_MOCK');
-  try { fs.chmodSync(exePath, 0o755); } catch {}
+  try {
+    fs.chmodSync(exePath, 0o755);
+  } catch {}
 
   // 1. Quoted %~dp0
   const shim1 = path.join(dir, 'agy.cmd');

@@ -42,7 +42,10 @@ test('session tool consolidates list, history and close actions', async () => {
   const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-other-list-'));
   const other = createSession('agy', otherDir);
   const listRes = await handleSession({ action: 'list', limit: 1, cursor: '{"v":1,"after":1,"offset":0}', workspace_path: tempDir });
-  assert.ok(!listRes.structuredContent.sessions.some(s => s.sessionHandle === other.sessionHandle), 'list shows only this workspace (AUD-P1-8)');
+  assert.ok(
+    !listRes.structuredContent.sessions.some(s => s.sessionHandle === other.sessionHandle),
+    'list shows only this workspace (AUD-P1-8)',
+  );
   fs.rmSync(otherDir, { recursive: true, force: true });
   assert.equal(listRes.structuredContent.schemaVersion, 1);
   assert.ok(listRes.structuredContent.sessions.some(s => s.sessionHandle === handle));
@@ -56,26 +59,17 @@ test('session tool consolidates list, history and close actions', async () => {
   assert.ok(histRes.content[0].text.includes('Initial message for history test'));
 
   // Missing handle for history should throw
-  await assert.rejects(
-    async () => handleSession({ action: 'history' }),
-    /session_handle is required for action "history"/
-  );
+  await assert.rejects(async () => handleSession({ action: 'history' }), /session_handle is required for action "history"/);
 
   // 3. action: close
   const closeRes = await handleSession({ action: 'close', session_handle: handle, workspace_path: tempDir });
   assert.ok(closeRes.content[0].text.includes('closed successfully'));
 
   // Missing handle for close should throw
-  await assert.rejects(
-    async () => handleSession({ action: 'close' }),
-    /session_handle is required for action "close"/
-  );
+  await assert.rejects(async () => handleSession({ action: 'close' }), /session_handle is required for action "close"/);
 
   // Invalid action should throw
-  await assert.rejects(
-    async () => handleSession({ action: 'invalid_action' }),
-    /Validation Error: action must be one of/
-  );
+  await assert.rejects(async () => handleSession({ action: 'invalid_action' }), /Validation Error: action must be one of/);
 });
 
 test('cancel tool releases leases, child execution and recovers locks', async () => {
@@ -106,7 +100,7 @@ test('cancel tool releases leases, child execution and recovers locks', async ()
   try {
     await assert.rejects(
       async () => handleCancelSession({ session_handle: handle, workspace_path: otherDir }),
-      /Session workspace mismatch/
+      /Session workspace mismatch/,
     );
   } finally {
     fs.rmSync(otherDir, { recursive: true, force: true });
@@ -133,7 +127,7 @@ test('cancelSession respects external live processes and protects replacement tu
 
     await assert.rejects(
       async () => handleCancelSession({ session_handle: handle, workspace_path: tempDir }),
-      /actively running in another CoAgent8 server process/
+      /actively running in another CoAgent8 server process/,
     );
   }
 
@@ -192,10 +186,7 @@ test('cancelSession respects external live processes and protects replacement tu
   setExecutionCanceller(async () => {
     return 'timed_out';
   });
-  await assert.rejects(
-    async () => cancelSession(handle3, tempDir),
-    /cancellation timed out/
-  );
+  await assert.rejects(async () => cancelSession(handle3, tempDir), /cancellation timed out/);
 });
 
 test('formatExecutionResult produces clean Markdown with answer at top, and handleSessionHistory preserves global turn numbers across pagination', async () => {
@@ -203,16 +194,26 @@ test('formatExecutionResult produces clean Markdown with answer at top, and hand
   const { handleSessionHistory } = require('../../../src/mcp/tools/session.tool.ts');
 
   // Test formatExecutionResult
-  const formatted = await formatExecutionResult('codex', {
-    status: 'completed',
-    isError: false,
-    output: '# Analysis Result\nEverything looks good.',
-    continuationAvailable: true,
-  }, '', 'syn_sess_test123', { turn: 1, toolCount: 2, durationMs: 3450, historyAvailable: true });
+  const formatted = await formatExecutionResult(
+    'codex',
+    {
+      status: 'completed',
+      isError: false,
+      output: '# Analysis Result\nEverything looks good.',
+      continuationAvailable: true,
+    },
+    '',
+    'syn_sess_test123',
+    { turn: 1, toolCount: 2, durationMs: 3450, historyAvailable: true },
+  );
 
   assert.equal(formatted.isError, false);
   assert.ok(formatted.content[0].text.startsWith('```plaintext\n# Analysis Result\nEverything looks good.\n```'));
-  assert.ok(formatted.content[0].text.includes('\n```plaintext\nCoAgent8: codex - provider default - 3.5s - 2 ops - session_handle=syn_sess_test123 (ready)\n```'));
+  assert.ok(
+    formatted.content[0].text.includes(
+      '\n```plaintext\nCoAgent8: codex - provider default - 3.5s - 2 ops - session_handle=syn_sess_test123 (ready)\n```',
+    ),
+  );
 
   // Test handleSessionHistory across two turns
   const s = createSession('codex', tempDir);
@@ -239,7 +240,11 @@ test('formatExecutionResult produces clean Markdown with answer at top, and hand
   assert.ok(page1.structuredContent.nextCursor);
 
   // Page 2 using cursor from page 1 (covering Turn 2)
-  const page2 = await handleSessionHistory({ session_handle: s.sessionHandle, workspace_path: tempDir, cursor: page1.structuredContent.nextCursor });
+  const page2 = await handleSessionHistory({
+    session_handle: s.sessionHandle,
+    workspace_path: tempDir,
+    cursor: page1.structuredContent.nextCursor,
+  });
   assert.ok(page2.content[0].text.includes('### Turn 2'));
   assert.ok(page2.content[0].text.includes('**User:**\n\nTurn 2 prompt'));
   assert.ok(page2.content[0].text.includes('**Assistant (codex):**\n\nTurn 2 response'));
@@ -265,23 +270,31 @@ test('session list and the sessions resource show a workspace under the home dir
     const record = listed.structuredContent.sessions.find(s => s.sessionHandle === created.sessionHandle);
     // Windows stores the canonical lower-case path.
     assert.equal(record.workspace.toLowerCase(), `~${path.sep}${path.basename(workspace)}`.toLowerCase());
-    assert.ok(!JSON.stringify(listed).toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()), 'no absolute home path');
+    assert.ok(
+      !JSON.stringify(listed).toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()),
+      'no absolute home path',
+    );
     const { createServer } = require('../../../src/mcp/server.ts');
     const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
     const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
     const { ListRootsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
     const { pathToFileURL } = require('node:url');
-    const server = createServer(), client = new Client({ name: 'list-client', version: '1' }, { capabilities: { roots: {} } });
+    const server = createServer(),
+      client = new Client({ name: 'list-client', version: '1' }, { capabilities: { roots: {} } });
     // Resources are scoped to the client's root.
     client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: [{ uri: pathToFileURL(workspace).href }] }));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     try {
-      await server.connect(serverTransport); await client.connect(clientTransport);
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
       const text = (await client.readResource({ uri: 'coagent8://sessions' })).contents[0].text;
       const resource = JSON.parse(text).find(s => s.sessionHandle === created.sessionHandle);
       assert.equal(resource.workspace.toLowerCase(), record.workspace.toLowerCase());
       assert.ok(!text.toLowerCase().includes(JSON.stringify(os.homedir()).slice(1, -1).toLowerCase()), 'no absolute home path');
-    } finally { await client.close(); await server.close(); }
+    } finally {
+      await client.close();
+      await server.close();
+    }
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
@@ -296,10 +309,12 @@ test('sessions of a deleted workspace can still be listed, read and closed, only
   const created = createSession('agy', workspace);
   // Native 0.7.0 acceptance: another client deleted the repository a review session ran in.
   fs.rmSync(workspace, { recursive: true, force: true });
-  const server = createServer(), client = new Client({ name: 'deleted-client', version: '1' });
+  const server = createServer(),
+    client = new Client({ name: 'deleted-client', version: '1' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   try {
-    await server.connect(serverTransport); await client.connect(clientTransport);
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
     const call = args => client.callTool({ name: 'session', arguments: args });
     const listed = await call({ action: 'list', workspace_path: workspace });
     assert.ok(listed.structuredContent.sessions.some(entry => entry.sessionHandle === created.sessionHandle));
@@ -312,7 +327,8 @@ test('sessions of a deleted workspace can still be listed, read and closed, only
     const relative = await call({ action: 'list', workspace_path: 'no-such-directory-' + randomUUID() });
     assert.equal(relative.isError, true, 'a relative path that does not exist is still a validation error');
   } finally {
-    await client.close(); await server.close();
+    await client.close();
+    await server.close();
     fs.rmSync(other, { recursive: true, force: true });
   }
 });
@@ -362,17 +378,19 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
 
     // 1. Client 1 starts a Claude consult turn that enters the active running state
     let turn1Settled = false;
-    turn1Promise = client1.callTool({
-      name: 'consult',
-      arguments: {
-        proposal: 'Long-running architecture check',
-        backend: 'claude',
-        model: 'claude-sonnet-4-6',
-        workspace_path: workspace,
-      },
-    }).finally(() => {
-      turn1Settled = true;
-    });
+    turn1Promise = client1
+      .callTool({
+        name: 'consult',
+        arguments: {
+          proposal: 'Long-running architecture check',
+          backend: 'claude',
+          model: 'claude-sonnet-4-6',
+          workspace_path: workspace,
+        },
+      })
+      .finally(() => {
+        turn1Settled = true;
+      });
 
     // 2. Bounded wait for the deterministic running-turn handshake from claude.cjs
     const deadline = Date.now() + 5000;
@@ -393,7 +411,7 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     assert.equal(turn1Settled, false, 'natural completion must not count as a cancellation pass');
     assert.ok(
       [...activeProcesses].some(proc => proc.pid === readyData.pid),
-      'live Claude child process must be tracked in activeProcesses while turn is running'
+      'live Claude child process must be tracked in activeProcesses while turn is running',
     );
 
     // 3. Client 2 lists active sessions in the workspace and confirms the session is running
@@ -428,7 +446,7 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     // 5. Immediately when cancel resolves, process resources and session lease are already released
     assert.ok(
       ![...activeProcesses].some(proc => proc.pid === readyData.pid),
-      'Claude child process must be cleaned up before cancel returns'
+      'Claude child process must be cleaned up before cancel returns',
     );
     assert.equal(activeProcesses.size, 0, 'no active child processes remain after cancel');
     const afterCancel = getSession(handle);
@@ -449,7 +467,10 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     assert.equal(parsedTurn1.continuationAvailable, true, 'cancelled turn after init and partial output stays resumable');
 
     const captured1 = JSON.parse(fs.readFileSync(captureTurn1, 'utf8'));
-    assert.deepEqual(captured1.records.map(r => r.type), ['user', 'control_request']);
+    assert.deepEqual(
+      captured1.records.map(r => r.type),
+      ['user', 'control_request'],
+    );
     assert.equal(captured1.records[1].request.subtype, 'interrupt');
 
     // 7. Subsequent turn in the same session reuses the handle and resumes the native Claude session
@@ -493,7 +514,10 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     });
     assert.equal(historyRes.isError, undefined);
     const finishedEvents = historyRes.structuredContent.events.filter(e => e.type === 'turn_finished');
-    assert.deepEqual(finishedEvents.map(e => e.status), ['cancelled', 'completed']);
+    assert.deepEqual(
+      finishedEvents.map(e => e.status),
+      ['cancelled', 'completed'],
+    );
   } finally {
     const settleTurn1 = turn1Promise?.catch(() => {});
     await terminateAllProcesses();

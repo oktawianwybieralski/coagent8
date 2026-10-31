@@ -2,10 +2,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const excluded = new Set(['fixtures', 'helpers', 'consumer', 'artifacts', 'node_modules']);
 const FLAGS_WITH_ARG = new Set([
-  '-r', '--require',
+  '-r',
+  '--require',
   '--import',
   '--loader',
-  '-C', '--conditions',
+  '-C',
+  '--conditions',
   '--test-concurrency',
   '--test-name-pattern',
   '--test-skip-pattern',

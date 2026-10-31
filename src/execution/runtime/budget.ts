@@ -63,19 +63,16 @@ export function createExecutionBudget(options: ExecutionBudgetOptions = {}): Exe
   let totalBudgetMs: number;
   if (options.totalBudgetMs == null) {
     totalBudgetMs = DEFAULT_EXECUTION_TIMEOUT_MS;
-  } else if (
-    typeof options.totalBudgetMs !== 'number' ||
-    !Number.isFinite(options.totalBudgetMs) ||
-    options.totalBudgetMs <= 0
-  ) {
+  } else if (typeof options.totalBudgetMs !== 'number' || !Number.isFinite(options.totalBudgetMs) || options.totalBudgetMs <= 0) {
     throw new ToolError('INPUT_LIMIT', 'Invalid deadline or buffer budget.');
   } else {
     totalBudgetMs = Math.floor(options.totalBudgetMs);
   }
 
-  const rawTeardown = options.teardownAllowanceMs != null
-    ? sanitizeBudgetDuration(options.teardownAllowanceMs, DEFAULT_TEARDOWN_GRACE_MS)
-    : Math.min(DEFAULT_TEARDOWN_GRACE_MS, Math.max(1, Math.floor(totalBudgetMs * 0.2)));
+  const rawTeardown =
+    options.teardownAllowanceMs != null
+      ? sanitizeBudgetDuration(options.teardownAllowanceMs, DEFAULT_TEARDOWN_GRACE_MS)
+      : Math.min(DEFAULT_TEARDOWN_GRACE_MS, Math.max(1, Math.floor(totalBudgetMs * 0.2)));
 
   // Cleanup allowance is finite and cannot exceed total budget
   const teardownAllowanceMs = Math.min(rawTeardown, totalBudgetMs);
@@ -185,7 +182,9 @@ export function createExecutionBudget(options: ExecutionBudgetOptions = {}): Exe
     if (parentSignal.aborted) {
       handleCallerAbort(true);
     } else {
-      onParentAbort = () => { handleCallerAbort(false); };
+      onParentAbort = () => {
+        handleCallerAbort(false);
+      };
       parentSignal.addEventListener('abort', onParentAbort, { once: true });
     }
   }
@@ -294,7 +293,11 @@ export function createExecutionBudget(options: ExecutionBudgetOptions = {}): Exe
       syncClock();
       if (abortOrigin === 'caller') return customAbortReason ?? parentSignal?.reason;
       if (abortOrigin === 'timeout' || clock() >= executionDeadlineMs) {
-        return customAbortReason ?? executionController.signal.reason ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${totalBudgetMs} ms).`);
+        return (
+          customAbortReason ??
+          executionController.signal.reason ??
+          new ToolError('TIMEOUT', `Execution deadline exceeded (${totalBudgetMs} ms).`)
+        );
       }
       return undefined;
     },
