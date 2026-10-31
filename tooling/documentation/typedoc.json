@@ -14,7 +14,7 @@
     "../../docs/ROADMAP.md",
     "../../docs/HANDOFF.md",
     "../../CHANGELOG.md",
-    "../../.agents/rules/02-git-workflow.md"
+    "../../.agents/rules/12-release-workflow.md"
   ],
   "highlightLanguages": [
     "bash",

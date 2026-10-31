@@ -7,7 +7,7 @@ from the Conventional Commits history by [git-cliff](https://git-cliff.org/)
 Each version lists its changes by area, then by type. Each entry is the pull
 request that made the change: `#PR: description (by @author)`. This project
 adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
-Release procedure: [.agents/rules/02-git-workflow.md](.agents/rules/02-git-workflow.md).
+Release procedure: [.agents/rules/12-release-workflow.md](.agents/rules/12-release-workflow.md).
 
 ## v0.7.0 - (2026-10-20)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Verifies that the published packages are the release files (RELEASE-001f): the npm
 // registry's `dist.shasum` and `dist.integrity` for the version equal the release tarball's
-// SHA-1 and SHA-512, the `next` dist-tag points at the version (rule 02 section 4), and the
+// SHA-1 and SHA-512, the `next` dist-tag points at the version (rule 12 section 4), and the
 // VSIX the Marketplace serves for the version is byte-identical to the release VSIX.
 // Usage: node scripts/verify-published.cjs --tag vX.Y.Z --dir <folder with the release files>
 // [--skip-marketplace]. It reads public endpoints only and needs no credentials.

@@ -1,6 +1,6 @@
 name: API documentation
 
-# Publishes the TypeDoc source API reference to GitHub Pages (Git workflow rule 02,
+# Publishes the TypeDoc source API reference to GitHub Pages (release workflow rule 12,
 # phase E). Pages shows the API of the latest published GitHub Release, beta and rc
 # included, so testers read the documentation of what they install. A manual run
 # rebuilds it from the chosen ref.

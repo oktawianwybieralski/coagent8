@@ -250,7 +250,7 @@ profiles).
 
 ### Verification shorthand and test groups
 
-Select local checks by change scope using the [quality gate](../.agents/rules/04-quality-gate.md) (the single source of truth). In task cards below:
+Select local checks by change scope using the [quality gate](../.agents/rules/14-quality-gate.md) (the single source of truth). In task cards below:
 
 - **P** means prose/contract review against source, local link checks and `git diff --check`.
 - **R** adds `npm run typecheck`, `npm run check:dependencies` and the listed test groups passed to `node tests/run.cjs <files>`. Source-comment changes also require `npm run lint:docs` and `npm run docs`.
@@ -277,7 +277,7 @@ Select local checks by change scope using the [quality gate](../.agents/rules/04
 
 ## SIMPLIFY-001: module boundary migration
 
-Completed in `0.6.0` (`S0` through `S6`: contract and storage extraction, MCP presentation separation, model policy vs. provider discovery separation, session history split, consumer layout cleanup, and automated dependency-graph enforcement in `npm run check:dependencies`). Use the [target ownership map](ARCHITECTURE.md#dependency-boundaries) and [P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries). Evidence: [S0](HANDOFF.md#simplify-001-s0-baseline), [S1](HANDOFF.md#simplify-001-s1-implementation), [S2](HANDOFF.md#simplify-001-s2-implementation), [S3](HANDOFF.md#simplify-001-s3-implementation), [S4](HANDOFF.md#simplify-001-s4-implementation), [S5](HANDOFF.md#simplify-001-s5-implementation), [S6](HANDOFF.md#simplify-001-s6-implementation).
+Completed in `0.6.0` (`S0` through `S6`: contract and storage extraction, MCP presentation separation, model policy vs. provider discovery separation, session history split, consumer layout cleanup, and automated dependency-graph enforcement in `npm run check:dependencies`). Use the [target ownership map](ARCHITECTURE.md#dependency-boundaries) and [P0 boundary rules](../.agents/rules/10-architecture-and-runtime.md#dependency-and-responsibility-boundaries). Evidence: [S0](HANDOFF.md#simplify-001-s0-baseline), [S1](HANDOFF.md#simplify-001-s1-implementation), [S2](HANDOFF.md#simplify-001-s2-implementation), [S3](HANDOFF.md#simplify-001-s3-implementation), [S4](HANDOFF.md#simplify-001-s4-implementation), [S5](HANDOFF.md#simplify-001-s5-implementation), [S6](HANDOFF.md#simplify-001-s6-implementation).
 
 ### Execution checkpoints
 
@@ -287,7 +287,7 @@ Slices `S0` through `S6` are complete and enforced by `check:dependencies`; deta
 
 Stages `EXEC-001-T01` through `EXEC-001-T11` and `T12a`/`T12b` are implemented in `0.6.0`:
 
-- **Completed stages (`EXEC-001-T01`–`T12b`):** baseline harness and measurements (`T01a`–`T01c`), monotonic phase timing (`T02a`–`T02c`), effective configuration with redacted provenance (`T03a`–`T03d`), cohesive task preparation (`T04a`–`T04b`), catalog and default-model observation reuse (`T05a`–`T05c`), guaranteed finalization and cancellation settlement (`T06a`–`T06c`), complete-call budget contract and centralized timeout defaults (`T07a`–`T07c`), cancellable shared native reads and price fetches (`T08a`–`T08f`), bounded review Git collection and lock/session acquisition (`T09a`–`T09c`), budget-bound consent and pre-acquisition revalidation (`T10a`–`T10c`), end-to-end budget activation and phase timing output (`T11a`–`T11c`), and baseline repetition plus local package validation (`T12a`–`T12b`). Evidence: [HANDOFF.md](HANDOFF.md#exec-001-t01a-call-and-wait-map) through [T12b](HANDOFF.md#exec-001-t12b-local-candidate-package-validation).
+- **Completed stages (`EXEC-001-T01`-`T12b`):** baseline harness and measurements (`T01a`-`T01c`), monotonic phase timing (`T02a`-`T02c`), effective configuration with redacted provenance (`T03a`-`T03d`), cohesive task preparation (`T04a`-`T04b`), catalog and default-model observation reuse (`T05a`-`T05c`), guaranteed finalization and cancellation settlement (`T06a`-`T06c`), complete-call budget contract and centralized timeout defaults (`T07a`-`T07c`), cancellable shared native reads and price fetches (`T08a`-`T08f`), bounded review Git collection and lock/session acquisition (`T09a`-`T09c`), budget-bound consent and pre-acquisition revalidation (`T10a`-`T10c`), end-to-end budget activation and phase timing output (`T11a`-`T11c`), and baseline repetition plus local package validation (`T12a`-`T12b`). Evidence: [HANDOFF.md](HANDOFF.md#exec-001-t01a-call-and-wait-map) through [T12b](HANDOFF.md#exec-001-t12b-local-candidate-package-validation).
 
 ### EXEC-001-T12: compare results and bind independent acceptance
 
@@ -459,7 +459,7 @@ All milestones are pending. Start with the contract design cards below (`Check: 
 
 - [ ] **COAGENT-001a - task payload examples.** Read `src/contracts/execution.ts`, `src/mcp/schema.ts` and the target task contract in ARCHITECTURE. Specify valid and invalid start/inspect/continue/cancel payloads; distinguish task/root/parent identity, role, profile and actual provider/model while preserving legacy `consult`/`review`.
 - [ ] **COAGENT-001b - task transitions.** After `001a`, define allowed status transitions and outcomes for repeated requests, lost replies, cancellation and restart (`src/sessions/types.ts`, `session.ts`). Acceptance: duplicate starts cannot create duplicate writers and worker completion cannot finish the root task.
-- [ ] **COAGENT-002a - profile evidence inventory.** Read all three adapters and `.agents/rules/01-security-and-sandboxes.md`. Record verified vs. unknown capabilities per backend/version/OS and the agy inherited-tool limitation, keeping read-only evidence separate from planned write/command profiles.
+- [ ] **COAGENT-002a - profile evidence inventory.** Read all three adapters and `.agents/rules/11-security-and-sandboxes.md`. Record verified vs. unknown capabilities per backend/version/OS and the agy inherited-tool limitation, keeping read-only evidence separate from planned write/command profiles.
 - [ ] **COAGENT-002b - writer ownership design.** After `001b`/`002a`, start from `src/workspace/identity.ts`, `src/storage/lock.ts`, `src/sessions/session.ts`. Specify dirty-baseline ownership, conflict detection, path-escape prevention, partial-work preservation and restart recovery, rejecting concurrent writers to one canonical workspace.
 - [ ] **COAGENT-003a - role/route precedence.** After `001a`, read config, routing and model selection. Specify request vs. role vs. configured defaults with examples for explicit models and optional preferences, keeping roles provider-independent and preserving explicit-model refusal.
 - [ ] **COAGENT-003b - root reservation protocol.** After `001b`, specify atomic reservation/release/recovery for calls, concurrency, time and depth across children and retries using existing storage/lease owners.
@@ -618,6 +618,27 @@ decisions:
   after `COAGENT-002` to `004` and `WINDOWS-001b-e`; multi-file skill
   packaging (`COAGENT-005`) is not a prerequisite. Check: R, native.
 
+## STANDARDS-001: shared agent standards
+
+Owner request 2026-10-31: the repository follows the shared
+[agent-standards](https://github.com/oktawianwybieralski/agent-standards)
+core rules, copied into `.agents/rules/core/` and pinned in
+`.agents/standards.lock.json`; CoAgent8's own rules are project rules 10-15
+([AGENTS.md](../AGENTS.md)).
+
+- [x] **STANDARDS-001a - adopt v0.1.0.** Core copy, lock and checks in CI,
+  `.agents/project.md`, project rules 10-15, `AGENTS.md`, `CLAUDE.md` and
+  `GEMINI.md` entry points and the PR template. Owner decisions 2026-10-31: an
+  agent merges a PR only on the owner's explicit instruction for that PR
+  (#94); the standing go-ahead of 2026-10-12 is recorded in `project.md`;
+  user-visible separators use `-` instead of the middle dot, which core rule
+  00 forbids. Check: P, R, the two standards checks.
+- [ ] **FORMAT-001 - one formatter.** Core rule 05 requires one formatter
+  configuration checked in CI. Add it with a one-time mechanical reformat in
+  its own PR (owner decision 2026-10-31), then the CI check. Check: R, CI.
+- [ ] **STANDARDS-001b - issue labels.** The owner creates the labels of
+  `project.md` "Findings labels" that do not exist yet. Check: O.
+
 ## Remaining foundation work
 
 Retain these foundation IDs for candidate acceptance and follow-up cards. Use the [AUDIT-001 follow-up cards](#audit-001-corrected-analysis-follow-up) for source-analysis items rather than creating duplicate tasks.
@@ -627,9 +648,9 @@ Retain these foundation IDs for candidate acceptance and follow-up cards. Use th
 | `AUDIT-001` | Rerun process, redaction, history, cooldown, error, config, lease and resource reproductions on the release candidate. `CUR-001/003/004/005/006/010/012` and `AUDIT-001-A01` through `A07` are fixed locally; `A08` through `A21` remain below. |
 | `WINDOWS-001` | `CUR-011`: POSIX parent-death cleanup and Windows per-call descendant containment ([`WINDOWS-001b-e`](#windows-001-per-call-process-containment)) before write/command profiles, plus native no-survivor/quiet-desktop evidence. Never select teardown targets by PID, PPID or process name. |
 | `REDACTION-002` | Preserve credential-only answers, diagnostic home-path redaction and split-stream secret boundaries across all execution paths. |
-| `EXEC-001`, `CLI-INTERACT-001` | `CUR-007`: `T01`–`T12b` implemented; complete native/remote acceptance (`T12c`) and independent review binding (`T12d`). |
+| `EXEC-001`, `CLI-INTERACT-001` | `CUR-007`: `T01`-`T12b` implemented; complete native/remote acceptance (`T12c`) and independent review binding (`T12d`). |
 | `SESSION-001`, `HISTORY-002` | `CUR-008`: early handle publication before turn completion and ephemeral (`none`) / `auto` / `new` session modes (distinct from `coagent8_HISTORY=off`). Opt-in `auto` reuses a same-workspace/provider session used within 15 minutes and starts fresh when that session is busy; only a native expiry proven before execution allows one fresh retry within the original budget. Preserve fail-closed busy/invalid handle checks, retention, pagination and history compatibility. |
-| `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Preserve renewed token leases, single cooldown recording, accurate quota reporting and concurrency-safe caches (`EXEC-001-T08/T09`, `AUDIT-001-A01`–`A07`). |
+| `LOCKS-001`, `ROUTING-MIGRATE-001`, `QUOTA-001` | Preserve renewed token leases, single cooldown recording, accurate quota reporting and concurrency-safe caches (`EXEC-001-T08/T09`, `AUDIT-001-A01`-`A07`). |
 | `SURFACE-001`, `CONSULT-001`, `CONTEXT-001`, `MCP-001`, `STARTUP-001` | Preserve six tools, plain consult, client roots/resources and probe-free startup; deduplicate review prompt/description wording and verify tool-definition byte budgets across native clients (`AX-006`). |
 | `CLAUDE-BACKEND-001`, `DIAGNOSTICS-001` | `CUR-009`: auth evidence, bounded cancellable native quota reads, real client approval acceptance and restricted-review hook/plugin/skill verification. |
 | `INSTALL-001`, `MIGRATION-001`, `ONBOARDING-002`, `UNINSTALL-002` | Clean-environment setup, shared-config migration and native install/update/repair/restart/uninstall acceptance across supported clients while preserving manual registrations, credentials and histories. |
@@ -985,7 +1006,7 @@ line (`1.0.x` from the first release candidate). Every commit on a protected
 branch is a GitHub-signed (Verified) squash commit `<PR title> (#N)`. CI tests
 Node 24 and 26 across Ubuntu, macOS and Windows. Steady-state branching,
 changelog generation and release phases are governed by
-[rule 02](../.agents/rules/02-git-workflow.md).
+[rule 12](../.agents/rules/12-release-workflow.md).
 
 Completed for `0.6.0`:
 
@@ -1369,7 +1390,7 @@ Completed on `develop` in PR #19 (`fc76539`):
   first-party package, plugin and extension metadata while retaining
   `THIRD_PARTY_NOTICES.txt`.
 - `LIC-001c` (`LIC-001c1`): updated the README license sections, badges and
-  contributor license guidance in `AGENTS.md` and `.agents/rules/02-git-workflow.md`.
+  contributor license guidance in `AGENTS.md` and `.agents/rules/12-release-workflow.md`.
 
 Remaining verification:
 
@@ -1569,7 +1590,7 @@ delivered record: [FEEDBACK-070](delivered/0.7.0/FEEDBACK-070.md).
   Submodules, byte budgets and index flags still make the input PARTIAL.
 - Observations without a change: agy reviews of a one-line defect took
   112-300 s and up to 36 operations, with a sandbox-denial warning that does
-  not name the action; the closed-session footer reads `CLI · provider
+  not name the action; the closed-session footer reads `CLI - provider
   default`; setup status counts a manual registration that starts another
   runtime as registered. They are candidates for `0.8.0`.
 
@@ -1634,7 +1655,7 @@ deferred as research only.
 - [x] **PROPOSALS-001g - agent output outside `.artifacts/`.** A rule that
   agents keep their scripts and logs in their scratch directories, not in
   `.artifacts/`, which holds build output only. Done in
-  [rule 04](../.agents/rules/04-quality-gate.md#source-bundle-and-artifact-provenance).
+  [rule 14](../.agents/rules/14-quality-gate.md#source-bundle-and-artifact-provenance).
 - [x] **PROPOSALS-001h - cancel description.** Say in the `cancel` tool
   description that it asks the backend to stop and then terminates its process
   if it does not exit, without renaming the tool. Done: the description says
@@ -1650,7 +1671,7 @@ deferred as research only.
   silently refreshed by a background `git fetch` (editor autofetch, another
   agent) and can overwrite unseen commits. Require
   `--force-with-lease=<branch>:<sha> --force-if-includes`. Done in
-  [rule 02](../.agents/rules/02-git-workflow.md) section 1 and the `pr-merge`
+  [rule 12](../.agents/rules/12-release-workflow.md) section 1 and the `pr-merge`
   skill.
 - [x] **PROPOSALS-001l - compact session resources.** The session and history
   MCP resources use `JSON.stringify(..., null, 2)` (`src/mcp/server.ts`);
@@ -1976,7 +1997,7 @@ What 0.7.0 delivered, per card with its evidence, is recorded in
 [docs/delivered/0.7.0](delivered/0.7.0/README.md).
 Its [release split](#070-beta3-plan) assigns each open row to `0.7.0` or `0.8.0`.
 Rows are checklist items, not automatic branch or PR boundaries. Group related
-steps into one coherent result per [rule 02](../.agents/rules/02-git-workflow.md#3-pull-requests).
+steps into one coherent result per [rule 12](../.agents/rules/12-release-workflow.md#3-pull-requests).
 The linked card holds the full acceptance; the row says where the task stops.
 A completed row is ticked `[x]` with its PR number in the PR that completes it.
 Tasks of later phases that depend on contracts not yet written
@@ -2038,7 +2059,7 @@ while the generated full changelog retains individual entries.
    with `git diff --check` and a link check.
 5. **Kind `R` (code).** Write the regression or behavior test first and run
    it to see it fail, then implement. Run the checks of the change's scope
-   from [rule 04](../.agents/rules/04-quality-gate.md): typecheck and the
+   from [rule 14](../.agents/rules/14-quality-gate.md): typecheck and the
    focused tests; the full suite for shared contracts; `npm run build` and
    `npm run test:consumer` for entry points or packaging; `npm run lint:docs`
    for TSDoc. Record each command with PASS, FAIL or NOT_RUN.
@@ -2057,7 +2078,7 @@ while the generated full changelog retains individual entries.
    list them in the PR. Stop after three rounds without `READY` and report.
 8. **Open the PR.** `npm run changelog:check -- --with-commit "<title>"`.
    Push the branch and open a PR into `develop` only with the owner's
-   go-ahead in the session ([rule 02](../.agents/rules/02-git-workflow.md));
+   go-ahead in the session ([rule 12](../.agents/rules/12-release-workflow.md));
    the owner may give it once for the whole queue. Without it, stop with the
    local branch, checks and review evidence. The PR uses the template with
    the checks and the review verdict, handle and snapshot. Tick the card in
@@ -2225,8 +2246,8 @@ Every release needs a clean candidate, applicable full package gate, six OS/Node
 CI jobs, exact artifact provenance, soak evidence (concurrency/cancel/EOF/crashes,
 recovery/leases/histories/memory), and independent approval bound to Base SHA,
 Candidate SHA, Tree SHA and Artifact SHA-256. No unresolved P1/P2; content changes
-invalidate approval. Procedures belong to the [quality gate](../.agents/rules/04-quality-gate.md)
-and [Git workflow](../.agents/rules/02-git-workflow.md).
+invalidate approval. Procedures belong to the [quality gate](../.agents/rules/14-quality-gate.md)
+and [Git workflow](../.agents/rules/12-release-workflow.md).
 
 ### Native VS Code acceptance
 

@@ -1,11 +1,11 @@
 name: Marketplace publish
 
-# Phase E of the release process (Git workflow rule 02, section 5, RELEASE-001d). Publishing
+# Phase E of the release process (release workflow rule 12, section 5, RELEASE-001d). Publishing
 # the verified GitHub Release publishes its exact VSIX, never a rebuild, on the VS Code
 # Marketplace under `okidev`, in the normal channel (owner decision 2026-10-13). Publishing
 # the release is the owner's approval; there is no GitHub environment gate. The job runs only
 # after the owner set the repository variable MARKETPLACE_PUBLISHING to `true` and stored a
-# Marketplace personal access token as the secret VSCE_PAT (rule 02, section 8).
+# Marketplace personal access token as the secret VSCE_PAT (rule 12, section 8).
 on:
   release:
     types: [published]

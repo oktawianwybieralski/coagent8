@@ -66,7 +66,7 @@ for tasks; introduce a scheduler only for actual dependency/concurrency work.
 The table below describes the realized ownership and dependency direction
 completed in [SIMPLIFY-001](ROADMAP.md#simplify-001-module-boundary-migration).
 It implements the
-[P0 boundary rules](../.agents/rules/00-core-invariants.md#dependency-and-responsibility-boundaries)
+[P0 boundary rules](../.agents/rules/10-architecture-and-runtime.md#dependency-and-responsibility-boundaries)
 and is enforced by automated verification (`scripts/check-dependencies.cjs`, `npm run check:dependencies`).
 
 | Target owner | Responsibility and dependency direction |
@@ -478,7 +478,7 @@ probes. Codex verifies isolation; agy's inherited-tool limitation was accepted b
 the owner on 2026-10-08 and is named by doctor. It is not permission to claim
 isolation or remove the recursion guard. User hooks/plugins in Claude need further
 native acceptance. Security requirements belong to
-[rule 01](../.agents/rules/01-security-and-sandboxes.md).
+[rule 11](../.agents/rules/11-security-and-sandboxes.md).
 
 Answer/history redaction targets credential formats; diagnostics also redact
 keyword credentials and home paths. Ordinary code such as token variable names
@@ -1400,7 +1400,7 @@ only with a new owner decision; details and evidence remain in Git history.
 
 | Date | Decision |
 | --- | --- |
-| 2026-10-06 | Regenerate the changelog before every push and check the PR title before opening a PR ([rule 02](../.agents/rules/02-git-workflow.md)). |
+| 2026-10-06 | Regenerate the changelog before every push and check the PR title before opening a PR ([rule 12](../.agents/rules/12-release-workflow.md)). |
 | 2026-10-07 | Markdown content is the only result channel, without structuredContent for execution results: Claude Code 2.1.289 showed the model only structuredContent when present, so the answer and footer did not reach it. |
 | 2026-10-07 | Consent comes only from the user through MCP elicitation; a calling agent cannot assert it. An absolute 20 USD output limit applies to every model, the default included, besides the 2x relative rule. |
 | 2026-10-07 | No model literals in source: defaults come from catalogs, configuration or the CLI. Claude's default is the model Claude Code reports in system/init. |
@@ -1703,7 +1703,7 @@ do not bypass peer checks. Generated output is not a stable public JS API.
 Tool descriptions are executable strings: changes need focused surface/budget
 checks. Prose uses content/link/diff checks; source comments/tooling also require
 lint/generation. Runtime/package changes need their scope's checks in the
-[quality gate](../.agents/rules/04-quality-gate.md).
+[quality gate](../.agents/rules/14-quality-gate.md).
 
 The Node 24 server bundle uses tsdown; the extension uses esbuild. Historical
 Windows Defender timing motivated the server choice; remeasure cold starts before

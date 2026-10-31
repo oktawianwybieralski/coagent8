@@ -55,17 +55,17 @@ Use isolated test profiles and preserve existing client registrations and data.
    submission. Documentation-only titles are omitted from the generated entries.
 7. Open a PR targeting `develop`, as a draft if work or verification is incomplete.
    Describe the problem, change, related issues, verification and risks using the
-   [required PR sections](.agents/rules/02-git-workflow.md#3-pull-requests).
+   [required PR sections](.agents/rules/12-release-workflow.md#3-pull-requests).
 
 Required CI checks and independent review must pass before merge. The author
 cannot provide their own independent approval. The maintainer integrates changes
 through squash merges; release tagging and publication are owner actions.
-See the [Git workflow](.agents/rules/02-git-workflow.md) for release lines,
+See the [Git workflow](.agents/rules/12-release-workflow.md) for release lines,
 backports and the full process.
 
 ## Verification by scope
 
-The [quality gate](.agents/rules/04-quality-gate.md) defines required checks.
+The [quality gate](.agents/rules/14-quality-gate.md) defines required checks.
 Markdown prose needs content and link review plus `git diff --check`, without
 runtime tests, builds or backend model calls solely for documentation edits.
 

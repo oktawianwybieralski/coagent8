@@ -1,6 +1,6 @@
 name: CI
 
-# Protected branches: develop and the release lines X.Y.x (Git workflow rule 02).
+# Protected branches: develop and the release lines X.Y.x (release workflow rule 12).
 # The six job names below are the ruleset's required checks; renaming one blocks merges
 # until the ruleset is updated.
 on:
@@ -40,6 +40,14 @@ jobs:
 
       - name: Install documentation dependencies
         run: npm ci --prefix tooling/documentation
+
+      # Core rules 00 and 05 of the agent standards: the managed copy matches its lock,
+      # and tracked files carry keyboard characters only.
+      - name: Verify the agent standards copy
+        run: node .agents/standards/agent-standards.mjs check
+
+      - name: Check keyboard characters
+        run: node .agents/standards/check-keyboard-characters.mjs
 
       - name: Typecheck
         run: npm run typecheck
