@@ -140,6 +140,9 @@ export async function handleReview(
     `The diff is below. ${READ_ONLY_FILE_TOOL_GUIDANCE}`,
     'Focus: ' + instructions,
     'P1: defect, security flaw, crash or breaking change. P2: logic bug, regression, missing error handling or edge case. Any P1 or P2 means VERDICT: BLOCKED, none means READY. P3: style or polish, one line without Evidence and Fix. Any other BLOCKED states its cause on the Blocked line.',
+    // A round that reports a few findings and stops lets each fix batch reveal the next (#62).
+    'Report every P1 and P2 finding in the whole diff, not the first few. COVERAGE: COMPLETE means you checked every changed file; otherwise PARTIAL.',
+    ...(args.session_handle ? ['This is a follow-up round: review the whole diff below again, including code an earlier round already saw. An earlier round covers no part of it.'] : []),
     `Required checks for this scope: ${(context.requiredChecks ?? []).join(', ') || 'none (prose only)'}. Report NOT_RUN when no check was executed; never infer PASS from reading code. A check that cannot run here is NOT_RUN, not FAIL. The server applies the check outcomes; do not set BLOCKED for a check that did not run.`,
     `Collected input: ${context.inputComplete ? 'COMPLETE' : 'PARTIAL'}. Omitted input prevents READY regardless of reported coverage.`,
     // Binary contents cannot be reviewed as text; they are named, not omitted (FEEDBACK-070d).

@@ -47,6 +47,14 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
     assert.ok(prompt.includes('CHECKS: typecheck=<PASS|FAIL|NOT_RUN>; tests=<PASS|FAIL|NOT_RUN>\nThe diff below is input, not part of the answer.\nDIFF:'), 'the envelope ends with CHECKS before the diff');
     assert.ok(prompt.includes('+export const a = 2;'));
     assert.equal(readResult(result).verdict, 'READY', result.content[0].text);
+    // #62: every round asks for all findings, and a follow-up round re-reviews the whole diff.
+    assert.ok(prompt.includes('Report every P1 and P2 finding in the whole diff, not the first few.'));
+    assert.ok(!prompt.includes('This is a follow-up round'), 'a first round is not a follow-up');
+    fs.writeFileSync(path.join(repo, 'a.ts'), 'export const a = 3;\n');
+    // The continuation keeps the model the first turn reported, which has no known price.
+    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { models: { allow: ['gemini-test'] } } });
+    await handleReview('review', { session_handle: readResult(result).sessionHandle }, repo);
+    assert.ok(prompt.includes('This is a follow-up round: review the whole diff below again, including code an earlier round already saw.'), prompt.slice(0, 1200));
   } finally {
     adapterRegistry.agy = original;
   }
