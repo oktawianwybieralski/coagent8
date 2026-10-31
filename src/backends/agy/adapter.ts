@@ -1,5 +1,5 @@
 import { createGeminiCollector } from './collector.js';
-import { classifyGeminiError } from './errors.js';
+import { classifyGeminiError, isOutputLimitError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,10 +31,14 @@ export const name = 'Google Gemini (Antigravity agy)';
 const AGY_SIGNAL_GRACE_MS = 2000;
 /**
  * Added to a workspace-write prompt: agy approves only file edits there, and a single denied
- * command ends its headless turn without an answer (verified natively 2026-10-21).
+ * command ends its headless turn without an answer (verified natively 2026-10-21). A file tool
+ * on a path outside the workspace, such as the main checkout of a Git worktree, is denied the
+ * same way (agy 1.4.12, 2026-10-31, #92).
  */
 export const AGY_WRITE_NOTE = 'In this run you cannot execute any command: a command attempt ends your turn without an answer. '
-  + 'Read, create and edit files only with your file tools, and report every check as NOT_RUN.';
+  + 'Read, create and edit files only with your file tools and only inside the workspace directory: '
+  + 'a file outside it, including another checkout of this repository, is denied and also ends your turn. '
+  + 'Report every check as NOT_RUN.';
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -44,6 +48,24 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
  */
 export const SANDBOX_DENIAL_RECOVERY_PROMPT =
   'Your sandbox denied a shell command and your previous turn ended without an answer. Answer the previous request now, in the format it asks for. Run no shell command: read files only with your file tools, or answer from what you already know and say what you could not check.';
+
+/**
+ * Sent once on `--conversation <id>` when a workspace-write turn ends without an answer after
+ * a denial; natively, the same conversation then finished its edits (agy 1.4.12, 2026-10-31, #92).
+ * @param workspace - The workspace directory the turn was started in.
+ * @param deniedActions - Validated action names from agy's denial report.
+ */
+export function writeDenialRecoveryPrompt(workspace: string, deniedActions: readonly string[]): string {
+  return `Headless mode ${deniedSummary(deniedActions)} and your previous turn ended without an answer. Continue the previous task now. `
+    + `Read and edit only files inside ${workspace}, never another checkout of this repository, run no command, `
+    + 'and answer in the format the task asks for, reporting every check as NOT_RUN.';
+}
+
+/** The denial named in an error or warning: the validated action names, or that agy named none. */
+function deniedSummary(deniedActions: readonly string[]): string {
+  if (!deniedActions.length) return 'denied an action it did not name';
+  return `denied ${deniedActions.length === 1 ? 'action' : 'actions'} ${deniedActions.join(', ')}`;
+}
 
 /**
  * Creates a deterministic per-retry event identifier mapper that stays within the 256 UTF-8
@@ -376,7 +398,7 @@ export async function execute(
       onStdoutLine: collector.line,
       onStderrLine(line) {
         if (/jetski:.*auto-denied/i.test(line)) {
-          collector.denySandbox();
+          collector.denySandbox(line);
         }
       },
     });
@@ -402,9 +424,8 @@ export async function execute(
   let s = first.snapshot;
   let retriedAfterDenial = false;
 
-  // The recovery prompt forbids shell commands, which a writer needs; it is read-only only.
+  // A writer runs no command either, so it gets its own recovery prompt that keeps it in the workspace.
   const canRetryEmptyDenial =
-    !writes &&
     processResult.status === 'completed' &&
     !processResult.error &&
     !s.terminalError &&
@@ -434,13 +455,15 @@ export async function execute(
             }
           }
         : undefined;
-      const second = await runTurn(SANDBOX_DENIAL_RECOVERY_PROMPT, retrySessionId, remainingTimeoutMs, retryOnEvent);
+      const recoveryPrompt = writes ? writeDenialRecoveryPrompt(resolvedCwd, s.deniedActions) : SANDBOX_DENIAL_RECOVERY_PROMPT;
+      const second = await runTurn(recoveryPrompt, retrySessionId, remainingTimeoutMs, retryOnEvent);
       processResult = second.processResult;
       const s2 = second.snapshot;
       s = {
         ...s2,
         model: s2.model ?? s.model,
         sandboxDenied: s.sandboxDenied || s2.sandboxDenied,
+        deniedActions: [...new Set([...s.deniedActions, ...s2.deniedActions])],
         truncated: s.truncated || s2.truncated,
         usage: mergeUsage(s.usage, s2.usage),
       };
@@ -448,9 +471,10 @@ export async function execute(
   }
 
   // A denied action shows that the sandbox works; the answer stays, as with Claude permission denials.
+  // The names reach the session history through this warning (#92).
   if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: writes
-    ? 'agy denied a command (a workspace-write turn runs no commands); the answer may be incomplete.'
-    : 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
+    ? `agy headless mode ${deniedSummary(s.deniedActions)} (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.`
+    : `The agy sandbox ${deniedSummary(s.deniedActions)} outside the read-only profile; the answer may be incomplete.` });
   const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
   const sessionMismatch = Boolean(expectedSessionId && s.nativeSessionId && s.nativeSessionId !== expectedSessionId);
   let error: ExecutionError | undefined = sessionMismatch
@@ -462,6 +486,16 @@ export async function execute(
       ? classifyGeminiError(fallbackStderr)
       : { code: 'PROCESS_ERROR', message: `Gemini process failed with status ${processResult.status} (exit code ${processResult.exitCode}).`, retryable: false };
   }
+  // agy's own continuation retries ran out at the output token limit: the streamed text is a
+  // usable, incomplete answer, not a process failure (#89). A review stopped there is never judged.
+  const outputLimited = s.lengthLimited || (error?.code === 'PROCESS_ERROR' && isOutputLimitError(error.message));
+  if (outputLimited && error?.code === 'PROCESS_ERROR') {
+    error = s.output.trim()
+      ? undefined
+      : { ...error, message: 'agy stopped at its output token limit before it answered. Ask for a shorter answer in a new session (without session_handle).' };
+  }
+  if (outputLimited && !error) options.onEvent?.({ type: 'warning', message: 'agy stopped at its output token limit; the answer is incomplete. '
+    + 'A follow-up in the same session can stop the same way: ask for the rest in a shorter form or in a new session.' });
   if (!error && (!s.terminal || (!s.nativeSessionId && !expectedSessionId))) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }
@@ -470,10 +504,11 @@ export async function execute(
     error = {
       code: 'POLICY_DENIED',
       message: writes
-        ? 'agy ended the turn without an answer after it denied a command: a workspace-write turn edits files only, and headless agy ends its turn on a denied command.'
+        ? `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}${retriedAfterDenial ? ', including on automatic retry inside the workspace' : ''}: `
+          + 'a workspace-write turn runs no command and uses files inside the workspace only, and headless agy ends its turn on a denial.'
         : retriedAfterDenial
-          ? 'agy ended the turn without an answer after its sandbox denied a command, including on automatic retry without shell commands (headless mode cannot ask for permission).'
-          : 'agy ended the turn without an answer after its sandbox denied a command (headless mode cannot ask for permission). Ask again for an answer that reads files without running commands.',
+          ? `agy ended the turn without an answer after its sandbox ${deniedSummary(s.deniedActions)}, including on automatic retry without shell commands (headless mode cannot ask for permission).`
+          : `agy ended the turn without an answer after its sandbox ${deniedSummary(s.deniedActions)} (headless mode cannot ask for permission). Ask again for an answer that reads files inside the workspace without running commands.`,
       retryable: false,
     };
   }
@@ -500,6 +535,8 @@ export async function execute(
     signal: processResult.signal,
     // The collector owns the answer; the runner's bounded stdout copy of the event stream is diagnostic.
     truncated: s.truncated || error?.code === 'BUFFER_LIMIT',
+    // Only a reported stop is evidence; agy otherwise reports no stop reason.
+    lengthLimited: outputLimited ? true : undefined,
     continuationAvailable: !!(effectiveSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
   };
 }

@@ -114,7 +114,8 @@ function run() {
     return;
   }
 
-  const isRecoveryTurn = args.includes('--conversation') && prompt.includes('Your sandbox denied a shell command');
+  const isRecoveryTurn = args.includes('--conversation')
+    && (prompt.includes('Your sandbox denied a shell command') || prompt.includes('your previous turn ended without an answer. Continue the previous task'));
   const omitConversationId = mode === 'resume-without-conversation-id';
   const sid = mode === 'wrong-session' || (isRecoveryTurn && process.env.coagent8_FIXTURE_RETRY_WRONG_SESSION === '1')
     ? '99999999-aaaa-bbbb-cccc-123456789012'
@@ -128,6 +129,16 @@ function run() {
   if (mode === 'secret-hang') {
     send({ event: 'step_update', step_update: { ...(sid ? { conversation_id: sid } : {}), step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'sk-fixtureSecret1234567890abcdef' } });
     setInterval(() => {}, 1000);
+    return;
+  }
+
+  // #89 (agy 1.4.3): agy's own continuation retries ran out at the output token limit.
+  if (mode === 'output-limit' || mode === 'output-limit-empty') {
+    if (mode === 'output-limit') {
+      send({ event: 'step_update', step_update: { conversation_id: sid, step_index: 1, state: 'ACTIVE', step_type: 'agent_response', text_delta: 'D1: first part of a long answer' } });
+    }
+    send({ event: 'result', result: { conversation_id: sid, status: 'ERROR',
+      error: 'Your previous response was cut off because it exceeded the output token limit\nPlease continue from where you left off, keeping your response shorter\nRetries remaining: 3' } });
     return;
   }
 
@@ -169,10 +180,13 @@ function run() {
         duration_seconds: 0.5,
         num_turns: 1,
         usage: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
-        denied_actions: [{ action: 'command', display_name: 'RunCommand' }],
+        // coagent8_FIXTURE_DENIED_ACTION=read_file: agy 1.4.12 (2026-10-31) denying a file outside the workspace (#92).
+        denied_actions: [{ action: process.env.coagent8_FIXTURE_DENIED_ACTION || 'command', display_name: 'RunCommand' }],
       },
     };
-    const denial = () => process.stderr.write('jetski: RunCommand auto-denied by sandbox policy\n');
+    const denial = () => process.stderr.write(process.env.coagent8_FIXTURE_DENIED_ACTION === 'read_file'
+      ? 'jetski: no output produced — a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.\n'
+      : 'jetski: RunCommand auto-denied by sandbox policy\n');
     if (mode === 'sandbox-denied-stderr-first') {
       process.stderr.write('jetski: RunCommand auto-denied by sandbox policy\n', () => setTimeout(() => send(terminal), 100));
     } else {
