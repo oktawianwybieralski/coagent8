@@ -44,7 +44,12 @@ const AUTH_PARTS = ['auth', 'permission'];
 const NOT_FOUND_CODES = ['404', 'model_not_found'];
 
 function asHttpStatus(value: unknown): number | undefined {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number.parseInt(value.trim(), 10) : undefined;
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^\d+$/.test(value.trim())
+        ? Number.parseInt(value.trim(), 10)
+        : undefined;
   return parsed !== undefined && parsed >= 100 && parsed <= 599 ? parsed : undefined;
 }
 
@@ -57,12 +62,21 @@ function asHttpStatus(value: unknown): number | undefined {
 export function extractStructuredError(payload: unknown, fallbackMessage: string | undefined, dialect: ErrorDialect): ExecutionError {
   if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
     const outer = payload as Record<string, unknown>;
-    const inner = dialect.nested && typeof outer.error === 'object' && outer.error !== null ? outer.error as Record<string, unknown> : null;
-    const read = (fields: readonly string[], innerFields: readonly string[] = []) => [...fields.map(f => outer[f]), ...(inner ? innerFields.map(f => inner[f]) : [])];
+    const inner =
+      dialect.nested && typeof outer.error === 'object' && outer.error !== null ? (outer.error as Record<string, unknown>) : null;
+    const read = (fields: readonly string[], innerFields: readonly string[] = []) => [
+      ...fields.map(f => outer[f]),
+      ...(inner ? innerFields.map(f => inner[f]) : []),
+    ];
     const message = String(read(['message', 'detail'], dialect.nested?.messageFields).find(Boolean) || fallbackMessage || '');
-    const httpCode = read(dialect.httpFields, dialect.nested?.httpFields).map(asHttpStatus).find(v => v !== undefined);
-    const codes = read(dialect.codeFields, dialect.nested?.codeFields).filter(v => v != null).map(v => String(v).toLowerCase().trim());
-    const has = (exact: readonly string[], parts: readonly string[] = []) => codes.some(c => exact.includes(c) || parts.some(part => c.includes(part)));
+    const httpCode = read(dialect.httpFields, dialect.nested?.httpFields)
+      .map(asHttpStatus)
+      .find(v => v !== undefined);
+    const codes = read(dialect.codeFields, dialect.nested?.codeFields)
+      .filter(v => v != null)
+      .map(v => String(v).toLowerCase().trim());
+    const has = (exact: readonly string[], parts: readonly string[] = []) =>
+      codes.some(c => exact.includes(c) || parts.some(part => c.includes(part)));
 
     if (httpCode === 429 || has([...RATE_LIMIT_CODES, ...dialect.rateLimitCodes], [...RATE_LIMIT_PARTS, ...dialect.rateLimitParts])) {
       return { code: 'RATE_LIMITED', message: redactDiagnostic(message || 'Rate limit or quota exhausted (429)'), retryable: true };

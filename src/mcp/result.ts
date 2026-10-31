@@ -17,7 +17,13 @@ import type { TokenUsage } from '../contracts/conversation.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
 import { stripAnsi } from '../execution/cli-output.js';
-import { evaluateStateEnvelopeGate, alignEnvelopeReviewTurn, appendEnvelopeTerminator, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
+import {
+  evaluateStateEnvelopeGate,
+  alignEnvelopeReviewTurn,
+  appendEnvelopeTerminator,
+  type ReviewGateContext,
+  type StateEnvelopeEvaluation,
+} from '../review/index.js';
 import type { ResolvedWorkspace } from '../workspace/workspace.js';
 import { providerForClient } from '../execution/routing.js';
 
@@ -83,18 +89,26 @@ export function formatObservedChanges(changes: WorkspaceChanges): string {
     return lines.join('\n');
   }
   if (!changes.changed.length) lines.push('No file changed.');
-  for (const change of changes.changed) lines.push(`${change.kind === 'added' ? 'A' : change.kind === 'deleted' ? 'D' : 'M'} ${p(change.path)}`);
+  for (const change of changes.changed)
+    lines.push(`${change.kind === 'added' ? 'A' : change.kind === 'deleted' ? 'D' : 'M'} ${p(change.path)}`);
   if (changes.truncated) lines.push('More paths changed than are listed.');
   if (changes.outsideScope.length) lines.push(`Warning: changed outside scope: ${changes.outsideScope.map(p).join(', ')}`);
-  if (changes.dirtyBefore.length) lines.push(`Warning: already had uncommitted changes before the turn: ${changes.dirtyBefore.map(p).join(', ')}`);
+  if (changes.dirtyBefore.length)
+    lines.push(`Warning: already had uncommitted changes before the turn: ${changes.dirtyBefore.map(p).join(', ')}`);
   const moved = changes.headMoved;
   if (moved) {
-    const name = (branch: string | null) => branch === null ? '(detached)' : redactDiagnostic(branch, 256);
+    const name = (branch: string | null) => (branch === null ? '(detached)' : redactDiagnostic(branch, 256));
     const branch = moved.branchBefore !== moved.branchAfter ? `; branch ${name(moved.branchBefore)} -> ${name(moved.branchAfter)}` : '';
-    lines.push(`Warning: HEAD moved ${moved.before?.slice(0, 12) ?? '(none)'} -> ${moved.after?.slice(0, 12) ?? '(none)'} (${moved.commits} new ${moved.commits === 1 ? 'commit' : 'commits'})${branch}.`);
+    lines.push(
+      `Warning: HEAD moved ${moved.before?.slice(0, 12) ?? '(none)'} -> ${moved.after?.slice(0, 12) ?? '(none)'} (${moved.commits} new ${moved.commits === 1 ? 'commit' : 'commits'})${branch}.`,
+    );
   }
   // The stat repeats paths, so it gets the same diagnostic redaction as the path list.
-  if (changes.diffStat) lines.push('Diff against HEAD of the changed tracked files (includes earlier uncommitted changes):', redactDiagnostic(changes.diffStat, 16 * 1024));
+  if (changes.diffStat)
+    lines.push(
+      'Diff against HEAD of the changed tracked files (includes earlier uncommitted changes):',
+      redactDiagnostic(changes.diffStat, 16 * 1024),
+    );
   return lines.join('\n');
 }
 
@@ -121,8 +135,10 @@ export function formatUsage(usage: TokenUsage | undefined, price: ListPrice | un
   if (!usage || (usage.inputTokens === undefined && usage.outputTokens === undefined)) return undefined;
   const n = (value: number) => value.toLocaleString('en-US');
   const parts: string[] = [];
-  if (usage.inputTokens !== undefined) parts.push(`${n(usage.inputTokens)} input${usage.cachedInputTokens ? ` (${n(usage.cachedInputTokens)} cached)` : ''}`);
-  if (usage.outputTokens !== undefined) parts.push(`${n(usage.outputTokens)} output${usage.reasoningTokens ? ` (${n(usage.reasoningTokens)} reasoning)` : ''}`);
+  if (usage.inputTokens !== undefined)
+    parts.push(`${n(usage.inputTokens)} input${usage.cachedInputTokens ? ` (${n(usage.cachedInputTokens)} cached)` : ''}`);
+  if (usage.outputTokens !== undefined)
+    parts.push(`${n(usage.outputTokens)} output${usage.reasoningTokens ? ` (${n(usage.reasoningTokens)} reasoning)` : ''}`);
   let line = `Usage: ${parts.join(' - ')} tokens`;
   const cost = listPriceEquivalent(usage, price);
   if (cost !== undefined && price) line += ` - list price ~${formatUsd(cost)} USD (${price.source})`;
@@ -147,14 +163,22 @@ function listPriceEquivalent(usage: TokenUsage, price: ListPrice | undefined): n
   let long = usage.cacheWriteLongInputTokens;
   // Without a split, the writes are of one kind only when the list prices one kind.
   if (long === undefined) {
-    const shortListed = price.cacheWriteUsdPerMTok !== null, longListed = price.cacheWriteLongUsdPerMTok !== null;
+    const shortListed = price.cacheWriteUsdPerMTok !== null,
+      longListed = price.cacheWriteLongUsdPerMTok !== null;
     if (written > 0 && shortListed && longListed) return undefined;
     long = longListed && !shortListed ? written : 0;
   }
   const short = written - long;
-  if (short < 0 || (short > 0 && price.cacheWriteUsdPerMTok === null) || (long > 0 && price.cacheWriteLongUsdPerMTok === null)) return undefined;
-  return (regular * price.inputUsdPerMTok + cached * (price.cachedInputUsdPerMTok ?? 0) + short * (price.cacheWriteUsdPerMTok ?? 0)
-    + long * (price.cacheWriteLongUsdPerMTok ?? 0) + outputTokens * price.outputUsdPerMTok) / 1_000_000;
+  if (short < 0 || (short > 0 && price.cacheWriteUsdPerMTok === null) || (long > 0 && price.cacheWriteLongUsdPerMTok === null))
+    return undefined;
+  return (
+    (regular * price.inputUsdPerMTok +
+      cached * (price.cachedInputUsdPerMTok ?? 0) +
+      short * (price.cacheWriteUsdPerMTok ?? 0) +
+      long * (price.cacheWriteLongUsdPerMTok ?? 0) +
+      outputTokens * price.outputUsdPerMTok) /
+    1_000_000
+  );
 }
 
 /**
@@ -168,17 +192,14 @@ function listPriceEquivalent(usage: TokenUsage, price: ListPrice | undefined): n
  *   with its state, the review verdict, the price evidence of a price limit, notices and warnings.
  * - Appends the bug report form link and the issue tool on unrecoverable fatal system errors.
  */
-export function formatExecutionResult(
-  outcome: TaskExecutionResult,
-  defaultText?: string
-): ExecutionToolResult;
+export function formatExecutionResult(outcome: TaskExecutionResult, defaultText?: string): ExecutionToolResult;
 export function formatExecutionResult(
   provider: string | null,
   res: TerminalExecutionResult,
   defaultText?: string,
   sessionHandle?: string | null,
   meta?: ExecutionMeta,
-  options?: FormatExecutionOptions
+  options?: FormatExecutionOptions,
 ): ExecutionToolResult;
 export function formatExecutionResult(
   outcomeOrProvider: TaskExecutionResult | string | null,
@@ -186,7 +207,7 @@ export function formatExecutionResult(
   defaultText = '',
   sessionHandle: string | null = null,
   meta: ExecutionMeta = { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false },
-  options: FormatExecutionOptions = {}
+  options: FormatExecutionOptions = {},
 ): ExecutionToolResult {
   let provider: string | null;
   let res: TerminalExecutionResult;
@@ -241,10 +262,11 @@ export function formatExecutionResult(
       verdict = 'BLOCKED';
       reason = error?.message || 'Execution error';
     } else {
-      const reviewCtx = res.denials?.length
-        ? { ...formatOpts.reviewContext, observedDenials: res.denials }
-        : formatOpts.reviewContext;
-      evaluation = evaluateStateEnvelopeGate(cleaned, res.truncated, true, reviewCtx, { completed: res.status === 'completed', lengthLimited: res.lengthLimited });
+      const reviewCtx = res.denials?.length ? { ...formatOpts.reviewContext, observedDenials: res.denials } : formatOpts.reviewContext;
+      evaluation = evaluateStateEnvelopeGate(cleaned, res.truncated, true, reviewCtx, {
+        completed: res.status === 'completed',
+        lengthLimited: res.lengthLimited,
+      });
       ({ verdict, reason } = evaluation);
     }
   } else {
@@ -266,9 +288,12 @@ export function formatExecutionResult(
   // A failed or cancelled worker may still have changed files, so the block follows every outcome.
   if (observedChanges) parts.push(present(formatObservedChanges(observedChanges)));
 
-  const durationMs = Math.max(0, typeof executionMeta.totalMs === 'number' && Number.isFinite(executionMeta.totalMs)
-    ? executionMeta.totalMs
-    : (executionMeta.durationMs || 0));
+  const durationMs = Math.max(
+    0,
+    typeof executionMeta.totalMs === 'number' && Number.isFinite(executionMeta.totalMs)
+      ? executionMeta.totalMs
+      : executionMeta.durationMs || 0,
+  );
   const durationSec = (durationMs / 1000).toFixed(1);
   const ops = executionMeta.toolCount > 0 ? ` - ${executionMeta.toolCount} ${executionMeta.toolCount === 1 ? 'op' : 'ops'}` : '';
   const turn = executionMeta.turn > 1 ? `turn ${executionMeta.turn}, ` : '';
@@ -276,11 +301,11 @@ export function formatExecutionResult(
   // an unchanged repeat review still retains a valid workspace session_handle in the footer (FEEDBACK-060f4).
   const history = executionMeta.historyAvailable || executionMeta.turn === 0 ? '' : ', no history';
   // Labelled with its parameter name, so a caller passes it back as `session_handle` (AX-007b).
-  const session = activeHandle ? ` - session_handle=${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})` : '';
+  const session = activeHandle
+    ? ` - session_handle=${activeHandle} (${turn}${res.continuationAvailable ? 'ready' : 'finished'}${history})`
+    : '';
 
-  const footerLines: string[] = [
-    `CoAgent8: ${provider || 'CLI'} - ${res.model || 'provider default'} - ${durationSec}s${ops}${session}`,
-  ];
+  const footerLines: string[] = [`CoAgent8: ${provider || 'CLI'} - ${res.model || 'provider default'} - ${durationSec}s${ops}${session}`];
   if (verdict !== 'NOT_APPLICABLE') {
     // A failed run states its reason in the error line already.
     // The reason may quote the reviewer's own Blocked line.
@@ -320,7 +345,10 @@ export function withWorkspace<T extends { content: Array<{ type: string; text?: 
   if (workspace.source !== 'server_directory') return result;
   const [first, ...rest] = result.content;
   const note = footerLine(`Workspace: ${redactDiagnostic(workspace.path, 1024)} (server directory)`);
-  const content = first?.type === 'text' ? [{ ...first, text: withFooterLine(first.text ?? '', note) }, ...rest] : [...result.content, { type: 'text', text: present(note) }];
+  const content =
+    first?.type === 'text'
+      ? [{ ...first, text: withFooterLine(first.text ?? '', note) }, ...rest]
+      : [...result.content, { type: 'text', text: present(note) }];
   return { ...result, content };
 }
 
@@ -334,4 +362,3 @@ function withFooterLine(text: string, line: string): string {
   const footer = text.slice(opening + fence.length + 'plaintext\n'.length, text.length - fence.length - 1);
   return text.slice(0, opening) + frame(`${footer}\n${line}`);
 }
-

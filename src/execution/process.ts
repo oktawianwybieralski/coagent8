@@ -29,12 +29,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { resolveCliCommand } from './cli-resolver.js';
 import { createLineDecoder, truncateToByteLength } from './runtime/stream.js';
-import {
-  DEFAULT_EXECUTION_TIMEOUT_MS,
-  DEFAULT_TEARDOWN_GRACE_MS,
-  type ExecutionError,
-  type TerminalStatus,
-} from '../contracts/index.js';
+import { DEFAULT_EXECUTION_TIMEOUT_MS, DEFAULT_TEARDOWN_GRACE_MS, type ExecutionError, type TerminalStatus } from '../contracts/index.js';
 import { errorCodeOf } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/redaction.js';
 
@@ -140,7 +135,8 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_
  * remaining owned process.
  */
 export async function terminateAllProcesses(): Promise<void> {
-  const runs = [...activeRuns.values()], processes = [...activeProcesses];
+  const runs = [...activeRuns.values()],
+    processes = [...activeProcesses];
   for (const run of runs) run.cancel();
   await Promise.allSettled(runs.map(run => run.done));
   await Promise.allSettled(processes.map(proc => terminateProcessTree(proc)));
@@ -214,8 +210,15 @@ export interface RunCommandResult {
 }
 
 function failure(code: ExecutionError['code'], message: string): RunCommandResult {
-  return { stdout: '', stderr: '', exitCode: null, signal: null, status: code === 'ABORTED' ? 'cancelled' : code === 'TIMEOUT' ? 'timed_out' : 'failed',
-    error: { code, message: redactDiagnostic(message), retryable: code === 'TIMEOUT' }, isTruncated: false };
+  return {
+    stdout: '',
+    stderr: '',
+    exitCode: null,
+    signal: null,
+    status: code === 'ABORTED' ? 'cancelled' : code === 'TIMEOUT' ? 'timed_out' : 'failed',
+    error: { code, message: redactDiagnostic(message), retryable: code === 'TIMEOUT' },
+    isTruncated: false,
+  };
 }
 
 /**
@@ -244,29 +247,44 @@ function abortOutcome(signal: AbortSignal | null | undefined, cancelled: string)
  */
 export function runCommand(command: string, args: string[], options: RunCommandOptions = {}): Promise<RunCommandResult> {
   if (shuttingDown) return Promise.resolve(failure('ABORTED', 'Server shutdown has stopped subprocess admission.'));
-  if (options.abortSignal?.aborted) return Promise.resolve(failure(...abortOutcome(options.abortSignal, 'Operation cancelled before launch.')));
-  const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS, limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
+  if (options.abortSignal?.aborted)
+    return Promise.resolve(failure(...abortOutcome(options.abortSignal, 'Operation cancelled before launch.')));
+  const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    limit = options.maxBufferBytes ?? MAX_BUFFER_BYTES;
   const grace = options.interruptGraceMs ?? INTERRUPT_GRACE_MS;
   const signalGrace = options.signalGraceMs ?? SIGNAL_GRACE_MS;
-  if (!Number.isFinite(timeout) || timeout <= 0 || !Number.isSafeInteger(limit) || limit < 1) return Promise.resolve(failure('INPUT_LIMIT', 'Invalid deadline or buffer budget.'));
-  if (!Number.isSafeInteger(grace) || grace < 0 || !Number.isSafeInteger(signalGrace) || signalGrace < 0) return Promise.resolve(failure('INPUT_LIMIT', 'Invalid grace period.'));
-  if (Buffer.byteLength(options.stdinInput || '') > (options.maxInputBytes ?? MAX_PROMPT_BYTES)) return Promise.resolve(failure('INPUT_LIMIT', 'Prompt exceeds the UTF-8 byte limit.'));
+  if (!Number.isFinite(timeout) || timeout <= 0 || !Number.isSafeInteger(limit) || limit < 1)
+    return Promise.resolve(failure('INPUT_LIMIT', 'Invalid deadline or buffer budget.'));
+  if (!Number.isSafeInteger(grace) || grace < 0 || !Number.isSafeInteger(signalGrace) || signalGrace < 0)
+    return Promise.resolve(failure('INPUT_LIMIT', 'Invalid grace period.'));
+  if (Buffer.byteLength(options.stdinInput || '') > (options.maxInputBytes ?? MAX_PROMPT_BYTES))
+    return Promise.resolve(failure('INPUT_LIMIT', 'Prompt exceeds the UTF-8 byte limit.'));
   let child: ChildProcess;
   try {
     const resolved = resolveCliCommand(command, { env: options.env, cwd: options.cwd });
     child = launch(resolved.command, [...resolved.argsPrefix, ...args], options.cwd || process.cwd(), options.env || process.env);
   } catch (err) {
     const error = err as Error & { code?: string };
-    return Promise.resolve(failure(error.code === 'CLI_NOT_FOUND' ? 'CLI_NOT_FOUND' : error.code === 'CLI_UNSUPPORTED' ? 'CLI_UNSUPPORTED' : 'PROCESS_ERROR', error.message));
+    return Promise.resolve(
+      failure(
+        error.code === 'CLI_NOT_FOUND' ? 'CLI_NOT_FOUND' : error.code === 'CLI_UNSUPPORTED' ? 'CLI_UNSUPPORTED' : 'PROCESS_ERROR',
+        error.message,
+      ),
+    );
   }
   activeProcesses.add(child);
   const session = options.session ?? null;
   let cancel = () => {};
   const done = new Promise<RunCommandResult>(resolve => {
     let stopped: RunCommandResult | undefined;
-    let forced = false, started = false, stdinClosed = false;
-    let stdout = '', stderr = '', truncated = false;
-    const outDecoder = new StringDecoder('utf8'), errDecoder = new StringDecoder('utf8');
+    let forced = false,
+      started = false,
+      stdinClosed = false;
+    let stdout = '',
+      stderr = '',
+      truncated = false;
+    const outDecoder = new StringDecoder('utf8'),
+      errDecoder = new StringDecoder('utf8');
     const outLines = options.onStdoutLine ? createLineDecoder(options.onStdoutLine, options.maxLineBytes) : null;
     const errLines = options.onStderrLine ? createLineDecoder(options.onStderrLine, options.maxLineBytes) : null;
     let timer: NodeJS.Timeout;
@@ -295,26 +313,39 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     const stop = (code: ExecutionError['code'], message: string) => {
       if (stopped) return;
       stopped = failure(code, message);
-      if (!session || !started || hasExited(child)) { forceStop(); return; }
+      if (!session || !started || hasExited(child)) {
+        forceStop();
+        return;
+      }
       graceTimer = setTimeout(forceStop, grace);
       // A session that already closed stdin is ending its CLI; it only needs the grace period.
       if (stdinClosed) return;
-      try { session.interrupt(channel); }
-      catch { forceStop(); }
+      try {
+        session.interrupt(channel);
+      } catch {
+        forceStop();
+      }
     };
     cancel = () => stop(...abortOutcome(options.abortSignal, 'Operation cancelled.'));
     child.on('error', (err: NodeJS.ErrnoException) => stop(err.code === 'ENOENT' ? 'CLI_NOT_FOUND' : 'PROCESS_ERROR', err.message));
-    child.stdin?.on('error', (err: NodeJS.ErrnoException) => { if (err.code !== 'EPIPE' && err.code !== 'ERR_STREAM_DESTROYED') stop('PROCESS_ERROR', 'CLI stdin failed.'); });
+    child.stdin?.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EPIPE' && err.code !== 'ERR_STREAM_DESTROYED') stop('PROCESS_ERROR', 'CLI stdin failed.');
+    });
     function collect(chunk: Buffer, channelName: 'stdout' | 'stderr') {
       // A session keeps reading after a stop so it can observe the interrupted turn end.
       if (forced || (stopped && !session)) return;
       const decoder = channelName === 'stdout' ? outDecoder : errDecoder;
       const current = channelName === 'stdout' ? stdout : stderr;
-      const text = decoder.write(chunk), next = truncateToByteLength(current + text, limit);
+      const text = decoder.write(chunk),
+        next = truncateToByteLength(current + text, limit);
       if (Buffer.byteLength(current) + Buffer.byteLength(text) > limit) truncated = true;
-      if (channelName === 'stdout') stdout = next; else stderr = next;
-      try { (channelName === 'stdout' ? outLines : errLines)?.push(chunk); }
-      catch (err) { stop(callbackErrorCode(err), (err as Error).message); }
+      if (channelName === 'stdout') stdout = next;
+      else stderr = next;
+      try {
+        (channelName === 'stdout' ? outLines : errLines)?.push(chunk);
+      } catch (err) {
+        stop(callbackErrorCode(err), (err as Error).message);
+      }
     }
     child.stdout?.on('data', (chunk: Buffer) => collect(chunk, 'stdout'));
     child.stderr?.on('data', (chunk: Buffer) => collect(chunk, 'stderr'));
@@ -323,15 +354,24 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     child.once('exit', () => {
       if (graceTimer) clearTimeout(graceTimer);
       void terminateProcessTree(child, signalGrace);
-      drainTimer = setTimeout(() => { child.stdout?.destroy(); child.stderr?.destroy(); }, PIPE_DRAIN_MS);
+      drainTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      }, PIPE_DRAIN_MS);
     });
     child.on('close', async (exitCode, signal) => {
       clearTimeout(timer);
       if (graceTimer) clearTimeout(graceTimer);
       if (drainTimer) clearTimeout(drainTimer);
       options.abortSignal?.removeEventListener('abort', cancel);
-      try { if (!stopped) { outLines?.finish(); errLines?.finish(); } }
-      catch (err) { stopped = failure(callbackErrorCode(err), (err as Error).message); }
+      try {
+        if (!stopped) {
+          outLines?.finish();
+          errLines?.finish();
+        }
+      } catch (err) {
+        stopped = failure(callbackErrorCode(err), (err as Error).message);
+      }
       stdout = truncateToByteLength(stdout + outDecoder.end(), limit);
       stderr = truncateToByteLength(stderr + errDecoder.end(), limit);
       try {
@@ -339,8 +379,16 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       } catch {
         // teardown safety
       }
-      activeProcesses.delete(child); activeRuns.delete(child);
-      resolve({ ...(stopped || { status: exitCode === 0 && !signal ? 'completed' : 'failed' }), stdout, stderr, exitCode, signal, isTruncated: truncated });
+      activeProcesses.delete(child);
+      activeRuns.delete(child);
+      resolve({
+        ...(stopped || { status: exitCode === 0 && !signal ? 'completed' : 'failed' }),
+        stdout,
+        stderr,
+        exitCode,
+        signal,
+        isTruncated: truncated,
+      });
     });
     timer = setTimeout(() => stop('TIMEOUT', `CLI deadline exceeded (${timeout} ms).`), timeout);
     options.abortSignal?.addEventListener('abort', cancel, { once: true });
@@ -357,7 +405,9 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     try {
       session.start(channel, options.stdinInput || '');
       started = true;
-    } catch (err) { stop(callbackErrorCode(err), (err as Error).message); }
+    } catch (err) {
+      stop(callbackErrorCode(err), (err as Error).message);
+    }
   });
   activeRuns.set(child, { cancel, done });
   return done;

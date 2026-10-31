@@ -142,7 +142,7 @@ test('metadata failure returns answer with warning and continuationAvailable=fal
     assert.equal(readResult(res).continuationAvailable, false, 'continuationAvailable must be disabled on metadata failure');
     assert.ok(
       readResult(res).warnings.some(w => w.includes('Session update failed')),
-      'Warning must report metadata failure'
+      'Warning must report metadata failure',
     );
   } finally {
     adapterRegistry.agy = original;
@@ -251,9 +251,21 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
     name: 'fixture',
     probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
-      for (let i = 0; i < 2; i++) options.onEvent({ type: 'warning', message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.' });
+      for (let i = 0; i < 2; i++)
+        options.onEvent({
+          type: 'warning',
+          message: 'The agy sandbox denied an action outside the read-only profile; the answer may be incomplete.',
+        });
       for (let i = 0; i < 10; i++) options.onEvent({ type: 'warning', message: `distinct warning ${i}` });
-      return { status: 'completed', isError: false, output: 'Answer kept', nativeSessionId: randomUUID(), model: 'gemini-test', truncated: false, continuationAvailable: true };
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'Answer kept',
+        nativeSessionId: randomUUID(),
+        model: 'gemini-test',
+        truncated: false,
+        continuationAvailable: true,
+      };
     },
   };
   try {
@@ -272,16 +284,29 @@ test('adapter warnings such as a sandbox denial reach the result once each, with
 test('a top-tier model without a way to ask the user is refused in one line; user_confirmed grants nothing (AUD-P1-7)', async () => {
   const original = adapterRegistry.agy;
   let executed = false;
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
-    execute: async () => { executed = true; throw new Error('must not run'); } };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+    execute: async () => {
+      executed = true;
+      throw new Error('must not run');
+    },
+  };
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
-    const message = "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Tell the user; switch to another model only if the user asks. The user can approve it in a client that shows MCP forms, or allow it in governance.models.allow (VS Code: CoAgent8: Manage Model Approvals); never change that setting yourself.";
-    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking' }, tempDir),
-      { name: 'ToolError', code: 'POLICY_DENIED', message });
+    const message =
+      "Model 'claude-opus-4-6-thinking' needs the user's approval, which this client cannot ask for (no MCP elicitation). Its price is known only approximately, as anthropic/claude-opus-4.6: 25 USD per million output tokens. Tell the user; switch to another model only if the user asks. The user can approve it in a client that shows MCP forms, or allow it in governance.models.allow (VS Code: CoAgent8: Manage Model Approvals); never change that setting yourself.";
+    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking' }, tempDir), {
+      name: 'ToolError',
+      code: 'POLICY_DENIED',
+      message,
+    });
     // The audit reproduction: an agent-set flag used to start the governed model.
-    await assert.rejects(executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking', user_confirmed: true }, tempDir),
-      { name: 'ToolError', code: 'POLICY_DENIED', message });
+    await assert.rejects(
+      executeTask('User prompt', 'Public question', { backend: 'agy', model: 'claude-opus-4-6-thinking', user_confirmed: true }, tempDir),
+      { name: 'ToolError', code: 'POLICY_DENIED', message },
+    );
     assert.equal(executed, false);
   } finally {
     adapterRegistry.agy = original;
@@ -290,28 +315,59 @@ test('a top-tier model without a way to ask the user is refused in one line; use
 
 test("consent is asked from the user for the backend's effective default model and bound to that model", async () => {
   const original = adapterRegistry.agy;
-  const asked = [], received = [];
+  const asked = [],
+    received = [];
   // The fixture's own default is top-tier, as agy's interface selection can be.
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'claude-opus-4-6-thinking' } }),
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'claude-opus-4-6-thinking' } }),
     execute: async (_prompt, options) => {
       received.push(options.model);
-      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'claude-opus-4-6-thinking', truncated: false, continuationAvailable: true };
-    } };
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'ok',
+        nativeSessionId: randomUUID(),
+        model: 'claude-opus-4-6-thinking',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir), { code: 'POLICY_DENIED' });
-    const declined = async request => { asked.push(request); return { approved: false }; };
-    await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: declined }),
-      { code: 'POLICY_DENIED', message: "The user did not approve model 'claude-opus-4-6-thinking'. Ask the user before using another model." });
+    const declined = async request => {
+      asked.push(request);
+      return { approved: false };
+    };
+    await assert.rejects(executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: declined }), {
+      code: 'POLICY_DENIED',
+      message: "The user did not approve model 'claude-opus-4-6-thinking'. Ask the user before using another model.",
+    });
     assert.deepEqual(received, [], 'nothing runs without approval');
-    const approved = async request => { asked.push(request); return { approved: true }; };
+    const approved = async request => {
+      asked.push(request);
+      return { approved: true };
+    };
     const res = await executeTask('p', 'q', { backend: 'agy' }, tempDir, null, null, { askConsent: approved });
     assert.equal(res.isError, false);
     assert.deepEqual(received, ['claude-opus-4-6-thinking']);
-    assert.deepEqual(asked.map(({ backend, model }) => ({ backend, model })), [{ backend: 'agy', model: 'claude-opus-4-6-thinking' }, { backend: 'agy', model: 'claude-opus-4-6-thinking' }]);
+    assert.deepEqual(
+      asked.map(({ backend, model }) => ({ backend, model })),
+      [
+        { backend: 'agy', model: 'claude-opus-4-6-thinking' },
+        { backend: 'agy', model: 'claude-opus-4-6-thinking' },
+      ],
+    );
     assert.match(asked[0].reason, /approximately, as anthropic\/claude-opus-4\.6/, 'the user sees why');
     // A model the policy does not price as expensive never prompts.
-    await executeTask('p', 'q', { backend: 'agy', model: 'gemini-3.8-flash-high' }, tempDir, null, null, { askConsent: async () => { throw new Error('must not ask'); } });
+    await executeTask('p', 'q', { backend: 'agy', model: 'gemini-3.8-flash-high' }, tempDir, null, null, {
+      askConsent: async () => {
+        throw new Error('must not ask');
+      },
+    });
     assert.deepEqual(received, ['claude-opus-4-6-thinking', 'gemini-3.8-flash-high']);
   } finally {
     adapterRegistry.agy = original;
@@ -321,11 +377,23 @@ test("consent is asked from the user for the backend's effective default model a
 test('a continuation reuses the model and effort of its session unless the call names a model', async () => {
   const original = adapterRegistry.agy;
   const seen = [];
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, version: 'fixture', config: { defaultModel: 'fixture-model' } }),
     execute: async (_prompt, options) => {
       seen.push({ model: options.model, effort: options.reasoningEffort });
-      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
-    } };
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'ok',
+        nativeSessionId: randomUUID(),
+        model: options.model,
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
   try {
     const first = readResult(await executeTask('p', 'q', { backend: 'agy', model: 'gemini-3.8-flash', reasoning_effort: 'low' }, tempDir));
     for (const args of [{}, { reasoning_effort: 'high' }, {}, { model: 'gemini-3.7-flash' }]) {

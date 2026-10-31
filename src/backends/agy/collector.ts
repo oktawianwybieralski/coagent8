@@ -244,7 +244,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
     if (eventType === 'result') {
       if (terminal) throw new Error('Invalid or duplicate Gemini terminal result.');
       terminal = true;
-      const resObj = (e.result && typeof e.result === 'object') ? (e.result as Record<string, unknown>) : e;
+      const resObj = e.result && typeof e.result === 'object' ? (e.result as Record<string, unknown>) : e;
       const statusStr = String(resObj.status || '').toLowerCase();
       if (!['success', 'error'].includes(statusStr)) throw new Error('Invalid or duplicate Gemini terminal result.');
 

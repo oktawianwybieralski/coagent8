@@ -73,7 +73,7 @@ test('Yes adds one entry and the shim and records them', async t => {
   const adapter = new MockPathAdapter('C:\\Existing\\bin', 'REG_SZ');
   const res = await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   assert.equal(res.action, 'enabled');
@@ -159,7 +159,7 @@ test('an existing entry is not duplicated', async t => {
 
   const res = await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   assert.equal(res.action, 'enabled');
@@ -181,7 +181,7 @@ test('an expandable PATH keeps its type and other entries', async t => {
 
   await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   assert.equal(adapter.pathKind, 'REG_EXPAND_SZ', 'preserves REG_EXPAND_SZ type');
@@ -196,7 +196,7 @@ test('uninstall removes only recorded, unchanged artifacts', async t => {
     const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
     await enablePathIntegration(
       { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-      adapter
+      adapter,
     );
 
     const uninstallRes = await removePathIntegration(f.home, f.installation, 1500, adapter);
@@ -213,7 +213,7 @@ test('uninstall removes only recorded, unchanged artifacts', async t => {
     const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
     await enablePathIntegration(
       { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-      adapter
+      adapter,
     );
     const shimPath = path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd');
     fs.appendFileSync(shimPath, '\r\necho customized\r\n');
@@ -235,7 +235,7 @@ test('uninstall removes only recorded, unchanged artifacts', async t => {
     const adapter = new MockPathAdapter(`C:\\System;${existingEntry}`, 'REG_SZ');
     await enablePathIntegration(
       { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-      adapter
+      adapter,
     );
 
     const uninstallRes = await removePathIntegration(f.home, f.installation, 1500, adapter);
@@ -253,13 +253,13 @@ test('uninstall removes only recorded, unchanged artifacts', async t => {
     // First install (Stable)
     await enablePathIntegration(
       { home: f1.home, storage: f1.storage, installation: f1.installation, bundle: f1.bundle, nodePath: 'node' },
-      adapter
+      adapter,
     );
 
     // Second install (Insiders)
     await enablePathIntegration(
       { home: f1.home, storage: path.join(f1.root, 'Insiders/storage'), installation: inst2, bundle: f1.bundle, nodePath: 'node' },
-      adapter
+      adapter,
     );
 
     const record = readPathRecord(f1.home);
@@ -282,7 +282,7 @@ test('extension update keeps the shim working', async t => {
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   const initialRecord = readPathRecord(f.home);
@@ -296,7 +296,7 @@ test('extension update keeps the shim working', async t => {
 
   const syncRes = await syncPathShim(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   assert.equal(syncRes.action, 'updated');
@@ -312,7 +312,7 @@ test('extension update keeps the shim working', async t => {
   fs.appendFileSync(shimPath, '\r\n:: user edit\r\n');
   const syncModified = await syncPathShim(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
   assert.equal(syncModified.action, 'preserved', 'user modified shim is preserved during update');
   assert.match(fs.readFileSync(shimPath, 'utf8'), /:: user edit/);
@@ -327,11 +327,12 @@ test('enablePathIntegration refuses to overwrite unowned file or modified shim',
 
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   await assert.rejects(
-    () => enablePathIntegration(
-      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-      adapter
-    ),
-    /Cannot overwrite unowned file/
+    () =>
+      enablePathIntegration(
+        { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+        adapter,
+      ),
+    /Cannot overwrite unowned file/,
   );
   assert.equal(adapter.writes.length, 0);
   assert.equal(fs.readFileSync(shimPath, 'utf8'), 'echo unowned');
@@ -342,7 +343,7 @@ test('removePathIntegration reports blocked, retains installation and restores s
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   const initialRecord = readPathRecord(f.home);
@@ -351,7 +352,9 @@ test('removePathIntegration reports blocked, retains installation and restores s
   assert.ok(fs.existsSync(shimPath), 'shim exists before removal attempt');
 
   // Simulate registry failure
-  adapter.writeUserPath = async () => { throw new Error('Registry access denied'); };
+  adapter.writeUserPath = async () => {
+    throw new Error('Registry access denied');
+  };
   const res = await removePathIntegration(f.home, f.installation, 1500, adapter);
   assert.equal(res.action, 'blocked');
   assert.match(res.message, /Registry access denied/);
@@ -380,7 +383,7 @@ test('syncPathShim restores previous shim content if record write fails', async 
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   const initialRecord = readPathRecord(f.home);
@@ -401,11 +404,8 @@ test('syncPathShim restores previous shim content if record write fails', async 
 
   try {
     await assert.rejects(
-      () => syncPathShim(
-        { home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' },
-        adapter
-      ),
-      /Disk write failed/
+      () => syncPathShim({ home: f.home, storage: f.storage, installation: f.installation, bundle: newBundle, nodePath: 'node' }, adapter),
+      /Disk write failed/,
     );
   } finally {
     fs.renameSync = origRename;
@@ -421,7 +421,7 @@ test('non-ASCII and unicode PATH entries are preserved without corruption', asyn
 
   const res = await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
 
   assert.equal(res.action, 'enabled');
@@ -444,11 +444,12 @@ test('enablePathIntegration fails closed and preserves user PATH when registry r
   adapter.readError = new Error('Simulated registry query failure');
 
   await assert.rejects(
-    () => enablePathIntegration(
-      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-      adapter
-    ),
-    /Simulated registry query failure/
+    () =>
+      enablePathIntegration(
+        { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+        adapter,
+      ),
+    /Simulated registry query failure/,
   );
 
   assert.equal(adapter.writes.length, 0, 'no registry writes attempted');
@@ -460,7 +461,7 @@ test('removePathIntegration allocates remaining deadline budget to registry oper
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   const enableRes = await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
   assert.equal(enableRes.action, 'enabled');
 
@@ -483,11 +484,12 @@ test('enablePathIntegration rolls back shim and record when writeUserPath fails'
   adapter.writeError = new Error('Simulated registry write failure');
 
   await assert.rejects(
-    () => enablePathIntegration(
-      { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-      adapter
-    ),
-    /Simulated registry write failure/
+    () =>
+      enablePathIntegration(
+        { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+        adapter,
+      ),
+    /Simulated registry write failure/,
   );
 
   const shimPath = path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd');
@@ -504,7 +506,7 @@ test('a write that reached the registry before failing is taken out again and ro
   adapter.failAfterWrite = new Error('Simulated readback timeout');
   await assert.rejects(
     enablePathIntegration({ home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' }, adapter),
-    /Simulated readback timeout/
+    /Simulated readback timeout/,
   );
   assert.equal(adapter.pathValue, initialPath, 'the entry that reached the registry is removed');
   assert.equal(fs.existsSync(path.join(f.home, '.coagent8', 'bin', 'coagent8.cmd')), false);
@@ -518,7 +520,7 @@ test('an entry that may remain after a failed write stays recorded so it can be 
   adapter.failAfterWriteAgain = true;
   await assert.rejects(
     enablePathIntegration({ home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' }, adapter),
-    /may remain and is still recorded for removal/
+    /may remain and is still recorded for removal/,
   );
   const record = readPathRecord(f.home);
   assert.ok(record, 'the ownership record stays');
@@ -535,7 +537,10 @@ test('a broadcast that is not delivered is reported, not treated as a failure', 
   const f = fixture(t);
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   adapter.broadcastResult = false;
-  const enabled = await enablePathIntegration({ home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' }, adapter);
+  const enabled = await enablePathIntegration(
+    { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
+    adapter,
+  );
   assert.equal(enabled.action, 'enabled');
   assert.equal(enabled.environmentNotified, false);
   assert.equal(adapter.broadcasts[0], 5000, 'enable allows five seconds for PowerShell to start and broadcast');
@@ -555,7 +560,7 @@ test('removePathIntegration prunes unreferenced runtime copies on removal', asyn
   const adapter = new MockPathAdapter('C:\\System', 'REG_SZ');
   const enableRes = await enablePathIntegration(
     { home: f.home, storage: f.storage, installation: f.installation, bundle: f.bundle, nodePath: 'node' },
-    adapter
+    adapter,
   );
   assert.equal(enableRes.action, 'enabled');
 
@@ -585,10 +590,7 @@ test('pruneUnreferencedRuntimes throws on corrupt installs.json and deletes no r
   fs.writeFileSync(installsFile, 'not valid json {{{');
 
   const { pruneUnreferencedRuntimes } = require('../../src/integrations/cleanup.ts');
-  assert.throws(
-    () => pruneUnreferencedRuntimes(root, f.home),
-    /Malformed installs.json/
-  );
+  assert.throws(() => pruneUnreferencedRuntimes(root, f.home), /Malformed installs.json/);
 
   assert.equal(fs.existsSync(dummyRuntimeDir), true, 'runtime preserved when installs.json is corrupt');
 });

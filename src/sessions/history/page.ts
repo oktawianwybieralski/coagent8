@@ -28,19 +28,37 @@ export const PAGE_LIMIT = 240 * 1024;
  */
 export function paginateHistory(h: History, handle: string, cursor?: string, limit = 50) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('History limit must be 1..100.');
-  let after = 0, offset = 0;
+  let after = 0,
+    offset = 0;
   let expectedRevision: string | undefined;
   if (cursor) {
     if (cursor.length > 512) throw new Error('Invalid history cursor.');
     let parsed: unknown;
-    try { parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')); } catch { throw new Error('Invalid history cursor.'); }
+    try {
+      parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    } catch {
+      throw new Error('Invalid history cursor.');
+    }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid history cursor.');
     const c = parsed as Record<string, unknown>;
-    if (c.handle !== handle || !validEventIdentifier(c.revision) || typeof c.after !== 'number' || !Number.isSafeInteger(c.after) || c.after < 0 || (c.offset != null && (typeof c.offset !== 'number' || !Number.isSafeInteger(c.offset) || c.offset < 0))) throw new Error('Invalid history cursor.');
-    after = c.after; offset = c.offset || 0; expectedRevision = c.revision;
+    if (
+      c.handle !== handle ||
+      !validEventIdentifier(c.revision) ||
+      typeof c.after !== 'number' ||
+      !Number.isSafeInteger(c.after) ||
+      c.after < 0 ||
+      (c.offset != null && (typeof c.offset !== 'number' || !Number.isSafeInteger(c.offset) || c.offset < 0))
+    )
+      throw new Error('Invalid history cursor.');
+    after = c.after;
+    offset = c.offset || 0;
+    expectedRevision = c.revision;
   }
 
-  if (expectedRevision && expectedRevision !== h.revision) throw new Error('HISTORY_CHANGED: Conversation updated during pagination; restart without a cursor to read the current canonical messages.');
+  if (expectedRevision && expectedRevision !== h.revision)
+    throw new Error(
+      'HISTORY_CHANGED: Conversation updated during pagination; restart without a cursor to read the current canonical messages.',
+    );
 
   const events: (ConversationEvent & { fragment?: { offsetBytes: number; totalBytes: number; complete: boolean } })[] = [];
   let bytes = 0;
@@ -57,7 +75,9 @@ export function paginateHistory(h: History, handle: string, cursor?: string, lim
       const raw = Buffer.from(copy.text);
       const start = events.length === 0 ? offset : 0;
       if (start > raw.length || (start < raw.length && (raw[start] & 0xc0) === 0x80)) throw new Error('Invalid history fragment offset.');
-      const metaSize = Buffer.byteLength(JSON.stringify({ ...copy, text: '', fragment: { offsetBytes: start, totalBytes: raw.length, complete: false } }));
+      const metaSize = Buffer.byteLength(
+        JSON.stringify({ ...copy, text: '', fragment: { offsetBytes: start, totalBytes: raw.length, complete: false } }),
+      );
       const availableBudget = Math.max(0, PAGE_LIMIT - 2048 - bytes - metaSize);
       if (availableBudget < 4096) break;
 
@@ -106,7 +126,9 @@ export function paginateHistory(h: History, handle: string, cursor?: string, lim
 }
 
 function findFirstEventIndexAfter(events: ConversationEvent[], afterSeq: number): number {
-  let low = 0, high = events.length - 1, ans = events.length;
+  let low = 0,
+    high = events.length - 1,
+    ans = events.length;
   while (low <= high) {
     const mid = (low + high) >> 1;
     if (events[mid].sequence > afterSeq) {
@@ -118,4 +140,3 @@ function findFirstEventIndexAfter(events: ConversationEvent[], afterSeq: number)
   }
   return ans;
 }
-

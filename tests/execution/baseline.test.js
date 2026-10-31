@@ -201,7 +201,7 @@ test('baseline: explicit model and effort passes validated selection to adapter'
     'explicit model prompt',
     'explicit model input',
     { backend: 'codex', model: 'gpt-6-sol', reasoning_effort: 'high' },
-    tempDir
+    tempDir,
   );
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
@@ -213,10 +213,14 @@ test('baseline: explicit model and effort passes validated selection to adapter'
   assert.equal(last.options.reasoningEffort, 'high');
   assert.equal(outcome.isError, false);
 
-  const observation = recordObservation('explicit_model_effort', { ...deltas, durationMs }, {
-    model: 'gpt-6-sol',
-    reasoningEffort: 'high',
-  });
+  const observation = recordObservation(
+    'explicit_model_effort',
+    { ...deltas, durationMs },
+    {
+      model: 'gpt-6-sol',
+      reasoningEffort: 'high',
+    },
+  );
   assert.equal(observation.adapterLaunches, 1);
   assert.equal(observation.catalogReads, 0);
   assert.equal(observation.clientTransportLatency, NOT_MEASURED);
@@ -231,12 +235,7 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
   const start = Date.now();
   // gpt-6-sol is 10 USD (default, over limit). Qualifying models: gpt-6-luna (0.5 USD, 2026-02-01) and gpt-5.6-luna (1.2 USD, 2025-01-31).
   // Ceiling = 5 USD -> recency ranking chooses the more recent gpt-6-luna (AX-002f)
-  const outcome = await executeTask(
-    'priced prompt',
-    'priced input',
-    { backend: 'codex', output_price_below: 5 },
-    tempDir
-  );
+  const outcome = await executeTask('priced prompt', 'priced input', { backend: 'codex', output_price_below: 5 }, tempDir);
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
 
@@ -246,10 +245,14 @@ test('baseline: priced auto resolves highest qualifying model below ceiling', as
   assert.equal(parsed.model, 'gpt-6-luna');
   assert.match(outcome.price || '', /below the limit of 5 USD/);
 
-  const observation = recordObservation('priced_auto', { ...deltas, durationMs, phases: outcome.meta.phases }, {
-    selectedModel: parsed.model,
-    priceLimit: 5,
-  });
+  const observation = recordObservation(
+    'priced_auto',
+    { ...deltas, durationMs, phases: outcome.meta.phases },
+    {
+      selectedModel: parsed.model,
+      priceLimit: 5,
+    },
+  );
   assert.equal(observation.adapterLaunches, 1);
   assert.equal(observation.catalogReads, 0);
   assert.ok(typeof observation.consentDurationMs === 'number', 'consent phase must be measured');
@@ -272,7 +275,7 @@ test('baseline: continuation reuses session lease and propagates native session 
     'turn 2 continuation',
     'turn 2 continuation',
     { backend: 'codex', session_handle: turn1.sessionHandle },
-    tempDir
+    tempDir,
   );
   const durationMs = Date.now() - start;
   const deltas = counterDeltas(counters, before);
@@ -286,11 +289,15 @@ test('baseline: continuation reuses session lease and propagates native session 
   const lastLaunch = counters.launches[counters.launches.length - 1];
   assert.equal(lastLaunch.options.nativeSessionId, 'codex-native-1', 'continuation must pass native thread/session ID');
 
-  const observation = recordObservation('continuation', {
-    ...deltas,
-    durationMs,
-    phases: turn2.meta.phases,
-  }, { turn: 2, handle: turn1.sessionHandle });
+  const observation = recordObservation(
+    'continuation',
+    {
+      ...deltas,
+      durationMs,
+      phases: turn2.meta.phases,
+    },
+    { turn: 2, handle: turn1.sessionHandle },
+  );
   assert.equal(observation.adapterLaunches, 1);
   assert.ok(typeof observation.finalizationDurationMs === 'number', 'finalization phase must be measured');
 });
@@ -357,10 +364,14 @@ test('baseline: review workflow collects git diff, evaluates state envelope, and
   const parsed = readResult(reviewResult);
   assert.equal(parsed.verdict, 'READY', 'state envelope verdict must evaluate to READY');
 
-  const observation = recordObservation('review', { ...deltas, durationMs, phases: reviewTrace?.phases }, {
-    verdict: 'READY',
-    diffObserved: true,
-  });
+  const observation = recordObservation(
+    'review',
+    { ...deltas, durationMs, phases: reviewTrace?.phases },
+    {
+      verdict: 'READY',
+      diffObserved: true,
+    },
+  );
   assert.equal(observation.adapterLaunches, 1);
   assert.ok(typeof observation.preparationDurationMs === 'number', 'preparation phase must be measured');
   assert.ok(typeof observation.gitCollectionDurationMs === 'number', 'git_collection phase must be measured');
@@ -379,9 +390,7 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
     }, 5000);
   });
 
-  const { adapter, counters } = createInstrumentedFixture('agy', [
-    { id: 'gemini-3.8-flash', efforts: ['low', 'high'], isDefault: true },
-  ], {
+  const { adapter, counters } = createInstrumentedFixture('agy', [{ id: 'gemini-3.8-flash', efforts: ['low', 'high'], isDefault: true }], {
     onExecute: async (_prompt, opts, c) => {
       activeExecutions++;
       if (activeExecutions > maxActiveExecutions) {
@@ -413,7 +422,7 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
   const before = snapshotCounters(counters);
   const start = Date.now();
   const taskPromises = Array.from({ length: concurrency }, (_, i) =>
-    executeTask(`concurrent prompt ${i}`, `concurrent input ${i}`, { backend: 'agy' }, tempDir)
+    executeTask(`concurrent prompt ${i}`, `concurrent input ${i}`, { backend: 'agy' }, tempDir),
   );
 
   let results;
@@ -436,12 +445,15 @@ test('baseline: concurrent runs coalesce probes and execute tasks concurrently b
   const distinctHandles = new Set(results.map(r => r.sessionHandle));
   assert.equal(distinctHandles.size, concurrency, 'concurrent tasks must have distinct session handles');
 
-  const observation = recordObservation('concurrent_coalesced', {
-    ...deltas,
-    durationMs,
-  }, { concurrency, maxActiveExecutions });
+  const observation = recordObservation(
+    'concurrent_coalesced',
+    {
+      ...deltas,
+      durationMs,
+    },
+    { concurrency, maxActiveExecutions },
+  );
   assert.equal(observation.probes, 1);
   assert.equal(observation.adapterLaunches, concurrency);
   assert.equal(observation.clientTransportLatency, NOT_MEASURED);
 });
-

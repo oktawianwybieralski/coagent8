@@ -6,12 +6,7 @@ const path = require('node:path');
 const { getEventListeners } = require('node:events');
 const { spawn } = require('node:child_process');
 
-const {
-  runCommand,
-  activeProcesses,
-  terminateAllProcesses,
-  terminateProcessTree,
-} = require('../../src/execution/process.ts');
+const { runCommand, activeProcesses, terminateAllProcesses, terminateProcessTree } = require('../../src/execution/process.ts');
 const { resolveCliCommand } = require('../../src/execution/cli-resolver.ts');
 const { createLineDecoder, truncateToByteLength } = require('../../src/execution/runtime/stream.ts');
 const { readBoundedFile } = require('../../src/storage/read.ts');
@@ -38,9 +33,18 @@ function protocolSession(onStarted) {
   let channel;
   return {
     seen,
-    session: { start(c, input) { channel = c; c.send({ type: 'start', input }); }, interrupt(c) { c.send({ type: 'interrupt' }); } },
+    session: {
+      start(c, input) {
+        channel = c;
+        c.send({ type: 'start', input });
+      },
+      interrupt(c) {
+        c.send({ type: 'interrupt' });
+      },
+    },
     line(raw) {
-      const m = JSON.parse(raw); seen.push(m.type);
+      const m = JSON.parse(raw);
+      seen.push(m.type);
       if (m.type === 'started') onStarted?.();
       if (m.type === 'done') channel.close();
     },
@@ -49,25 +53,42 @@ function protocolSession(onStarted) {
 
 test('a stop whose abort reason is a budget TIMEOUT reports TIMEOUT, not a cancellation (FEEDBACK-060s, #2)', async () => {
   const expiry = () => new ToolError('TIMEOUT', 'Execution deadline exceeded (180000 ms).');
-  const before = new AbortController(); before.abort(expiry());
+  const before = new AbortController();
+  before.abort(expiry());
   const early = await runCommand('coagent8-nonexistent-command', [], { abortSignal: before.signal });
-  assert.equal(early.status, 'timed_out'); assert.equal(early.error.code, 'TIMEOUT'); assert.equal(early.error.retryable, true);
+  assert.equal(early.status, 'timed_out');
+  assert.equal(early.error.code, 'TIMEOUT');
+  assert.equal(early.error.retryable, true);
   assert.match(early.error.message, /Execution deadline exceeded \(180000 ms\)/);
   const during = new AbortController();
-  const late = await runCommand(process.execPath, ['-e', "console.log('ready'); setInterval(() => {}, 1000);"],
-    { abortSignal: during.signal, timeoutMs: 15000, onStdoutLine() { during.abort(expiry()); } });
-  assert.equal(late.status, 'timed_out'); assert.equal(late.error.code, 'TIMEOUT');
+  const late = await runCommand(process.execPath, ['-e', "console.log('ready'); setInterval(() => {}, 1000);"], {
+    abortSignal: during.signal,
+    timeoutMs: 15000,
+    onStdoutLine() {
+      during.abort(expiry());
+    },
+  });
+  assert.equal(late.status, 'timed_out');
+  assert.equal(late.error.code, 'TIMEOUT');
   assert.match(late.error.message, /Execution deadline exceeded \(180000 ms\)/);
   const cancel = new AbortController();
-  const cancelled = await runCommand(process.execPath, ['-e', "console.log('ready'); setInterval(() => {}, 1000);"],
-    { abortSignal: cancel.signal, timeoutMs: 15000, onStdoutLine() { cancel.abort(); } });
-  assert.equal(cancelled.status, 'cancelled'); assert.equal(cancelled.error.code, 'ABORTED');
+  const cancelled = await runCommand(process.execPath, ['-e', "console.log('ready'); setInterval(() => {}, 1000);"], {
+    abortSignal: cancel.signal,
+    timeoutMs: 15000,
+    onStdoutLine() {
+      cancel.abort();
+    },
+  });
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.error.code, 'ABORTED');
 });
 
 test('F05: pre-abort with a missing executable never launches or emits uncaught ENOENT', async () => {
-  const controller = new AbortController(); controller.abort();
+  const controller = new AbortController();
+  controller.abort();
   const result = await runCommand('coagent8-nonexistent-command', [], { abortSignal: controller.signal });
-  assert.equal(result.error.code, 'ABORTED'); assert.equal(result.status, 'cancelled');
+  assert.equal(result.error.code, 'ABORTED');
+  assert.equal(result.status, 'cancelled');
   assert.equal(activeProcesses.size, 0);
   await new Promise(resolve => setImmediate(resolve));
 });
@@ -75,7 +96,8 @@ test('F05: pre-abort with a missing executable never launches or emits uncaught 
 test('F02: npm shim resolves its actual JS entrypoint with spaces and literal shell metacharacters', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8 shim '));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const entry = path.join(dir, 'cli.cjs'), shim = path.join(dir, 'fake.cmd');
+  const entry = path.join(dir, 'cli.cjs'),
+    shim = path.join(dir, 'fake.cmd');
   fs.writeFileSync(entry, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
   fs.writeFileSync(shim, '@ECHO off\r\n"%dp0%\\node.exe" "%dp0%\\cli.cjs" %*\r\n');
   assert.deepEqual(resolveCliCommand(shim).argsPrefix, [entry]);
@@ -84,23 +106,30 @@ test('F02: npm shim resolves its actual JS entrypoint with spaces and literal sh
   assert.deepEqual(JSON.parse(result.stdout), ['a b', '$(literal)&"x\\', 'zażółć 😀']);
   const byPath = resolveCliCommand('fake', { platform: 'win32', env: { PATH: dir, PATHEXT: '.EXE;.CMD' } });
   assert.equal(byPath.source, 'npm-shim');
-  fs.chmodSync(entry,0o600);
-  assert.equal(resolveCliCommand(entry,{platform:'linux'}).command,process.execPath,'Explicit JS does not require an executable bit');
+  fs.chmodSync(entry, 0o600);
+  assert.equal(resolveCliCommand(entry, { platform: 'linux' }).command, process.execPath, 'Explicit JS does not require an executable bit');
 });
 
-test('F06: timeout, cancellation, EOF shutdown remove the whole process tree and listeners', async (t) => {
+test('F06: timeout, cancellation, EOF shutdown remove the whole process tree and listeners', async t => {
   for (const mode of ['timeout', 'abort', 'eof', 'leader-exit']) {
     let pid;
     t.after(() => {
       if (pid) {
-        try { process.kill(pid); } catch {}
+        try {
+          process.kill(pid);
+        } catch {}
       }
     });
     const controller = new AbortController();
-    const script = `const {spawn}=require('node:child_process');const c=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{stdio:${mode==='leader-exit'?"'inherit'":"'ignore'"},windowsHide:true});console.log(c.pid);${mode === 'leader-exit' ? 'setTimeout(()=>process.exit(0),100)' : 'setInterval(()=>{},1000)'};`;
+    const script = `const {spawn}=require('node:child_process');const c=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{stdio:${mode === 'leader-exit' ? "'inherit'" : "'ignore'"},windowsHide:true});console.log(c.pid);${mode === 'leader-exit' ? 'setTimeout(()=>process.exit(0),100)' : 'setInterval(()=>{},1000)'};`;
     const result = await runCommand(process.execPath, ['-e', script], {
-      abortSignal: controller.signal, timeoutMs: 4000,
-      onStdoutLine(line) { pid = Number(line); if (mode === 'abort') controller.abort(); if (mode === 'eof') void terminateAllProcesses(); },
+      abortSignal: controller.signal,
+      timeoutMs: 4000,
+      onStdoutLine(line) {
+        pid = Number(line);
+        if (mode === 'abort') controller.abort();
+        if (mode === 'eof') void terminateAllProcesses();
+      },
     });
     assert.ok(pid, `${mode}: ${result.stderr}`);
     assert.equal(result.status, mode === 'timeout' ? 'timed_out' : mode === 'leader-exit' ? 'completed' : 'cancelled');
@@ -125,37 +154,52 @@ test('F06: timeout, cancellation, EOF shutdown remove the whole process tree and
 });
 
 test('F08: UTF-8, CRLF, split emoji, complete oversized lines and trailing fragments', () => {
-  const lines = [], decoder = createLineDecoder(line => lines.push(line), 20);
+  const lines = [],
+    decoder = createLineDecoder(line => lines.push(line), 20);
   const bytes = Buffer.from('zażółć 😀\r\nx\ny');
   for (const byte of bytes) decoder.push(Buffer.from([byte]));
-  decoder.finish(); assert.deepEqual(lines, ['zażółć 😀', 'x', 'y']);
-  for (const text of ['a'.repeat(21)+'\n', 'ok\n'+'a'.repeat(21)]) {
+  decoder.finish();
+  assert.deepEqual(lines, ['zażółć 😀', 'x', 'y']);
+  for (const text of ['a'.repeat(21) + '\n', 'ok\n' + 'a'.repeat(21)]) {
     assert.throws(() => createLineDecoder(() => {}, 20).push(Buffer.from(text)), { code: 'BUFFER_LIMIT' });
   }
   for (let limit = 0; limit < 30; limit++) {
     // A multibyte suffix is cut on a character boundary too.
     const output = truncateToByteLength('😀'.repeat(50), limit, 'é');
-    assert.ok(Buffer.byteLength(output) <= limit); assert.ok(!output.includes('�'));
+    assert.ok(Buffer.byteLength(output) <= limit);
+    assert.ok(!output.includes('�'));
   }
 });
 
-test('F06: server shutdown blocks a pending task from launching its next subprocess',async t=>{
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'coagent8-shutdown-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
-  const marker=path.join(dir,'should-not-exist'),module=path.resolve(__dirname, '../..', 'src/execution/process.ts');
-  const script=`const {runCommand,shutdownProcessRunner,activeProcesses}=require(process.argv[1]);(async()=>{let resume;const pending=new Promise(resolve=>resume=resolve).then(()=>runCommand(process.execPath,['-e','require("node:fs").writeFileSync(process.argv[1],"launched")',process.argv[2]]));await shutdownProcessRunner();resume();const result=await pending;console.log(JSON.stringify({status:result.status,code:result.error?.code,active:activeProcesses.size}));})().catch(()=>process.exit(1));`;
-  const result=await runCommand(process.execPath,['--require','tsx/cjs','-e',script,module,marker]);
-  assert.equal(result.status,'completed',result.stderr);assert.deepEqual(JSON.parse(result.stdout),{status:'cancelled',code:'ABORTED',active:0});assert.equal(fs.existsSync(marker),false);
+test('F06: server shutdown blocks a pending task from launching its next subprocess', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-shutdown-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const marker = path.join(dir, 'should-not-exist'),
+    module = path.resolve(__dirname, '../..', 'src/execution/process.ts');
+  const script = `const {runCommand,shutdownProcessRunner,activeProcesses}=require(process.argv[1]);(async()=>{let resume;const pending=new Promise(resolve=>resume=resolve).then(()=>runCommand(process.execPath,['-e','require("node:fs").writeFileSync(process.argv[1],"launched")',process.argv[2]]));await shutdownProcessRunner();resume();const result=await pending;console.log(JSON.stringify({status:result.status,code:result.error?.code,active:activeProcesses.size}));})().catch(()=>process.exit(1));`;
+  const result = await runCommand(process.execPath, ['--require', 'tsx/cjs', '-e', script, module, marker]);
+  assert.equal(result.status, 'completed', result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { status: 'cancelled', code: 'ABORTED', active: 0 });
+  assert.equal(fs.existsSync(marker), false);
 });
 
 test('F08: protocol overflow stops execution; file and diagnostic budgets cannot be bypassed', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-output-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const file = path.join(dir, 'answer.txt'); fs.writeFileSync(file, 'x'.repeat(200));
+  const file = path.join(dir, 'answer.txt');
+  fs.writeFileSync(file, 'x'.repeat(200));
   await assert.rejects(readBoundedFile(file, 100), { code: 'BUFFER_LIMIT' });
-  const result = await runCommand(process.execPath, ['-e', "console.log('x'.repeat(10000));setInterval(()=>{},1000)"], { maxLineBytes: 100, maxBufferBytes: 40, onStdoutLine() {} });
-  assert.equal(result.error.code, 'BUFFER_LIMIT'); assert.ok(Buffer.byteLength(result.stdout) <= 40);
+  const result = await runCommand(process.execPath, ['-e', "console.log('x'.repeat(10000));setInterval(()=>{},1000)"], {
+    maxLineBytes: 100,
+    maxBufferBytes: 40,
+    onStdoutLine() {},
+  });
+  assert.equal(result.error.code, 'BUFFER_LIMIT');
+  assert.ok(Buffer.byteLength(result.stdout) <= 40);
   const diag = await runCommand(process.execPath, ['-e', "process.stderr.write('😀'.repeat(500))"], { maxBufferBytes: 39 });
-  assert.ok(Buffer.byteLength(diag.stderr) <= 39); assert.ok(!diag.stderr.includes('�')); assert.ok(diag.isTruncated);
+  assert.ok(Buffer.byteLength(diag.stderr) <= 39);
+  assert.ok(!diag.stderr.includes('�'));
+  assert.ok(diag.isTruncated);
 });
 
 test('missing command, async spawn failure, closed stdin and native executable are controlled', async () => {
@@ -170,7 +214,10 @@ test('layer 2: terminateProcessTree stops the owned root through its handle and 
   const { spawn } = require('node:child_process');
   const { once } = require('node:events');
   const { terminateProcessTree } = require('../../src/execution/process.ts');
-  const proc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform !== 'win32', windowsHide: true });
+  const proc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    detached: process.platform !== 'win32',
+    windowsHide: true,
+  });
   await once(proc, 'spawn');
   const first = terminateProcessTree(proc);
   assert.equal(terminateProcessTree(proc), first, 'concurrent calls share one teardown');
@@ -180,13 +227,22 @@ test('layer 2: terminateProcessTree stops the owned root through its handle and 
 });
 
 test('layer 1: an interrupted protocol CLI ends its turn and exits by itself before the grace period', async () => {
-  for (const [mode, expected] of [['abort', 'cancelled'], ['timeout', 'timed_out']]) {
+  for (const [mode, expected] of [
+    ['abort', 'cancelled'],
+    ['timeout', 'timed_out'],
+  ]) {
     const controller = new AbortController();
-    const fake = protocolSession(() => { if (mode === 'abort') controller.abort(); });
+    const fake = protocolSession(() => {
+      if (mode === 'abort') controller.abort();
+    });
     const startedAt = Date.now();
     const result = await runCommand(process.execPath, ['-e', protocolCli], {
-      stdinInput: 'prompt', session: fake.session, onStdoutLine: fake.line, abortSignal: controller.signal,
-      timeoutMs: mode === 'timeout' ? 1500 : 30_000, interruptGraceMs: 10_000,
+      stdinInput: 'prompt',
+      session: fake.session,
+      onStdoutLine: fake.line,
+      abortSignal: controller.signal,
+      timeoutMs: mode === 'timeout' ? 1500 : 30_000,
+      interruptGraceMs: 10_000,
     });
     assert.equal(result.status, expected, `${mode}: ${result.stderr}`);
     assert.deepEqual(fake.seen, ['started', 'done'], `${mode}: output after the interrupt is still delivered`);
@@ -201,7 +257,11 @@ test('layer 1 -> 2: a CLI that ignores the interrupt is stopped when the grace p
   const fake = protocolSession(() => controller.abort());
   const startedAt = Date.now();
   const result = await runCommand(process.execPath, ['-e', protocolCli, 'ignore'], {
-    stdinInput: 'prompt', session: fake.session, onStdoutLine: fake.line, abortSignal: controller.signal, interruptGraceMs: 400,
+    stdinInput: 'prompt',
+    session: fake.session,
+    onStdoutLine: fake.line,
+    abortSignal: controller.signal,
+    interruptGraceMs: 400,
   });
   assert.equal(result.status, 'cancelled');
   assert.deepEqual(fake.seen, ['started']);
@@ -214,8 +274,20 @@ test('layer 1: a session that closed stdin before failing lets the CLI exit by i
   let channel;
   const startedAt = Date.now();
   const result = await runCommand(process.execPath, ['-e', protocolCli], {
-    session: { start(c) { channel = c; c.send({ type: 'start' }); }, interrupt() { throw new Error('interrupt must not be sent after EOF'); } },
-    onStdoutLine() { channel.close(); throw Object.assign(new Error('bad record'), { code: 'PROTOCOL_ERROR' }); }, interruptGraceMs: 10_000,
+    session: {
+      start(c) {
+        channel = c;
+        c.send({ type: 'start' });
+      },
+      interrupt() {
+        throw new Error('interrupt must not be sent after EOF');
+      },
+    },
+    onStdoutLine() {
+      channel.close();
+      throw Object.assign(new Error('bad record'), { code: 'PROTOCOL_ERROR' });
+    },
+    interruptGraceMs: 10_000,
   });
   assert.equal(result.error.code, 'PROTOCOL_ERROR');
   assert.equal(result.exitCode, 0, 'EOF ended the CLI; it was not stopped');
@@ -225,7 +297,15 @@ test('layer 1: a session that closed stdin before failing lets the CLI exit by i
 test('layer 1: a session that throws on start or interrupt falls back to a forced stop', async () => {
   const startedAt = Date.now();
   const failing = await runCommand(process.execPath, ['-e', protocolCli], {
-    session: { start() { throw Object.assign(new Error('bad start'), { code: 'PROTOCOL_ERROR' }); }, interrupt() { throw new Error('nothing was started'); } }, interruptGraceMs: 10_000,
+    session: {
+      start() {
+        throw Object.assign(new Error('bad start'), { code: 'PROTOCOL_ERROR' });
+      },
+      interrupt() {
+        throw new Error('nothing was started');
+      },
+    },
+    interruptGraceMs: 10_000,
   });
   assert.equal(failing.error.code, 'PROTOCOL_ERROR');
   assert.notEqual(failing.exitCode, 0, 'a session that never started is stopped');
@@ -233,20 +313,44 @@ test('layer 1: a session that throws on start or interrupt falls back to a force
   const controller = new AbortController();
   const interruptedAt = Date.now();
   const broken = await runCommand(process.execPath, ['-e', protocolCli], {
-    session: { start(c) { c.send({ type: 'start' }); }, interrupt() { throw new Error('channel broken'); } },
-    onStdoutLine() { controller.abort(); }, abortSignal: controller.signal, interruptGraceMs: 10_000,
+    session: {
+      start(c) {
+        c.send({ type: 'start' });
+      },
+      interrupt() {
+        throw new Error('channel broken');
+      },
+    },
+    onStdoutLine() {
+      controller.abort();
+    },
+    abortSignal: controller.signal,
+    interruptGraceMs: 10_000,
   });
   assert.equal(broken.status, 'cancelled');
   assert.ok(Date.now() - interruptedAt < 9000, 'a failed interrupt does not wait for the grace period');
 });
 
 test('layer 2 (POSIX): a per-run signal grace lets a SIGTERM handler finish before SIGKILL', async t => {
-  if (process.platform === 'win32') { t.skip('POSIX process-group signals only'); return; }
+  if (process.platform === 'win32') {
+    t.skip('POSIX process-group signals only');
+    return;
+  }
   // Handles SIGTERM with 1 s of cleanup, then exits 0.
   const cli = "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 1000)); console.log('ready'); setInterval(() => {}, 1000);";
-  for (const [signalGraceMs, cleanExit] of [[2000, true], [undefined, false]]) {
+  for (const [signalGraceMs, cleanExit] of [
+    [2000, true],
+    [undefined, false],
+  ]) {
     const controller = new AbortController();
-    const result = await runCommand(process.execPath, ['-e', cli], { abortSignal: controller.signal, timeoutMs: 15000, signalGraceMs, onStdoutLine() { controller.abort(); } });
+    const result = await runCommand(process.execPath, ['-e', cli], {
+      abortSignal: controller.signal,
+      timeoutMs: 15000,
+      signalGraceMs,
+      onStdoutLine() {
+        controller.abort();
+      },
+    });
     assert.equal(result.status, 'cancelled');
     if (cleanExit) assert.equal(result.exitCode, 0, 'the handler finished inside the 2 s grace');
     else assert.equal(result.signal, 'SIGKILL', 'the default 250 ms grace escalates to SIGKILL');
@@ -256,10 +360,17 @@ test('layer 2 (POSIX): a per-run signal grace lets a SIGTERM handler finish befo
 
 test('layer 2 (POSIX): a group that has exited ends teardown at once; other signal failures are reported (ERRORS-001)', async t => {
   t.mock.property(process, 'platform', 'linux');
-  const calls = [], warnings = [];
+  const calls = [],
+    warnings = [];
   let failure = 'ESRCH';
-  t.mock.method(process, 'kill', (pid, signal) => { calls.push([pid, signal]); throw Object.assign(new Error(failure), { code: failure }); });
-  t.mock.method(process.stderr, 'write', text => { warnings.push(String(text)); return true; });
+  t.mock.method(process, 'kill', (pid, signal) => {
+    calls.push([pid, signal]);
+    throw Object.assign(new Error(failure), { code: failure });
+  });
+  t.mock.method(process.stderr, 'write', text => {
+    warnings.push(String(text));
+    return true;
+  });
   const started = Date.now();
   await terminateProcessTree({ pid: 424242, exitCode: null, signalCode: null }, 5000);
   assert.ok(Date.now() - started < 1000, 'no grace period for a group without members');
@@ -268,7 +379,10 @@ test('layer 2 (POSIX): a group that has exited ends teardown at once; other sign
   failure = 'EPERM';
   calls.length = 0;
   await terminateProcessTree({ pid: 434343, exitCode: null, signalCode: null }, 10);
-  assert.deepEqual(calls, [[-434343, 'SIGTERM'], [-434343, 'SIGKILL']]);
+  assert.deepEqual(calls, [
+    [-434343, 'SIGTERM'],
+    [-434343, 'SIGKILL'],
+  ]);
   assert.deepEqual(warnings, [
     'Warning: could not send SIGTERM to owned process group 434343: EPERM\n',
     'Warning: could not send SIGKILL to owned process group 434343: EPERM\n',
@@ -276,7 +390,10 @@ test('layer 2 (POSIX): a group that has exited ends teardown at once; other sign
 });
 
 test('layer 2 (POSIX): a normal exit does not wait for the signal grace', async t => {
-  if (process.platform === 'win32') { t.skip('POSIX process-group signals only'); return; }
+  if (process.platform === 'win32') {
+    t.skip('POSIX process-group signals only');
+    return;
+  }
   const started = Date.now();
   const result = await runCommand(process.execPath, ['-e', ''], { signalGraceMs: 3000 });
   assert.equal(result.status, 'completed');
@@ -288,9 +405,10 @@ test('layer 3: a descendant outside the owned tree that holds stdout cannot dela
   // The leaf escapes the owned tree (a non-Node intermediate on Windows, its own process
   // group on POSIX), inherits stdout and exits by itself after 6 s.
   const leaf = 'setTimeout(() => {}, 6000)';
-  const root = process.platform === 'win32'
-    ? `require('node:child_process').spawn('cmd.exe', ['/d', '/s', '/c', '""' + process.execPath + '" -e "${leaf}""'], { stdio: 'inherit', windowsHide: true, windowsVerbatimArguments: true }); setTimeout(() => process.exit(0), 500);`
-    : `require('node:child_process').spawn(process.execPath, ['-e', '${leaf}'], { stdio: 'inherit', detached: true }).unref(); setTimeout(() => process.exit(0), 500);`;
+  const root =
+    process.platform === 'win32'
+      ? `require('node:child_process').spawn('cmd.exe', ['/d', '/s', '/c', '""' + process.execPath + '" -e "${leaf}""'], { stdio: 'inherit', windowsHide: true, windowsVerbatimArguments: true }); setTimeout(() => process.exit(0), 500);`
+      : `require('node:child_process').spawn(process.execPath, ['-e', '${leaf}'], { stdio: 'inherit', detached: true }).unref(); setTimeout(() => process.exit(0), 500);`;
   const startedAt = Date.now();
   const result = await runCommand(process.execPath, ['-e', root], { timeoutMs: 30_000 });
   const elapsed = Date.now() - startedAt;

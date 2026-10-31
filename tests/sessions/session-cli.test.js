@@ -32,13 +32,15 @@ test('coagent8 session list outputs human text and JSON with workspace isolation
 
   try {
     // 1. Empty workspace returns no active sessions message
-    const emptyOut = sink(), emptyErr = sink();
+    const emptyOut = sink(),
+      emptyErr = sink();
     assert.equal(await runSessionCli(['list'], emptyOut.stream, emptyErr.stream, undefined, tempDir), 0);
     assert.match(emptyOut.text(), /> CoAgent8: No active sessions found\./);
     assert.equal(emptyErr.text(), '');
 
     // 2. Empty workspace with --json returns empty array
-    const emptyJsonOut = sink(), emptyJsonErr = sink();
+    const emptyJsonOut = sink(),
+      emptyJsonErr = sink();
     assert.equal(await runSessionCli(['list', '--json'], emptyJsonOut.stream, emptyJsonErr.stream, undefined, tempDir), 0);
     assert.deepEqual(JSON.parse(emptyJsonOut.text()), []);
     assert.equal(emptyJsonErr.text(), '');
@@ -49,7 +51,8 @@ test('coagent8 session list outputs human text and JSON with workspace isolation
     const sOther = createSession('claude', otherDir);
 
     // 4. Human text list in tempDir shows s1 and s2, excludes sOther
-    const textOut = sink(), textErr = sink();
+    const textOut = sink(),
+      textErr = sink();
     assert.equal(await runSessionCli(['list'], textOut.stream, textErr.stream, undefined, tempDir), 0);
     assert.match(textOut.text(), /## Active CoAgent8 Sessions/);
     assert.ok(textOut.text().includes(s1.sessionHandle));
@@ -58,7 +61,8 @@ test('coagent8 session list outputs human text and JSON with workspace isolation
     assert.equal(textErr.text(), '');
 
     // 5. JSON list in tempDir returns array of session records with redacted home path
-    const jsonOut = sink(), jsonErr = sink();
+    const jsonOut = sink(),
+      jsonErr = sink();
     assert.equal(await runSessionCli(['list', '--json'], jsonOut.stream, jsonErr.stream, undefined, tempDir), 0);
     const list = JSON.parse(jsonOut.text());
     assert.ok(Array.isArray(list));
@@ -109,7 +113,8 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     await writer3.flush();
 
     // 1. Text history format
-    const textOut = sink(), textErr = sink();
+    const textOut = sink(),
+      textErr = sink();
     assert.equal(await runSessionCli(['history', handle], textOut.stream, textErr.stream, undefined, tempDir), 0);
     assert.match(textOut.text(), new RegExp(`## Session History: \`${handle}\``));
     assert.match(textOut.text(), /### Turn 1/);
@@ -128,7 +133,8 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     assert.equal(textErr.text(), '');
 
     // 2. JSON history format
-    const jsonOut = sink(), jsonErr = sink();
+    const jsonOut = sink(),
+      jsonErr = sink();
     assert.equal(await runSessionCli(['history', handle, '--json'], jsonOut.stream, jsonErr.stream, undefined, tempDir), 0);
     const hist = JSON.parse(jsonOut.text());
     assert.equal(hist.sessionHandle, handle);
@@ -144,25 +150,38 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
     assert.equal(jsonErr.text(), '');
 
     // 3. Pagination with --limit and --cursor
-    const p1Out = sink(), p1Err = sink();
+    const p1Out = sink(),
+      p1Err = sink();
     assert.equal(await runSessionCli(['history', handle, '--limit', '2', '--json'], p1Out.stream, p1Err.stream, undefined, tempDir), 0);
     const p1 = JSON.parse(p1Out.text());
     assert.equal(p1.events.length, 2);
     assert.ok(p1.nextCursor, 'First page should have nextCursor');
 
-    const p2Out = sink(), p2Err = sink();
-    assert.equal(await runSessionCli(['history', handle, '--cursor', p1.nextCursor, '--limit=2', '--json'], p2Out.stream, p2Err.stream, undefined, tempDir), 0);
+    const p2Out = sink(),
+      p2Err = sink();
+    assert.equal(
+      await runSessionCli(
+        ['history', handle, '--cursor', p1.nextCursor, '--limit=2', '--json'],
+        p2Out.stream,
+        p2Err.stream,
+        undefined,
+        tempDir,
+      ),
+      0,
+    );
     const p2 = JSON.parse(p2Out.text());
     assert.ok(p2.events.length > 0);
     assert.notEqual(p2.events[0].eventId, p1.events[0].eventId);
 
     // 4. Workspace isolation: querying handle from another workspace fails with exit code 1
-    const isoOut = sink(), isoErr = sink();
+    const isoOut = sink(),
+      isoErr = sink();
     assert.equal(await runSessionCli(['history', handle], isoOut.stream, isoErr.stream, undefined, otherDir), 1);
     assert.match(isoErr.text(), /Error: History not found in this workspace\./);
 
     // 5. Non-existent handle fails with exit code 1
-    const fakeOut = sink(), fakeErr = sink();
+    const fakeOut = sink(),
+      fakeErr = sink();
     assert.equal(await runSessionCli(['history', 'syn_sess_nonexistent'], fakeOut.stream, fakeErr.stream, undefined, tempDir), 1);
     assert.match(fakeErr.text(), /Error: History not found in this workspace\./);
   } finally {
@@ -172,69 +191,81 @@ test('coagent8 session history inspects paginated turn history in text and JSON'
 });
 
 test('coagent8 session argument validation and exit code 2 handling', async () => {
-  const out = sink(), err = sink();
+  const out = sink(),
+    err = sink();
 
   // Root session missing subcommand -> exit 2
   assert.equal(await runSessionCli([], out.stream, err.stream), 2);
   assert.match(err.text(), /Unknown command or missing subcommand/);
 
   // Root session unknown subcommand -> exit 2
-  const unkOut = sink(), unkErr = sink();
+  const unkOut = sink(),
+    unkErr = sink();
   assert.equal(await runSessionCli(['unknown-subcmd'], unkOut.stream, unkErr.stream), 2);
   assert.match(unkErr.text(), /Unknown subcommand 'unknown-subcmd'/);
 
   // Root session --help -> exit 0
-  const helpOut = sink(), helpErr = sink();
+  const helpOut = sink(),
+    helpErr = sink();
   assert.equal(await runSessionCli(['--help'], helpOut.stream, helpErr.stream), 0);
   assert.match(helpOut.text(), /Usage: coagent8 session/);
 
   // session list --help -> exit 0
-  const listHelpOut = sink(), listHelpErr = sink();
+  const listHelpOut = sink(),
+    listHelpErr = sink();
   assert.equal(await runSessionCli(['list', '--help'], listHelpOut.stream, listHelpErr.stream), 0);
   assert.match(listHelpOut.text(), /Usage: coagent8 session list \[--json\]/);
 
   // session list unknown argument -> exit 2
-  const listArgOut = sink(), listArgErr = sink();
+  const listArgOut = sink(),
+    listArgErr = sink();
   assert.equal(await runSessionCli(['list', '--invalid'], listArgOut.stream, listArgErr.stream), 2);
   assert.match(listArgErr.text(), /Unknown argument '--invalid'/);
 
   // session history --help -> exit 0
-  const histHelpOut = sink(), histHelpErr = sink();
+  const histHelpOut = sink(),
+    histHelpErr = sink();
   assert.equal(await runSessionCli(['history', '--help'], histHelpOut.stream, histHelpErr.stream), 0);
   assert.match(histHelpOut.text(), /Usage: coagent8 session history <handle>/);
 
   // session history missing handle -> exit 2
-  const histNoHandleOut = sink(), histNoHandleErr = sink();
+  const histNoHandleOut = sink(),
+    histNoHandleErr = sink();
   assert.equal(await runSessionCli(['history'], histNoHandleOut.stream, histNoHandleErr.stream), 2);
   assert.match(histNoHandleErr.text(), /Missing required session handle/);
 
   // session history invalid limit -> exit 2
   for (const invalidLimit of ['0', '101', 'abc', '-5']) {
-    const limOut = sink(), limErr = sink();
+    const limOut = sink(),
+      limErr = sink();
     assert.equal(await runSessionCli(['history', 'handle-1', '--limit', invalidLimit], limOut.stream, limErr.stream), 2);
     assert.match(limErr.text(), /History limit must be 1\.\.100/);
   }
 
   // session history missing value for --cursor -> exit 2
-  const noCursorValOut = sink(), noCursorValErr = sink();
+  const noCursorValOut = sink(),
+    noCursorValErr = sink();
   assert.equal(await runSessionCli(['history', 'handle-1', '--cursor'], noCursorValOut.stream, noCursorValErr.stream), 2);
   assert.match(noCursorValErr.text(), /Missing value for argument '--cursor'/);
 
   // session history extra positional argument -> exit 2
-  const extraPosOut = sink(), extraPosErr = sink();
+  const extraPosOut = sink(),
+    extraPosErr = sink();
   assert.equal(await runSessionCli(['history', 'handle-1', 'extra-arg'], extraPosOut.stream, extraPosErr.stream), 2);
   assert.match(extraPosErr.text(), /Unknown argument 'extra-arg'/);
 });
 
 test('coagent8 session aborts with exit code 130 on signal abort', async () => {
-  const out = sink(), err = sink();
+  const out = sink(),
+    err = sink();
   const ac = new AbortController();
   ac.abort();
   const code = await runSessionCli(['list'], out.stream, err.stream, ac.signal);
   assert.equal(code, 130);
   assert.equal(out.text(), '');
 
-  const histOut = sink(), histErr = sink();
+  const histOut = sink(),
+    histErr = sink();
   const acHist = new AbortController();
   acHist.abort();
   const histCode = await runSessionCli(['history', 'syn_sess_any'], histOut.stream, histErr.stream, acHist.signal);

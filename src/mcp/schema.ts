@@ -28,14 +28,28 @@ export const WORKSPACE_PARAMETER = {
 };
 
 export const EXECUTION_PARAMETERS = {
-  backend: { type: 'string', enum: ['auto', 'codex', 'claude', 'agy', 'smart_quota'],
-    description: 'codex: Codex CLI; claude: Claude Code; agy: Antigravity. auto (default): configured provider, else another CLI than yours, most cached quota.' },
-  model: { type: 'string',
-    description: 'Omit unless the user names a model or price limit. doctor lists models, efforts and prices; unknown names fail. Tag ask: ask the user first, a form follows; deny: never runs.' },
-  reasoning_effort: { type: 'string', enum: [...REASONING_EFFORTS],
-    description: 'Omit for the default; doctor lists per-model values. Required where listed, or as a model name suffix.' },
-  output_price_below: { type: 'number', minimum: 0,
-    description: 'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; server picks default or newest.' },
+  backend: {
+    type: 'string',
+    enum: ['auto', 'codex', 'claude', 'agy', 'smart_quota'],
+    description:
+      'codex: Codex CLI; claude: Claude Code; agy: Antigravity. auto (default): configured provider, else another CLI than yours, most cached quota.',
+  },
+  model: {
+    type: 'string',
+    description:
+      'Omit unless the user names a model or price limit. doctor lists models, efforts and prices; unknown names fail. Tag ask: ask the user first, a form follows; deny: never runs.',
+  },
+  reasoning_effort: {
+    type: 'string',
+    enum: [...REASONING_EFFORTS],
+    description: 'Omit for the default; doctor lists per-model values. Required where listed, or as a model name suffix.',
+  },
+  output_price_below: {
+    type: 'number',
+    minimum: 0,
+    description:
+      'User limit, USD per million output tokens, strict (5 excludes 5). Only verified prices qualify; server picks default or newest.',
+  },
   session_handle: { type: 'string', minLength: 1, description: 'Same-topic follow-up: footer handle; else a fresh agent rereads all.' },
   timeout_ms: {
     type: 'integer',
@@ -45,4 +59,3 @@ export const EXECUTION_PARAMETERS = {
   },
   ...WORKSPACE_PARAMETER,
 };
-

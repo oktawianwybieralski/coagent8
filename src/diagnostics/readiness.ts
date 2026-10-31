@@ -23,8 +23,14 @@
 
 /** One backend's readiness state. */
 export type ReadinessState =
-  | 'not_installed' | 'not_allowed' | 'profile_unverified' | 'signed_out'
-  | 'rate_limited' | 'quota_exhausted' | 'ready' | 'sign_in_unverified';
+  | 'not_installed'
+  | 'not_allowed'
+  | 'profile_unverified'
+  | 'signed_out'
+  | 'rate_limited'
+  | 'quota_exhausted'
+  | 'ready'
+  | 'sign_in_unverified';
 
 /** A backend's readiness and the evidence it rests on. */
 export interface BackendReadiness {
@@ -54,11 +60,18 @@ export const SUCCESS_EVIDENCE_MS = 24 * 60 * 60 * 1000;
 
 /** Decides a backend's readiness from its facts; see the module's decision table. */
 export function decideReadiness(facts: ReadinessFacts, now = Date.now()): BackendReadiness {
-  const success = facts.lastSuccess ? { model: facts.lastSuccess.model, at: new Date(facts.lastSuccess.observedAt).toISOString() } : undefined;
-  const result = (state: ReadinessState, evidence: string): BackendReadiness => ({ state, evidence, ...(success ? { lastSuccess: success } : {}) });
+  const success = facts.lastSuccess
+    ? { model: facts.lastSuccess.model, at: new Date(facts.lastSuccess.observedAt).toISOString() }
+    : undefined;
+  const result = (state: ReadinessState, evidence: string): BackendReadiness => ({
+    state,
+    evidence,
+    ...(success ? { lastSuccess: success } : {}),
+  });
   if (!facts.installed) return { state: 'not_installed', evidence: 'The CLI was not found.' };
   if (!facts.allowed) return result('not_allowed', 'Routing does not allow this backend.');
-  if (!facts.executionSupported || !facts.readOnlyVerified) return result('profile_unverified', 'The CLI cannot run turns, or its read-only profile is not verified.');
+  if (!facts.executionSupported || !facts.readOnlyVerified)
+    return result('profile_unverified', 'The CLI cannot run turns, or its read-only profile is not verified.');
   if (facts.authStatus === 'unauthenticated') return result('signed_out', 'The CLI reports that it is not signed in.');
   const cooldown = facts.quota?.cooldownUntil ? Date.parse(facts.quota.cooldownUntil) : NaN;
   // A measured zero quota is also reported as rate limited, without a cooldown: only a
@@ -66,7 +79,8 @@ export function decideReadiness(facts: ReadinessFacts, now = Date.now()): Backen
   if (facts.quota?.status === 'rate_limited' && Number.isFinite(cooldown) && cooldown > now) {
     return result('rate_limited', `Rate limited until ${facts.quota.cooldownUntil}.`);
   }
-  if (facts.quota?.headroomPercent === 0) return result('quota_exhausted', facts.quota.resetsAt ? `Quota exhausted until ${facts.quota.resetsAt}.` : 'Quota exhausted.');
+  if (facts.quota?.headroomPercent === 0)
+    return result('quota_exhausted', facts.quota.resetsAt ? `Quota exhausted until ${facts.quota.resetsAt}.` : 'Quota exhausted.');
   if (facts.authStatus === 'authenticated') return result('ready', 'The CLI reports a signed-in account.');
   if (facts.quotaMeasuredNow) return result('ready', 'The CLI measured its quota now, which needs a signed-in account.');
   if (facts.lastSuccess && now - facts.lastSuccess.observedAt < SUCCESS_EVIDENCE_MS) {

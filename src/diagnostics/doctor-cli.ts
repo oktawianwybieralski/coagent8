@@ -13,7 +13,7 @@ import { DOCTOR_SUMMARY_MAX_BYTES, formatDoctorSummary, formatModelSummary, runD
 const USAGE = 'Usage: coagent8 doctor [--scope models|health] [--backend codex|claude|agy] [--json]';
 
 const VALID_SCOPES = ['models', 'health'] as const;
-type DoctorScope = typeof VALID_SCOPES[number];
+type DoctorScope = (typeof VALID_SCOPES)[number];
 
 /**
  * Runs `coagent8 doctor` with the arguments after the command name.
@@ -27,7 +27,7 @@ export async function runDoctorCli(
   args: string[],
   out: NodeJS.WritableStream = process.stdout,
   err: NodeJS.WritableStream = process.stderr,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<number> {
   let json = false;
   let scope: DoctorScope = 'models';
@@ -100,7 +100,7 @@ export async function runDoctorCli(
         signal: effectiveSignal,
       });
       out.write(
-        `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatDoctorSummary(report), DOCTOR_SUMMARY_MAX_BYTES)}\n`
+        `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatDoctorSummary(report), DOCTOR_SUMMARY_MAX_BYTES)}\n`,
       );
     } else {
       const { trace: _trace, ...report } = await runModelReport({
@@ -108,14 +108,13 @@ export async function runDoctorCli(
         signal: effectiveSignal,
       });
       out.write(
-        `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatModelSummary({ ...report }), DOCTOR_SUMMARY_MAX_BYTES)}\n`
+        `${json ? JSON.stringify(redactDiagnosticData(report)) : redactDiagnostic(formatModelSummary({ ...report }), DOCTOR_SUMMARY_MAX_BYTES)}\n`,
       );
     }
     return 0;
   } catch (error: unknown) {
     const isAbort =
-      effectiveSignal.aborted ||
-      (error instanceof Error && (error.name === 'AbortError' || ('code' in error && error.code === 'ABORTED')));
+      effectiveSignal.aborted || (error instanceof Error && (error.name === 'AbortError' || ('code' in error && error.code === 'ABORTED')));
     if (isAbort) {
       return 130;
     }
@@ -128,4 +127,3 @@ export async function runDoctorCli(
     }
   }
 }
-

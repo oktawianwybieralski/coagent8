@@ -6,12 +6,22 @@ import { redactDiagnostic } from '../../security/redaction.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 import { createClaudeStreamCollector } from './collector.js';
 import { parseClaudeUsage } from './usage.js';
-import { DEFAULT_PROBE_TIMEOUT_MS, type AdapterProbeResult, type BackendReadContext, type CatalogModel, type ExecutionOptions, type ModelCatalog, type TerminalExecutionResult, type CliAdapter } from '../types.js';
+import {
+  DEFAULT_PROBE_TIMEOUT_MS,
+  type AdapterProbeResult,
+  type BackendReadContext,
+  type CatalogModel,
+  type ExecutionOptions,
+  type ModelCatalog,
+  type TerminalExecutionResult,
+  type CliAdapter,
+} from '../types.js';
 import { ToolError, type ExecutionError, type ExecutionProfile } from '../../contracts/index.js';
 import { MIN_CLAUDE_VERSION, supportsClaudeVersion } from './version.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
 import { configuredBackendCommand, probeCommand } from '../executable.js';
-export const id = 'claude', name = 'Claude Code CLI';
+export const id = 'claude',
+  name = 'Claude Code CLI';
 /** Built-in tools of the read-only profile; `--restricted` removes every code-running tool not named here. */
 export const CLAUDE_READ_ONLY_TOOLS = Object.freeze(['Read', 'Glob', 'Grep']);
 /**
@@ -25,9 +35,11 @@ export const CLAUDE_WRITE_TOOLS = Object.freeze(['Read', 'Glob', 'Grep', 'Edit',
  * directory, the workspace, so `Edit` and `Write` outside it are denied.
  */
 export function claudeTurnSettings(profile: ExecutionProfile): string {
-  return JSON.stringify(profile === 'workspace-write'
-    ? { disableAllHooks: true, permissions: { allow: ['Edit(./**)', 'Write(./**)', 'Bash'] } }
-    : { disableAllHooks: true });
+  return JSON.stringify(
+    profile === 'workspace-write'
+      ? { disableAllHooks: true, permissions: { allow: ['Edit(./**)', 'Write(./**)', 'Bash'] } }
+      : { disableAllHooks: true },
+  );
 }
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const SESSION_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -76,7 +88,8 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
   const installed = res.status === 'completed';
   const version = res.stdout.trim() || 'unknown';
   const executionSupported = installed && supportsClaudeVersion(version);
-  let authStatus = 'unknown', authMethod: string | undefined;
+  let authStatus = 'unknown',
+    authMethod: string | undefined;
   const authEvidence: string[] = [];
   if (installed) {
     if (abortSignal?.aborted) {
@@ -101,21 +114,38 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
     let parsed: Record<string, unknown> | null = null;
     try {
       const value: unknown = JSON.parse(auth.stdout);
-      parsed = value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+      parsed = value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
     } catch {
       authEvidence.push(`claude auth status returned no JSON (${auth.error?.code ?? `exit ${auth.exitCode}`}).`);
     }
     if (parsed && typeof parsed.loggedIn === 'boolean') {
       authStatus = parsed.loggedIn ? 'authenticated' : 'unauthenticated';
       authMethod = typeof parsed.authMethod === 'string' ? parsed.authMethod : undefined;
-      authEvidence.push(`claude auth status: loggedIn=${parsed.loggedIn}${authMethod ? `, authMethod=${authMethod}` : ''}; token validity is proven only by an execution.`);
+      authEvidence.push(
+        `claude auth status: loggedIn=${parsed.loggedIn}${authMethod ? `, authMethod=${authMethod}` : ''}; token validity is proven only by an execution.`,
+      );
     }
   } else authEvidence.push('Claude Code CLI not found.');
-  if (installed && !executionSupported) authEvidence.push(`Claude Code ${version} is older than ${MIN_CLAUDE_VERSION.join('.')}, which the restricted profile and model reporting need.`);
-  return { id, name, installed, version, command, configPath: claudeSettingsPath(), authStatus, authMethod, authEvidence, loginHint: 'claude auth login',
+  if (installed && !executionSupported)
+    authEvidence.push(
+      `Claude Code ${version} is older than ${MIN_CLAUDE_VERSION.join('.')}, which the restricted profile and model reporting need.`,
+    );
+  return {
+    id,
+    name,
+    installed,
+    version,
+    command,
+    configPath: claudeSettingsPath(),
+    authStatus,
+    authMethod,
+    authEvidence,
+    loginHint: 'claude auth login',
     supportedReasoningEfforts: VALID_REASONING_EFFORTS,
-    modelSource: 'models and aliases from stream-json initialize; an unlisted name is resolved from system/init', executionSupported,
-    capabilities: { resume: true, streaming: true, readOnlyVerified: executionSupported, reasoningEffort: true } };
+    modelSource: 'models and aliases from stream-json initialize; an unlisted name is resolved from system/init',
+    executionSupported,
+    capabilities: { resume: true, streaming: true, readOnlyVerified: executionSupported, reasoningEffort: true },
+  };
 }
 
 /**
@@ -131,7 +161,7 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
 async function runLocalUsage(
   model: string | undefined,
   probe?: AdapterProbeResult,
-  context?: BackendReadContext
+  context?: BackendReadContext,
 ): Promise<{ model?: string; usage: string } | undefined> {
   const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
   if (abortSignal?.aborted) {
@@ -169,12 +199,34 @@ async function runLocalUsage(
     throw new ToolError('TIMEOUT', 'Execution budget expired before running Claude usage command.');
   }
 
-  const res = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
-    '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
-    ...(model ? ['--model', model] : []), '--output-format', 'stream-json', '--verbose', '/usage'], {
-    timeoutMs: boundReadTimeout(context, 15000),
-    abortSignal,
-  });
+  const res = await runCommand(
+    claudeCommand(),
+    [
+      '-p',
+      '--restricted',
+      '--tools',
+      '',
+      '--permission-mode',
+      'dontAsk',
+      '--permission-prompts',
+      'none',
+      '--settings',
+      '{"disableAllHooks":true}',
+      '--strict-mcp-config',
+      '--mcp-config',
+      '{"mcpServers":{}}',
+      '--no-session-persistence',
+      ...(model ? ['--model', model] : []),
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '/usage',
+    ],
+    {
+      timeoutMs: boundReadTimeout(context, 15000),
+      abortSignal,
+    },
+  );
   if (abortSignal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
     if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
       throw new ToolError('TIMEOUT', 'Execution budget expired during Claude usage read.');
@@ -188,12 +240,22 @@ async function runLocalUsage(
   let reported: unknown, result: Record<string, unknown> | undefined;
   for (const line of res.stdout.split(/\r?\n/)) {
     let event: Record<string, unknown>;
-    try { event = JSON.parse(line) as Record<string, unknown>; }
-    catch { continue; }
+    try {
+      event = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
     if (event?.type === 'system' && event.subtype === 'init') reported = event.model;
     else if (event?.type === 'result') result = event;
   }
-  if (result?.is_error !== false || result.local_command !== 'usage' || result.num_turns !== 0 || result.total_cost_usd !== 0 || typeof result.result !== 'string') return undefined;
+  if (
+    result?.is_error !== false ||
+    result.local_command !== 'usage' ||
+    result.num_turns !== 0 ||
+    result.total_cost_usd !== 0 ||
+    typeof result.result !== 'string'
+  )
+    return undefined;
   return { ...(isValidModelIdentifier(reported) ? { model: reported } : {}), usage: result.result };
 }
 
@@ -224,7 +286,11 @@ export async function inspectQuota(probe?: AdapterProbeResult, context?: Backend
  * @param probe - Probe result whose version is checked.
  * @param context - Optional cancellation and deadline context (`EXEC-001-T08d`).
  */
-export async function observeModel(requested?: string, probe?: AdapterProbeResult, context?: BackendReadContext): Promise<string | undefined> {
+export async function observeModel(
+  requested?: string,
+  probe?: AdapterProbeResult,
+  context?: BackendReadContext,
+): Promise<string | undefined> {
   const abortSignal = context?.abortSignal ?? context?.budget?.executionSignal;
   if (abortSignal?.aborted) {
     throw new ToolError('ABORTED', 'Claude model observation cancelled before launch.');
@@ -240,7 +306,7 @@ export async function observeModel(requested?: string, probe?: AdapterProbeResul
 const MODEL_LIST_TIMEOUT_MS = 15_000;
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 /**
@@ -259,9 +325,13 @@ export function parseClaudeModels(response: unknown): ModelCatalog | undefined {
     const value = item?.value;
     const concrete = item?.resolvedModel ?? value;
     if (!isValidModelIdentifier(value) || !isValidModelIdentifier(concrete)) continue;
-    const efforts = Array.isArray(item!.supportedEffortLevels) ? item!.supportedEffortLevels.filter((effort): effort is string => typeof effort === 'string' && VALID_REASONING_EFFORTS.includes(effort)) : [];
+    const efforts = Array.isArray(item!.supportedEffortLevels)
+      ? item!.supportedEffortLevels.filter(
+          (effort): effort is string => typeof effort === 'string' && VALID_REASONING_EFFORTS.includes(effort),
+        )
+      : [];
     const model = models.get(concrete) ?? { id: concrete, efforts };
-    if (value !== concrete && !model.aliases?.includes(value)) model.aliases = [...model.aliases ?? [], value];
+    if (value !== concrete && !model.aliases?.includes(value)) model.aliases = [...(model.aliases ?? []), value];
     if (value === 'default') model.isDefault = true;
     models.set(concrete, model);
   }
@@ -287,31 +357,66 @@ export async function listModels(probe?: AdapterProbeResult, context?: BackendRe
   }
   if (probe && !probe.executionSupported) return undefined;
   const requestId = randomUUID();
-  let channel: StdinChannel | undefined, response: unknown, turned = false;
+  let channel: StdinChannel | undefined,
+    response: unknown,
+    turned = false;
   const timeoutMs = boundReadTimeout(context, MODEL_LIST_TIMEOUT_MS);
   try {
-    const result = await runCommand(claudeCommand(), ['-p', '--restricted', '--tools', '', '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
-      '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence',
-      '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'], {
-      timeoutMs, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024,
-      abortSignal,
-      session: {
-        start(opened) { channel = opened; opened.send({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize' } }); },
-        interrupt(opened) { opened.close(); },
+    const result = await runCommand(
+      claudeCommand(),
+      [
+        '-p',
+        '--restricted',
+        '--tools',
+        '',
+        '--permission-mode',
+        'dontAsk',
+        '--permission-prompts',
+        'none',
+        '--settings',
+        '{"disableAllHooks":true}',
+        '--strict-mcp-config',
+        '--mcp-config',
+        '{"mcpServers":{}}',
+        '--no-session-persistence',
+        '--input-format',
+        'stream-json',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+      ],
+      {
+        timeoutMs,
+        maxBufferBytes: 512 * 1024,
+        maxLineBytes: 512 * 1024,
+        abortSignal,
+        session: {
+          start(opened) {
+            channel = opened;
+            opened.send({ type: 'control_request', request_id: requestId, request: { subtype: 'initialize' } });
+          },
+          interrupt(opened) {
+            opened.close();
+          },
+        },
+        onStdoutLine(line) {
+          let event: Record<string, unknown> | null;
+          try {
+            event = record(JSON.parse(line));
+          } catch {
+            event = null;
+          }
+          if (!event) return;
+          if (event.type === 'result' || event.type === 'assistant') turned = true;
+          const answer = record(event.response);
+          if (event.type === 'control_response' && answer?.request_id === requestId) {
+            response = answer.subtype === 'success' ? answer.response : undefined;
+            // Closing stdin before any user message ends the session without a turn.
+            channel?.close();
+          }
+        },
       },
-      onStdoutLine(line) {
-        let event: Record<string, unknown> | null;
-        try { event = record(JSON.parse(line)); } catch { event = null; }
-        if (!event) return;
-        if (event.type === 'result' || event.type === 'assistant') turned = true;
-        const answer = record(event.response);
-        if (event.type === 'control_response' && answer?.request_id === requestId) {
-          response = answer.subtype === 'success' ? answer.response : undefined;
-          // Closing stdin before any user message ends the session without a turn.
-          channel?.close();
-        }
-      },
-    });
+    );
     if (abortSignal?.aborted || result.error?.code === 'ABORTED' || result.status === 'cancelled') {
       if (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()) {
         throw new ToolError('TIMEOUT', 'Execution budget expired reading Claude models.');
@@ -340,10 +445,18 @@ export async function listModels(probe?: AdapterProbeResult, context?: BackendRe
  */
 export async function executeClaude(prompt: string, options: ExecutionOptions = {}): Promise<TerminalExecutionResult> {
   const rejected = (code: ExecutionError['code'], message: string, model?: string): TerminalExecutionResult => ({
-    status: 'failed', isError: true, output: '', model, error: { code, message: redactDiagnostic(message), retryable: false }, errorDetail: redactDiagnostic(message), truncated: false, continuationAvailable: false,
+    status: 'failed',
+    isError: true,
+    output: '',
+    model,
+    error: { code, message: redactDiagnostic(message), retryable: false },
+    errorDetail: redactDiagnostic(message),
+    truncated: false,
+    continuationAvailable: false,
   });
   const model: unknown = options.model;
-  if (model === undefined) return rejected('INPUT_LIMIT', 'No Claude model selected; the controller passes the model Claude Code reported.');
+  if (model === undefined)
+    return rejected('INPUT_LIMIT', 'No Claude model selected; the controller passes the model Claude Code reported.');
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Claude model identifier.');
   const resumeRaw = options.nativeSessionId || options.threadId || null;
   const resumeId = typeof resumeRaw === 'string' ? resumeRaw.trim().toLowerCase() : null;
@@ -352,12 +465,36 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
   // --restricted keeps OAuth/subscription auth (unlike --bare) and ignores user/project/local settings.
   const profile = options.profile ?? 'read-only';
   const tools = profile === 'workspace-write' ? CLAUDE_WRITE_TOOLS : CLAUDE_READ_ONLY_TOOLS;
-  const args = ['-p', '--restricted', '--tools', tools.join(','), '--permission-mode', 'dontAsk', '--permission-prompts', 'none',
-    '--settings', claudeTurnSettings(profile), '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-    '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--model', model];
+  const args = [
+    '-p',
+    '--restricted',
+    '--tools',
+    tools.join(','),
+    '--permission-mode',
+    'dontAsk',
+    '--permission-prompts',
+    'none',
+    '--settings',
+    claudeTurnSettings(profile),
+    '--strict-mcp-config',
+    '--mcp-config',
+    '{"mcpServers":{}}',
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--model',
+    model,
+  ];
   const effort = options.reasoningEffort?.toLowerCase();
   if (effort && VALID_REASONING_EFFORTS.includes(effort)) args.push('--effort', effort);
-  else if (effort) options.onEvent?.({ type: 'warning', message: redactDiagnostic(`Ignoring unsupported Claude reasoning effort '${effort.slice(0, 32)}'.`) });
+  else if (effort)
+    options.onEvent?.({
+      type: 'warning',
+      message: redactDiagnostic(`Ignoring unsupported Claude reasoning effort '${effort.slice(0, 32)}'.`),
+    });
   args.push(resumeId ? '--resume' : '--session-id', sessionId);
   const collector = createClaudeStreamCollector({ expectedSessionId: sessionId, allowedTools: tools, onEvent: options.onEvent });
   let channel: StdinChannel | undefined;
@@ -367,35 +504,80 @@ export async function executeClaude(prompt: string, options: ExecutionOptions = 
       opened.send({ type: 'user', message: { role: 'user', content: input } });
     },
     // Claude answers with a `control_response` and ends the turn with an error `result`.
-    interrupt(opened) { opened.send({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } }); },
+    interrupt(opened) {
+      opened.send({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } });
+    },
   };
   // stdin is closed only after the terminal `result`: Claude 2.1.289 did not exit on EOF mid-turn.
   const onStdoutLine = (line: string) => {
-    try { collector.line(line); }
-    finally { if (collector.isTerminal()) channel?.close(); }
+    try {
+      collector.line(line);
+    } finally {
+      if (collector.isTerminal()) channel?.close();
+    }
   };
-  const result = await runCommand(claudeCommand(), args, { cwd: options.cwd, env: turnEnvironment(), stdinInput: prompt, session, abortSignal: options.abortSignal,
-    timeoutMs: options.timeoutMs, maxBufferBytes: 512 * 1024, maxLineBytes: 512 * 1024, onStdoutLine });
+  const result = await runCommand(claudeCommand(), args, {
+    cwd: options.cwd,
+    env: turnEnvironment(),
+    stdinInput: prompt,
+    session,
+    abortSignal: options.abortSignal,
+    timeoutMs: options.timeoutMs,
+    maxBufferBytes: 512 * 1024,
+    maxLineBytes: 512 * 1024,
+    onStdoutLine,
+  });
   const snapshot = collector.snapshot();
   let error = result.error || snapshot.error;
   if (!error && !snapshot.terminal) {
-    error = result.status === 'completed'
-      ? { code: 'PROTOCOL_ERROR', message: 'Claude Code exited without a result event.', retryable: false }
-      : { code: 'PROCESS_ERROR', message: redactDiagnostic(result.stderr.trim() || `Claude Code exited with code ${result.exitCode}.`), retryable: false };
+    error =
+      result.status === 'completed'
+        ? { code: 'PROTOCOL_ERROR', message: 'Claude Code exited without a result event.', retryable: false }
+        : {
+            code: 'PROCESS_ERROR',
+            message: redactDiagnostic(result.stderr.trim() || `Claude Code exited with code ${result.exitCode}.`),
+            retryable: false,
+          };
   }
   if (!error && !snapshot.initialized) {
     error = { code: 'SANDBOX_UNAVAILABLE', message: 'Claude Code completed without read-only initialization.', retryable: false };
   }
-  if (!error && result.status !== 'completed') error = { code: 'PROCESS_ERROR', message: `Claude Code exited with code ${result.exitCode} after a successful result.`, retryable: false };
+  if (!error && result.status !== 'completed')
+    error = {
+      code: 'PROCESS_ERROR',
+      message: `Claude Code exited with code ${result.exitCode} after a successful result.`,
+      retryable: false,
+    };
   const status = result.status === 'cancelled' || result.status === 'timed_out' ? result.status : error ? 'failed' : 'completed';
   const nativeSessionId = snapshot.initialized ? sessionId : null;
-  const nonResumableCodes = ['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE', 'AUTH_REQUIRED', 'MODEL_UNAVAILABLE', 'POLICY_DENIED'];
-  const continuationAvailable = !!nativeSessionId && (status === 'completed' || (Boolean(snapshot.hasAssistantMessage) && !nonResumableCodes.includes(error?.code || '')));
-  return { status, isError: status !== 'completed', output: snapshot.output, model: snapshot.model ?? model, threadId: nativeSessionId, nativeSessionId,
-    error, errorDetail: error?.message, exitCode: result.exitCode, signal: result.signal, usage: snapshot.usage,
+  const nonResumableCodes = [
+    'PROTOCOL_ERROR',
+    'SESSION_INVALID',
+    'CLI_NOT_FOUND',
+    'SANDBOX_UNAVAILABLE',
+    'AUTH_REQUIRED',
+    'MODEL_UNAVAILABLE',
+    'POLICY_DENIED',
+  ];
+  const continuationAvailable =
+    !!nativeSessionId &&
+    (status === 'completed' || (Boolean(snapshot.hasAssistantMessage) && !nonResumableCodes.includes(error?.code || '')));
+  return {
+    status,
+    isError: status !== 'completed',
+    output: snapshot.output,
+    model: snapshot.model ?? model,
+    threadId: nativeSessionId,
+    nativeSessionId,
+    error,
+    errorDetail: error?.message,
+    exitCode: result.exitCode,
+    signal: result.signal,
+    usage: snapshot.usage,
     truncated: snapshot.truncated || error?.code === 'BUFFER_LIMIT',
     ...(snapshot.lengthLimited === undefined ? {} : { lengthLimited: snapshot.lengthLimited }),
-    continuationAvailable };
+    continuationAvailable,
+  };
 }
 export const execute = executeClaude;
 export const claudeAdapter: CliAdapter = { id, name, probe, observeModel, listModels, execute, inspectQuota };

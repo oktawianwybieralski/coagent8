@@ -35,10 +35,11 @@ const AGY_SIGNAL_GRACE_MS = 2000;
  * on a path outside the workspace, such as the main checkout of a Git worktree, is denied the
  * same way (agy 1.4.12, 2026-10-31, #92).
  */
-export const AGY_WRITE_NOTE = 'In this run you cannot execute any command: a command attempt ends your turn without an answer. '
-  + 'Read, create and edit files only with your file tools and only inside the workspace directory: '
-  + 'a file outside it, including another checkout of this repository, is denied and also ends your turn. '
-  + 'Report every check as NOT_RUN.';
+export const AGY_WRITE_NOTE =
+  'In this run you cannot execute any command: a command attempt ends your turn without an answer. ' +
+  'Read, create and edit files only with your file tools and only inside the workspace directory: ' +
+  'a file outside it, including another checkout of this repository, is denied and also ends your turn. ' +
+  'Report every check as NOT_RUN.';
 export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const GEMINI_CONFIG_DIR = path.join(process.env.GEMINI_CLI_HOME || os.homedir(), '.gemini');
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -56,9 +57,11 @@ export const SANDBOX_DENIAL_RECOVERY_PROMPT =
  * @param deniedActions - Validated action names from agy's denial report.
  */
 export function writeDenialRecoveryPrompt(workspace: string, deniedActions: readonly string[]): string {
-  return `Headless mode ${deniedSummary(deniedActions)} and your previous turn ended without an answer. Continue the previous task now. `
-    + `Read and edit only files inside ${workspace}, never another checkout of this repository, run no command, `
-    + 'and answer in the format the task asks for, reporting every check as NOT_RUN.';
+  return (
+    `Headless mode ${deniedSummary(deniedActions)} and your previous turn ended without an answer. Continue the previous task now. ` +
+    `Read and edit only files inside ${workspace}, never another checkout of this repository, run no command, ` +
+    'and answer in the format the task asks for, reporting every check as NOT_RUN.'
+  );
 }
 
 /** The denial named in an error or warning: the validated action names, or that agy named none. */
@@ -99,10 +102,7 @@ export function createRetryIdMapper(initialIds?: Iterable<string>): (id: string)
   };
 }
 
-function mergeUsage(
-  first: TerminalExecutionResult['usage'],
-  second: TerminalExecutionResult['usage']
-): TerminalExecutionResult['usage'] {
+function mergeUsage(first: TerminalExecutionResult['usage'], second: TerminalExecutionResult['usage']): TerminalExecutionResult['usage'] {
   if (!first || !second) return undefined;
   const merged: NonNullable<TerminalExecutionResult['usage']> = { source: 'provider' };
   if (typeof first.inputTokens === 'number' && typeof second.inputTokens === 'number') {
@@ -142,7 +142,7 @@ function checkPreflight(context: BackendReadContext | undefined, operation: stri
 function checkPostRun(
   res: { status: string; error?: { code?: string } },
   context: BackendReadContext | undefined,
-  operation: string
+  operation: string,
 ): void {
   const signal = effectiveAbortSignal(context);
   if (signal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
@@ -156,10 +156,7 @@ function checkPostRun(
   }
 }
 
-export function resolveModelAndEffort(
-  model?: string,
-  reasoningEffort?: string
-): { model?: string; effort?: string } {
+export function resolveModelAndEffort(model?: string, reasoningEffort?: string): { model?: string; effort?: string } {
   const effort = reasoningEffort ? reasoningEffort.toLowerCase() : undefined;
   if (!model) {
     return { model: undefined, effort };
@@ -183,7 +180,7 @@ function agyEnvironment(): NodeJS.ProcessEnv {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 /**
@@ -199,7 +196,8 @@ export function parseGeminiUsage(parsed: unknown): AdapterProbeResult['quota'] {
   const geminiGroup = records.find(group => /gemini/i.test(String(group.name ?? ''))) || records[0];
   if (!geminiGroup || !Array.isArray(geminiGroup.buckets)) return undefined;
 
-  const buckets = geminiGroup.buckets.map(asRecord)
+  const buckets = geminiGroup.buckets
+    .map(asRecord)
     .filter((bucket): bucket is Record<string, unknown> => typeof bucket?.remaining_fraction === 'number')
     .map(bucket => ({
       id: String(bucket.id ?? ''),
@@ -299,7 +297,11 @@ export async function inspectQuota(probe?: AdapterProbeResult, context?: Backend
   checkPostRun(usageRes, context, 'Gemini quota read');
   if (usageRes.status !== 'completed' || usageRes.exitCode !== 0 || !usageRes.stdout) return undefined;
   let parsed: unknown;
-  try { parsed = JSON.parse(usageRes.stdout); } catch { return undefined; }
+  try {
+    parsed = JSON.parse(usageRes.stdout);
+  } catch {
+    return undefined;
+  }
   const payload = parsed as { status?: unknown; command?: { name?: unknown } } | null;
   return payload?.status === 'SUCCESS' && payload.command?.name === 'usage' ? parseGeminiUsage(payload) : undefined;
 }
@@ -320,11 +322,15 @@ function failed(error: ExecutionError): TerminalExecutionResult {
  */
 export async function execute(
   prompt: string,
-  options: ExecutionOptions & { clock?: MonotonicClock } = {}
+  options: ExecutionOptions & { clock?: MonotonicClock } = {},
 ): Promise<TerminalExecutionResult> {
   const model = options.model;
   if (model === undefined) {
-    return failed({ code: 'INPUT_LIMIT', message: 'No agy model selected; the controller passes the configured model or the first one agy lists.', retryable: false });
+    return failed({
+      code: 'INPUT_LIMIT',
+      message: 'No agy model selected; the controller passes the configured model or the first one agy lists.',
+      retryable: false,
+    });
   }
   if (!isValidModelIdentifier(model)) {
     return failed({ code: 'INPUT_LIMIT', message: 'Invalid Gemini model identifier.', retryable: false });
@@ -339,7 +345,11 @@ export async function execute(
   if (options.reasoningEffort) {
     const norm = options.reasoningEffort.toLowerCase();
     if (!VALID_REASONING_EFFORTS.includes(norm)) {
-      return failed({ code: 'CLI_UNSUPPORTED', message: `Invalid reasoning effort '${options.reasoningEffort}'. Valid: ${VALID_REASONING_EFFORTS.join(', ')}`, retryable: false });
+      return failed({
+        code: 'CLI_UNSUPPORTED',
+        message: `Invalid reasoning effort '${options.reasoningEffort}'. Valid: ${VALID_REASONING_EFFORTS.join(', ')}`,
+        retryable: false,
+      });
     }
   }
 
@@ -381,7 +391,7 @@ export async function execute(
     turnPrompt: string,
     conversationId: string | null | undefined,
     timeoutMs: number,
-    onEvent: ((event: AdapterEvent) => void) | undefined
+    onEvent: ((event: AdapterEvent) => void) | undefined,
   ) => {
     const collector = createGeminiCollector(onEvent);
     const args = conversationId ? [...baseArgs, '--conversation', conversationId] : [...baseArgs];
@@ -472,19 +482,27 @@ export async function execute(
 
   // A denied action shows that the sandbox works; the answer stays, as with Claude permission denials.
   // The names reach the session history through this warning (#92).
-  if (s.sandboxDenied) options.onEvent?.({ type: 'warning', message: writes
-    ? `agy headless mode ${deniedSummary(s.deniedActions)} (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.`
-    : `The agy sandbox ${deniedSummary(s.deniedActions)} outside the read-only profile; the answer may be incomplete.` });
+  if (s.sandboxDenied)
+    options.onEvent?.({
+      type: 'warning',
+      message: writes
+        ? `agy headless mode ${deniedSummary(s.deniedActions)} (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.`
+        : `The agy sandbox ${deniedSummary(s.deniedActions)} outside the read-only profile; the answer may be incomplete.`,
+    });
   const expectedSessionId = retriedAfterDenial ? first.snapshot.nativeSessionId : native;
   const sessionMismatch = Boolean(expectedSessionId && s.nativeSessionId && s.nativeSessionId !== expectedSessionId);
   let error: ExecutionError | undefined = sessionMismatch
     ? { code: 'SESSION_INVALID', message: 'Resume returned a different Gemini session.', retryable: false }
-    : (processResult.error || s.terminalError);
+    : processResult.error || s.terminalError;
   if (!error && processResult.status !== 'completed') {
     const fallbackStderr = processResult.stderr ? processResult.stderr.trim() : '';
     error = fallbackStderr
       ? classifyGeminiError(fallbackStderr)
-      : { code: 'PROCESS_ERROR', message: `Gemini process failed with status ${processResult.status} (exit code ${processResult.exitCode}).`, retryable: false };
+      : {
+          code: 'PROCESS_ERROR',
+          message: `Gemini process failed with status ${processResult.status} (exit code ${processResult.exitCode}).`,
+          retryable: false,
+        };
   }
   // agy's own continuation retries ran out at the output token limit: the streamed text is a
   // usable, incomplete answer, not a process failure (#89). A review stopped there is never judged.
@@ -494,10 +512,20 @@ export async function execute(
   if (outputLimited && (!error || errorIsOutputLimit)) {
     error = s.output.trim()
       ? undefined
-      : { code: 'PROCESS_ERROR', message: 'agy stopped at its output token limit before it answered. Ask for a shorter answer in a new session (without session_handle).', retryable: false };
+      : {
+          code: 'PROCESS_ERROR',
+          message:
+            'agy stopped at its output token limit before it answered. Ask for a shorter answer in a new session (without session_handle).',
+          retryable: false,
+        };
   }
-  if (outputLimited && !error) options.onEvent?.({ type: 'warning', message: 'agy stopped at its output token limit; the answer is incomplete. '
-    + 'A follow-up in the same session can stop the same way: ask for the rest in a shorter form or in a new session.' });
+  if (outputLimited && !error)
+    options.onEvent?.({
+      type: 'warning',
+      message:
+        'agy stopped at its output token limit; the answer is incomplete. ' +
+        'A follow-up in the same session can stop the same way: ask for the rest in a shorter form or in a new session.',
+    });
   if (!error && (!s.terminal || (!s.nativeSessionId && !expectedSessionId))) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }
@@ -506,23 +534,25 @@ export async function execute(
     error = {
       code: 'POLICY_DENIED',
       message: writes
-        ? `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}${retriedAfterDenial ? ', including on automatic retry inside the workspace' : ''}: `
-          + 'a workspace-write turn runs no command and uses files inside the workspace only, and headless agy ends its turn on a denial.'
+        ? `agy ended the turn without an answer after headless mode ${deniedSummary(s.deniedActions)}${retriedAfterDenial ? ', including on automatic retry inside the workspace' : ''}: ` +
+          'a workspace-write turn runs no command and uses files inside the workspace only, and headless agy ends its turn on a denial.'
         : retriedAfterDenial
           ? `agy ended the turn without an answer after its sandbox ${deniedSummary(s.deniedActions)}, including on automatic retry without shell commands (headless mode cannot ask for permission).`
           : `agy ended the turn without an answer after its sandbox ${deniedSummary(s.deniedActions)} (headless mode cannot ask for permission). Ask again for an answer that reads files inside the workspace without running commands.`,
       retryable: false,
     };
   }
-  const effectiveSessionId = sessionMismatch || error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
-    ? null
-    : (s.nativeSessionId ?? expectedSessionId ?? null);
+  const effectiveSessionId =
+    sessionMismatch || error?.code === 'SESSION_INVALID' || error?.code === 'PROTOCOL_ERROR'
+      ? null
+      : (s.nativeSessionId ?? expectedSessionId ?? null);
 
-  const status = !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
-    ? processResult.status
-    : error
-      ? 'failed'
-      : 'completed';
+  const status =
+    !sessionMismatch && (processResult.status === 'cancelled' || processResult.status === 'timed_out')
+      ? processResult.status
+      : error
+        ? 'failed'
+        : 'completed';
   return {
     ...s,
     nativeSessionId: effectiveSessionId,
@@ -539,7 +569,9 @@ export async function execute(
     truncated: s.truncated || error?.code === 'BUFFER_LIMIT',
     // Only a reported stop is evidence; agy otherwise reports no stop reason.
     lengthLimited: outputLimited ? true : undefined,
-    continuationAvailable: !!(effectiveSessionId || native) && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
+    continuationAvailable:
+      !!(effectiveSessionId || native) &&
+      !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
   };
 }
 
@@ -555,7 +587,10 @@ export function parseAgyModels(stdout: string): CatalogModel[] {
     const modelId = line.split('\t')[0].trim();
     if (!line.includes('\t') || !isValidModelIdentifier(modelId)) continue;
     const match = suffix.exec(modelId);
-    if (!match) { models.push({ id: modelId, efforts: [] }); continue; }
+    if (!match) {
+      models.push({ id: modelId, efforts: [] });
+      continue;
+    }
     const group = models.find(model => model.id === match[1] && model.effortRequired);
     if (group) group.efforts.push(match[2]);
     else models.push({ id: match[1], efforts: [match[2]], effortRequired: true });
@@ -586,14 +621,17 @@ export async function listModels(_probe?: AdapterProbeResult, context?: BackendR
 
 /** Names of the enabled servers in an `agy mcp list` table (`NAME  TYPE  STATUS  COMMAND/URL`). */
 export function parseAgyMcpList(stdout: string): string[] {
-  return stdout.split(/\r?\n/).map(line => line.trim().split(/\s{2,}/))
+  return stdout
+    .split(/\r?\n/)
+    .map(line => line.trim().split(/\s{2,}/))
     .filter(columns => columns.length >= 3 && columns[0] !== 'NAME' && columns[2] === 'enabled')
     .map(columns => columns[0]);
 }
 
 function readJsonObject(file: string): Record<string, unknown> | undefined {
-  try { return asRecord(JSON.parse(fs.readFileSync(file, 'utf8'))); }
-  catch (err) {
+  try {
+    return asRecord(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw err;
   }
@@ -607,18 +645,22 @@ function readJsonObject(file: string): Record<string, unknown> | undefined {
 export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config')): string[] {
   const root = path.join(configDir, 'plugins');
   let entries: fs.Dirent[];
-  try { entries = fs.readdirSync(root, { withFileTypes: true }); }
-  catch (err) {
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;
   }
   const settings = asRecord(readJsonObject(path.join(configDir, 'config.json'))?.plugins);
-  return entries.filter(entry => entry.isDirectory()).map(entry => entry.name).filter(dir => {
-    const manifest = readJsonObject(path.join(root, dir, 'plugin.json'));
-    if (!manifest) return false;
-    const enabled = asRecord(settings?.[dir])?.enabled;
-    return typeof enabled === 'boolean' ? enabled : manifest.disabled !== true;
-  });
+  return entries
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .filter(dir => {
+      const manifest = readJsonObject(path.join(root, dir, 'plugin.json'));
+      if (!manifest) return false;
+      const enabled = asRecord(settings?.[dir])?.enabled;
+      return typeof enabled === 'boolean' ? enabled : manifest.disabled !== true;
+    });
 }
 
 /**
@@ -629,8 +671,11 @@ export function listAgyPlugins(configDir = path.join(GEMINI_CONFIG_DIR, 'config'
 export async function inheritedTools(context?: BackendReadContext): Promise<InheritedTools | undefined> {
   checkPreflight(context, 'Gemini inherited tools read');
   let resolved: ReturnType<typeof resolveCliCommand>;
-  try { resolved = resolveCliCommand(configuredBackendCommand('agy')); }
-  catch { return undefined; }
+  try {
+    resolved = resolveCliCommand(configuredBackendCommand('agy'));
+  } catch {
+    return undefined;
+  }
   const res = await runCommand(resolved.command, [...resolved.argsPrefix, 'mcp', 'list'], {
     timeoutMs: boundReadTimeout(context, DEFAULT_MODEL_LIST_TIMEOUT_MS),
     abortSignal: effectiveAbortSignal(context),
@@ -639,11 +684,23 @@ export async function inheritedTools(context?: BackendReadContext): Promise<Inhe
   checkPostRun(res, context, 'Gemini inherited tools read');
   if (res.status !== 'completed' || res.exitCode !== 0) return undefined;
   let plugins: string[];
-  try { plugins = listAgyPlugins(); }
-  catch { return undefined; }
+  try {
+    plugins = listAgyPlugins();
+  } catch {
+    return undefined;
+  }
   return { mcpServers: parseAgyMcpList(res.stdout), plugins };
 }
 
 // `resolveModelAndEffort` drops a model's effort suffix when an effort is passed separately.
-export const agyAdapter: CliAdapter = { id, name, effortReplacesModelSuffix: true, probe, execute, inspectQuota, listModels, inheritedTools };
+export const agyAdapter: CliAdapter = {
+  id,
+  name,
+  effortReplacesModelSuffix: true,
+  probe,
+  execute,
+  inspectQuota,
+  listModels,
+  inheritedTools,
+};
 export default agyAdapter;

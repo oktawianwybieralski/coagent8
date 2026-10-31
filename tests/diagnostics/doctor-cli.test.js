@@ -25,7 +25,9 @@ function sink() {
 }
 
 test('coagent8 doctor defaults to scope models and prints human summary or JSON', async () => {
-  const text = sink(), json = sink(), err = sink();
+  const text = sink(),
+    json = sink(),
+    err = sink();
   assert.equal(await runDoctorCli([], text.stream, err.stream), 0);
   assert.match(text.text(), /^CoAgent8 models - /);
   assert.equal(err.text(), '');
@@ -39,7 +41,9 @@ test('coagent8 doctor defaults to scope models and prints human summary or JSON'
 });
 
 test('coagent8 doctor --scope health prints health diagnostics or JSON matching MCP doctor', async () => {
-  const text = sink(), json = sink(), err = sink();
+  const text = sink(),
+    json = sink(),
+    err = sink();
   assert.equal(await runDoctorCli(['--scope', 'health'], text.stream, err.stream), 0);
   assert.match(text.text(), /^CoAgent8 doctor: \w+ - v\d+\.\d+\.\d+.* - runtime: .* - default backend:/);
   assert.equal(err.text(), '');
@@ -74,7 +78,8 @@ test('coagent8 doctor refuses unknown arguments, invalid scope, and invalid back
   ];
 
   for (const args of invalidCases) {
-    const out = sink(), err = sink();
+    const out = sink(),
+      err = sink();
     assert.equal(await runDoctorCli(args, out.stream, err.stream), 2, args.join(' '));
     assert.match(err.text(), /Usage: coagent8 doctor \[--scope models\|health\] \[--backend codex\|claude\|agy\] \[--json\]/);
     assert.equal(out.text(), '');
@@ -90,7 +95,8 @@ test('coagent8 doctor refuses unknown arguments, invalid scope, and invalid back
 });
 
 test('coagent8 doctor aborts with exit code 130 on aborted signal', async () => {
-  const out = sink(), err = sink();
+  const out = sink(),
+    err = sink();
   const ac = new AbortController();
   ac.abort();
   const code = await runDoctorCli([], out.stream, err.stream, ac.signal);
@@ -101,7 +107,8 @@ test('coagent8 doctor creates no execution sessions', async () => {
   const sessionsDir = path.join(os.homedir(), '.coagent8', 'sessions');
   const filesBefore = fs.existsSync(sessionsDir) ? fs.readdirSync(sessionsDir) : [];
 
-  const out = sink(), err = sink();
+  const out = sink(),
+    err = sink();
   assert.equal(await runDoctorCli(['--scope=health'], out.stream, err.stream), 0);
 
   const filesAfter = fs.existsSync(sessionsDir) ? fs.readdirSync(sessionsDir) : [];
@@ -113,7 +120,8 @@ test('coagent8 doctor redacts home directory paths in text and JSON output', asy
   const home = process.platform === 'win32' ? 'C:\\Users\\DoctorSyntheticUser' : '/home/DoctorSyntheticUser';
   os.homedir = () => home;
   try {
-    const textSink = sink(), jsonSink = sink();
+    const textSink = sink(),
+      jsonSink = sink();
     assert.equal(await runDoctorCli(['--scope=health'], textSink.stream), 0);
     assert.ok(!textSink.text().includes('DoctorSyntheticUser'));
 

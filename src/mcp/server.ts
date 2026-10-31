@@ -16,7 +16,13 @@ import { BRAND } from '../brand.js';
 import { CANONICAL_TOOL_NAMES, SERVER_INSTRUCTIONS } from './constants.js';
 import { SERVER_ICONS } from '../generated/server-icon.js';
 import { doctorToolDefinition, handleDoctor } from './tools/doctor.tool.js';
-import { sessionToolDefinition, cancelToolDefinition, handleSession, handleCancelSession, publicSessionRecord } from './tools/session.tool.js';
+import {
+  sessionToolDefinition,
+  cancelToolDefinition,
+  handleSession,
+  handleCancelSession,
+  publicSessionRecord,
+} from './tools/session.tool.js';
 import { getCanonicalReviewToolDefinition, handleReview } from './tools/review.tool.js';
 import { getCanonicalConsultToolDefinition, handleConsult } from './tools/consult.tool.js';
 import { getCanonicalDelegateToolDefinition, handleDelegate, type DelegateArguments } from './tools/delegate.tool.js';
@@ -38,7 +44,10 @@ import type { ToolArguments } from './arguments.js';
 
 export { SERVER_INSTRUCTIONS };
 
-export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & { inputSchema: { type: string; properties?: Record<string, object>; required?: string[] }; outputSchema?: { type: string; [key: string]: unknown } };
+export type ToolDefinition = Omit<Tool, 'inputSchema' | 'outputSchema'> & {
+  inputSchema: { type: string; properties?: Record<string, object>; required?: string[] };
+  outputSchema?: { type: string; [key: string]: unknown };
+};
 
 const executionNames = new Set<string>([
   CANONICAL_TOOL_NAMES.CONSULT,
@@ -88,11 +97,7 @@ export function getLegacyAliasTools(): ToolDefinition[] {
 }
 
 export function getAllCallableToolDefinitions(): Tool[] {
-  return buildToolDefinitionsWithSchemas([
-    ...getCoreCanonicalTools(),
-    ...getLegacyAliasTools(),
-    runToolDefinition,
-  ]);
+  return buildToolDefinitionsWithSchemas([...getCoreCanonicalTools(), ...getLegacyAliasTools(), runToolDefinition]);
 }
 
 /**
@@ -131,17 +136,19 @@ export function validateToolArguments(value: unknown, schema: Schema, field = 'a
         t === 'object'
           ? !!v && typeof v === 'object' && !Array.isArray(v)
           : t === 'array'
-          ? Array.isArray(v)
-          : t === 'integer'
-          ? Number.isSafeInteger(v)
-          : t === 'null'
-          ? v === null
-          : typeof v === t
+            ? Array.isArray(v)
+            : t === 'integer'
+              ? Number.isSafeInteger(v)
+              : t === 'null'
+                ? v === null
+                : typeof v === t,
       )
     )
       throw new ToolError('INPUT_LIMIT', `Invalid ${name}: expected ${types.join(' or ')}.`);
-    if (typeof v === 'string' && !v.trim() && s.minLength !== 0) throw new ToolError('INPUT_LIMIT', `Invalid ${name}: string must not be empty.`);
-    if (typeof v === 'string' && s.minLength && v.length < s.minLength) throw new ToolError('INPUT_LIMIT', `Invalid ${name}: string too short.`);
+    if (typeof v === 'string' && !v.trim() && s.minLength !== 0)
+      throw new ToolError('INPUT_LIMIT', `Invalid ${name}: string must not be empty.`);
+    if (typeof v === 'string' && s.minLength && v.length < s.minLength)
+      throw new ToolError('INPUT_LIMIT', `Invalid ${name}: string too short.`);
     if (typeof v === 'number' && (!Number.isFinite(v) || (s.minimum != null && v < s.minimum) || (s.maximum != null && v > s.maximum)))
       throw new ToolError('INPUT_LIMIT', `Invalid ${name}: outside allowed range.`);
     if (Array.isArray(v) && s.items) v.forEach((entry, i) => validate(entry, s.items!, `${name}[${i}]`));
@@ -177,7 +184,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
       icons: SERVER_ICONS.map(icon => ({ ...icon, sizes: [...icon.sizes] })),
     },
     // No resources/list_changed notifications are sent, so listChanged is not declared.
-    { capabilities: { tools: {}, resources: {} }, instructions: SERVER_INSTRUCTIONS }
+    { capabilities: { tools: {}, resources: {} }, instructions: SERVER_INSTRUCTIONS },
   );
 
   server.oninitialized = () => {
@@ -188,12 +195,18 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
 
   // Client roots are read once per connection and again after the client reports a change.
   let clientRoots: Promise<string[]> | null = null;
-  server.setNotificationHandler(RootsListChangedNotificationSchema, async () => { clientRoots = null; });
+  server.setNotificationHandler(RootsListChangedNotificationSchema, async () => {
+    clientRoots = null;
+  });
   async function workspaceRoots(): Promise<string[] | null> {
     if (!server.getClientCapabilities()?.roots) return null;
-    clientRoots ??= server.listRoots(undefined, { timeout: ROOTS_TIMEOUT_MS })
+    clientRoots ??= server
+      .listRoots(undefined, { timeout: ROOTS_TIMEOUT_MS })
       .then(result => result.roots.filter(root => root.uri.startsWith('file:')).map(root => fileURLToPath(root.uri)))
-      .catch((cause: unknown) => { clientRoots = null; throw new ToolError('INPUT_LIMIT', 'Validation Error: The client did not answer roots/list; pass workspace_path.', { cause }); });
+      .catch((cause: unknown) => {
+        clientRoots = null;
+        throw new ToolError('INPUT_LIMIT', 'Validation Error: The client did not answer roots/list; pass workspace_path.', { cause });
+      });
     return clientRoots;
   }
   async function resolveWorkspace(rawPath: string | undefined): Promise<ResolvedWorkspace> {
@@ -240,7 +253,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
               },
             },
           },
-          { signal: effectiveSignal ?? undefined, timeout }
+          { signal: effectiveSignal ?? undefined, timeout },
         );
       } catch (cause) {
         if (effectiveSignal?.aborted) {
@@ -320,7 +333,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
     return { resourceTemplates };
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.setRequestHandler(ReadResourceRequestSchema, async request => {
     const uri = request.params.uri;
     const workspace = (await resolveWorkspace(undefined)).path;
     if (uri === 'coagent8://sessions') {
@@ -415,7 +428,10 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.DELEGATE:
           // The schema validated `scope` and `checks` as string lists.
-          return withWorkspace(await handleDelegate(args as unknown as DelegateArguments, cwd, extra.signal, progress, execOptions), workspace);
+          return withWorkspace(
+            await handleDelegate(args as unknown as DelegateArguments, cwd, extra.signal, progress, execOptions),
+            workspace,
+          );
         case CANONICAL_TOOL_NAMES.ANALYZE:
         case CANONICAL_TOOL_NAMES.DEBUG:
         case CANONICAL_TOOL_NAMES.IMPLEMENT:
@@ -432,9 +448,9 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
         // A call refused before launch names the model the caller asked for, not "provider default".
         const requestedModel = typeof raw?.model === 'string' && isValidModelIdentifier(raw.model) ? raw.model : undefined;
         const elapsedMs = budget
-          ? (typeof budget.elapsedMs === 'function'
-              ? budget.elapsedMs()
-              : Math.max(0, Math.round(budget.totalBudgetMs - budget.remainingTotalMs())))
+          ? typeof budget.elapsedMs === 'function'
+            ? budget.elapsedMs()
+            : Math.max(0, Math.round(budget.totalBudgetMs - budget.remainingTotalMs()))
           : 0;
         return formatExecutionResult(
           provider,
@@ -450,7 +466,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
           '',
           sanitizeHandle(typeof raw?.session_handle === 'string' ? raw.session_handle : null),
           { turn: 0, toolCount: 0, durationMs: elapsedMs, totalMs: elapsedMs, historyAvailable: false },
-          { requireEnvelope: name === CANONICAL_TOOL_NAMES.REVIEW }
+          { requireEnvelope: name === CANONICAL_TOOL_NAMES.REVIEW },
         );
       }
       return { isError: true, content: [{ type: 'text', text: `${BRAND.NAME}: ${message}` }] };
@@ -461,4 +477,3 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
   });
   return server;
 }
-

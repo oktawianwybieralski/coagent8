@@ -57,9 +57,44 @@ test('readZipEntry verifies structure, compression method and CRC-32', t => {
   };
   const eocd = original.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   const cd = original.readUInt32LE(eocd + 16);
-  assert.throws(() => readZipEntry(variant('method.vsix', b => b.writeUInt16LE(99, cd + 10)), 'extension/package.json'), /unsupported compression method 99/);
-  assert.throws(() => readZipEntry(variant('crc.vsix', b => b.writeUInt32LE(0, cd + 16)), 'extension/package.json'), /CRC-32/);
-  assert.throws(() => readZipEntry(variant('zip64.vsix', b => b.writeUInt32LE(0xffffffff, eocd + 16)), 'extension/package.json'), /ZIP64/);
-  assert.throws(() => readZipEntry(variant('bounds.vsix', b => b.writeUInt32LE(eocd + 100, eocd + 16)), 'extension/package.json'), /out of bounds/);
-  assert.throws(() => readZipEntry(variant('noeocd.vsix', b => b.writeUInt32LE(0, eocd)), 'extension/package.json'), /end of central directory/);
+  assert.throws(
+    () =>
+      readZipEntry(
+        variant('method.vsix', b => b.writeUInt16LE(99, cd + 10)),
+        'extension/package.json',
+      ),
+    /unsupported compression method 99/,
+  );
+  assert.throws(
+    () =>
+      readZipEntry(
+        variant('crc.vsix', b => b.writeUInt32LE(0, cd + 16)),
+        'extension/package.json',
+      ),
+    /CRC-32/,
+  );
+  assert.throws(
+    () =>
+      readZipEntry(
+        variant('zip64.vsix', b => b.writeUInt32LE(0xffffffff, eocd + 16)),
+        'extension/package.json',
+      ),
+    /ZIP64/,
+  );
+  assert.throws(
+    () =>
+      readZipEntry(
+        variant('bounds.vsix', b => b.writeUInt32LE(eocd + 100, eocd + 16)),
+        'extension/package.json',
+      ),
+    /out of bounds/,
+  );
+  assert.throws(
+    () =>
+      readZipEntry(
+        variant('noeocd.vsix', b => b.writeUInt32LE(0, eocd)),
+        'extension/package.json',
+      ),
+    /end of central directory/,
+  );
 });

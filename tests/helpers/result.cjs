@@ -7,7 +7,8 @@
  * parse, which keeps the documented format under test. Both result styles are read: `framed`
  * (answer and footer each in a plaintext block) and `raw` (Codex: plain lines).
  */
-const STATUS = /^(?<provider>\S+) - (?<model>.+?) - (?<duration>\d+\.\d)s(?: - (?<ops>\d+) ops?)?(?: - (?:session_handle=)?(?<handle>\S+) \((?:turn (?<turn>\d+), )?(?<state>ready|finished)(?<noHistory>, no history)?\))?$/;
+const STATUS =
+  /^(?<provider>\S+) - (?<model>.+?) - (?<duration>\d+\.\d)s(?: - (?<ops>\d+) ops?)?(?: - (?:session_handle=)?(?<handle>\S+) \((?:turn (?<turn>\d+), )?(?<state>ready|finished)(?<noHistory>, no history)?\))?$/;
 const ERROR = /^Error \[(?<code>[A-Z_]+)(?<retryable>, retryable)?\]: (?<message>[\s\S]*)$/;
 /** A plaintext block: a fence longer than any backtick run inside it. */
 const FRAME = /^(?<fence>`{3,})plaintext\n(?<content>[\s\S]*)\n\k<fence>$/;
@@ -41,7 +42,7 @@ function readResult(result) {
   if (result.content.length !== 1 || result.content[0].type !== 'text') throw new Error('execution results carry one text block');
   const text = result.content[0].text;
   const { style, body, footer } = split(text);
-  const answerOf = block => style === 'framed' ? unframe(block) : block;
+  const answerOf = block => (style === 'framed' ? unframe(block) : block);
   const [statusLine, ...lines] = footer.split('\n');
   if (!statusLine.startsWith('CoAgent8: ')) throw new Error(`unexpected footer line: ${statusLine}`);
   const status = STATUS.exec(statusLine.slice('CoAgent8: '.length));
@@ -49,13 +50,28 @@ function readResult(result) {
   // The server's own no-answer placeholders are the only bodies outside a frame.
   const placeholder = body === 'CLI completed with no public text.' || body === 'No public response.';
   const parsed = {
-    text, style, provider: status.groups.provider, model: status.groups.model,
-    durationSec: Number(status.groups.duration), ops: Number(status.groups.ops || 0),
-    sessionHandle: status.groups.handle || null, turn: status.groups.turn ? Number(status.groups.turn) : (status.groups.handle ? 1 : null),
-    state: status.groups.state || null, continuationAvailable: status.groups.state === 'ready', historyAvailable: !status.groups.noHistory,
+    text,
+    style,
+    provider: status.groups.provider,
+    model: status.groups.model,
+    durationSec: Number(status.groups.duration),
+    ops: Number(status.groups.ops || 0),
+    sessionHandle: status.groups.handle || null,
+    turn: status.groups.turn ? Number(status.groups.turn) : status.groups.handle ? 1 : null,
+    state: status.groups.state || null,
+    continuationAvailable: status.groups.state === 'ready',
+    historyAvailable: !status.groups.noHistory,
     status: 'completed',
-    verdict: 'NOT_APPLICABLE', reason: null, truncated: false, warnings: [], issueUrl: null, workspace: null, denials: [],
-    error: null, answer: placeholder || /^Error \[/.test(body) ? body : answerOf(body), price: null,
+    verdict: 'NOT_APPLICABLE',
+    reason: null,
+    truncated: false,
+    warnings: [],
+    issueUrl: null,
+    workspace: null,
+    denials: [],
+    error: null,
+    answer: placeholder || /^Error \[/.test(body) ? body : answerOf(body),
+    price: null,
   };
   const error = /^Error \[/.test(body) ? ERROR.exec(body.split('\n\n')[0]) : null;
   if (error) {
@@ -66,12 +82,15 @@ function readResult(result) {
   }
   for (const line of lines) {
     let match;
-    if ((match = /^Verdict: (READY|BLOCKED)(?: \((.*)\))?$/.exec(line))) { parsed.verdict = match[1]; parsed.reason = match[2] || null; }
-    else if (line === 'Notice: Output reached buffer limit.') parsed.truncated = true;
+    if ((match = /^Verdict: (READY|BLOCKED)(?: \((.*)\))?$/.exec(line))) {
+      parsed.verdict = match[1];
+      parsed.reason = match[2] || null;
+    } else if (line === 'Notice: Output reached buffer limit.') parsed.truncated = true;
     else if ((match = /^Price: (.+)$/.exec(line))) parsed.price = match[1];
     else if ((match = /^Usage: (.+)$/.exec(line))) parsed.usage = match[1];
     else if ((match = /^Warning: (.*)$/.exec(line))) parsed.warnings.push(match[1]);
-    else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool prepares the sanitized report to paste\)$/.exec(line))) parsed.issueUrl = match[1];
+    else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool prepares the sanitized report to paste\)$/.exec(line)))
+      parsed.issueUrl = match[1];
     else if ((match = /^Workspace: (.+) \(server directory\)$/.exec(line))) parsed.workspace = match[1];
     else if ((match = /^Denied \(observed from tool events\): (.*)$/.exec(line))) parsed.denials.push(match[1]);
     else throw new Error(`unexpected footer line: ${line}`);

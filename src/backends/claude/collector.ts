@@ -26,7 +26,7 @@ export interface ClaudeStreamCollectorOptions {
 }
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 function fail(code: 'PROTOCOL_ERROR' | 'SANDBOX_UNAVAILABLE', message: string): never {
   throw new ToolError(code, message);
@@ -48,8 +48,11 @@ function count(value: unknown): number {
  * text is not passed through keyword redaction; only diagnostics are redacted.
  */
 export function createClaudeStreamCollector(options: ClaudeStreamCollectorOptions) {
-  const reducer = new StreamReducer({ maxTotalBytes: options.maxTotalMessageBytes ?? 512 * 1024,
-    maxMessageBytes: options.maxTotalMessageBytes ?? 512 * 1024, maxMessages: options.maxMessages ?? 200 });
+  const reducer = new StreamReducer({
+    maxTotalBytes: options.maxTotalMessageBytes ?? 512 * 1024,
+    maxMessageBytes: options.maxTotalMessageBytes ?? 512 * 1024,
+    maxMessages: options.maxMessages ?? 200,
+  });
   const allowed = new Set(options.allowedTools);
   const tools = new Map<string, string>();
   const warned = new Set<string>();
@@ -81,11 +84,13 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (typeof event.session_id !== 'string' || event.session_id.toLowerCase() !== options.expectedSessionId.toLowerCase()) {
       fail('PROTOCOL_ERROR', 'Claude Code reported an unexpected session ID.');
     }
-    const reported = event.tools, servers = event.mcp_servers;
+    const reported = event.tools,
+      servers = event.mcp_servers;
     if (!Array.isArray(reported) || !reported.every(tool => typeof tool === 'string' && allowed.has(tool))) {
       fail('SANDBOX_UNAVAILABLE', 'Claude Code exposed tools outside the requested profile.');
     }
-    if (!Array.isArray(servers) || servers.length > 0) fail('SANDBOX_UNAVAILABLE', 'Claude Code connected MCP servers despite the empty strict MCP configuration.');
+    if (!Array.isArray(servers) || servers.length > 0)
+      fail('SANDBOX_UNAVAILABLE', 'Claude Code connected MCP servers despite the empty strict MCP configuration.');
     if (event.permissionMode !== 'dontAsk') fail('SANDBOX_UNAVAILABLE', 'Claude Code did not start in dontAsk permission mode.');
     sessionId = options.expectedSessionId.toLowerCase();
     // The CLI resolves aliases such as `opus`; report the model that actually answers.
@@ -95,15 +100,24 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
   function acceptSystem(event: Record<string, unknown>) {
     const subtype = typeof event.subtype === 'string' ? event.subtype : '';
     if (subtype === 'init') acceptInit(event);
-    else if (subtype === 'status') { if (event.status === 'requesting') emit({ type: 'status', message: 'Requesting model response...' }); }
-    else if (subtype === 'api_retry') {
-      emit({ type: 'warning', message: redactDiagnostic(`Claude API retry ${count(event.attempt)}/${count(event.max_retries)}: ${String(event.error ?? 'unknown')}`, 512) });
-    } else if (!KNOWN_SYSTEM_SUBTYPES.has(subtype)) warnOnce(`system/${subtype}`, `Ignoring unknown Claude Code system event '${subtype.slice(0, 64)}'.`);
+    else if (subtype === 'status') {
+      if (event.status === 'requesting') emit({ type: 'status', message: 'Requesting model response...' });
+    } else if (subtype === 'api_retry') {
+      emit({
+        type: 'warning',
+        message: redactDiagnostic(
+          `Claude API retry ${count(event.attempt)}/${count(event.max_retries)}: ${String(event.error ?? 'unknown')}`,
+          512,
+        ),
+      });
+    } else if (!KNOWN_SYSTEM_SUBTYPES.has(subtype))
+      warnOnce(`system/${subtype}`, `Ignoring unknown Claude Code system event '${subtype.slice(0, 64)}'.`);
   }
   function acceptAssistant(event: Record<string, unknown>) {
     ensureInitialized();
     const message = record(event.message);
-    if (!message || !Array.isArray(message.content) || !validEventIdentifier(message.id)) fail('PROTOCOL_ERROR', 'Invalid Claude Code assistant event.');
+    if (!message || !Array.isArray(message.content) || !validEventIdentifier(message.id))
+      fail('PROTOCOL_ERROR', 'Invalid Claude Code assistant event.');
     const id = message.id as string;
     if (typeof event.error === 'string') category = event.error;
     // API error notices are diagnostics carried in the result, not model answers.
@@ -113,7 +127,8 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (!block) fail('PROTOCOL_ERROR', 'Invalid Claude Code content block.');
       if (block.type === 'text' && typeof block.text === 'string') {
         if (!publicText) continue;
-        if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages) throw new BufferLimitError('Too many Claude Code public messages.');
+        if (!reducer.getMessageMap().has(id) && reducer.getMessageMap().size >= reducer.maxMessages)
+          throw new BufferLimitError('Too many Claude Code public messages.');
         reducer.upsertMessage(id, (reducer.getMessageMap().get(id) ?? '') + block.text);
         emit({ type: 'assistant_message', messageId: id, text: reducer.getMessageMap().get(id) ?? '' });
       } else if (block.type === 'tool_use') {
@@ -162,9 +177,12 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     if (!isError && sessionId === null) {
       fail('SANDBOX_UNAVAILABLE', 'Claude Code completed successfully without read-only initialization.');
     }
-    resultFields = { isError, subtype: typeof event.subtype === 'string' ? event.subtype : null,
+    resultFields = {
+      isError,
+      subtype: typeof event.subtype === 'string' ? event.subtype : null,
       apiErrorStatus: typeof event.api_error_status === 'number' ? event.api_error_status : null,
-      errors: Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [] };
+      errors: Array.isArray(event.errors) ? event.errors.filter((entry): entry is string => typeof entry === 'string') : [],
+    };
     if (typeof event.result === 'string') finalText = event.result;
     if (typeof event.stop_reason === 'string') stopReason = event.stop_reason;
     const data = record(event.usage);
@@ -173,29 +191,46 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       // (AX-001c). Output includes extended thinking, reported as `output_tokens_details.thinking_tokens`.
       // Each count is kept only when reported; a sum only when every part is known.
       const known = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-      const uncached = data.input_tokens, read = data.cache_read_input_tokens, write = data.cache_creation_input_tokens;
-      const output = data.output_tokens, thinking = record(data.output_tokens_details)?.thinking_tokens;
+      const uncached = data.input_tokens,
+        read = data.cache_read_input_tokens,
+        write = data.cache_creation_input_tokens;
+      const output = data.output_tokens,
+        thinking = record(data.output_tokens_details)?.thinking_tokens;
       const input = known(uncached) && known(read) && known(write) ? uncached + read + write : undefined;
       // Writes kept for an hour have their own list price; the split counts only when it adds up.
-      const classes = record(data.cache_creation), short = classes?.ephemeral_5m_input_tokens, long = classes?.ephemeral_1h_input_tokens;
+      const classes = record(data.cache_creation),
+        short = classes?.ephemeral_5m_input_tokens,
+        long = classes?.ephemeral_1h_input_tokens;
       const longWrite = known(write) && known(short) && known(long) && short + long === write ? long : undefined;
-      const counts: NonNullable<typeof usage> = { source: 'provider',
+      const counts: NonNullable<typeof usage> = {
+        source: 'provider',
         ...(input !== undefined ? { inputTokens: input } : {}),
         ...(known(read) ? { cachedInputTokens: read } : {}),
         ...(known(write) ? { cacheWriteInputTokens: write } : {}),
         ...(longWrite !== undefined ? { cacheWriteLongInputTokens: longWrite } : {}),
         ...(known(output) ? { outputTokens: output } : {}),
         ...(known(thinking) ? { reasoningTokens: thinking } : {}),
-        ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}) };
+        ...(input !== undefined && known(output) ? { totalTokens: input + output } : {}),
+      };
       if (Object.keys(counts).length > 1) usage = counts;
     }
-    const denials = Array.isArray(event.permission_denials) ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier) : [];
-    if (denials.length) emit({ type: 'warning', message: `Claude Code denied tool calls outside the requested profile: ${[...new Set(denials)].join(', ')}.` });
+    const denials = Array.isArray(event.permission_denials)
+      ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier)
+      : [];
+    if (denials.length)
+      emit({
+        type: 'warning',
+        message: `Claude Code denied tool calls outside the requested profile: ${[...new Set(denials)].join(', ')}.`,
+      });
   }
   function line(raw: string) {
     if (!raw.trim()) return;
     let parsed: unknown;
-    try { parsed = JSON.parse(raw); } catch { fail('PROTOCOL_ERROR', 'Invalid Claude Code JSON record.'); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      fail('PROTOCOL_ERROR', 'Invalid Claude Code JSON record.');
+    }
     const event = record(parsed);
     if (!event || typeof event.type !== 'string') fail('PROTOCOL_ERROR', 'Invalid Claude Code event.');
     if (terminal && event.type !== 'result') return;
@@ -218,10 +253,29 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     const output = truncateToByteLength(text, reducer.maxTotalBytes);
     const truncated = output !== text || reducer.isTruncated();
     const error: ExecutionError | undefined = resultFields?.isError
-      ? classifyClaudeFailure({ category, apiErrorStatus: resultFields.apiErrorStatus, subtype: resultFields.subtype,
-        errors: resultFields.errors, message: finalText, rateLimitResetsAt })
-      : truncated ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false } : undefined;
-    return { sessionId, initialized: sessionId !== null, model, terminal, usage, truncated, lengthLimited: stopReason === null ? undefined : stopReason === 'max_tokens', error, output: (resultFields?.isError || !sessionId) ? '' : output, hasAssistantMessage: reducer.getMessageMap().size > 0 };
+      ? classifyClaudeFailure({
+          category,
+          apiErrorStatus: resultFields.apiErrorStatus,
+          subtype: resultFields.subtype,
+          errors: resultFields.errors,
+          message: finalText,
+          rateLimitResetsAt,
+        })
+      : truncated
+        ? { code: 'BUFFER_LIMIT', message: 'Claude Code public output exceeded the byte budget.', retryable: false }
+        : undefined;
+    return {
+      sessionId,
+      initialized: sessionId !== null,
+      model,
+      terminal,
+      usage,
+      truncated,
+      lengthLimited: stopReason === null ? undefined : stopReason === 'max_tokens',
+      error,
+      output: resultFields?.isError || !sessionId ? '' : output,
+      hasAssistantMessage: reducer.getMessageMap().size > 0,
+    };
   }
   return { line, snapshot, isTerminal: () => terminal };
 }

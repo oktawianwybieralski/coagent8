@@ -11,11 +11,7 @@ process.env.coagent8_DIR = tempDir;
 
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { saveConfig, loadConfigSnapshot } = require('../../src/config.ts');
-const {
-  validateTaskContext,
-  prepareTask,
-  confirmTaskConsent,
-} = require('../../src/execution/preparation.ts');
+const { validateTaskContext, prepareTask, confirmTaskConsent } = require('../../src/execution/preparation.ts');
 const { createExecutionBudget } = require('../../src/execution/runtime/budget.ts');
 const { ToolError } = require('../../src/contracts/error.ts');
 
@@ -24,62 +20,60 @@ test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 function createMockSession(handle, workspace, backend = 'codex', threadId = 'thread_123', model = 'gpt-6-luna') {
   const file = path.join(tempDir, 'sessions', `${handle}.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({
-    schemaVersion: 2,
-    sessionHandle: handle,
-    backend,
-    threadId,
-    workspace,
-    model,
-    reasoningEffort: 'low',
-    activePid: null,
-    activeTurnAt: null,
-    createdAt: new Date().toISOString(),
-    lastUsedAt: new Date().toISOString(),
-  }));
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      schemaVersion: 2,
+      sessionHandle: handle,
+      backend,
+      threadId,
+      workspace,
+      model,
+      reasoningEffort: 'low',
+      activePid: null,
+      activeTurnAt: null,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+    }),
+  );
 }
 
 test('validateTaskContext: rejects invalid model identifiers before any backend or probe run', () => {
   const cwd = tempDir;
-  assert.throws(
-    () => validateTaskContext({ model: '--malicious-flag' }, cwd),
-    { code: 'INPUT_LIMIT' }
-  );
-  assert.throws(
-    () => validateTaskContext({ model: 'gpt 4 with spaces' }, cwd),
-    { code: 'INPUT_LIMIT' }
-  );
-  assert.throws(
-    () => validateTaskContext({ model: '' }, cwd),
-    { code: 'INPUT_LIMIT' }
-  );
-  assert.doesNotThrow(
-    () => validateTaskContext({ model: 'gpt-6-luna' }, cwd)
-  );
+  assert.throws(() => validateTaskContext({ model: '--malicious-flag' }, cwd), { code: 'INPUT_LIMIT' });
+  assert.throws(() => validateTaskContext({ model: 'gpt 4 with spaces' }, cwd), { code: 'INPUT_LIMIT' });
+  assert.throws(() => validateTaskContext({ model: '' }, cwd), { code: 'INPUT_LIMIT' });
+  assert.doesNotThrow(() => validateTaskContext({ model: 'gpt-6-luna' }, cwd));
 });
 
 test('validateTaskContext: rejects pre-aborted caller signals', () => {
   const cwd = tempDir;
   const ac = new AbortController();
   ac.abort();
-  assert.throws(
-    () => validateTaskContext({}, cwd, { abortSignal: ac.signal }),
-    { code: 'ABORTED' }
-  );
+  assert.throws(() => validateTaskContext({}, cwd, { abortSignal: ac.signal }), { code: 'ABORTED' });
 });
 
 test('a closed session is refused with its state and readable history; another workspace learns nothing (FEEDBACK-060e)', () => {
-  const cwd = tempDir, foreign = path.join(tempDir, 'foreign-closed');
+  const cwd = tempDir,
+    foreign = path.join(tempDir, 'foreign-closed');
   fs.mkdirSync(foreign, { recursive: true });
-  for (const [handle, workspace] of [['syn_sess_closed_here', cwd], ['syn_sess_closed_foreign', foreign]]) {
+  for (const [handle, workspace] of [
+    ['syn_sess_closed_here', cwd],
+    ['syn_sess_closed_foreign', foreign],
+  ]) {
     createMockSession(handle, workspace);
     const file = path.join(tempDir, 'sessions', `${handle}.json`);
     fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), state: 'closed', threadId: null }));
   }
-  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_closed_here' }, cwd),
-    error => error.code === 'SESSION_INVALID' && /Session is closed/.test(error.message) && /history/.test(error.message));
-  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_closed_foreign' }, cwd),
-    error => error.code === 'SESSION_INVALID' && error.message === 'Session is expired, invalidated, closed or belongs to another workspace.');
+  assert.throws(
+    () => validateTaskContext({ session_handle: 'syn_sess_closed_here' }, cwd),
+    error => error.code === 'SESSION_INVALID' && /Session is closed/.test(error.message) && /history/.test(error.message),
+  );
+  assert.throws(
+    () => validateTaskContext({ session_handle: 'syn_sess_closed_foreign' }, cwd),
+    error =>
+      error.code === 'SESSION_INVALID' && error.message === 'Session is expired, invalidated, closed or belongs to another workspace.',
+  );
 });
 
 test('validateTaskContext: validates session existence, workspace binding, and provider lock', () => {
@@ -88,17 +82,11 @@ test('validateTaskContext: validates session existence, workspace binding, and p
   fs.mkdirSync(foreignWorkspace, { recursive: true });
 
   // Missing session
-  assert.throws(
-    () => validateTaskContext({ session_handle: 'syn_sess_missing' }, cwd),
-    { code: 'SESSION_INVALID' }
-  );
+  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_missing' }, cwd), { code: 'SESSION_INVALID' });
 
   // Foreign workspace session
   createMockSession('syn_sess_foreign', foreignWorkspace, 'codex', 'thread_foreign');
-  assert.throws(
-    () => validateTaskContext({ session_handle: 'syn_sess_foreign' }, cwd),
-    { code: 'SESSION_INVALID' }
-  );
+  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_foreign' }, cwd), { code: 'SESSION_INVALID' });
 
   // Valid session in local workspace
   createMockSession('syn_sess_valid_abc', cwd, 'codex', 'thread_valid');
@@ -107,25 +95,15 @@ test('validateTaskContext: validates session existence, workspace binding, and p
   assert.equal(validated.previousSession.sessionHandle, 'syn_sess_valid_abc');
 
   // Attempting provider switch
-  assert.throws(
-    () => validateTaskContext({ session_handle: 'syn_sess_valid_abc', backend: 'claude' }, cwd),
-    { code: 'SESSION_INVALID' }
-  );
+  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_valid_abc', backend: 'claude' }, cwd), { code: 'SESSION_INVALID' });
 
   // Permitted provider specifications (auto, smart_quota, or same provider)
-  assert.doesNotThrow(
-    () => validateTaskContext({ session_handle: 'syn_sess_valid_abc', backend: 'auto' }, cwd)
-  );
-  assert.doesNotThrow(
-    () => validateTaskContext({ session_handle: 'syn_sess_valid_abc', backend: 'codex' }, cwd)
-  );
+  assert.doesNotThrow(() => validateTaskContext({ session_handle: 'syn_sess_valid_abc', backend: 'auto' }, cwd));
+  assert.doesNotThrow(() => validateTaskContext({ session_handle: 'syn_sess_valid_abc', backend: 'codex' }, cwd));
 
   // Session without native continuation (threadId null)
   createMockSession('syn_sess_no_thread', cwd, 'codex', null);
-  assert.throws(
-    () => validateTaskContext({ session_handle: 'syn_sess_no_thread' }, cwd),
-    { code: 'SESSION_INVALID' }
-  );
+  assert.throws(() => validateTaskContext({ session_handle: 'syn_sess_no_thread' }, cwd), { code: 'SESSION_INVALID' });
 });
 
 test('prepareTask: prepares auto execution with single configuration snapshot', async () => {
@@ -140,7 +118,9 @@ test('prepareTask: prepares auto execution with single configuration snapshot', 
         version: '1.0.0',
         config: { defaultModel: 'gpt-6-luna' },
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -175,7 +155,9 @@ test('prepareTask: respects continuation session model and reasoning effort inhe
         version: '1.0.0',
         config: { defaultModel: 'gpt-6-luna' },
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     const cwd = tempDir;
@@ -203,7 +185,9 @@ test('prepareTask & confirmConsent: handles consent verification and price limit
         version: '1.0.0',
         config: { defaultModel: 'gpt-6-luna' },
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -221,26 +205,20 @@ test('prepareTask & confirmConsent: handles consent verification and price limit
     assert.ok(note.includes('0.5 USD per million output tokens'));
 
     // Price limit rejects for gpt-6-luna if limit is 0.20
-    await assert.rejects(
-      prepareTask({ model: 'gpt-6-luna', output_price_below: 0.2 }, cwd),
-      { code: 'PRICE_LIMIT' }
-    );
+    await assert.rejects(prepareTask({ model: 'gpt-6-luna', output_price_below: 0.2 }, cwd), { code: 'PRICE_LIMIT' });
 
     // gpt-6-astra (50.00 USD) requires consent because askAbovePrice is 20
     const prepAstra = await prepareTask({ model: 'gpt-6-astra' }, cwd);
 
     // Consent denied when askConsent is missing
-    await assert.rejects(
-      prepAstra.confirmConsent(),
-      { code: 'POLICY_DENIED' }
-    );
+    await assert.rejects(prepAstra.confirmConsent(), { code: 'POLICY_DENIED' });
 
     // Consent denied when user rejects
     await assert.rejects(
       prepAstra.confirmConsent({
         askConsent: async () => ({ approved: false }),
       }),
-      { code: 'POLICY_DENIED' }
+      { code: 'POLICY_DENIED' },
     );
 
     // Consent granted
@@ -276,7 +254,9 @@ test('EXEC-001-T05a: catalog observation obtained during routing is reused in mo
           ],
         };
       },
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -309,11 +289,11 @@ test('EXEC-001-T05b: defaultModel is reused in consent and handles missing backe
       }),
       listModels: async () => ({
         source: 'codex-catalog',
-        models: [
-          { id: 'gpt-6.1-sol', efforts: ['low'] },
-        ],
+        models: [{ id: 'gpt-6.1-sol', efforts: ['low'] }],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -355,11 +335,11 @@ test('EXEC-001-T05c: price change while consent is pending triggers re-validatio
       }),
       listModels: async () => ({
         source: 'codex-catalog',
-        models: [
-          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
-        ],
+        models: [{ id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true }],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -389,7 +369,7 @@ test('EXEC-001-T05c: price change while consent is pending triggers re-validatio
       {
         code: 'PRICE_LIMIT',
         message: /costs 25 USD per million output tokens.*not below 15 USD/,
-      }
+      },
     );
   } finally {
     Object.assign(adapterRegistry, original);
@@ -412,11 +392,11 @@ test('EXEC-001-T10b: confirmConsent price increase without price limit throws PO
       }),
       listModels: async () => ({
         source: 'codex-catalog',
-        models: [
-          { id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true },
-        ],
+        models: [{ id: 'gpt-6.1-sol', efforts: ['low'], isDefault: true }],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -451,11 +431,14 @@ test('EXEC-001-T10b: confirmConsent price increase without price limit throws PO
       }),
       err => {
         assert.equal(err.code, 'POLICY_DENIED');
-        assert.match(err.message, /The approval for model 'gpt-6.1-sol' was invalidated because conditions changed while awaiting consent/i);
+        assert.match(
+          err.message,
+          /The approval for model 'gpt-6.1-sol' was invalidated because conditions changed while awaiting consent/i,
+        );
         assert.match(err.message, /Its output price increased from 10 USD to 30 USD per million tokens/i);
         assert.match(err.message, /Retry the request to approve under current conditions/i);
         return true;
-      }
+      },
     );
 
     assert.ok(!loadConfig().governance.models.allow.includes('gpt-6.1-sol'), 'models.allow must remain untouched when consent invalidated');
@@ -466,7 +449,9 @@ test('EXEC-001-T10b: confirmConsent price increase without price limit throws PO
 
 test('EXEC-001-T10b: confirmConsent governance config change invalidates approval and leaves models.allow untouched', async () => {
   const { loadConfig } = require('../../src/config.ts');
-  try { fs.unlinkSync(path.join(tempDir, 'models.json')); } catch {}
+  try {
+    fs.unlinkSync(path.join(tempDir, 'models.json'));
+  } catch {}
   const original = { ...adapterRegistry };
   try {
     adapterRegistry.codex = {
@@ -485,7 +470,9 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
           { id: 'gpt-non-default', efforts: ['low'] },
         ],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -513,10 +500,13 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
         assert.match(err.message, /governance.askAbovePrice (was lowered|changed) from 50 USD to 5 USD/i);
         assert.match(err.message, /Retry the request to approve under current conditions/i);
         return true;
-      }
+      },
     );
 
-    assert.ok(!loadConfig().governance.models.allow.includes('gpt-non-default'), 'models.allow must remain untouched when consent invalidated');
+    assert.ok(
+      !loadConfig().governance.models.allow.includes('gpt-non-default'),
+      'models.allow must remain untouched when consent invalidated',
+    );
   } finally {
     Object.assign(adapterRegistry, original);
   }
@@ -524,7 +514,9 @@ test('EXEC-001-T10b: confirmConsent governance config change invalidates approva
 
 test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true succeeds and updates models.allow', async () => {
   const { loadConfig } = require('../../src/config.ts');
-  try { fs.unlinkSync(path.join(tempDir, 'models.json')); } catch {}
+  try {
+    fs.unlinkSync(path.join(tempDir, 'models.json'));
+  } catch {}
   const original = { ...adapterRegistry };
   try {
     adapterRegistry.codex = {
@@ -543,7 +535,9 @@ test('EXEC-001-T10b: confirmConsent unchanged conditions with remember: true suc
           { id: 'gpt-unpriced', efforts: ['low'] },
         ],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -587,7 +581,9 @@ test('EXEC-001-T10c: confirmConsent preserves valid approval when storage fails,
           { id: 'gpt-unpriced', efforts: ['low'] },
         ],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -649,7 +645,9 @@ test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABO
           { id: 'gpt-unpriced', efforts: ['low'] },
         ],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -674,10 +672,13 @@ test('EXEC-001-T10c: confirmConsent cancellation before storage rejects with ABO
         assert.ok(err instanceof ToolError);
         assert.equal(err.code, 'ABORTED');
         return true;
-      }
+      },
     );
 
-    assert.ok(!loadConfig().governance.models.allow.includes('gpt-unpriced'), 'models.allow must remain untouched when cancelled before storage');
+    assert.ok(
+      !loadConfig().governance.models.allow.includes('gpt-unpriced'),
+      'models.allow must remain untouched when cancelled before storage',
+    );
   } finally {
     Object.assign(adapterRegistry, original);
   }
@@ -705,7 +706,9 @@ test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with T
           { id: 'gpt-unpriced', efforts: ['low'] },
         ],
       }),
-      execute: async () => { throw new Error('Must not execute'); },
+      execute: async () => {
+        throw new Error('Must not execute');
+      },
     };
 
     await saveConfig({
@@ -736,10 +739,13 @@ test('EXEC-001-T10c: confirmConsent budget timeout before storage rejects with T
         assert.ok(err instanceof ToolError);
         assert.equal(err.code, 'TIMEOUT');
         return true;
-      }
+      },
     );
 
-    assert.ok(!loadConfig().governance.models.allow.includes('gpt-unpriced'), 'models.allow must remain untouched when timed out before storage');
+    assert.ok(
+      !loadConfig().governance.models.allow.includes('gpt-unpriced'),
+      'models.allow must remain untouched when timed out before storage',
+    );
   } finally {
     Object.assign(adapterRegistry, original);
   }
@@ -764,7 +770,9 @@ test('prepareTask reclassifies probe abortion from budget expiration as TIMEOUT'
       }
       return { installed: true, executionSupported: true, config: { defaultModel: 'gpt-4o' } };
     },
-    execute: async () => { throw new Error('Must not execute'); },
+    execute: async () => {
+      throw new Error('Must not execute');
+    },
   };
 
   try {
@@ -773,14 +781,11 @@ test('prepareTask reclassifies probe abortion from budget expiration as TIMEOUT'
       routing: { strategy: 'fixed', allowedBackends: ['codex'] },
     });
 
-    await assert.rejects(
-      prepareTask({ backend: 'codex' }, tempDir, { budget }),
-      err => {
-        assert.ok(err instanceof ToolError);
-        assert.equal(err.code, 'TIMEOUT');
-        return true;
-      }
-    );
+    await assert.rejects(prepareTask({ backend: 'codex' }, tempDir, { budget }), err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'TIMEOUT');
+      return true;
+    });
   } finally {
     budget.dispose();
     Object.assign(adapterRegistry, original);

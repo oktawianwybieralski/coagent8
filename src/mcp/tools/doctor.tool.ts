@@ -21,7 +21,8 @@ export const doctorToolDefinition = {
 function redactStrings(value: unknown): unknown {
   if (typeof value === 'string') return redactDiagnostic(value, 2048);
   if (Array.isArray(value)) return value.map(redactStrings);
-  if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactStrings(entry)]));
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactStrings(entry)]));
   return value;
 }
 
@@ -30,10 +31,7 @@ function redactStrings(value: unknown): unknown {
  * diagnosis. Summary text by default; `detail: "full"` returns the report as compact JSON and
  * structured content.
  */
-export async function handleDoctor(
-  args: { backend?: string; detail?: string; scope?: string } = {},
-  signal?: AbortSignal
-) {
+export async function handleDoctor(args: { backend?: string; detail?: string; scope?: string } = {}, signal?: AbortSignal) {
   const backend = args.backend as ProviderId | undefined;
   const report = args.scope === 'health' ? await runDoctor({ backend, signal }) : await runModelReport({ backend, signal });
   if (args.detail !== 'full') {
@@ -43,4 +41,3 @@ export async function handleDoctor(
   const structuredContent = redactStrings(report) as Record<string, unknown>;
   return { content: [{ type: 'text', text: JSON.stringify(structuredContent) }], structuredContent };
 }
-

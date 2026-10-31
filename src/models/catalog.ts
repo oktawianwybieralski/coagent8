@@ -18,8 +18,10 @@ const LISTED_MODELS = 12;
 
 /** Renders catalog entries as `id (low|medium|high)`, the form an error or doctor quotes. */
 export function describeModels(models: CatalogModel[]): string {
-  const shown = models.slice(0, LISTED_MODELS).map(model => model.efforts.length ? `${model.id} (${model.efforts.join('|')})` : model.id);
-  return models.length > LISTED_MODELS ? `${shown.join(', ')}, and ${models.length - LISTED_MODELS} more (doctor lists all)` : shown.join(', ');
+  const shown = models.slice(0, LISTED_MODELS).map(model => (model.efforts.length ? `${model.id} (${model.efforts.join('|')})` : model.id));
+  return models.length > LISTED_MODELS
+    ? `${shown.join(', ')}, and ${models.length - LISTED_MODELS} more (doctor lists all)`
+    : shown.join(', ');
 }
 
 /**
@@ -36,7 +38,10 @@ export function lookupName(model: string): string {
  * @returns The entry, the effort a suffixed name carries, and `name`: the exact form the CLI
  * accepts for what was asked (the entry's id, or `<id>-<effort>`), never an approximation.
  */
-export function findCatalogEntry(catalog: ModelCatalog, model: string): { entry: CatalogModel; suffixEffort?: string; name: string } | undefined {
+export function findCatalogEntry(
+  catalog: ModelCatalog,
+  model: string,
+): { entry: CatalogModel; suffixEffort?: string; name: string } | undefined {
   const wanted = lookupName(model);
   const exact = catalog.models.find(entry => lookupName(entry.id) === wanted || entry.aliases?.some(alias => lookupName(alias) === wanted));
   if (exact) return { entry: exact, name: exact.id };
@@ -57,27 +62,40 @@ export function findCatalogEntry(catalog: ModelCatalog, model: string): { entry:
  * @returns An error that names the accepted values, or null when the selection is valid or
  * cannot be checked.
  */
-export function checkModelSelection(backend: string, catalog: ModelCatalog | undefined, model: string | undefined, effort: string | undefined): ExecutionError | null {
+export function checkModelSelection(
+  backend: string,
+  catalog: ModelCatalog | undefined,
+  model: string | undefined,
+  effort: string | undefined,
+): ExecutionError | null {
   if (!catalog || !catalog.models.length || !model) return null;
   const found = findCatalogEntry(catalog, model);
   // A CLI that also runs unlisted models (Claude Code) decides about a name it does not list.
   if (!found && catalog.acceptsUnlisted) return null;
   if (!found) {
-    return { code: 'MODEL_UNAVAILABLE', retryable: false,
-      message: `Model '${model}' is not offered by ${backend}. Use one of: ${describeModels(catalog.models)}; or omit model for the default.` };
+    return {
+      code: 'MODEL_UNAVAILABLE',
+      retryable: false,
+      message: `Model '${model}' is not offered by ${backend}. Use one of: ${describeModels(catalog.models)}; or omit model for the default.`,
+    };
   }
   const { entry, suffixEffort } = found;
   const normalized = effort?.toLowerCase();
   if (normalized && !entry.efforts.includes(normalized)) {
-    return { code: 'INPUT_LIMIT', retryable: false,
+    return {
+      code: 'INPUT_LIMIT',
+      retryable: false,
       message: entry.efforts.length
         ? `${backend} model '${entry.id}' accepts reasoning_effort ${entry.efforts.join(', ')}, not '${effort}'.`
-        : `${backend} model '${entry.id}' takes no reasoning_effort; omit it.` };
+        : `${backend} model '${entry.id}' takes no reasoning_effort; omit it.`,
+    };
   }
   if (entry.effortRequired && !normalized && !suffixEffort) {
-    return { code: 'INPUT_LIMIT', retryable: false,
-      message: `${backend} model '${entry.id}' needs reasoning_effort (${entry.efforts.join(', ')}), or name it with the effort, for example '${entry.id}-${entry.efforts[0]}'.` };
+    return {
+      code: 'INPUT_LIMIT',
+      retryable: false,
+      message: `${backend} model '${entry.id}' needs reasoning_effort (${entry.efforts.join(', ')}), or name it with the effort, for example '${entry.id}-${entry.efforts[0]}'.`,
+    };
   }
   return null;
 }
-

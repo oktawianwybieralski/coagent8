@@ -256,7 +256,7 @@ function canonicalFolder(value: string): string {
 }
 
 function sameFolder(a: string, b: string): boolean {
-  const normal = (val: string) => process.platform === 'win32' ? canonicalFolder(val).toLowerCase() : canonicalFolder(val);
+  const normal = (val: string) => (process.platform === 'win32' ? canonicalFolder(val).toLowerCase() : canonicalFolder(val));
   return normal(a) === normal(b);
 }
 
@@ -265,7 +265,10 @@ function sameInstallation(a: string | undefined, b: string): boolean {
 }
 
 function normalizePathEntry(entry: string): string {
-  return entry.trim().replace(/[\\/]+$/, '').toLowerCase();
+  return entry
+    .trim()
+    .replace(/[\\/]+$/, '')
+    .toLowerCase();
 }
 
 function readRecordFile(home: string): Record<string, unknown> {
@@ -367,7 +370,10 @@ async function entryMayRemain(adapter: PathSystemAdapter, normalizedEntry: strin
   try {
     const current = await adapter.readUserPath();
     if (!current) return true;
-    const entries = current.value.split(';').map(p => p.trim()).filter(Boolean);
+    const entries = current.value
+      .split(';')
+      .map(p => p.trim())
+      .filter(Boolean);
     const kept = entries.filter(p => normalizePathEntry(p) !== normalizedEntry);
     if (kept.length === entries.length) return false;
     await adapter.writeUserPath(kept.join(';'), current.kind);
@@ -379,7 +385,7 @@ async function entryMayRemain(adapter: PathSystemAdapter, normalizedEntry: strin
 
 export async function enablePathIntegration(
   options: PathOptInOptions,
-  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
+  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter(),
 ): Promise<PathEnableResult> {
   if (!adapter.isWindows()) {
     return { action: 'unsupported', addedToPath: false, shimPath: '', environmentNotified: true };
@@ -414,7 +420,10 @@ export async function enablePathIntegration(
     }
     const kind = currentPath?.kind ?? 'REG_SZ';
     const rawVal = currentPath?.value ?? '';
-    const parts = rawVal.split(';').map(p => p.trim()).filter(Boolean);
+    const parts = rawVal
+      .split(';')
+      .map(p => p.trim())
+      .filter(Boolean);
 
     const runtimeTarget = ensureRuntimeCopy(options.home, options.bundle);
     const nodeExec = options.nodePath?.trim() || 'node';
@@ -469,7 +478,9 @@ export async function enablePathIntegration(
         // again; while it may remain, the shim and the record stay so Remove from PATH or the
         // uninstall hook can clean it up later.
         if (await entryMayRemain(adapter, normalizedBin)) {
-          throw new Error(`${err instanceof Error ? err.message : String(err)}; the PATH entry may remain and is still recorded for removal`);
+          throw new Error(
+            `${err instanceof Error ? err.message : String(err)}; the PATH entry may remain and is still recorded for removal`,
+          );
         }
         rollbackShim();
         if (existingPath) {
@@ -477,7 +488,9 @@ export async function enablePathIntegration(
         } else {
           delete records.path;
         }
-        try { writeRecordFile(options.home, records); } catch {}
+        try {
+          writeRecordFile(options.home, records);
+        } catch {}
         throw err;
       }
       environmentNotified = await adapter.broadcastEnvironmentChange(5000);
@@ -490,14 +503,14 @@ export async function enablePathIntegration(
 
 export async function disablePathIntegration(
   options: PathOptInOptions,
-  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
+  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter(),
 ): Promise<PathRemovalResult> {
   return removePathIntegration(options.home, options.installation, 5000, adapter);
 }
 
 export async function syncPathShim(
   options: PathOptInOptions,
-  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter()
+  adapter: PathSystemAdapter = new DefaultWindowsPathAdapter(),
 ): Promise<PathSyncResult> {
   if (!adapter.isWindows()) return { action: 'noop' };
   if (!readPathRecord(options.home)) return { action: 'missing' };
@@ -529,7 +542,9 @@ export async function syncPathShim(
     try {
       writeRecordFile(options.home, records);
     } catch (err) {
-      try { atomicWriteShim(record.shimPath, previousShimContent); } catch {}
+      try {
+        atomicWriteShim(record.shimPath, previousShimContent);
+      } catch {}
       throw err;
     }
 
@@ -542,7 +557,7 @@ export async function removePathIntegration(
   installation: string,
   leaseTimeoutMs = 1500,
   adapter: PathSystemAdapter = new DefaultWindowsPathAdapter(),
-  deadline = Date.now() + leaseTimeoutMs
+  deadline = Date.now() + leaseTimeoutMs,
 ): Promise<PathRemovalResult> {
   if (!readPathRecord(home)) return { action: 'missing' };
   if (!adapter.ownsHome(home)) {
@@ -573,7 +588,9 @@ export async function removePathIntegration(
       // Check budget before performing any destructive file system changes
       if (record.addedToPath && timeRemaining() <= 100) {
         records.path = record;
-        try { writeRecordFile(home, records); } catch {}
+        try {
+          writeRecordFile(home, records);
+        } catch {}
         return { action: 'blocked', message: 'Uninstall deadline exceeded before registry operation' };
       }
 
@@ -613,7 +630,9 @@ export async function removePathIntegration(
         if (remainingRead <= 0) {
           restoreShimIfNeeded();
           records.path = record;
-          try { writeRecordFile(home, records); } catch {}
+          try {
+            writeRecordFile(home, records);
+          } catch {}
           return { action: 'blocked', message: 'Uninstall deadline exceeded before registry read' };
         }
         try {
@@ -634,14 +653,16 @@ export async function removePathIntegration(
               const writeBudget = Math.max(100, remainingWrite - 100);
               await adapter.writeUserPath(kept.join(';'), current.kind, writeBudget);
               const remainingBroadcast = timeRemaining();
-              environmentNotified = remainingBroadcast > 100
-                && await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 1500));
+              environmentNotified =
+                remainingBroadcast > 100 && (await adapter.broadcastEnvironmentChange(Math.min(remainingBroadcast, 1500)));
             }
           }
         } catch (error) {
           restoreShimIfNeeded();
           records.path = record;
-          try { writeRecordFile(home, records); } catch {}
+          try {
+            writeRecordFile(home, records);
+          } catch {}
           return { action: 'blocked', message: redactDiagnostic(error instanceof Error ? error.message : String(error)) };
         }
       }
@@ -654,7 +675,7 @@ export async function removePathIntegration(
       } catch {}
       return { action: 'removed', environmentNotified };
     },
-    Math.min(leaseTimeoutMs, Math.max(100, timeRemaining()))
+    Math.min(leaseTimeoutMs, Math.max(100, timeRemaining())),
   );
   const root = path.join(home, '.coagent8');
   if (res.action === 'removed') {

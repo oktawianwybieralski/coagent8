@@ -20,7 +20,7 @@ export function canonicalPath(value?: string | null): string {
   const absolute = path.resolve(value);
   let resolved = absolute;
   const missing: string[] = [];
-  for (let current = absolute; ; ) {
+  for (let current = absolute; ;) {
     try {
       resolved = path.join(fs.realpathSync.native(current), ...missing);
       break;
@@ -34,4 +34,3 @@ export function canonicalPath(value?: string | null): string {
   }
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
-

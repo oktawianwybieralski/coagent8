@@ -61,8 +61,11 @@ export function readEditorSettings(env: NodeJS.ProcessEnv = process.env): Partia
   const raw = env[EDITOR_SETTINGS_ENV];
   if (!raw) return {};
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch (cause) { throw new Error(`${EDITOR_SETTINGS_ENV} is not valid JSON.`, { cause }); }
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`${EDITOR_SETTINGS_ENV} is not valid JSON.`, { cause });
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${EDITOR_SETTINGS_ENV} must be a JSON object.`);
   for (const key of Object.keys(parsed)) {
     if (!Object.hasOwn(EDITOR_SETTINGS, key)) throw new Error(`${EDITOR_SETTINGS_ENV} contains the unknown setting '${key}'.`);

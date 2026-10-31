@@ -12,7 +12,11 @@ export function isRateLimitError(text?: string | null): boolean {
       return true;
     }
 
-    if (/\b(?:http\s*status\s*[:=]?\s*|status\s*(?:code)?\s*[:=]?\s*|api\s*error\s*[:=]?\s*|http[\s/]+(?:1\.[01]|2(?:\.0)?)?\s*)429(?!\.[a-zA-Z0-9])(?:\s|$|[:,\r\n"]|too\s+many\s+requests)/i.test(trimmed)) {
+    if (
+      /\b(?:http\s*status\s*[:=]?\s*|status\s*(?:code)?\s*[:=]?\s*|api\s*error\s*[:=]?\s*|http[\s/]+(?:1\.[01]|2(?:\.0)?)?\s*)429(?!\.[a-zA-Z0-9])(?:\s|$|[:,\r\n"]|too\s+many\s+requests)/i.test(
+        trimmed,
+      )
+    ) {
       return true;
     }
 
@@ -20,7 +24,11 @@ export function isRateLimitError(text?: string | null): boolean {
       return true;
     }
 
-    if (/\b(?:rate[\s_-]?limit\s*(?:exceeded|reached)|usage\s*limit\s*(?:exceeded|reached)?|hit\s*(?:your\s*)?usage\s*limit|spend\s*cap)\b/i.test(trimmed)) {
+    if (
+      /\b(?:rate[\s_-]?limit\s*(?:exceeded|reached)|usage\s*limit\s*(?:exceeded|reached)?|hit\s*(?:your\s*)?usage\s*limit|spend\s*cap)\b/i.test(
+        trimmed,
+      )
+    ) {
       return true;
     }
     if (/\b(?:exceeded\s*your\s*(?:current\s*)?quota|insufficient_quota)\b/i.test(trimmed)) {
@@ -50,7 +58,10 @@ export function parseResetTimestamp(text?: string | null): ParsedResetTime | nul
   // Exact timestamp matches: "try again at <timestamp>", "resets at <timestamp>"
   const dateMatch = /(?:try again at|resets? at)\s+([^\r\n]+?)(?:\.\s|\.\n|\.$|\r|\n|$)/i.exec(text);
   if (dateMatch) {
-    const rawDate = dateMatch[1].trim().replace(/\.$/, '').replace(/(\d+)(st|nd|rd|th)/gi, '$1');
+    const rawDate = dateMatch[1]
+      .trim()
+      .replace(/\.$/, '')
+      .replace(/(\d+)(st|nd|rd|th)/gi, '$1');
     const parsedMs = Date.parse(rawDate);
     if (Number.isFinite(parsedMs)) {
       const now = Date.now();

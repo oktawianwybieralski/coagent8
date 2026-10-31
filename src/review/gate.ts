@@ -102,15 +102,26 @@ export interface ReviewGateContext {
  * evidence either, since this does not execute tests, verify a reported PASS or bind a
  * release artifact. A reviewer's BLOCKED without a P1/P2 finding quotes its `Blocked:` line.
  */
-export function evaluateStateEnvelopeGate(output: string, truncated: boolean, requireEnvelope = false, context?: ReviewGateContext, completion?: TurnCompletion): StateEnvelopeEvaluation {
+export function evaluateStateEnvelopeGate(
+  output: string,
+  truncated: boolean,
+  requireEnvelope = false,
+  context?: ReviewGateContext,
+  completion?: TurnCompletion,
+): StateEnvelopeEvaluation {
   const rawLines = output.split(/\r?\n/);
   const nonEmptyLines = rawLines.map(l => l.trim()).filter(l => l.length > 0);
 
-  let reviewCount = 0, reviewVal = '';
-  let snapshotCount = 0, snapshotVal = '';
-  let coverageCount = 0, coverageVal: 'COMPLETE' | 'PARTIAL' | undefined = undefined;
-  let verdictCount = 0, verdictVal: 'READY' | 'BLOCKED' | undefined = undefined;
-  let checksCount = 0, checksVal = '';
+  let reviewCount = 0,
+    reviewVal = '';
+  let snapshotCount = 0,
+    snapshotVal = '';
+  let coverageCount = 0,
+    coverageVal: 'COMPLETE' | 'PARTIAL' | undefined = undefined;
+  let verdictCount = 0,
+    verdictVal: 'READY' | 'BLOCKED' | undefined = undefined;
+  let checksCount = 0,
+    checksVal = '';
   let endReviewCount = 0;
   let hasBogusVerdict = false;
   let blockedVal = '';
@@ -171,7 +182,8 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
   // A model may drop the brackets of a finding header (`P2 sum.js:4`); only a line shaped
   // like a header counts then, so prose that mentions P1 or P2 does not block.
   const hasBlockers = /\[P[12]\]/i.test(output) || rawLines.some(line => UNBRACKETED_BLOCKER.test(line.trim()));
-  const isEnveloped = reviewCount > 0 || snapshotCount > 0 || coverageCount > 0 || verdictCount > 0 || checksCount > 0 || endReviewCount > 0;
+  const isEnveloped =
+    reviewCount > 0 || snapshotCount > 0 || coverageCount > 0 || verdictCount > 0 || checksCount > 0 || endReviewCount > 0;
   const isEndReviewLast = nonEmptyLines.length > 0 && /^END_REVIEW$/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
   const isChecksLast = nonEmptyLines.length > 0 && /^CHECKS:/i.test(nonEmptyLines[nonEmptyLines.length - 1]);
   const lengthLimited = completion?.lengthLimited === true;
@@ -208,30 +220,39 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       }
       for (const req of context.requiredFiles) {
         const normReq = normalizePath(req);
-        const matches = normReq === normDenial
-          || normReq.endsWith('/' + normDenial)
-          || normDenial.endsWith('/' + normReq)
-          || (normDenial.length > 0 && normReq.startsWith(normDenial + '/'))
-          || (normDenial === '');
+        const matches =
+          normReq === normDenial ||
+          normReq.endsWith('/' + normDenial) ||
+          normDenial.endsWith('/' + normReq) ||
+          (normDenial.length > 0 && normReq.startsWith(normDenial + '/')) ||
+          normDenial === '';
         if (matches && !deniedRequiredFiles.includes(req)) {
           deniedRequiredFiles.push(req);
         }
       }
     }
   }
-  const deniedRequiredScope = (deniedRequiredFiles.length > 0) || ((policyBlocked || pathlessDenials.length > 0) && (context?.requiredFiles?.length ?? 0) > 0);
+  const deniedRequiredScope =
+    deniedRequiredFiles.length > 0 || ((policyBlocked || pathlessDenials.length > 0) && (context?.requiredFiles?.length ?? 0) > 0);
   if (deniedRequiredScope) {
     coverageVal = 'PARTIAL';
   }
 
   if (requireEnvelope || isEnveloped || hasBlockers) {
-    const isCompleteEnvelope = isEnveloped
-      && reviewCount === 1 && reviewVal.length > 0
-      && snapshotCount === 1 && snapshotVal.length > 0
-      && coverageCount === 1 && coverageVal !== undefined
-      && verdictCount === 1 && verdictVal !== undefined && !hasBogusVerdict
-      && checksCount === 1 && checksVal.length > 0
-      && ((endReviewCount === 1 && isEndReviewLast) || serverTerminated);
+    const isCompleteEnvelope =
+      isEnveloped &&
+      reviewCount === 1 &&
+      reviewVal.length > 0 &&
+      snapshotCount === 1 &&
+      snapshotVal.length > 0 &&
+      coverageCount === 1 &&
+      coverageVal !== undefined &&
+      verdictCount === 1 &&
+      verdictVal !== undefined &&
+      !hasBogusVerdict &&
+      checksCount === 1 &&
+      checksVal.length > 0 &&
+      ((endReviewCount === 1 && isEndReviewLast) || serverTerminated);
 
     const checks = /^typecheck=(PASS|FAIL|NOT_RUN);\s*tests=(PASS|FAIL|NOT_RUN)$/i.exec(checksVal);
     const checkValues = checks ? { typecheck: checks[1].toUpperCase(), tests: checks[2].toUpperCase() } : undefined;
@@ -242,20 +263,36 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
     const incompleteInput = Boolean(context && context.inputComplete === false);
     const judged = Boolean(isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope);
     const appendTerminator = Boolean(isCompleteEnvelope && serverTerminated);
-    const shouldBlock = !isCompleteEnvelope || !checks || failedChecks || wrongSnapshot || incompleteInput || context?.invalidatedReason
-      || truncated || lengthLimited || hasBlockers || coverageVal === 'PARTIAL' || verdictVal !== 'READY' || deniedRequiredScope;
+    const shouldBlock =
+      !isCompleteEnvelope ||
+      !checks ||
+      failedChecks ||
+      wrongSnapshot ||
+      incompleteInput ||
+      context?.invalidatedReason ||
+      truncated ||
+      lengthLimited ||
+      hasBlockers ||
+      coverageVal === 'PARTIAL' ||
+      verdictVal !== 'READY' ||
+      deniedRequiredScope;
 
     if (shouldBlock) {
       // Every cause is reported: a blocked verdict without its causes gives the caller nothing to act on.
-      const checkList = (keep: (name: 'typecheck' | 'tests', value: string) => boolean) => checkValues
-        ? (['typecheck', 'tests'] as const).filter(name => keep(name, checkValues[name])).map(name => `${name}=${checkValues[name]}`).join(', ')
-        : '';
+      const checkList = (keep: (name: 'typecheck' | 'tests', value: string) => boolean) =>
+        checkValues
+          ? (['typecheck', 'tests'] as const)
+              .filter(name => keep(name, checkValues[name]))
+              .map(name => `${name}=${checkValues[name]}`)
+              .join(', ')
+          : '';
       const reasons: string[] = [];
       if (hasBlockers) reasons.push('Blocker issue [P1/P2] reported');
       if (deniedRequiredScope) {
         if (policyBlocked) reasons.push('Tool execution was blocked by policy');
         if (pathlessDenials.length > 0) reasons.push(`Tool execution access was denied: ${pathlessDenials.join(', ')}`);
-        if (deniedRequiredFiles.length > 0) reasons.push(`Filesystem access to required review scope was denied: ${deniedRequiredFiles.join(', ')}`);
+        if (deniedRequiredFiles.length > 0)
+          reasons.push(`Filesystem access to required review scope was denied: ${deniedRequiredFiles.join(', ')}`);
       }
       if (coverageVal === 'PARTIAL') reasons.push('Review coverage is partial');
       if (truncated) reasons.push('Output was truncated');
@@ -270,9 +307,11 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       if (isEnveloped && !checks) reasons.push('Invalid CHECKS outcomes');
       if (failedChecks) reasons.push(`A reported check failed (${checkList((_, value) => value === 'FAIL')})`);
       if (verdictVal === 'BLOCKED' && !hasBlockers) {
-        reasons.push(blockedVal
-          ? `Reviewer reported BLOCKED: ${blockedVal.slice(0, MAX_BLOCKED_REASON_CHARS)}`
-          : 'Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason');
+        reasons.push(
+          blockedVal
+            ? `Reviewer reported BLOCKED: ${blockedVal.slice(0, MAX_BLOCKED_REASON_CHARS)}`
+            : 'Reviewer reported BLOCKED without a [P1/P2] finding or a Blocked reason',
+        );
       }
       // The answer still reads READY; the caller must see that the server overrides it.
       if (verdictVal === 'READY' && verdictCount === 1 && !hasBogusVerdict) reasons.push('the reviewer answered READY');
@@ -289,8 +328,13 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
       ...(notRunChecks.length ? [`${notRunChecks.join(' and ')} not run`] : []),
       ...(binaries ? [`${binaries} binary ${binaries === 1 ? 'file' : 'files'} not reviewed`] : []),
     ];
-    return { verdict: 'READY', judged, ...(coverageVal ? { coverage: coverageVal } : {}), ...(appendTerminator ? { appendTerminator } : {}),
-      ...(caveats.length ? { reason: caveats.join('; ') } : {}) };
+    return {
+      verdict: 'READY',
+      judged,
+      ...(coverageVal ? { coverage: coverageVal } : {}),
+      ...(appendTerminator ? { appendTerminator } : {}),
+      ...(caveats.length ? { reason: caveats.join('; ') } : {}),
+    };
   }
 
   return { verdict: 'NOT_APPLICABLE' };
@@ -301,7 +345,10 @@ export function evaluateStateEnvelopeGate(output: string, truncated: boolean, re
  * @param output - The reviewer's text after redaction.
  * @param evaluation - The gate's evaluation of that text.
  */
-export function appendEnvelopeTerminator(output: string, evaluation: Pick<StateEnvelopeEvaluation, 'appendTerminator'> | undefined): string {
+export function appendEnvelopeTerminator(
+  output: string,
+  evaluation: Pick<StateEnvelopeEvaluation, 'appendTerminator'> | undefined,
+): string {
   return evaluation?.appendTerminator ? `${output.replace(/\s+$/, '')}\nEND_REVIEW` : output;
 }
 
@@ -321,4 +368,3 @@ export function alignEnvelopeReviewTurn(output: string, turn: number): string {
   if (turn <= 0 || !Number.isFinite(turn)) return output;
   return output.replace(/^([^\S\r\n]*REVIEW:)[^\S\r\n]+\S.*$/im, `$1 ${Math.floor(turn)}`);
 }
-

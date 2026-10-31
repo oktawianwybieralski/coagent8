@@ -25,8 +25,12 @@ test('inProcessLocks queue entries are deterministically deleted upon lock relea
   assert.equal(inProcessLocks.has(path.resolve(resource1)), false);
 
   await Promise.all([
-    withFileLock(resource1, async () => { await new Promise(r => setTimeout(r, 20)); }),
-    withFileLock(resource2, async () => { await new Promise(r => setTimeout(r, 20)); }),
+    withFileLock(resource1, async () => {
+      await new Promise(r => setTimeout(r, 20));
+    }),
+    withFileLock(resource2, async () => {
+      await new Promise(r => setTimeout(r, 20));
+    }),
   ]);
   assert.equal(inProcessLocks.has(path.resolve(resource1)), false);
   assert.equal(inProcessLocks.has(path.resolve(resource2)), false);
@@ -38,37 +42,57 @@ test('timed out waiters in inProcessLocks queue preserve FIFO ordering for subse
 
   let acquiredA;
   let releaseA;
-  const startedA = new Promise(resolve => { acquiredA = resolve; });
-  const heldA = new Promise(resolve => { releaseA = resolve; });
+  const startedA = new Promise(resolve => {
+    acquiredA = resolve;
+  });
+  const heldA = new Promise(resolve => {
+    releaseA = resolve;
+  });
 
   // Waiter A owns the lease until the queued timeout is observed.
-  const pA = withFileLock(resource, async () => {
-    executionOrder.push('A-start');
-    acquiredA();
-    await heldA;
-    executionOrder.push('A-finish');
-    return 'A';
-  }, 1000);
+  const pA = withFileLock(
+    resource,
+    async () => {
+      executionOrder.push('A-start');
+      acquiredA();
+      await heldA;
+      executionOrder.push('A-finish');
+      return 'A';
+    },
+    1000,
+  );
 
   // Queue only after acquisition, independent of filesystem or scheduler speed.
   await startedA;
 
   // Waiter B: queues behind A but times out after 40ms
-  const pB = withFileLock(resource, async () => {
-    executionOrder.push('B');
-    return 'B';
-  }, 40).catch(err => {
+  const pB = withFileLock(
+    resource,
+    async () => {
+      executionOrder.push('B');
+      return 'B';
+    },
+    40,
+  ).catch(err => {
     executionOrder.push('B-timeout');
     return 'B-caught';
   });
 
   // Waiter C: queues behind B with generous 1000ms timeout
-  const pC = withFileLock(resource, async () => {
-    executionOrder.push('C');
-    return 'C';
-  }, 1000);
+  const pC = withFileLock(
+    resource,
+    async () => {
+      executionOrder.push('C');
+      return 'C';
+    },
+    1000,
+  );
 
-  try { await pB; } finally { releaseA(); }
+  try {
+    await pB;
+  } finally {
+    releaseA();
+  }
   const [resA, resB, resC] = await Promise.all([pA, pB, pC]);
 
   assert.equal(resA, 'A');
@@ -111,21 +135,39 @@ test('withFileLock handles concurrency with jittered exponential backoff', async
   await fsp.rm(tempDir, { recursive: true, force: true });
 });
 
-test('storage locks serialize actual competing Node processes (F09/F10)',async()=>{
-  const counter=path.join(tempDir,'multiprocess-counter');fs.writeFileSync(counter,'0');
-  const module=path.resolve(__dirname, '../..', 'src/storage/lock.ts');
-  const script=`const fs=require('node:fs/promises');const {withFileLock}=require(process.argv[1]);(async()=>{for(let i=0;i<8;i++)await withFileLock(process.argv[2],async()=>{const n=Number(await fs.readFile(process.argv[2],'utf8'));await new Promise(r=>setTimeout(r,2));await fs.writeFile(process.argv[2],String(n+1));});})().catch(e=>{console.error(e);process.exitCode=1;});`;
-  await Promise.all(Array.from({length:3},()=>new Promise((resolve,reject)=>{
-    const proc=spawn(process.execPath,['--require','tsx/cjs','-e',script,module,counter],{stdio:['ignore','ignore','pipe'],windowsHide:true});let error='';proc.stderr.on('data',d=>{error+=d;});proc.on('error',reject);proc.on('exit',code=>code===0?resolve():reject(new Error(error)));
-  })));
-  assert.equal(fs.readFileSync(counter,'utf8'),'24');
+test('storage locks serialize actual competing Node processes (F09/F10)', async () => {
+  const counter = path.join(tempDir, 'multiprocess-counter');
+  fs.writeFileSync(counter, '0');
+  const module = path.resolve(__dirname, '../..', 'src/storage/lock.ts');
+  const script = `const fs=require('node:fs/promises');const {withFileLock}=require(process.argv[1]);(async()=>{for(let i=0;i<8;i++)await withFileLock(process.argv[2],async()=>{const n=Number(await fs.readFile(process.argv[2],'utf8'));await new Promise(r=>setTimeout(r,2));await fs.writeFile(process.argv[2],String(n+1));});})().catch(e=>{console.error(e);process.exitCode=1;});`;
+  await Promise.all(
+    Array.from(
+      { length: 3 },
+      () =>
+        new Promise((resolve, reject) => {
+          const proc = spawn(process.execPath, ['--require', 'tsx/cjs', '-e', script, module, counter], {
+            stdio: ['ignore', 'ignore', 'pipe'],
+            windowsHide: true,
+          });
+          let error = '';
+          proc.stderr.on('data', d => {
+            error += d;
+          });
+          proc.on('error', reject);
+          proc.on('exit', code => (code === 0 ? resolve() : reject(new Error(error))));
+        }),
+    ),
+  );
+  assert.equal(fs.readFileSync(counter, 'utf8'), '24');
 });
 
 test('atomic lease lock serializes contender and recovers cleanly upon release', async () => {
   const resource = path.join(tempDir, 'atomic-lease-contention');
-  let releaseOwner, ownerEntered, contenderEntered = false;
-  const ownerGate = new Promise(r => releaseOwner = r);
-  const ownerReady = new Promise(r => ownerEntered = r);
+  let releaseOwner,
+    ownerEntered,
+    contenderEntered = false;
+  const ownerGate = new Promise(r => (releaseOwner = r));
+  const ownerReady = new Promise(r => (ownerEntered = r));
 
   const owner = withFileLock(resource, async () => {
     ownerEntered();
@@ -166,7 +208,10 @@ test('an empty lease left by a crash between open and write is reclaimed after i
   assert.equal(fs.existsSync(`${resource}.lease`), false);
   // A fresh unreadable lease may still be in creation by an older release: it is not taken.
   writeLease(resource, '', 0);
-  await assert.rejects(withFileLock(resource, async () => 'stolen', 300), /Timed out/);
+  await assert.rejects(
+    withFileLock(resource, async () => 'stolen', 300),
+    /Timed out/,
+  );
   fs.rmSync(`${resource}.lease`, { force: true });
 });
 
@@ -174,10 +219,16 @@ test('a lease not renewed for the maximum age is reclaimed even when its PID is 
   const resource = path.join(tempDir, 'reused-pid-lease');
   const token = 'dead-owner-token';
   writeLease(resource, JSON.stringify({ token, pid: process.pid, createdAt: Date.now() - 60000 }), 60000);
-  assert.equal(await withFileLock(resource, async () => JSON.parse(fs.readFileSync(`${resource}.lease`, 'utf8')).token !== token, 1000), true);
+  assert.equal(
+    await withFileLock(resource, async () => JSON.parse(fs.readFileSync(`${resource}.lease`, 'utf8')).token !== token, 1000),
+    true,
+  );
   // A renewed lease of a live PID is respected.
   writeLease(resource, JSON.stringify({ token, pid: process.pid, createdAt: Date.now() }), 0);
-  await assert.rejects(withFileLock(resource, async () => 'stolen', 300), /Timed out/);
+  await assert.rejects(
+    withFileLock(resource, async () => 'stolen', 300),
+    /Timed out/,
+  );
   fs.rmSync(`${resource}.lease`, { force: true });
 });
 
@@ -197,7 +248,11 @@ test('a lease is published complete: no contender ever reads an empty or partial
   const reader = (async () => {
     while (holding) {
       // Windows reports EPERM for a lease that is being deleted: no content is observed.
-      try { observed.push(fs.readFileSync(`${resource}.lease`, 'utf8')); } catch (err) { if (err.code !== 'ENOENT' && err.code !== 'EPERM') throw err; }
+      try {
+        observed.push(fs.readFileSync(`${resource}.lease`, 'utf8'));
+      } catch (err) {
+        if (err.code !== 'ENOENT' && err.code !== 'EPERM') throw err;
+      }
       await new Promise(resolve => setImmediate(resolve));
     }
   })();
@@ -212,7 +267,10 @@ test('a lock timeout is a typed LockTimeoutError, so callers can tell contention
   const resource = path.join(tempDir, 'typed-timeout');
   fs.writeFileSync(`${resource}.lease`, JSON.stringify({ token: 'live-owner', pid: process.pid, createdAt: Date.now() }));
   try {
-    await assert.rejects(withFileLock(resource, async () => {}, 50), err => err instanceof LockTimeoutError);
+    await assert.rejects(
+      withFileLock(resource, async () => {}, 50),
+      err => err instanceof LockTimeoutError,
+    );
   } finally {
     fs.rmSync(`${resource}.lease`, { force: true });
   }
@@ -230,10 +288,15 @@ test('a wait the budget bounds ends as budget expiry even when the budget clock 
   fs.writeFileSync(`${resource}.lease`, JSON.stringify({ token: 'live-owner', pid: process.pid, createdAt: Date.now() }));
   try {
     assert.equal(budget.remainingExecutionMs(), 30);
-    await assert.rejects(withFileLock(resource, async () => {}, { timeoutMs: 5000, budget }),
-      err => err instanceof ToolError && err.code === 'TIMEOUT');
-    await assert.rejects(withFileLock(resource, async () => {}, { timeoutMs: 20, budget }),
-      err => err instanceof LockTimeoutError, 'a wait its own shorter timeout bounds is still contention');
+    await assert.rejects(
+      withFileLock(resource, async () => {}, { timeoutMs: 5000, budget }),
+      err => err instanceof ToolError && err.code === 'TIMEOUT',
+    );
+    await assert.rejects(
+      withFileLock(resource, async () => {}, { timeoutMs: 20, budget }),
+      err => err instanceof LockTimeoutError,
+      'a wait its own shorter timeout bounds is still contention',
+    );
   } finally {
     budget.dispose();
     fs.rmSync(`${resource}.lease`, { force: true });
@@ -246,38 +309,54 @@ test('aborting the middle of three in-process waiters does not strand the third 
 
   let acquiredA;
   let releaseA;
-  const startedA = new Promise(resolve => { acquiredA = resolve; });
-  const heldA = new Promise(resolve => { releaseA = resolve; });
+  const startedA = new Promise(resolve => {
+    acquiredA = resolve;
+  });
+  const heldA = new Promise(resolve => {
+    releaseA = resolve;
+  });
 
   const acB = new AbortController();
 
   // Waiter A: owns the lock until released
-  const pA = withFileLock(resource, async () => {
-    executionOrder.push('A-start');
-    acquiredA();
-    await heldA;
-    executionOrder.push('A-finish');
-    return 'A';
-  }, 2000);
+  const pA = withFileLock(
+    resource,
+    async () => {
+      executionOrder.push('A-start');
+      acquiredA();
+      await heldA;
+      executionOrder.push('A-finish');
+      return 'A';
+    },
+    2000,
+  );
 
   // Ensure Waiter A has actually acquired before queuing B and C
   await startedA;
 
   // Waiter B: queues behind A with an AbortSignal
-  const pB = withFileLock(resource, async () => {
-    executionOrder.push('B');
-    return 'B';
-  }, { abortSignal: acB.signal, timeoutMs: 2000 }).catch(err => {
+  const pB = withFileLock(
+    resource,
+    async () => {
+      executionOrder.push('B');
+      return 'B';
+    },
+    { abortSignal: acB.signal, timeoutMs: 2000 },
+  ).catch(err => {
     executionOrder.push('B-aborted');
     assert.ok(err instanceof ToolError && err.code === 'ABORTED', `Expected ToolError ABORTED, got: ${err}`);
     return 'B-caught';
   });
 
   // Waiter C: queues behind B with generous timeout
-  const pC = withFileLock(resource, async () => {
-    executionOrder.push('C');
-    return 'C';
-  }, 2000);
+  const pC = withFileLock(
+    resource,
+    async () => {
+      executionOrder.push('C');
+      return 'C';
+    },
+    2000,
+  );
 
   // Now abort Waiter B while Waiter A is still running
   acB.abort();
@@ -313,9 +392,13 @@ test('aborting during on-disk lease contention interrupts backoff immediately an
   const ac = new AbortController();
   const started = Date.now();
 
-  const contenderPromise = withFileLock(resource, async () => {
-    return 'contender-should-not-run';
-  }, { timeoutMs: 5000, abortSignal: ac.signal });
+  const contenderPromise = withFileLock(
+    resource,
+    async () => {
+      return 'contender-should-not-run';
+    },
+    { timeoutMs: 5000, abortSignal: ac.signal },
+  );
 
   // Wait a short moment to ensure contender is in the on-disk backoff loop
   await new Promise(r => setTimeout(r, 25));
@@ -348,14 +431,18 @@ test('pre-aborted signal rejects immediately without queueing or touching filesy
 
   let fnCalled = false;
   await assert.rejects(
-    withFileLock(resource, async () => {
-      fnCalled = true;
-    }, { abortSignal: ac.signal }),
+    withFileLock(
+      resource,
+      async () => {
+        fnCalled = true;
+      },
+      { abortSignal: ac.signal },
+    ),
     err => {
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
 
   assert.equal(fnCalled, false, 'fn must never be invoked');
@@ -377,7 +464,7 @@ test('withFileLock supports BackendReadContext and ExecutionBudget (EXEC-001-T09
 
   await assert.rejects(
     withFileLock(resource, async () => 'not-run', { context: contextWithAbortedParent }),
-    err => err instanceof ToolError && err.code === 'ABORTED'
+    err => err instanceof ToolError && err.code === 'ABORTED',
   );
 
   // 2. Direct AbortSignal argument polymorphism: withFileLock(resource, fn, abortSignal)
@@ -385,7 +472,7 @@ test('withFileLock supports BackendReadContext and ExecutionBudget (EXEC-001-T09
   directAc.abort();
   await assert.rejects(
     withFileLock(resource, async () => 'not-run', directAc.signal),
-    err => err instanceof ToolError && err.code === 'ABORTED'
+    err => err instanceof ToolError && err.code === 'ABORTED',
   );
 
   // 3. Context passed directly as 3rd parameter: withFileLock(resource, fn, context)
@@ -395,7 +482,7 @@ test('withFileLock supports BackendReadContext and ExecutionBudget (EXEC-001-T09
   };
   await assert.rejects(
     withFileLock(resource, async () => 'not-run', directCtx),
-    err => err instanceof ToolError && err.code === 'ABORTED'
+    err => err instanceof ToolError && err.code === 'ABORTED',
   );
 });
 
@@ -412,21 +499,18 @@ test('distinguishes contention LockTimeoutError from cancellation ToolError(ABOR
         assert.ok(err instanceof LockTimeoutError);
         assert.equal(err.name, 'LockTimeoutError');
         return true;
-      }
+      },
     );
 
     // 2. Abort throws ToolError with code ABORTED
     const ac = new AbortController();
     const abortP = withFileLock(resource, async () => 'not-run', { timeoutMs: 2000, abortSignal: ac.signal });
     ac.abort();
-    await assert.rejects(
-      abortP,
-      err => {
-        assert.ok(err instanceof ToolError);
-        assert.equal(err.code, 'ABORTED');
-        return true;
-      }
-    );
+    await assert.rejects(abortP, err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'ABORTED');
+      return true;
+    });
   } finally {
     fs.rmSync(`${resource}.lease`, { force: true });
   }
@@ -465,8 +549,12 @@ test('cross-process contention: cancelling a contender never corrupts or release
   let childExitCode = null;
   let childSpawnError = null;
 
-  child.stderr.on('data', d => { childStderr += d; });
-  child.on('error', err => { childSpawnError = err; });
+  child.stderr.on('data', d => {
+    childStderr += d;
+  });
+  child.on('error', err => {
+    childSpawnError = err;
+  });
   child.on('exit', code => {
     childExited = true;
     childExitCode = code;

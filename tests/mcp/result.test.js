@@ -17,8 +17,21 @@ const { readResult } = require('../helpers/result.cjs');
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
 test('response formatting has no cooldown/storage writes and carries execution-owned warnings', async () => {
-  const formatted = await formatExecutionResult('codex', { status: 'failed', isError: true, output: '', error: { code: 'RATE_LIMITED', message: 'synthetic limit', retryable: true }, truncated: false, continuationAvailable: false }, '', null,
-    { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, { warnings: ['token=synthetic-secret'] });
+  const formatted = await formatExecutionResult(
+    'codex',
+    {
+      status: 'failed',
+      isError: true,
+      output: '',
+      error: { code: 'RATE_LIMITED', message: 'synthetic limit', retryable: true },
+      truncated: false,
+      continuationAvailable: false,
+    },
+    '',
+    null,
+    { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false },
+    { warnings: ['token=synthetic-secret'] },
+  );
   assert.deepEqual(fs.readdirSync(tempDir), []);
   assert.ok(readResult(formatted).warnings[0].includes('REDACTED'));
 });
@@ -46,36 +59,78 @@ test('formatExecutionResult enforces strict No-Emoji standard and a framed foote
   const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
   assert.ok(!emojiRegex.test(text), `Output should not contain any emojis: ${text}`);
 
-  assert.equal(text, '```plaintext\nSystem analysis successful.\n```\n\n```plaintext\nCoAgent8: codex - gpt-6.1-sol - 4.5s - 3 ops - session_handle=syn_sess_1234567890abcdef (turn 2, ready)\n```', 'answer and footer each in a plaintext frame');
+  assert.equal(
+    text,
+    '```plaintext\nSystem analysis successful.\n```\n\n```plaintext\nCoAgent8: codex - gpt-6.1-sol - 4.5s - 3 ops - session_handle=syn_sess_1234567890abcdef (turn 2, ready)\n```',
+    'answer and footer each in a plaintext frame',
+  );
   assert.deepEqual(Object.keys(formatted), ['isError', 'content'], 'markdown is the only channel');
 });
 
 test('formatExecutionResult omits a zero operation count and the first turn, and keeps footer lines apart', async () => {
-  const formatted = await formatExecutionResult('claude', {
-    status: 'completed', isError: false, output: 'answer', model: 'claude-haiku-4-5-20251001',
-    truncated: true, continuationAvailable: true,
-  }, '', 'syn_sess_first', { turn: 1, toolCount: 0, durationMs: 7500, historyAvailable: true }, { warnings: ['slow backend'] });
-  assert.ok(formatted.content[0].text.endsWith([
-    '```plaintext',
-    'CoAgent8: claude - claude-haiku-4-5-20251001 - 7.5s - session_handle=syn_sess_first (ready)',
-    'Notice: Output reached buffer limit.',
-    'Warning: slow backend',
-    '```',
-  ].join('\n')), 'each footer field is its own line');
+  const formatted = await formatExecutionResult(
+    'claude',
+    {
+      status: 'completed',
+      isError: false,
+      output: 'answer',
+      model: 'claude-haiku-4-5-20251001',
+      truncated: true,
+      continuationAvailable: true,
+    },
+    '',
+    'syn_sess_first',
+    { turn: 1, toolCount: 0, durationMs: 7500, historyAvailable: true },
+    { warnings: ['slow backend'] },
+  );
+  assert.ok(
+    formatted.content[0].text.endsWith(
+      [
+        '```plaintext',
+        'CoAgent8: claude - claude-haiku-4-5-20251001 - 7.5s - session_handle=syn_sess_first (ready)',
+        'Notice: Output reached buffer limit.',
+        'Warning: slow backend',
+        '```',
+      ].join('\n'),
+    ),
+    'each footer field is its own line',
+  );
 });
 
 test('AX-007b: the footer labels the continuation handle and the bare legacy form still parses', async () => {
-  const formatted = await formatExecutionResult('codex', {
-    status: 'completed', isError: false, output: 'answer', truncated: false, continuationAvailable: true,
-  }, '', 'syn_sess_labelled', { turn: 3, toolCount: 0, durationMs: 1000, historyAvailable: true });
+  const formatted = await formatExecutionResult(
+    'codex',
+    {
+      status: 'completed',
+      isError: false,
+      output: 'answer',
+      truncated: false,
+      continuationAvailable: true,
+    },
+    '',
+    'syn_sess_labelled',
+    { turn: 3, toolCount: 0, durationMs: 1000, historyAvailable: true },
+  );
   const footer = formatted.content[0].text.split('\n').find(line => line.startsWith('CoAgent8: '));
-  assert.equal(footer, 'CoAgent8: codex - provider default - 1.0s - session_handle=syn_sess_labelled (turn 3, ready)', 'no new footer line');
+  assert.equal(
+    footer,
+    'CoAgent8: codex - provider default - 1.0s - session_handle=syn_sess_labelled (turn 3, ready)',
+    'no new footer line',
+  );
   assert.equal(formatted.content[0].text.match(/syn_sess_labelled/g).length, 1, 'the handle appears once');
   const labelled = readResult(formatted);
   assert.equal(labelled.sessionHandle, 'syn_sess_labelled');
   assert.equal(labelled.turn, 3);
   assert.equal(labelled.state, 'ready');
-  const legacy = readResult({ isError: false, content: [{ type: 'text', text: '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: codex - provider default - 1.0s - syn_sess_legacy (finished)\n```' }] });
+  const legacy = readResult({
+    isError: false,
+    content: [
+      {
+        type: 'text',
+        text: '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: codex - provider default - 1.0s - syn_sess_legacy (finished)\n```',
+      },
+    ],
+  });
   assert.equal(legacy.sessionHandle, 'syn_sess_legacy');
   assert.equal(legacy.state, 'finished');
 });
@@ -105,7 +160,10 @@ test('error formatting states the error first without warning emojis', async () 
   const text = formatted.content[0].text;
   const emojiRegex = /[\u2300-\u23FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/;
   assert.ok(!emojiRegex.test(text), `Error output should not contain any emojis: ${text}`);
-  assert.ok(text.startsWith('Error [RATE_LIMITED, retryable]: Provider quota exhausted.'), 'the error line says the same request may succeed later');
+  assert.ok(
+    text.startsWith('Error [RATE_LIMITED, retryable]: Provider quota exhausted.'),
+    'the error line says the same request may succeed later',
+  );
 });
 
 test('formatExecutionResult appends issue reporting link strictly on fatal unrecoverable system errors', async () => {
@@ -122,10 +180,14 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     },
     '',
     null,
-    { turn: 1, toolCount: 0, durationMs: 100, historyAvailable: false }
+    { turn: 1, toolCount: 0, durationMs: 100, historyAvailable: false },
   );
   const textProcessErr = resProcessErr.content[0].text;
-  assert.ok(textProcessErr.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml (the issue tool prepares the sanitized report to paste)'));
+  assert.ok(
+    textProcessErr.includes(
+      'Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml (the issue tool prepares the sanitized report to paste)',
+    ),
+  );
   assert.ok(textProcessErr.includes('PROCESS_ERROR'));
 
   // 2. Fatal CLI_UNSUPPORTED
@@ -141,7 +203,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     },
     '',
     null,
-    { turn: 1, toolCount: 0, durationMs: 50, historyAvailable: false }
+    { turn: 1, toolCount: 0, durationMs: 50, historyAvailable: false },
   );
   assert.ok(resCliErr.content[0].text.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?'));
 
@@ -158,7 +220,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     },
     '',
     null,
-    { turn: 1, toolCount: 0, durationMs: 80, historyAvailable: false }
+    { turn: 1, toolCount: 0, durationMs: 80, historyAvailable: false },
   );
   assert.ok(resProtoErr.content[0].text.includes('Report this issue: https://github.com/oktawianwybieralski/coagent8/issues/new?'));
 
@@ -175,7 +237,7 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     },
     '',
     null,
-    { turn: 1, toolCount: 0, durationMs: 30, historyAvailable: false }
+    { turn: 1, toolCount: 0, durationMs: 30, historyAvailable: false },
   );
   assert.ok(!resRateLimited.content[0].text.includes('Report this issue:'));
 
@@ -192,27 +254,45 @@ test('formatExecutionResult appends issue reporting link strictly on fatal unrec
     },
     '',
     null,
-    { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false }
+    { turn: 1, toolCount: 0, durationMs: 10, historyAvailable: false },
   );
   assert.ok(!resAborted.content[0].text.includes('Report this issue:'));
 });
 
 test('withWorkspace adds a line only for the server-directory fallback', () => {
   const { withWorkspace } = require('../../src/mcp/result.ts');
-  const base = { isError: false, content: [{ type: 'text', text: '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: agy - m - 0.0s\n```' }] };
+  const base = {
+    isError: false,
+    content: [{ type: 'text', text: '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: agy - m - 0.0s\n```' }],
+  };
   assert.equal(withWorkspace(base, { path: tempDir, source: 'client_root' }), base, 'a client root costs no text');
   assert.equal(withWorkspace(base, { path: tempDir, source: 'argument' }), base, 'an explicit path costs no text');
   const fallback = withWorkspace(base, { path: tempDir, source: 'server_directory' });
-  assert.match(fallback.content[0].text, /\n\n```plaintext\nCoAgent8: agy - m - 0\.0s\nWorkspace: .+ \(server directory\)\n```$/, 'the note is a line of the framed footer');
+  assert.match(
+    fallback.content[0].text,
+    /\n\n```plaintext\nCoAgent8: agy - m - 0\.0s\nWorkspace: .+ \(server directory\)\n```$/,
+    'the note is a line of the framed footer',
+  );
   assert.ok(fallback.content[0].text.startsWith('```plaintext\nanswer\n```\n\n'), 'the answer frame is unchanged');
 });
 
 test('CONTEXT-001: an execution result is text only and its footer carries every field a caller acts on', async () => {
   const meta = { turn: 2, toolCount: 1, durationMs: 1200, historyAvailable: false };
-  const review = await formatExecutionResult('claude', {
-    status: 'completed', isError: false, output: 'Summary without an envelope.', model: 'claude-haiku-4-5-20251001',
-    truncated: false, continuationAvailable: true,
-  }, '', 'syn_sess_review', meta, { requireEnvelope: true });
+  const review = await formatExecutionResult(
+    'claude',
+    {
+      status: 'completed',
+      isError: false,
+      output: 'Summary without an envelope.',
+      model: 'claude-haiku-4-5-20251001',
+      truncated: false,
+      continuationAvailable: true,
+    },
+    '',
+    'syn_sess_review',
+    meta,
+    { requireEnvelope: true },
+  );
   assert.equal(review.structuredContent, undefined, 'Claude Code would show the model only structuredContent');
   const read = readResult(review);
   assert.equal(read.provider, 'claude');
@@ -226,17 +306,42 @@ test('CONTEXT-001: an execution result is text only and its footer carries every
   assert.equal(read.verdict, 'BLOCKED', 'the gate verdict is in the footer, not only in the answer');
   assert.ok(read.reason, 'a blocked verdict states its reason');
 
-  const failed = readResult(await formatExecutionResult('codex', {
-    status: 'failed', isError: true, output: '', error: { code: 'AUTH_REQUIRED', message: 'Sign in to Codex.', retryable: false },
-    truncated: false, continuationAvailable: false,
-  }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false }, { requireEnvelope: true }));
+  const failed = readResult(
+    await formatExecutionResult(
+      'codex',
+      {
+        status: 'failed',
+        isError: true,
+        output: '',
+        error: { code: 'AUTH_REQUIRED', message: 'Sign in to Codex.', retryable: false },
+        truncated: false,
+        continuationAvailable: false,
+      },
+      '',
+      null,
+      { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: false },
+      { requireEnvelope: true },
+    ),
+  );
   assert.deepEqual(failed.error, { code: 'AUTH_REQUIRED', retryable: false, message: 'Sign in to Codex.' });
   assert.equal(failed.verdict, 'BLOCKED');
   assert.equal(failed.reason, null, 'the error line already states why');
 
-  const consult = readResult(await formatExecutionResult('agy', {
-    status: 'completed', isError: false, output: 'answer', truncated: false, continuationAvailable: false,
-  }, '', null, { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }));
+  const consult = readResult(
+    await formatExecutionResult(
+      'agy',
+      {
+        status: 'completed',
+        isError: false,
+        output: 'answer',
+        truncated: false,
+        continuationAvailable: false,
+      },
+      '',
+      null,
+      { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true },
+    ),
+  );
   assert.equal(consult.verdict, 'NOT_APPLICABLE', 'consult has no verdict line');
   assert.equal(consult.model, 'provider default');
   assert.equal(consult.text, '```plaintext\nanswer\n```\n\n```plaintext\nCoAgent8: agy - provider default - 0.0s\n```');
@@ -244,12 +349,22 @@ test('CONTEXT-001: an execution result is text only and its footer carries every
 
 test('a Codex client gets raw lines, which it frames itself; other clients get plaintext frames', () => {
   const { setResultStyle, withWorkspace } = require('../../src/mcp/result.ts');
-  const run = () => formatExecutionResult('agy', { status: 'completed', isError: false, output: 'REVIEW: 1\nVERDICT: READY', truncated: false, continuationAvailable: false },
-    '', 'syn_sess_raw', { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true }, { warnings: ['multi\nline warning'] });
+  const run = () =>
+    formatExecutionResult(
+      'agy',
+      { status: 'completed', isError: false, output: 'REVIEW: 1\nVERDICT: READY', truncated: false, continuationAvailable: false },
+      '',
+      'syn_sess_raw',
+      { turn: 1, toolCount: 0, durationMs: 0, historyAvailable: true },
+      { warnings: ['multi\nline warning'] },
+    );
   try {
     setResultStyle('codex-mcp-client');
     const raw = withWorkspace(run(), { path: tempDir, source: 'server_directory' });
-    assert.match(raw.content[0].text, /^REVIEW: 1\nVERDICT: READY\n\nCoAgent8: agy - provider default - 0\.0s - session_handle=syn_sess_raw \(finished\)\nWarning: multi line warning\nWorkspace: .+ \(server directory\)$/);
+    assert.match(
+      raw.content[0].text,
+      /^REVIEW: 1\nVERDICT: READY\n\nCoAgent8: agy - provider default - 0\.0s - session_handle=syn_sess_raw \(finished\)\nWarning: multi line warning\nWorkspace: .+ \(server directory\)$/,
+    );
     assert.ok(!raw.content[0].text.includes('```'), 'no frame inside the frame Codex draws');
     const read = readResult(raw);
     assert.equal(read.style, 'raw');
@@ -259,17 +374,30 @@ test('a Codex client gets raw lines, which it frames itself; other clients get p
       setResultStyle(client);
       assert.equal(readResult(run()).style, 'framed', String(client));
     }
-  } finally { setResultStyle(undefined); }
+  } finally {
+    setResultStyle(undefined);
+  }
 });
 
 test('EXEC-001-T11c: formatExecutionResult retains plaintext frame structure and bounded footer lines across error states and metadata', async () => {
   const cases = [
     {
       meta: { turn: 1, toolCount: 0, durationMs: 0, totalMs: 0, historyAvailable: false },
-      error: { code: 'TIMEOUT', message: 'Execution deadline exceeded (900000 ms).\nDetailed stack trace and multiline error message', retryable: false },
+      error: {
+        code: 'TIMEOUT',
+        message: 'Execution deadline exceeded (900000 ms).\nDetailed stack trace and multiline error message',
+        retryable: false,
+      },
     },
     {
-      meta: { turn: 3, toolCount: 5, durationMs: 4567, totalMs: 4567, historyAvailable: true, phases: { preparation: 200, execution: 4000, finalization: 367 } },
+      meta: {
+        turn: 3,
+        toolCount: 5,
+        durationMs: 4567,
+        totalMs: 4567,
+        historyAvailable: true,
+        phases: { preparation: 200, execution: 4000, finalization: 367 },
+      },
       error: { code: 'ABORTED', message: 'User cancelled turn with newline\nand extra commentary', retryable: false },
     },
     {
@@ -295,7 +423,7 @@ test('EXEC-001-T11c: formatExecutionResult retains plaintext frame structure and
       meta,
       {
         warnings: ['Warning with\nline break', 'Another normal warning'],
-      }
+      },
     );
 
     const parsed = readResult(formatted);
@@ -323,10 +451,20 @@ test('EXEC-001-T11c: formatExecutionResult retains plaintext frame structure and
 });
 
 test('a refused call that started no turn does not claim its session has no history (FEEDBACK-060e)', async () => {
-  const refused = await formatExecutionResult('codex', {
-    status: 'failed', isError: true, output: '', truncated: false, continuationAvailable: false,
-    error: { code: 'SESSION_INVALID', message: 'Session is closed.', retryable: false },
-  }, '', 'syn_sess_closed', { turn: 0, toolCount: 0, durationMs: 0, historyAvailable: false });
+  const refused = await formatExecutionResult(
+    'codex',
+    {
+      status: 'failed',
+      isError: true,
+      output: '',
+      truncated: false,
+      continuationAvailable: false,
+      error: { code: 'SESSION_INVALID', message: 'Session is closed.', retryable: false },
+    },
+    '',
+    'syn_sess_closed',
+    { turn: 0, toolCount: 0, durationMs: 0, historyAvailable: false },
+  );
   const text = refused.content[0].text;
   assert.match(text, /session_handle=syn_sess_closed \(finished\)/);
   assert.doesNotMatch(text, /no history/);

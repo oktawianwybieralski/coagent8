@@ -52,7 +52,7 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
     'Do not commit, push, reset, stash, check out or switch branches, and do not change Git configuration or files outside the workspace; leave your changes in the working tree.',
     checks.length
       ? 'Run the checks below and fix failures your change causes.'
-      : 'Run the project\'s relevant tests or checks if there are any, and fix failures your change causes.',
+      : "Run the project's relevant tests or checks if there are any, and fix failures your change causes.",
     // agy writers may not run commands, and a sandbox can deny one (DELEGATE-001w).
     'If a command is denied or cannot start, do not work around the restriction: report that check as NOT_RUN; the calling agent runs it.',
     'End with a short report: the files you changed and why, each check with PASS, FAIL or NOT_RUN, and anything left undone.',
@@ -60,7 +60,9 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
     task,
     checks.length ? 'CHECKS:' : '',
     ...checks.map(check => `- ${check}`),
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -72,23 +74,37 @@ export async function handleDelegate(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent' | 'budget' | 'context' | 'clock' | 'warnings'> = {}
+  options: Pick<TaskOptions, 'askConsent' | 'budget' | 'context' | 'clock' | 'warnings'> = {},
 ) {
   const task = typeof args.task === 'string' ? args.task.trim() : '';
   if (!task) throw new ToolError('INPUT_LIMIT', 'task is required.');
   const scope = list(args.scope, 'scope').map(entry => {
     const normalized = normalizeScopeEntry(entry);
-    if (normalized === null) throw new ToolError('INPUT_LIMIT', `Scope entry '${entry.slice(0, 120)}' is absolute or leaves the workspace.`);
+    if (normalized === null)
+      throw new ToolError('INPUT_LIMIT', `Scope entry '${entry.slice(0, 120)}' is absolute or leaves the workspace.`);
     return normalized;
   });
   const checks = list(args.checks, 'checks');
   const wholeWorkspace = scope.includes('');
   const effectiveScope = wholeWorkspace ? [] : scope;
   // History keeps what was asked: the task, its scope and its checks.
-  const publicInput = [task, effectiveScope.length ? `Scope: ${effectiveScope.join(', ')}` : '', checks.length ? `Checks: ${checks.join('; ')}` : '']
-    .filter(Boolean).join('\n');
+  const publicInput = [
+    task,
+    effectiveScope.length ? `Scope: ${effectiveScope.join(', ')}` : '',
+    checks.length ? `Checks: ${checks.join('; ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
   const { scope: _scope, checks: _checks, task: _task, ...request } = args;
-  const outcome = await executeDelegation(delegatePrompt(task, effectiveScope, checks), publicInput, request, workspaceCwd, effectiveScope,
-    abortSignal, onProgress, { requireEnvelope: false, ...options });
+  const outcome = await executeDelegation(
+    delegatePrompt(task, effectiveScope, checks),
+    publicInput,
+    request,
+    workspaceCwd,
+    effectiveScope,
+    abortSignal,
+    onProgress,
+    { requireEnvelope: false, ...options },
+  );
   return formatExecutionResult(outcome);
 }

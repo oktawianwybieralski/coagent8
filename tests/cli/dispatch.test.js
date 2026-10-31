@@ -63,12 +63,24 @@ function createHarness({ stdinTTY = false, stdoutTTY = false } = {}) {
   return {
     streams: { stdin, stdout, stderr },
     deps,
-    get servedStdio() { return servedStdio; },
-    get setupLoaded() { return setupLoaded; },
-    get modelsRan() { return modelsRan; },
-    get doctorRan() { return doctorRan; },
-    get sessionRan() { return sessionRan; },
-    get issueRan() { return issueRan; },
+    get servedStdio() {
+      return servedStdio;
+    },
+    get setupLoaded() {
+      return setupLoaded;
+    },
+    get modelsRan() {
+      return modelsRan;
+    },
+    get doctorRan() {
+      return doctorRan;
+    },
+    get sessionRan() {
+      return sessionRan;
+    },
+    get issueRan() {
+      return issueRan;
+    },
     stdout,
     stderr,
   };
@@ -191,7 +203,10 @@ test('CLI-FIRST-001b1: unrecognized arguments on non-TTY emit stderr warning and
     assert.equal(code, 0, combo.label);
     assert.equal(harness.servedStdio, true, `servedStdio must be true for ${combo.label}`);
     assert.equal(harness.setupLoaded, false, `setupLoaded must be false for ${combo.label}`);
-    assert.match(harness.stderr.output, /Warning: unrecognized arguments \[legacy-host-arg, --extra\] ignored; starting legacy MCP stdio server\./);
+    assert.match(
+      harness.stderr.output,
+      /Warning: unrecognized arguments \[legacy-host-arg, --extra\] ignored; starting legacy MCP stdio server\./,
+    );
   }
 });
 
@@ -315,11 +330,15 @@ test('CLI-FIRST-001b1/001c/001e: subprocess execution verifies clean exits and s
   assert.match(doctorRes.stdout, /^CoAgent8 models - /);
 
   // 8. doctor --scope health --json subprocess
-  const doctorHealthJsonRes = spawnSync(process.execPath, ['--require', 'tsx/cjs', indexPath, 'doctor', '--scope=health', '--backend=codex', '--json'], {
-    env: childEnv,
-    encoding: 'utf8',
-    windowsHide: true,
-  });
+  const doctorHealthJsonRes = spawnSync(
+    process.execPath,
+    ['--require', 'tsx/cjs', indexPath, 'doctor', '--scope=health', '--backend=codex', '--json'],
+    {
+      env: childEnv,
+      encoding: 'utf8',
+      windowsHide: true,
+    },
+  );
   assert.equal(doctorHealthJsonRes.status, 0);
   const doctorHealthJson = JSON.parse(doctorHealthJsonRes.stdout);
   assert.ok(doctorHealthJson.status);
@@ -353,12 +372,19 @@ test('CLI-FIRST-001b1: sensitive flag-value pairs are redacted in fallback warni
   assert.ok(!harness.stderr.output.includes('secret-tok-123'));
   // Hyphen-prefixed sensitive values must also be redacted
   const hyphenHarness = createHarness({ stdinTTY: false, stdoutTTY: false });
-  const hyphenCode = await runCli(['--password', '-private-value', '--api-key', '--secret-flag-val'], hyphenHarness.streams, hyphenHarness.deps);
+  const hyphenCode = await runCli(
+    ['--password', '-private-value', '--api-key', '--secret-flag-val'],
+    hyphenHarness.streams,
+    hyphenHarness.deps,
+  );
   assert.equal(hyphenCode, 0);
   assert.equal(hyphenHarness.servedStdio, true);
   assert.ok(!hyphenHarness.stderr.output.includes('-private-value'));
   assert.ok(!hyphenHarness.stderr.output.includes('--secret-flag-val'));
-  assert.match(hyphenHarness.stderr.output, /Warning: unrecognized arguments \[--password, \*\*\*\[REDACTED\]\*\*\*, --api-key, \*\*\*\[REDACTED\]\*\*\*\] ignored/);
+  assert.match(
+    hyphenHarness.stderr.output,
+    /Warning: unrecognized arguments \[--password, \*\*\*\[REDACTED\]\*\*\*, --api-key, \*\*\*\[REDACTED\]\*\*\*\] ignored/,
+  );
 
   // Adjacent sensitive flags must preserve flag detection and redact subsequent values
   const adjacentHarness = createHarness({ stdinTTY: false, stdoutTTY: false });

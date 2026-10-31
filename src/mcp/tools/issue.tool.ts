@@ -32,7 +32,8 @@ export const issueOutputSchema = {
 
 export const issueToolDefinition = {
   name: CANONICAL_TOOL_NAMES.ISSUE,
-  description: 'Sanitized bug report with GitHub link. Be concise and actionable: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them. Keep issueUrl verbatim; do not decode or re-escape it.',
+  description:
+    'Sanitized bug report with GitHub link. Be concise and actionable: reproduction steps, expected/actual behavior, impact, sanitized telemetry (tool/backend/model, CLI versions, errors, timing, scope/check evidence). Mark unknown facts; never invent them. Keep issueUrl verbatim; do not decode or re-escape it.',
   outputSchema: issueOutputSchema,
   inputSchema: {
     type: 'object',
@@ -81,4 +82,3 @@ export async function handleIssue(args: IssueToolArgs = {}) {
     },
   };
 }
-

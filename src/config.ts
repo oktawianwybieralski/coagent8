@@ -157,9 +157,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
   let defaultBackend = config.defaultBackend;
   if (defaultBackend !== null && defaultBackend !== undefined) {
     if (typeof defaultBackend !== 'string' || !VALID_BACKENDS.includes(defaultBackend.toLowerCase() as BackendId)) {
-      throw new Error(
-        `Configuration Error: Invalid defaultBackend: '${defaultBackend}'. Supported: ${VALID_BACKENDS.join(', ')} or null.`
-      );
+      throw new Error(`Configuration Error: Invalid defaultBackend: '${defaultBackend}'. Supported: ${VALID_BACKENDS.join(', ')} or null.`);
     }
     defaultBackend = defaultBackend.toLowerCase() as BackendId;
   } else {
@@ -178,24 +176,18 @@ export function validateConfig(value: unknown): CoAgent8Config {
 
     if (fields.strategy !== undefined) {
       if (typeof fields.strategy !== 'string' || !VALID_STRATEGIES.includes(fields.strategy as RoutingStrategy)) {
-        throw new Error(
-          `Configuration Error: Invalid routing strategy. Supported: ${VALID_STRATEGIES.join(', ')}`
-        );
+        throw new Error(`Configuration Error: Invalid routing strategy. Supported: ${VALID_STRATEGIES.join(', ')}`);
       }
       strategy = fields.strategy as RoutingStrategy;
     }
 
     if (fields.allowedBackends !== undefined) {
       if (!Array.isArray(fields.allowedBackends)) {
-        throw new Error(
-          'Configuration Error: Invalid allowedBackends: expected an array of strings.'
-        );
+        throw new Error('Configuration Error: Invalid allowedBackends: expected an array of strings.');
       }
       for (const b of fields.allowedBackends) {
         if (typeof b !== 'string' || !['codex', 'claude', 'agy'].includes(b.toLowerCase())) {
-          throw new Error(
-            `Configuration Error: Invalid entry in allowedBackends: '${b}'. Supported: 'codex', 'claude', 'agy'.`
-          );
+          throw new Error(`Configuration Error: Invalid entry in allowedBackends: '${b}'. Supported: 'codex', 'claude', 'agy'.`);
         }
       }
       allowedBackends = fields.allowedBackends.map((b: string) => b.toLowerCase() as Exclude<BackendId, 'smart_quota'>);
@@ -219,19 +211,33 @@ export function validateConfig(value: unknown): CoAgent8Config {
         throw new Error(`Configuration Error: backends.${id}.defaultModel is not a valid model identifier.`);
       }
       if (executable !== undefined && !isValidExecutable(executable)) {
-        throw new Error(`Configuration Error: backends.${id}.executable must be an absolute path, a path starting with ~/, or "vscode-extension".`);
+        throw new Error(
+          `Configuration Error: backends.${id}.executable must be an absolute path, a path starting with ~/, or "vscode-extension".`,
+        );
       }
       let selection: SkillSelection | undefined;
       if (skills !== undefined) {
-        if (!skills || typeof skills !== 'object' || Array.isArray(skills)) throw new Error(`Configuration Error: backends.${id}.skills must be an object.`);
+        if (!skills || typeof skills !== 'object' || Array.isArray(skills))
+          throw new Error(`Configuration Error: backends.${id}.skills must be an object.`);
         const fields = skills as Record<string, unknown>;
-        if (Object.keys(fields).some(key => !['installed', 'disabled'].includes(key))) throw new Error(`Configuration Error: backends.${id}.skills has unknown fields.`);
-        const valid = (list: unknown): list is string[] => Array.isArray(list) && list.length <= 64 && list.every(name => typeof name === 'string' && COAGENT_SKILL_NAME.test(name)) && new Set(list).size === list.length;
-        const installed = fields.installed, disabled = fields.disabled;
-        if (!valid(installed) || !valid(disabled) || disabled.some(name => !installed.includes(name))) throw new Error(`Configuration Error: backends.${id}.skills requires unique installed names and a disabled subset.`);
+        if (Object.keys(fields).some(key => !['installed', 'disabled'].includes(key)))
+          throw new Error(`Configuration Error: backends.${id}.skills has unknown fields.`);
+        const valid = (list: unknown): list is string[] =>
+          Array.isArray(list) &&
+          list.length <= 64 &&
+          list.every(name => typeof name === 'string' && COAGENT_SKILL_NAME.test(name)) &&
+          new Set(list).size === list.length;
+        const installed = fields.installed,
+          disabled = fields.disabled;
+        if (!valid(installed) || !valid(disabled) || disabled.some(name => !installed.includes(name)))
+          throw new Error(`Configuration Error: backends.${id}.skills requires unique installed names and a disabled subset.`);
         selection = { installed: [...installed].sort(), disabled: [...disabled].sort() };
       }
-      backends[id as ProviderId] = { ...(defaultModel === undefined ? {} : { defaultModel: defaultModel as string }), ...(executable === undefined ? {} : { executable: executable as string }), ...(selection === undefined ? {} : { skills: selection }) };
+      backends[id as ProviderId] = {
+        ...(defaultModel === undefined ? {} : { defaultModel: defaultModel as string }),
+        ...(executable === undefined ? {} : { executable: executable as string }),
+        ...(selection === undefined ? {} : { skills: selection }),
+      };
     }
   }
 
@@ -248,7 +254,10 @@ export function validateConfig(value: unknown): CoAgent8Config {
       governance.priceMultiplier = fields.priceMultiplier;
     }
     if (fields.askAbovePrice !== undefined) {
-      if (fields.askAbovePrice !== null && (typeof fields.askAbovePrice !== 'number' || !Number.isFinite(fields.askAbovePrice) || fields.askAbovePrice < 0)) {
+      if (
+        fields.askAbovePrice !== null &&
+        (typeof fields.askAbovePrice !== 'number' || !Number.isFinite(fields.askAbovePrice) || fields.askAbovePrice < 0)
+      ) {
         throw new Error('Configuration Error: governance.askAbovePrice must be a price in USD per million output tokens, or null.');
       }
       governance.askAbovePrice = fields.askAbovePrice;
@@ -260,12 +269,15 @@ export function validateConfig(value: unknown): CoAgent8Config {
       const rules = fields.models as Record<string, unknown>;
       // A misspelt list would silently leave a model unrestricted, so it is rejected.
       const unknown = Object.keys(rules).filter(key => !(MODEL_RULES as readonly string[]).includes(key));
-      if (unknown.length) throw new Error(`Configuration Error: governance.models has unknown lists (${unknown.join(', ')}); supported: allow, ask, deny.`);
+      if (unknown.length)
+        throw new Error(`Configuration Error: governance.models has unknown lists (${unknown.join(', ')}); supported: allow, ask, deny.`);
       for (const rule of MODEL_RULES) {
         const value = rules[rule];
         if (value === undefined) continue;
         if (!Array.isArray(value) || value.length > MAX_GOVERNED_MODELS || !value.every(isValidModelIdentifier)) {
-          throw new Error(`Configuration Error: governance.models.${rule} must be a list of at most ${MAX_GOVERNED_MODELS} model identifiers.`);
+          throw new Error(
+            `Configuration Error: governance.models.${rule} must be a list of at most ${MAX_GOVERNED_MODELS} model identifiers.`,
+          );
         }
         governance.models[rule] = [...new Set(value)];
       }
@@ -289,8 +301,12 @@ export function validateConfig(value: unknown): CoAgent8Config {
 }
 
 function defaultConfig(): CoAgent8Config {
-  return { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] }, backends: {},
-    governance: { ...DEFAULT_CONFIG.governance, models: { allow: [], ask: [], deny: [] } } };
+  return {
+    ...DEFAULT_CONFIG,
+    routing: { ...DEFAULT_CONFIG.routing, allowedBackends: [...DEFAULT_CONFIG.routing.allowedBackends] },
+    backends: {},
+    governance: { ...DEFAULT_CONFIG.governance, models: { allow: [], ask: [], deny: [] } },
+  };
 }
 
 /**
@@ -303,20 +319,33 @@ function defaultConfig(): CoAgent8Config {
 function loadFileConfig(configFile = getConfigFile()): CoAgent8Config {
   if (!fs.existsSync(configFile)) return defaultConfig();
   const unusable = (reason: string, cause: unknown) =>
-    new ToolError('POLICY_DENIED', `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`, { cause });
+    new ToolError(
+      'POLICY_DENIED',
+      `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`,
+      { cause },
+    );
   let raw: string;
-  try { raw = readBoundedFileSync(configFile); }
-  catch (err) { throw unusable(`the file cannot be read: ${(err as Error).message}`, err); }
+  try {
+    raw = readBoundedFileSync(configFile);
+  } catch (err) {
+    throw unusable(`the file cannot be read: ${(err as Error).message}`, err);
+  }
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch (err) { throw unusable('Malformed JSON in the configuration file', err); }
-  try { return validateConfig(parsed); }
-  catch (err) { throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err); }
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw unusable('Malformed JSON in the configuration file', err);
+  }
+  try {
+    return validateConfig(parsed);
+  } catch (err) {
+    throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err);
+  }
 }
 
 function collectSources(
   rawFile: Record<string, unknown> | null,
-  editorSettings: Partial<Record<EditorSettingKey, unknown>>
+  editorSettings: Partial<Record<EditorSettingKey, unknown>>,
 ): Record<string, SettingSource> {
   const sources: Record<string, SettingSource> = {
     defaultBackend: 'default',
@@ -349,7 +378,7 @@ function collectSources(
       const g = rawFile.governance as Record<string, unknown>;
       if (g.priceMultiplier !== undefined) sources['governance.priceMultiplier'] = 'file';
       if (g.askAbovePrice !== undefined) sources['governance.askAbovePrice'] = 'file';
-      const rules = g.models && typeof g.models === 'object' && !Array.isArray(g.models) ? g.models as Record<string, unknown> : {};
+      const rules = g.models && typeof g.models === 'object' && !Array.isArray(g.models) ? (g.models as Record<string, unknown>) : {};
       for (const rule of MODEL_RULES) if (rules[rule] !== undefined) sources[`governance.models.${rule}`] = 'file';
     }
   }
@@ -403,27 +432,47 @@ export function loadConfigSnapshot(configFile = getConfigFile()): ConfigSnapshot
       // Best-effort stat
     }
     const unusable = (reason: string, cause: unknown) =>
-      new ToolError('POLICY_DENIED', `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`, { cause });
+      new ToolError(
+        'POLICY_DENIED',
+        `Configuration Error: ${reason} (${configFile}); fix or delete the file. Its routing policy cannot be applied until then.`,
+        { cause },
+      );
     let raw: string;
-    try { raw = readBoundedFileSync(configFile); }
-    catch (err) { throw unusable(`the file cannot be read: ${(err as Error).message}`, err); }
+    try {
+      raw = readBoundedFileSync(configFile);
+    } catch (err) {
+      throw unusable(`the file cannot be read: ${(err as Error).message}`, err);
+    }
     let parsed: unknown;
-    try { parsed = JSON.parse(raw); }
-    catch (err) { throw unusable('Malformed JSON in the configuration file', err); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      throw unusable('Malformed JSON in the configuration file', err);
+    }
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       parsedRaw = parsed as Record<string, unknown>;
     }
-    try { base = validateConfig(parsed); }
-    catch (err) { throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err); }
+    try {
+      base = validateConfig(parsed);
+    } catch (err) {
+      throw unusable((err as Error).message.replace(/^Configuration Error:\s*/, ''), err);
+    }
   } else {
     base = defaultConfig();
   }
 
   const unusableEditor = (reason: string, cause: unknown) =>
-    new ToolError('POLICY_DENIED', `Configuration Error: ${reason}; fix it in the VS Code user settings. Its routing policy cannot be applied until then.`, { cause });
+    new ToolError(
+      'POLICY_DENIED',
+      `Configuration Error: ${reason}; fix it in the VS Code user settings. Its routing policy cannot be applied until then.`,
+      { cause },
+    );
   let settings: Partial<Record<EditorSettingKey, unknown>>;
-  try { settings = readEditorSettings(); }
-  catch (err) { throw unusableEditor((err as Error).message, err); }
+  try {
+    settings = readEditorSettings();
+  } catch (err) {
+    throw unusableEditor((err as Error).message, err);
+  }
 
   const editorOverridesApplied = Object.keys(settings) as EditorSettingKey[];
   const combined = structuredClone(base) as unknown as Record<string, unknown>;
@@ -431,13 +480,19 @@ export function loadConfigSnapshot(configFile = getConfigFile()): ConfigSnapshot
     // Each setting is validated alone first, so the error names the one to fix.
     const single = structuredClone(base) as unknown as Record<string, unknown>;
     applyEditorSetting(single, key, value);
-    try { validateConfig(single); }
-    catch (err) { throw unusableEditor(`VS Code setting coagent8.${key}: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
+    try {
+      validateConfig(single);
+    } catch (err) {
+      throw unusableEditor(`VS Code setting coagent8.${key}: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err);
+    }
     applyEditorSetting(combined, key, value);
   }
   let effective: CoAgent8Config;
-  try { effective = validateConfig(combined); }
-  catch (err) { throw unusableEditor(`VS Code settings coagent8.*: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err); }
+  try {
+    effective = validateConfig(combined);
+  } catch (err) {
+    throw unusableEditor(`VS Code settings coagent8.*: ${(err as Error).message.replace(/^Configuration Error:\s*/, '')}`, err);
+  }
 
   const sources = collectSources(parsedRaw, settings);
   const provenance: ConfigProvenance = {
@@ -488,7 +543,11 @@ export function loadConfigSnapshotForDiagnostics(configFile = getConfigFile()): 
       const fileExisted = fs.existsSync(configFile);
       const effective = defaultConfig();
       let editorSettings: Partial<Record<EditorSettingKey, unknown>> = {};
-      try { editorSettings = readEditorSettings(); } catch { /* ignore for fallback */ }
+      try {
+        editorSettings = readEditorSettings();
+      } catch {
+        /* ignore for fallback */
+      }
       const editorOverridesAttempted = Object.keys(editorSettings) as EditorSettingKey[];
       const sources = collectSources(null, {});
       const provenance: ConfigProvenance = {
@@ -569,38 +628,42 @@ const REMEMBER_ABORTED_MESSAGE = 'Request cancelled before recording remembered 
  * @throws `ToolError` on invalid model identifier, cancellation, or expired budget.
  * @throws When the configuration cannot be locked, read, validated or written.
  */
-export async function rememberApprovedModel(
-  model: string,
-  options?: FileLockOptions | BackendReadContext | AbortSignal
-): Promise<boolean> {
+export async function rememberApprovedModel(model: string, options?: FileLockOptions | BackendReadContext | AbortSignal): Promise<boolean> {
   if (!isValidModelIdentifier(model)) {
     throw new ToolError('INPUT_LIMIT', `Invalid model identifier: '${redactDiagnostic(model, 64)}'`);
   }
   ensureConfigDir();
-  return withFileLock(getConfigFile(), async () => {
-    if (isAbortSignal(options)) {
-      if (options.aborted) {
-        throw new ToolError('ABORTED', REMEMBER_ABORTED_MESSAGE);
-      }
-    } else if (options) {
-      const nestedContext = 'context' in options ? options.context : undefined;
-      const callerSignal = options.abortSignal ?? nestedContext?.abortSignal;
-      const budget = options.budget ?? nestedContext?.budget;
+  return withFileLock(
+    getConfigFile(),
+    async () => {
+      if (isAbortSignal(options)) {
+        if (options.aborted) {
+          throw new ToolError('ABORTED', REMEMBER_ABORTED_MESSAGE);
+        }
+      } else if (options) {
+        const nestedContext = 'context' in options ? options.context : undefined;
+        const callerSignal = options.abortSignal ?? nestedContext?.abortSignal;
+        const budget = options.budget ?? nestedContext?.budget;
 
-      if (callerSignal?.aborted || budget?.isCallerAborted()) {
-        throw new ToolError('ABORTED', REMEMBER_ABORTED_MESSAGE);
+        if (callerSignal?.aborted || budget?.isCallerAborted()) {
+          throw new ToolError('ABORTED', REMEMBER_ABORTED_MESSAGE);
+        }
+        if (budget && (budget.isExecutionExpired() || budget.isTimedOut())) {
+          throw new ToolError('TIMEOUT', 'Execution budget expired before recording remembered approval.');
+        }
       }
-      if (budget && (budget.isExecutionExpired() || budget.isTimedOut())) {
-        throw new ToolError('TIMEOUT', 'Execution budget expired before recording remembered approval.');
-      }
-    }
-    const file = getConfigFile();
-    const current = loadFileConfig(file);
-    const { models } = current.governance;
-    if (models.allow.includes(model)) return false;
-    await writeConfig(validateConfig({ ...current, governance: { ...current.governance, models: { ...models, allow: [...models.allow, model] } } }), file);
-    return true;
-  }, options);
+      const file = getConfigFile();
+      const current = loadFileConfig(file);
+      const { models } = current.governance;
+      if (models.allow.includes(model)) return false;
+      await writeConfig(
+        validateConfig({ ...current, governance: { ...current.governance, models: { ...models, allow: [...models.allow, model] } } }),
+        file,
+      );
+      return true;
+    },
+    options,
+  );
 }
 
 /**
@@ -616,7 +679,9 @@ export async function recordDefaultModel(id: ProviderId, model: string): Promise
   return withFileLock(getConfigFile(), async () => {
     if (loadConfig().backends[id]?.defaultModel) return false;
     const current = loadFileConfig();
-    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }));
+    await writeConfig(
+      validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], defaultModel: model } } }),
+    );
     return true;
   });
 }
@@ -635,13 +700,22 @@ export function readBackendSkills(id: ProviderId, file = getConfigFile()): Skill
 }
 
 /** Persists a desired package selection under the configuration lease, retaining other settings. */
-export async function setBackendSkills(id: ProviderId, skills: SkillSelection, file = getConfigFile(), expectedSnapshot?: string | null): Promise<void> {
+export async function setBackendSkills(
+  id: ProviderId,
+  skills: SkillSelection,
+  file = getConfigFile(),
+  expectedSnapshot?: string | null,
+): Promise<void> {
   ensureConfigDir(file);
   await withFileLock(file, async () => {
     if (expectedSnapshot !== undefined) {
       let snapshot: string | null;
-      try { snapshot = readBoundedFileSync(file); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; snapshot = null; }
+      try {
+        snapshot = readBoundedFileSync(file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        snapshot = null;
+      }
       if (snapshot !== expectedSnapshot) throw new Error('Skill configuration changed concurrently; inspect a fresh preview.');
     }
     const current = loadFileConfig(file);
@@ -661,7 +735,10 @@ export async function recordBackendExecutable(id: ProviderId, executable: string
   return withFileLock(file, async () => {
     const current = loadFileConfig(file);
     if (current.backends[id]?.executable) return false;
-    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], executable } } }), file);
+    await writeConfig(
+      validateConfig({ ...current, backends: { ...current.backends, [id]: { ...current.backends[id], executable } } }),
+      file,
+    );
     return true;
   });
 }
@@ -676,7 +753,10 @@ export async function setBackendExecutable(id: ProviderId, executable: string | 
   await withFileLock(file, async () => {
     const current = loadFileConfig(file);
     const { executable: _previous, ...rest } = current.backends[id] ?? {};
-    await writeConfig(validateConfig({ ...current, backends: { ...current.backends, [id]: executable === undefined ? rest : { ...rest, executable } } }), file);
+    await writeConfig(
+      validateConfig({ ...current, backends: { ...current.backends, [id]: executable === undefined ? rest : { ...rest, executable } } }),
+      file,
+    );
   });
 }
 
@@ -698,10 +778,12 @@ export async function setModelRule(model: string, rule: keyof ModelRules | null,
   ensureConfigDir(file);
   await withFileLock(file, async () => {
     const current = loadFileConfig(file);
-    const models = Object.fromEntries(MODEL_RULES.map(name => {
-      const others = current.governance.models[name].filter(listed => listed !== model);
-      return [name, name === rule ? [...others, model] : others];
-    })) as unknown as ModelRules;
+    const models = Object.fromEntries(
+      MODEL_RULES.map(name => {
+        const others = current.governance.models[name].filter(listed => listed !== model);
+        return [name, name === rule ? [...others, model] : others];
+      }),
+    ) as unknown as ModelRules;
     await writeConfig(validateConfig({ ...current, governance: { ...current.governance, models } }), file);
   });
 }
@@ -712,7 +794,10 @@ export async function setModelRule(model: string, rule: keyof ModelRules | null,
  * `priceMultiplier` above 1.
  * @throws When a value is invalid or the configuration cannot be locked, read or written.
  */
-export async function setPriceRules(rules: { askAbovePrice?: number | null; priceMultiplier?: number }, file = getConfigFile()): Promise<void> {
+export async function setPriceRules(
+  rules: { askAbovePrice?: number | null; priceMultiplier?: number },
+  file = getConfigFile(),
+): Promise<void> {
   ensureConfigDir(file);
   await withFileLock(file, async () => {
     const current = loadFileConfig(file);
@@ -726,10 +811,7 @@ export async function setPriceRules(rules: { askAbovePrice?: number | null; pric
  */
 export async function setDefaultBackend(backend: unknown): Promise<CoAgent8Config> {
   if (typeof backend !== 'string' || !VALID_BACKENDS.includes(backend.toLowerCase() as BackendId)) {
-    throw new ToolError(
-      'INPUT_LIMIT',
-      `Validation Error: backend must be one of: ${VALID_BACKENDS.join(', ')}. Received: '${backend}'`
-    );
+    throw new ToolError('INPUT_LIMIT', `Validation Error: backend must be one of: ${VALID_BACKENDS.join(', ')}. Received: '${backend}'`);
   }
   return saveConfig({ defaultBackend: backend.toLowerCase() as BackendId });
 }

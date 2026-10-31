@@ -64,7 +64,8 @@ function createTestEnvironment(base = process.env) {
     coagent8_PRICES_URL: path.join(fixtures, 'prices', 'openrouter-models.json'),
   });
   // A suite started from inside a CoAgent8 turn must not inherit the nested-turn guard.
-  for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'COAGENT8_NESTED_TURN']) delete env[key];
+  for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CODEX_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'COAGENT8_NESTED_TURN'])
+    delete env[key];
   return { env, root };
 }
 

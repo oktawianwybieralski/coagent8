@@ -40,9 +40,4 @@ export function getRuntimePath(): string {
 }
 
 // Compatibility re-exports for workspace functions and types
-export {
-  resolveWorkspacePath,
-  type WorkspaceSource,
-  type ResolvedWorkspace,
-  chooseWorkspace,
-} from './workspace/workspace.js';
+export { resolveWorkspacePath, type WorkspaceSource, type ResolvedWorkspace, chooseWorkspace } from './workspace/workspace.js';

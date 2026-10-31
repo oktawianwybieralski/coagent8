@@ -20,22 +20,9 @@ import { canonicalPath } from '../../workspace/identity.js';
 import { truncateToByteLength } from '../../execution/runtime/stream.js';
 import { computeSafeCommitPoint, redactCredentialFormats } from '../../security/index.js';
 import type { AdapterEvent, ConversationEvent, ProviderId, BackendReadContext, ExecutionBudget } from '../../contracts/index.js';
-import {
-  SESSION_LIMIT,
-  getHistoryDir,
-  fileFor,
-  logFileFor,
-  sizeIfExists,
-  validateEvent,
-  sanitize,
-} from './types.js';
+import { SESSION_LIMIT, getHistoryDir, fileFor, logFileFor, sizeIfExists, validateEvent, sanitize } from './types.js';
 import { load, invalidateHistoryCache } from './reader.js';
-import {
-  reserveCapacity,
-  releaseCapacity,
-  adjustCapacityMeta,
-  pruneHistoryDirectoryInternal,
-} from './retention.js';
+import { reserveCapacity, releaseCapacity, adjustCapacityMeta, pruneHistoryDirectoryInternal } from './retention.js';
 
 /** Bytes read per step while scanning a log backward for its last record. */
 const TAIL_BLOCK_BYTES = 8 * 1024;
@@ -81,7 +68,12 @@ export async function tornTailOffset(logFile: string, size: number): Promise<num
         const start = newline + 1;
         const line = tail.subarray(start, end).toString('utf8').trim();
         if (line.length > 0) {
-          try { JSON.parse(line); return null; } catch { return position + start; }
+          try {
+            JSON.parse(line);
+            return null;
+          } catch {
+            return position + start;
+          }
         }
         if (newline < 0) return null;
         end = newline;
@@ -108,7 +100,7 @@ export function createHistoryWriter(
   workspace: string,
   provider: ProviderId,
   turnId: string,
-  options?: { context?: BackendReadContext; abortSignal?: AbortSignal; budget?: ExecutionBudget }
+  options?: { context?: BackendReadContext; abortSignal?: AbortSignal; budget?: ExecutionBudget },
 ) {
   const pending: AdapterEvent[] = [];
   const rawAssembled = new Map<string, string>();
@@ -149,7 +141,8 @@ export function createHistoryWriter(
       emittedRedactedText.set(event.messageId, redacted);
       const index = pending.findIndex(e => e.type === 'assistant_message' && e.messageId === event.messageId);
       const snapshot: AdapterEvent = { type: 'assistant_message', messageId: event.messageId, text: redacted };
-      if (index >= 0) pending[index] = snapshot; else pending.push(snapshot);
+      if (index >= 0) pending[index] = snapshot;
+      else pending.push(snapshot);
     } else {
       pending.push(sanitize(event));
     }
@@ -222,170 +215,185 @@ export function createHistoryWriter(
 
     const isInitialBatch = !headerWritten && !isTurnFinished;
     const initLockOptions: FileLockOptions | undefined = isInitialBatch
-      ? (options?.context ?? (options?.abortSignal || options?.budget ? { abortSignal: options.abortSignal, budget: options.budget } : undefined))
+      ? (options?.context ??
+        (options?.abortSignal || options?.budget ? { abortSignal: options.abortSignal, budget: options.budget } : undefined))
       : undefined;
 
-    chain = chain.then(async () => {
-      const dir = getHistoryDir();
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-      const sessionLockFile = path.join(dir, `${handle}.lock`);
-      await withFileLock(sessionLockFile, async () => {
-        if (!hasPruned) {
-          hasPruned = true;
-          await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, 0, handle), initLockOptions);
-        }
-
-        const logFile = logFileFor(handle);
-        const jsonFile = fileFor(handle);
-
-        // Initialize sequence counter and file size if not done
-        if (!headerWritten) {
-          let stat: Awaited<ReturnType<typeof fs.stat>> | null = null;
-          try {
-            stat = await fs.stat(logFile);
-          } catch (err: unknown) {
-            if (!(err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT')) throw err;
-          }
-
-          if (stat) {
-            currentFileBytes = stat.size;
-            headerWritten = true;
-
-            const existing = await load(handle);
-            if (existing) {
-              if (existing.workspace !== canonicalPath(workspace)) throw new Error('History workspace mismatch.');
-              nextSeq = existing.nextSequence;
+    chain = chain
+      .then(async () => {
+        const dir = getHistoryDir();
+        await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+        const sessionLockFile = path.join(dir, `${handle}.lock`);
+        await withFileLock(
+          sessionLockFile,
+          async () => {
+            if (!hasPruned) {
+              hasPruned = true;
+              await withFileLock(path.join(dir, '.capacity.lock'), () => pruneHistoryDirectoryInternal(dir, 0, handle), initLockOptions);
             }
 
-            // Inspect for torn tail from an abrupt crash and truncate only the invalid suffix
-            const validBytes = await tornTailOffset(logFile, stat.size);
-            if (validBytes !== null) {
-              const truncatedBytes = stat.size - validBytes;
-              await fs.truncate(logFile, validBytes);
-              currentFileBytes = validBytes;
-              if (truncatedBytes > 0) {
-                const capLockFile = path.join(dir, '.capacity.lock');
-                await withFileLock(capLockFile, async () => {
-                  const metaFile = path.join(dir, '.capacity.meta');
-                  await adjustCapacityMeta(metaFile, -truncatedBytes);
-                }, initLockOptions);
+            const logFile = logFileFor(handle);
+            const jsonFile = fileFor(handle);
+
+            // Initialize sequence counter and file size if not done
+            if (!headerWritten) {
+              let stat: Awaited<ReturnType<typeof fs.stat>> | null = null;
+              try {
+                stat = await fs.stat(logFile);
+              } catch (err: unknown) {
+                if (!(err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT')) throw err;
               }
-            }
-          } else {
-            // logFile does not exist yet. Check if jsonFile exists from earlier turn
-            const existing = await load(handle);
-            if (existing) {
-              if (existing.workspace !== canonicalPath(workspace)) throw new Error('History workspace mismatch.');
-              nextSeq = existing.nextSequence;
-            }
-            const header = JSON.stringify({
-              _type: 'header',
-              schemaVersion: 1,
-              sessionHandle: handle,
-              workspace: canonicalPath(workspace),
-              createdAt: new Date().toISOString(),
-              nextSequence: nextSeq,
-            }) + '\n';
-            const headerBytes = Buffer.byteLength(header, 'utf8');
 
-            await reserveCapacity(dir, headerBytes, handle, initLockOptions);
-            try {
-              await fs.appendFile(logFile, header, 'utf8');
-              currentFileBytes = headerBytes;
-              headerWritten = true;
-            } catch (appendErr) {
-              await releaseCapacity(dir, headerBytes);
-              throw appendErr;
-            }
-          }
-        }
+              if (stat) {
+                currentFileBytes = stat.size;
+                headerWritten = true;
 
-        // Serialize the batch as JSONL; copying cost scales with serialized batch bytes.
-        let appendLines = '';
-        for (const event of batch) {
-          const fullEvent: ConversationEvent = {
-            ...event,
-            schemaVersion: 1,
-            eventId: randomUUID(),
-            sequence: nextSeq++,
-            timestamp: new Date().toISOString(),
-            sessionHandle: handle,
-            turnId,
-            provider,
-          };
-          appendLines += JSON.stringify(fullEvent) + '\n';
-        }
+                const existing = await load(handle);
+                if (existing) {
+                  if (existing.workspace !== canonicalPath(workspace)) throw new Error('History workspace mismatch.');
+                  nextSeq = existing.nextSequence;
+                }
 
-        let prefix = '';
-        if (currentFileBytes > 0) {
-          try {
-            const fd = await fs.open(logFile, 'r');
-            try {
-              const stat = await fd.stat();
-              if (stat.size > 0) {
-                const buf = Buffer.alloc(1);
-                await fd.read(buf, 0, 1, stat.size - 1);
-                if (buf[0] !== 0x0A) {
-                  prefix = '\n';
+                // Inspect for torn tail from an abrupt crash and truncate only the invalid suffix
+                const validBytes = await tornTailOffset(logFile, stat.size);
+                if (validBytes !== null) {
+                  const truncatedBytes = stat.size - validBytes;
+                  await fs.truncate(logFile, validBytes);
+                  currentFileBytes = validBytes;
+                  if (truncatedBytes > 0) {
+                    const capLockFile = path.join(dir, '.capacity.lock');
+                    await withFileLock(
+                      capLockFile,
+                      async () => {
+                        const metaFile = path.join(dir, '.capacity.meta');
+                        await adjustCapacityMeta(metaFile, -truncatedBytes);
+                      },
+                      initLockOptions,
+                    );
+                  }
+                }
+              } else {
+                // logFile does not exist yet. Check if jsonFile exists from earlier turn
+                const existing = await load(handle);
+                if (existing) {
+                  if (existing.workspace !== canonicalPath(workspace)) throw new Error('History workspace mismatch.');
+                  nextSeq = existing.nextSequence;
+                }
+                const header =
+                  JSON.stringify({
+                    _type: 'header',
+                    schemaVersion: 1,
+                    sessionHandle: handle,
+                    workspace: canonicalPath(workspace),
+                    createdAt: new Date().toISOString(),
+                    nextSequence: nextSeq,
+                  }) + '\n';
+                const headerBytes = Buffer.byteLength(header, 'utf8');
+
+                await reserveCapacity(dir, headerBytes, handle, initLockOptions);
+                try {
+                  await fs.appendFile(logFile, header, 'utf8');
+                  currentFileBytes = headerBytes;
+                  headerWritten = true;
+                } catch (appendErr) {
+                  await releaseCapacity(dir, headerBytes);
+                  throw appendErr;
                 }
               }
-            } finally {
-              await fd.close();
             }
-          } catch (err) {
-            // A log removed meanwhile needs no separator; any other read error stops the append.
-            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-          }
-        }
 
-        if (prefix) {
-          appendLines = prefix + appendLines;
-        }
+            // Serialize the batch as JSONL; copying cost scales with serialized batch bytes.
+            let appendLines = '';
+            for (const event of batch) {
+              const fullEvent: ConversationEvent = {
+                ...event,
+                schemaVersion: 1,
+                eventId: randomUUID(),
+                sequence: nextSeq++,
+                timestamp: new Date().toISOString(),
+                sessionHandle: handle,
+                turnId,
+                provider,
+              };
+              appendLines += JSON.stringify(fullEvent) + '\n';
+            }
 
-        const appendBytes = Buffer.byteLength(appendLines, 'utf8');
-        if (currentFileBytes + appendBytes > SESSION_LIMIT) throw new Error('History session limit reached.');
+            let prefix = '';
+            if (currentFileBytes > 0) {
+              try {
+                const fd = await fs.open(logFile, 'r');
+                try {
+                  const stat = await fd.stat();
+                  if (stat.size > 0) {
+                    const buf = Buffer.alloc(1);
+                    await fd.read(buf, 0, 1, stat.size - 1);
+                    if (buf[0] !== 0x0a) {
+                      prefix = '\n';
+                    }
+                  }
+                } finally {
+                  await fd.close();
+                }
+              } catch (err) {
+                // A log removed meanwhile needs no separator; any other read error stops the append.
+                if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+              }
+            }
 
-        await reserveCapacity(dir, appendBytes, handle);
-        try {
-          await fs.appendFile(logFile, appendLines, 'utf8');
-          currentFileBytes += appendBytes;
-        } catch (appendErr) {
-          await releaseCapacity(dir, appendBytes);
-          throw appendErr;
-        }
+            if (prefix) {
+              appendLines = prefix + appendLines;
+            }
 
-        // Materialize/update consolidated JSON snapshot on turn finish or non-streaming user_message
-        const isTurnFinished = batch.some(e => e.type === 'turn_finished');
-        const shouldMaterialize = isTurnFinished || (!isStreaming && batch.some(e => e.type === 'user_message' || e.type === 'assistant_message'));
-        if (shouldMaterialize) {
-          const h = await load(handle, true);
-          if (h) {
-            h.updatedAt = new Date().toISOString();
-            const text = JSON.stringify(h);
-            const jsonBytes = Buffer.byteLength(text);
-            const oldJsonBytes = await sizeIfExists(jsonFile);
-            const deltaBytes = jsonBytes - oldJsonBytes;
-            // A growing snapshot reserves its bytes before the write, like an append; a
-            // shrinking one releases them after it (CUR-012).
-            if (deltaBytes > 0) await reserveCapacity(dir, deltaBytes, handle);
+            const appendBytes = Buffer.byteLength(appendLines, 'utf8');
+            if (currentFileBytes + appendBytes > SESSION_LIMIT) throw new Error('History session limit reached.');
+
+            await reserveCapacity(dir, appendBytes, handle);
             try {
-              await atomicWrite(jsonFile, text);
-            } catch (writeErr) {
-              if (deltaBytes > 0) await releaseCapacity(dir, deltaBytes);
-              throw writeErr;
+              await fs.appendFile(logFile, appendLines, 'utf8');
+              currentFileBytes += appendBytes;
+            } catch (appendErr) {
+              await releaseCapacity(dir, appendBytes);
+              throw appendErr;
             }
-            if (deltaBytes < 0) {
-              await withFileLock(path.join(dir, '.capacity.lock'), () => adjustCapacityMeta(path.join(dir, '.capacity.meta'), deltaBytes));
-            }
-          }
-        }
 
-        invalidateHistoryCache(handle);
-      }, initLockOptions);
-    }).catch(err => {
-      writeError = err;
-      writerDisabled = true;
-    });
+            // Materialize/update consolidated JSON snapshot on turn finish or non-streaming user_message
+            const isTurnFinished = batch.some(e => e.type === 'turn_finished');
+            const shouldMaterialize =
+              isTurnFinished || (!isStreaming && batch.some(e => e.type === 'user_message' || e.type === 'assistant_message'));
+            if (shouldMaterialize) {
+              const h = await load(handle, true);
+              if (h) {
+                h.updatedAt = new Date().toISOString();
+                const text = JSON.stringify(h);
+                const jsonBytes = Buffer.byteLength(text);
+                const oldJsonBytes = await sizeIfExists(jsonFile);
+                const deltaBytes = jsonBytes - oldJsonBytes;
+                // A growing snapshot reserves its bytes before the write, like an append; a
+                // shrinking one releases them after it (CUR-012).
+                if (deltaBytes > 0) await reserveCapacity(dir, deltaBytes, handle);
+                try {
+                  await atomicWrite(jsonFile, text);
+                } catch (writeErr) {
+                  if (deltaBytes > 0) await releaseCapacity(dir, deltaBytes);
+                  throw writeErr;
+                }
+                if (deltaBytes < 0) {
+                  await withFileLock(path.join(dir, '.capacity.lock'), () =>
+                    adjustCapacityMeta(path.join(dir, '.capacity.meta'), deltaBytes),
+                  );
+                }
+              }
+            }
+
+            invalidateHistoryCache(handle);
+          },
+          initLockOptions,
+        );
+      })
+      .catch(err => {
+        writeError = err;
+        writerDisabled = true;
+      });
 
     await chain;
     if (writeError) throw writeError;
@@ -393,4 +401,3 @@ export function createHistoryWriter(
 
   return { accept, flush, disabled };
 }
-

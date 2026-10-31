@@ -17,9 +17,15 @@ test('optional setup is a separate bundle and core startup excludes installation
   assert.ok(!fs.existsSync(path.join(root, 'dist/setup.cjs.map')), 'setup bundle must not emit a source map');
   const { modules } = await buildBundles({ write: false });
   assert.ok(modules['index.cjs']?.length > 0, 'core bundle module list must be populated');
-  assert.ok(!modules['index.cjs'].some(source => /integrations[\\/]|jsonc-parser/.test(source)), 'build module graph proves setup code is outside core');
+  assert.ok(
+    !modules['index.cjs'].some(source => /integrations[\\/]|jsonc-parser/.test(source)),
+    'build module graph proves setup code is outside core',
+  );
   assert.ok(modules['setup.cjs']?.includes('src/integrations/setup-cli.ts'), 'setup bundle includes setup entrypoint');
-  assert.ok(modules['setup.cjs']?.some(source => /jsonc-parser/.test(source)), 'setup bundle includes jsonc-parser');
+  assert.ok(
+    modules['setup.cjs']?.some(source => /jsonc-parser/.test(source)),
+    'setup bundle includes jsonc-parser',
+  );
 });
 
 test('package.json has zero omniagent entry in bin and clean coagent8 release metadata', () => {
@@ -79,7 +85,13 @@ test('PACKAGE-001: the tarball reader extracts package/ entries, honors PAX path
   try {
     const long = `package/${'nested/'.repeat(20)}file.txt`;
     const file = path.join(dir, 'pkg.tgz');
-    fs.writeFileSync(file, tarball([{ name: 'package/dist/index.cjs', data: Buffer.from('bundle') }, { name: long, data: Buffer.from('deep'), pax: true }]));
+    fs.writeFileSync(
+      file,
+      tarball([
+        { name: 'package/dist/index.cjs', data: Buffer.from('bundle') },
+        { name: long, data: Buffer.from('deep'), pax: true },
+      ]),
+    );
     const entries = readTarball(file);
     assert.deepEqual([...entries.keys()], ['package/dist/index.cjs', long]);
     const target = path.join(dir, 'out');
@@ -97,7 +109,8 @@ test('PACKAGE-001: the plugin check rejects a package whose manifests reference 
   const root = path.resolve(__dirname, '..');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-plugin-'));
   try {
-    for (const name of ['package.json', 'plugin.json', 'mcp.json', 'index.js']) fs.copyFileSync(path.join(root, name), path.join(dir, name));
+    for (const name of ['package.json', 'plugin.json', 'mcp.json', 'index.js'])
+      fs.copyFileSync(path.join(root, name), path.join(dir, name));
     fs.mkdirSync(path.join(dir, 'dist'));
     fs.writeFileSync(path.join(dir, 'dist', 'index.cjs'), '');
     assert.throws(() => verifyPlugin(dir), /assets\/logo32\.png/, 'a missing plugin icon is reported');
@@ -118,7 +131,11 @@ test('the VSIX keeps the shared numeric version and is built for the normal Mark
   const { extensionVersion } = require('../scripts/build-vscode.cjs');
   assert.equal(extensionVersion('0.6.0', '0.6.0'), '0.6.0');
   assert.throws(() => extensionVersion('0.6.0', '0.7.0'), /must match/);
-  assert.throws(() => extensionVersion('1.0.0-beta.2', '1.0.0-beta.2'), /numeric major\.minor\.patch version, not 1\.0\.0-beta\.2/, 'a pre-release suffix is refused, not stripped');
+  assert.throws(
+    () => extensionVersion('1.0.0-beta.2', '1.0.0-beta.2'),
+    /numeric major\.minor\.patch version, not 1\.0\.0-beta\.2/,
+    'a pre-release suffix is refused, not stripped',
+  );
   // RELEASE-001c: no pre-release flag, also below 1.0.0; marketplace-publish.yml refuses a flagged VSIX.
   assert.match(fs.readFileSync(path.resolve(__dirname, '../tooling/vscode/package.cjs'), 'utf8'), /^\s*preRelease: false,$/m);
 });
@@ -130,7 +147,14 @@ test('npm, plugin and VS Code manifests share one numeric version', () => {
   assert.match(version, /^\d+\.\d+\.\d+$/);
   const lock = read('package-lock.json');
   const server = read('server.json');
-  for (const [name, actual] of [['package-lock.json', lock.version], ['package-lock.json packages[""]', lock.packages[''].version], ['plugin.json', read('plugin.json').version], ['extensions/vscode/package.json', read('extensions/vscode/package.json').version], ['server.json', server.version], ['server.json packages[0]', server.packages[0].version]]) {
+  for (const [name, actual] of [
+    ['package-lock.json', lock.version],
+    ['package-lock.json packages[""]', lock.packages[''].version],
+    ['plugin.json', read('plugin.json').version],
+    ['extensions/vscode/package.json', read('extensions/vscode/package.json').version],
+    ['server.json', server.version],
+    ['server.json packages[0]', server.packages[0].version],
+  ]) {
     assert.equal(actual, version, `${name} carries the package version`);
   }
 });
@@ -138,14 +162,18 @@ test('npm, plugin and VS Code manifests share one numeric version', () => {
 test('PROPOSALS-001a: server.json describes the npm package for the MCP Registry', () => {
   const root = path.resolve(__dirname, '..');
   const read = name => JSON.parse(fs.readFileSync(path.join(root, name), 'utf8'));
-  const manifest = read('package.json'), server = read('server.json');
+  const manifest = read('package.json'),
+    server = read('server.json');
   // The registry accepts an npm package only when its published package.json names the server.
   assert.equal(manifest.mcpName, server.name);
   assert.match(server.name, /^io\.github\.oktawianwybieralski\/[a-zA-Z0-9._-]+$/, 'the GitHub namespace the owner can authenticate');
   assert.ok(server.description.length <= 100, 'the registry limits the description to 100 characters');
   assert.equal(server.packages.length, 1);
   const [pkg] = server.packages;
-  assert.deepEqual({ registryType: pkg.registryType, identifier: pkg.identifier, transport: pkg.transport }, { registryType: 'npm', identifier: manifest.name, transport: { type: 'stdio' } });
+  assert.deepEqual(
+    { registryType: pkg.registryType, identifier: pkg.identifier, transport: pkg.transport },
+    { registryType: 'npm', identifier: manifest.name, transport: { type: 'stdio' } },
+  );
   // New registrations start the server with `mcp` (CLI-FIRST-001a2).
   assert.deepEqual(pkg.packageArguments, [{ type: 'positional', value: 'mcp' }]);
   for (const icon of server.icons) {
@@ -176,7 +204,10 @@ test('RELEASE-001a/b1: the npm script publishes the ./release/... tarball direct
     const forcedFallback = resolveNpmCommand({ PATH: '', Path: '', npm_execpath: '' }, 'C:\\isolated\\node.exe');
     assert.match(forcedFallback.command, /cmd\.exe/i);
     assert.deepEqual(forcedFallback.argsPrefix, ['/d', '/s', '/c', 'npm']);
-    const fallbackExec = spawnSync(forcedFallback.command, [...forcedFallback.argsPrefix, '--version'], { encoding: 'utf8', windowsHide: true });
+    const fallbackExec = spawnSync(forcedFallback.command, [...forcedFallback.argsPrefix, '--version'], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
     assert.equal(fallbackExec.status, 0, 'Windows fallback interpreter executes npm cleanly');
     assert.match(fallbackExec.stdout.trim(), /^\d+\.\d+\.\d+/);
   }
@@ -203,14 +234,17 @@ test('RELEASE-001b1: publish executes the exact tarball with provenance or a dry
   try {
     const cli = path.join(dir, 'npm-fixture.cjs');
     const recorded = path.join(dir, 'args.json');
-    fs.writeFileSync(cli, `
+    fs.writeFileSync(
+      cli,
+      `
       const fs = require('node:fs');
       fs.writeFileSync('args.json', JSON.stringify(process.argv.slice(2)));
       if (fs.existsSync('fail')) {
         process.stderr.write(fs.readFileSync('fail', 'utf8'));
         process.exit(1);
       }
-    `);
+    `,
+    );
     const consumer = path.join(dir, '.artifacts', 'consumer');
     fs.mkdirSync(consumer, { recursive: true });
     const bytes = Buffer.from('exact consumer tarball');

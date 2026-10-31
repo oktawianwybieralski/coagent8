@@ -31,12 +31,22 @@ export function environmentOverride(id: ProviderId, env: NodeJS.ProcessEnv = pro
  * @throws `CliResolutionError` (`CLI_NOT_FOUND`) when `vscode-extension` is configured and the
  * vendor's VS Code extension provides no usable copy.
  */
-export function backendCommand(id: ProviderId, configured: string | undefined, env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
+export function backendCommand(
+  id: ProviderId,
+  configured: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  home = os.homedir(),
+): string {
   const override = environmentOverride(id, env);
   if (override) return override;
   if (configured === VSCODE_EXTENSION_EXECUTABLE) {
-    const bundled = id === 'codex' ? resolveBundledCodex(home, env) : id === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
-    if (!bundled) throw new CliResolutionError('CLI_NOT_FOUND', `backends.${id}.executable is "${VSCODE_EXTENSION_EXECUTABLE}", but the vendor's VS Code extension provides no ${NAMES[id]} executable.`);
+    const bundled =
+      id === 'codex' ? resolveBundledCodex(home, env) : id === 'claude' ? resolveBundledClaude(home, env) : resolveManagedAgy(home, env);
+    if (!bundled)
+      throw new CliResolutionError(
+        'CLI_NOT_FOUND',
+        `backends.${id}.executable is "${VSCODE_EXTENSION_EXECUTABLE}", but the vendor's VS Code extension provides no ${NAMES[id]} executable.`,
+      );
     return bundled.command;
   }
   if (configured) return /^~[\\/]/.test(configured) ? path.join(home, configured.slice(2)) : configured;
@@ -53,9 +63,19 @@ export function configuredBackendCommand(id: ProviderId): string {
  * @returns The command, or the probe result of a backend whose configured executable is missing.
  */
 export function probeCommand(id: ProviderId, name: string): { command: string } | { unresolved: AdapterProbeResult } {
-  try { return { command: configuredBackendCommand(id) }; }
-  catch (error) {
+  try {
+    return { command: configuredBackendCommand(id) };
+  } catch (error) {
     if (!(error instanceof CliResolutionError)) throw error;
-    return { unresolved: { id, name, installed: false, executionSupported: false, authStatus: 'unknown', authEvidence: [(error as CliResolutionError).message] } };
+    return {
+      unresolved: {
+        id,
+        name,
+        installed: false,
+        executionSupported: false,
+        authStatus: 'unknown',
+        authEvidence: [(error as CliResolutionError).message],
+      },
+    };
   }
 }
