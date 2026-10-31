@@ -24,7 +24,7 @@ function npmRun(args,cwd=root) {
   const hash=createHash('sha256').update(await fsp.readFile(tarball)).digest('hex');
   if(existing)assert.equal(hash,pack.sha256,'Existing artifact hash');
   else await fsp.writeFile(tarball+'.manifest.json',JSON.stringify({...pack,sha256:hash},null,2));
-  for(const name of ['dist/index.cjs','dist/setup.cjs','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
+  for(const name of ['dist/index.cjs','dist/setup.cjs','dist/THIRD_PARTY_NOTICES.txt','assets/logo.svg','assets/logo.png','assets/logo32.png','assets/logo64.png','plugin.json','mcp.json','index.js','README.md','LICENSE',...['consult','delegate','doctor','issue','loop','review','session'].map(n=>`skills/coagent8-${n}/SKILL.md`)])assert.ok(pack.files.some(f=>f.path===name),name);
   assert.deepEqual(pack.files.filter(f=>f.path.startsWith('dist/')).map(f=>f.path).sort(),['dist/THIRD_PARTY_NOTICES.txt','dist/index.cjs','dist/setup.cjs'],'Packed dist/ must contain only the bundles and third-party notices');
   assert.ok(!pack.files.some(f=>f.path.endsWith('.map')),'Source maps must not ship in runtime package');
   for(const name of ['logo-light.svg','logo-light.png','logo32-light.png','logo64-light.png','logo256-light.png'])assert.ok(pack.files.some(f=>f.path===`assets/${name}`),name);
@@ -117,7 +117,7 @@ function npmRun(args,cwd=root) {
         assert.deepEqual(Buffer.from(icon.src.replace(/^data:image\/png;base64,/,''),'base64'),expectedIcons[icon.theme]);
       }
       proc.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
-      const tools=await request('tools/list',{});assert.equal(tools.result.tools.length,6);
+      const tools=await request('tools/list',{});assert.equal(tools.result.tools.length,7);
       assert.ok(tools.result.tools.every(tool=>tool.icons===undefined),'the brand icon is declared once, on the server');
       for(const name of ['consult','review'])assert.equal(tools.result.tools.find(tool=>tool.name===name).outputSchema,undefined,`${name}: markdown result only`);
       if(binIndex===0) {

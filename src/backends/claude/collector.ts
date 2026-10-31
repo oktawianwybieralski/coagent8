@@ -9,8 +9,11 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
 
 /** Event types emitted by `claude -p --output-format stream-json --verbose` (observed with 2.1.289). */
 const KNOWN_TYPES = new Set(['system', 'assistant', 'user', 'stream_event', 'result', 'rate_limit_event', 'control_response']);
-/** `system` subtypes the collector understands; others produce one warning each. */
-const KNOWN_SYSTEM_SUBTYPES = new Set(['init', 'status', 'thinking_tokens', 'api_retry']);
+/**
+ * `system` subtypes the collector understands; others produce one warning each.
+ * `permission_denied` (2.1.300) repeats a denial that the denied tool's result already reports.
+ */
+const KNOWN_SYSTEM_SUBTYPES = new Set(['init', 'status', 'thinking_tokens', 'api_retry', 'permission_denied']);
 
 export interface ClaudeStreamCollectorOptions {
   /** Session ID passed as `--session-id` or `--resume`; `system/init` must report the same ID. */
@@ -80,7 +83,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
     }
     const reported = event.tools, servers = event.mcp_servers;
     if (!Array.isArray(reported) || !reported.every(tool => typeof tool === 'string' && allowed.has(tool))) {
-      fail('SANDBOX_UNAVAILABLE', 'Claude Code exposed tools outside the read-only profile.');
+      fail('SANDBOX_UNAVAILABLE', 'Claude Code exposed tools outside the requested profile.');
     }
     if (!Array.isArray(servers) || servers.length > 0) fail('SANDBOX_UNAVAILABLE', 'Claude Code connected MCP servers despite the empty strict MCP configuration.');
     if (event.permissionMode !== 'dontAsk') fail('SANDBOX_UNAVAILABLE', 'Claude Code did not start in dontAsk permission mode.');
@@ -187,7 +190,7 @@ export function createClaudeStreamCollector(options: ClaudeStreamCollectorOption
       if (Object.keys(counts).length > 1) usage = counts;
     }
     const denials = Array.isArray(event.permission_denials) ? event.permission_denials.map(entry => record(entry)?.tool_name).filter(validEventIdentifier) : [];
-    if (denials.length) emit({ type: 'warning', message: `Claude Code denied tool calls outside the read-only profile: ${[...new Set(denials)].join(', ')}.` });
+    if (denials.length) emit({ type: 'warning', message: `Claude Code denied tool calls outside the requested profile: ${[...new Set(denials)].join(', ')}.` });
   }
   function line(raw: string) {
     if (!raw.trim()) return;

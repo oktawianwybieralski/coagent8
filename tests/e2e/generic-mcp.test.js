@@ -61,7 +61,7 @@ test('MCP-001 & STARTUP-001: arbitrary client initializes and lists tools withou
 
   // Tools list succeeds without invoking any backend or failing
   const list = await c.request('tools/list', {});
-  assert.equal(list.result.tools.length, 6, 'All six canonical tools must be advertised even with uninstalled backends');
+  assert.equal(list.result.tools.length, 7, 'All seven canonical tools must be advertised even with uninstalled backends');
   assert.ok(list.result.tools.some(tool => tool.name === 'consult'));
   assert.ok(list.result.tools.some(tool => tool.name === 'review'));
   assert.ok(list.result.tools.some(tool => tool.name === 'doctor'));

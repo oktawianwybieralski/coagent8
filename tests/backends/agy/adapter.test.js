@@ -137,8 +137,87 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   const empty = await execute('request', { model: MODEL, cwd: tempDir });
   assert.equal(empty.status, 'failed', 'a denial that ended the turn without an answer is not a completed answer');
   assert.equal(empty.error.code, 'POLICY_DENIED');
-  assert.match(empty.error.message, /without an answer after its sandbox denied a command/);
+  assert.match(empty.error.message, /without an answer after its sandbox denied action command/);
   delete process.env.coagent8_FIXTURE_MODE;
+});
+
+test('#92: a workspace-write turn names the denied action and recovers once inside the workspace (fixture)', async () => {
+  const capture = path.join(tempDir, 'write-denial-capture.json');
+  Object.assign(process.env, { coagent8_FIXTURE_MODE: 'sandbox-denied-recover', coagent8_FIXTURE_DENIED_ACTION: 'read_file', coagent8_FIXTURE_CAPTURE: capture });
+  try {
+    const warnings = [];
+    const recovered = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write', onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+    assert.equal(recovered.status, 'completed', JSON.stringify(recovered.error));
+    assert.equal(recovered.output, 'Recovered answer from read_file without shell commands.');
+    const retry = JSON.parse(fs.readFileSync(capture, 'utf8'));
+    assert.ok(retry.args.includes('--conversation') && !retry.args.includes('--sandbox'), 'the writer retries in its conversation without the sandbox');
+    assert.match(retry.prompt, /^Headless mode denied action read_file and your previous turn ended without an answer\./);
+    assert.ok(retry.prompt.includes(`inside ${tempDir}, never another checkout`), 'the recovery prompt names the workspace');
+    assert.deepEqual(warnings, ['agy headless mode denied action read_file (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.']);
+
+    process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
+    const empty = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
+    assert.equal(empty.status, 'failed');
+    assert.equal(empty.error.code, 'POLICY_DENIED');
+    assert.match(empty.error.message, /after headless mode denied action read_file, including on automatic retry inside the workspace: /);
+
+    Object.assign(process.env, { coagent8_FIXTURE_DENIED_ACTION: 'a1,a2,a3,a4,a5', coagent8_FIXTURE_RETRY_DENIED_ACTION: 'b1,b2,b3,b4,b5' });
+    const many = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
+    assert.match(many.error.message, /denied actions a1, a2, a3, a4, a5, including/, 'both turns together still name five actions at most');
+  } finally {
+    for (const key of ['coagent8_FIXTURE_MODE', 'coagent8_FIXTURE_DENIED_ACTION', 'coagent8_FIXTURE_RETRY_DENIED_ACTION', 'coagent8_FIXTURE_CAPTURE']) delete process.env[key];
+  }
+});
+
+test('#89: an answer cut off at agy\'s output token limit is a completed, length-limited result (fixture)', async () => {
+  try {
+    process.env.coagent8_FIXTURE_MODE = 'output-limit';
+    const warnings = [];
+    const partial = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+    assert.equal(partial.status, 'completed', JSON.stringify(partial.error));
+    assert.equal(partial.error, undefined);
+    assert.equal(partial.lengthLimited, true);
+    assert.equal(partial.output, 'D1: first part of a long answer');
+    assert.equal(partial.continuationAvailable, true);
+    assert.equal(warnings.filter(w => /output token limit; the answer is incomplete/.test(w)).length, 1);
+
+    process.env.coagent8_FIXTURE_MODE = 'output-limit-empty';
+    const empty = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir });
+    assert.equal(empty.status, 'failed');
+    assert.equal(empty.error.code, 'PROCESS_ERROR');
+    assert.match(empty.error.message, /output token limit before it answered\. Ask for a shorter answer in a new session/);
+    assert.equal(empty.lengthLimited, true);
+
+    process.env.coagent8_FIXTURE_MODE = 'max-tokens-empty';
+    const stoppedEmpty = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir });
+    assert.equal(stoppedEmpty.status, 'failed', 'a stop at the limit without an answer is no answer');
+    assert.match(stoppedEmpty.error.message, /output token limit before it answered/);
+
+    process.env.coagent8_FIXTURE_MODE = 'max-tokens-failure';
+    const unrelated = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir });
+    assert.equal(unrelated.status, 'failed', 'a stop at the limit does not clear an unrelated failure');
+    assert.equal(unrelated.error.code, 'PROCESS_ERROR');
+    assert.match(unrelated.error.message, /internal backend crash/);
+
+    delete process.env.coagent8_FIXTURE_MODE;
+    const normal = await execute('request', { model: MODEL, cwd: tempDir });
+    assert.equal(normal.lengthLimited, undefined, 'without a reported stop agy reports no stop reason');
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
+});
+
+test('#92: denied action names come from agy reports and stderr, bounded and without operands', () => {
+  const collector = createGeminiCollector();
+  collector.denySandbox('jetski: no output produced — a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.');
+  collector.denySandbox('jetski: RunCommand auto-denied by sandbox policy');
+  collector.line(JSON.stringify({ event: 'result', result: { conversation_id: '11111111-aaaa-bbbb-cccc-123456789012', status: 'SUCCESS', response: '', denied_actions: [
+    { action: 'read_file' }, { action: 'command' }, { action: 'C:\\Users\\name\\secret.txt' }, { action: 'rm -rf /' }, {}, null,
+    ...['a1', 'a2', 'a3', 'a4'].map(action => ({ action })),
+  ] } }));
+  const snapshot = collector.snapshot();
+  assert.equal(snapshot.sandboxDenied, true);
+  assert.deepEqual(snapshot.deniedActions, ['read_file', 'command', 'a1', 'a2', 'a3'], 'identifiers only, five at most, no paths or command text');
 });
 
 test('Gemini deadline preserves a partial public answer (fixture)', async () => {

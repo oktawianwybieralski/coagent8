@@ -8,6 +8,15 @@ import { extractStructuredGeminiError } from './errors.js';
 import { isValidModelIdentifier } from '../../models/identifier.js';
 /** Distinct unknown event types reported per turn; later ones are ignored silently. */
 const MAX_REPORTED_UNKNOWN_TYPES = 5;
+/** Distinct denied action names kept per turn; the names identify a tool, never its operands. */
+export const MAX_DENIED_ACTIONS = 5;
+/** A denied action name as agy reports it (`read_file`, `command`); anything else is not kept. */
+const DENIED_ACTION_NAME = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+/**
+ * The permission named by a headless denial on stderr: agy 1.4.12 (2026-10-31) writes
+ * `jetski: ... a tool required the "read_file" permission ... auto-denied`.
+ */
+const STDERR_DENIED_PERMISSION = /required the "([A-Za-z][A-Za-z0-9_]{0,39})" permission/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 /**
@@ -25,12 +34,25 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
   let terminal = false;
   let terminalError: ExecutionError | undefined;
   let sandboxDenied = false;
+  const deniedActions: string[] = [];
+  let lengthLimited = false;
   const reducer = new StreamReducer({ maxTotalBytes: 512 * 1024, maxMessageBytes: 256 * 1024, maxTools: 50, maxMessages: 50 });
   const seen = new Set<string>();
   const ignoredTypes = new Set<string>();
   let messageId = 'assistant-1';
   let messageNumber = 1;
   let usage: TerminalExecutionResult['usage'];
+
+  function recordDeniedAction(name: unknown) {
+    if (typeof name !== 'string' || !DENIED_ACTION_NAME.test(name)) return;
+    if (!deniedActions.includes(name) && deniedActions.length < MAX_DENIED_ACTIONS) deniedActions.push(name);
+  }
+
+  function recordDeniedActions(list: unknown) {
+    if (!Array.isArray(list) || list.length === 0) return;
+    sandboxDenied = true;
+    for (const entry of list) recordDeniedAction((entry as Record<string, unknown> | null)?.action);
+  }
 
   function checkMetadata(key: string, val: unknown) {
     if (val != null && !validEventIdentifier(val)) {
@@ -84,9 +106,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
       if (statusStr === 'error') {
         terminalError ||= extractStructuredGeminiError(e.error, typeof e.message === 'string' ? e.message : undefined);
       }
-      if (Array.isArray(e.denied_actions) && e.denied_actions.length > 0) {
-        sandboxDenied = true;
-      }
+      recordDeniedActions(e.denied_actions);
       if (typeof e.response === 'string' && e.response) {
         reducer.setFinalAnswer(e.response);
         onEvent?.({ type: 'assistant_message', messageId: 'final', text: e.response });
@@ -121,6 +141,8 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
       if (u.step_type === 'user_input' || u.step_type === 'system_message') return;
 
       if (u.step_type === 'agent_response') {
+        // Reported by agy's own consultation, not yet seen natively (#89).
+        if (typeof u.finish_reason === 'string' && /^MAX_TOKENS$/i.test(u.finish_reason)) lengthLimited = true;
         if (typeof u.text_delta === 'string') {
           const key = `msg-${u.step_index ?? messageNumber}`;
           if (reducer.getTotalBytes() + Buffer.byteLength(u.text_delta) > reducer.maxTotalBytes) {
@@ -234,9 +256,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
         terminalError ||= extractStructuredGeminiError(resObj.error, typeof resObj.message === 'string' ? resObj.message : undefined);
       }
 
-      if (Array.isArray(resObj.denied_actions) && resObj.denied_actions.length > 0) {
-        sandboxDenied = true;
-      }
+      recordDeniedActions(resObj.denied_actions);
 
       if (typeof resObj.response === 'string' && resObj.response) {
         const hadMessages = reducer.getMessages().some(m => m.trim().length > 0);
@@ -273,10 +293,19 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
       terminal,
       terminalError,
       sandboxDenied,
+      deniedActions: [...deniedActions],
+      lengthLimited,
       usage,
       truncated: reducer.isTruncated(),
     };
   }
 
-  return { line, snapshot, denySandbox() { sandboxDenied = true; } };
+  /** Records a headless denial from stderr, with the permission it names when that is readable. */
+  function denySandbox(stderrLine?: string) {
+    sandboxDenied = true;
+    const permission = stderrLine ? STDERR_DENIED_PERMISSION.exec(stderrLine)?.[1] : undefined;
+    recordDeniedAction(permission);
+  }
+
+  return { line, snapshot, denySandbox };
 }

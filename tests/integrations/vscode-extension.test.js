@@ -830,11 +830,11 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   const run = (action, extra = {}) => runExtension({ ...options, steps: [{ client: 'agy' }, { action }, { names: ['coagent8-review'] }], ...extra });
   const installed = await run('install');
   assert.deepEqual(installed.errors, []);
-  assert.equal(installed.menus[0].items.find(item => item.client === 'agy').description, '0 enabled · 6 not installed', 'each CLI shows its packages');
+  assert.equal(installed.menus[0].items.find(item => item.client === 'agy').description, '0 enabled · 7 not installed', 'each CLI shows its packages');
   assert.deepEqual(installed.menus[1].items.map(item => item.action), ['install'], 'only actions with packages to change are offered');
-  assert.deepEqual(installed.menus[1].items.map(item => [item.label, item.description]), [['$(cloud-download) Install / Update', '6 to install or update']], 'an icon and the number of packages it changes');
+  assert.deepEqual(installed.menus[1].items.map(item => [item.label, item.description]), [['$(cloud-download) Install / Update', '7 to install or update']], 'an icon and the number of packages it changes');
   assert.equal(installed.menus[0].items.find(item => item.client === 'agy').label, '$(circle-large-outline) Antigravity CLI');
-  assert.equal(installed.menus[1].placeholder, '0 enabled · 6 not installed');
+  assert.equal(installed.menus[1].placeholder, '0 enabled · 7 not installed');
   assert.ok(installed.menus[2].many && installed.menus[2].items.every(item => item.picked), 'every package starts selected');
   assert.equal(fs.existsSync(file), true);
   assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(file))), ['coagent8-review']);
@@ -854,7 +854,7 @@ test('Manage Skills installs and toggles only selected packages; picker cancella
   assert.deepEqual(disabled.menus[1].items.map(item => item.label), ['$(cloud-download) Install / Update', '$(eye-closed) Disable', '$(trash) Uninstall']);
   assert.equal(disabled.menus[0].items.find(item => item.client === 'agy').label, '$(pass-filled) Antigravity CLI');
   const enabled = await run('enable');
-  assert.equal(enabled.menus[1].placeholder, '0 enabled · 1 disabled · 5 not installed');
+  assert.equal(enabled.menus[1].placeholder, '0 enabled · 1 disabled · 6 not installed');
   assert.equal(fs.existsSync(file), true); assert.equal(fs.existsSync(archived), false);
   await run('uninstall');
   assert.equal(fs.existsSync(file), false);

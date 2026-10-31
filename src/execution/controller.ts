@@ -42,7 +42,7 @@ import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
 import { combineSignals } from '../storage/lock.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ExecutionOptions, ExecutionResult, TerminalExecutionResult } from '../backends/types.js';
-import { ToolError, errorCodeOf, type AdapterEvent, type ProviderId } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type AdapterEvent, type ExecutionProfile, type ProviderId } from '../contracts/index.js';
 import { recordQuotaCooldown, resetQuotaCooldown } from '../backends/availability.js';
 import { recordTurnSuccess } from '../backends/probe-cache.js';
 import { createExecutionBudget } from './runtime/budget.js';
@@ -110,6 +110,11 @@ export interface TaskOptions {
   updateSession?: typeof updateSession;
   /** Optional hook to simulate lease release failure during finalization. */
   releaseSessionTurn?: typeof releaseSessionTurn;
+  /**
+   * Execution profile chosen by the calling tool, never by a call argument; read-only when
+   * absent. It binds the session at creation and reaches the adapter (`DELEGATE-001w`).
+   */
+  profile?: ExecutionProfile;
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -262,6 +267,7 @@ async function executeTaskInternal(
       context: executionContext,
       // A review prompt is self-contained: a failed review with no native thread is retried in its session.
       allowFreshNativeThread: Boolean(options.reviewIdentity),
+      profile: options.profile,
     });
     prepHandle.end();
 
@@ -349,7 +355,7 @@ async function executeTaskInternal(
       await pruneExpiredSessions();
       assertSessionContextNotExpired('before');
 
-      acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd, sessionContext);
+      acquired = await acquireAndResolveSession(args.session_handle, backend.id, cwd, sessionContext, options.profile);
       if (!acquired.session) throw new ToolError('SESSION_BUSY', acquired.error ?? 'Session is busy executing another turn.');
     } catch (err) {
       acqHandle.end();
@@ -479,9 +485,9 @@ async function executeTaskInternal(
           budgetAbortListenerAdded = true;
         }
 
-        const options: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
-          timeoutMs: remainingExecutionMs, abortSignal: cancelController.signal, onEvent: receive };
-        const raw: ExecutionResult = await backend.adapter.execute(prompt, options);
+        const executionOptions: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
+          timeoutMs: remainingExecutionMs, abortSignal: cancelController.signal, onEvent: receive, profile: options.profile ?? 'read-only' };
+        const raw: ExecutionResult = await backend.adapter.execute(prompt, executionOptions);
         // Validate terminal results defensively, including adapters supplied at runtime.
         const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
         const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);
@@ -525,7 +531,7 @@ async function executeTaskInternal(
             model: raw.model || model,
             reasoningEffort,
             cliVersion: backend.probe.version,
-            safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-read-only` : undefined,
+            safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-${options.profile ?? 'read-only'}` : undefined,
           }, token);
         }
         if (result.error?.code === 'SESSION_INVALID') {

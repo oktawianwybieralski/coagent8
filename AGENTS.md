@@ -13,8 +13,9 @@ version delivered, per card, with its evidence (owner decision 2026-10-20): hist
 not instructions. The PR that delivers a card's subtasks adds or extends its record.
 The product is a client-independent system for delegating complete tasks to
 cooperating agents (owner decision, 2026-10-08). Roles and model/provider choices are independent;
-client skill installation is planned. The current runtime remains a read-only
-MCP-to-CLI bridge until verified task execution profiles land. Follow the
+client skill installation is planned. The current runtime is a read-only
+MCP-to-CLI bridge except `delegate`, whose workspace-write profile follows rule 01
+(owner decision 2026-10-21), until verified task execution profiles land. Follow the
 roadmap's full coagent direction while preserving audit gates and quiet desktop
 operation. Historical plans and RFCs do not override this direction.
 
@@ -38,6 +39,8 @@ operation. Historical plans and RFCs do not override this direction.
      Claude restricted mode verifies Read/Glob/Grep, dontAsk and empty MCP config;
      agy receives native --sandbox; its inherited MCP servers and plugins are a
      documented limitation (owner decision 2026-10-08), with recursion refused.
+   - Only `delegate` runs the verified workspace-write profile, one writer per
+     workspace, with observed Git changes reported (owner decision 2026-10-21).
    - Planned full coagents use task-scoped capabilities under user policy;
      writing and bounded delegation require the roadmap's profile migration.
    - Models priced as expensive (at least 2x the backend default, or 20 USD per

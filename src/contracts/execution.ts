@@ -106,6 +106,40 @@ export interface TaskExecutionResult {
     verdict: 'READY' | 'BLOCKED' | 'NOT_APPLICABLE';
     reason?: string;
   };
+  /** What the server observed in the workspace around a `workspace-write` turn (`DELEGATE-001w`). */
+  changes?: WorkspaceChanges;
+}
+
+/**
+ * The execution profile of a turn. `workspace-write` lets the backend change files in the
+ * workspace (`DELEGATE-001w`); only the server chooses it, never a call argument.
+ */
+export type ExecutionProfile = 'read-only' | 'workspace-write';
+
+/** One changed path, relative to the workspace, as the server observed it. */
+export interface ObservedChange {
+  path: string;
+  /** `added` and `deleted` compare presence; `modified` covers content, index or mode changes. */
+  kind: 'added' | 'modified' | 'deleted';
+}
+
+/**
+ * Workspace state the server compared before and after a `workspace-write` turn, separate
+ * from what the backend reported. `unavailable` replaces the lists when a snapshot failed.
+ */
+export interface WorkspaceChanges {
+  changed: ObservedChange[];
+  /** Changed paths outside the call's scope. */
+  outsideScope: string[];
+  /** Changed paths that already had uncommitted changes before the turn. */
+  dirtyBefore: string[];
+  /** Commits between the HEAD before and after the turn, or a branch switch. */
+  headMoved?: { before: string | null; after: string | null; commits: number; branchBefore: string | null; branchAfter: string | null };
+  /** `git diff --stat` of each changed tracked path against HEAD after the turn, bounded. */
+  diffStat?: string;
+  /** More changed paths than were listed. */
+  truncated: boolean;
+  unavailable?: string;
 }
 
 /**
@@ -172,6 +206,8 @@ export interface ExecutionOptions {
   timeoutMs?: number;
   nativeSessionId?: string | null;
   onEvent?: (event: AdapterEvent) => void;
+  /** Execution profile of the turn; read-only when absent. */
+  profile?: ExecutionProfile;
 }
 
 /**

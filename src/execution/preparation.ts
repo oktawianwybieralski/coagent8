@@ -9,11 +9,11 @@
  * @packageDocumentation
  */
 
-import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget, type ListPrice } from '../contracts/index.js';
+import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget, type ExecutionProfile, type ListPrice } from '../contracts/index.js';
 import type { BackendReadContext } from '../backends/types.js';
 import { effortVariant } from '../contracts/models.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
-import { getSession, isBudgetExpired, unavailableSessionState } from '../sessions/session.js';
+import { getSession, isBudgetExpired, sessionProfile, unavailableSessionState } from '../sessions/session.js';
 import { combineSignals } from '../storage/lock.js';
 import type { SessionRecord } from '../sessions/types.js';
 import { assertNotNestedTurn } from './nested-turn.js';
@@ -80,6 +80,8 @@ export interface PrepareTaskOptions {
    * whose earlier turn left none (FEEDBACK-061j).
    */
   allowFreshNativeThread?: boolean;
+  /** Execution profile of the call; a session started with the other profile is refused. */
+  profile?: ExecutionProfile;
 }
 
 /**
@@ -156,7 +158,7 @@ function asConfigSnapshot(config?: CoAgent8Config | ConfigSnapshot): ConfigSnaps
 export function validateTaskContext(
   args: ExecutionRequest,
   cwd: string,
-  options: { abortSignal?: AbortSignal | null; allowFreshNativeThread?: boolean } = {}
+  options: { abortSignal?: AbortSignal | null; allowFreshNativeThread?: boolean; profile?: ExecutionProfile } = {}
 ): ValidatedTaskContext {
   // A server started by a backend inside a turn never starts another one (CUR-002).
   assertNotNestedTurn();
@@ -179,6 +181,12 @@ export function validateTaskContext(
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) {
     throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
   }
+  const profile = options.profile ?? 'read-only';
+  if (previous && sessionProfile(previous) !== profile) {
+    throw new ToolError('POLICY_DENIED', profile === 'workspace-write'
+      ? 'This session is read-only; omit session_handle to start a delegate session.'
+      : 'This session belongs to delegate and can change files; continue it with delegate, or omit session_handle.');
+  }
   if (previous && !previous.threadId && !options.allowFreshNativeThread) {
     throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
   }
@@ -200,7 +208,7 @@ export async function prepareTask(
   cwd: string,
   options: PrepareTaskOptions = {}
 ): Promise<PreparedTask> {
-  const { previousSession } = validateTaskContext(args, cwd, { abortSignal: options.abortSignal, allowFreshNativeThread: options.allowFreshNativeThread });
+  const { previousSession } = validateTaskContext(args, cwd, { abortSignal: options.abortSignal, allowFreshNativeThread: options.allowFreshNativeThread, profile: options.profile });
 
   const configSnapshot = asConfigSnapshot(options.config);
   const abortSignal = options.abortSignal;

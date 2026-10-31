@@ -226,7 +226,7 @@ test('a malformed configuration hides no tool, is reported by doctor and refuses
   process.env.coagent8_CONFIG = path.join(testTempDir, 'malformed-config.json');
   fs.writeFileSync(process.env.coagent8_CONFIG, '{"routing": {"allowedBackends": ["claude"]');
   try {
-    assert.equal(createToolDefinitions().length, 6, 'every tool is listed');
+    assert.equal(createToolDefinitions().length, 7, 'every tool is listed');
     const report = await runDoctor({ quota: false });
     assert.equal(report.status, 'configuration_error');
     assert.match(report.configError, /^Configuration Error: Malformed JSON/);

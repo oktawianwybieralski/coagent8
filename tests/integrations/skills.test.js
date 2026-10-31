@@ -35,7 +35,7 @@ function profile(t) {
 
 test('the packaged catalog names one SKILL.md per CoAgent8 function', () => {
   const catalog = readSkillCatalog(catalogDir);
-  assert.deepEqual(catalog.map(item => item.name), ['coagent8-consult', 'coagent8-doctor', 'coagent8-issue', 'coagent8-loop', 'coagent8-review', 'coagent8-session']);
+  assert.deepEqual(catalog.map(item => item.name), ['coagent8-consult', 'coagent8-delegate', 'coagent8-doctor', 'coagent8-issue', 'coagent8-loop', 'coagent8-review', 'coagent8-session']);
   for (const item of catalog) {
     assert.match(item.content, new RegExp(`^---\\r?\\nname: ${item.name}\\r?\\ndescription: \\S`));
     assert.equal(item.digest, digest(item.content));
@@ -134,10 +134,10 @@ test('setup installs the catalog with each registration and cleanup removes both
   const runtimeSource = path.resolve(__dirname, '../../dist/index.cjs');
   const installed = await setupClients({ ...p, env, cwd: p.home, runtimeSource, skillsSource: catalogDir, clients: ['codex', 'claude'], origin: 'vscode-extension' });
   assert.ok(installed.every(result => result.action === 'installed' && result.skills.every(skill => skill.action === 'installed')), JSON.stringify(installed));
-  assert.match(installed.find(result => result.client === 'claude').message, /Skills: 6 installed; type \/coagent8-review/);
+  assert.match(installed.find(result => result.client === 'claude').message, /Skills: 7 installed; type \/coagent8-review/);
   const cli = await setupClients({ ...p, env, cwd: p.home, runtimeSource, skillsSource: catalogDir, clients: ['agy'] });
-  assert.equal(cli[0].skills.length, 6);
-  for (const client of ['codex', 'claude', 'agy']) assert.equal(fs.readdirSync(skillRoot(client, p.home)).length, 6, client);
+  assert.equal(cli[0].skills.length, 7);
+  for (const client of ['codex', 'claude', 'agy']) assert.equal(fs.readdirSync(skillRoot(client, p.home)).length, 7, client);
   const state = JSON.parse(fs.readFileSync(p.state, 'utf8'));
   assert.deepEqual(Object.keys(state.skills).sort(), ['agy', 'claude', 'codex']);
   assert.deepEqual(state.skillOrigin, { codex: 'vscode-extension', claude: 'vscode-extension' });
@@ -158,7 +158,7 @@ test('setup installs the catalog with each registration and cleanup removes both
     assert.ok(result.skills.every(skill => skill.action === 'removed'), JSON.stringify(result));
     assert.deepEqual(fs.readdirSync(skillRoot(client, p.home)), []);
   }
-  assert.equal(fs.readdirSync(skillRoot('agy', p.home)).length, 6);
+  assert.equal(fs.readdirSync(skillRoot('agy', p.home)).length, 7);
 
   // The CLI cleanup (before npm uninstall) removes the rest and the empty setup state.
   const cliOptions = { home: p.home, env: options.env, uninstall: true };

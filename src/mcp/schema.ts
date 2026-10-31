@@ -12,9 +12,9 @@
  * chosen first, and not to call one tagged `deny` (calling agents learned of the approval
  * only from the refusal, 2026-10-11). A user's price limit is a parameter (`AX-002`): the user's
  * constraint, not consent, and a reason to select a model that descriptions otherwise
- * leave unset (`AX-006`). Model-visible definitions stay within 5,900 bytes (owner
- * decision of 2026-10-11 for the approval notice; 5,800 bytes on 2026-10-10 for actionable
- * issue telemetry instructions).
+ * leave unset (`AX-006`). Model-visible definitions stay within 7,700 bytes (owner
+ * decision of 2026-10-21 for `delegate`; 5,900 bytes on 2026-10-11 for the approval notice;
+ * 5,800 bytes on 2026-10-10 for actionable issue telemetry instructions).
  *
  * @packageDocumentation
  */

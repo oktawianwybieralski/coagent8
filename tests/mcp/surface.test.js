@@ -22,13 +22,14 @@ const { readResult } = require('../helpers/result.cjs');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('SURFACE-001: core canonical tools interface defines exactly 6 canonical tools', () => {
+test('SURFACE-001: core canonical tools interface defines exactly 7 canonical tools', () => {
   const coreTools = getCoreCanonicalTools();
-  assert.equal(coreTools.length, 6, 'Must define exactly 6 core canonical tools');
+  assert.equal(coreTools.length, 7, 'Must define exactly 7 core canonical tools (delegate, DELEGATE-001w)');
   const names = coreTools.map(t => t.name).sort();
   assert.deepEqual(names, [
     'cancel',
     'consult',
+    'delegate',
     'doctor',
     'issue',
     'review',
@@ -128,12 +129,12 @@ test('SURFACE-001: direct legacy handlers validate required parameters', async (
   }
 });
 
-test('canonical profile advertises exactly the 6 core tools, without the callable legacy aliases', () => {
+test('canonical profile advertises exactly the 7 core tools, without the callable legacy aliases', () => {
   const tools = createToolDefinitions();
 
-  assert.equal(tools.length, 6, 'Default canonical profile must advertise exactly 6 tools');
+  assert.equal(tools.length, 7, 'Default canonical profile must advertise exactly 7 tools');
   const names = tools.map(t => t.name).sort();
-  assert.deepEqual(names, ['cancel', 'consult', 'doctor', 'issue', 'review', 'session'], 'Canonical tools must match the 6 unprefixed names');
+  assert.deepEqual(names, ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session'], 'Canonical tools must match the 7 unprefixed names');
   for (const tool of tools) assert.equal(tool.icons, undefined, `${tool.name} carries no copy of the server icon`);
 
   // Verify none have double prefixes
@@ -152,7 +153,7 @@ test('a legacy toolProfile setting is ignored: every client gets the same six to
   process.env.coagent8_CONFIG = configFile;
   try {
     assert.equal(loadConfig().toolProfile, undefined, 'the key no longer has a meaning');
-    assert.deepEqual(createToolDefinitions().map(t => t.name).sort(), ['cancel', 'consult', 'doctor', 'issue', 'review', 'session']);
+    assert.deepEqual(createToolDefinitions().map(t => t.name).sort(), ['cancel', 'consult', 'delegate', 'doctor', 'issue', 'review', 'session']);
   } finally {
     if (previous === undefined) delete process.env.coagent8_CONFIG; else process.env.coagent8_CONFIG = previous;
   }
@@ -194,12 +195,12 @@ test('run gateway strictly validates parameters per-action', async () => {
   );
 });
 
-test('canonical profile advertises the 6 core tools; legacy aliases stay callable only', () => {
+test('canonical profile advertises the 7 core tools; legacy aliases stay callable only', () => {
   const tools = createToolDefinitions();
 
-  assert.equal(tools.length, 6);
+  assert.equal(tools.length, 7);
   const names = new Set(tools.map(t => t.name));
-  for (const name of ['consult', 'review', 'doctor', 'session', 'cancel', 'issue']) {
+  for (const name of ['consult', 'review', 'delegate', 'doctor', 'session', 'cancel', 'issue']) {
     assert.ok(names.has(name));
   }
   const callable = new Set(getAllCallableToolDefinitions().map(t => t.name));
@@ -218,7 +219,7 @@ test('getAllCallableToolDefinitions provides lookup strictly for canonical tools
   const allTools = getAllCallableToolDefinitions();
   const allNames = new Set(allTools.map(t => t.name));
 
-  assert.equal(allNames.size, 10);
+  assert.equal(allNames.size, 11);
   assert.ok(allNames.has('consult'));
   assert.ok(allNames.has('review'));
   assert.ok(allNames.has('analyze'));
@@ -305,7 +306,7 @@ test('CONTEXT-001 budgets: server instructions and model-visible tool definition
   const tools = createToolDefinitions();
   // Clients show the model the name, description and input schema; icons and output schemas stay out of its context.
   const visible = Buffer.byteLength(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))));
-  assert.ok(visible <= 5900, `model-visible tool definitions: ${visible} B (owner budget raised to 5,900 B for the approval notice on model, 2026-10-11; owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
+  assert.ok(visible <= 7700, `model-visible tool definitions: ${visible} B (owner budget raised to 7,700 B for delegate, 2026-10-21; 5,900 B for the approval notice on model, 2026-10-11; owner budget raised to 5,800 B for concise, actionable issue telemetry instructions, 2026-10-10; 5,500 B for the price limit and model view, 2026-10-08; about 5 KB on 2026-10-07; 9.6 KB before CONTEXT-001)`);
   const consultProperties = tools.find(t => t.name === 'consult').inputSchema.properties;
   for (const name of ['backend', 'model', 'reasoning_effort', 'output_price_below', 'proposal', 'specific_questions', 'context_files', 'task_type', 'workspace_path', 'session_handle', 'timeout_ms']) {
     assert.ok(consultProperties[name].description, `consult.${name} is described`);

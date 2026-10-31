@@ -10,13 +10,12 @@ const { evaluateStateEnvelopeGate } = require('../../src/review/gate.ts');
 const { formatExecutionResult } = require('../../src/mcp/result.ts');
 const { codexAppServerArgs } = require('../../src/backends/codex/app-server.ts');
 
-test('codexAppServerArgs includes windows.sandbox="elevated" on Windows platforms', () => {
+test('codexAppServerArgs keeps the read-only sandbox and selects the unelevated Windows backend without profiles', () => {
   const args = codexAppServerArgs();
-  if (process.platform === 'win32') {
-    assert.ok(args.includes('windows.sandbox="elevated"'), 'elevated sandbox configured on Windows');
-  } else {
-    assert.ok(!args.includes('windows.sandbox="elevated"'), 'elevated sandbox omitted on non-Windows');
-  }
+  assert.ok(args.includes('sandbox_mode="read-only"'));
+  assert.ok(args.includes('approval_policy="never"'), 'approvals stay disabled');
+  const windows = args.filter(arg => arg.startsWith('windows.sandbox') || arg.startsWith('allow_login_shell'));
+  assert.deepEqual(windows, process.platform === 'win32' ? ['windows.sandbox="unelevated"', 'allow_login_shell=false'] : []);
 });
 
 test('createCodexStreamCollector captures filesystem permission denials only on failed items', () => {
@@ -267,4 +266,15 @@ test('classifyCodexError classifies sandbox provisioning and backend failures as
   // Unrelated stderr containing sandbox and failed in ordinary prose should not match
   const err4 = classifyCodexError('test inside sandbox: assertion failed at line 10');
   assert.equal(err4.code, 'PROCESS_ERROR');
+});
+
+test('codexLaunchEnvironment drops only the Windows app execution alias directory from PATH', () => {
+  const { codexLaunchEnvironment } = require('../../src/backends/codex/app-server.ts');
+  const env = { Path: String.raw`C:\Dev\scoop\shims;C:\Users\u\AppData\Local\Microsoft\WindowsApps\;C:\Windows\System32`, LOCALAPPDATA: String.raw`C:\Users\u\AppData\Local`, OTHER: 'x' };
+  const windows = codexLaunchEnvironment(env, 'win32');
+  assert.equal(windows.Path, String.raw`C:\Dev\scoop\shims;C:\Windows\System32`);
+  assert.equal(windows.OTHER, 'x');
+  assert.equal(env.Path.includes('WindowsApps'), true, 'the input is not changed');
+  assert.equal(codexLaunchEnvironment(env, 'linux'), env);
+  assert.equal(codexLaunchEnvironment({ Path: 'a;b' }, 'win32').Path, 'a;b', 'without LOCALAPPDATA nothing is removed');
 });

@@ -60,7 +60,7 @@ test('Codex failures are typed and authoritative even at exit zero; malformed or
     if (['PROTOCOL_ERROR','SESSION_INVALID','SANDBOX_UNAVAILABLE'].includes(code)) assert.equal(result.continuationAvailable,false,mode);
     if (code === 'SANDBOX_UNAVAILABLE') {
       const capture = JSON.parse(fs.readFileSync(process.env.CODEX_FIXTURE_CAPTURE,'utf8'));
-      assert.ok(!capture.records.some(r=>r.method==='turn/start'),`${mode}: no turn starts without a verified read-only sandbox`);
+      assert.ok(!capture.records.some(r=>r.method==='turn/start'),`${mode}: no turn starts without the verified sandbox`);
     }
   }
   const thread = '11111111-aaaa-bbbb-cccc-123456789012';

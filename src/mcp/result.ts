@@ -12,7 +12,7 @@
  * @packageDocumentation
  */
 
-import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult, ListPrice } from '../contracts/execution.js';
+import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult, ListPrice, WorkspaceChanges } from '../contracts/execution.js';
 import type { TokenUsage } from '../contracts/conversation.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
@@ -68,6 +68,34 @@ function present(text: string): string {
 /** One footer line: line breaks inside a field would split it into other footer lines. */
 function footerLine(text: string): string {
   return text.replace(/\s*\r?\n\s*/g, ' ');
+}
+
+/**
+ * The block of changes the server observed around a `workspace-write` turn (`DELEGATE-001w`),
+ * kept apart from the worker's own report. Paths come from the workspace and are redacted
+ * like every diagnostic.
+ */
+export function formatObservedChanges(changes: WorkspaceChanges): string {
+  const p = (file: string) => redactDiagnostic(file, 512);
+  const lines = ['Observed by CoAgent8 (Git, before and after the turn):'];
+  if (changes.unavailable) {
+    lines.push(`Changes could not be read: ${redactDiagnostic(changes.unavailable, 256)}. Check git status yourself.`);
+    return lines.join('\n');
+  }
+  if (!changes.changed.length) lines.push('No file changed.');
+  for (const change of changes.changed) lines.push(`${change.kind === 'added' ? 'A' : change.kind === 'deleted' ? 'D' : 'M'} ${p(change.path)}`);
+  if (changes.truncated) lines.push('More paths changed than are listed.');
+  if (changes.outsideScope.length) lines.push(`Warning: changed outside scope: ${changes.outsideScope.map(p).join(', ')}`);
+  if (changes.dirtyBefore.length) lines.push(`Warning: already had uncommitted changes before the turn: ${changes.dirtyBefore.map(p).join(', ')}`);
+  const moved = changes.headMoved;
+  if (moved) {
+    const name = (branch: string | null) => branch === null ? '(detached)' : redactDiagnostic(branch, 256);
+    const branch = moved.branchBefore !== moved.branchAfter ? `; branch ${name(moved.branchBefore)} -> ${name(moved.branchAfter)}` : '';
+    lines.push(`Warning: HEAD moved ${moved.before?.slice(0, 12) ?? '(none)'} -> ${moved.after?.slice(0, 12) ?? '(none)'} (${moved.commits} new ${moved.commits === 1 ? 'commit' : 'commits'})${branch}.`);
+  }
+  // The stat repeats paths, so it gets the same diagnostic redaction as the path list.
+  if (changes.diffStat) lines.push('Diff against HEAD of the changed tracked files (includes earlier uncommitted changes):', redactDiagnostic(changes.diffStat, 16 * 1024));
+  return lines.join('\n');
 }
 
 export interface FormatExecutionOptions {
@@ -168,6 +196,7 @@ export function formatExecutionResult(
   let priceNote: string | undefined;
   let listPrice: ListPrice | undefined;
   let preEvaluatedReview: StateEnvelopeEvaluation | undefined;
+  let observedChanges: WorkspaceChanges | undefined;
   let fallbackText = '';
   let formatOpts = options;
 
@@ -181,6 +210,7 @@ export function formatExecutionResult(
     priceNote = outcome.price;
     listPrice = outcome.listPrice;
     preEvaluatedReview = outcome.review;
+    observedChanges = outcome.changes;
     fallbackText = typeof resOrDefaultText === 'string' ? resOrDefaultText : '';
   } else {
     provider = outcomeOrProvider as string | null;
@@ -233,6 +263,8 @@ export function formatExecutionResult(
   } else {
     parts.push(output ? present(output) : res.status === 'completed' ? 'CLI completed with no public text.' : 'No public response.');
   }
+  // A failed or cancelled worker may still have changed files, so the block follows every outcome.
+  if (observedChanges) parts.push(present(formatObservedChanges(observedChanges)));
 
   const durationMs = Math.max(0, typeof executionMeta.totalMs === 'number' && Number.isFinite(executionMeta.totalMs)
     ? executionMeta.totalMs

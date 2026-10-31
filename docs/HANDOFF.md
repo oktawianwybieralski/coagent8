@@ -4,11 +4,100 @@ title: Handoff
 
 # CoAgent8 handoff
 
-Updated 2026-10-20. Read this for current work, [ROADMAP.md](ROADMAP.md) for
+Updated 2026-10-31. Read this for current work, [ROADMAP.md](ROADMAP.md) for
 priorities/acceptance, and [ARCHITECTURE.md](ARCHITECTURE.md) for contracts.
 Do not append another session transcript or treat old test counts as fresh evidence.
 
 ## Current state
+
+- **Open issues on the 001w branch (owner request 2026-10-31):** the owner asked
+  to fix the open issues first and then work toward `0.8.0` with a complete
+  `delegate`. The plan was consulted with Codex (`gpt-6.1-terra`, session
+  `syn_sess_ccae8fe748eb3980edc63618`) and agy (`gemini-3.8-flash-high`,
+  `syn_sess_d57de691433d03b7f179edc4`). Owner decision on #94: rule 02's
+  wording applies, and an agent merges only on the owner's explicit instruction
+  for that PR. The rule files change together with the adoption of
+  `agent-standards` v0.1.0.
+  - #92: reproduced natively (Windows 11, agy 1.4.12, `gemini-3.8-flash`
+    medium) in a local clone of this repository. `delegate` failed with
+    `POLICY_DENIED` after 268 s and 42 operations, with no change. A direct agy
+    run with the same flags showed the cause: `denied_actions` named
+    `read_file`, a read of the clone's origin checkout outside the workspace,
+    not a shell command. agy's own consultation had claimed that directory
+    listing runs through `run_command`, but no run showed that. One more turn
+    in the same agy conversation, which named the workspace, finished the edit.
+    The fix names denied actions (identifiers only) in the error and the
+    history warning, keeps the writer inside the workspace in its prompt, and
+    sends one writer recovery turn. A native run of the built server then
+    completed the same task with one changed line (404.5 s, no denial). A small
+    scratch repository never reproduced the failure.
+  - #89: two direct agy runs that asked for oversized answers were refused by
+    the model, so the limit was not reproduced natively. The fix uses the error
+    text from the issue: a partial answer at the output token limit becomes a
+    completed result with `lengthLimited: true` and a warning. Without a
+    partial answer it stays `PROCESS_ERROR` with guidance. `finish_reason:
+    MAX_TOKENS` is accepted as agy described it but has not been observed.
+  - #62: every review round now asks for all P1/P2 findings in the whole diff,
+    and a follow-up round re-reviews the whole diff. A native Codex consult
+    (codex-cli 0.164.0-alpha.11.1, unelevated sandbox, `gpt-6.1-terra`,
+    `syn_sess_47027532bc6a6a16ef5029c4`) read its `context_files` without a
+    denial and ran `git status`.
+
+- **DELEGATE-001w synchronous write delegation (owner request 2026-10-21):** on
+  branch `fix/codex-windows-sandbox-backend`, in its own commit after the sandbox fix.
+  Native runs on Windows through CoAgent8 in a scratch repository (codex-cli
+  0.162.0-alpha.17.2, Claude Code 2.1.300, agy 1.4.4): Codex (gpt-6.1-sol) and
+  Claude (claude-opus-5-5) each added a function with a test and were denied a
+  write one level above the workspace (Codex by its sandbox, Claude by
+  `--restricted`); Claude ran `npm test` (PASS); Codex could not, because
+  inside its Windows sandbox every process started from Node fails with
+  `spawn EPERM` (reproduced with `codex sandbox`: node to node and node to
+  cmd). agy without `--sandbox` denied every command in headless mode and
+  changed nothing; with `--mode accept-edits` and the write note it added the
+  function and tests and reported `npm test` as NOT_RUN; the tests passed when
+  run by the caller (5/5). The "Observed by CoAgent8" block matched each diff,
+  including the warning for files dirty before the turn. Claude Code sent two
+  parallel delegate calls one after the other, so the single-writer refusal is
+  covered by tests across server processes with different data directories,
+  not natively. Independent review (Codex, handle
+  `syn_sess_a3dd10933437bf6e4860fada`): BLOCKED in rounds 1 and 2 (redaction,
+  evidence completeness, existence inference, writer record reads), READY in
+  round 3 with one P3 documentation fix applied.
+
+- **Codex Windows sandbox backend (owner decision 2026-10-21):** branch
+  `fix/codex-windows-sandbox-backend`. On codex-cli 0.162.0-alpha.17.2, `codex
+  sandbox` with `read-only` and `windows.sandbox="elevated"` ran as
+  `CodexSandboxOffline` and could not read `assets/` (protected ACL without
+  `CodexSandboxUsers`), so `git status` listed its 25 tracked files as deleted;
+  with `windows.sandbox="unelevated"` the same commands read all 25 files, ran Git
+  and Node, and a write in the workspace was denied (`workspace-write`: written
+  inside, denied outside). Through `app-server` every command first failed with
+  `CreateProcessAsUserW` error 5: Codex starts the first `pwsh.exe` on `PATH`, a
+  Microsoft Store alias that a restricted token cannot start (directly from the
+  package directory neither). With that directory removed from the server's
+  `PATH`, `allow_login_shell=false` and the owner's PowerShell 7.6.7 from Scoop,
+  a CoAgent8 consult on gpt-6.1-sol ran PowerShell 7.6.7, read `assets/` (25),
+  reported a correct `git status`, printed no profile errors and was denied the
+  write probe (16.2 s, 4 operations; handle `syn_sess_59b59a2e22e834dac9f131e5`).
+  Not run: an isolated `CODEX_HOME` (lane 4 of 2.12d) and POSIX, which is unchanged.
+
+- **DELEGATE-001 asynchronous plan (owner request 2026-10-21):** prose only,
+  no code. Using `001w` from Claude Code needs a Claude subagent that only
+  waits on the blocking call, so `delegate` is to return at once and wake the
+  caller. Codex consultation `gpt-6.1-sol`, session
+  `syn_sess_973e692be03b734e8b5fdbaa` (243.5 s); its findings were checked
+  in `src/mcp/server.ts` (request-owned signal and budget),
+  `src/execution/delegation.ts` (writer released when the request ends) and
+  `src/sessions/writer.ts` (takeover of a record whose process is gone). The
+  Claude Code channels documentation was read on 2026-10-21. A Bash tool
+  process of the Claude Code VS Code extension 2.1.306 had
+  `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID` and a private
+  `CLAUDE_CODE_MESSAGING_SOCKET`; the MCP server process was not checked.
+  Draft contract in
+  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented);
+  re-scoped cards and four open owner decisions in the
+  [DELEGATE-001 card](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
+  Not reviewed yet.
 
 - **Delivered records (owner decision 2026-10-20):** what 0.7.0 delivered, per
   card with PRs, review handles and evidence, is in

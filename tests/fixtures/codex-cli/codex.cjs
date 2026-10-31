@@ -27,6 +27,7 @@ const CONFIGURED_SERVERS = { coagent8: { command: 'coagent8', enabled: true }, '
 const DEFAULT_ON = ['apps', 'plugins', 'remote_plugin', 'browser_use', 'browser_use_external', 'computer_use', 'in_app_browser', 'skill_mcp_dependency_install', 'tool_suggest', 'hooks', 'multi_agent', 'shell_tool'];
 const records = [];
 let threadId = null, threadConfig = null, turnRunning = false, pending = '';
+let threadCwd = null, threadWrites = false;
 function featureEnabled(name) {
   if (mode === 'feature-enabled' && name === 'apps') return true;
   return !args.includes(`features.${name}=false`) && DEFAULT_ON.includes(name);
@@ -81,6 +82,14 @@ function runTurn() {
   item('item/completed', { type: 'reasoning', id: 'private', summary: ['PRIVATE_REASONING_NEVER_PERSIST'], content: [] });
   item('item/started', { type: 'commandExecution', id: 'read-1', command: 'PRIVATE_RAW_COMMAND', status: 'inProgress', exitCode: null });
   item('item/completed', { type: 'commandExecution', id: 'read-1', command: 'PRIVATE_RAW_COMMAND', status: 'completed', aggregatedOutput: 'PRIVATE_TOOL_OUTPUT', exitCode: 0 });
+  // CODEX_FIXTURE_WRITES: on a workspace-write thread, files to write (relative path to text) or delete (null).
+  if (threadWrites && process.env.CODEX_FIXTURE_WRITES) {
+    for (const [file, text] of Object.entries(JSON.parse(process.env.CODEX_FIXTURE_WRITES))) {
+      const target = path.resolve(threadCwd, file);
+      if (text === null) fs.rmSync(target, { force: true });
+      else { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, text); }
+    }
+  }
   // `large-tool-output`: tool output fills more than the runner's 512 KB stdout copy before a small answer.
   if (mode === 'large-tool-output') for (let i = 0; i < 8; i++) item('item/completed', { type: 'commandExecution', id: `read-big-${i}`, command: 'git diff', status: 'completed', aggregatedOutput: 'x'.repeat(100 * 1024), exitCode: 0 });
   item('item/started', { type: 'agentMessage', id: 'message-1', text: '' });
@@ -126,9 +135,18 @@ function handle(message) {
     if (method === 'thread/resume' && mode === 'invalid-session') { send({ id, error: { code: -32600, message: `no rollout found for thread id ${params.threadId}` } }); return; }
     threadConfig = params.config || null;
     threadId = method === 'thread/resume' ? (mode === 'wrong-thread' ? '22222222-aaaa-bbbb-cccc-123456789012' : params.threadId) : (acceptance ? randomUUID() : THREAD);
+    // A workspace-write thread reports the overrides it received (`write-network` and
+    // `write-outside-root` report a policy the client must refuse).
+    threadCwd = params.cwd;
+    threadWrites = params.sandbox === 'workspace-write';
     const sandbox = mode === 'sandbox-writable'
       ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
-      : { type: 'readOnly', networkAccess: false };
+      : threadWrites
+        ? { type: 'workspaceWrite', writableRoots: mode === 'write-outside-root' ? [path.resolve(params.cwd, '..', 'elsewhere')] : [],
+          networkAccess: mode === 'write-network' || !args.includes('sandbox_workspace_write.network_access=false'),
+          excludeTmpdirEnvVar: args.includes('sandbox_workspace_write.exclude_tmpdir_env_var=true'),
+          excludeSlashTmp: args.includes('sandbox_workspace_write.exclude_slash_tmp=true') }
+        : { type: 'readOnly', networkAccess: false };
     // `resolved-model`: the thread reports a concrete model other than the requested one.
     send({ id, result: { thread: { id: threadId, turns: [] }, model: mode === 'resolved-model' ? 'gpt-6.1-sol-2026-10-01' : params.model, modelProvider: 'openai', serviceTier: null, cwd: params.cwd,
       approvalPolicy: mode === 'approvals-on' ? 'on-request' : 'never', sandbox, reasoningEffort: null } });

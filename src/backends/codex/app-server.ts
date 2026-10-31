@@ -1,10 +1,10 @@
 /**
- * One read-only turn over the `codex app-server` JSON-RPC protocol (Codex CLI 0.160; the isolation checks were measured on 0.162).
+ * One turn over the `codex app-server` JSON-RPC protocol (Codex CLI 0.160; the isolation checks were measured on 0.162).
  *
  * @remarks
  * Messages are newline-delimited JSON-RPC 2.0 without the `jsonrpc` field. The session
  * performs the `initialize`/`initialized` handshake, starts or resumes the thread, fails
- * closed unless the server reports a read-only sandbox with `approvalPolicy: "never"`,
+ * closed unless the server reports the sandbox of {@link CODEX_SANDBOX} with `approvalPolicy: "never"`,
  * starts one turn and closes stdin when the turn completes, which ends the server. An
  * interrupt sends `turn/interrupt`; the server then completes the turn with
  * `status: "interrupted"`. Server-initiated requests (approvals, user input, tool calls)
@@ -20,8 +20,10 @@
  *
  * @packageDocumentation
  */
+import path from 'node:path';
 import { BRAND } from '../../brand.js';
-import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError } from '../../contracts/index.js';
+import { ToolError, validEventIdentifier, type AdapterEvent, type ExecutionError, type ExecutionProfile } from '../../contracts/index.js';
+import { canonicalPath } from '../../workspace/identity.js';
 import type { StdinChannel, StdinSession } from '../../execution/process.js';
 import { classifyCodexTurnError } from './errors.js';
 import type { createCodexStreamCollector } from './collector.js';
@@ -38,24 +40,91 @@ export const CODEX_DISABLED_FEATURES = [
   'skill_mcp_dependency_install', 'tool_suggest', 'hooks', 'multi_agent', 'multi_agent_v2',
 ] as const;
 
+/** The sandbox of a Codex turn per execution profile: the requested mode and the type the server must report. */
+export const CODEX_SANDBOX = {
+  'read-only': { mode: 'read-only', type: 'readOnly' },
+  'workspace-write': { mode: 'workspace-write', type: 'workspaceWrite' },
+} as const;
+
 /**
- * Arguments of every `codex app-server` launch: read-only sandbox, no approvals and the
- * features in {@link CODEX_DISABLED_FEATURES} off. On Windows, forces `windows.sandbox="elevated"`
- * to use the provisioned Windows sandbox backend (CodexSandboxUsers), enabling read-only sandboxed
- * execution without failing closed by policy in isolated configurations.
+ * Overrides for a `workspace-write` turn (`DELEGATE-001w`): writes only in the turn's
+ * directory, without network access, extra writable roots or the temporary directories
+ * Codex otherwise adds. A user's `config.toml` may enable any of them.
  */
-export function codexAppServerArgs(): string[] {
+const CODEX_WORKSPACE_WRITE_CONFIG = [
+  'sandbox_workspace_write.network_access=false',
+  'sandbox_workspace_write.writable_roots=[]',
+  'sandbox_workspace_write.exclude_tmpdir_env_var=true',
+  'sandbox_workspace_write.exclude_slash_tmp=true',
+] as const;
+
+/**
+ * Arguments of every `codex app-server` launch: the sandbox of {@link CODEX_SANDBOX} for the
+ * profile, no approvals and the features in {@link CODEX_DISABLED_FEATURES} off. On Windows the sandbox is
+ * `windows.sandbox="unelevated"` (`CUR-014`, 2026-10-21): a restricted token of the user's own
+ * account reads what the user can read, while the elevated backend's separate sandbox account
+ * loses read access wherever ACL inheritance is cut, which left reviews PARTIAL. Windows
+ * commands also run without the user's PowerShell profile (`allow_login_shell=false`, which
+ * Codex turns into `-NoProfile`): a profile adds output to every command, and under the
+ * default execution policy of Windows PowerShell it fails on every command.
+ */
+export function codexAppServerArgs(profile: ExecutionProfile = 'read-only'): string[] {
   return [
     'app-server',
-    '-c', 'sandbox_mode="read-only"',
+    '-c', `sandbox_mode="${CODEX_SANDBOX[profile].mode}"`,
+    ...(profile === 'workspace-write' ? CODEX_WORKSPACE_WRITE_CONFIG.flatMap(setting => ['-c', setting]) : []),
     '-c', 'approval_policy="never"',
-    ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="elevated"'] : []),
+    ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="unelevated"', '-c', 'allow_login_shell=false'] : []),
     ...CODEX_DISABLED_FEATURES.flatMap(feature => ['-c', `features.${feature}=false`]),
   ];
 }
 
+/**
+ * The environment of a Codex launch on Windows without the user's app execution alias
+ * directory (`%LOCALAPPDATA%\Microsoft\WindowsApps`) on `PATH`. Codex runs commands with the
+ * first `pwsh.exe` on `PATH`, and a Microsoft Store PowerShell's alias there cannot start under
+ * the sandbox's restricted token (`CreateProcessAsUserW` error 5), which denied every command;
+ * without it Codex falls back to `powershell.exe`. Other platforms get `env` unchanged.
+ */
+export function codexLaunchEnvironment(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  if (platform !== 'win32') return env;
+  // Windows environment names are case-insensitive; Node keeps the spelling it received.
+  const name = (key: string) => Object.keys(env).find(candidate => candidate.toUpperCase() === key);
+  const pathKey = name('PATH');
+  const localAppData = name('LOCALAPPDATA');
+  if (!pathKey || !localAppData || !env[localAppData]) return env;
+  const aliases = path.win32.join(env[localAppData]!, 'Microsoft', 'WindowsApps').toLowerCase();
+  const kept = (env[pathKey] || '').split(';')
+    .filter(entry => path.win32.normalize(entry.trim()).replace(/\\+$/, '').toLowerCase() !== aliases);
+  return { ...env, [pathKey]: kept.join(';') };
+}
+
 /** Pages read at most from a paginated isolation check before it fails closed. */
 const MAX_CHECK_PAGES = 20;
+
+/**
+ * Checks the sandbox a `thread/start` or `thread/resume` result reports against the profile.
+ * A `workspace-write` thread must report no network access, both temporary directories
+ * excluded, its directory as `cwd` and no writable root outside it.
+ * @returns A reason the sandbox does not match, or null when it does.
+ */
+export function codexSandboxMismatch(result: Record<string, unknown>, profile: ExecutionProfile, cwd: string): string | null {
+  const sandbox = record(result.sandbox);
+  const expected = CODEX_SANDBOX[profile];
+  if (sandbox?.type !== expected.type) return `Codex did not confirm the ${expected.mode} sandbox.`;
+  if (result.approvalPolicy !== 'never') return 'Codex did not confirm that approvals are disabled.';
+  if (profile === 'read-only') return null;
+  if (sandbox.networkAccess !== false) return 'Codex did not confirm a workspace-write sandbox without network access.';
+  if (sandbox.excludeTmpdirEnvVar !== true || sandbox.excludeSlashTmp !== true) return 'Codex did not confirm a workspace-write sandbox without temporary write roots.';
+  if (typeof result.cwd !== 'string' || canonicalPath(result.cwd) !== canonicalPath(cwd)) return 'Codex reported another working directory for the thread.';
+  const roots = sandbox.writableRoots;
+  if (!Array.isArray(roots)) return 'Codex did not report the writable roots of the sandbox.';
+  for (const root of roots) {
+    const relative = typeof root === 'string' && path.isAbsolute(root) ? path.relative(canonicalPath(cwd), canonicalPath(root)) : null;
+    if (relative === null || relative.startsWith('..') || path.isAbsolute(relative)) return 'Codex reported a writable root outside the workspace.';
+  }
+  return null;
+}
 
 export interface CodexAppSessionOptions {
   collector: ReturnType<typeof createCodexStreamCollector>;
@@ -65,6 +134,8 @@ export interface CodexAppSessionOptions {
   effort: string;
   cwd: string;
   onEvent?: (event: AdapterEvent) => void;
+  /** Execution profile of the turn; read-only when absent. */
+  profile?: ExecutionProfile;
 }
 
 const REQUEST = { initialize: 1, thread: 2, turn: 3, interrupt: 4, config: 5, features: 6, mcpStatus: 7 } as const;
@@ -136,12 +207,13 @@ export function checkCodexMcpStatusPage(result: unknown): string | null {
  * Creates the stdin session and stdout line handler for one Codex app-server turn.
  * @param options - Collector, thread, model, effort and working directory of the turn.
  * @returns `session` for `runCommand` and `line` for its `onStdoutLine`.
- * @throws From `line`: `SANDBOX_UNAVAILABLE` when the server does not confirm read-only
- * mode, `SESSION_INVALID` for an unknown thread, `PROTOCOL_ERROR` on malformed messages,
+ * @throws From `line`: `SANDBOX_UNAVAILABLE` when the server does not confirm the sandbox
+ * of {@link CODEX_SANDBOX}, `SESSION_INVALID` for an unknown thread, `PROTOCOL_ERROR` on malformed messages,
  * and typed provider errors for failed requests.
  */
 export function createCodexAppSession(options: CodexAppSessionOptions) {
   const { collector } = options;
+  const profile = options.profile ?? 'read-only';
   let channel: StdinChannel | undefined;
   let prompt = '';
   let interruptRequested = false, interruptSent = false;
@@ -169,7 +241,7 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
   }
   function onConfig(result: unknown) {
     const servers = checked(() => configuredCodexMcpServers(result));
-    const thread: Record<string, unknown> = { model: options.model, cwd: options.cwd, approvalPolicy: 'never', sandbox: 'read-only' };
+    const thread: Record<string, unknown> = { model: options.model, cwd: options.cwd, approvalPolicy: 'never', sandbox: CODEX_SANDBOX[profile].mode };
     if (servers.length) thread.config = { mcp_servers: Object.fromEntries(servers.map(name => [name, { enabled: false }])) };
     send(options.threadId
       // `excludeTurns` keeps the response from carrying the whole thread history.
@@ -183,10 +255,9 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     else send({ id, method: 'mcpServerStatus/list', params: { ...params, detail: 'toolsAndAuthOnly' } });
   }
   function onThread(result: Record<string, unknown>) {
-    const sandbox = record(result.sandbox);
-    if (sandbox?.type !== 'readOnly' || result.approvalPolicy !== 'never') {
-      fail(typed('SANDBOX_UNAVAILABLE', 'Codex did not confirm a read-only sandbox with approvals disabled.'));
-    }
+    // Started and resumed threads are both checked: a resumed thread could keep another policy.
+    const mismatch = codexSandboxMismatch(result, profile, options.cwd);
+    if (mismatch) fail(typed('SANDBOX_UNAVAILABLE', mismatch));
     const id = record(result.thread)?.id;
     if (typeof id !== 'string') fail(typed('PROTOCOL_ERROR', 'Codex returned a thread without an ID.'));
     // The thread reports the model chosen from the request or the Codex configuration.
@@ -263,9 +334,9 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     if (hasId && typeof msg.method === 'string') {
       if (!warnedRequest) {
         warnedRequest = true;
-        options.onEvent?.({ type: 'warning', message: `Declined a Codex '${msg.method.slice(0, 64)}' request in read-only mode.` });
+        options.onEvent?.({ type: 'warning', message: `Declined a Codex '${msg.method.slice(0, 64)}' request; ${BRAND.NAME} grants no approvals.` });
       }
-      send({ id: msg.id, error: { code: -32601, message: `${BRAND.NAME} runs Codex read-only and does not answer server requests.` } });
+      send({ id: msg.id, error: { code: -32601, message: `${BRAND.NAME} runs Codex without approvals and does not answer server requests.` } });
       return;
     }
     if (hasId) onResponse(msg.id, msg);

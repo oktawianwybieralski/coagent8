@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { SessionRecord, SessionResult, AcquireSessionResult, GetSessionOptions, type CompletedReview, type ReviewIdentity } from './types.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite, withFileLock, combineSignals, type FileLockOptions } from '../storage/lock.js';
-import { PROVIDERS, ToolError, type BackendReadContext, type ExecutionBudget } from '../contracts/index.js';
+import { PROVIDERS, ToolError, type BackendReadContext, type ExecutionBudget, type ExecutionProfile } from '../contracts/index.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.js';
 import { canonicalPath } from '../workspace/identity.js';
@@ -50,6 +50,7 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
   if (s.turnCount != null && (!Number.isSafeInteger(s.turnCount) || s.turnCount < 0)) return null;
   for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode]) if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
+  if (s.profile != null && s.profile !== 'workspace-write') return null;
   const { lastReview: rawReview, ...rest } = s;
   const lastReview = parseCompletedReview(rawReview);
   return { ...rest, schemaVersion: 2, state: s.state || (s.activePid ? 'running' : 'idle'), activePid: s.activePid ?? null, activeTurnAt: s.activeTurnAt ?? null, threadId: s.threadId ?? null, turnToken: s.turnToken ?? null, turnCount: s.turnCount ?? 0, ...(lastReview ? { lastReview } : {}) };
@@ -166,11 +167,18 @@ async function withSessionLock<T>(
     return { ok: false, error: (err as Error).message };
   }
 }
-export function createSession(backend: string, workspace = process.cwd(), threadId: string | null = null): SessionRecord {
+/** The execution profile a session was created with; records without one are read-only. */
+export function sessionProfile(s: SessionRecord): ExecutionProfile {
+  return s.profile === 'workspace-write' ? 'workspace-write' : 'read-only';
+}
+
+export function createSession(backend: string, workspace = process.cwd(), threadId: string | null = null, profile: ExecutionProfile = 'read-only'): SessionRecord {
   if (!PROVIDERS.includes(backend as typeof PROVIDERS[number])) throw new Error('Invalid session provider.');
   const handle = `syn_sess_${crypto.randomBytes(12).toString('hex')}`, now = new Date().toISOString();
+  // The profile is written with the record, before any turn starts, and never updated.
   const s: SessionRecord = { schemaVersion: 2, sessionHandle: handle, backend, workspace: canonicalPath(workspace), threadId,
-    state: 'idle', turnToken: null, turnCount: 0, activePid: null, activeTurnAt: null, createdAt: now, lastUsedAt: now };
+    state: 'idle', turnToken: null, turnCount: 0, activePid: null, activeTurnAt: null, createdAt: now, lastUsedAt: now,
+    ...(profile === 'workspace-write' ? { profile } : {}) };
   saveSessionFile(getSessionFilePath(handle)!, s);
   return s;
 }
@@ -306,14 +314,16 @@ export async function acquireAndResolveSession(
   handle?: string | null,
   backend = 'codex',
   workspace = process.cwd(),
-  options?: number | AbortSignal | FileLockOptions | BackendReadContext
+  options?: number | AbortSignal | FileLockOptions | BackendReadContext,
+  profile: ExecutionProfile = 'read-only'
 ): Promise<AcquireSessionResult> {
   const { effectiveSignal, budget } = parseSessionOptions(options);
   assertSessionNotExpired(effectiveSignal, budget, 'Session acquisition');
 
   const isNewSession = !handle;
-  const s = handle ? getSession(handle, { backend, workspace }) : createSession(backend, workspace);
+  const s = handle ? getSession(handle, { backend, workspace }) : createSession(backend, workspace, null, profile);
   if (!s) return { error: 'Invalid or expired session handle (workspace/provider mismatch or invalidation).' };
+  if (sessionProfile(s) !== profile) return { error: `The session was started ${sessionProfile(s)} and cannot run a ${profile} turn.` };
 
   let acquired: SessionResult<{ token: string }>;
   try {

@@ -73,6 +73,8 @@ function answer() {
     if (sessionId && typeof event.session_id === 'string') event.session_id = sessionId;
     if (scenario === 'missing-init' && event.subtype === 'init') continue;
     if (scenario === 'write-tools' && event.subtype === 'init') event.tools = [...event.tools, 'Bash', 'Write'];
+    // A workspace-write run requests the write tools, and Claude Code reports what was requested.
+    else if (event.subtype === 'init' && (valueOf('--tools') || '').includes('Edit')) event.tools = valueOf('--tools').split(',');
     // `max-tokens`: the answer stopped at the output length limit (ENVELOPE-001).
     if (scenario === 'max-tokens' && event.type === 'result') event.stop_reason = 'max_tokens';
     if ((scenario === 'no-result' || scenario === 'interruptible' || scenario === 'ignore-interrupt') && event.type === 'result') continue;

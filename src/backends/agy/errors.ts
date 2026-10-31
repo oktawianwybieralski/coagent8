@@ -20,6 +20,15 @@ export function classifyGeminiError(text: string): ExecutionError {
   return { code, message, retryable: code === 'RATE_LIMITED' };
 }
 
+/**
+ * agy's error after its own continuation retries at the output token limit: "Your previous
+ * response was cut off because it exceeded the output token limit ... Retries remaining: 3"
+ * (agy 1.4.3, #89). The streamed answer before it is the partial answer.
+ */
+export function isOutputLimitError(text: string): boolean {
+  return /exceeded the output token limit|\bMAX_TOKENS\b/i.test(text);
+}
+
 const GEMINI_ERRORS: ErrorDialect = {
   name: 'Gemini',
   httpFields: ['status_code', 'statusCode', 'http_status', 'httpCode', 'code'],

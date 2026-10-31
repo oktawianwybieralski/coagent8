@@ -5,9 +5,11 @@ description: Carry out a non-trivial change in a loop led by you, with CoAgent8 
 
 # CoAgent8 loop
 
-You lead the loop and make every change. CoAgent8 agents run read-only: they
-review, they do not edit. This skill grants no permission. Commit, push, merge,
-deploy and publish only with the user's authority.
+You lead the loop and own every change: you make it yourself or delegate it.
+CoAgent8 consult and review agents run read-only; a delegate agent edits the
+workspace for you, and you check what it changed. This skill grants no
+permission. Commit, push, merge, deploy and publish only with the user's
+authority.
 
 1. **Size.** For a trivial edit skip the loop and make the change directly.
 2. **Recon.** Read the relevant code and the project's documents. List your
@@ -21,7 +23,9 @@ deploy and publish only with the user's authority.
    `context_files`. Continue the same `session_handle` for revisions. Give every
    finding a disposition: accepted, rejected with the reason, or deferred. After
    three rounds without agreement, show the open points to the user.
-6. **Implement** once the user agrees with the plan.
+6. **Implement** once the user agrees with the plan, yourself or, for a
+   well-defined part, through `coagent8-delegate` with the plan's scope and
+   proof commands. A delegated change is still yours to verify and review.
 7. **Verify.** Run the proof commands yourself and record each command, exit
    code and result. Fix failures, at most two rounds, then report what still
    fails.

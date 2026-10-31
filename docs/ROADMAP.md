@@ -4,7 +4,7 @@ title: Roadmap
 
 # CoAgent8 roadmap
 
-Updated 2026-10-19. This is the single active plan. CoAgent8 is becoming a
+Updated 2026-10-21. This is the single active plan. CoAgent8 is becoming a
 client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. The current runtime still exposes the
@@ -134,8 +134,9 @@ recorded in the card it changes:
 - Asynchronous delegation with caller wake-up is a headline of `0.8.0`
   (decided for `0.7.0`; moved by the release split of 2026-10-15)
   ([`DELEGATE-001`](#delegate-001-asynchronous-delegation-and-caller-wake-up)):
-  read-only delegation lands early, delegation with writes follows the write
-  profiles.
+  the asynchronous lifecycle lands for the synchronous write delegation of
+  `001w` (re-scoped 2026-10-21 from read-only first); delegation through the
+  coagent profiles and the server-owned loop follow the write profiles.
 - npm publishes directly to `next` through trusted publishing with provenance;
   publishing the verified GitHub Release draft is the approval, with no staging
   or npmjs.com 2FA approval (superseded by owner decision 2026-10-19,
@@ -198,9 +199,9 @@ delegation contract, with early handles from `SESSION-001`), and
 [`WINDOWS-001b-e`](#windows-001-per-call-process-containment) per-call process
 containment, which must land before any write or command profile.
 
-**Phase 3 - read-only delegation, accepted proposals, documentation and
-package hygiene.** `DELEGATE-001e` (working `delegate` for consult and
-review turns) and `DELEGATE-001d` (wake-up adapters for the clients whose
+**Phase 3 - asynchronous delegation, accepted proposals, documentation and
+package hygiene.** `DELEGATE-001e` (asynchronous lifecycle of `delegate`)
+and `DELEGATE-001d` (wake-up adapters for the clients whose
 `001a` tests passed); the
 `PROPOSALS-001` items accepted in Phase 0,
 [`DOCS-003`](#docs-003-documentation-site) (the GitHub Pages site and the
@@ -214,7 +215,8 @@ write/check/review/fix profiles, role configuration and multi-file skills;
 `CLI-FIRST-001f` (one execution path through the CLI) after the profiles;
 `FAILOVER-001a`; [`PLUGIN-001a-e`, `001g`](#plugin-001-native-plugin-in-every-supported-client)
 (`PLUGIN-001f` follows publication in Phase 5);
-`DELEGATE-001f` (delegation of write tasks through the accepted profiles).
+`DELEGATE-001f1` (asynchronous delegation through the accepted profiles) and
+`DELEGATE-001f2` (the server-owned check, fix and review loop).
 
 **Phase 5 - publication automation and 0.7.0 acceptance.**
 [`RELEASE-001a-g`](#release-001-automated-publication), then the release PR
@@ -498,6 +500,45 @@ the next minor, `0.8.0` after the release split of 2026-10-15. Read-only delegat
 [0.7.0 plan](#070-beta3-plan)); delegation of write tasks follows the
 profiles (Phase 4).
 
+Owner request 2026-10-21: `delegate` delegates. The call returns once the
+worker runs and the caller is woken when it finishes, because a calling agent
+that waits on the synchronous `001w` call wraps it in a subagent of its own
+vendor, which pays only for waiting. A Codex consultation (`gpt-6.1-sol`,
+session `syn_sess_973e692be03b734e8b5fdbaa`) and the Claude Code channels
+documentation shaped the contract in
+[ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented):
+`mode: "async" | "sync"` with `async` as the target default, a task handle
+and a wait command built by the server from its own process (no PATH needed),
+a task-owned lifecycle that holds the writer until evidence is persisted, and
+later a server-owned check, fix and review loop (`001f2`) that removes the
+caller's supervision. Re-scoped from read-only first: `001e` now delivers the
+asynchronous lifecycle for the existing write delegation. Open owner
+decisions:
+
+1. Whether `delegate` is first published with `async` as the default
+   (`001w` is unreleased, so no client depends on `sync` yet) or ships
+   `sync` first and switches in `0.8.0`.
+2. Whether asynchronous writes on Windows ship before `WINDOWS-001b-e` with
+   the `001w` limitation. Codex: no, because a writer record whose server
+   process is gone is taken over while a surviving descendant may still write.
+   Author: `001w` already has that risk; `async` lengthens the window but adds
+   no new kind of risk.
+3. Whether this work rides on the `001w` branch or follows it in its own PR.
+4. Claude Code's private messaging pipe is recorded as rejected unless the
+   owner approves a separate experiment (`001a` step 4).
+
+- [ ] **DELEGATE-001w - synchronous write delegation.** Owner request
+  2026-10-21, ahead of `001c-f`: the `delegate` tool, its write profiles,
+  the single-writer lease, the before/after Git evidence and the
+  `coagent8-delegate` skill, as specified in
+  [ARCHITECTURE](ARCHITECTURE.md#synchronous-write-delegation-delegate-001w).
+  It brings forward a minimal slice of `COAGENT-002` (profiles, one writer)
+  without `WINDOWS-001b-e`, whose gap is a documented limitation. Acceptance:
+  per backend, a worker adds a function with a test in a scratch repository;
+  a write outside the workspace is denied for Codex; a second `delegate` in
+  the same workspace is refused; changes outside `scope` and to files dirty
+  before are reported; the skill is installed in all three clients by
+  `coagent8 skills install`. Check: R, MCP/E2E, native per backend.
 - [ ] **DELEGATE-001a - native tests of the wake-up mechanisms.** Owner
   decision 2026-10-13: delegation must work in every client, so try the
   mechanisms in this order and stop at the first that works:
@@ -508,7 +549,13 @@ profiles (Phase 4).
      without user input. To test: agy `run_command` in the background.
   2. Documented push or injection surfaces: Claude Code plugin monitors and
      channels; Codex `codex queue --thread` against an idle, busy and
-     unloaded thread and whether the IDE shows it; client hooks.
+     unloaded thread and whether the IDE shows it; client hooks. Channels
+     (research preview, documentation read 2026-10-21) register only with
+     `--channels` for an allowlisted plugin or with
+     `--dangerously-load-development-channels`, which is ignored with `-p` and
+     the Agent SDK; test whether the VS Code extension can load a channel at
+     all, whether an event wakes an idle session, and the MCP protocol
+     revision limit (a server negotiating 2026-07-28 is not registered).
   3. Documented host protocols the client already exposes (for example
      Codex `app-server` threads and turns, Claude Code SDK sessions).
   4. Last resort, only as an owner-approved experiment for a client where 1-3
@@ -517,38 +564,59 @@ profiles (Phase 4).
      client updates, resembles malware to security tools and conflicts with
      the no-hacks invariant, so it never ships without a separate decision.
 
-  Also record which MCP protocol revision CoAgent8 negotiates. Check: native,
-  per client.
+  Also record which MCP protocol revision CoAgent8 negotiates, and for each
+  mechanism what happens when the task is cancelled: whether a waiter that
+  exits on cancellation still starts a turn, and a registration made after the
+  task already finished. Check: native, per client.
 - [ ] **DELEGATE-001b - caller identity label.** Learn how the caller's own
   session or thread id reaches CoAgent8 (for example an inherited
   `CLAUDE_CODE_SESSION_ID`, or an explicit argument) and record it on
   sessions, so `session list` can show "my sessions" and wake-ups reach the
   right caller. The label filters only; it never authorizes cancel or close
-  (`turnToken` and `activePid` keep that role). Check: P, then R.
-- [ ] **DELEGATE-001c - portable core contract.** `delegate` returns a task
-  id at once; `session` reads status and result; `cancel` stops it; a bounded
-  `wait`. The result is written to the session store before any wake-up;
-  completion, notification sent and result fetched are separate, deduplicated
-  states, with no wake-up after cancel. Record in ARCHITECTURE as
-  unimplemented. Check: P.
-- [ ] **DELEGATE-001d - wake-up adapters.** After `001a-c` and the CLI
-  (`CLI-FIRST-001b`): per-client adapters for the clients whose `001a` tests
-  passed (Claude Code monitor `coagent8 watch`, later a channel; Codex
-  `codex queue`; agy background `coagent8 wait`), or the proxy subagent in
-  each client's plugin where adapters prove fragile. A client without a
-  working adapter still gets the result through `session` and `wait`.
+  (`turnToken` and `activePid` keep that role). First finding (2026-10-21):
+  the Claude Code VS Code extension 2.1.306 sets `CLAUDE_CODE_SESSION_ID` in
+  a Bash tool process; check that the MCP server process inherits it, and find
+  the Codex thread id (needed by `codex queue --thread`) and the agy
+  conversation id. Knowing the id does not wake the window by itself
+  ([ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented)).
+  Check: P, then R.
+- [ ] **DELEGATE-001c - portable core contract.** Turn the draft in
+  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented)
+  into the reviewed contract: `mode` and the default (owner decision 1
+  above), task handle and idempotent start, the immediate response with
+  `wakeup` and the server-built wait argv (`process.execPath`, the running
+  bundle, `--data-dir`, needed environment), `session` task status and result,
+  bounded `wait` with exit codes, `cancel`, and the task states. The result is
+  written to the session store before any wake-up; completion, notification
+  sent and result fetched are separate, deduplicated states, with no new
+  wake-up after cancel. Check: P.
+- [ ] **DELEGATE-001d - wake-up adapters.** After `001e4`, `001a` and the CLI
+  (`CLI-FIRST-001b`): Claude Code first (the skill runs the returned wait
+  command as a background task; a channel only after an official listing),
+  then Codex (`codex queue`) and agy (background wait) only after their `001a`
+  tests pass, or the proxy subagent in each client's plugin where adapters
+  prove fragile. A client reports `wakeup: armed` only after its adapter
+  registered; without one it gets the result through `session` and `wait`.
   Check: R, native per client.
-- [ ] **DELEGATE-001e - read-only delegate.** After `001c`: `delegate` starts
-  a consult or review turn in the background and returns its handle at once
-  (early handle publication, `SESSION-001`); the turn runs under owned
-  supervision independent of the calling MCP request (`COAGENT-004`), keeps
-  price limits, model approval and the read-only profiles, writes its result
-  before any wake-up, and is stopped by `cancel` or server shutdown without
-  survivors. Check: R, LIFE/PROCESS/SESSION, MCP/E2E, native per backend.
-- [ ] **DELEGATE-001f - delegation of write tasks.** After `COAGENT-002` to
-  `005` and `WINDOWS-001b-e`: the same `delegate` runs host-led write, check
-  and fix tasks through the accepted profiles and task records. Check: R,
-  native.
+- [ ] **DELEGATE-001e - asynchronous lifecycle.** After `001c`: `delegate`
+  starts the existing write delegation in the background and returns its
+  handle at once (early handle publication, `SESSION-001`). One task-owned
+  operation (approve, writer, baseline, execute, stop descendants, Git
+  evidence, persist, release, notify) runs under owned supervision independent
+  of the calling MCP request (`COAGENT-004`), keeps price limits, model
+  approval and the write profiles, holds the writer until the evidence is
+  persisted, writes its result before any wake-up, and is stopped by `cancel`
+  or server shutdown without survivors. `001e1-e4` ship together before
+  `async` is enabled; asynchronous review (`001e5`) is deferred. Windows
+  acceptance follows owner decision 2 above. Check: R,
+  LIFE/PROCESS/SESSION, MCP/E2E, native per backend.
+- [ ] **DELEGATE-001f - delegation of write tasks.** Split in two.
+  `001f1`: asynchronous delegation through the accepted `COAGENT-002`
+  profiles and task records. `001f2`: the server-owned loop (server-run
+  `checks` under a command policy, bounded fix rounds in the worker session,
+  independent read-only review in a separate session, one final wake-up),
+  after `COAGENT-002` to `004` and `WINDOWS-001b-e`; multi-file skill
+  packaging (`COAGENT-005`) is not a prerequisite. Check: R, native.
 
 ## Remaining foundation work
 
@@ -1460,6 +1528,11 @@ behavior or a test-procedure lesson.
   with the task-scoped coagent profiles (planned for `0.8.0`) the backend
   sandbox becomes one execution option, not the only way CoAgent8 runs an agent.
   The POSIX native check moves to 2.18.
+  Remedy replaced (owner decision 2026-10-21): the denials kept recurring and
+  blocked the review loop. The cause is the elevated backend's separate sandbox
+  account, not the sandbox itself, so Codex on Windows now uses
+  `windows.sandbox="unelevated"` with `allow_login_shell=false` and without the
+  app execution alias directory on `PATH`; the read-only sandbox stays.
 
 ## FEEDBACK-070: findings of the 0.7.0 native acceptance
 
@@ -2017,7 +2090,7 @@ agent (owner assigns).
 | 1.11 | [x] `CLI-FIRST-001e` `doctor` (#41) | R | 1.4 | `coagent8 doctor` (`--scope models` or `--scope health`, `--json`) creates no sessions, keeps redaction, maps errors to exit codes, cancels on Ctrl+C; fixture. |
 | 1.12 | [x] `CLI-FIRST-001h1` PATH prompt design (#43) | P | 1.1 | ARCHITECTURE specifies the extension's opt-in prompt, the shim location per OS, ownership record and removal on uninstall; reviewed READY. |
 | 1.13 | [x] `CLI-FIRST-001h2` Windows PATH opt-in (#43) | R | 1.12 | The extension asks once, adds an owned shim to the user PATH on yes, never on no or dismiss, and removes it on uninstall; tests; native check on Windows by the owner. |
-| 1.14 | `DELEGATE-001a` wake-up tests | N | - par | Each client tried in the card's order with a stand-in background script; results recorded in HANDOFF per client. |
+| 1.14 | `DELEGATE-001a` wake-up tests | N | - par | Each client tried in the card's order with a stand-in background script, including channels in the VS Code extension, cancellation and registration after completion; results recorded in HANDOFF per client. |
 
 ### Phase 2 - stability, feedback, containment, delegation contract
 
@@ -2048,8 +2121,8 @@ agent (owner assigns).
 | 2.18 | `ACCEPT-001c` WSL lane (`0.8.0`, owner decision 2026-10-19) | N | 2.16 | Owner installs a WSL2 Ubuntu distribution; the lane runs the POSIX scenarios, including the 2.12d recovery checks; results recorded. |
 | 2.19 | `SESSION-001a` early handle and session modes spec | P S | - | ARCHITECTURE specifies early handle publication and `none`/`auto`/`new` modes; reviewed READY. |
 | 2.20 | `COAGENT-004a1` read-only lifecycle contract | P S | 2.19 | Contract card done; reviewed READY. |
-| 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the server per client; the label contract is written; reviewed READY. |
-| 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | ARCHITECTURE (unimplemented) defines `delegate`, `wait`, states and ordering; reviewed READY. |
+| 2.21 | `DELEGATE-001b1` caller identity research | P | 1.14 | HANDOFF records which caller ids reach the MCP server process per client (`CLAUDE_CODE_SESSION_ID`, Codex thread, agy conversation); the label contract is written, separate from wake-up capability; reviewed READY. |
+| 2.22 | `DELEGATE-001c` delegation contract | P S | 2.20, 2.21 | The owner's decisions 1-3 in the card are recorded; ARCHITECTURE (unimplemented) defines `mode`, task handle and idempotency, the immediate response and server-built wait argv, `session` task actions, `wait`, states and ordering, and the writer's task-owned lifetime; reviewed READY. |
 | 2.23 | [x] `AX-005a`, then `AX-005b` | P, R | - | As the cards say; group design and implementation when the contract is accepted. |
 | 2.24 | [x] `AX-004a`, `AX-004b` | R | - par | As the cards say; group by coherent result; `AX-004c` is kind N. |
 | 2.25 | `AX-001a`, then `AX-001b`/`c`/`d` (par), `AX-001e`, `f`, `g`, `h`, `i` | P, R | - | In that order, with PR groups chosen by coherent result and risk. |
@@ -2075,14 +2148,14 @@ agent (owner assigns).
 | # | Task | Kind | After | Done when |
 | --- | --- | --- | --- | --- |
 | 3.0 | [x] Confirm `PROPOSALS-001k` to `n` (#68) | O | - | Owner accepts or rejects each; the proposal cards record it. |
-| 3.1 | `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (consult) returns a handle at once and the turn runs under owned supervision independent of the request; tests. |
-| 3.2 | `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown stop delegated turns without survivors; tests. |
-| 3.3 | `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `coagent8 wait <handle>` in the CLI; tests. |
-| 3.4 | `DELEGATE-001e4` result before wake-up | R | 3.3 | Result persisted before any notification; completion, notified and fetched states; no wake-up after cancel; tests. |
-| 3.5 | `DELEGATE-001e5` review through `delegate` | R | 3.4 | Review turns delegate with the same gate and snapshot rules; tests. |
-| 3.6 | `DELEGATE-001d1` Claude Code adapter | R | 3.3, 1.14 | The skill tells the agent to run `coagent8 wait` in the background; native check. |
-| 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
-| 3.8 | `DELEGATE-001d3` agy adapter | R | 3.3, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
+| 3.1 | `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (the existing write delegation) returns a handle at once after approval, writer and baseline; the task-owned operation runs under owned supervision independent of the request; tests. |
+| 3.2 | `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown await the whole operation (evidence and writer release included) and stop delegated turns without survivors; tests. |
+| 3.3 | `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `wait --data-dir <dir> <handle>` in the CLI; the response carries the server-built argv; a stopped waiter never cancels the worker; tests. |
+| 3.4 | `DELEGATE-001e4` result before wake-up | R | 3.3 | Result with Git evidence persisted before any notification; `session` task status and result; completion, notified and fetched states; no new wake-up after cancel; 3.1-3.4 enable `async` together; tests. |
+| 3.5 | `DELEGATE-001e5` review through `delegate` | R | 3.4 | Deferred (2026-10-21): review keeps its existing operation and gates; revisit after 3.8. |
+| 3.6 | `DELEGATE-001d1` Claude Code adapter | R | 3.4, 1.14 | The skill tells the agent to run the returned wait command verbatim as a background task; `wakeup: background_wait`; native check without a caller subagent. |
+| 3.7 | `DELEGATE-001d2` Codex adapter | R | 3.4, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
+| 3.8 | `DELEGATE-001d3` agy adapter | R | 3.4, 1.14 | The mechanism that passed 1.14, or `wait` only; native check. |
 | 3.9 | [x] `PROPOSALS-001a` `server.json` and `mcpName` (#70) | R | - par | Files added; publication stays an owner action. |
 | 3.10 | [x] `PROPOSALS-001d` (#69) | R | - par | Tool descriptions and skills ask for paths; tool-definition budget test passes. |
 | 3.10b | [x] `PROPOSALS-001l` (#69) | R | 3.0 | Session resources use compact JSON (accepted for `0.7.0`, with 3.10). |
@@ -2106,7 +2179,7 @@ agent (owner assigns).
 | 4.2 | `COAGENT-002a`, `002b` | P S | 4.1 | Profile evidence and writer ownership designs. |
 | 4.3 | `COAGENT-003a`, `003b` | P S | 4.1 | Routing precedence and root reservations. |
 | 4.4 | `COAGENT-004a2`, `004b`, `005a`, `005b`, `007a` | P S | 4.1, 4.2 | Remaining contract cards. |
-| 4.5 | Decompose implementation | P S | 4.1-4.4, 2.35 | A strong agent or the owner adds implementation rows here for write/check/review/fix profiles, roles, multi-file skills, `DELEGATE-001f` and `CLI-FIRST-001f`. |
+| 4.5 | Decompose implementation | P S | 4.1-4.4, 2.35 | A strong agent or the owner adds implementation rows here for write/check/review/fix profiles, roles, multi-file skills, `DELEGATE-001f1`, the server-owned loop `DELEGATE-001f2` and `CLI-FIRST-001f`. |
 | 4.6 | `FAILOVER-001a` | R | - par | As the card says. |
 | 4.7 | `PLUGIN-001a` | N | - | Loader evidence per client. |
 | 4.8 | `PLUGIN-001b` to `001e` | P, R | 4.7 | Group related cards by coherent plugin result after loader evidence. |

@@ -23,12 +23,38 @@ All multi-agent review, diagnostic, consultation, and codebase analysis operatio
   with its tool features (connectors, plugins, browser and computer use, hooks,
   subagents) off; each thread start/resume must report `readOnly` and `never`,
   disables every configured MCP server, and must report every MCP server
-  `disabled` before the turn starts. The older exec `--sandbox read-only`
+  `disabled` before the turn starts. On Windows it also passes
+  `windows.sandbox="unelevated"` (a restricted token of the user's own account)
+  and `allow_login_shell=false`, and removes the app execution alias directory
+  from the server's `PATH` (owner decision 2026-10-21, `CUR-014`). The older exec `--sandbox read-only`
   invocation is not the current adapter protocol.
 * `--restricted --tools Read,Glob,Grep --permission-mode dontAsk --permission-prompts none --strict-mcp-config` with an empty `--mcp-config` on Claude Code CLI (`claude`); each run is rejected unless the CLI reports at startup only these tools, no MCP server and `dontAsk`. `--bare` is not used: it disables subscription authentication.
 * Native `--sandbox` read-only isolation on Google Antigravity CLI (`agy`).
 
 Never grant write permissions or file modification capabilities to external CLI agents during diagnostic, review, or analysis tasks.
+
+### Delegate write profile (DELEGATE-001w)
+
+Owner decision 2026-10-21: only the `delegate` tool runs the `workspace-write`
+profile, chosen by the server and never by a call argument. Its session is bound
+to that profile at creation; `consult` and `review` cannot continue it, nor can
+`delegate` continue a read-only session. Approvals, tool features and inherited
+MCP servers stay disabled and verified as above, and the nested-turn refusal stays.
+* Codex: `sandbox_mode="workspace-write"` with network access, extra writable
+  roots and temporary write roots off; each thread start/resume must report
+  `workspaceWrite`, `never`, no network, both temporary roots excluded, its own
+  `cwd` and no writable root outside it.
+* Claude Code: tools `Read,Glob,Grep,Edit,Write,Bash` with `dontAsk` and allow
+  rules `Edit(./**)`, `Write(./**)` and `Bash`; `system/init` must report only
+  these tools. `Bash` is not path-limited (documented limitation).
+* agy: no `--sandbox`, `--mode accept-edits` (headless agy approves file edits and
+  denies every command) and no enforced path limit (documented limitation).
+
+One writer per Git work tree, recorded in its Git directory so every client's
+server process sees it; the server
+reports the Git changes it observed before and after the turn and never commits,
+resets or cleans up. On Windows a cancelled worker's descendants can outlive it
+until `WINDOWS-001b-e` (`CUR-011`).
 
 ---
 
