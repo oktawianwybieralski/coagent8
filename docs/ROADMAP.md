@@ -634,9 +634,13 @@ core rules, copied into `.agents/rules/core/` and pinned in
   user-visible separators use `-` instead of the middle dot, which core rule
   00 forbids. Check: P, R, the two standards checks. Delivered:
   [record](delivered/0.8.0/STANDARDS-001.md).
-- [ ] **FORMAT-001 - one formatter.** Core rule 05 requires one formatter
+- [x] **FORMAT-001 - one formatter.** Core rule 05 requires one formatter
   configuration checked in CI. Add it with a one-time mechanical reformat in
-  its own PR (owner decision 2026-10-31), then the CI check. Check: R, CI.
+  its own PR (owner decision 2026-10-31), then the CI check. Owner decisions
+  2026-10-31: Prettier with a line width of 140; Markdown keeps its
+  hand-written layout. The next PR adds the reformat's squash commit to
+  `.git-blame-ignore-revs`. Check: R, CI. Delivered:
+  [record](delivered/0.8.0/FORMAT-001.md).
 - [ ] **STANDARDS-001b - issue labels.** The owner creates the labels of
   `project.md` "Findings labels" that do not exist yet. Check: O.
 

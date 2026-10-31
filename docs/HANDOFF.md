@@ -10,8 +10,17 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
-- **Agent standards (owner request 2026-10-31, `STANDARDS-001a`):** branch
-  `chore/agent-standards`. `agent-standards.mjs sync --ref v0.1.0` copied the
+- **Formatter (`FORMAT-001`, owner decisions 2026-10-31):** branch
+  `chore/formatter`. Prettier, line width 140, formats TypeScript,
+  JavaScript, JSON and YAML; Markdown keeps its layout. CI runs
+  `npm run format:check`. The reformat needed two source fixes: the branding
+  generator now writes the formatted layout, and the VS Code command test no
+  longer depends on line breaks. The next PR adds the squash commit to
+  `.git-blame-ignore-revs`. Record:
+  [FORMAT-001 in 0.8.0](delivered/0.8.0/FORMAT-001.md).
+
+- **Agent standards (owner request 2026-10-31, `STANDARDS-001a`):** merged in
+  #97 (`ca9c793`). `agent-standards.mjs sync --ref v0.1.0` copied the
   core rules and scripts (commit `e69b2d0`); `check` matches the lock. The
   character check found 204 forbidden characters in 34 files. Most of them
   were the middle dot in CoAgent8's own output (result footer, usage line,

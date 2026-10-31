@@ -4,6 +4,9 @@ CoAgent8 project rule. It adds scopes and checks to
 [core rule 04](core/04-quality-gate.md) and never removes one. The commands are
 listed in [`.agents/project.md`](../project.md#commands).
 
+A change to a file the formatter covers passes `npm run format:check` before
+it is pushed; CI runs the same check on every PR.
+
 ## Additional scopes
 
 | Scope | Required local evidence |
