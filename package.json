@@ -55,6 +55,8 @@
   },
   "scripts": {
     "lint:docs": "node tooling/documentation/node_modules/eslint/bin/eslint.js --config tooling/documentation/eslint.config.cjs src --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "docs": "npm --prefix tooling/documentation run build",
     "build": "node scripts/build.cjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p extensions/vscode/tsconfig.json",
@@ -92,6 +94,7 @@
     "esbuild": "0.25.12",
     "git-cliff": "2.14.2",
     "jsonc-parser": "3.3.1",
+    "prettier": "3.9.10",
     "smol-toml": "1.9.0",
     "tsdown": "0.23.0",
     "tsx": "^4.23.15",

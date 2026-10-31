@@ -13,6 +13,12 @@ function readIcon(asset, theme) {
   return { src: 'data:image/png;base64,' + icon.toString('base64'), mimeType: 'image/png', sizes: ['64x64'], theme };
 }
 
+/** A single-quoted literal as Prettier prints it; the icon values hold no quote or backslash. */
+function quote(value) {
+  if (/['\\\n]/.test(value)) throw new Error(`Unexpected character in icon value ${value.slice(0, 40)}.`);
+  return `'${value}'`;
+}
+
 function prepareBranding() {
   const icons = [readIcon('assets/logo64.png', 'light'), readIcon('assets/logo64-light.png', 'dark')];
   const target = path.join(root, 'src/generated/server-icon.ts');
@@ -26,7 +32,16 @@ function prepareBranding() {
     "import type { Icon } from '@modelcontextprotocol/sdk/types.js';",
     '',
     '/** Offline server icons for light and dark backgrounds. Regenerate with npm run build. */',
-    `export const SERVER_ICONS = ${JSON.stringify(icons, null, 2)} satisfies Icon[];`,
+    'export const SERVER_ICONS = [',
+    ...icons.flatMap(icon => [
+      '  {',
+      `    src: ${quote(icon.src)},`,
+      `    mimeType: ${quote(icon.mimeType)},`,
+      `    sizes: [${icon.sizes.map(quote).join(', ')}],`,
+      `    theme: ${quote(icon.theme)},`,
+      '  },',
+    ]),
+    '] satisfies Icon[];',
     '',
   ].join('\n');
   fs.mkdirSync(path.dirname(target), { recursive: true });
