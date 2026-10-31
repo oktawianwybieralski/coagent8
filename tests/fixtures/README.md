@@ -40,7 +40,7 @@ describes (installed CLIs, installations, registrations) through
 Most unit/e2e checks load current `src/` via tsx. Setup checks use `dist/index.cjs`
 and need a prior build for current-bundle evidence. Consumer smoke installs and
 checks the tarball, also with fixtures. See the
-[provenance policy](../../.agents/rules/04-quality-gate.md#source-bundle-and-artifact-provenance).
+[provenance policy](../../.agents/rules/14-quality-gate.md#source-bundle-and-artifact-provenance).
 
 The shared runner limits concurrent test files to two because each suite can own
 CLI process trees. Pass `--test-concurrency=N` for an

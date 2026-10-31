@@ -10,6 +10,19 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Agent standards (owner request 2026-10-31, `STANDARDS-001a`):** branch
+  `chore/agent-standards`. `agent-standards.mjs sync --ref v0.1.0` copied the
+  core rules and scripts (commit `e69b2d0`); `check` matches the lock. The
+  character check found 204 forbidden characters in 34 files. Most of them
+  were the middle dot in CoAgent8's own output (result footer, usage line,
+  doctor, session list, VS Code UI), now `-` (owner decision 2026-10-31). The
+  Claude `/usage` parser accepts any one separator character, because Claude
+  prints a middle dot. The recorded Claude CLI output in
+  `tests/fixtures/claude-cli/recordings/` stays verbatim and excluded with its
+  reason. #94 is resolved by core rule 02 (merge only on the owner's explicit
+  instruction for that PR). Record:
+  [STANDARDS-001 in 0.8.0](delivered/0.8.0/STANDARDS-001.md).
+
 - **Open issues on the 001w branch (owner request 2026-10-31):** the owner asked
   to fix the open issues first and then work toward `0.8.0` with a complete
   `delegate`. The plan was consulted with Codex (`gpt-6.1-terra`, session
@@ -191,11 +204,11 @@ Do not append another session transcript or treat old test counts as fresh evide
   `coagent8_DIR` to use shared user directory `~/.coagent8` and migrate legacy
   profile-directed registrations, while downgrade prevention preserves newer
   runtime registrations and suppresses update/downgrade offers in VS Code.
-  Rows 2.26a–d (`AX-002d–i`, "Recency under a price limit") are merged in PR #47:
+  Rows 2.26a-d (`AX-002d-i`, "Recency under a price limit") are merged in PR #47:
   selection ranks models under a price limit by release recency, the doctor models
   view lists the day the price list added each model, models without a known date
   sort last, and expiration dates are ignored.
-  Rows 2.6–2.8 (`FEEDBACK-061c1`, `FEEDBACK-061d`, `FEEDBACK-061f`, "Bug-report
+  Rows 2.6-2.8 (`FEEDBACK-061c1`, `FEEDBACK-061d`, `FEEDBACK-061f`, "Bug-report
   content and paste flow") are completed in PR #51: `issueUrl` targets
   `?template=bug_report.yml`; the prompt has the clickable link, the link in a code
   block and the report once, in a copy block with paste instructions; `structuredContent`
@@ -206,7 +219,7 @@ Do not append another session transcript or treat old test counts as fresh evide
   is reported as unavailable here (`$(warning) Selected CLI unavailable here`),
   not "Selected CLI not found", while preserving "Selected CLI not found" when the
   vendor extension is installed or a custom path is missing.
-  Result group 2.9–2.10 ("Bug-report opening actions", `FEEDBACK-061c2/c3`) is completed
+  Result group 2.9-2.10 ("Bug-report opening actions", `FEEDBACK-061c2/c3`) is completed
   in PR #55: an explicit VS Code command `coagent8.openBugReport` opens the form URL
   with `vscode.env.openExternal` and never opens automatically; `coagent8 issue` prints
   the report to stdout and opens the browser with the form link only when `--open`
@@ -514,7 +527,7 @@ Rights/material inventory (`LIC-001a`):
 - Inspected all 302 tracked files by category: 113 source files, 107 tests and
   fixtures, six client skills, 25 artwork files, 19 documentation/rule files
   and 32 other files. Project copyright attribution identifies Oktawian
-  Wybieralski (`oki.dev`), and [rule 02](../.agents/rules/02-git-workflow.md)
+  Wybieralski (`oki.dev`), and [rule 12](../.agents/rules/12-release-workflow.md)
   section 2 records the owner as sole author and copyright holder of the
   first-party work. Git history contains only the owner's two email identities
   as corroborating attribution.
@@ -559,7 +572,7 @@ Socket license/supply-chain remeasurement; these run in `PATCH-061-R3`, `R4` and
 
 ## 0.6.0 release evidence
 
-Published `0.6.0` release (`REPO-002` owner steps 1–8), verified on 2026-10-12 on
+Published `0.6.0` release (`REPO-002` owner steps 1-8), verified on 2026-10-12 on
 Windows 11, Node v26.10.0, against the downloaded release artifacts:
 
 - PASS: `v0.6.0` is an annotated tag on `9b78a0a` (`chore(release): v0.6.0 (#3)`,
@@ -585,7 +598,7 @@ Windows 11, Node v26.10.0, against the downloaded release artifacts:
   `cancel`, `issue`), clean `doctor` output, and a completed `consult` turn on
   `codex` (`gpt-6-luna`, 3.8 s).
 - NOTE: GitHub Release `v0.6.0` (published `2026-10-11T22:57:25Z`) is not marked
-  as a GitHub pre-release, whereas [rule 02](../.agents/rules/02-git-workflow.md)
+  as a GitHub pre-release, whereas [rule 12](../.agents/rules/12-release-workflow.md)
   marks versions below `1.0.0` as pre-releases.
 - Open: `REPO-002` owner step 9 (enabling npm trusted publishing for
   `npm-publish.yml`).
@@ -788,7 +801,7 @@ and test imports to canonical owners, and mirrored source ownership across
 
 Added AST and Tarjan SCC dependency-boundary enforcement in
 `scripts/check-dependencies.cjs` (`npm run check:dependencies`, wired into
-`.github/workflows/ci.yml` and [rule 04](../.agents/rules/04-quality-gate.md))
+`.github/workflows/ci.yml` and [rule 14](../.agents/rules/14-quality-gate.md))
 with zero legacy exemptions (`allowedLegacyEdges: []`), plus indirect external
 SDK/transport edge detection (`af9f7d2`).
 
@@ -806,21 +819,21 @@ execution, history/cooldown finalization and post-turn snapshot rechecks,
 establishing the baseline harness in `tests/execution/baseline.test.js`
 (`T01b`/`T01c` at `42e4cbd`) and driving stages `EXEC-001-T02` through `T11c`:
 
-- **Monotonic phase timing and configuration provenance (`T02`–`T05`):**
+- **Monotonic phase timing and configuration provenance (`T02`-`T05`):**
   monotonic phase tracker (`preparation`, `consent`, `acquisition`, `execution`,
   `finalization`), single-load immutable `ConfigSnapshot` with redacted
   `DoctorConfigProvenance` (`T03`), cohesive `prepareTask`/`confirmConsent`
   lifecycle (`T04`), and coalesced catalog/default-model observation reuse (`T05`).
-- **Guaranteed finalization and complete-call budget (`T06`–`T11c`):**
+- **Guaranteed finalization and complete-call budget (`T06`-`T11c`):**
   unconditional turn-lease/process/history settlement (`T06`), monotonic
   `ExecutionBudget` with teardown reserve and centralized timeout constants
   (`T07`), cancellable shared native reads across Codex, Claude, Antigravity and
-  price fetches with last-waiter abort (`T08a`–`T08f`), budget-bound Git review
-  collection, FIFO lock waiters and session rollbacks (`T09a`–`T09c`),
+  price fetches with last-waiter abort (`T08a`-`T08f`), budget-bound Git review
+  collection, FIFO lock waiters and session rollbacks (`T09a`-`T09c`),
   budget-bound consent elicitation, pre-acquisition revalidation and fault-isolated
-  `neverAsk` persistence (`T10a`–`T10c`), and end-to-end budget activation for
+  `neverAsk` persistence (`T10a`-`T10c`), and end-to-end budget activation for
   `consult`/`review`, bounded `doctor` execution (`DEFAULT_DIAGNOSTIC_TIMEOUT_MS = 60_000`)
-  and wall-clock `totalMs` reporting (`T11a`–`T11c`).
+  and wall-clock `totalMs` reporting (`T11a`-`T11c`).
 
 ## AUDIT-001-A01-A03: quota cache read failure
 
@@ -932,8 +945,8 @@ Card: [REPO-002](ROADMAP.md#repo-002-branch-model-and-release-workflow).
 Prepared the `develop` + `X.Y.x` workflow, CI/release automation and TypeDoc
 API site for `0.6.0`:
 
-- **`REPO-002a`–`e` (`7adccdc`, tree `d84f40d`):** configured
-  [rule 02](../.agents/rules/02-git-workflow.md), `.github/workflows/ci.yml`
+- **`REPO-002a`-`e` (`7adccdc`, tree `d84f40d`):** configured
+  [rule 12](../.agents/rules/12-release-workflow.md), `.github/workflows/ci.yml`
   (six OS/Node 24.x and 26.x jobs on `develop` and `[0-9]+.[0-9]+.x`),
   `.github/workflows/release.yml` (tag-triggered draft release with `SHA256SUMS`
   and `git-cliff` notes), `.github/workflows/docs.yml` (TypeDoc API and project
@@ -1013,5 +1026,5 @@ workspace/branch/target plus base/candidate or dirty-diff identity; changes;
 checks with commands, platform, PASS/FAIL/NOT_RUN and evidence; unresolved work and
 next action. Link to rules instead of copying them. A reviewer needs original
 requirements and the actual candidate, not just an implementation summary
-([review input](../.agents/rules/03-author-reviewer.md#review-input)). Name pull
+([review input](../.agents/rules/core/03-review.md#review-input)). Name pull
 requests by number (`PR #51`), never "this PR": the text outlives the PR.

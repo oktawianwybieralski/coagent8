@@ -2,7 +2,7 @@
 // Composes the GitHub Release notes (RELEASE-001e): the tester header that the release PR
 // adds as docs/releases/vX.Y.Z.md, the version's generated changelog, and the artifacts with
 // their checksums. release.yml runs it and fails without the header, so the draft carries the
-// reviewed notes and nobody replaces them by hand (rule 02, section 5).
+// reviewed notes and nobody replaces them by hand (rule 12, section 5).
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -18,7 +18,7 @@ function headerPath(tag) {
 function readHeader(root, tag) {
   const file = path.join(root, headerPath(tag));
   if (!fs.existsSync(file)) {
-    throw new Error(`${headerPath(tag).replace(/\\/g, '/')} is missing: the release PR adds the tester header (rule 02, section 5, step 9).`);
+    throw new Error(`${headerPath(tag).replace(/\\/g, '/')} is missing: the release PR adds the tester header (rule 12, section 5, step 9).`);
   }
   const text = fs.readFileSync(file, 'utf8').trim();
   if (!text) throw new Error(`${headerPath(tag).replace(/\\/g, '/')} is empty.`);

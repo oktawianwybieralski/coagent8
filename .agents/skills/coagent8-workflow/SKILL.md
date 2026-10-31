@@ -38,15 +38,15 @@ choices are independent; writing, bounded delegation and client skills require
 the roadmap's verified profiles/task contract. Do not remove current sandbox or
 nested-turn enforcement as a shortcut.
 
-Follow [core invariants](../../rules/00-core-invariants.md),
-[security](../../rules/01-security-and-sandboxes.md),
-[Git governance](../../rules/02-git-workflow.md) and the
-[scope-based quality gate](../../rules/04-quality-gate.md).
+Follow [core invariants](../../rules/core/00-core-invariants.md),
+[security](../../rules/11-security-and-sandboxes.md),
+[Git governance](../../rules/12-release-workflow.md) and the
+[scope-based quality gate](../../rules/14-quality-gate.md).
 Preserve the owner's local stack, existing changes, registrations and stored data.
 Audit blockers come before exposing affected capabilities. Work remains local
 unless the user authorizes integration/publication.
 
-Branches and releases ([rule 02](../../rules/02-git-workflow.md)): topic branches
+Branches and releases ([rule 12](../../rules/12-release-workflow.md)): topic branches
 start from `develop` and return to it by a squash-merged PR; there is no `main`.
 Betas are tags on `develop`, release candidates and patches tags on an `X.Y.x`
 line, which receives fixes only as backport PRs. You may prepare commits, a
@@ -62,7 +62,7 @@ bundle, exact-artifact and native-host evidence distinct. A model READY string
 does not establish independent checks or release approval.
 
 Prepare and maintain the PR description and checklist per
-[rule 02 section 3](../../rules/02-git-workflow.md#3-pull-requests), within the
+[rule 12 section 3](../../rules/12-release-workflow.md#3-pull-requests), within the
 owner's authorization. Group related roadmap subtasks into one coherent result
 on one branch and PR, with its tests and documentation. Follow the roadmap's PR
 groups; task IDs and line counts do not automatically create PR boundaries.

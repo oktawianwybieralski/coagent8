@@ -1,6 +1,6 @@
 name: Release
 
-# Phase C of the release process (Git workflow rule 02, section 5). A release tag
+# Phase C of the release process (release workflow rule 12, section 5). A release tag
 # pushed by the owner builds the exact artifacts from a clean checkout and creates a
 # DRAFT GitHub Release with them, plus signed build provenance for each artifact.
 # This workflow never publishes the draft and never publishes to npm: the owner

@@ -1,40 +1,40 @@
-<!-- Follow .agents/rules/02-git-workflow.md section 3. Keep the six sections,
-scale detail to risk, replace placeholders and mark inapplicable items N/A.
-Author checks, independent review and owner approval are separate evidence.
-GitHub Checks records CI status on the current head. -->
+<!-- Follow .agents/rules/core/02-git-workflow.md and section 3 of
+.agents/rules/12-release-workflow.md. Title: Conventional Commit.
+Replace the comments, mark sections that do not apply N/A. -->
 
 ## Summary
 
-<!-- Explain the concrete problem and resulting behavior in commit-ready prose. -->
+<!-- The problem and the resulting behavior. -->
 
 ## Links
 
-<!-- Fixes #N / Refs #N; link applicable roadmap cards, findings and documents.
-Write None if no references apply. -->
+<!-- Fixes #N / Refs #N, ROADMAP card, ARCHITECTURE decision. None if nothing applies. -->
 
 ## Changes
 
-<!-- Describe relevant behavior, contracts, migration and architectural decisions.
-Include the title-preview changelog entry or explain why it is omitted. -->
+<!-- Behavior, contracts, configuration and stored data, removed code or
+dependencies, and the `pending` changelog entry from the title preview. -->
 
 ## Verification
 
-<!-- Name the checked SHA (or local dirty diff), platform/Node where relevant,
-commands and PASS/FAIL/NOT_RUN results with reasons. -->
+<!-- Checked SHA, platform and Node version, commands run with
+PASS/FAIL/NOT_RUN and the reason. -->
 
-Independent review: NOT_RUN; pending independent review of the current head.
+Independent review: NOT_RUN; pending review of the current head.
 
-<!-- Replace with the actual verdict, reviewed head SHA, target/base and scope,
-coverage, unresolved P1/P2 count and review evidence. See rule 03.
-Consultation is advisory and does not satisfy independent review. -->
+<!-- One line per required reviewer (.agents/project.md), core rule 03:
+Independent review (<backend>): READY | BLOCKED; head <sha>; base <sha>; scope <base>..<head>; coverage COMPLETE | PARTIAL; unresolved P1/P2: <n>
+A consult is advisory and does not satisfy independent review. -->
 
 ## Risk and rollback
 
-<!-- Explain realistic risks and how to revert; prose can establish policy. -->
+<!-- What can break, data impact, how to revert. -->
 
 ## Checklist
 
-- [ ] Documentation, contracts and roadmap updated where applicable.
+- [ ] Core rule 01 checked: no secrets, personal data, local paths or hard-coded hosts.
+- [ ] Docs, contracts and ROADMAP/HANDOFF updated where needed.
+- [ ] No dead code or unused dependencies left behind.
 - [ ] CHANGELOG.md unchanged (it is regenerated only in release PRs).
 - [ ] Conventional Commit title preview passed.
-- [ ] Diff and PR body checked for secrets, local paths and private data.
+- [ ] No AI attribution in commits or this description.

@@ -1,10 +1,10 @@
 name: npm publish
 
-# Phase E of the release process (rule 02, section 5). Publishing the verified
+# Phase E of the release process (rule 12, section 5). Publishing the verified
 # GitHub Release is the owner's approval to publish its exact npm tarball to `next`
 # through trusted publishing (OIDC) with provenance, without a GitHub environment.
 # The owner later promotes a stable version to `latest` by hand (2026-10-19).
-# Requires NPM_TRUSTED_PUBLISHING=true and a valid publisher (rule 02, section 8).
+# Requires NPM_TRUSTED_PUBLISHING=true and a valid publisher (rule 12, section 8).
 on:
   release:
     types: [published]

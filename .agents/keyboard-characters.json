@@ -1,0 +1,8 @@
+{
+  "exclude": [
+    {
+      "path": "tests/fixtures/claude-cli/recordings/",
+      "reason": "verbatim Claude Code CLI output recorded for the fixtures; Claude prints a middle dot that the usage parser must accept"
+    }
+  ]
+}

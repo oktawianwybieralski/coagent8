@@ -1,11 +1,11 @@
 ---
 name: pr-merge
-description: Merge pull requests that the owner lists explicitly into develop of this repository. Use when the owner says "merge #15, #16" or similar. Rebases each PR onto develop, checks the commits, waits for the six CI jobs and squash-merges with a message that follows rule 02. Not for reviewing, fixing or creating pull requests, and not for release PRs.
+description: Merge pull requests that the owner lists explicitly into develop of this repository. Use when the owner says "merge #15, #16" or similar. Rebases each PR onto develop, checks the commits, waits for the six CI jobs and squash-merges with a message that follows rule 12. Not for reviewing, fixing or creating pull requests, and not for release PRs.
 ---
 
 # Merge pull requests into develop
 
-Merging is an owner action ([rule 02](../../rules/02-git-workflow.md)): run this
+Merging is an owner action ([rule 12](../../rules/12-release-workflow.md)): run this
 only when the owner lists the PR numbers in the request, and merge only those,
 one at a time, in the order given (ascending if no order was given). Never touch
 any other PR. The owner's list also authorizes rebasing and force-pushing the
@@ -37,7 +37,7 @@ listed PRs' branches; it covers nothing else.
 3. `git fetch origin`, then `git rev-parse origin/develop` gives the current
    `develop` commit; `gh run list --workflow CI --commit <that SHA>` must list
    a finished run with conclusion `success`. If it is red or missing, stop:
-   rule 02 allows no further merge until a fix restores green CI.
+   rule 12 allows no further merge until a fix restores green CI.
 
 ## For each PR number N
 
@@ -46,13 +46,13 @@ listed PRs' branches; it covers nothing else.
    - Stop unless `state` is `OPEN`, `baseRefName` is `develop` and
      `isCrossRepository` is `false` (the branch lives in this repository).
    - Stop if `headRefName` starts with `release/`: a release PR is merged by
-     the owner per rule 02 section 5, and its changelog needs `--tag`.
+     the owner per rule 12 section 5, and its changelog needs `--tag`.
    - Stop unless the body's Verification section records an independent
      review with verdict `READY` in the format of
-     [rule 03](../../rules/03-author-reviewer.md#recording-pr-evidence). If its
+     [core rule 03](../../rules/core/03-review.md#evidence-in-the-pr). If its
      reviewed head differs from `headRefOid`, step 9 reviews the head again.
    - Stop if the PR has an open review finding or unresolved conversation:
-     rebasing is allowed only after the review is complete (rule 02
+     rebasing is allowed only after the review is complete (rule 12
      section 3, "Review and merge").
    - Remember `title`, `body`, `headRefName` (the branch) and `headRefOid`
      (the observed head).
@@ -66,7 +66,7 @@ listed PRs' branches; it covers nothing else.
      else changed the branch, or the local copy has unpushed commits).
    - `git rebase origin/develop`
 5. Rebase conflicts. `git status --short` lists them; for each conflicted file:
-   - `CHANGELOG.md`: a topic branch must not change it (rule 02 section 6);
+   - `CHANGELOG.md`: a topic branch must not change it (rule 12 section 6);
      stop and report.
    - `docs/ROADMAP.md`: run `git show REBASE_HEAD -- docs/ROADMAP.md` to see
      the exact edit of the commit being replayed. Keep the `<<<<<<< HEAD` side
@@ -89,7 +89,7 @@ listed PRs' branches; it covers nothing else.
      `node tests/run.cjs <file>`, which must report `fail 0`.
 7. `git rev-parse HEAD` gives the new local head. Push with
    `git push --force-with-lease=<branch>:<headRefOid> --force-if-includes origin <branch>`
-   ([rule 02](../../rules/02-git-workflow.md) section 1), then
+   ([rule 12](../../rules/12-release-workflow.md) section 1), then
    `gh pr view N --json headRefOid` must equal the new local head (otherwise
    stop: someone else pushed). From now on `headRefOid` is that SHA.
 8. CI on the current head: `gh pr view N --json headRefOid` must still equal
@@ -97,7 +97,7 @@ listed PRs' branches; it covers nothing else.
    pending. Exactly six jobs must be listed and all must be `pass`, also
    when step 3 skipped the update. On a failure, stop and report the last 60
    lines of `gh run view <run id> --log-failed`; never rerun jobs.
-9. Independent review of the current head (rule 03). A rebase or new commit
+9. Independent review of the current head (core rule 03, rule 13). A rebase or new commit
    supersedes earlier review evidence. Reuse the review recorded in the PR body
    only if it names head `headRefOid`, scope `<base>...<head>` with base equal
    to `git merge-base origin/develop <headRefOid>` (the whole PR, not one
@@ -113,12 +113,12 @@ listed PRs' branches; it covers nothing else.
      snapshot: stop;
    - update the PR body's Verification section with `gh pr edit N --body-file
      <file>`: mark the old review line superseded and add the new one in the
-     rule 03 format (verdict, head, base, scope, coverage, unresolved P1/P2,
+     core rule 03 format (verdict, head, base, scope, coverage, unresolved P1/P2,
      session handle as evidence). Change nothing else in the body.
 10. `gh pr view N --json mergeStateStatus` must be `CLEAN`; if it is
     `BEHIND` again, go back to step 4. `CLEAN` also means that the ruleset's
     conditions (resolved conversations, required checks) hold.
-11. Write the squash message body (rule 02 section 2) to a file outside the
+11. Write the squash message body (rule 12 section 2) to a file outside the
     repository, for example in the system temp directory:
     - the text of the PR body's `## Summary` section (why the change is
       needed and what behavior changes), wrapped at 72 characters;

@@ -2,12 +2,12 @@
 title: Git workflow
 ---
 
-# P0: Git Workflow, Versioning & Release Process (`02-git-workflow.md`)
+# P0: Branch model, versioning and release process
 
-> **Priority Level: P0 (Critical System Invariant)**
-> Direct pushes and force pushes to `develop` or to a release line (`X.Y.x`) are
-> strictly forbidden. This rule is the single source for branching, commits, pull
-> requests, versioning, releases and issue handling. Other documents reference it.
+CoAgent8 project rule. It adds the project's branch model, versioning, releases
+and issue handling to [core rule 02](core/02-git-workflow.md) and never relaxes
+it. Direct pushes and force pushes to `develop` or to a release line (`X.Y.x`)
+are forbidden.
 
 The process follows widely used conventions:
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html),
@@ -24,30 +24,21 @@ Implementation subtasks are not automatically separate pull requests.
 
 ## 0. Who does what
 
-Agents implement changes and prepare the review evidence. The owner focuses on
-architecture and code review; the Author must not leave routine PR preparation,
-check selection or evidence collection for the owner. Independent verification
-does not imply the owner's approval or replace their architectural decisions.
-The owner's code review normally happens before opening the PR (owner
-clarification, 2026-10-12). Agents prepare the local candidate, relevant diff,
-check evidence and open questions for that review, address the feedback, then
-open the PR within the owner's authorization. Opening a PR does not require
-the owner to repeat a completed review of the same snapshot. Later changes
-must be disclosed with their effect on the earlier review.
+[Core rule 02](core/02-git-workflow.md#who-does-what) is the table; the
+standing go-ahead for pushing and opening PRs is in
+[`.agents/project.md`](../project.md#standing-go-aheads). The author does not
+leave routine PR preparation, check selection or evidence collection for the
+owner (owner clarification 2026-10-12). The release steps add:
 
 | Action | Agent | Owner |
 | --- | --- | --- |
-| Topic branch, commits, local checks, changelog check | Yes | Yes |
-| Push a topic branch, open or update a PR | Only after the owner's explicit go-ahead in the session | Yes |
-| Independent review ([03-author-reviewer](03-author-reviewer.md)) | Yes (Reviewer role) | Yes |
-| Merge a PR | Only on the owner's explicit instruction for that PR | Yes |
+| Changelog check before a push or PR (section 6) | Yes | Yes |
 | Create a release line, push a tag | Never | Yes |
 | Verify a draft release, edit its notes | Yes | Yes |
-| Publish a GitHub Release, promote a version to `latest`, publish or deprecate on npm, publish on the VS Code Marketplace, change repository settings | Never | Yes |
+| Publish a GitHub Release, promote a version to `latest`, publish or deprecate on npm, publish on the VS Code Marketplace or Open VSX | Never | Yes |
 
 An agent prepares release PRs, release notes and evidence (section 5) and
-stops. It never states or implies that a push, merge, tag or publication
-happened unless it observed it.
+stops there.
 
 ---
 
@@ -87,35 +78,14 @@ happened unless it observed it.
 
 ### Topic branch names
 
-Format: `<type>/<short-kebab-description>`, optionally with the issue number:
-`fix/123-windows-teardown-identity`, `feat/session-mode-none`, `docs/release-process`.
+Names and prefixes follow [core rule 02](core/02-git-workflow.md#branches),
+including the explicit force-push lease (owner decision 2026-10-18,
+`PROPOSALS-001k`). This project adds two prefixes:
 
 | Prefix | Use |
 | --- | --- |
-| `feat/` | New user-visible capability |
-| `fix/` | Bug fix |
-| `perf/` | Performance improvement without behavior change |
-| `refactor/` | Internal restructuring without behavior change |
-| `docs/` | Documentation and contributor rules only |
-| `test/` | Tests only |
-| `build/`, `ci/` | Build system, packaging or CI workflow |
-| `chore/` | Maintenance that fits no other type (dependency bumps, tooling) |
 | `release/` | A release PR (section 5): `release/v0.7.0` |
 | `backport/` | A cherry-pick of a merged `develop` fix into a line (above) |
-
-Keep a topic branch focused on one concern. Rebase it onto its target to pick
-up changes (`git rebase origin/develop`). The author may force-push their own
-topic branch before merge, only with an explicit lease on the commit they last
-saw on the remote and `--force-if-includes`:
-
-```bash
-git push --force-with-lease=<branch>:<sha> --force-if-includes origin <branch>
-```
-
-A bare `--force-with-lease` compares against the local remote-tracking ref,
-which a background `git fetch` (editor autofetch, another agent) can move, so
-it may overwrite commits the author never saw (owner decision 2026-10-18,
-`PROPOSALS-001k`). Never force-push a branch someone else is working on.
 
 ---
 
@@ -142,19 +112,16 @@ squash-merge commit - must follow Conventional Commits 1.0.0:
   incompatible change to the MCP tool contract, configuration, stored data or CLI.
 * **subject**: imperative mood ("add", not "added"), no trailing period, at most
   72 characters including type and scope, English (see
-  [06-language-and-style](06-language-and-style.md)).
+  [core rule 05](core/05-language-and-style.md)).
 * **body** (required unless trivial): wrapped at 72 characters; explain *why* the
   change is needed and what behavior changes, not a file list.
 * **footers** (one per line):
   * `Fixes #123` / `Refs #123` - linked GitHub issue;
   * `Refs: AUD-P0-1` - audit finding or roadmap item;
   * `BREAKING CHANGE: <description and migration>`;
-* **No AI attribution (forbidden):** commits, pull requests, changelogs and
-  release notes never credit an AI tool as author or co-author. Do not add a
-  `Co-Authored-By` trailer for an AI (Claude, Codex, Gemini, Antigravity or any
-  other), a "Generated with" line or a similar note. AI tools are tools paid for
-  by the owner, who is the sole author and copyright holder. The Reviewer
-  rejects a commit or PR that contains AI attribution.
+* No AI attribution ([core rule 02](core/02-git-workflow.md#commits-and-pull-requests))
+  also covers changelogs and release notes; the owner is the sole author and
+  copyright holder, and the reviewer rejects a commit or PR that carries it.
 
 Examples:
 
@@ -187,7 +154,7 @@ become the final commit, so they must meet this section.
 
 * Target `develop`; a backport targets its line (section 1). A release PR
   targets the branch that will carry the tag (section 5). Push the branch only
-  after the owner's go-ahead (section 0); GitHub needs it to open the PR.
+  within the go-ahead in section 0; GitHub needs it to open the PR.
 * **Title**: a valid Conventional Commit header (section 2). It becomes the
   squash-merge subject and the changelog entry. Preview that entry with the
   changelog check (section 6) before opening the PR and whenever the title
@@ -212,7 +179,7 @@ become the final commit, so they must meet this section.
 * For a grouped PR, record all included task IDs and acceptance checks. Internal
   dependencies are completed in order on the same branch; external dependencies
   must be satisfied before starting. Review and required CI cover the combined
-  current head, using the union of affected verification scopes (rule 04).
+  current head, using the union of affected verification scopes (rule 14).
 * **Description** (English) follows the
   [PR template](../../.github/pull_request_template.md) and has these sections.
   Scale detail to the change's risk; a small prose PR can use a sentence per
@@ -229,10 +196,10 @@ become the final commit, so they must meet this section.
      evaluate the affected behavior.
   4. **Verification** - the commands run, platform and Node version, and each
      result as PASS, FAIL or NOT_RUN with a reason, selected per
-     [04-quality-gate](04-quality-gate.md). Never report an unexecuted check as PASS.
+     [rule 14](14-quality-gate.md). Never report an unexecuted check as PASS.
      Identify the checked snapshot (commit SHA, or explicitly a local dirty
      diff). Separately record independent review per
-     [03-author-reviewer](03-author-reviewer.md#recording-pr-evidence), including
+     [core rule 03](core/03-review.md#evidence-in-the-pr), including
      pending review honestly. GitHub Checks is the record of remote CI on the
      current head; do not duplicate its status in a checkbox or paste its logs.
      Link a relevant run or failure when it helps assess the change.
@@ -257,7 +224,7 @@ become the final commit, so they must meet this section.
 * **Required before merge:**
   * all required CI checks green on the PR's latest commit;
   * an independent review by the Reviewer per
-    [03-author-reviewer](03-author-reviewer.md), on the latest commit, with no
+    [rule 13](13-review.md), on the latest commit, with no
     unresolved P1/P2 finding;
   * all review conversations resolved;
   * the branch up to date with its target.
@@ -267,7 +234,7 @@ become the final commit, so they must meet this section.
   the Reviewer agrees. Rebasing a branch whose review is complete (READY, no
   open finding or conversation) onto its target is an update, not a rewrite
   during review; it supersedes the review evidence, and the rebased head needs
-  a new independent review ([03-author-reviewer](03-author-reviewer.md#recording-pr-evidence)).
+  a new independent review ([core rule 03](core/03-review.md#evidence-in-the-pr)).
 * **Merge method:** Squash and Merge; the repository deletes the merged topic
   branch itself:
   ```bash
@@ -368,9 +335,9 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
    concern per branch (section 1); a fix a line also needs lands on `develop`
    first and is backported.
 2. Before pushing: the local checks of the change's scope
-   ([04-quality-gate](04-quality-gate.md)), `npm run changelog:check` (section 6) and,
+   ([rule 14](14-quality-gate.md)), `npm run changelog:check` (section 6) and,
    for code, an independent CoAgent8 review of the branch with `VERDICT: READY`
-   ([03-author-reviewer](03-author-reviewer.md)).
+   ([rule 13](13-review.md)).
 3. Open the PR into the target (section 3). It merges when the six CI jobs are
    green on its head and no P1/P2 finding is open; squash, and the repository
    deletes the merged branch.
@@ -398,7 +365,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
    Every later regeneration on this branch also passes `--tag vX.Y.Z`; plain
    `npm run changelog` would turn the version heading back into Unreleased.
 8. **Local checks on that commit:** the full local gate
-   ([04-quality-gate](04-quality-gate.md#full-release-gate)) with platform, Node,
+   ([rule 14](14-quality-gate.md#full-release-gate)) with platform, Node,
    commit, tree and tarball digest recorded.
 9. **Release notes header** in English for testers, written to
    `docs/releases/vX.Y.Z.md` and reviewed with the release PR: what CoAgent8 is,
@@ -442,7 +409,7 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
     credentials. A re-run uses the workflow at the tag; a failed publishing job
     can use the verified-file fallback (step 22). A tag is never replaced.
 13. **Independent review** of `<previous tag>...release/vX.Y.Z`, bound to the
-    base, candidate, tree and tarball hashes ([03-author-reviewer](03-author-reviewer.md)).
+    base, candidate, tree and tarball hashes ([rule 13](13-review.md)).
 
 ### Phase B - merge and tag (owner)
 
@@ -558,7 +525,10 @@ head. A pushed tag is never moved, deleted or reused.
   The layout below is an owner decision of 2026-10-13.
 * Nobody edits it by hand; the Reviewer rejects a manual edit. It is
   regenerated only in a release PR, with `--tag` (section 5, owner decision
-  2026-10-14). Between releases it lists the released versions only; topic
+  2026-10-14). One exception (owner decision 2026-10-31): the adoption of the
+  agent standards moved this rule file, so `STANDARDS-001a` committed the
+  output of `git-cliff --config cliff.toml v0.6.0..v0.7.0`, which changes only
+  the header link. Between releases it lists the released versions only; topic
   branches never run `npm run changelog` and never commit `CHANGELOG.md`.
 * Each section is a nested list: area (commit scope; "General" without one),
   then type, then entries, newest first. Each entry is
@@ -631,15 +601,13 @@ The agent does this itself, without being asked.
 * Bugs are reported as GitHub issues. Testers should include the output of the
   `issue` tool (a sanitized report to paste into the form) and of `doctor`, the OS, Node
   version, CoAgent8 version and backend CLI versions.
-* Triage labels:
-  * type: `bug`, `enhancement`, `question`, `docs`;
-  * severity for bugs: `P0` (safety, data loss, tool unusable), `P1`
-    (incorrect result or contract violation), `P2` (robustness or degraded
-    behavior), `P3` (cosmetic);
-  * `found-in:v0.6.0` (the version where the bug was observed);
-  * status: `needs-repro`, `confirmed`, `wontfix`, `duplicate`.
-* P0 and P1 issues block the next stage tag. Every closed bug references the PR
-  that fixed it (`Fixes #...` in the PR).
+* Triage labels follow the scheme in
+  [`.agents/project.md`](../project.md#findings-labels). Priority for bugs:
+  `priority: high` (safety, data loss, tool unusable, or an incorrect result or
+  contract violation), `priority: medium` (robustness or degraded behavior),
+  `priority: low` (cosmetic).
+* `priority: high` issues block the next stage tag. Every closed bug references
+  the PR that fixed it (`Fixes #...` in the PR).
 * Never paste credentials, configuration files or private code into issues;
   maintainers redact any that appear.
 
@@ -699,8 +667,12 @@ the tag-creation rule:
 
 ## 9. History Recovery Protocol (Emergency Incident Exception)
 
-* History rewrites are strictly an emergency incident recovery mechanism, never routine cleanup.
-* An owner-authorized recovery must identify:
+* [Core rule 02](core/02-git-workflow.md#branches) forbids force pushes to `develop`,
+  a release line and tags, and this rule does not relax it. Only the owner's
+  explicit instruction for one incident, which precedes the core rules
+  ([AGENTS.md](../../AGENTS.md)), can order a history rewrite; an agent never
+  proposes one as routine cleanup or performs one without that instruction.
+* The owner's instruction for a recovery must identify:
   - The exact affected refs and expected old object IDs.
   - The consolidated replacement tree SHA.
   - Complete local validation evidence.

@@ -1,9 +1,8 @@
-# P2: Cross-Platform & CI Matrix Guardrails (`05-cross-platform.md`)
+# P2: Cross-platform and CI matrix
 
-> **Priority Level: P2 (Compatibility & Code Standards)**  
-> Universal cross-platform compatibility across Windows, macOS, and Linux.
-
----
+CoAgent8 project rule. It adds requirements to the core rules in
+[`core/`](core/) and never relaxes one. CoAgent8 runs on Windows, macOS and
+Linux. Process teardown (section 2) is a safety invariant.
 
 ## 1. Supported CI Environment Matrix
 Release acceptance requires all six jobs for the exact candidate; the configured

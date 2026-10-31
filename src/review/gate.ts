@@ -24,7 +24,7 @@
  * truncation or an incomplete envelope makes the server verdict `BLOCKED`. The reviewer's text is
  * never rewritten; the server verdict and its causes are reported beside it. A read-only
  * reviewer cannot run checks, so a required check reported `NOT_RUN` does not block: READY then
- * says which checks did not run, and the author and CI run them (rule 03).
+ * says which checks did not run, and the author and CI run them (rule 13).
  *
  * @packageDocumentation
  */

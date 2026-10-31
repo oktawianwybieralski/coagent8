@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/oktawianwybieralski/agent-standards.git",
+  "ref": "v0.1.0",
+  "commit": "e69b2d0c4545368340fe01360ddbe368d4db6bd0",
+  "managedDirectories": [
+    ".agents/rules/core",
+    ".agents/standards"
+  ],
+  "files": {
+    ".agents/rules/core/00-core-invariants.md": "b63d00113f67ffd6da86f1da52c8384f5553e924385d289a94efeb97ed306e88",
+    ".agents/rules/core/01-data-and-secrets.md": "390d1c1ac33e112e971ad78bb5980d1a017791f042f0a919b5ac9321f3a4a2d5",
+    ".agents/rules/core/02-git-workflow.md": "7942576295702cf90623869a131ee2a8db5f176b080427ec5c05d48d377e5d43",
+    ".agents/rules/core/03-review.md": "db6822e412e6eb7f6092894ceacc7e2be8560ad476af4374b51ecca9f1d2e5dd",
+    ".agents/rules/core/04-quality-gate.md": "37ba33d8466d7736e3afa8a28c0cb5c5725731bedc661adfc3d56ef0a162dd2a",
+    ".agents/rules/core/05-language-and-style.md": "f5a373f52f0cec593d1b2185327626e5149e64fa3fe1ce7de1257238421a6262",
+    ".agents/standards/project.template.md": "fb02b185fcdecedcc6dae679599aecf72a94c91be9dd715d682c608f5879142d",
+    ".agents/standards/agent-standards.mjs": "051027943c7d32f93e17e40cf650ec62c46ac270caefa83118cf911ba9d99f48",
+    ".agents/standards/check-keyboard-characters.mjs": "6cdc2a0656776f8bb89322136a0881061f74ffebeb938fc20f35625fddfe104e",
+    ".agents/standards/forbidden-html-entities.mjs": "db121c991a031fdbdb096152290900b981d63832ea086121dbf02b4c485b7f9b",
+    ".agents/standards/pull_request_template.md": "6ba1a342ad421ce563609acf326524db8a89bcae13d31fceb1aef840d17e7ea3"
+  }
+}

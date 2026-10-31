@@ -1,6 +1,6 @@
 name: Verify published
 
-# After npm and Marketplace publishing finish (rule 02, section 5, RELEASE-001f),
+# After npm and Marketplace publishing finish (rule 12, section 5, RELEASE-001f),
 # the owner starts this check: npm dist.shasum, dist.integrity and `next`, and the
 # Marketplace VSIX SHA-256 must match the verified GitHub Release files.
 on:

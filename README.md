@@ -516,8 +516,8 @@ release. Restart a running MCP server after rebuilding.
 | Contracts, limitations and design | [Architecture](docs/ARCHITECTURE.md) |
 | Current work and evidence | [Handoff](docs/HANDOFF.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
-| Branches, pull requests and releases | [Git workflow](.agents/rules/02-git-workflow.md) |
-| Checks by scope | [Quality gate](.agents/rules/04-quality-gate.md) |
+| Branches, pull requests and releases | [Git workflow](.agents/rules/12-release-workflow.md) |
+| Checks by scope | [Quality gate](.agents/rules/14-quality-gate.md) |
 | Release history | [Changelog](CHANGELOG.md) |
 | Documentation site: this README, the project documents and the source API | [oktawianwybieralski.github.io/coagent8](https://oktawianwybieralski.github.io/coagent8/) |
 

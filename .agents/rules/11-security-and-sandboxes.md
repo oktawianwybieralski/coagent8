@@ -1,9 +1,8 @@
-# P0: Security & Execution Profiles (`01-security-and-sandboxes.md`)
+# P0: Security and execution profiles
 
-> **Priority Level: P0 (Critical System Invariant)**  
-> Violations block execution and must never be bypassed.
-
----
+CoAgent8 project rule. It adds requirements to the core rules in
+[`core/`](core/) (core rule 01 covers secrets and personal data in general) and
+never relaxes one. Violations block execution and are never bypassed.
 
 ## Product direction and current enforcement
 
@@ -48,7 +47,9 @@ MCP servers stay disabled and verified as above, and the nested-turn refusal sta
   rules `Edit(./**)`, `Write(./**)` and `Bash`; `system/init` must report only
   these tools. `Bash` is not path-limited (documented limitation).
 * agy: no `--sandbox`, `--mode accept-edits` (headless agy approves file edits and
-  denies every command) and no enforced path limit (documented limitation).
+  denies every command) and no enforced write path limit (documented
+  limitation). A denial ends the headless turn; the server sends at most one
+  recovery turn that keeps the writer inside the workspace (#92).
 
 One writer per Git work tree, recorded in its Git directory so every client's
 server process sees it; the server
