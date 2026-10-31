@@ -291,7 +291,7 @@ test('PEM key redaction stays linear on repeated BEGIN and END markers', () => {
     const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
     assert.ok(elapsedMs < 500, `redaction took ${elapsedMs.toFixed(0)} ms on ${input.slice(0, 30)}...`);
   }
-  for (const type of ['RSA ', 'EC ', 'OPENSSH ', 'ENCRYPTED ', '']) {
+  for (const type of ['RSA ', 'EC ', 'OPENSSH ', 'ENCRYPTED ', 'X-TEST ', '']) {
     const key = `-----BEGIN ${type}PRIVATE KEY-----\nSECRET_BODY\n-----END ${type}PRIVATE KEY-----`;
     assert.equal(redactCredentialFormats(key), '-----BEGIN PRIVATE KEY-----\n***[REDACTED]***\n-----END PRIVATE KEY-----');
   }

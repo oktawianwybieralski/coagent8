@@ -13,9 +13,10 @@ Do not append another session transcript or treat old test counts as fresh evide
 - **PEM redaction ReDoS (CodeQL alert 4, `js/polynomial-redos`):** the PEM
   private-key pattern in `src/security/redaction.ts` allowed a hyphen in the
   key type, so repeated `-----BEGIN ` or `-----END ` markers backtracked
-  quadratically (4.7 s on 220 KB). The key type now holds no hyphen; real
-  types (RSA, EC, OPENSSH, ENCRYPTED) still match, and a regression test
-  bounds the time.
+  quadratically (4.7 s on 220 KB). The key type is now bounded to 40
+  characters, hyphens included, so each marker costs constant work (7 ms on
+  the same input); every key type that matched before and fits the bound
+  still matches, and a regression test bounds the time.
 
 - **Agent standards (owner request 2026-10-31, `STANDARDS-001a`):** branch
   `chore/agent-standards`. `agent-standards.mjs sync --ref v0.1.0` copied the
