@@ -10,13 +10,23 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
-- **Formatter (`FORMAT-001`, owner decisions 2026-10-31):** branch
-  `chore/formatter`, PR #98. Prettier, line width 140, formats TypeScript,
+- **CodeQL alerts and CI timing (2026-11-01):** branch `fix/codeql-alerts`.
+  Alert 1: `ci.yml` limits the token to `contents: read`. Alert 2: the Windows
+  shim check in `src/execution/cli-resolver.ts` consumes the redirections after
+  `%*` with a sticky tokenizer instead of removing them with `replace`; the
+  decision is unchanged (the new shim test passes on the old code). Alert 3: the
+  opener test checks the URL as an exact argument. Two timing tests failed on
+  loaded runners after #98: AUDIT-001-A12 now counts the 20 attempts instead of
+  wall time, and the sanitizer ReDoS test compares a 16x larger input (linear
+  16x, quadratic 256x) instead of 4x.
+
+- **Formatter (`FORMAT-001`, owner decisions 2026-10-31):** merged in #98
+  (`e91b598`). Prettier, line width 140, formats TypeScript,
   JavaScript, JSON and YAML; Markdown keeps its layout. CI runs
   `npm run format:check`. The reformat needed two source fixes: the branding
   generator now writes the formatted layout, and the VS Code command test no
-  longer depends on line breaks. The next PR adds the squash commit to
-  `.git-blame-ignore-revs`. Record:
+  longer depends on line breaks. `.git-blame-ignore-revs` lists the squash
+  commit. Record:
   [FORMAT-001 in 0.8.0](delivered/0.8.0/FORMAT-001.md).
 
 - **PEM redaction ReDoS (CodeQL alert 4, `js/polynomial-redos`, #99, `a778caa`):** the PEM
