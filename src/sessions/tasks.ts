@@ -81,6 +81,41 @@ export async function writeTask(task: DelegationTask): Promise<void> {
   await atomicWrite(taskFile(task.taskHandle), JSON.stringify(task));
 }
 
+/** Attempts to store a final record before the result is given up; a full disk may clear. */
+const FINAL_WRITE_ATTEMPTS = 3;
+const FINAL_WRITE_RETRY_MS = 200;
+
+/**
+ * Stores a final record, so that a waiter learns the end of the worker. After failed attempts the
+ * result is replaced by a short note, which fits where the result did not.
+ * @param task - The final record.
+ * @param write - Writes a record.
+ * @returns Whether a final record was stored.
+ */
+export async function writeFinalTask(task: DelegationTask, write: (task: DelegationTask) => Promise<void> = writeTask): Promise<boolean> {
+  for (let attempt = 1; attempt <= FINAL_WRITE_ATTEMPTS; attempt++) {
+    try {
+      await write(task);
+      return true;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, FINAL_WRITE_RETRY_MS));
+    }
+  }
+  try {
+    await write({
+      ...task,
+      state: 'failed',
+      result: {
+        text: 'The worker ended, but its result could not be stored. Inspect the work tree with git status and git diff.',
+        isError: true,
+      },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Reads a task record.
  * @param handle - The task handle.

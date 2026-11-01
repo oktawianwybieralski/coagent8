@@ -65,15 +65,16 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
     const task = readTask(handle);
     if (!task) throw new ToolError('SESSION_INVALID', `No task ${handle.slice(0, 80)}.`);
     const header = `task_handle: ${task.taskHandle}\nsession_handle: ${task.sessionHandle}\nstate: ${task.state}`;
-    const body =
-      task.result?.text ??
-      (task.state === 'running'
-        ? 'The worker is still running.'
-        : 'The server ended before the worker finished. Partial changes may be in the work tree: inspect them before a retry.');
+    // A stored result is final only with the state: until then the writer is still held.
+    const running = task.state === 'running';
+    const body = running
+      ? 'The worker is still running.'
+      : (task.result?.text ??
+        'The server ended before the worker finished. Partial changes may be in the work tree: inspect them before a retry.');
     return {
       content: [{ type: 'text' as const, text: `${header}\n\n${body}` }],
-      structuredContent: { ...task, workspace: redactDiagnostic(task.workspace, 1024) },
-      ...(task.result?.isError ? { isError: true } : {}),
+      structuredContent: { ...task, ...(running ? { result: undefined } : {}), workspace: redactDiagnostic(task.workspace, 1024) },
+      ...(!running && task.result?.isError ? { isError: true } : {}),
     };
   }
   if (action === 'list') {

@@ -78,15 +78,13 @@ export async function runWaitCli(
         return 1;
       }
       await new Promise<void>(resolve => {
-        const timer = setTimeout(resolve, POLL_MS);
-        signal?.addEventListener(
-          'abort',
-          () => {
-            clearTimeout(timer);
-            resolve();
-          },
-          { once: true },
-        );
+        const done = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', done);
+          resolve();
+        };
+        const timer = setTimeout(done, POLL_MS);
+        signal?.addEventListener('abort', done, { once: true });
       });
     }
   } catch (error) {

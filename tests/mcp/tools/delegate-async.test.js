@@ -19,7 +19,7 @@ const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/s
 const { saveConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
-const { readTask, writeTask, createTaskHandle, pruneTasks } = require('../../../src/sessions/tasks.ts');
+const { readTask, writeFinalTask, writeTask, createTaskHandle, pruneTasks } = require('../../../src/sessions/tasks.ts');
 const { runWaitCli } = require('../../../src/sessions/wait-cli.ts');
 const { WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
 test.after(async () => {
@@ -255,6 +255,64 @@ test('a wait command starts this runtime with the store of this server', () => {
   assert.equal(argv[0], process.execPath);
   assert.equal(argv[2], 'wait');
   assert.equal(argv[4], process.env.coagent8_DIR);
+});
+
+test('a final record survives failed writes: first retried, then as a short note', async () => {
+  const task = {
+    schemaVersion: 1,
+    taskHandle: createTaskHandle(),
+    state: 'completed',
+    workspace: tempDir,
+    sessionHandle: 'syn_sess_x',
+    backend: 'codex',
+    model: MODEL,
+    serverPid: process.pid,
+    startedAt: new Date().toISOString(),
+    result: { text: 'x'.repeat(100), isError: false },
+  };
+  const failing = failures => {
+    const written = [];
+    let calls = 0;
+    return {
+      written,
+      write: async record => {
+        if (++calls <= failures) throw new Error('disk');
+        written.push(record);
+      },
+    };
+  };
+  const retried = failing(2);
+  assert.equal(await writeFinalTask(task, retried.write), true);
+  assert.equal(retried.written[0].state, 'completed', 'a retry keeps the full result');
+
+  const noted = failing(3);
+  assert.equal(await writeFinalTask(task, noted.write), true);
+  assert.equal(noted.written[0].state, 'failed');
+  assert.match(noted.written[0].result.text, /could not be stored/);
+
+  assert.equal(await writeFinalTask(task, failing(4).write), false, 'it reports and never rejects');
+});
+
+test('the task action shows a stored result only with a final state', async () => {
+  const task = {
+    schemaVersion: 1,
+    taskHandle: createTaskHandle(),
+    state: 'running',
+    workspace: tempDir,
+    sessionHandle: 'syn_sess_x',
+    backend: 'codex',
+    model: MODEL,
+    serverPid: process.pid,
+    startedAt: new Date().toISOString(),
+    result: { text: 'STORED BEFORE THE RELEASE', isError: false },
+  };
+  await writeTask(task);
+  const running = await handleSession({ action: 'task', task_handle: task.taskHandle }, tempDir);
+  assert.doesNotMatch(running.content[0].text, /STORED/);
+  assert.equal(running.structuredContent.result, undefined);
+  await writeTask({ ...task, state: 'completed' });
+  const done = await handleSession({ action: 'task', task_handle: task.taskHandle }, tempDir);
+  assert.match(done.content[0].text, /STORED/);
 });
 
 test('a running task of a dead server reads as interrupted; old finished tasks are removed', async () => {

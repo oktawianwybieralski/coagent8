@@ -22,7 +22,7 @@ import { redactDiagnostic } from '../security/index.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { jobHelperPath } from './job-helper.js';
 import { withRequiredJobHelper } from './process.js';
-import { createTaskHandle, pruneTasks, readTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
+import { createTaskHandle, pruneTasks, readTask, writeFinalTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
 import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 
@@ -179,16 +179,18 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   const running = new Promise<void>(resolve => {
     announce = resolve;
   });
-  /** A waiter must learn the end even when the full result cannot be stored; this never rejects. */
-  const record = async (update: Partial<DelegationTask>) => {
+  const logUnstored = () => process.stderr.write(`CoAgent8: task ${taskHandle} could not be recorded.\n`);
+  /** The result, kept for a crash before the release; a failure only delays it to the final record. */
+  const storeResult = async (result: DelegationTask['result']) => {
     if (!task) return;
-    task = { ...task, ...update };
-    try {
-      await writeTask(task);
-    } catch (err) {
-      const message = redactDiagnostic((err as Error).message, 512);
-      process.stderr.write(`CoAgent8: task ${task.taskHandle} could not be recorded: ${message}\n`);
-    }
+    task = { ...task, result };
+    await writeTask(task).catch(logUnstored);
+  };
+  /** Never rejects: a waiter must learn the end, and nobody awaits this but the shutdown. */
+  const finish = async (update: Pick<DelegationTask, 'state' | 'result'>) => {
+    if (!task) return;
+    task = { ...task, ...update, finishedAt: new Date().toISOString() };
+    if (!(await writeFinalTask(task))) logUnstored();
   };
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
@@ -215,21 +217,17 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     },
     // The evidence is stored while the writer is held; the state turns final after the release, so
     // a woken caller can start the next delegation at once.
-    beforeRelease: outcome => record({ result: start.format(outcome) }),
+    beforeRelease: outcome => storeResult(start.format(outcome)),
   });
   const settled: Promise<{ outcome: TaskExecutionResult } | { error: unknown }> = operation.then(
     async outcome => {
       // Formatted again: a failed release adds its warning after the first copy was stored.
-      await record({ state: finalState(outcome), finishedAt: new Date().toISOString(), result: start.format(outcome) });
+      await finish({ state: finalState(outcome), result: start.format(outcome) });
       return { outcome };
     },
     async (err: unknown) => {
       const message = redactDiagnostic((err as Error).message, 1024);
-      await record({
-        state: 'failed',
-        finishedAt: new Date().toISOString(),
-        result: { text: `The delegation failed: ${message}`, isError: true },
-      });
+      await finish({ state: 'failed', result: { text: `The delegation failed: ${message}`, isError: true } });
       return { error: err };
     },
   );
