@@ -1,6 +1,5 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { withAnswerLanguage } = require('../../../src/execution/controller.ts');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -84,6 +83,7 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   const turn = capture.records[7].params;
   assert.equal(turn.threadId, thread);
   assert.equal(turn.effort, 'high');
+  const { withAnswerLanguage } = require('../../../src/execution/controller.ts');
   assert.equal(capture.prompt, withAnswerLanguage('Follow up'));
   const history = await sessionHistory(handle, directory);
   assert.equal(history.events.filter(event => event.type === 'assistant_message').length, 2);
