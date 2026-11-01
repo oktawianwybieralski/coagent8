@@ -29,6 +29,7 @@
  * @packageDocumentation
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { spawn, ChildProcess } from 'node:child_process';
 import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
@@ -76,14 +77,27 @@ function callbackErrorCode(err: unknown): ExecutionError['code'] {
   return errorCodeOf(err, 'PROTOCOL_ERROR');
 }
 
-function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
-  return process.platform !== 'win32'
-    ? spawn(command, args, { cwd, env, stdio: 'pipe', shell: false, detached: true })
-    : launchWindows(command, args, cwd, env);
+/** Set while a writer runs: every launch inside it must get a helper from this lookup. */
+const requiredJobHelper = new AsyncLocalStorage<() => string | undefined>();
+
+/**
+ * Runs a task whose every process must be contained by the job helper. A launch that finds no
+ * helper fails with `SANDBOX_UNAVAILABLE` instead of starting the process uncontained.
+ * @param run - The task.
+ * @param locate - The helper lookup, which every launch repeats.
+ * @returns The task's result.
+ */
+export function withRequiredJobHelper<T>(run: () => Promise<T>, locate: () => string | undefined = jobHelperPath): Promise<T> {
+  return requiredJobHelper.run(locate, run);
 }
 
-function launchWindows(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
-  const helper = jobHelperPath();
+function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, helper: string | undefined) {
+  return process.platform !== 'win32'
+    ? spawn(command, args, { cwd, env, stdio: 'pipe', shell: false, detached: true })
+    : launchWindows(command, args, cwd, env, helper);
+}
+
+function launchWindows(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, helper: string | undefined) {
   return helper
     ? spawn(helper, [command, ...args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'], shell: false, windowsHide: true })
     : spawn(command, args, { cwd, env, stdio: 'pipe', shell: false, windowsHide: true });
@@ -305,10 +319,17 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     return Promise.resolve(failure('INPUT_LIMIT', 'Invalid grace period.'));
   if (Buffer.byteLength(options.stdinInput || '') > (options.maxInputBytes ?? MAX_PROMPT_BYTES))
     return Promise.resolve(failure('INPUT_LIMIT', 'Prompt exceeds the UTF-8 byte limit.'));
+  const requiredHelper = requiredJobHelper.getStore();
+  const helper = requiredHelper ? requiredHelper() : jobHelperPath();
+  if (requiredHelper && !helper) {
+    return Promise.resolve(
+      failure('SANDBOX_UNAVAILABLE', 'The Windows job helper is missing or failed its digest check; the writer was not started.'),
+    );
+  }
   let child: ChildProcess;
   try {
     const resolved = resolveCliCommand(command, { env: options.env, cwd: options.cwd });
-    child = launch(resolved.command, [...resolved.argsPrefix, ...args], options.cwd || process.cwd(), options.env || process.env);
+    child = launch(resolved.command, [...resolved.argsPrefix, ...args], options.cwd || process.cwd(), options.env || process.env, helper);
   } catch (err) {
     const error = err as Error & { code?: string };
     return Promise.resolve(

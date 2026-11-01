@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const { jobHelperPath, jobTreeEnded, locateJobHelper, parseJobStatus } = require('../../src/execution/job-helper.ts');
-const { runCommand } = require('../../src/execution/process.ts');
+const { runCommand, withRequiredJobHelper } = require('../../src/execution/process.ts');
 
 // WINDOWS-001: the helper is built by CI on Windows and by `cargo build --release` locally.
 // The helper starts children with CREATE_NO_WINDOW and is started hidden, so no window can open.
@@ -80,6 +80,35 @@ test('the helper is found in the package or a source checkout, never outside the
 
   // A module elsewhere has no package root to look in.
   assert.equal(locateJobHelper(path.join(root, checkout, 'scripts'), 'x64'), undefined);
+});
+
+test('a launch inside a writer that finds no helper fails instead of starting uncontained', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-required-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const marker = path.join(dir, 'started');
+  const result = await withRequiredJobHelper(
+    () => runCommand(process.execPath, ['-e', 'require("fs").writeFileSync(process.argv[1],"1")', marker], { cwd: dir, timeoutMs: 10000 }),
+    () => undefined,
+  );
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error.code, 'SANDBOX_UNAVAILABLE');
+  assert.equal(fs.existsSync(marker), false, 'nothing ran');
+});
+
+test('a helper that cannot be read is unavailable, not a crash', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-unreadable-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const moduleDir = path.join(dir, 'dist');
+  fs.mkdirSync(path.join(moduleDir, 'win32-x64'), { recursive: true });
+  fs.writeFileSync(path.join(moduleDir, 'win32-x64', 'coagent8-job.exe'), 'helper');
+  const read = fs.readFileSync;
+  t.after(() => (fs.readFileSync = read));
+  fs.readFileSync = () => {
+    throw Object.assign(new Error('denied'), { code: 'EACCES' });
+  };
+  const located = locateJobHelper(moduleDir, 'x64', { x64: 'digest' });
+  fs.readFileSync = read;
+  assert.equal(located, undefined);
 });
 
 function fixture(t) {

@@ -15,6 +15,7 @@ import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../c
 import { redactDiagnostic } from '../security/index.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { jobHelperPath } from './job-helper.js';
+import { withRequiredJobHelper } from './process.js';
 import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 
@@ -50,7 +51,8 @@ export async function executeDelegation(
   let outcome: TaskExecutionResult | undefined;
   try {
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
-    outcome = await executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...options, profile: 'workspace-write' });
+    const runTask = () => executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...options, profile: 'workspace-write' });
+    outcome = await (process.platform === 'win32' ? withRequiredJobHelper(runTask) : runTask());
     let changes: WorkspaceChanges;
     try {
       changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope);

@@ -38,6 +38,8 @@ jobs:
         with:
           name: job-helper
           path: .artifacts/job-helper/
+          # upload-artifact skips dot-prefixed paths unless told otherwise.
+          include-hidden-files: true
           if-no-files-found: error
 
   draft:

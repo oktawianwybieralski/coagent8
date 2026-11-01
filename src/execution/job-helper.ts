@@ -47,9 +47,15 @@ export function locateJobHelper(
 ): string | undefined {
   const isFile = (file: string) => fs.statSync(file, { throwIfNoEntry: false })?.isFile() ?? false;
   const packaged = path.join(moduleDir, `win32-${arch}`, 'coagent8-job.exe');
-  if (isFile(packaged)) {
-    const digest = createHash('sha256').update(fs.readFileSync(packaged)).digest('hex');
-    return digest === digests[arch] ? packaged : undefined;
+  try {
+    if (isFile(packaged)) {
+      const digest = createHash('sha256').update(fs.readFileSync(packaged)).digest('hex');
+      return digest === digests[arch] ? packaged : undefined;
+    }
+  } catch (err) {
+    // A helper that cannot be read is an unavailable helper, which callers report or refuse.
+    if ((err as NodeJS.ErrnoException).code) return undefined;
+    throw err;
   }
   const parent = path.dirname(moduleDir);
   const root =

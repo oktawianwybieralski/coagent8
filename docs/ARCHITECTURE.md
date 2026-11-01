@@ -1335,7 +1335,9 @@ The check does not stop someone who can also change the bundle. The binaries are
 code-signed (owner decision 2026-10-13: no paid certificate; SignPath Foundation is the
 first choice). Files extracted by npm or VS Code normally carry no Mark-of-the-Web.
 
-**Missing or refused helper.** `delegate` fails with `SANDBOX_UNAVAILABLE` on Windows, and
+**Missing or refused helper.** `delegate` fails with `SANDBOX_UNAVAILABLE` on Windows, also when
+the helper disappears after the call started, because every launch inside a writer repeats the
+check (`withRequiredJobHelper`), and
 `doctor` reports it (`windowsJobHelper`) with the way out.
 Read-only runs keep the direct spawn with the documented limitation, because they do not
 write.
