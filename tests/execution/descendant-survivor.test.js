@@ -15,6 +15,7 @@ process.env.GEMINI_CLI_HOME = path.join(tempDir, 'agy-home');
 process.env.AGY_PATH = path.resolve(__dirname, '../fixtures/agy-cli/agy.cjs');
 const { execute } = require('../../src/backends/agy/adapter.ts');
 const { activeProcesses } = require('../../src/execution/process.ts');
+const { jobHelperPath } = require('../../src/execution/job-helper.ts');
 const MODEL = 'gemini-3.8-flash-high';
 
 const heartbeat = marker => {
@@ -51,7 +52,7 @@ const cases = [
     name: 'outside any job (native root model)',
     descendant: 'outside-job',
     win32Only: true,
-    todo: 'WINDOWS-001a REPRODUCED: proc.kill() ends only the owned root; containment is WINDOWS-001b-e',
+    todo: 'WINDOWS-001a REPRODUCED without the job helper: proc.kill() ends only the owned root',
   },
 ];
 
@@ -60,7 +61,7 @@ for (const scenario of cases) {
     `cancelling an agy turn ends its native descendant ${scenario.name} (WINDOWS-001a)`,
     {
       skip: scenario.win32Only && process.platform !== 'win32' ? 'Windows job model only' : false,
-      todo: process.platform === 'win32' ? scenario.todo : false,
+      todo: process.platform === 'win32' && !jobHelperPath() ? scenario.todo : false,
     },
     async t => {
       const marker = path.join(tempDir, `heartbeat-${scenario.descendant}`);

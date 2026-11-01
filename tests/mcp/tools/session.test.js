@@ -339,6 +339,7 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
   const { saveConfig } = require('../../../src/config.ts');
   const { activeProcesses, terminateAllProcesses } = require('../../../src/execution/process.ts');
+  const { jobHelperPath } = require('../../../src/execution/job-helper.ts');
   const { readResult } = require('../../helpers/result.cjs');
 
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-claude-cancel-'));
@@ -410,7 +411,8 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     assert.equal(readyData.scenario, 'interruptible');
     assert.equal(turn1Settled, false, 'natural completion must not count as a cancellation pass');
     assert.ok(
-      [...activeProcesses].some(proc => proc.pid === readyData.pid),
+      // Through the Windows job helper the tracked process is the helper, the CLI's parent.
+      jobHelperPath() ? activeProcesses.size > 0 : [...activeProcesses].some(proc => proc.pid === readyData.pid),
       'live Claude child process must be tracked in activeProcesses while turn is running',
     );
 

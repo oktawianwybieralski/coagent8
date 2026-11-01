@@ -1,0 +1,3 @@
+# The helper runs on machines without the Visual C++ runtime.
+[target.'cfg(target_env = "msvc")']
+rustflags = ["-C", "target-feature=+crt-static"]
