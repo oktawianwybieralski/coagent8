@@ -16,6 +16,8 @@ core rule; it never relaxes one (agent-standards README "Precedence").
 ## Languages
 
 - Conversation with the owner: Polish.
+- Agent to agent (consult, review, delegate): English; the calling agent answers the owner
+  in Polish. The server asks backends for this (`answerLanguage`, owner decision 2026-11-01).
 - UI languages: English only (CLI output, MCP tool text, VS Code extension).
 
 ## Primary sources

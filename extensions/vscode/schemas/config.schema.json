@@ -19,6 +19,12 @@
         "Compatibility alias for routing.strategy smart_quota."
       ]
     },
+    "answerLanguage": {
+      "type": ["string", "null"],
+      "pattern": "^\\p{L}[\\p{L} -]{0,39}$",
+      "default": "English",
+      "description": "Language the backends answer the calling agent in; the calling agent relays the answer in your language. null adds no instruction, so a backend follows the workspace."
+    },
     "routing": {
       "type": "object",
       "additionalProperties": false,

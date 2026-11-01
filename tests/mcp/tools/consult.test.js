@@ -13,6 +13,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { withAnswerLanguage } = require('../../../src/execution/controller.ts');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -219,8 +220,8 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
   await handleConsult('consult', { proposal: 'Plain question' }, tempDir);
   assert.equal(
     receivedPrompts[0],
-    'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nPlain question',
-    'plain consult without task_type or context_files stays byte-for-byte neutral',
+    withAnswerLanguage('Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nPlain question'),
+    'plain consult without task_type or context_files stays byte-for-byte neutral, apart from the answer language',
   );
   assert.ok(!receivedPrompts[0].includes(READ_ONLY_FILE_TOOL_GUIDANCE));
 

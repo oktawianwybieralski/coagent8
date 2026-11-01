@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { withAnswerLanguage } = require('../../src/execution/controller.ts');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -131,7 +132,9 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
   // recommendation sections to plain questions while the prompt asked for "trade-offs and technical advice".
   assert.equal(
     captured.prompt,
-    'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?',
+    withAnswerLanguage(
+      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?',
+    ),
   );
   assert.ok(!captured.prompt.includes('FORMAT REQUIREMENTS:'), 'Prompt must not contain State Envelope FORMAT REQUIREMENTS');
   assert.ok(!captured.prompt.includes('State Envelope protocol'), 'Prompt must not mention State Envelope protocol');

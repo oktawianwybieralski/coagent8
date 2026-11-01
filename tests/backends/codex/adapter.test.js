@@ -83,7 +83,8 @@ test('production Codex adapter passes the shared pipeline, preserves Markdown an
   const turn = capture.records[7].params;
   assert.equal(turn.threadId, thread);
   assert.equal(turn.effort, 'high');
-  assert.equal(capture.prompt, 'Follow up');
+  const { withAnswerLanguage } = require('../../../src/execution/controller.ts');
+  assert.equal(capture.prompt, withAnswerLanguage('Follow up'));
   const history = await sessionHistory(handle, directory);
   assert.equal(history.events.filter(event => event.type === 'assistant_message').length, 2);
   assert.equal(history.events.filter(event => event.type === 'user_message').length, 2);

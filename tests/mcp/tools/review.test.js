@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { withAnswerLanguage } = require('../../../src/execution/controller.ts');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -61,7 +62,7 @@ test('review prompt names the snapshot, asks for the bounded envelope, and a mat
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const result = await handleReview('review', {}, repo);
-    assert.ok(prompt.startsWith('Review this diff: Uncommitted working changes'), prompt.slice(0, 80));
+    assert.ok(prompt.startsWith(withAnswerLanguage('Review this diff: Uncommitted working changes')), prompt.slice(0, 80));
     assert.match(prompt, new RegExp(`SNAPSHOT: ${head}\\+uncommitted#[0-9a-f]{64}\\n`));
     for (const line of [
       'REVIEW: <turn>',
