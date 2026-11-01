@@ -10,9 +10,14 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Answer language (owner decision 2026-11-01):** branch `feat/backend-answer-language`.
+  Backends followed the workspace's rule to answer the owner in Polish, inconsistently. The
+  server now asks for English before every backend prompt (`answerLanguage`), and the calling
+  agent relays. CI also builds the `arm64` helper with `--verify`, which only a tag did before.
+
 - **Windows per-call containment (`WINDOWS-001b-d`, owner decisions 2026-11-01):**
-  `001b` and `c` merged in #102 (`6161449`); `001d` on branch
-  `feat/windows-job-helper-package`. `delegate` becomes asynchronous by default in 0.8.0,
+  `001b` and `c` merged in #102 (`6161449`), `001d` in #103
+  (`68d7d56`). `delegate` becomes asynchronous by default in 0.8.0,
   and asynchronous writes on Windows wait for `WINDOWS-001b-e`. The package carries the helper
   unsigned, with its digest checked before launch, and `delegate` refuses to run on Windows
   without it. Next: `001e`, then `DELEGATE-001`. Record:

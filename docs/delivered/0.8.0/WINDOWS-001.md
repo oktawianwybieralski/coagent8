@@ -71,4 +71,20 @@ Delivered:
 - A changed or unknown helper is refused, and `delegate` then fails with
   `SANDBOX_UNAVAILABLE` on Windows.
 
-Evidence and reviews of this delivery are in its PR body; the next PR moves them here.
+Merged as [#103](https://github.com/oktawianwybieralski/coagent8/pull/103), squash `68d7d56`, 2026-11-01:
+`feat(windows): ship the job helper and refuse delegate without it`.
+
+Evidence on Windows 11, Node 24.21.0, with a GNU-toolchain helper staged by hand: the full gate at
+`932c120` (956 tests, 953 pass, 0 fail, 3 skipped), `test:consumer` at `0badd7e` with `doctor` and
+`delegate` refusing a changed helper on the installed package. CI: the MSVC x64 build with
+`--verify` and all jobs passed. Not run: `release.yml`, `arm64`, SmartScreen and Defender.
+
+Review rounds: Codex BLOCKED in three rounds (digest checked once per process, damaged copies not
+repaired, a launch without a helper after the first check, an unreadable helper throwing, a smoke
+test that checked only `doctor`), agy BLOCKED once (`upload-artifact` skipping dot-prefixed paths);
+all fixed.
+
+| Reviewer | Head | Verdict | Handle |
+| --- | --- | --- | --- |
+| codex | `0badd7e` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_b4a6951f2f5efbd5216efcf0` |
+| agy | `0badd7e` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_9cb026053054451322f0c748` |
