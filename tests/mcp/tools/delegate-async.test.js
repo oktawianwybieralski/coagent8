@@ -193,6 +193,18 @@ test('a task that cannot be recorded does not start, and the writer is released'
   }
 });
 
+test('the final result names a writer slot that could not be released', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_MODE = 'interruptible';
+  const started = await handleDelegate(REQUEST, repo, null, null, approve);
+  // A damaged record is left for the user, so the release fails.
+  fs.writeFileSync(writerRecord(repo), 'damaged');
+  await handleCancelSession({ session_handle: started.structuredContent.sessionHandle, workspace_path: repo });
+  const task = await finished(started.structuredContent.taskHandle);
+  assert.match(task.result.text, /writer slot was not released/);
+  fs.rmSync(writerRecord(repo), { force: true });
+});
+
 test('server shutdown stops a running delegation and awaits its result and release', async () => {
   const repo = fixtureRepo();
   process.env.CODEX_FIXTURE_MODE = 'interruptible';

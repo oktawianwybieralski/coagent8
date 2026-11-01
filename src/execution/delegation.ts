@@ -219,7 +219,8 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   });
   const settled: Promise<{ outcome: TaskExecutionResult } | { error: unknown }> = operation.then(
     async outcome => {
-      await record({ state: finalState(outcome), finishedAt: new Date().toISOString() });
+      // Formatted again: a failed release adds its warning after the first copy was stored.
+      await record({ state: finalState(outcome), finishedAt: new Date().toISOString(), result: start.format(outcome) });
       return { outcome };
     },
     async (err: unknown) => {
