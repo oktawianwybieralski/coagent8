@@ -34,7 +34,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { loadConfigSnapshot } from '../config.js';
+import { DEFAULT_ANSWER_LANGUAGE, loadConfigSnapshot } from '../config.js';
 import {
   acquireAndResolveSession,
   releaseSessionTurn,
@@ -165,6 +165,22 @@ export function composeExecutionCancellation(): void {
  */
 export async function waitForActiveExecutionTasks(): Promise<void> {
   await Promise.allSettled([...activeExecutionTasks]);
+}
+
+/**
+ * Puts the answer language before a backend prompt. Without it a backend follows whatever the
+ * workspace says, such as a rule to answer its owner in another language, which varies between
+ * turns and can cost more tokens; its reader is the calling agent, not the user.
+ * @param prompt - The backend prompt.
+ * @param language - The configured language; `null` adds nothing, unset means the default.
+ * @returns The prompt to send.
+ */
+export function withAnswerLanguage(prompt: string, language: string | null | undefined): string {
+  if (language === null) return prompt;
+  return [
+    `[ANSWER LANGUAGE] You are answering another agent, which relays your answer to its user. Write your answer in ${language ?? DEFAULT_ANSWER_LANGUAGE}, whatever the workspace says about the user's language, unless the request below names a language. Files you edit keep the language of their project.`,
+    prompt,
+  ].join('\n');
 }
 
 /**
@@ -545,7 +561,10 @@ async function executeTaskInternal(
           onEvent: receive,
           profile: options.profile ?? 'read-only',
         };
-        const raw: ExecutionResult = await backend.adapter.execute(prompt, executionOptions);
+        const raw: ExecutionResult = await backend.adapter.execute(
+          withAnswerLanguage(prompt, configSnapshot.config.answerLanguage),
+          executionOptions,
+        );
         // Validate terminal results defensively, including adapters supplied at runtime.
         const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
         const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);

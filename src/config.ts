@@ -40,6 +40,11 @@ export interface CoAgent8Config {
   $schema?: string;
   schemaVersion: number;
   defaultBackend: BackendId | null;
+  /**
+   * Language the backends answer the calling agent in; `null` adds no instruction. Unset means
+   * {@link DEFAULT_ANSWER_LANGUAGE}.
+   */
+  answerLanguage?: string | null;
   routing: RoutingConfig;
   /** Per-backend settings; doctor records a default model here when it finds none. */
   backends: Partial<Record<ProviderId, BackendSettings>>;
@@ -110,6 +115,10 @@ function isValidExecutable(value: unknown): boolean {
   return value === 'vscode-extension' || /^~[\\/]./.test(value) || path.isAbsolute(value);
 }
 
+/** The calling agent relays a backend's answer in its user's language, so the backend need not use it. */
+export const DEFAULT_ANSWER_LANGUAGE = 'English';
+const ANSWER_LANGUAGE = /^\p{L}[\p{L} -]{0,39}$/u;
+
 const VALID_BACKENDS: BackendId[] = ['codex', 'claude', 'agy', 'smart_quota'];
 const VALID_STRATEGIES: RoutingStrategy[] = ['fixed', 'smart_quota'];
 
@@ -162,6 +171,15 @@ export function validateConfig(value: unknown): CoAgent8Config {
     defaultBackend = defaultBackend.toLowerCase() as BackendId;
   } else {
     defaultBackend = null;
+  }
+
+  const answerLanguage = config.answerLanguage;
+  if (
+    answerLanguage !== undefined &&
+    answerLanguage !== null &&
+    (typeof answerLanguage !== 'string' || !ANSWER_LANGUAGE.test(answerLanguage))
+  ) {
+    throw new Error('Configuration Error: Invalid answerLanguage: expected a language name of at most 40 letters, or null.');
   }
 
   const routing = config.routing;
@@ -288,6 +306,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     ...(schema === undefined ? {} : { $schema: schema }),
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
+    ...(answerLanguage === undefined ? {} : { answerLanguage }),
     routing: {
       strategy,
       allowedBackends,
@@ -349,6 +368,7 @@ function collectSources(
 ): Record<string, SettingSource> {
   const sources: Record<string, SettingSource> = {
     defaultBackend: 'default',
+    answerLanguage: 'default',
     'routing.strategy': 'default',
     'routing.allowedBackends': 'default',
     'governance.priceMultiplier': 'default',
@@ -360,6 +380,7 @@ function collectSources(
 
   if (rawFile) {
     if (rawFile.defaultBackend !== undefined) sources.defaultBackend = 'file';
+    if (rawFile.answerLanguage !== undefined) sources.answerLanguage = 'file';
     if (rawFile.routing && typeof rawFile.routing === 'object' && !Array.isArray(rawFile.routing)) {
       const r = rawFile.routing as Record<string, unknown>;
       if (r.strategy !== undefined) sources['routing.strategy'] = 'file';
@@ -399,6 +420,7 @@ function computeChangeIdentity(config: CoAgent8Config, provenance: ConfigProvena
   const payload = JSON.stringify({
     schemaVersion: config.schemaVersion,
     defaultBackend: config.defaultBackend,
+    answerLanguage: config.answerLanguage,
     routing: config.routing,
     backends: config.backends,
     governance: config.governance,

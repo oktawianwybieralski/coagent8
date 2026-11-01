@@ -177,8 +177,13 @@ existing config blocks execution with POLICY_DENIED. Discovery remains available
 
 Core fields are schemaVersion: 1, defaultBackend, routing.strategy
 (fixed or smart_quota), routing.allowedBackends (codex/claude/agy), per-backend
-defaultModel/executable, and governance. The pre-release gemini backend alias and
+defaultModel/executable, governance and answerLanguage. The pre-release gemini backend alias and
 GEMINI_PATH were removed by owner decision; agy/AGY_PATH are current.
+
+`answerLanguage` (owner decision 2026-11-01, default English, `null` for no instruction) goes
+before every backend prompt: a backend's reader is the calling agent, which relays the answer
+in its user's language. One measurement of about 120 words took 146 tokens of text in English
+and 269 in Polish; it is a single sample on one model.
 
 Executable precedence: CODEX_PATH/CLAUDE_PATH/AGY_PATH; configured executable
 (absolute, ~/ path or vscode-extension); PATH; vendor extension copy. A configured
