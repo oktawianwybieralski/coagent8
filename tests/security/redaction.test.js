@@ -283,6 +283,20 @@ test('REDACTION-002: high-confidence credential formats are individually redacte
   }
 });
 
+test('PEM key redaction stays linear on repeated BEGIN and END markers', () => {
+  // The earlier pattern took several seconds on these 220 KB inputs (CodeQL js/polynomial-redos).
+  for (const input of ['-----begin '.repeat(20000), '-----begin private key-----' + '-----end '.repeat(20000)]) {
+    const started = process.hrtime.bigint();
+    redactCredentialFormats(input);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    assert.ok(elapsedMs < 500, `redaction took ${elapsedMs.toFixed(0)} ms on ${input.slice(0, 30)}...`);
+  }
+  for (const type of ['RSA ', 'EC ', 'OPENSSH ', 'ENCRYPTED ', 'X-TEST ', '']) {
+    const key = `-----BEGIN ${type}PRIVATE KEY-----\nSECRET_BODY\n-----END ${type}PRIVATE KEY-----`;
+    assert.equal(redactCredentialFormats(key), '-----BEGIN PRIVATE KEY-----\n***[REDACTED]***\n-----END PRIVATE KEY-----');
+  }
+});
+
 test('REDACTION-002: diagnostic redaction strips keyword=value rules, Authorization catch-all, and home directory', () => {
   const diagInput = 'Error connecting to database: password="superSecretPassword" token=anotherSecret api_key=12345 auth=jwtVal Authorization: custom-token at ' + os.homedir() + '/workspace/app.js';
   const diagResult = redactDiagnostic(diagInput);
