@@ -211,7 +211,10 @@ test('openBrowser spawns a quiet, non-detached opener that ignores its output', 
 
   assert.equal(await resultPromise, true);
   assert.equal(calls.length, 1);
-  assert.ok(calls[0].args.includes('https://example.com'));
+  assert.ok(
+    calls[0].args.some(arg => arg === 'https://example.com'),
+    'the URL is passed as one argument',
+  );
   assert.equal(calls[0].options.detached, undefined, 'a detached child can show a console window on Windows');
   assert.equal(calls[0].options.stdio, 'ignore');
   assert.equal(calls[0].options.windowsHide, true);

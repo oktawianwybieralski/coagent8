@@ -30,6 +30,17 @@ function extractEntrypoints(content: string, dir: string, extPattern: RegExp): s
   }
   return [...new Set(list)].filter(p => fs.statSync(p, { throwIfNoEntry: false })?.isFile());
 }
+/** One redirection a shim may append after `%*` (`>nul`, `2>&1`, `>> log.txt`, `<in`), matched at the current position. */
+const REDIRECTION = /\s*(?:[0-9]*>>?(?:&[0-9]+|\s*[\w.-]+)|<[\w.-]+)/y;
+/** The text after `%*` once its leading chain of redirections is consumed, trimmed; empty when only redirections follow. */
+function argumentsAfterRedirections(text: string): string {
+  let position = 0;
+  for (;;) {
+    REDIRECTION.lastIndex = position;
+    if (!REDIRECTION.exec(text)) return text.slice(position).trim();
+    position = REDIRECTION.lastIndex;
+  }
+}
 function extractNativeArgsPrefix(content: string, exePath: string): string[] {
   const exeBase = path.basename(exePath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const rawLine of content.split(/\r?\n/)) {
@@ -51,7 +62,7 @@ function extractNativeArgsPrefix(content: string, exePath: string): string[] {
       const afterForward = (parts[1] || '').trim();
 
       if (afterForward) {
-        const nonRedir = afterForward.replace(/(?:[0-9]*>>?(?:&[0-9]+|\s*[\w.-]+)|<[\w.-]+)/g, '').trim();
+        const nonRedir = argumentsAfterRedirections(afterForward);
         if (nonRedir.length > 0) {
           throw new CliResolutionError(
             'CLI_UNSUPPORTED',
