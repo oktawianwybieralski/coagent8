@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
+import { copyJobHelperBeside } from './runtime-files.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -638,6 +639,7 @@ export async function setupClients(options: SetupOptions): Promise<SetupStatus[]
         (candidate.args.at(-1) === 'mcp' ? candidate.args.at(-2)! : candidate.args.at(-1)!);
       fs.mkdirSync(path.dirname(runtime), { recursive: true, mode: 0o700 });
       if (!fs.existsSync(runtime)) fs.writeFileSync(runtime, bundle, { flag: 'wx', mode: 0o600 });
+      copyJobHelperBeside(options.runtimeSource, path.dirname(runtime));
       const versionFile = path.join(path.dirname(runtime), 'version.json');
       if (!fs.existsSync(versionFile)) {
         const versionToRecord = options.version ?? extractRuntimeVersion(options.runtimeSource) ?? BRAND.SERVER_VERSION;

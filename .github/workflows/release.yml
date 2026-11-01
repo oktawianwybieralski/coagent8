@@ -17,8 +17,34 @@ permissions:
   attestations: write
 
 jobs:
+  # WINDOWS-001d: the package carries the Windows job helper for both architectures. Each
+  # build runs twice and must match byte for byte. The draft job embeds their digests.
+  job-helper:
+    name: Build the Windows job helper
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Build reproducible helpers
+        run: |
+          node scripts/build-job-helper.cjs --arch x64 --verify
+          node scripts/build-job-helper.cjs --arch arm64 --verify
+
+      - name: Keep the helpers for the draft job
+        uses: actions/upload-artifact@v4
+        with:
+          name: job-helper
+          path: .artifacts/job-helper/
+          # upload-artifact skips dot-prefixed paths unless told otherwise.
+          include-hidden-files: true
+          if-no-files-found: error
+
   draft:
     name: Draft release ${{ github.ref_name }}
+    needs: job-helper
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tagged commit with full history
@@ -87,6 +113,12 @@ jobs:
           npm run lint:docs
           npm run docs
 
+      - name: Restore the Windows job helpers
+        uses: actions/download-artifact@v4
+        with:
+          name: job-helper
+          path: .artifacts/job-helper/
+
       - name: Build bundle
         run: npm run build
 
@@ -96,6 +128,8 @@ jobs:
       # Packs the npm tarball once, installs that exact file and records its SHA-256.
       - name: Pack and verify the exact npm tarball
         run: npm run test:consumer
+        env:
+          coagent8_REQUIRE_JOB_HELPERS: '1'
 
       - name: Package the VS Code extension
         run: npm run package:vscode

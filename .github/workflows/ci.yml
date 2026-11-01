@@ -52,6 +52,11 @@ jobs:
         working-directory: native/coagent8-job
         run: cargo build --release --locked --examples --bins
 
+      # WINDOWS-001d: the consumer test installs the package with its reproducible helper.
+      - name: Stage the Windows job helper for the package
+        if: runner.os == 'Windows'
+        run: node scripts/build-job-helper.cjs --verify
+
       # Core rules 00 and 05 of the agent standards: the managed copy matches its lock,
       # and tracked files carry keyboard characters only.
       - name: Verify the agent standards copy

@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { copyJobHelperBeside, removeRuntimeDirectory } from './runtime-files.js';
 import { parse, applyEdits, modify, type ParseError } from 'jsonc-parser';
 import { readBoundedFileSync } from '../storage/read.js';
 import { withFileLock } from '../storage/lock.js';
@@ -186,8 +187,9 @@ function runtimeCopy(storagePath: string, bundle: string): string {
   const content = fs.readFileSync(bundle);
   const directory = path.join(storagePath, 'runtime', hash(content)),
     target = path.join(directory, 'index.cjs');
-  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === path.basename(directory)) return target;
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  copyJobHelperBeside(bundle, directory);
+  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === path.basename(directory)) return target;
   const temp = `${target}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(temp, content, { flag: 'wx', mode: 0o600 });
@@ -202,8 +204,7 @@ function pruneRuntimes(storagePath: string, keep: string): void {
   const root = path.join(storagePath, 'runtime');
   if (!fs.existsSync(root)) return;
   for (const name of fs.readdirSync(root)) {
-    if (/^[a-f0-9]{64}$/.test(name) && path.join(root, name) !== path.dirname(keep))
-      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    if (/^[a-f0-9]{64}$/.test(name) && path.join(root, name) !== path.dirname(keep)) removeRuntimeDirectory(path.join(root, name));
   }
 }
 

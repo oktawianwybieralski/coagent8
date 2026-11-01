@@ -14,6 +14,7 @@ import path from 'node:path';
 import cp from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { hash } from './setup-storage.js';
+import { copyJobHelperBeside } from './runtime-files.js';
 import { pruneUnreferencedRuntimes } from './cleanup.js';
 import { withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
@@ -334,8 +335,9 @@ function ensureRuntimeCopy(home: string, bundle: string): string {
   const digest = hash(content);
   const runtimeDir = path.join(home, '.coagent8', 'runtime', digest);
   const target = path.join(runtimeDir, 'index.cjs');
-  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === digest) return target;
   fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
+  copyJobHelperBeside(bundle, runtimeDir);
+  if (fs.existsSync(target) && hash(fs.readFileSync(target)) === digest) return target;
   const tmp = `${target}.tmp.${randomUUID()}`;
   try {
     fs.writeFileSync(tmp, content, { flag: 'wx', mode: 0o600 });

@@ -5,6 +5,7 @@ import { PROVIDERS, ToolError, type ProviderId, type ModelCatalog } from '../con
 import { inspectQuotas } from '../backends/availability.js';
 import { catalogNames, listModelCandidates, type ModelCandidate, type ModelSelection, type ModelSource } from '../models/selection.js';
 import { selectModel } from '../execution/selection.js';
+import { jobHelperPath } from '../execution/job-helper.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { isPriceListStale, readPrices, type PriceList } from '../models/prices.js';
 import { decideConsent, type ConsentBasis, type GovernanceSettings } from '../models/governance.js';
@@ -98,6 +99,8 @@ export interface DoctorReport {
    */
   selection: ModelCandidate[];
   recommendations: string[];
+  /** Windows only: whether the job helper was found and passed its digest check (WINDOWS-001). */
+  windowsJobHelper?: 'ready' | 'unavailable';
   installed_backends: ProviderId[];
   /**
    * Backends whose CLI is installed, authenticated and has execution capability and quota headroom.
@@ -144,6 +147,7 @@ export interface DoctorOptions {
 }
 
 export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorReport> {
+  const jobHelperState = process.platform !== 'win32' ? undefined : jobHelperPath() ? 'ready' : 'unavailable';
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
   const isOwnedBudget = !options.budget;
@@ -466,7 +470,13 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
         ...inheritedNotes,
         ...configNotes,
         ...observerNotes,
+        ...(jobHelperState === 'unavailable'
+          ? [
+              'The Windows job helper is missing or failed its digest check, so delegate refuses to run and a cancelled turn can leave processes behind. Reinstall CoAgent8.',
+            ]
+          : []),
       ],
+      ...(jobHelperState ? { windowsJobHelper: jobHelperState } : {}),
       ...(configError ? { configError } : {}),
       configProvenance,
       inheritedTools,

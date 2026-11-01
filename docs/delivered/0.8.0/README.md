@@ -16,7 +16,7 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 | --- | --- | --- |
 | [STANDARDS-001](STANDARDS-001.md) | Shared agent standards v0.1.0 and keyboard characters in CoAgent8 output | #96, #97 |
 | [FORMAT-001](FORMAT-001.md) | One formatter (Prettier) checked in CI | #98 |
-| [WINDOWS-001](WINDOWS-001.md) | Per-call Windows containment: launcher contract and helper, not packaged yet | pending |
+| [WINDOWS-001](WINDOWS-001.md) | Per-call Windows containment: launcher contract, helper and unsigned package | #102, packaging PR |
 
 ## Merged without a card record yet
 
@@ -24,3 +24,5 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 | --- | --- |
 | [#95](https://github.com/oktawianwybieralski/coagent8/pull/95) | `delegate` and the agy denial and output-limit fixes (#92, #89); its `DELEGATE-001` record is still to be written |
 | [#99](https://github.com/oktawianwybieralski/coagent8/pull/99) | PEM key redaction stays linear on repeated markers (CodeQL alert 4), `a778caa`, 2026-11-01 |
+| [#100](https://github.com/oktawianwybieralski/coagent8/pull/100) | Dependabot: `@azure/msal-node` and `@azure/identity` in the VSIX packaging tool, `aa37095`, 2026-11-01 |
+| [#101](https://github.com/oktawianwybieralski/coagent8/pull/101) | CodeQL alerts 1-3 and two deterministic timing tests, `696f6b1`, 2026-11-01 |
