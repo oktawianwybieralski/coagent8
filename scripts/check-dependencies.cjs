@@ -27,6 +27,7 @@ function resolveTypeScript(customRoot) {
 const RUNTIME_PRIMITIVES = new Set([
   'src/execution/process.ts',
   'src/execution/cli-resolver.ts',
+  'src/execution/job-helper.ts',
   'src/execution/nested-turn.ts',
   'src/execution/stream-reducer.ts',
 ]);

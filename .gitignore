@@ -9,4 +9,5 @@ yarn-error.log*
 .artifacts/
 *.tgz
 dist/
+native/*/target/
 /docs/.local/

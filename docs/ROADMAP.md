@@ -512,20 +512,18 @@ and a wait command built by the server from its own process (no PATH needed),
 a task-owned lifecycle that holds the writer until evidence is persisted, and
 later a server-owned check, fix and review loop (`001f2`) that removes the
 caller's supervision. Re-scoped from read-only first: `001e` now delivers the
-asynchronous lifecycle for the existing write delegation. Open owner
-decisions:
+asynchronous lifecycle for the existing write delegation. Owner decisions
+2026-11-01:
 
-1. Whether `delegate` is first published with `async` as the default
-   (`001w` is unreleased, so no client depends on `sync` yet) or ships
-   `sync` first and switches in `0.8.0`.
-2. Whether asynchronous writes on Windows ship before `WINDOWS-001b-e` with
-   the `001w` limitation. Codex: no, because a writer record whose server
-   process is gone is taken over while a surviving descendant may still write.
-   Author: `001w` already has that risk; `async` lengthens the window but adds
-   no new kind of risk.
-3. Whether this work rides on the `001w` branch or follows it in its own PR.
-4. Claude Code's private messaging pipe is recorded as rejected unless the
-   owner approves a separate experiment (`001a` step 4).
+1. `delegate` is first published in `0.8.0` with `async` as the default;
+   `sync` stays available explicitly. `001w` is unreleased, so no client
+   depends on `sync`.
+2. Asynchronous writes on Windows do not ship before `WINDOWS-001b-e`: a
+   writer record whose server process is gone could be taken over while a
+   surviving descendant still writes.
+3. This work follows `001w` (#95) in its own PRs.
+4. Claude Code's private messaging pipe stays rejected as a wake-up mechanism
+   (`001a` step 4).
 
 - [ ] **DELEGATE-001w - synchronous write delegation.** Owner request
   2026-10-21, ahead of `001c-f`: the `delegate` tool, its write profiles,
@@ -668,8 +666,8 @@ Retain these foundation IDs for candidate acceptance and follow-up cards. Use th
 
 libuv places non-detached server children into one server-wide `KILL_ON_JOB_CLOSE` job, so server termination leaves no survivors (`AUD-P2-14`), but per-call cancellation or timeout stops only the owned root process (`src/execution/process.ts`). While Codex and Claude stop their children after a protocol interrupt, Antigravity has no headless interrupt and launches the user's MCP servers on every turn. `WINDOWS-001a` reproduced per-call survivor processes outside the root job ([evidence](HANDOFF.md#windows-001a-per-call-descendant-survivors)); this is a documented known limitation for read-only `0.6.0`/`0.6.1` and must be resolved by `WINDOWS-001b-e` before enabling any `COAGENT-002` write or command profile.
 
-- [ ] **WINDOWS-001b - launcher contract.** Check: P. Specify a hidden launcher helper (**new**, `coagent8-job.exe`) that creates a per-call Job Object with `KILL_ON_JOB_CLOSE` (and optional memory/process limits), starts the CLI with `CREATE_SUSPENDED`, assigns and resumes it, inherits standard streams directly for protocol interrupts, and closes the job when stopped via its owned handle or when the server exits. `process.ts` remains the single owner with zero PID-based selection. Define `CREATE_BREAKAWAY_FROM_JOB` policy (tested with npm, Git and a browser), JSON launch specification over an extra descriptor, post-root-exit descendant handling (default: stopped; exceptions only by explicit task policy), missing-helper behavior (write/command profiles fail closed; read-only retains current behavior) and a platform-neutral interface reusable for `CUR-011`.
-- [ ] **WINDOWS-001c - implement the helper.** After `001b`. Implement the static Rust (`windows-sys`) helper binary and measure first-launch overhead. Acceptance: fixture trees, breakaway requests, root exit and helper teardown match the contract. Check: R, PROCESS/LIFE plus helper tests.
+- [x] **WINDOWS-001b - launcher contract.** Check: P. [ARCHITECTURE](ARCHITECTURE.md#windows-per-call-containment-windows-001) replaces this card's first draft after Codex and agy consultations and native tests: verbatim command line instead of a JSON specification, atomic job assignment instead of `CREATE_SUSPENDED`, a status line instead of a reserved exit code, and a helper that exits only when its job is empty. Delivered: [record](delivered/0.8.0/WINDOWS-001.md).
+- [x] **WINDOWS-001c - implement the helper.** After `001b`. Static Rust (`windows-sys`) helper in `native/coagent8-job`, used by `process.ts` when present. First-launch overhead about 25 ms. Acceptance: fixture trees, breakaway requests, root exit and helper teardown match the contract. Check: R, PROCESS/LIFE plus helper tests. Delivered: [record](delivered/0.8.0/WINDOWS-001.md).
 - [ ] **WINDOWS-001d - package and verify the helper.** After `001c`. Build reproducible `x64` and `arm64` binaries in CI, ship them in the npm tarball and VSIX, and verify SHA-256 digests before launch. Owner decision 2026-10-13: no paid code-signing certificate. Apply to SignPath Foundation's free signing for open-source projects first; if it is not available, ship unsigned binaries verified by SHA-256 and measure whether SmartScreen or Defender react (files extracted by npm or VS Code normally carry no Mark-of-the-Web). An intermediate signed `node.exe` cannot replace the helper: libuv's job allows silent breakaway, so grandchildren escape (`WINDOWS-001a`). Acceptance: package inspection and consumer smoke verify the helper and refuse tampered binaries.
 - [ ] **WINDOWS-001e - native acceptance.** After `001d`. Verify per backend on Windows that cancel/expiry leaves no surviving descendants, preserves quiet desktop operation and keeps the cold agy updater disabled.
 

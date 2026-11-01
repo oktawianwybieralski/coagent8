@@ -1,4 +1,5 @@
 const { test } = require('node:test');
+const { jobHelperPath } = require('../../../src/execution/job-helper.ts');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -613,7 +614,8 @@ test('FEEDBACK-060h: deterministic running-turn handshake confirms live Claude t
       assert.match(ready.sessionId, UUID);
       assert.equal(turn1Settled, false, 'natural completion must not occur before cancellation');
       assert.ok(
-        [...activeProcesses].some(proc => proc.pid === ready.pid),
+        // Through the Windows job helper the tracked process is the helper, the CLI's parent.
+        jobHelperPath() ? activeProcesses.size > 0 : [...activeProcesses].some(proc => proc.pid === ready.pid),
         'live Claude process must be tracked in activeProcesses',
       );
 

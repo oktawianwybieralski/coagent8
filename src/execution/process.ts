@@ -12,9 +12,13 @@
  *    calls `TerminateProcess` on the handle Node holds since spawn. POSIX signals the
  *    detached process group with `SIGTERM`, then `SIGKILL`.
  * 3. **No tree guessing**: no process is ever selected by PID or parent PID. There is no
- *    snapshot, polling or name list. On Windows, libuv places every non-detached child in
- *    a `KILL_ON_JOB_CLOSE` job, so a chain of Node processes dies with its root.
- *    Descendants created by native backends are the backend's responsibility.
+ *    snapshot, polling or name list. On Windows, a run started through the job helper
+ *    owns its whole tree: closing the stop pipe ends the helper's job and the helper reports
+ *    when the job is empty; `proc.kill()` remains the fallback, and a result then says
+ *    that the end of the tree is unconfirmed (`treeEnded`). Without the helper,
+ *    libuv places every non-detached child in a `KILL_ON_JOB_CLOSE` job, so a chain of
+ *    Node processes dies with its root, while descendants created by native backends can
+ *    outlive a cancelled turn.
  *
  * ## Bounds
  * UTF-8 decoding is split-safe (`StringDecoder`), stdout/stderr are capped
@@ -26,8 +30,10 @@
  */
 
 import { spawn, ChildProcess } from 'node:child_process';
+import type { Duplex } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { resolveCliCommand } from './cli-resolver.js';
+import { jobHelperPath, jobTreeEnded, parseJobStatus } from './job-helper.js';
 import { createLineDecoder, truncateToByteLength } from './runtime/stream.js';
 import { DEFAULT_EXECUTION_TIMEOUT_MS, DEFAULT_TEARDOWN_GRACE_MS, type ExecutionError, type TerminalStatus } from '../contracts/index.js';
 import { errorCodeOf } from '../contracts/index.js';
@@ -47,6 +53,19 @@ export const SIGNAL_GRACE_MS = 250;
 export const PIPE_DRAIN_MS = 2000;
 /** Upper bound for observing the owned root's exit after a forced stop on Windows. */
 const WINDOWS_EXIT_WAIT_MS = 2000;
+/**
+ * Time the job helper has to report after a stop request before it is terminated; longer
+ * than the helper's own bound for an ended job to empty (`JOB_EMPTY_WAIT_MS`, 3 s).
+ */
+const JOB_STOP_WAIT_MS = 4000;
+/** Upper bound for observing the helper's exit after a stop request. */
+const JOB_EXIT_WAIT_MS = 5000;
+/** Descriptor of the job helper's status pipe. */
+const JOB_STATUS_DESCRIPTOR = 3;
+/** Descriptor of the job helper's stop pipe. */
+const JOB_STOP_DESCRIPTOR = 4;
+/** Upper bound of the helper's status line; anything longer is not a status. */
+const MAX_JOB_STATUS_BYTES = 256;
 /** Set of currently live ChildProcess instances managed by the supervisor. */
 export const activeProcesses = new Set<ChildProcess>();
 const activeRuns = new Map<ChildProcess, { cancel: () => void; done: Promise<RunCommandResult> }>();
@@ -60,7 +79,19 @@ function callbackErrorCode(err: unknown): ExecutionError['code'] {
 function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
   return process.platform !== 'win32'
     ? spawn(command, args, { cwd, env, stdio: 'pipe', shell: false, detached: true })
+    : launchWindows(command, args, cwd, env);
+}
+
+function launchWindows(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
+  const helper = jobHelperPath();
+  return helper
+    ? spawn(helper, [command, ...args], { cwd, env, stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'], shell: false, windowsHide: true })
     : spawn(command, args, { cwd, env, stdio: 'pipe', shell: false, windowsHide: true });
+}
+
+/** A pipe of a run started through the job helper; `undefined` for any other run. */
+function jobPipe(proc: ChildProcess, descriptor: number): Duplex | undefined {
+  return proc.stdio[descriptor] as Duplex | undefined;
 }
 
 function hasExited(proc: ChildProcess): boolean {
@@ -113,13 +144,23 @@ export function terminateProcessTree(proc: ChildProcess, graceMs = SIGNAL_GRACE_
           if (timer) clearTimeout(timer);
           resolve();
         };
-        timer = setTimeout(() => {
-          proc.removeListener('exit', onExit);
-          resolve();
-        }, WINDOWS_EXIT_WAIT_MS);
+        timer = setTimeout(
+          () => {
+            proc.removeListener('exit', onExit);
+            resolve();
+          },
+          jobPipe(proc, JOB_STOP_DESCRIPTOR) ? JOB_EXIT_WAIT_MS : WINDOWS_EXIT_WAIT_MS,
+        );
         proc.once('exit', onExit);
       });
-      proc.kill();
+      const stopPipe = jobPipe(proc, JOB_STOP_DESCRIPTOR);
+      if (stopPipe) {
+        const fallback = setTimeout(() => proc.kill(), JOB_STOP_WAIT_MS);
+        proc.once('exit', () => clearTimeout(fallback));
+        stopPipe.destroy();
+      } else {
+        proc.kill();
+      }
       await exited;
     } else if (signalOwnedGroup(proc.pid, 'SIGTERM')) {
       await new Promise<void>(resolve => setTimeout(resolve, graceMs));
@@ -207,6 +248,11 @@ export interface RunCommandResult {
   status: TerminalStatus;
   error?: ExecutionError;
   isTruncated: boolean;
+  /**
+   * Set for a run through the Windows job helper: whether the helper confirmed that every
+   * process of the run has ended. A writer must not be released on `false`.
+   */
+  treeEnded?: boolean;
 }
 
 function failure(code: ExecutionError['code'], message: string): RunCommandResult {
@@ -347,6 +393,18 @@ export function runCommand(command: string, args: string[], options: RunCommandO
         stop(callbackErrorCode(err), (err as Error).message);
       }
     }
+    const status = jobPipe(child, JOB_STATUS_DESCRIPTOR);
+    jobPipe(child, JOB_STOP_DESCRIPTOR)?.on('error', () => {});
+    let statusText = '';
+    if (status) {
+      status.on('error', () => {});
+      status.on('data', (chunk: Buffer) => {
+        if (statusText.length >= MAX_JOB_STATUS_BYTES) return;
+        statusText += chunk.toString('latin1');
+        const failed = parseJobStatus(statusText);
+        if (failed) stop(failed.code, failed.message);
+      });
+    }
     child.stdout?.on('data', (chunk: Buffer) => collect(chunk, 'stdout'));
     child.stderr?.on('data', (chunk: Buffer) => collect(chunk, 'stderr'));
     // A descendant may keep inherited pipes open after the root exits. Signal the owned
@@ -388,6 +446,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
         exitCode,
         signal,
         isTruncated: truncated,
+        ...(status ? { treeEnded: jobTreeEnded(statusText) } : {}),
       });
     });
     timer = setTimeout(() => stop('TIMEOUT', `CLI deadline exceeded (${timeout} ms).`), timeout);

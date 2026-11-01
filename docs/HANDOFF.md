@@ -10,6 +10,14 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Windows per-call containment (`WINDOWS-001b`, `c`, owner decisions 2026-11-01):**
+  branch `feat/windows-job-helper`. `delegate` becomes asynchronous by default in
+  0.8.0, and asynchronous writes on Windows wait for `WINDOWS-001b-e`. The helper in
+  `native/coagent8-job` ends a cancelled run's whole tree; `survivedCancel` of
+  `WINDOWS-001a` is now false for the descendant outside any job. It is not packaged
+  yet, so an installed CoAgent8 keeps the limitation until `001d`. Next: `001d`, `001e`.
+  Record: [WINDOWS-001 in 0.8.0](delivered/0.8.0/WINDOWS-001.md).
+
 - **CodeQL alerts and CI timing (2026-11-01):** branch `fix/codeql-alerts`.
   Alert 1: `ci.yml` limits the token to `contents: read`. Alert 2: the Windows
   shim check in `src/execution/cli-resolver.ts` consumes the redirections after
