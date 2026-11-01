@@ -258,6 +258,21 @@ function npmRun(args, cwd = root) {
         for (const name of ['consult', 'review'])
           assert.equal(tools.result.tools.find(tool => tool.name === name).outputSchema, undefined, `${name}: markdown result only`);
         if (binIndex === 0) {
+          if (process.platform === 'win32' && fs.existsSync(packagedHelper)) {
+            // WINDOWS-001d: with a changed helper the installed delegate starts no worker.
+            const original = fs.readFileSync(packagedHelper);
+            fs.writeFileSync(packagedHelper, Buffer.concat([original, Buffer.from([0])]));
+            try {
+              const refused = await request('tools/call', {
+                name: 'delegate',
+                arguments: { task: 'consumer write task', backend: 'codex', model: 'gpt-6.1-sol', workspace_path: dir },
+              });
+              assert.equal(refused.result.isError, true, JSON.stringify(refused));
+              assert.match(JSON.stringify(refused.result.content), /SANDBOX_UNAVAILABLE/);
+            } finally {
+              fs.writeFileSync(packagedHelper, original);
+            }
+          }
           const first = await request('tools/call', {
             name: 'consult',
             arguments: { proposal: 'consumer first turn', backend: 'agy', workspace_path: dir },
