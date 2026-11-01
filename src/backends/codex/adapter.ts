@@ -215,11 +215,13 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
   if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-')))
     return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
-  const promptBytes = Buffer.byteLength(prompt, 'utf8');
+  const profile = options.profile ?? 'read-only';
+  const turnPrompt = codexTurnPrompt(prompt, profile);
+  const promptBytes = Buffer.byteLength(turnPrompt, 'utf8');
   if (promptBytes > CODEX_MAX_PROMPT_BYTES) {
     return rejected('INPUT_LIMIT', `Prompt exceeds the UTF-8 byte limit (${promptBytes} > ${CODEX_MAX_PROMPT_BYTES} bytes).`);
   }
-  const serializedPromptBytes = Buffer.byteLength(JSON.stringify(prompt), 'utf8');
+  const serializedPromptBytes = Buffer.byteLength(JSON.stringify(turnPrompt), 'utf8');
   if (serializedPromptBytes > CODEX_MAX_SERIALIZED_PROMPT_BYTES) {
     return rejected(
       'INPUT_LIMIT',
@@ -229,7 +231,6 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   // The app-server session requests the profile's sandbox of CODEX_SANDBOX per thread and
   // verifies the server's answer; the config overrides pin the same policy for the server's
   // defaults and turn off the features that add tools beyond the shell.
-  const profile = options.profile ?? 'read-only';
   const args = codexAppServerArgs(profile);
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
   const app = createCodexAppSession({
@@ -244,7 +245,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const result = await runCommand(configuredBackendCommand('codex'), args, {
     cwd: options.cwd,
     env: codexLaunchEnvironment(turnEnvironment()),
-    stdinInput: codexTurnPrompt(prompt, profile),
+    stdinInput: turnPrompt,
     session: app.session,
     abortSignal: options.abortSignal,
     timeoutMs: options.timeoutMs,

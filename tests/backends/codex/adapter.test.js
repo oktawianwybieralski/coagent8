@@ -617,3 +617,10 @@ test('a Windows writer learns that its PowerShell runs in ConstrainedLanguage mo
   assert.equal(codexTurnPrompt('task', 'workspace-write', 'linux'), 'task', 'other systems have no such mode');
   assert.match(CODEX_WINDOWS_WRITE_NOTE, /Set-Content/);
 });
+
+test('the size limit covers the Windows writer note', { skip: process.platform === 'win32' ? false : 'Windows writers only' }, async () => {
+  const atLimit = 'a'.repeat(CODEX_MAX_PROMPT_BYTES);
+  const result = await execute(atLimit, { model: 'gpt-6.1-sol', profile: 'workspace-write' });
+  assert.equal(result.error.code, 'INPUT_LIMIT');
+  assert.match(result.error.message, /Prompt exceeds the UTF-8 byte limit/);
+});
