@@ -90,12 +90,18 @@ function fixture(t) {
     'heartbeat.cjs',
     "const fs=require('fs');let n=0;const end=Date.now()+15000;setInterval(()=>{if(Date.now()>end)process.exit(0);fs.writeFileSync(process.argv[2],String(++n));},50);",
   );
-  /** A root that starts a heartbeat descendant, by default detached as a native CLI's child would be. */
-  const rootWithDescendant = (marker, after = 'setInterval(()=>{},1000);') =>
+  /**
+   * Arguments of a root that starts a heartbeat descendant, detached as a native CLI's child
+   * would be. The paths travel as arguments: process.argv[2] and [3] in the root's code.
+   */
+  const rootWithDescendant = (marker, after = 'setInterval(()=>{},1000);') => [
     script(
       `root-${path.basename(marker)}.cjs`,
-      `require('child_process').spawn(process.execPath,[${JSON.stringify(heartbeat)},${JSON.stringify(marker)}],{stdio:'ignore',windowsHide:true,detached:true}).unref();${after}`,
-    );
+      `require('child_process').spawn(process.execPath,[process.argv[2],process.argv[3]],{stdio:'ignore',windowsHide:true,detached:true}).unref();${after}`,
+    ),
+    heartbeat,
+    marker,
+  ];
   return { dir, script, rootWithDescendant };
 }
 
@@ -167,7 +173,7 @@ test('a failed start is reported on the status pipe, also when a command could e
 test('without its status and stop pipes the helper refuses to run anything', { skip }, async t => {
   const { dir, rootWithDescendant } = fixture(t);
   const marker = path.join(dir, 'no-status');
-  const result = spawnSync(helper, [process.execPath, rootWithDescendant(marker)], { stdio: 'pipe', windowsHide: true, timeout: 5000 });
+  const result = spawnSync(helper, [process.execPath, ...rootWithDescendant(marker)], { stdio: 'pipe', windowsHide: true, timeout: 5000 });
   assert.equal(result.status, 1);
   await delay(200);
   assert.equal(beats(marker), 0);
@@ -180,7 +186,7 @@ for (const [name, stop] of [
   test(`${name} ends a detached descendant`, { skip }, async t => {
     const { dir, rootWithDescendant } = fixture(t);
     const marker = path.join(dir, `stop-${name.replace(/ /g, '-')}`);
-    const child = launch(dir, process.execPath, [rootWithDescendant(marker)]);
+    const child = launch(dir, process.execPath, rootWithDescendant(marker));
     const done = collect(child);
     await waitForBeat(marker);
     stop(child);
@@ -192,8 +198,8 @@ for (const [name, stop] of [
 test('a root that exits by itself takes its descendants along and keeps its exit code', { skip }, async t => {
   const { dir, rootWithDescendant } = fixture(t);
   const marker = path.join(dir, 'root-exit');
-  const exitWhenRunning = `const t=setInterval(()=>{if(require('fs').existsSync(${JSON.stringify(marker)})){clearInterval(t);process.exit(5);}},20);`;
-  const result = await collect(launch(dir, process.execPath, [rootWithDescendant(marker, exitWhenRunning)]));
+  const exitWhenRunning = `const t=setInterval(()=>{if(require('fs').existsSync(process.argv[3])){clearInterval(t);process.exit(5);}},20);`;
+  const result = await collect(launch(dir, process.execPath, rootWithDescendant(marker, exitWhenRunning)));
   assert.equal(result.exitCode, 5);
   await assertStopped(marker);
 });
@@ -232,7 +238,7 @@ test('a forced stop returns only after the descendant ended', { skip }, async t 
   const { dir, rootWithDescendant } = fixture(t);
   const marker = path.join(dir, 'forced');
   const controller = new AbortController();
-  const run = runCommand(process.execPath, [rootWithDescendant(marker)], { cwd: dir, timeoutMs: 15000, abortSignal: controller.signal });
+  const run = runCommand(process.execPath, rootWithDescendant(marker), { cwd: dir, timeoutMs: 15000, abortSignal: controller.signal });
   await waitForBeat(marker);
   controller.abort();
   const result = await run;
