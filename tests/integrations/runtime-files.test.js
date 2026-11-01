@@ -26,10 +26,27 @@ test('the job helper for this machine follows the bundle to its runtime copy', t
   assert.deepEqual(fs.readdirSync(runtime), ['win32-x64']);
   assert.deepEqual(fs.readdirSync(path.join(runtime, 'win32-x64')), ['coagent8-job.exe'], 'no temporary file stays');
 
-  // An existing copy can be in use, so it is left alone; the digest check judges it at launch.
-  fs.writeFileSync(helper, 'changed');
+  // A damaged copy is repaired.
+  const copy = path.join(runtime, 'win32-x64', 'coagent8-job.exe');
+  fs.writeFileSync(copy, 'damaged');
   copyJobHelperBeside(path.join(dist, 'index.cjs'), runtime, 'x64');
-  assert.equal(fs.readFileSync(path.join(runtime, 'win32-x64', 'coagent8-job.exe'), 'utf8'), 'helper');
+  assert.equal(fs.readFileSync(copy, 'utf8'), 'helper');
+
+  // A copy locked by a running server stays; any other failure is reported.
+  fs.writeFileSync(copy, 'in use');
+  const rename = fs.renameSync;
+  t.after(() => (fs.renameSync = rename));
+  fs.renameSync = () => {
+    throw Object.assign(new Error('locked'), { code: 'EPERM' });
+  };
+  copyJobHelperBeside(path.join(dist, 'index.cjs'), runtime, 'x64');
+  assert.equal(fs.readFileSync(copy, 'utf8'), 'in use');
+  fs.renameSync = () => {
+    throw Object.assign(new Error('disk'), { code: 'EIO' });
+  };
+  assert.throws(() => copyJobHelperBeside(path.join(dist, 'index.cjs'), runtime, 'x64'), /disk/);
+  fs.renameSync = rename;
+  assert.deepEqual(fs.readdirSync(path.dirname(copy)), ['coagent8-job.exe'], 'no temporary file stays');
 });
 
 test('a bundle without a helper copies nothing', t => {

@@ -1325,10 +1325,12 @@ bundle the parent of the package is `node_modules`, where anyone's executable co
 **Package.** CI builds the helper for `x64` and `arm64` with a pinned compiler and without a
 link timestamp, twice, and fails unless both builds match byte for byte. The npm tarball
 and the VSIX carry them in `dist/win32-<arch>/`. The bundle embeds their SHA-256 digests
-and checks the helper once per process before launching it, so a changed binary is refused.
-Setup copies the machine's helper beside every runtime copy of the bundle, because clients
-start those copies. A helper in use is locked, so removing an old runtime copy may leave it
-for a later removal.
+and checks the helper before every launch, so a changed binary is refused, also while the
+server runs. A change between the check and the spawn remains possible, because Node can
+only start a program by its path. Setup copies the machine's helper beside every runtime copy
+of the bundle, because clients start those copies, and replaces a copy that differs. A helper
+in use is locked: it stays until no server runs from it, and removing an old runtime copy
+may leave it for a later removal.
 The check does not stop someone who can also change the bundle. The binaries are not
 code-signed (owner decision 2026-10-13: no paid certificate; SignPath Foundation is the
 first choice). Files extracted by npm or VS Code normally carry no Mark-of-the-Web.

@@ -13,8 +13,9 @@ const IN_USE_ERRORS = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY']);
 
 /**
  * Copies this machine's job helper from beside a bundle to its runtime copy, so the copy finds
- * it the way an installed bundle does. The copy's directory is named after the bundle, which
- * embeds the helper's digest, so an existing file is either the right one or refused at launch.
+ * it the way an installed bundle does. A different file there is replaced, which repairs a
+ * damaged copy. One that a running server keeps locked stays: the digest check refuses it at
+ * launch and `doctor` reports it, which is no reason for setup to fail.
  * @param bundle - The source bundle.
  * @param runtimeDir - The directory of the runtime copy.
  * @param arch - Processor architecture.
@@ -23,12 +24,16 @@ export function copyJobHelperBeside(bundle: string, runtimeDir: string, arch: st
   const relative = path.join(`win32-${arch}`, 'coagent8-job.exe');
   const source = path.join(path.dirname(bundle), relative);
   const target = path.join(runtimeDir, relative);
-  if (!fs.existsSync(source) || fs.existsSync(target)) return;
+  if (!fs.existsSync(source)) return;
+  const content = fs.readFileSync(source);
+  if (fs.existsSync(target) && fs.readFileSync(target).equals(content)) return;
   fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
   const temp = `${target}.${randomUUID()}.tmp`;
   try {
-    fs.copyFileSync(source, temp, fs.constants.COPYFILE_EXCL);
+    fs.writeFileSync(temp, content, { flag: 'wx', mode: 0o700 });
     fs.renameSync(temp, target);
+  } catch (err) {
+    if (!IN_USE_ERRORS.has((err as NodeJS.ErrnoException).code ?? '')) throw err;
   } finally {
     fs.rmSync(temp, { force: true });
   }

@@ -17,7 +17,6 @@ const NOT_FOUND_ERRORS = new Set(['2', '3']);
 declare const __COAGENT8_JOB_HELPER_DIGESTS__: Readonly<Record<string, string>> | undefined;
 const PACKAGED_DIGESTS: Readonly<Record<string, string>> =
   typeof __COAGENT8_JOB_HELPER_DIGESTS__ === 'undefined' ? {} : __COAGENT8_JOB_HELPER_DIGESTS__;
-let located: { path: string | undefined } | undefined;
 
 /** Whether a directory is a source checkout of this project, which alone holds Cargo output. */
 function isSourceCheckout(root: string): boolean {
@@ -65,12 +64,14 @@ export function locateJobHelper(
 }
 
 /**
- * The job helper of this installation, kept for the life of the process.
- * @returns The helper's path, or `undefined` off Windows and when it is not installed.
+ * The job helper of this installation, checked anew for every launch, so a helper changed while
+ * the server runs is refused. A change between this check and the spawn remains possible: Node
+ * can only start a program by its path.
+ * @returns The helper's path, or `undefined` off Windows and when it is not installed or fails
+ * its digest check.
  */
 export function jobHelperPath(): string | undefined {
-  located ??= { path: process.platform === 'win32' ? locateJobHelper(__dirname) : undefined };
-  return located.path;
+  return process.platform === 'win32' ? locateJobHelper(__dirname) : undefined;
 }
 
 /**
