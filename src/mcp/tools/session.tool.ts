@@ -6,15 +6,17 @@ import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/hi
 import { resolveWorkspacePath } from '../../workspace/workspace.js';
 import { ToolError } from '../../contracts/index.js';
 import { redactDiagnostic } from '../../security/redaction.js';
+import { readTask } from '../../sessions/tasks.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description: 'List, page history or close sessions.',
+  description: 'List, page history or close sessions; read a delegate task.',
   inputSchema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['list', 'history', 'close'] },
+      action: { type: 'string', enum: ['list', 'history', 'close', 'task'] },
+      task_handle: { type: 'string' },
       session_handle: { type: 'string', description: 'history/close.' },
       cursor: { type: 'string', description: 'history.' },
       limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history.' },
@@ -53,8 +55,26 @@ export function publicSessionRecord(record: SessionRecord): SessionRecord {
  */
 export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
-  if (!action || !['list', 'history', 'close'].includes(action)) {
-    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "close".');
+  if (!action || !['list', 'history', 'close', 'task'].includes(action)) {
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "close", "task".');
+  }
+  if (action === 'task') {
+    const handle = (args as { task_handle?: unknown }).task_handle;
+    if (typeof handle !== 'string' || !handle)
+      throw new ToolError('INPUT_LIMIT', 'Validation Error: task_handle is required for action task.');
+    const task = readTask(handle);
+    if (!task) throw new ToolError('SESSION_INVALID', `No task ${handle.slice(0, 80)}.`);
+    const header = `task_handle: ${task.taskHandle}\nsession_handle: ${task.sessionHandle}\nstate: ${task.state}`;
+    const body =
+      task.result?.text ??
+      (task.state === 'running'
+        ? 'The worker is still running.'
+        : 'The server ended before the worker finished. Partial changes may be in the work tree: inspect them before a retry.');
+    return {
+      content: [{ type: 'text' as const, text: `${header}\n\n${body}` }],
+      structuredContent: { ...task, workspace: redactDiagnostic(task.workspace, 1024) },
+      ...(task.result?.isError ? { isError: true } : {}),
+    };
   }
   if (action === 'list') {
     const sessions = listSessions(workspace).map(publicSessionRecord);

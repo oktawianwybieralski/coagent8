@@ -78,17 +78,23 @@ function callbackErrorCode(err: unknown): ExecutionError['code'] {
 }
 
 /** Set while a writer runs: every launch inside it must get a helper from this lookup. */
-const requiredJobHelper = new AsyncLocalStorage<() => string | undefined>();
+const requiredJobHelper = new AsyncLocalStorage<{ locate: () => string | undefined; onTreeUnconfirmed: () => void }>();
 
 /**
  * Runs a task whose every process must be contained by the job helper. A launch that finds no
  * helper fails with `SANDBOX_UNAVAILABLE` instead of starting the process uncontained.
  * @param run - The task.
+ * @param onTreeUnconfirmed - Called when a run of the task ended without the helper confirming
+ * the end of its process tree; a writer must then keep its slot.
  * @param locate - The helper lookup, which every launch repeats.
  * @returns The task's result.
  */
-export function withRequiredJobHelper<T>(run: () => Promise<T>, locate: () => string | undefined = jobHelperPath): Promise<T> {
-  return requiredJobHelper.run(locate, run);
+export function withRequiredJobHelper<T>(
+  run: () => Promise<T>,
+  onTreeUnconfirmed: () => void = () => {},
+  locate: () => string | undefined = jobHelperPath,
+): Promise<T> {
+  return requiredJobHelper.run({ locate, onTreeUnconfirmed }, run);
 }
 
 function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, helper: string | undefined) {
@@ -320,7 +326,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
   if (Buffer.byteLength(options.stdinInput || '') > (options.maxInputBytes ?? MAX_PROMPT_BYTES))
     return Promise.resolve(failure('INPUT_LIMIT', 'Prompt exceeds the UTF-8 byte limit.'));
   const requiredHelper = requiredJobHelper.getStore();
-  const helper = requiredHelper ? requiredHelper() : jobHelperPath();
+  const helper = requiredHelper ? requiredHelper.locate() : jobHelperPath();
   if (requiredHelper && !helper) {
     return Promise.resolve(
       failure('SANDBOX_UNAVAILABLE', 'The Windows job helper is missing or failed its digest check; the writer was not started.'),
@@ -460,6 +466,7 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       }
       activeProcesses.delete(child);
       activeRuns.delete(child);
+      if (status && !jobTreeEnded(statusText)) requiredHelper?.onTreeUnconfirmed();
       resolve({
         ...(stopped || { status: exitCode === 0 && !signal ? 'completed' : 'failed' }),
         stdout,

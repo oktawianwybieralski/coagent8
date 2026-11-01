@@ -13,7 +13,9 @@ process.env.coagent8_DIR = path.join(tempDir, 'data');
 process.env.CODEX_PATH = path.resolve(__dirname, '../../fixtures/codex-cli/codex.cjs');
 process.env.CODEX_FIXTURE_CAPTURE = path.join(tempDir, 'capture.json');
 process.env.CODEX_CONFIG_PATH = path.join(tempDir, 'config.toml');
-const { handleDelegate, delegatePrompt } = require('../../../src/mcp/tools/delegate.tool.ts');
+const { handleDelegate: startDelegate, delegatePrompt } = require('../../../src/mcp/tools/delegate.tool.ts');
+// Most tests here cover the synchronous contract; delegate-async.test.js covers the default.
+const handleDelegate = (args, ...rest) => startDelegate({ mode: 'sync', ...args }, ...rest);
 const { handleConsult } = require('../../../src/mcp/tools/consult.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { acquireWriterLease, WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');

@@ -429,7 +429,10 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
         case CANONICAL_TOOL_NAMES.DELEGATE:
           // The schema validated `scope` and `checks` as string lists.
           return withWorkspace(
-            await handleDelegate(args as unknown as DelegateArguments, cwd, extra.signal, progress, execOptions),
+            await handleDelegate(args as unknown as DelegateArguments, cwd, extra.signal, progress, {
+              ...execOptions,
+              clientName: server.getClientVersion()?.name,
+            }),
             workspace,
           );
         case CANONICAL_TOOL_NAMES.ANALYZE:

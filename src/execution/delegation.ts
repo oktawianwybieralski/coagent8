@@ -9,6 +9,11 @@
  * too, with its own Git deadlines instead of the call's spent budget; a failed snapshot is
  * reported in the result instead of replacing it, and so is a failed release.
  *
+ * Asynchronous delegation (`DELEGATE-001e`) runs the same operation under its own cancellation
+ * and deadline. The call returns once the backend turn starts, so consent still uses the open
+ * request and a refusal is still the call's error. The result is persisted before the slot is
+ * released, and a waiter sees it only then.
+ *
  * @packageDocumentation
  */
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
@@ -16,6 +21,7 @@ import { redactDiagnostic } from '../security/index.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { jobHelperPath } from './job-helper.js';
 import { withRequiredJobHelper } from './process.js';
+import { createTaskHandle, pruneTasks, readTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
 import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 
@@ -34,8 +40,9 @@ export async function executeDelegation(
   scope: readonly string[],
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: Omit<TaskOptions, 'profile'> = {},
+  options: Omit<TaskOptions, 'profile'> & { beforeRelease?: (outcome: TaskExecutionResult) => Promise<void> } = {},
 ): Promise<TaskExecutionResult> {
+  const { beforeRelease, ...taskOptions } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
   if (process.platform === 'win32' && !jobHelperPath()) {
     throw new ToolError(
@@ -49,10 +56,16 @@ export async function executeDelegation(
   });
   const lease = await acquireWriterLease(repo.gitDir);
   let outcome: TaskExecutionResult | undefined;
+  let treeUnconfirmed = false;
   try {
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
-    const runTask = () => executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...options, profile: 'workspace-write' });
-    outcome = await (process.platform === 'win32' ? withRequiredJobHelper(runTask) : runTask());
+    const runTask = () =>
+      executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...taskOptions, profile: 'workspace-write' });
+    outcome = await (process.platform === 'win32'
+      ? withRequiredJobHelper(runTask, () => {
+          treeUnconfirmed = true;
+        })
+      : runTask());
     let changes: WorkspaceChanges;
     try {
       changes = await compareWorkspace(cwd, repo, before, await captureWorkspace(cwd, repo), scope);
@@ -66,10 +79,21 @@ export async function executeDelegation(
       };
     }
     outcome = { ...outcome, changes };
+    if (treeUnconfirmed) {
+      outcome = {
+        ...outcome,
+        warnings: [
+          ...(outcome.warnings ?? []),
+          'The end of the worker process tree could not be confirmed, so this work tree stays reserved until this CoAgent8 server restarts.',
+        ],
+      };
+    }
+    await beforeRelease?.(outcome);
     return outcome;
   } finally {
     try {
-      await lease.release();
+      // A process that may still run could still write: the slot then ends with this server.
+      if (!treeUnconfirmed) await lease.release();
     } catch (err) {
       const warning = `The workspace writer slot was not released: ${redactDiagnostic((err as Error).message, 256)}`;
       // Without a result the call's own error is reported; the failed release goes to the log.
@@ -77,4 +101,106 @@ export async function executeDelegation(
       else process.stderr.write(`Warning: ${warning}\n`);
     }
   }
+}
+
+/** Operations of asynchronous delegations in this server, awaited at shutdown. */
+const activeDelegations = new Map<Promise<unknown>, AbortController>();
+
+/** Stops every asynchronous delegation of this server and awaits its evidence and release. */
+export async function stopActiveDelegations(): Promise<void> {
+  for (const controller of activeDelegations.values()) controller.abort();
+  await Promise.allSettled([...activeDelegations.keys()]);
+}
+
+/** A request for one asynchronous delegation. */
+export interface DelegationStart {
+  prompt: string;
+  publicInput: string;
+  args: ExecutionRequest;
+  cwd: string;
+  scope: readonly string[];
+  /** The caller's id for this start; a repeat returns the existing task. */
+  requestId?: string;
+  /** Aborts the start until the turn runs; afterwards the request no longer owns the worker. */
+  requestSignal?: AbortSignal | null;
+  /** Formats the outcome the way the tool returns it. */
+  format: (outcome: TaskExecutionResult) => { text: string; isError: boolean };
+  options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
+}
+
+/** Terminal task state of an outcome. */
+function finalState(outcome: TaskExecutionResult): DelegationTask['state'] {
+  const status = outcome.result.status;
+  return status === 'completed' || status === 'cancelled' || status === 'timed_out' ? status : 'failed';
+}
+
+/**
+ * Starts a delegation that outlives the call.
+ * @param start - The request.
+ * @returns The task, or the outcome when the call ended before a turn started.
+ * @throws Refusals before the turn starts, such as a busy writer or a denied model.
+ */
+export async function startDelegation(start: DelegationStart): Promise<{ task: DelegationTask } | { outcome: TaskExecutionResult }> {
+  const key = start.requestId ? `${start.cwd}\n${start.requestId}` : undefined;
+  const taskHandle = createTaskHandle(key);
+  const existing = key ? readTask(taskHandle) : null;
+  if (existing) return { task: existing };
+  pruneTasks();
+
+  const controller = new AbortController();
+  const abortStart = () => controller.abort();
+  start.requestSignal?.addEventListener('abort', abortStart, { once: true });
+  if (start.requestSignal?.aborted) controller.abort();
+
+  let task: DelegationTask | undefined;
+  let announce!: () => void;
+  const running = new Promise<void>(resolve => {
+    announce = resolve;
+  });
+  const finish = async (result: DelegationTask['result'], state: DelegationTask['state']) => {
+    if (task) await writeTask({ ...task, state, result, finishedAt: new Date().toISOString() });
+  };
+  const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
+    ...start.options,
+    onTurnStart: async turn => {
+      const callerSession = process.env.CLAUDE_CODE_SESSION_ID;
+      task = {
+        schemaVersion: 1,
+        taskHandle,
+        state: 'running',
+        workspace: start.cwd,
+        sessionHandle: turn.sessionHandle,
+        backend: turn.backend,
+        model: turn.model,
+        serverPid: process.pid,
+        startedAt: new Date().toISOString(),
+        ...(callerSession ? { callerSession } : {}),
+      };
+      await writeTask(task);
+      start.requestSignal?.removeEventListener('abort', abortStart);
+      announce();
+    },
+    beforeRelease: async outcome => {
+      if (task) await finish(start.format(outcome), finalState(outcome));
+    },
+  });
+  // After the turn started nobody awaits the operation but the shutdown: it records its own failure.
+  const settled = operation.then(
+    outcome => ({ outcome }),
+    async (err: unknown) => {
+      if (!task) return { error: err };
+      const message = redactDiagnostic((err as Error).message, 1024);
+      await finish({ text: `The delegation failed: ${message}`, isError: true }, 'failed');
+      return { error: err };
+    },
+  );
+  activeDelegations.set(settled, controller);
+  void settled.finally(() => activeDelegations.delete(settled));
+
+  await Promise.race([running, settled]);
+  start.requestSignal?.removeEventListener('abort', abortStart);
+  if (task) return { task };
+  const ended = await settled;
+  if ('error' in ended) throw ended.error;
+  return { outcome: ended.outcome };
 }
