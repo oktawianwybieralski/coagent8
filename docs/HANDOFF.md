@@ -10,7 +10,12 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
-- **Answer language (owner decision 2026-11-01):** branch `feat/backend-answer-language`.
+- **Windows native acceptance (`WINDOWS-001e`, first pass 2026-11-01):** branch
+  `fix/codex-windows-writer-language-mode`. All three backends wrote through the helper, left no
+  survivor after a cancel and showed no console window. The open items are on the card. Next:
+  `DELEGATE-001a`. Record: [WINDOWS-001 in 0.8.0](delivered/0.8.0/WINDOWS-001.md).
+
+- **Answer language (owner decision 2026-11-01):** merged in #104 (`c50def0`).
   Backends followed the workspace's rule to answer the owner in Polish, inconsistently. The
   server now asks for English before every backend prompt (`answerLanguage`), and the calling
   agent relays. CI also builds the `arm64` helper with `--verify`, which only a tag did before.

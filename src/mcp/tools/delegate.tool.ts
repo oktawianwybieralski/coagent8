@@ -54,6 +54,7 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
       ? 'Run the checks below and fix failures your change causes.'
       : "Run the project's relevant tests or checks if there are any, and fix failures your change causes.",
     // agy writers may not run commands, and a sandbox can deny one (DELEGATE-001w).
+    'A command that fails for another reason is no denial: try another way to make the change.',
     'If a command is denied or cannot start, do not work around the restriction: report that check as NOT_RUN; the calling agent runs it.',
     'End with a short report: the files you changed and why, each check with PASS, FAIL or NOT_RUN, and anything left undone.',
     'TASK:',

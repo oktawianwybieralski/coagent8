@@ -1275,6 +1275,11 @@ Codex 0.162 on Windows cannot start a process from Node
 inside its sandbox (`spawn EPERM`, verified natively 2026-10-21), so test runners
 that spawn processes fail there.
 
+**Codex on Windows.** The unelevated sandbox runs PowerShell in ConstrainedLanguage mode, so
+.NET calls fail while cmdlets work (codex-cli 0.164, 2026-11-01). A worker told only to report
+denials took that error for one and stopped without changing anything, so a Windows writer now
+gets a note about it.
+
 **Known limitations.** Claude's `Bash` and agy write wherever the user's account
 can. On Windows, `delegate` requires the job helper, so a cancelled or timed-out
 worker's descendants end with it. Checks are

@@ -31,6 +31,25 @@ export const CODEX_CONFIG_PATH =
 /** Upper bound for reading `config.toml`. */
 const CODEX_CONFIG_MAX_BYTES = 256 * 1024;
 
+/**
+ * The Windows sandbox runs PowerShell in ConstrainedLanguage mode (codex-cli 0.164, 2026-11-01).
+ * A worker that took the resulting error for a denial stopped without changing anything.
+ */
+export const CODEX_WINDOWS_WRITE_NOTE =
+  'This sandbox runs PowerShell in ConstrainedLanguage mode: .NET types and methods such as [System.IO.File]::WriteAllText fail with a language mode error. ' +
+  'That is not a denial. Use cmdlets such as Set-Content and Get-Content, or your file editing tool.';
+
+/**
+ * The prompt of a Codex turn.
+ * @param prompt - The request.
+ * @param profile - The execution profile.
+ * @param platform - The operating system.
+ * @returns The request, with the note for a writer on Windows.
+ */
+export function codexTurnPrompt(prompt: string, profile: string, platform: NodeJS.Platform = process.platform): string {
+  return profile === 'workspace-write' && platform === 'win32' ? `${prompt}\n\n${CODEX_WINDOWS_WRITE_NOTE}` : prompt;
+}
+
 /** Upper bound for a Codex prompt payload (4 MiB). */
 export const CODEX_MAX_PROMPT_BYTES = 4 * 1024 * 1024;
 
@@ -225,7 +244,7 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const result = await runCommand(configuredBackendCommand('codex'), args, {
     cwd: options.cwd,
     env: codexLaunchEnvironment(turnEnvironment()),
-    stdinInput: prompt,
+    stdinInput: codexTurnPrompt(prompt, profile),
     session: app.session,
     abortSignal: options.abortSignal,
     timeoutMs: options.timeoutMs,

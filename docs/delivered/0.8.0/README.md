@@ -26,3 +26,4 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 | [#99](https://github.com/oktawianwybieralski/coagent8/pull/99) | PEM key redaction stays linear on repeated markers (CodeQL alert 4), `a778caa`, 2026-11-01 |
 | [#100](https://github.com/oktawianwybieralski/coagent8/pull/100) | Dependabot: `@azure/msal-node` and `@azure/identity` in the VSIX packaging tool, `aa37095`, 2026-11-01 |
 | [#101](https://github.com/oktawianwybieralski/coagent8/pull/101) | CodeQL alerts 1-3 and two deterministic timing tests, `696f6b1`, 2026-11-01 |
+| [#104](https://github.com/oktawianwybieralski/coagent8/pull/104) | Backends answer the calling agent in English (`answerLanguage`), `c50def0`, 2026-11-01 |
