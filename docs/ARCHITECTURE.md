@@ -1284,8 +1284,8 @@ Job Object API, so a small native helper owns one job per run.
 [`native/coagent8-job`](../native/coagent8-job/src/main.rs) is that helper.
 
 **Launch.** `process.ts` stays the single owner and spawns
-`coagent8-job.exe <command> <args>` hidden, with standard streams and a status pipe as
-descriptor 3. The helper removes its own name from `GetCommandLineW` and passes the
+`coagent8-job.exe <command> <args>` hidden, with standard streams, a status pipe as
+descriptor 3 and a stop pipe as descriptor 4. The helper removes its own name from `GetCommandLineW` and passes the
 rest verbatim, so Node's quoting reaches the CLI unchanged and no launch specification
 is needed. The first token, without quotes, is the application name, so no search path
 applies. The helper's own path shortens the 32,767-character limit; prompts travel over
@@ -1299,22 +1299,28 @@ streams are inherited (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`). The CLI starts with
 `CREATE_NO_WINDOW`: on a desktop whose default terminal is Windows Terminal, a console
 program without that flag opens a visible window.
 
-**Status.** One line on descriptor 3: `ready`, or `error <stage> <win32 code>`. The exit
-code is the CLI's own, so only the status line tells a failed start from a CLI that
-failed. Win32 errors 2 and 3 at process creation map to `CLI_NOT_FOUND`, others to
+**Status.** Lines on descriptor 3: `ready`, or `error <stage> <win32 code>`, and after the
+CLI ended `ended` or `unconfirmed`. The exit code is the CLI's own, so only the status
+tells a failed start from a CLI that failed. Win32 errors 2 and 3 at process creation map to `CLI_NOT_FOUND`, others to
 `PROCESS_ERROR`.
 
-**Stop and end of the tree.** To stop a run, `process.ts` closes its end of descriptor 3,
-which the helper turns into `TerminateJobObject`; `proc.kill()` follows after one second
-as a fallback, and the job handle closing ends the job in that case too. Interrupts over
-the CLI's own protocol still come first. When the root ends, by a stop or by itself, the
-helper ends what is left of the job and exits only once the job reports no active
-process (bounded at five seconds), so the helper's exit confirms the end of the tree
-before a writer lease is released. Descendants do not outlive their root: exceptions
-need an explicit task policy, which does not exist yet.
+**Stop and end of the tree.** To stop a run, `process.ts` closes its end of descriptor 4,
+which the helper turns into `TerminateJobObject`. Interrupts over the CLI's own protocol
+still come first. When the root ends, by a stop or by itself, the helper ends what is left
+of the job, waits up to three seconds for the job to report no active process and writes
+`ended` or `unconfirmed` before it exits. The result of the run carries this as
+`treeEnded`. After four seconds `proc.kill()` is the fallback: the closing job handle
+still ends the job, but nothing observes that any more, so `treeEnded` is false. A writer
+is released only on `treeEnded: true` (`DELEGATE-001e`). Descendants do not outlive their
+root: exceptions need an explicit task policy, which does not exist yet.
 
-**Server death.** The helper runs in libuv's server-wide job, and its status pipe breaks,
-so the per-call job ends as well.
+**Server death.** The helper runs in libuv's server-wide job, and its stop pipe breaks, so
+the per-call job ends as well.
+
+**Discovery.** The helper is looked up beside the bundle (`dist/win32-<arch>/`), then in the
+Cargo output of a source checkout, identified by this project's `package.json` name and
+the helper's `Cargo.toml`. Nothing outside the package is searched: from an installed
+bundle the parent of the package is `node_modules`, where anyone's executable could lie.
 
 **Missing helper.** Today every run without a helper keeps the direct spawn and its
 documented limitation. `WINDOWS-001d` ships and verifies the helper; from then on, write

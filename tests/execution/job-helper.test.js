@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { jobHelperPath, parseJobStatus } = require('../../src/execution/job-helper.ts');
+const { jobHelperPath, jobTreeEnded, locateJobHelper, parseJobStatus } = require('../../src/execution/job-helper.ts');
 const { runCommand } = require('../../src/execution/process.ts');
 
 // WINDOWS-001: the helper is built by CI on Windows and by `cargo build --release` locally.
@@ -21,6 +21,58 @@ test('the status line tells a failed start from a running command', () => {
   const other = parseJobStatus('error attribute-job 87\n');
   assert.equal(other.code, 'PROCESS_ERROR');
   assert.match(other.message, /attribute-job.*87/);
+});
+
+test('only the final line confirms the end of the tree', () => {
+  assert.equal(jobTreeEnded('ready\nended\n'), true);
+  assert.equal(jobTreeEnded('ready\nunconfirmed\n'), false);
+  assert.equal(jobTreeEnded('ready\n'), false);
+  assert.equal(jobTreeEnded(''), false);
+});
+
+test('the helper is found in the package or a source checkout, never outside the package', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-locate-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const write = (relative, text = 'x') => {
+    const file = path.join(root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+    return file;
+  };
+  const output = path.join('native', 'coagent8-job', 'target', 'release', 'coagent8-job.exe');
+  const manifest = JSON.stringify({ name: 'coagent8' });
+
+  // A helper planted beside an installed package is not picked up, even dressed as a checkout.
+  write(path.join('node_modules', 'coagent8', 'package.json'), manifest);
+  write(path.join('node_modules', 'package.json'), manifest);
+  write(path.join('node_modules', 'native', 'coagent8-job', 'Cargo.toml'));
+  write(path.join('node_modules', output));
+  const installed = path.join(root, 'node_modules', 'coagent8', 'dist');
+  fs.mkdirSync(installed, { recursive: true });
+  assert.equal(locateJobHelper(installed, 'x64'), undefined);
+
+  // The packaged helper is the one an installation uses, for its own architecture.
+  const packaged = write(path.join('node_modules', 'coagent8', 'dist', 'win32-x64', 'coagent8-job.exe'));
+  assert.equal(locateJobHelper(installed, 'x64'), packaged);
+  assert.equal(locateJobHelper(installed, 'arm64'), undefined);
+
+  // A source checkout finds its Cargo output, from the bundle and from the source modules.
+  const checkout = path.join('checkout');
+  write(path.join(checkout, 'package.json'), manifest);
+  write(path.join(checkout, 'native', 'coagent8-job', 'Cargo.toml'));
+  const built = write(path.join(checkout, output));
+  assert.equal(locateJobHelper(path.join(root, checkout, 'dist'), 'x64'), built);
+  assert.equal(locateJobHelper(path.join(root, checkout, 'src', 'execution'), 'x64'), built);
+
+  // Another project's checkout is not this project.
+  const other = path.join('other');
+  write(path.join(other, 'package.json'), JSON.stringify({ name: 'other' }));
+  write(path.join(other, 'native', 'coagent8-job', 'Cargo.toml'));
+  write(path.join(other, output));
+  assert.equal(locateJobHelper(path.join(root, other, 'dist'), 'x64'), undefined);
+
+  // A module elsewhere has no package root to look in.
+  assert.equal(locateJobHelper(path.join(root, checkout, 'scripts'), 'x64'), undefined);
 });
 
 function fixture(t) {
@@ -48,7 +100,7 @@ function fixture(t) {
 }
 
 const launch = (dir, command, args) =>
-  spawn(helper, [command, ...args], { cwd: dir, stdio: ['pipe', 'pipe', 'pipe', 'pipe'], windowsHide: true });
+  spawn(helper, [command, ...args], { cwd: dir, stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'], windowsHide: true });
 const collect = child =>
   new Promise(resolve => {
     const result = { stdout: '', stderr: '', status: '' };
@@ -56,6 +108,7 @@ const collect = child =>
     child.stderr.on('data', chunk => (result.stderr += chunk));
     child.stdio[3].on('data', chunk => (result.status += chunk));
     child.stdio[3].on('error', () => {});
+    child.stdio[4].on('error', () => {});
     child.on('close', code => resolve({ ...result, exitCode: code }));
   });
 const beats = marker => {
@@ -81,7 +134,7 @@ test('arguments reach the command exactly as the parent passed them', { skip }, 
   const args = ['plain', 'with space', 'quote"inside', 'trailing\\', 'trailing space\\', '', 'zażółć', 'a\\\\"b', '%PATH%', '^&|<>'];
   const printer = script('print args.cjs', 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
   const result = await collect(launch(dir, process.execPath, [printer, ...args]));
-  assert.equal(result.status, 'ready\n');
+  assert.equal(result.status, 'ready\nended\n');
   assert.deepEqual(JSON.parse(result.stdout), args);
 });
 
@@ -107,11 +160,11 @@ test('a failed start is reported on the status pipe, also when a command could e
   assert.equal(missing.status, 'error process-create 2\n');
   assert.equal(missing.exitCode, 1);
   const failing = await collect(launch(dir, process.execPath, ['-e', 'process.exit(1)']));
-  assert.equal(failing.status, 'ready\n');
+  assert.equal(failing.status, 'ready\nended\n');
   assert.equal(failing.exitCode, 1);
 });
 
-test('without its status pipe the helper refuses to run anything', { skip }, async t => {
+test('without its status and stop pipes the helper refuses to run anything', { skip }, async t => {
   const { dir, rootWithDescendant } = fixture(t);
   const marker = path.join(dir, 'no-status');
   const result = spawnSync(helper, [process.execPath, rootWithDescendant(marker)], { stdio: 'pipe', windowsHide: true, timeout: 5000 });
@@ -121,7 +174,7 @@ test('without its status pipe the helper refuses to run anything', { skip }, asy
 });
 
 for (const [name, stop] of [
-  ['closing the status pipe', child => child.stdio[3].destroy()],
+  ['closing the stop pipe', child => child.stdio[4].destroy()],
   ['terminating the helper', child => child.kill()],
 ]) {
   test(`${name} ends a detached descendant`, { skip }, async t => {
@@ -161,7 +214,7 @@ test('a request to leave the job is denied', { skip }, async t => {
   const tool = path.join(path.dirname(helper), 'examples', 'breakaway.exe');
   assert.ok(fs.existsSync(tool), 'cargo build --release --examples builds the test program');
   const inside = await collect(launch(dir, tool, [process.execPath]));
-  assert.equal(inside.status, 'ready\n');
+  assert.equal(inside.status, 'ready\nended\n');
   assert.equal(inside.stdout.trim(), 'denied 5', 'ERROR_ACCESS_DENIED: the job allows no breakaway');
 });
 
@@ -184,6 +237,7 @@ test('a forced stop returns only after the descendant ended', { skip }, async t 
   controller.abort();
   const result = await run;
   assert.equal(result.status, 'cancelled');
+  assert.equal(result.treeEnded, true, 'the helper confirmed the end of the tree');
   const atReturn = beats(marker);
   await delay(400);
   assert.equal(beats(marker), atReturn, 'nothing in the tree ran after the run returned');

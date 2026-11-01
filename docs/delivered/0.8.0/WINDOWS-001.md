@@ -32,10 +32,9 @@ Not part of this record:
 ## Delivered
 
 - [`native/coagent8-job`](../../../native/coagent8-job/src/main.rs): one job per run, atomic
-  job assignment, status line, stop over the status pipe, and exit only once the job is
-  empty ([contract](../../ARCHITECTURE.md#windows-per-call-containment-windows-001)).
-- `src/execution/process.ts` starts every Windows run through the helper when it is present
-  and maps a failed start to a typed error.
+  job assignment, a status pipe that also confirms the end of the tree, and a stop pipe ([contract](../../ARCHITECTURE.md#windows-per-call-containment-windows-001)).
+- `src/execution/process.ts` starts every Windows run through the helper when it is present,
+  maps a failed start to a typed error and reports `treeEnded`.
 - CI builds the helper on Windows, so the `WINDOWS-001a` observation is a required test
   there instead of a todo.
 

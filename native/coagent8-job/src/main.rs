@@ -1,18 +1,20 @@
 //! Runs one command in its own Job Object with `KILL_ON_JOB_CLOSE` (WINDOWS-001).
 //!
-//! The parent spawns `coagent8-job.exe <command> <args>` with standard streams and a status
-//! pipe as descriptor 3. The command joins the job atomically while it is created, so no
+//! The parent spawns `coagent8-job.exe <command> <args>` with standard streams, a status pipe
+//! as descriptor 3 and a stop pipe as descriptor 4. The command joins the job atomically while it is created, so no
 //! moment exists in which it runs, or waits suspended, outside the job. This helper holds
 //! the only job handle: when the helper ends for any reason, including termination by its
 //! parent, the system closes the handle and ends every process in the job.
 //!
-//! Status protocol, one line on descriptor 3: `ready` once the command runs, or
+//! Status protocol, lines on descriptor 3: `ready` once the command runs, or
 //! `error <stage> <win32 code>` when it could not start. The exit code is the command's own,
-//! so only the status line tells a failed start from a command that failed.
+//! so only the status tells a failed start from a command that failed. When the command has
+//! ended, `ended` confirms that the job is empty, and `unconfirmed` says that it could not be
+//! confirmed in time.
 //!
-//! Stop protocol: the parent closes its end of descriptor 3. The helper then ends the job.
-//! When the command ended, by a stop or by itself, the helper ends what is left of the job and
-//! exits only once the job is empty, so its exit confirms that the whole tree has ended.
+//! Stop protocol: the parent closes its end of descriptor 4, or is gone. The helper then ends
+//! the job. When the command ended, by a stop or by itself, the helper ends what is left of the
+//! job and waits for it to empty before it writes the last status line and exits.
 
 #[cfg(not(windows))]
 compile_error!("coagent8-job is a Windows helper; POSIX uses process groups.");
@@ -41,8 +43,9 @@ use windows_sys::Win32::System::Threading::{
 const EXIT_START_FAILED: u32 = 1;
 /// Exit code of the job's processes when the parent asks for a stop: `STATUS_CONTROL_C_EXIT`.
 const EXIT_STOPPED: u32 = 0xC000_013A;
-/// How long the helper waits for an ended job to empty before it exits anyway.
-const JOB_EMPTY_WAIT_MS: u32 = 5000;
+/// How long the helper waits for an ended job to empty before it reports `unconfirmed`.
+/// The parent's fallback waits longer than this (`JOB_STOP_WAIT_MS` in `process.ts`).
+const JOB_EMPTY_WAIT_MS: u32 = 3000;
 const JOB_EMPTY_POLL_MS: u32 = 5;
 const SPACE: u16 = b' ' as u16;
 const TAB: u16 = b'\t' as u16;
@@ -219,21 +222,20 @@ fn standard_streams() -> Vec<HANDLE> {
     streams
 }
 
-/// Ends the job when the parent closes its end of the status pipe, or when the parent is gone.
-/// Reads only after the status line is written: a synchronous pipe handle serves one call at a time.
-fn stop_on_status_close(status: HANDLE, job: HANDLE) {
+/// Ends the job when the parent closes its end of the stop pipe, or when the parent is gone.
+fn stop_on_close(stop: HANDLE, job: HANDLE) {
     // Handles are process-wide; the integers only carry them into the thread.
-    let (status, job) = (status as usize, job as usize);
+    let (stop, job) = (stop as usize, job as usize);
     std::thread::spawn(move || unsafe {
         let mut byte = 0u8;
         let mut read = 0;
-        while ReadFile(status as HANDLE, &mut byte, 1, &mut read, null_mut()) != 0 && read != 0 {}
+        while ReadFile(stop as HANDLE, &mut byte, 1, &mut read, null_mut()) != 0 && read != 0 {}
         TerminateJobObject(job as HANDLE, EXIT_STOPPED);
     });
 }
 
-/// Ends what is left of the job and waits until the system reports it empty.
-fn end_job(job: HANDLE, code: u32) {
+/// Ends what is left of the job and returns whether the system reports it empty in time.
+fn end_job(job: HANDLE, code: u32) -> bool {
     unsafe {
         TerminateJobObject(job, code);
         let mut waited = 0;
@@ -246,18 +248,22 @@ fn end_job(job: HANDLE, code: u32) {
                 size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
                 null_mut(),
             );
-            if queried == 0 || accounting.ActiveProcesses == 0 {
-                return;
+            if queried == 0 {
+                return false;
+            }
+            if accounting.ActiveProcesses == 0 {
+                return true;
             }
             Sleep(JOB_EMPTY_POLL_MS);
             waited += JOB_EMPTY_POLL_MS;
         }
+        false
     }
 }
 
 /// Runs the command and returns its exit code. The job handle stays open until this process
 /// exits, because closing it ends the command.
-fn run(status: HANDLE) -> Result<u32, StartError> {
+fn run(status: HANDLE, stop: HANDLE) -> Result<u32, StartError> {
     let mut command = command_line();
     if command.is_empty() {
         return Err(StartError("usage", 0));
@@ -269,7 +275,7 @@ fn run(status: HANDLE) -> Result<u32, StartError> {
     unsafe {
         CloseHandle(process.hThread);
         write_status(status, "ready\n");
-        stop_on_status_close(status, job);
+        stop_on_close(stop, job);
         if WaitForSingleObject(process.hProcess, INFINITE) != WAIT_OBJECT_0 {
             return Err(last_error("process-wait"));
         }
@@ -277,16 +283,16 @@ fn run(status: HANDLE) -> Result<u32, StartError> {
         if GetExitCodeProcess(process.hProcess, &mut code) == 0 {
             return Err(last_error("process-exit-code"));
         }
-        end_job(job, code);
+        write_status(status, if end_job(job, code) { "ended\n" } else { "unconfirmed\n" });
         Ok(code)
     }
 }
 
 fn main() {
-    let Some(status) = inherited_descriptor(3) else {
+    let (Some(status), Some(stop)) = (inherited_descriptor(3), inherited_descriptor(4)) else {
         unsafe { ExitProcess(EXIT_START_FAILED) }
     };
-    let code = match run(status) {
+    let code = match run(status, stop) {
         Ok(code) => code,
         Err(StartError(stage, code)) => {
             write_status(status, &format!("error {stage} {code}\n"));
