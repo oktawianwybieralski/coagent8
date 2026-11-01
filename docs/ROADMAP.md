@@ -506,7 +506,7 @@ that waits on the synchronous `001w` call wraps it in a subagent of its own
 vendor, which pays only for waiting. A Codex consultation (`gpt-6.1-sol`,
 session `syn_sess_973e692be03b734e8b5fdbaa`) and the Claude Code channels
 documentation shaped the contract in
-[ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented):
+[ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c):
 `mode: "async" | "sync"` with `async` as the target default, a task handle
 and a wait command built by the server from its own process (no PATH needed),
 a task-owned lifecycle that holds the writer until evidence is persisted, and
@@ -525,7 +525,7 @@ asynchronous lifecycle for the existing write delegation. Owner decisions
 4. Claude Code's private messaging pipe stays rejected as a wake-up mechanism
    (`001a` step 4).
 
-- [ ] **DELEGATE-001w - synchronous write delegation.** Owner request
+- [x] **DELEGATE-001w - synchronous write delegation.** Merged in #95 (`5f770c6`). Owner request
   2026-10-21, ahead of `001c-f`: the `delegate` tool, its write profiles,
   the single-writer lease, the before/after Git evidence and the
   `coagent8-delegate` skill, as specified in
@@ -562,6 +562,8 @@ asynchronous lifecycle for the existing write delegation. Owner decisions
      client updates, resembles malware to security tools and conflicts with
      the no-hacks invariant, so it never ships without a separate decision.
 
+  First results 2026-11-01: Claude Code wakes on a background command's exit (observed throughout this work). `codex queue` on a thread no client has open accepts the message and starts no turn within 40 s. An open Codex window and agy need the owner's session.
+
   Also record which MCP protocol revision CoAgent8 negotiates, and for each
   mechanism what happens when the task is cancelled: whether a waiter that
   exits on cancellation still starts a turn, and a registration made after the
@@ -576,10 +578,10 @@ asynchronous lifecycle for the existing write delegation. Owner decisions
   a Bash tool process; check that the MCP server process inherits it, and find
   the Codex thread id (needed by `codex queue --thread`) and the agy
   conversation id. Knowing the id does not wake the window by itself
-  ([ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented)).
+  ([ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c)).
   Check: P, then R.
-- [ ] **DELEGATE-001c - portable core contract.** Turn the draft in
-  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented)
+- [x] **DELEGATE-001c - portable core contract.** Reviewed as built, with its differences stated in ARCHITECTURE. Turn the draft in
+  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c)
   into the reviewed contract: `mode` and the default (owner decision 1
   above), task handle and idempotent start, the immediate response with
   `wakeup` and the server-built wait argv (`process.execPath`, the running
@@ -596,7 +598,7 @@ asynchronous lifecycle for the existing write delegation. Owner decisions
   prove fragile. A client reports `wakeup: armed` only after its adapter
   registered; without one it gets the result through `session` and `wait`.
   Check: R, native per client.
-- [ ] **DELEGATE-001e - asynchronous lifecycle.** After `001c`: `delegate`
+- [x] **DELEGATE-001e - asynchronous lifecycle.** Delivered for the write delegation; asynchronous review (`001e5`) stays deferred. After `001c`: `delegate`
   starts the existing write delegation in the background and returns its
   handle at once (early handle publication, `SESSION-001`). One task-owned
   operation (approve, writer, baseline, execute, stop descendants, Git

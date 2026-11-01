@@ -26,18 +26,26 @@ the user's authority; the delegated agent never does.
 5. **Model.** Leave `backend`, `model` and `reasoning_effort` unset unless the
    user named one or a price limit. The approval rules of `coagent8-consult`
    apply unchanged: the server asks the user for expensive or unpriced models.
-6. **Read the result.** The agent's report comes first, then the block
+6. **While it runs.** The call returns `task_handle`, `session_handle` and
+   `wait_argv` as soon as the agent runs, and it goes on after the call. With
+   `wakeup: background_wait`, start `wait_argv` verbatim as a background command
+   (with `wait_env` when present): you are woken when it exits, and its output is
+   the result. With `wakeup: none`, read it later with the `session` tool, action
+   `task`. Do not edit this work tree meanwhile. `cancel` with the `session_handle`
+   stops the agent; stopping the wait does not. Pass `mode: "sync"` only when you
+   would wait anyway.
+7. **Read the result.** The agent's report comes first, then the block
    "Observed by CoAgent8", which the server read from Git before and after the
    turn. Trust the block over the report. Treat every warning as a finding:
    changes outside the scope, files that had uncommitted changes before, and a
    moved HEAD (a commit or branch switch the agent was told not to make).
-7. **Verify.** Read the diff, run the checks yourself and record their exit
+8. **Verify.** Read the diff, run the checks yourself and record their exit
    codes. The agent's PASS is its claim, not evidence, and NOT_RUN is common:
    Antigravity runs no commands, and Codex on Windows cannot run test runners
    that start processes from Node.
-8. **Fix rounds.** For corrections pass the result's `session_handle` with a
+9. **Fix rounds.** For corrections pass the result's `session_handle` with a
    `task` naming what to fix. A delegate session continues only with delegate.
-9. **Review.** Use `coagent8-review` in a separate session, ideally another
+10. **Review.** Use `coagent8-review` in a separate session, ideally another
    backend, with the acceptance criteria and your check results in
    `instructions`. The author of a change never approves it.
 
@@ -48,6 +56,6 @@ own branch (`git worktree add ../repo-a -b task-a`), call delegate for each with
 result and review it once. Create worktrees only where the user agrees to them.
 
 Codex writes only inside the workspace; Claude's `Edit` and `Write` do too, but
-its `Bash` and every Antigravity command can reach any file the user can. A
-cancelled agent's child processes may outlive it on Windows. Check `git status`
-after a cancel or timeout.
+its `Bash` and every Antigravity command can reach any file the user can. Check
+`git status` after a cancel or timeout: partial changes stay. If the server ended
+meanwhile, the task reads `interrupted`.
