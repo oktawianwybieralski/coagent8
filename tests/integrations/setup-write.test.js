@@ -67,9 +67,19 @@ test('AUDIT-001-A12: an edit made while setup waits is never overwritten', () =>
 test('AUDIT-001-A12: a lasting failure ends after a bounded wait with the original error', () => {
   const { dir, file, temps } = fixture();
   try {
-    const started = Date.now();
-    assert.throws(() => withRenameFailures(Infinity, null, () => writeChecked(file, '{"manual":true}\n', '{}\n')), /EPERM/);
-    assert.ok(Date.now() - started < 3000, 'the wait is bounded');
+    // The bound is the number of attempts; wall time under coverage on a loaded runner is not
+    // (4.1 s on windows-latest, Node 24, 2026-11-01, for about 0.7 s of pauses).
+    let attempts = 0;
+    assert.throws(
+      () =>
+        withRenameFailures(
+          Infinity,
+          count => (attempts = count),
+          () => writeChecked(file, '{"manual":true}\n', '{}\n'),
+        ),
+      /EPERM/,
+    );
+    assert.equal(attempts, 20, 'the replacement is attempted a bounded number of times');
     assert.equal(fs.readFileSync(file, 'utf8'), '{"manual":true}\n', 'the file is unchanged');
     assert.deepEqual(temps(), []);
   } finally {

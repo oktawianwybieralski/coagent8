@@ -84,6 +84,20 @@ test('Windows shim resolves native .exe entrypoints and preserves wrapper flags'
   const shimSuffix = path.join(dir, 'agy_suffix.cmd');
   fs.writeFileSync(shimSuffix, '@ECHO off\r\n"%~dp0\\agy.exe" --prefix %* --suffix\r\n');
   assert.throws(() => resolveCliCommand(shimSuffix), /arguments after %\*.*are not supported/);
+
+  // 10. Redirection chains after %* are accepted; anything else after them is rejected
+  for (const suffix of ['2>&1', '>nul 2>&1', '>> log.txt', '<in.txt >out.txt', '1>nul2>nul']) {
+    const shimRedirect = path.join(dir, 'agy_redirect.cmd');
+    fs.writeFileSync(shimRedirect, `@ECHO off\r\n"%~dp0\\agy.exe" --prefix %* ${suffix}\r\n`);
+    clearCliResolverCache();
+    assert.deepEqual(resolveCliCommand(shimRedirect).argsPrefix, ['--prefix'], suffix);
+  }
+  for (const suffix of ['>nul --suffix', '<script>', 'x >nul']) {
+    const shimMixed = path.join(dir, 'agy_mixed.cmd');
+    fs.writeFileSync(shimMixed, `@ECHO off\r\n"%~dp0\\agy.exe" %* ${suffix}\r\n`);
+    clearCliResolverCache();
+    assert.throws(() => resolveCliCommand(shimMixed), /arguments after %\*.*are not supported/, suffix);
+  }
 });
 
 test('CLI resolution caching with clearCliResolverCache and fast hits', () => {

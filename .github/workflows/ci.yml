@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: [develop, '[0-9]+.[0-9]+.x']
 
+# The jobs only read the repository; artifact upload uses its own runtime token.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test on ${{ matrix.os }} (Node ${{ matrix.node-version }})

@@ -254,7 +254,9 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
   // ReDoS: the credential patterns run on the whole input, so sanitizing must scale linearly.
   // A 4x larger input is timed against a smaller one (best of three each) instead of a fixed
   // wall-clock limit, which a loaded runner under coverage exceeded (128 ms for 40,000
-  // characters, macos-latest, Node 26, 2026-10-19). Linear work grows about 4x, quadratic 16x.
+  // characters, macos-latest, Node 26, 2026-10-19). A 4x step still left too little margin
+  // (16.6 ms to 167.6 ms, macos-latest, Node 24, 2026-11-01), so the larger input is 16x:
+  // linear work grows about 16x, quadratic 256x.
   const bestOf3 = size => {
     const text = 'a'.repeat(size);
     let best = Infinity;
@@ -266,10 +268,10 @@ test('issue sanitization covers Basic auth, AWS secret keys, semicolons in unquo
     return best;
   };
   const small = bestOf3(400_000),
-    large = bestOf3(1_600_000);
+    large = bestOf3(6_400_000);
   assert.ok(
-    large < small * 8 + 10,
-    `sanitizing grew from ${small.toFixed(1)} ms to ${large.toFixed(1)} ms for 4x the input, possible ReDoS`,
+    large < small * 64 + 20,
+    `sanitizing grew from ${small.toFixed(1)} ms to ${large.toFixed(1)} ms for 16x the input, possible ReDoS`,
   );
   assert.ok(sanitizeText('a'.repeat(40000)).length <= 4096, 'Bounded length should be enforced');
 });
