@@ -16,6 +16,7 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 | --- | --- | --- |
 | [STANDARDS-001](STANDARDS-001.md) | Shared agent standards v0.1.0 and keyboard characters in CoAgent8 output | #96, #97 |
 | [FORMAT-001](FORMAT-001.md) | One formatter (Prettier) checked in CI | #98 |
+| [WINDOWS-001](WINDOWS-001.md) | Per-call Windows containment: launcher contract and helper, not packaged yet | pending |
 
 ## Merged without a card record yet
 

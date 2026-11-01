@@ -1275,6 +1275,57 @@ can. On Windows a cancelled or timed-out worker's descendants can outlive it
 until `WINDOWS-001b-e` (`CUR-011`), so they may still change files. Checks are
 reported by the worker, not observed by the server (`COAGENT-004b`).
 
+## Windows per-call containment (WINDOWS-001)
+
+libuv places a child in one server-wide `KILL_ON_JOB_CLOSE` job that allows silent
+breakaway. Server exit therefore ends the tree, but a per-call stop ends only the
+owned root, and a native CLI's descendants survive it (`WINDOWS-001a`). Node has no
+Job Object API, so a small native helper owns one job per run.
+[`native/coagent8-job`](../native/coagent8-job/src/main.rs) is that helper.
+
+**Launch.** `process.ts` stays the single owner and spawns
+`coagent8-job.exe <command> <args>` hidden, with standard streams and a status pipe as
+descriptor 3. The helper removes its own name from `GetCommandLineW` and passes the
+rest verbatim, so Node's quoting reaches the CLI unchanged and no launch specification
+is needed. The first token, without quotes, is the application name, so no search path
+applies. The helper's own path shortens the 32,767-character limit; prompts travel over
+stdin, so arguments stay far below it.
+
+**Job.** `KILL_ON_JOB_CLOSE`, without `BREAKAWAY_OK` and `SILENT_BREAKAWAY_OK`. The CLI
+joins while it is created (`PROC_THREAD_ATTRIBUTE_JOB_LIST`, Windows 10 1607 or later),
+because `CREATE_SUSPENDED` followed by `AssignProcessToJobObject` leaves a suspended
+process outside every job if the helper dies between the calls. Only the standard
+streams are inherited (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`). The CLI starts with
+`CREATE_NO_WINDOW`: on a desktop whose default terminal is Windows Terminal, a console
+program without that flag opens a visible window.
+
+**Status.** One line on descriptor 3: `ready`, or `error <stage> <win32 code>`. The exit
+code is the CLI's own, so only the status line tells a failed start from a CLI that
+failed. Win32 errors 2 and 3 at process creation map to `CLI_NOT_FOUND`, others to
+`PROCESS_ERROR`.
+
+**Stop and end of the tree.** To stop a run, `process.ts` closes its end of descriptor 3,
+which the helper turns into `TerminateJobObject`; `proc.kill()` follows after one second
+as a fallback, and the job handle closing ends the job in that case too. Interrupts over
+the CLI's own protocol still come first. When the root ends, by a stop or by itself, the
+helper ends what is left of the job and exits only once the job reports no active
+process (bounded at five seconds), so the helper's exit confirms the end of the tree
+before a writer lease is released. Descendants do not outlive their root: exceptions
+need an explicit task policy, which does not exist yet.
+
+**Server death.** The helper runs in libuv's server-wide job, and its status pipe breaks,
+so the per-call job ends as well.
+
+**Missing helper.** Today every run without a helper keeps the direct spawn and its
+documented limitation. `WINDOWS-001d` ships and verifies the helper; from then on, write
+and command profiles refuse to run on Windows without it, and read-only runs keep the
+direct spawn.
+
+**Known limit.** A job does not contain work a descendant hands to a process outside it,
+such as a running service or an existing browser instance. A program that needs to leave
+the job gets `ERROR_ACCESS_DENIED`; `WINDOWS-001e` tests browsers and Git credential
+helpers natively.
+
 ## Asynchronous delegation and caller wake-up (DELEGATE-001c, not implemented)
 
 Owner request 2026-10-21: `delegate` delegates. The call returns as soon as the

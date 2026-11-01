@@ -37,10 +37,11 @@ guarantees for window suppression.
    - Stop a protocol CLI gracefully first: interrupt its turn over its own
      protocol and close stdin on the terminal event, then force-stop the owned root
      after a bounded grace period.
-   - Descendants are the backend's responsibility. A chain of Node processes ends
-     with its root through libuv's `KILL_ON_JOB_CLOSE` job on Windows. A per-run Job
-     Object helper is the only acceptable way to extend ownership to other
-     descendants (`WINDOWS-001` in the [roadmap](../../docs/ROADMAP.md)).
+   - A chain of Node processes ends with its root through libuv's
+     `KILL_ON_JOB_CLOSE` job on Windows. The per-run job helper
+     ([ARCHITECTURE](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001))
+     is the only acceptable way to extend ownership to other descendants; without it
+     they remain the backend's responsibility.
    - After the root exits, stop waiting for inherited stdout/stderr after a bounded
      drain period instead of searching for the holder.
    - Windows fixture/live observations are snapshot-specific. POSIX unexpected
