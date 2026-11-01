@@ -15,11 +15,7 @@ process.env.coagent8_CONFIG = testConfigFile;
 process.env.coagent8_QUOTA_CACHE = testQuotaCache;
 
 const { loadConfig, saveConfig, setDefaultBackend, validateConfig } = require('../src/config.ts');
-const {
-  inspectQuotas,
-  selectSmartQuotaBackend,
-  recordQuotaCooldown,
-} = require('../src/backends/availability.ts');
+const { inspectQuotas, selectSmartQuotaBackend, recordQuotaCooldown } = require('../src/backends/availability.ts');
 const { isRateLimitError } = require('../src/backends/rate-limit.ts');
 
 test('editor schema association survives backend-default and remembered-consent updates', async () => {
@@ -63,14 +59,8 @@ test('config module validates schema and persists user settings cleanly', async 
   // Schema validation tests
   assert.throws(() => validateConfig({ defaultBackend: 42 }), /Invalid defaultBackend/);
   assert.throws(() => validateConfig({ routing: { strategy: 'random' } }), /Invalid routing strategy/);
-  assert.throws(
-    () => validateConfig({ routing: { allowedBackends: 'claude' } }),
-    /Invalid allowedBackends/
-  );
-  assert.throws(
-    () => validateConfig({ routing: { allowedBackends: ['forbidden_backend'] } }),
-    /Invalid entry in allowedBackends/
-  );
+  assert.throws(() => validateConfig({ routing: { allowedBackends: 'claude' } }), /Invalid allowedBackends/);
+  assert.throws(() => validateConfig({ routing: { allowedBackends: ['forbidden_backend'] } }), /Invalid entry in allowedBackends/);
 
   // Corrupted JSON in config file throws and does NOT silently reset
   fs.writeFileSync(testConfigFile, 'INVALID_JSON{[[', 'utf8');
@@ -120,7 +110,7 @@ test('quota module operates without fabricated numbers and respects exhaustion &
         quotasOverride: exhaustedQuotas,
         config: { routing: { allowedBackends: ['codex'] } },
       }),
-    /observed rate limits/
+    /observed rate limits/,
   );
 
   // 5. The smart_quota compatibility name uses observed signals; fabricated
@@ -135,10 +125,15 @@ test('quota module operates without fabricated numbers and respects exhaustion &
     config: { routing: { allowedBackends: ['codex', 'claude'] } },
   });
   assert.equal(bestChoice, 'codex');
-  const geminiBest=await selectSmartQuotaBackend(['codex','claude','agy'],{quotasOverride:{...measuredQuotas,agy:{installed:true,status:'operational',headroomPercent:90}},config:{routing:{allowedBackends:['codex','claude','agy']}}});assert.equal(geminiBest,'codex');
-  await Promise.all(['codex','claude','agy'].map(id=>recordQuotaCooldown(id)));
-  const concurrent=JSON.parse(fs.readFileSync(testQuotaCache,'utf8'));for(const id of ['codex','claude','agy'])assert.equal(concurrent.data[id].status,'rate_limited');
-  await Promise.all(['codex','claude','agy'].map(id=>recordQuotaCooldown(id,-5000)));
+  const geminiBest = await selectSmartQuotaBackend(['codex', 'claude', 'agy'], {
+    quotasOverride: { ...measuredQuotas, agy: { installed: true, status: 'operational', headroomPercent: 90 } },
+    config: { routing: { allowedBackends: ['codex', 'claude', 'agy'] } },
+  });
+  assert.equal(geminiBest, 'codex');
+  await Promise.all(['codex', 'claude', 'agy'].map(id => recordQuotaCooldown(id)));
+  const concurrent = JSON.parse(fs.readFileSync(testQuotaCache, 'utf8'));
+  for (const id of ['codex', 'claude', 'agy']) assert.equal(concurrent.data[id].status, 'rate_limited');
+  await Promise.all(['codex', 'claude', 'agy'].map(id => recordQuotaCooldown(id, -5000)));
 
   // 6. Runtime rate-limit cooldown recording
   await recordQuotaCooldown('codex', undefined, 'OpenAI API Error: 429 Too Many Requests - rate limit exceeded for 5h window');
@@ -173,9 +168,9 @@ test('quota module operates without fabricated numbers and respects exhaustion &
   assert.equal(isRateLimitError('{"statusCode": 42901}'), false);
   assert.equal(
     isRateLimitError(
-      'Execution error (1):\nProcess crashed unexpectedly.\nPartial output:\nIn this section we will handle HTTP 429 rate limit responses gracefully.'
+      'Execution error (1):\nProcess crashed unexpectedly.\nPartial output:\nIn this section we will handle HTTP 429 rate limit responses gracefully.',
     ),
-    false
+    false,
   );
 
   // Mixed stderr warning + stdout 429 diagnostic is recognized
@@ -201,10 +196,9 @@ test('quota module operates without fabricated numbers and respects exhaustion &
         quotasOverride: bothRateLimited,
         config: { routing: { allowedBackends: ['codex', 'claude'] } },
       }),
-    /Earliest recovery cooldown resets at: 2026-10-02T23:45:00.000Z/
+    /Earliest recovery cooldown resets at: 2026-10-02T23:45:00.000Z/,
   );
 });
-
 
 test('a configuration directory that cannot be created is reported, not ignored (AUD-P2-7)', async () => {
   const blocker = path.join(testTempDir, 'not-a-directory');
@@ -248,7 +242,7 @@ test('EXEC-001-T10c: rememberApprovedModel rejects invalid model identifiers bef
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'INPUT_LIMIT');
       return true;
-    }
+    },
   );
 
   await assert.rejects(
@@ -257,7 +251,7 @@ test('EXEC-001-T10c: rememberApprovedModel rejects invalid model identifiers bef
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'INPUT_LIMIT');
       return true;
-    }
+    },
   );
 
   await assert.rejects(
@@ -266,7 +260,7 @@ test('EXEC-001-T10c: rememberApprovedModel rejects invalid model identifiers bef
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'INPUT_LIMIT');
       return true;
-    }
+    },
   );
 });
 
@@ -293,7 +287,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
   assert.ok(!loadConfig().governance.models.allow.includes('aborted-model'));
 
@@ -304,7 +298,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
   assert.ok(!loadConfig().governance.models.allow.includes('aborted-model-direct'));
 
@@ -323,7 +317,7 @@ test('EXEC-001-T10c: rememberApprovedModel respects cancellation and timeout opt
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'TIMEOUT');
       return true;
-    }
+    },
   );
   assert.ok(!loadConfig().governance.models.allow.includes('timed-out-model'));
 

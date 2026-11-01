@@ -99,7 +99,12 @@ export function validateEvent(event: AdapterEvent): void {
       if (typeof event.message !== 'string') throw new Error('Invalid status.');
       break;
     case 'error':
-      if (!event.error || !ERROR_CODES.includes(event.error.code) || typeof event.error.message !== 'string' || typeof event.error.retryable !== 'boolean') {
+      if (
+        !event.error ||
+        !ERROR_CODES.includes(event.error.code) ||
+        typeof event.error.message !== 'string' ||
+        typeof event.error.retryable !== 'boolean'
+      ) {
         throw new Error('Invalid public error.');
       }
       break;
@@ -114,14 +119,26 @@ export function validateEvent(event: AdapterEvent): void {
   }
 }
 
-const USAGE_COUNTS = ['inputTokens', 'cachedInputTokens', 'cacheWriteInputTokens', 'cacheWriteLongInputTokens', 'outputTokens', 'reasoningTokens', 'totalTokens'] as const;
+const USAGE_COUNTS = [
+  'inputTokens',
+  'cachedInputTokens',
+  'cacheWriteInputTokens',
+  'cacheWriteLongInputTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'totalTokens',
+] as const;
 
 /** Whether a value is a {@link TokenUsage} with only known non-negative integer counts. */
 function validUsage(value: unknown): value is TokenUsage {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const usage = value as Record<string, unknown>;
   if (usage.source !== 'provider') return false;
-  return Object.keys(usage).every(key => key === 'source' || ((USAGE_COUNTS as readonly string[]).includes(key) && Number.isSafeInteger(usage[key]) && (usage[key] as number) >= 0));
+  return Object.keys(usage).every(
+    key =>
+      key === 'source' ||
+      ((USAGE_COUNTS as readonly string[]).includes(key) && Number.isSafeInteger(usage[key]) && (usage[key] as number) >= 0),
+  );
 }
 
 /** Redacts sensitive content from an adapter event before persisting to history. */
@@ -137,7 +154,11 @@ export function sanitize(event: AdapterEvent): AdapterEvent {
     case 'status':
       return { type: event.type, message: redactDiagnostic(event.message), ...native };
     case 'error':
-      return { type: event.type, error: { code: event.error.code, retryable: event.error.retryable, message: redactDiagnostic(event.error.message) }, ...native };
+      return {
+        type: event.type,
+        error: { code: event.error.code, retryable: event.error.retryable, message: redactDiagnostic(event.error.message) },
+        ...native,
+      };
     case 'tool_started':
       return { type: event.type, toolId: event.toolId, name: redactDiagnostic(event.name, 128), ...native };
     case 'tool_finished':
@@ -167,4 +188,3 @@ export function cloneHistory(h: History): History {
     events: h.events.map(cloneEvent),
   };
 }
-

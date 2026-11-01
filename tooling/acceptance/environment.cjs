@@ -85,9 +85,11 @@ function createIsolatedAcceptanceEnvironment(options = {}) {
 }
 
 function isStripped(lower) {
-  return STRIP_EXACT.has(lower)
-    || STRIP_PREFIXES.some(prefix => lower.startsWith(prefix))
-    || STRIP_SUFFIXES.some(suffix => lower.endsWith(suffix));
+  return (
+    STRIP_EXACT.has(lower) ||
+    STRIP_PREFIXES.some(prefix => lower.startsWith(prefix)) ||
+    STRIP_SUFFIXES.some(suffix => lower.endsWith(suffix))
+  );
 }
 
 /**

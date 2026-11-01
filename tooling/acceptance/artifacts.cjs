@@ -40,8 +40,7 @@ function parseManifest(content, label) {
   } catch {
     throw new Error(`${label} is not valid JSON.`);
   }
-  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)
-      || typeof manifest.version !== 'string' || !manifest.version) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) || typeof manifest.version !== 'string' || !manifest.version) {
     throw new Error(`${label} has no version.`);
   }
   return manifest;
@@ -98,7 +97,13 @@ function buildTarGz(files) {
     // Size (124-135): octal string
     header.write(buf.length.toString(8).padStart(11, '0') + '\0', 124, 'ascii');
     // Mtime (136-147)
-    header.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + '\0', 136, 'ascii');
+    header.write(
+      Math.floor(Date.now() / 1000)
+        .toString(8)
+        .padStart(11, '0') + '\0',
+      136,
+      'ascii',
+    );
     // Type flag (156): '0' (regular file)
     header[156] = 48;
     // Magic (257-264): 'ustar\000'
@@ -206,12 +211,16 @@ function buildZip(files) {
 function createSyntheticArtifacts(targetDir, version = '0.6.1') {
   fs.mkdirSync(targetDir, { recursive: true });
 
-  const pkgJson = JSON.stringify({
-    name: 'coagent8',
-    version,
-    main: 'dist/index.cjs',
-    bin: { coagent8: 'dist/index.cjs' },
-  }, null, 2);
+  const pkgJson = JSON.stringify(
+    {
+      name: 'coagent8',
+      version,
+      main: 'dist/index.cjs',
+      bin: { coagent8: 'dist/index.cjs' },
+    },
+    null,
+    2,
+  );
 
   // Minimal stub that answers `doctor --json` and `doctor`
   const stubRuntime = `
@@ -245,12 +254,16 @@ console.log('CoAgent8 synthetic CLI');
   const tarballPath = path.join(targetDir, `coagent8-${version}.tgz`);
   fs.writeFileSync(tarballPath, tarballData);
 
-  const vsixJson = JSON.stringify({
-    name: 'coagent8-mcp',
-    displayName: 'CoAgent8',
-    version,
-    publisher: 'okidev',
-  }, null, 2);
+  const vsixJson = JSON.stringify(
+    {
+      name: 'coagent8-mcp',
+      displayName: 'CoAgent8',
+      version,
+      publisher: 'okidev',
+    },
+    null,
+    2,
+  );
 
   const vsixData = buildZip({
     'extension/package.json': vsixJson,

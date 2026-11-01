@@ -32,7 +32,8 @@ export function truncateToByteLength(str: string, maxBytes: number, suffix = '..
 
 export function createLineDecoder(onLine: (line: string) => void, maxBytes = 512 * 1024) {
   const decoder = new StringDecoder('utf8');
-  let pending = '', pendingBytes = 0;
+  let pending = '',
+    pendingBytes = 0;
   function consume(text: string) {
     let start = 0;
     for (;;) {
@@ -40,17 +41,25 @@ export function createLineDecoder(onLine: (line: string) => void, maxBytes = 512
       const piece = text.slice(start, end < 0 ? undefined : end);
       const size = Buffer.byteLength(piece);
       if (pendingBytes + size > maxBytes) throw new BufferLimitError('CLI record exceeds the UTF-8 byte limit.');
-      pending += piece; pendingBytes += size;
+      pending += piece;
+      pendingBytes += size;
       if (end < 0) return;
       const line = pending.endsWith('\r') ? pending.slice(0, -1) : pending;
-      pending = ''; pendingBytes = 0;
+      pending = '';
+      pendingBytes = 0;
       if (line.trim()) onLine(line);
       start = end + 1;
     }
   }
   return {
-    push(chunk: Buffer) { consume(decoder.write(chunk)); },
-    finish() { consume(decoder.end()); if (pending.trim()) onLine(pending); pending = ''; pendingBytes = 0; },
+    push(chunk: Buffer) {
+      consume(decoder.write(chunk));
+    },
+    finish() {
+      consume(decoder.end());
+      if (pending.trim()) onLine(pending);
+      pending = '';
+      pendingBytes = 0;
+    },
   };
 }
-

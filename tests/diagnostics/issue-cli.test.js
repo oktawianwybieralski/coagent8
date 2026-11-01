@@ -170,7 +170,7 @@ test('coagent8 issue --open always opens GITHUB_BUG_REPORT_TEMPLATE_URL even if 
       issueUrl: 'https://github.com/oktawianwybieralski/coagent8/issues/new',
       prompt: 'custom prompt with https://github.com/oktawianwybieralski/coagent8/issues/new',
     }),
-    openBrowser: (url) => {
+    openBrowser: url => {
       openedUrl = url;
       return true;
     },
@@ -193,7 +193,9 @@ test('coagent8 issue handles cancellation signal with exit code 130', async () =
 function fakeOpener() {
   const child = new EventEmitter();
   child.unrefCalls = 0;
-  child.unref = () => { child.unrefCalls += 1; };
+  child.unref = () => {
+    child.unrefCalls += 1;
+  };
   const calls = [];
   const spawnFn = (command, args, options) => {
     calls.push({ command, args, options });
@@ -249,7 +251,9 @@ test('openBrowser reports child process error events', async () => {
 test('openBrowser reports a synchronous spawn failure', async () => {
   const warnings = [];
   const result = await openBrowser('https://example.com', w => warnings.push(w), {
-    spawnFn: () => { throw new Error('spawn EPERM'); },
+    spawnFn: () => {
+      throw new Error('spawn EPERM');
+    },
     timeoutMs: 1000,
   });
 

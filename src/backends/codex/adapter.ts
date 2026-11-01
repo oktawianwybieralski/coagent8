@@ -25,7 +25,8 @@ import { configuredBackendCommand, probeCommand } from '../executable.js';
 export const id = 'codex';
 export const name = 'OpenAI Codex CLI';
 /** Codex reads `config.toml` from `CODEX_HOME` when it is set (CUR-006). */
-export const CODEX_CONFIG_PATH = process.env.CODEX_CONFIG_PATH || path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml');
+export const CODEX_CONFIG_PATH =
+  process.env.CODEX_CONFIG_PATH || path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml');
 
 /** Upper bound for reading `config.toml`. */
 const CODEX_CONFIG_MAX_BYTES = 256 * 1024;
@@ -56,7 +57,6 @@ export interface CodexConfig {
   /** Why the configuration file could not be used; the defaults apply. */
   configError?: string;
 }
-
 
 /**
  * Reads the top-level `model` and `model_reasoning_effort` keys of Codex's `config.toml`.
@@ -107,9 +107,10 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
   if ('unresolved' in resolved) return resolved.unresolved;
   // runCommand reports a missing or failing CLI in its result; it does not reject.
   const res = await runCommand(resolved.command, ['--version'], {
-    timeoutMs: (context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0)
-      ? context.timeoutMs
-      : DEFAULT_PROBE_TIMEOUT_MS,
+    timeoutMs:
+      context?.timeoutMs !== undefined && Number.isFinite(context.timeoutMs) && context.timeoutMs > 0
+        ? context.timeoutMs
+        : DEFAULT_PROBE_TIMEOUT_MS,
     abortSignal,
   });
   if (abortSignal?.aborted || res.error?.code === 'ABORTED' || res.status === 'cancelled') {
@@ -124,7 +125,7 @@ export async function probe(context?: BackendReadContext): Promise<AdapterProbeR
   const codexDir = path.dirname(CODEX_CONFIG_PATH);
   const authPath = path.join(codexDir, 'auth.json');
   const homeAuthPath = path.join(os.homedir(), '.codex', 'auth.json');
-  const targetAuth = fs.existsSync(authPath) ? authPath : (authPath !== homeAuthPath && fs.existsSync(homeAuthPath)) ? homeAuthPath : null;
+  const targetAuth = fs.existsSync(authPath) ? authPath : authPath !== homeAuthPath && fs.existsSync(homeAuthPath) ? homeAuthPath : null;
   const hasApiKey = Boolean(process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY);
   const hasConfigFile = fs.existsSync(CODEX_CONFIG_PATH);
 
@@ -182,18 +183,29 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const effort = normalizeReasoningEffort(options.reasoningEffort, config.defaultReasoningEffort);
   const requestedThread = options.nativeSessionId || options.threadId || null;
   const rejected = (code: ExecutionError['code'], message: string): TerminalExecutionResult => ({
-    status: 'failed', isError: true, output: '', model, error: { code, message, retryable: false }, truncated: false, continuationAvailable: false,
+    status: 'failed',
+    isError: true,
+    output: '',
+    model,
+    error: { code, message, retryable: false },
+    truncated: false,
+    continuationAvailable: false,
   });
-  if (model === undefined) return rejected('INPUT_LIMIT', 'No Codex model selected; the controller passes the config.toml model or the catalog default.');
+  if (model === undefined)
+    return rejected('INPUT_LIMIT', 'No Codex model selected; the controller passes the config.toml model or the catalog default.');
   if (!isValidModelIdentifier(model)) return rejected('INPUT_LIMIT', 'Invalid Codex model identifier.');
-  if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-'))) return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
+  if (requestedThread && (!validEventIdentifier(requestedThread) || requestedThread.startsWith('-')))
+    return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
   const promptBytes = Buffer.byteLength(prompt, 'utf8');
   if (promptBytes > CODEX_MAX_PROMPT_BYTES) {
     return rejected('INPUT_LIMIT', `Prompt exceeds the UTF-8 byte limit (${promptBytes} > ${CODEX_MAX_PROMPT_BYTES} bytes).`);
   }
   const serializedPromptBytes = Buffer.byteLength(JSON.stringify(prompt), 'utf8');
   if (serializedPromptBytes > CODEX_MAX_SERIALIZED_PROMPT_BYTES) {
-    return rejected('INPUT_LIMIT', `Serialized prompt exceeds the line record limit (${serializedPromptBytes} > ${CODEX_MAX_SERIALIZED_PROMPT_BYTES} bytes).`);
+    return rejected(
+      'INPUT_LIMIT',
+      `Serialized prompt exceeds the line record limit (${serializedPromptBytes} > ${CODEX_MAX_SERIALIZED_PROMPT_BYTES} bytes).`,
+    );
   }
   // The app-server session requests the profile's sandbox of CODEX_SANDBOX per thread and
   // verifies the server's answer; the config overrides pin the same policy for the server's
@@ -201,11 +213,26 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
   const profile = options.profile ?? 'read-only';
   const args = codexAppServerArgs(profile);
   const collector = createCodexStreamCollector({ nativeSessionId: requestedThread, onEvent: options.onEvent });
-  const app = createCodexAppSession({ collector, threadId: requestedThread, model, effort,
-    cwd: path.resolve(options.cwd || process.cwd()), onEvent: options.onEvent, profile });
+  const app = createCodexAppSession({
+    collector,
+    threadId: requestedThread,
+    model,
+    effort,
+    cwd: path.resolve(options.cwd || process.cwd()),
+    onEvent: options.onEvent,
+    profile,
+  });
   const result = await runCommand(configuredBackendCommand('codex'), args, {
-    cwd: options.cwd, env: codexLaunchEnvironment(turnEnvironment()), stdinInput: prompt, session: app.session, abortSignal: options.abortSignal, timeoutMs: options.timeoutMs,
-    maxBufferBytes: 512 * 1024, maxLineBytes: CODEX_MAX_LINE_BYTES, maxInputBytes: CODEX_MAX_PROMPT_BYTES, onStdoutLine: app.line,
+    cwd: options.cwd,
+    env: codexLaunchEnvironment(turnEnvironment()),
+    stdinInput: prompt,
+    session: app.session,
+    abortSignal: options.abortSignal,
+    timeoutMs: options.timeoutMs,
+    maxBufferBytes: 512 * 1024,
+    maxLineBytes: CODEX_MAX_LINE_BYTES,
+    maxInputBytes: CODEX_MAX_PROMPT_BYTES,
+    onStdoutLine: app.line,
   });
   const snapshot = collector.snapshot();
   const { initialized, terminal, threadId, usage } = snapshot;
@@ -216,16 +243,31 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
       ? classifyCodexError(fallbackStderr)
       : { code: 'PROCESS_ERROR', message: `Codex exited with code ${result.exitCode}.`, retryable: false };
   }
-  if (!error && (!initialized || !terminal)) error = { code: 'PROTOCOL_ERROR', message: 'Codex exited without a thread and terminal event.', retryable: false };
+  if (!error && (!initialized || !terminal))
+    error = { code: 'PROTOCOL_ERROR', message: 'Codex exited without a thread and terminal event.', retryable: false };
   if (!error && snapshot.interrupted) error = { code: 'PROCESS_ERROR', message: 'Codex interrupted the turn.', retryable: false };
   const status = result.status === 'cancelled' || result.status === 'timed_out' ? result.status : error ? 'failed' : 'completed';
   // The answer is the collector's; the runner's bounded stdout copy of the protocol stream
   // (tool output, deltas) is diagnostic, and filling it does not cut the answer.
-  return { status, isError: status !== 'completed', output: snapshot.output, model: app.resolvedModel() ?? model,
-    threadId, nativeSessionId: threadId, error, errorDetail: error?.message, exitCode: result.exitCode, signal: result.signal,
-    usage, truncated: snapshot.truncated || error?.code === 'BUFFER_LIMIT',
-    continuationAvailable: initialized && !!threadId && !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
-    denials: snapshot.denials };
+  return {
+    status,
+    isError: status !== 'completed',
+    output: snapshot.output,
+    model: app.resolvedModel() ?? model,
+    threadId,
+    nativeSessionId: threadId,
+    error,
+    errorDetail: error?.message,
+    exitCode: result.exitCode,
+    signal: result.signal,
+    usage,
+    truncated: snapshot.truncated || error?.code === 'BUFFER_LIMIT',
+    continuationAvailable:
+      initialized &&
+      !!threadId &&
+      !['PROTOCOL_ERROR', 'SESSION_INVALID', 'CLI_NOT_FOUND', 'SANDBOX_UNAVAILABLE'].includes(error?.code || ''),
+    denials: snapshot.denials,
+  };
 }
 
 export const codexAdapter: CliAdapter = {

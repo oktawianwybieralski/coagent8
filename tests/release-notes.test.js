@@ -20,7 +20,23 @@ test('RELEASE-001e: the release notes need the tester header the release PR adds
     fs.writeFileSync(path.join(dir, 'changelog.md'), '## Full Changelog\n\n- MCP:\n  - Bug fix:\n    - #1: Fix it (by @owner)\n');
     fs.writeFileSync(path.join(dir, 'SHA256SUMS'), 'aaa  coagent8-9.9.9.tgz\nbbb  coagent8-mcp-9.9.9.vsix\n');
     const out = path.join(dir, 'notes.md');
-    main(['--tag', 'v9.9.9', '--changelog', path.join(dir, 'changelog.md'), '--sums', path.join(dir, 'SHA256SUMS'), '--repository', 'owner/repo', '--sha', 'abc123', '--out', out], dir);
+    main(
+      [
+        '--tag',
+        'v9.9.9',
+        '--changelog',
+        path.join(dir, 'changelog.md'),
+        '--sums',
+        path.join(dir, 'SHA256SUMS'),
+        '--repository',
+        'owner/repo',
+        '--sha',
+        'abc123',
+        '--out',
+        out,
+      ],
+      dir,
+    );
     const notes = fs.readFileSync(out, 'utf8');
     // The header comes first, then the generated changelog, then the artifacts.
     assert.ok(notes.indexOf('## What is CoAgent8') < notes.indexOf('## Full Changelog'));
@@ -45,17 +61,28 @@ test('RELEASE-001e: both changelog layouts name areas as products and show the r
     git('init', '-q');
     git('config', 'user.name', 'Fixture');
     git('config', 'user.email', 'fixture@example.invalid');
-    for (const subject of ['feat(vscode): add a picker (#1)', 'fix(mcp): bound a result (#2)', 'fix(agy): keep a session (#3)', 'feat(cli): add a command (#4)', 'fix(config): read a file (#5)']) {
+    for (const subject of [
+      'feat(vscode): add a picker (#1)',
+      'fix(mcp): bound a result (#2)',
+      'fix(agy): keep a session (#3)',
+      'feat(cli): add a command (#4)',
+      'fix(config): read a file (#5)',
+    ]) {
       git('commit', '-q', '--allow-empty', '-m', subject);
     }
     // Offline: the release-notes configuration otherwise reads authors from the GitHub API.
     const render = (config, ...args) => {
-      const result = spawnSync(process.execPath, [cliff, '--config', path.join(root, config), '--offline', '--strip', 'all', ...args], { cwd: dir, encoding: 'utf8', windowsHide: true });
+      const result = spawnSync(process.execPath, [cliff, '--config', path.join(root, config), '--offline', '--strip', 'all', ...args], {
+        cwd: dir,
+        encoding: 'utf8',
+        windowsHide: true,
+      });
       assert.equal(result.status, 0, result.stderr);
       return result.stdout;
     };
     for (const output of [render('cliff.toml', '--unreleased'), render('cliff.release-notes.toml', '--unreleased')]) {
-      for (const area of ['- VS Code:', '- MCP:', '- Antigravity (agy):', '- CLI:', '- Config:']) assert.ok(output.includes(area), `${area} in\n${output}`);
+      for (const area of ['- VS Code:', '- MCP:', '- Antigravity (agy):', '- CLI:', '- Config:'])
+        assert.ok(output.includes(area), `${area} in\n${output}`);
       assert.ok(!/^- (Vscode|Mcp|Agy|Cli):/m.test(output), 'no raw scope names');
     }
     const notes = render('cliff.release-notes.toml', '--unreleased');

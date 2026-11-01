@@ -49,6 +49,10 @@ jobs:
       - name: Check keyboard characters
         run: node .agents/standards/check-keyboard-characters.mjs
 
+      # Core rule 05: one formatter configuration (.prettierrc.json, .prettierignore).
+      - name: Check formatting
+        run: npm run format:check
+
       - name: Typecheck
         run: npm run typecheck
 

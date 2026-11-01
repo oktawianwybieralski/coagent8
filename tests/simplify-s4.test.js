@@ -16,21 +16,10 @@ const {
 } = require('../src/security/index.ts');
 
 // Activity contract
-const {
-  isProcessAlive,
-  getSessionsDir,
-  getSessionFilePath,
-  isSessionActive,
-} = require('../src/sessions/activity.ts');
+const { isProcessAlive, getSessionsDir, getSessionFilePath, isSessionActive } = require('../src/sessions/activity.ts');
 
 // History submodules
-const {
-  SESSION_LIMIT,
-  TOTAL_LIMIT,
-  getHistoryDir,
-  fileFor,
-  logFileFor,
-} = require('../src/sessions/history/types.ts');
+const { SESSION_LIMIT, TOTAL_LIMIT, getHistoryDir, fileFor, logFileFor } = require('../src/sessions/history/types.ts');
 const { paginateHistory } = require('../src/sessions/history/page.ts');
 const {
   pruneHistoryDirectory,
@@ -105,7 +94,6 @@ test('S4 history: module decomposition and compatibility shims', () => {
   assert.equal(historyMain.deleteHistory, deleteHistory);
   assert.equal(historyMain.pruneHistoryDirectory, pruneHistoryDirectory);
   assert.equal(historyMain.paginateHistory, paginateHistory);
-
 });
 
 test('S4 history: session activity checker protects active turns during eviction', async () => {
@@ -119,7 +107,7 @@ test('S4 history: session activity checker protects active turns during eviction
 
     // Custom activity checker contract can protect specific sessions
     let protectedHandle = sess.sessionHandle;
-    setSessionActivityChecker((h) => h === protectedHandle);
+    setSessionActivityChecker(h => h === protectedHandle);
     assert.equal(sessionMayBeActive(sess.sessionHandle), true);
     assert.equal(sessionMayBeActive('other_handle'), false);
 
@@ -134,7 +122,8 @@ test('S4 history: session activity checker protects active turns during eviction
 test('S4 boundaries: history modules have zero dependency on session.ts (runtime cycle eliminated)', () => {
   const root = path.resolve(__dirname, '..');
   const historyDir = path.join(root, 'src', 'sessions', 'history');
-  const files = fs.readdirSync(historyDir, { recursive: true })
+  const files = fs
+    .readdirSync(historyDir, { recursive: true })
     .filter(f => typeof f === 'string' && f.endsWith('.ts'))
     .map(f => path.join(historyDir, f));
 
@@ -147,7 +136,7 @@ test('S4 boundaries: history modules have zero dependency on session.ts (runtime
       const specifier = match[1];
       assert.ok(
         !specifier.endsWith('session.js') && !specifier.endsWith('session.ts') && !specifier.includes('/session.'),
-        `Forbidden session.ts dependency in ${path.relative(root, file)}: ${specifier}`
+        `Forbidden session.ts dependency in ${path.relative(root, file)}: ${specifier}`,
       );
     }
   }
@@ -162,7 +151,7 @@ test('S4 boundaries: history page has zero dependency on history.ts (type cycle 
     const specifier = match[1];
     assert.ok(
       !specifier.includes('reader') && !specifier.includes('history.js') && !specifier.includes('writer'),
-      `Forbidden dependency in history/page.ts: ${specifier}`
+      `Forbidden dependency in history/page.ts: ${specifier}`,
     );
   }
 });
@@ -170,7 +159,8 @@ test('S4 boundaries: history page has zero dependency on history.ts (type cycle 
 test('S4 boundaries: security/ has zero dependency on sessions, backends, mcp or controller', () => {
   const root = path.resolve(__dirname, '..');
   const secDir = path.join(root, 'src', 'security');
-  const files = fs.readdirSync(secDir, { recursive: true })
+  const files = fs
+    .readdirSync(secDir, { recursive: true })
     .filter(f => typeof f === 'string' && f.endsWith('.ts'))
     .map(f => path.join(secDir, f));
 
@@ -183,12 +173,11 @@ test('S4 boundaries: security/ has zero dependency on sessions, backends, mcp or
       const specifier = match[1];
       assert.ok(
         !specifier.includes('sessions') &&
-        !specifier.includes('backends') &&
-        !specifier.includes('mcp') &&
-        !specifier.includes('controller'),
-        `Forbidden dependency in ${path.relative(root, file)}: ${specifier}`
+          !specifier.includes('backends') &&
+          !specifier.includes('mcp') &&
+          !specifier.includes('controller'),
+        `Forbidden dependency in ${path.relative(root, file)}: ${specifier}`,
       );
     }
   }
 });
-

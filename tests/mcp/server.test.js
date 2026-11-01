@@ -36,89 +36,102 @@ test('MCP server registers and fulfills coagent8://sessions and coagent8://sessi
   const launchDirectory = process.cwd();
   process.chdir(tempDir);
   try {
-  const server = createServer();
+    const server = createServer();
 
-  // 1. List Resources
-  const listHandler = server._requestHandlers?.get('resources/list') || server.handlers?.get?.('resources/list');
-  // Access through request handler
-  const resourcesResult = await server._requestHandlers.get('resources/list')({
-    method: 'resources/list',
-    params: {},
-  });
+    // 1. List Resources
+    const listHandler = server._requestHandlers?.get('resources/list') || server.handlers?.get?.('resources/list');
+    // Access through request handler
+    const resourcesResult = await server._requestHandlers.get('resources/list')({
+      method: 'resources/list',
+      params: {},
+    });
 
-  assert.ok(resourcesResult.resources.length >= 1, 'At least coagent8://sessions must be listed');
-  const sessionsResource = resourcesResult.resources.find(r => r.uri === 'coagent8://sessions');
-  assert.ok(sessionsResource, 'coagent8://sessions must be present');
-  assert.equal(sessionsResource.mimeType, 'application/json');
+    assert.ok(resourcesResult.resources.length >= 1, 'At least coagent8://sessions must be listed');
+    const sessionsResource = resourcesResult.resources.find(r => r.uri === 'coagent8://sessions');
+    assert.ok(sessionsResource, 'coagent8://sessions must be present');
+    assert.equal(sessionsResource.mimeType, 'application/json');
 
-  const historyResource = resourcesResult.resources.find(r => r.uri === `coagent8://sessions/${sess.sessionHandle}/history`);
-  assert.ok(historyResource, 'Session-specific history resource must be listed');
-  assert.ok(!resourcesResult.resources.some(r => r.uri.includes(other.sessionHandle)), 'another workspace is not listed');
+    const historyResource = resourcesResult.resources.find(r => r.uri === `coagent8://sessions/${sess.sessionHandle}/history`);
+    assert.ok(historyResource, 'Session-specific history resource must be listed');
+    assert.ok(!resourcesResult.resources.some(r => r.uri.includes(other.sessionHandle)), 'another workspace is not listed');
 
-  // 2. List Resource Templates
-  const templatesResult = await server._requestHandlers.get('resources/templates/list')({
-    method: 'resources/templates/list',
-    params: {},
-  });
-  assert.ok(templatesResult.resourceTemplates.some(t => t.uriTemplate === 'coagent8://sessions/{id}/history'));
+    // 2. List Resource Templates
+    const templatesResult = await server._requestHandlers.get('resources/templates/list')({
+      method: 'resources/templates/list',
+      params: {},
+    });
+    assert.ok(templatesResult.resourceTemplates.some(t => t.uriTemplate === 'coagent8://sessions/{id}/history'));
 
-  // 3. Read coagent8://sessions
-  const readSessionsResult = await server._requestHandlers.get('resources/read')({
-    method: 'resources/read',
-    params: { uri: 'coagent8://sessions' },
-  });
-  assert.equal(readSessionsResult.contents.length, 1);
-  const parsedSessions = JSON.parse(readSessionsResult.contents[0].text);
-  assert.ok(Array.isArray(parsedSessions));
-  assert.ok(parsedSessions.some(s => s.sessionHandle === sess.sessionHandle));
-  assert.ok(!parsedSessions.some(s => s.sessionHandle === other.sessionHandle), 'another workspace is not returned');
-  // PROPOSALS-001l: a model reads the resource, so indentation would only cost tokens.
-  assert.equal(readSessionsResult.contents[0].text, JSON.stringify(parsedSessions), 'sessions resource is compact JSON');
+    // 3. Read coagent8://sessions
+    const readSessionsResult = await server._requestHandlers.get('resources/read')({
+      method: 'resources/read',
+      params: { uri: 'coagent8://sessions' },
+    });
+    assert.equal(readSessionsResult.contents.length, 1);
+    const parsedSessions = JSON.parse(readSessionsResult.contents[0].text);
+    assert.ok(Array.isArray(parsedSessions));
+    assert.ok(parsedSessions.some(s => s.sessionHandle === sess.sessionHandle));
+    assert.ok(!parsedSessions.some(s => s.sessionHandle === other.sessionHandle), 'another workspace is not returned');
+    // PROPOSALS-001l: a model reads the resource, so indentation would only cost tokens.
+    assert.equal(readSessionsResult.contents[0].text, JSON.stringify(parsedSessions), 'sessions resource is compact JSON');
 
-  // 4. Read coagent8://sessions/{id}/history
-  const readHistoryResult = await server._requestHandlers.get('resources/read')({
-    method: 'resources/read',
-    params: { uri: `coagent8://sessions/${sess.sessionHandle}/history` },
-  });
-  assert.equal(readHistoryResult.contents.length, 1);
-  const parsedHistory = JSON.parse(readHistoryResult.contents[0].text);
-  assert.equal(parsedHistory.sessionHandle, sess.sessionHandle);
-  assert.ok(parsedHistory.events.length >= 4);
-  assert.equal(readHistoryResult.contents[0].text, JSON.stringify(parsedHistory), 'history resource is compact JSON');
-  await assert.rejects(server._requestHandlers.get('resources/read')({
-    method: 'resources/read',
-    params: { uri: `coagent8://sessions/${other.sessionHandle}/history` },
-  }), /not found in this workspace/, 'the history of another workspace is not readable');
+    // 4. Read coagent8://sessions/{id}/history
+    const readHistoryResult = await server._requestHandlers.get('resources/read')({
+      method: 'resources/read',
+      params: { uri: `coagent8://sessions/${sess.sessionHandle}/history` },
+    });
+    assert.equal(readHistoryResult.contents.length, 1);
+    const parsedHistory = JSON.parse(readHistoryResult.contents[0].text);
+    assert.equal(parsedHistory.sessionHandle, sess.sessionHandle);
+    assert.ok(parsedHistory.events.length >= 4);
+    assert.equal(readHistoryResult.contents[0].text, JSON.stringify(parsedHistory), 'history resource is compact JSON');
+    await assert.rejects(
+      server._requestHandlers.get('resources/read')({
+        method: 'resources/read',
+        params: { uri: `coagent8://sessions/${other.sessionHandle}/history` },
+      }),
+      /not found in this workspace/,
+      'the history of another workspace is not readable',
+    );
 
-  // 5. Invalid / Unknown resource URI throws
-  await assert.rejects(
-    async () => {
+    // 5. Invalid / Unknown resource URI throws
+    await assert.rejects(async () => {
       await server._requestHandlers.get('resources/read')({
         method: 'resources/read',
         params: { uri: 'coagent8://unknown-resource' },
       });
-    },
-    /Resource not found/
-  );
+    }, /Resource not found/);
   } finally {
     process.chdir(launchDirectory);
     fs.rmSync(otherDir, { recursive: true, force: true });
   }
 });
 
-test('F14/F15: shared schema validates required fields, types, enums and unknown fields',()=>{
-  const tools=createToolDefinitions();assert.equal(new Set(tools.map(t=>t.name)).size,tools.length);
-  const consultTool=tools.find(t=>t.name==='consult');assert.ok(consultTool.inputSchema.properties.session_handle);assert.equal(consultTool.outputSchema,undefined,'execution results are markdown only (CONTEXT-001)');
-  assert.throws(()=>validateToolArguments({},consultTool.inputSchema),/Missing/);
-  assert.throws(()=>validateToolArguments({proposal:'x',user_confirmed:true},consultTool.inputSchema),/Unknown arguments\.user_confirmed/,'consent is not a tool argument');
-  assert.throws(()=>validateToolArguments({proposal:'x',extra:1},consultTool.inputSchema),/Unknown/);
+test('F14/F15: shared schema validates required fields, types, enums and unknown fields', () => {
+  const tools = createToolDefinitions();
+  assert.equal(new Set(tools.map(t => t.name)).size, tools.length);
+  const consultTool = tools.find(t => t.name === 'consult');
+  assert.ok(consultTool.inputSchema.properties.session_handle);
+  assert.equal(consultTool.outputSchema, undefined, 'execution results are markdown only (CONTEXT-001)');
+  assert.throws(() => validateToolArguments({}, consultTool.inputSchema), /Missing/);
+  assert.throws(
+    () => validateToolArguments({ proposal: 'x', user_confirmed: true }, consultTool.inputSchema),
+    /Unknown arguments\.user_confirmed/,
+    'consent is not a tool argument',
+  );
+  assert.throws(() => validateToolArguments({ proposal: 'x', extra: 1 }, consultTool.inputSchema), /Unknown/);
   // AX-002: the price limit is a non-negative finite number of USD per million output tokens.
-  assert.ok(validateToolArguments({proposal:'x',output_price_below:4.99},consultTool.inputSchema));
-  for (const bad of ['5',-1,null,Number.POSITIVE_INFINITY]) assert.throws(()=>validateToolArguments({proposal:'x',output_price_below:bad},consultTool.inputSchema),/output_price_below/,String(bad));
+  assert.ok(validateToolArguments({ proposal: 'x', output_price_below: 4.99 }, consultTool.inputSchema));
+  for (const bad of ['5', -1, null, Number.POSITIVE_INFINITY])
+    assert.throws(
+      () => validateToolArguments({ proposal: 'x', output_price_below: bad }, consultTool.inputSchema),
+      /output_price_below/,
+      String(bad),
+    );
   const { getAllCallableToolDefinitions } = require('../../src/mcp/server.ts');
-  const schema=getAllCallableToolDefinitions().find(t=>t.name==='analyze').inputSchema;
-  assert.ok(validateToolArguments({task:'x',backend:'agy'},schema));
-  assert.throws(()=>validateToolArguments({task:'x',file_paths:[3]},schema),/expected string/);
+  const schema = getAllCallableToolDefinitions().find(t => t.name === 'analyze').inputSchema;
+  assert.ok(validateToolArguments({ task: 'x', backend: 'agy' }, schema));
+  assert.throws(() => validateToolArguments({ task: 'x', file_paths: [3] }, schema), /expected string/);
 });
 
 test('the connected client name sets the caller CLI that auto routing avoids', async () => {
@@ -132,8 +145,15 @@ test('the connected client name sets the caller CLI that auto routing avoids', a
   const client = new Client({ name: 'claude-code', version: '2.1.291' });
   try {
     for (const id of ['codex', 'claude', 'agy']) {
-      adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
-        probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }), execute: async () => { throw new Error('Not executed'); } };
+      adapterRegistry[id] = {
+        id,
+        name: id,
+        inspectQuota: async () => undefined,
+        probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+        execute: async () => {
+          throw new Error('Not executed');
+        },
+      };
     }
     await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -158,12 +178,30 @@ test('execution results report a workspace taken from client roots; roots are re
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-root-'));
   const original = adapterRegistry.agy;
   const seen = [];
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
-    execute: async (_prompt, options) => { seen.push(options.cwd); return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: 'gemini-test', truncated: false, continuationAvailable: true }; } };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
+    execute: async (_prompt, options) => {
+      seen.push(options.cwd);
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'ok',
+        nativeSessionId: randomUUID(),
+        model: 'gemini-test',
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
   const server = createServer();
   const client = new Client({ name: 'roots-client', version: '1' }, { capabilities: { roots: { listChanged: true } } });
   let rootsRequests = 0;
-  client.setRequestHandler(ListRootsRequestSchema, async () => { rootsRequests++; return { roots: [{ uri: pathToFileURL(root).href, name: 'project' }] }; });
+  client.setRequestHandler(ListRootsRequestSchema, async () => {
+    rootsRequests++;
+    return { roots: [{ uri: pathToFileURL(root).href, name: 'project' }] };
+  });
   try {
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -197,8 +235,16 @@ test('execution errors carry the code raised at their source; an unknown failure
   const { adapterRegistry } = require('../../src/backends/registry.ts');
   const { saveConfig } = require('../../src/config.ts');
   const original = adapterRegistry.agy;
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: async () => { throw new Error('Lock timeout on probe cache.'); },
-    execute: async () => { throw new Error('must not run'); } };
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: async () => {
+      throw new Error('Lock timeout on probe cache.');
+    },
+    execute: async () => {
+      throw new Error('must not run');
+    },
+  };
   const server = createServer();
   const client = new Client({ name: 'errors-client', version: '1' });
   try {
@@ -206,7 +252,8 @@ test('execution errors carry the code raised at their source; an unknown failure
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     await client.connect(clientTransport);
-    const call = async args => readResult(await client.callTool({ name: 'consult', arguments: { workspace_path: tempDir, ...args } })).error;
+    const call = async args =>
+      readResult(await client.callTool({ name: 'consult', arguments: { workspace_path: tempDir, ...args } })).error;
     const unknown = await call({ proposal: 'x' });
     assert.equal(unknown.code, 'PROCESS_ERROR');
     assert.equal(unknown.message, 'Lock timeout on probe cache.');
@@ -217,9 +264,15 @@ test('execution errors carry the code raised at their source; an unknown failure
     const invalid = await client.callTool({ name: 'consult', arguments: { proposal: '', workspace_path: tempDir } });
     assert.equal(readResult(invalid).error.code, 'INPUT_LIMIT', 'rejected input keeps INPUT_LIMIT');
     // Live, 2026-10-07: a call refused before launch showed "provider default" beside the model the caller named.
-    const refused = readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', model: 'gemini-3.8-flash', workspace_path: tempDir } }));
+    const refused = readResult(
+      await client.callTool({ name: 'consult', arguments: { proposal: 'x', model: 'gemini-3.8-flash', workspace_path: tempDir } }),
+    );
     assert.equal(refused.model, 'gemini-3.8-flash', 'the footer names the requested model');
-    assert.equal(readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', model: '--yolo', workspace_path: tempDir } })).model, 'provider default', 'an invalid identifier is not echoed');
+    assert.equal(
+      readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', model: '--yolo', workspace_path: tempDir } })).model,
+      'provider default',
+      'an invalid identifier is not echoed',
+    );
   } finally {
     await client.close();
     await server.close();
@@ -254,11 +307,23 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   const original = adapterRegistry.agy;
   const consented = [];
   const withDefault = defaultModel => async () => ({ installed: true, version: 'fixture', config: { defaultModel } });
-  adapterRegistry.agy = { id: 'agy', name: 'fixture', probe: withDefault('gemini-3.8-flash-high'),
+  adapterRegistry.agy = {
+    id: 'agy',
+    name: 'fixture',
+    probe: withDefault('gemini-3.8-flash-high'),
     execute: async (_prompt, options) => {
       consented.push(options.model);
-      return { status: 'completed', isError: false, output: 'approved answer', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
-    } };
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'approved answer',
+        nativeSessionId: randomUUID(),
+        model: options.model,
+        truncated: false,
+        continuationAvailable: true,
+      };
+    },
+  };
   const connect = async capabilities => {
     const server = createServer();
     const client = new Client({ name: 'consent-client', version: '1' }, { capabilities });
@@ -269,7 +334,11 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
   };
   const opened = [];
   try {
-    await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] }, governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } } });
+    await saveConfig({
+      defaultBackend: 'agy',
+      routing: { strategy: 'fixed', allowedBackends: ['agy'] },
+      governance: { priceMultiplier: 2, askAbovePrice: 20, models: { allow: [], ask: [], deny: [] } },
+    });
     const callWith = (client, args) => client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, ...args } });
     const call = (client, model) => callWith(client, model ? { model } : {});
 
@@ -283,7 +352,10 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     opened.push(asking);
     const requests = [];
     let answer = { action: 'decline' };
-    asking.client.setRequestHandler(ElicitRequestSchema, async request => { requests.push(request.params); return answer; });
+    asking.client.setRequestHandler(ElicitRequestSchema, async request => {
+      requests.push(request.params);
+      return answer;
+    });
     const declined = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(declined.code, 'POLICY_DENIED');
     assert.match(declined.message, /did not approve/);
@@ -292,12 +364,22 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     answer = { action: 'cancel' };
     const unanswered = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(unanswered.code, 'POLICY_DENIED');
-    assert.match(unanswered.message, /^The client closed the approval request for model 'claude-opus-4-6-thinking' without an answer, possibly without showing it to the user\. Its price is known only approximately/);
-    assert.match(unanswered.message, /Tell the user; switch to another model only if the user asks\. The user can approve it in a client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: CoAgent8: Manage Model Approvals\); never change that setting yourself\.$/);
+    assert.match(
+      unanswered.message,
+      /^The client closed the approval request for model 'claude-opus-4-6-thinking' without an answer, possibly without showing it to the user\. Its price is known only approximately/,
+    );
+    assert.match(
+      unanswered.message,
+      /Tell the user; switch to another model only if the user asks\. The user can approve it in a client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: CoAgent8: Manage Model Approvals\); never change that setting yourself\.$/,
+    );
     // Only an explicit `approve: true` is consent (CUR-003): an accepted form without the
     // field, with an empty or a non-boolean value, or unchecked, declines.
-    const notConsent = [{ action: 'accept' }, { action: 'accept', content: {} }, { action: 'accept', content: { approve: 'true' } },
-      { action: 'accept', content: { approve: false } }];
+    const notConsent = [
+      { action: 'accept' },
+      { action: 'accept', content: {} },
+      { action: 'accept', content: { approve: 'true' } },
+      { action: 'accept', content: { approve: false } },
+    ];
     for (const reply of notConsent) {
       answer = reply;
       assert.equal(readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error?.code, 'POLICY_DENIED', JSON.stringify(reply));
@@ -343,7 +425,10 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
     assert.equal(readResult(await call(asking.client, 'gpt-7-nova')).answer, 'approved answer');
     assert.equal(requests.length, asked, 'remembered: no prompt');
   } finally {
-    for (const { client, server } of opened) { await client.close(); await server.close(); }
+    for (const { client, server } of opened) {
+      await client.close();
+      await server.close();
+    }
     adapterRegistry.agy = original;
   }
 });
@@ -358,18 +443,12 @@ test('EXEC-001-T11b: handleDoctor forwards its signal for both scopes; MCP serve
   // 1. handleDoctor forwards signal for scope: health
   const abortedHealth = new AbortController();
   abortedHealth.abort();
-  await assert.rejects(
-    handleDoctor({ scope: 'health' }, abortedHealth.signal),
-    err => err instanceof ToolError && err.code === 'ABORTED'
-  );
+  await assert.rejects(handleDoctor({ scope: 'health' }, abortedHealth.signal), err => err instanceof ToolError && err.code === 'ABORTED');
 
   // 2. handleDoctor forwards signal for scope: models
   const abortedModels = new AbortController();
   abortedModels.abort();
-  await assert.rejects(
-    handleDoctor({ scope: 'models' }, abortedModels.signal),
-    err => err instanceof ToolError && err.code === 'ABORTED'
-  );
+  await assert.rejects(handleDoctor({ scope: 'models' }, abortedModels.signal), err => err instanceof ToolError && err.code === 'ABORTED');
 
   // 3. MCP server forwards extra.signal to doctor and reports a doctor timeout as isError: true text
   const server = createServer();
@@ -424,7 +503,7 @@ test('EXEC-001-T11b: server startup runs no probe, and doctor call creates no se
 
     // 2. Doctor call creates no session file
     const sessionDir = getSessionsDir();
-    const listSessions = () => fs.existsSync(sessionDir) ? fs.readdirSync(sessionDir) : [];
+    const listSessions = () => (fs.existsSync(sessionDir) ? fs.readdirSync(sessionDir) : []);
     const filesBefore = listSessions();
 
     await handleDoctor({ scope: 'models' });

@@ -30,6 +30,9 @@ export function turnEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.P
  */
 export function assertNotNestedTurn(env: NodeJS.ProcessEnv = process.env): void {
   if (env[NESTED_TURN_ENV] === '1') {
-    throw new ToolError('POLICY_DENIED', 'CoAgent8 was started by a backend inside a CoAgent8 turn (a CoAgent8 registration in that CLI) and does not start another turn from there.');
+    throw new ToolError(
+      'POLICY_DENIED',
+      'CoAgent8 was started by a backend inside a CoAgent8 turn (a CoAgent8 registration in that CLI) and does not start another turn from there.',
+    );
   }
 }

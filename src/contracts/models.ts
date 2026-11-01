@@ -76,7 +76,8 @@ export function namesModelRun(listed: string, model: string, run: EffortRun = {}
 /** The variant of `effort` a CLI that replaces effort suffixes runs for `model`: `<id>-<effort>`. */
 export function effortVariant(model: string, effort: string): string {
   const suffix = model.lastIndexOf('-');
-  const id = suffix > 0 && (REASONING_EFFORTS as readonly string[]).includes(model.slice(suffix + 1).toLowerCase()) ? model.slice(0, suffix) : model;
+  const id =
+    suffix > 0 && (REASONING_EFFORTS as readonly string[]).includes(model.slice(suffix + 1).toLowerCase()) ? model.slice(0, suffix) : model;
   return `${id}-${effort.toLowerCase()}`;
 }
 
@@ -87,4 +88,3 @@ const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
 export function isValidModelIdentifier(value: unknown): value is string {
   return typeof value === 'string' && MODEL_ID_PATTERN.test(value);
 }
-

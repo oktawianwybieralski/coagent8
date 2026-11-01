@@ -69,23 +69,27 @@ export async function consentFor(
   id: ProviderId,
   probe: AdapterProbeResult,
   model: string,
-  options: ConsentForOptions = {}
+  options: ConsentForOptions = {},
 ): Promise<ConsentDecision> {
-  const configObj = options.config
-    ? ('config' in options.config ? options.config.config : options.config)
-    : loadConfig();
+  const configObj = options.config ? ('config' in options.config ? options.config.config : options.config) : loadConfig();
   const settings = configObj.governance;
   let defaultModel: string | undefined;
   if (options.defaultModel !== undefined) {
     defaultModel = options.defaultModel === null ? undefined : options.defaultModel;
   } else {
-    try { defaultModel = (await selectModel(id, probe, {}, { config: options.config, context: options.context })).model; }
-    catch (err) {
+    try {
+      defaultModel = (await selectModel(id, probe, {}, { config: options.config, context: options.context })).model;
+    } catch (err) {
       // Without a known default there is no price reference; the other rules still apply.
       if (errorCodeOf(err) !== 'MODEL_UNAVAILABLE') throw err;
     }
   }
-  return decideConsent(model, defaultModel, await readPrices({ models: defaultModel ? [model, defaultModel] : [model], context: options.context }), settings);
+  return decideConsent(
+    model,
+    defaultModel,
+    await readPrices({ models: defaultModel ? [model, defaultModel] : [model], context: options.context }),
+    settings,
+  );
 }
 
 /**
@@ -109,16 +113,18 @@ export interface RevalidateConsentOptions {
 function listPriceOf(list: PriceList | undefined, model: string): { listPrice?: ListPrice } {
   const evidence = priceEvidence(list, model);
   if (evidence.match !== 'exact' || !evidence.source || !evidence.fetchedAt) return {};
-  return { listPrice: {
-    model,
-    inputUsdPerMTok: evidence.inputUsdPerMTok,
-    cachedInputUsdPerMTok: evidence.cachedInputUsdPerMTok,
-    cacheWriteUsdPerMTok: evidence.cacheWriteUsdPerMTok,
-    cacheWriteLongUsdPerMTok: evidence.cacheWriteLongUsdPerMTok,
-    tieredFromInputTokens: evidence.tieredFromInputTokens,
-    outputUsdPerMTok: evidence.outputUsdPerMTok,
-    source: `${evidence.source} ${evidence.fetchedAt.slice(0, 10)}`,
-  } };
+  return {
+    listPrice: {
+      model,
+      inputUsdPerMTok: evidence.inputUsdPerMTok,
+      cachedInputUsdPerMTok: evidence.cachedInputUsdPerMTok,
+      cacheWriteUsdPerMTok: evidence.cacheWriteUsdPerMTok,
+      cacheWriteLongUsdPerMTok: evidence.cacheWriteLongUsdPerMTok,
+      tieredFromInputTokens: evidence.tieredFromInputTokens,
+      outputUsdPerMTok: evidence.outputUsdPerMTok,
+      source: `${evidence.source} ${evidence.fetchedAt.slice(0, 10)}`,
+    },
+  };
 }
 
 /**
@@ -157,15 +163,15 @@ export async function revalidateConsent(
   probe: AdapterProbeResult,
   model: string,
   initialSnapshot: ConfigSnapshot,
-  options: RevalidateConsentOptions = {}
+  options: RevalidateConsentOptions = {},
 ): Promise<RevalidateConsentResult> {
   const currentSnapshot = options.currentConfig
-    ? ('provenance' in options.currentConfig && 'changeIdentity' in options.currentConfig
-        ? (options.currentConfig as ConfigSnapshot)
-        : { ...loadConfigSnapshot(), config: options.currentConfig as CoAgent8Config })
+    ? 'provenance' in options.currentConfig && 'changeIdentity' in options.currentConfig
+      ? (options.currentConfig as ConfigSnapshot)
+      : { ...loadConfigSnapshot(), config: options.currentConfig as CoAgent8Config }
     : isConfigModified(initialSnapshot)
-    ? loadConfigSnapshot()
-    : initialSnapshot;
+      ? loadConfigSnapshot()
+      : initialSnapshot;
 
   const run = options.effortRun;
   // A model the user denied while the approval was pending never runs, whatever was approved.
@@ -173,18 +179,13 @@ export async function revalidateConsent(
     throw new ToolError('POLICY_DENIED', modelDeniedMessage(model, run));
   }
 
-  const governanceChange = describeGovernanceChange(
-    initialSnapshot.config.governance,
-    currentSnapshot.config.governance,
-    model,
-    run
-  );
+  const governanceChange = describeGovernanceChange(initialSnapshot.config.governance, currentSnapshot.config.governance, model, run);
   if (governanceChange !== undefined) {
     throw new ToolError(
       'POLICY_DENIED',
       options.initialDecision?.ask
         ? consentInvalidatedMessage(model, governanceChange)
-        : `Execution requires approval for model '${model}' because policy changed before acquisition: ${governanceChange} Retry the request to approve under current conditions. ${NO_SUBSTITUTE}`
+        : `Execution requires approval for model '${model}' because policy changed before acquisition: ${governanceChange} Retry the request to approve under current conditions. ${NO_SUBSTITUTE}`,
     );
   }
 
@@ -216,7 +217,7 @@ export async function revalidateConsent(
         'PRICE_LIMIT',
         options.choosing
           ? `${rejected} The price list changed after the model was chosen; retry to choose again.`
-          : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${sessionHint}.`
+          : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${sessionHint}.`,
       );
     }
     priceNote = `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(options.outputPriceBelow.toFixed(4))} USD`;
@@ -231,25 +232,19 @@ export async function revalidateConsent(
       'POLICY_DENIED',
       consentInvalidatedMessage(
         model,
-        `Its output price increased from ${usd(initialPrice.output)} to ${usd(freshPrice.output)} per million tokens.`
-      )
+        `Its output price increased from ${usd(initialPrice.output)} to ${usd(freshPrice.output)} per million tokens.`,
+      ),
     );
   }
 
   // 3. Re-evaluate consent decision under fresh prices and current settings
-  const freshDecision = decideConsent(
-    model,
-    defaultModel,
-    freshPrices,
-    currentSnapshot.config.governance,
-    run
-  );
+  const freshDecision = decideConsent(model, defaultModel, freshPrices, currentSnapshot.config.governance, run);
 
   if (options.initialDecision) {
     if (!options.initialDecision.ask && freshDecision.ask) {
       throw new ToolError(
         'POLICY_DENIED',
-        `Execution requires approval for model '${model}' because conditions changed before acquisition: ${freshDecision.reason} Retry the request to approve under current conditions. ${NO_SUBSTITUTE}`
+        `Execution requires approval for model '${model}' because conditions changed before acquisition: ${freshDecision.reason} Retry the request to approve under current conditions. ${NO_SUBSTITUTE}`,
       );
     }
     if (options.initialDecision.ask) {
@@ -258,12 +253,12 @@ export async function revalidateConsent(
           'POLICY_DENIED',
           consentInvalidatedMessage(
             model,
-            `Governance basis changed from '${options.initialDecision.basis}' to '${freshDecision.basis}'. ${freshDecision.reason}`
-          )
+            `Governance basis changed from '${options.initialDecision.basis}' to '${freshDecision.basis}'. ${freshDecision.reason}`,
+          ),
         );
       }
       if (freshDecision.basis === 'relative') {
-        const refPrice = (defaultModel && freshPrices) ? findPrice(freshPrices, defaultModel) : undefined;
+        const refPrice = defaultModel && freshPrices ? findPrice(freshPrices, defaultModel) : undefined;
         if (
           refPrice &&
           freshPrice &&
@@ -279,8 +274,8 @@ export async function revalidateConsent(
               'POLICY_DENIED',
               consentInvalidatedMessage(
                 model,
-                `Relative price ratio increased from ${Number(initialRatio.toFixed(1))}x to ${Number(freshRatio.toFixed(1))}x.`
-              )
+                `Relative price ratio increased from ${Number(initialRatio.toFixed(1))}x to ${Number(freshRatio.toFixed(1))}x.`,
+              ),
             );
           }
         }

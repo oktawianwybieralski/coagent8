@@ -1,0 +1,20 @@
+# Markdown keeps its hand-written layout (owner decision 2026-10-31): aligned
+# tables would rewrite every row whenever a column widens.
+*.md
+
+# Generated files (Prettier also skips everything .gitignore lists).
+package-lock.json
+CHANGELOG.md
+
+# Verbatim copy of the shared agent standards, checked against
+# .agents/standards.lock.json; it changes only through agent-standards.mjs sync.
+.agents/rules/core/
+.agents/standards/
+
+# Verbatim Claude Code CLI output recorded for the fixtures.
+tests/fixtures/claude-cli/recordings/
+
+# Local editor and agent settings, which are not tracked.
+.vscode/
+.claude/
+.local/

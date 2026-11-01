@@ -36,8 +36,18 @@ import { isValidModelIdentifier } from '../../models/identifier.js';
  * all but `multi_agent_v2` by default and ignores names it does not know.
  */
 export const CODEX_DISABLED_FEATURES = [
-  'apps', 'plugins', 'remote_plugin', 'browser_use', 'browser_use_external', 'computer_use', 'in_app_browser',
-  'skill_mcp_dependency_install', 'tool_suggest', 'hooks', 'multi_agent', 'multi_agent_v2',
+  'apps',
+  'plugins',
+  'remote_plugin',
+  'browser_use',
+  'browser_use_external',
+  'computer_use',
+  'in_app_browser',
+  'skill_mcp_dependency_install',
+  'tool_suggest',
+  'hooks',
+  'multi_agent',
+  'multi_agent_v2',
 ] as const;
 
 /** The sandbox of a Codex turn per execution profile: the requested mode and the type the server must report. */
@@ -71,9 +81,11 @@ const CODEX_WORKSPACE_WRITE_CONFIG = [
 export function codexAppServerArgs(profile: ExecutionProfile = 'read-only'): string[] {
   return [
     'app-server',
-    '-c', `sandbox_mode="${CODEX_SANDBOX[profile].mode}"`,
+    '-c',
+    `sandbox_mode="${CODEX_SANDBOX[profile].mode}"`,
     ...(profile === 'workspace-write' ? CODEX_WORKSPACE_WRITE_CONFIG.flatMap(setting => ['-c', setting]) : []),
-    '-c', 'approval_policy="never"',
+    '-c',
+    'approval_policy="never"',
     ...(process.platform === 'win32' ? ['-c', 'windows.sandbox="unelevated"', '-c', 'allow_login_shell=false'] : []),
     ...CODEX_DISABLED_FEATURES.flatMap(feature => ['-c', `features.${feature}=false`]),
   ];
@@ -94,7 +106,8 @@ export function codexLaunchEnvironment(env: NodeJS.ProcessEnv, platform: NodeJS.
   const localAppData = name('LOCALAPPDATA');
   if (!pathKey || !localAppData || !env[localAppData]) return env;
   const aliases = path.win32.join(env[localAppData]!, 'Microsoft', 'WindowsApps').toLowerCase();
-  const kept = (env[pathKey] || '').split(';')
+  const kept = (env[pathKey] || '')
+    .split(';')
     .filter(entry => path.win32.normalize(entry.trim()).replace(/\\+$/, '').toLowerCase() !== aliases);
   return { ...env, [pathKey]: kept.join(';') };
 }
@@ -115,13 +128,16 @@ export function codexSandboxMismatch(result: Record<string, unknown>, profile: E
   if (result.approvalPolicy !== 'never') return 'Codex did not confirm that approvals are disabled.';
   if (profile === 'read-only') return null;
   if (sandbox.networkAccess !== false) return 'Codex did not confirm a workspace-write sandbox without network access.';
-  if (sandbox.excludeTmpdirEnvVar !== true || sandbox.excludeSlashTmp !== true) return 'Codex did not confirm a workspace-write sandbox without temporary write roots.';
-  if (typeof result.cwd !== 'string' || canonicalPath(result.cwd) !== canonicalPath(cwd)) return 'Codex reported another working directory for the thread.';
+  if (sandbox.excludeTmpdirEnvVar !== true || sandbox.excludeSlashTmp !== true)
+    return 'Codex did not confirm a workspace-write sandbox without temporary write roots.';
+  if (typeof result.cwd !== 'string' || canonicalPath(result.cwd) !== canonicalPath(cwd))
+    return 'Codex reported another working directory for the thread.';
   const roots = sandbox.writableRoots;
   if (!Array.isArray(roots)) return 'Codex did not report the writable roots of the sandbox.';
   for (const root of roots) {
     const relative = typeof root === 'string' && path.isAbsolute(root) ? path.relative(canonicalPath(cwd), canonicalPath(root)) : null;
-    if (relative === null || relative.startsWith('..') || path.isAbsolute(relative)) return 'Codex reported a writable root outside the workspace.';
+    if (relative === null || relative.startsWith('..') || path.isAbsolute(relative))
+      return 'Codex reported a writable root outside the workspace.';
   }
   return null;
 }
@@ -143,7 +159,7 @@ const REQUEST = { initialize: 1, thread: 2, turn: 3, interrupt: 4, config: 5, fe
 const ISOLATION_REQUESTS: readonly unknown[] = [REQUEST.config, REQUEST.features, REQUEST.mcpStatus];
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 function typed(code: ExecutionError['code'], message: string): ToolError {
   return new ToolError(code, message);
@@ -216,7 +232,8 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
   const profile = options.profile ?? 'read-only';
   let channel: StdinChannel | undefined;
   let prompt = '';
-  let interruptRequested = false, interruptSent = false;
+  let interruptRequested = false,
+    interruptSent = false;
   let warnedRequest = false;
   let resolvedModel: string | undefined;
   let threadId: string | undefined;
@@ -224,9 +241,18 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
 
   const send = (message: Record<string, unknown>) => channel?.send(message);
   // Every failure ends the server: no turn is left running after the run stops.
-  const fail = (error: Error): never => { channel?.close(); throw error; };
+  const fail = (error: Error): never => {
+    channel?.close();
+    throw error;
+  };
   // An isolation check that throws ends the server like any other failure.
-  const checked = <T>(check: () => T): T => { try { return check(); } catch (err) { return fail(err as Error); } };
+  const checked = <T>(check: () => T): T => {
+    try {
+      return check();
+    } catch (err) {
+      return fail(err as Error);
+    }
+  };
   function sendInterrupt() {
     const { threadId, turnId } = collector.snapshot();
     if (interruptSent || !threadId || !turnId) return;
@@ -241,12 +267,19 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
   }
   function onConfig(result: unknown) {
     const servers = checked(() => configuredCodexMcpServers(result));
-    const thread: Record<string, unknown> = { model: options.model, cwd: options.cwd, approvalPolicy: 'never', sandbox: CODEX_SANDBOX[profile].mode };
+    const thread: Record<string, unknown> = {
+      model: options.model,
+      cwd: options.cwd,
+      approvalPolicy: 'never',
+      sandbox: CODEX_SANDBOX[profile].mode,
+    };
     if (servers.length) thread.config = { mcp_servers: Object.fromEntries(servers.map(name => [name, { enabled: false }])) };
-    send(options.threadId
-      // `excludeTurns` keeps the response from carrying the whole thread history.
-      ? { id: REQUEST.thread, method: 'thread/resume', params: { ...thread, threadId: options.threadId, excludeTurns: true } }
-      : { id: REQUEST.thread, method: 'thread/start', params: thread });
+    send(
+      options.threadId
+        ? // `excludeTurns` keeps the response from carrying the whole thread history.
+          { id: REQUEST.thread, method: 'thread/resume', params: { ...thread, threadId: options.threadId, excludeTurns: true } }
+        : { id: REQUEST.thread, method: 'thread/start', params: thread },
+    );
   }
   function requestPage(id: typeof REQUEST.features | typeof REQUEST.mcpStatus, cursor: string | null) {
     if (++checkPages > MAX_CHECK_PAGES) fail(isolationFailure('too many result pages.'));
@@ -271,10 +304,20 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
   }
   function onMcpStatus(result: unknown) {
     const next = checked(() => checkCodexMcpStatusPage(result));
-    if (next) { requestPage(REQUEST.mcpStatus, next); return; }
+    if (next) {
+      requestPage(REQUEST.mcpStatus, next);
+      return;
+    }
     collector.initialize(threadId as string);
-    send({ id: REQUEST.turn, method: 'turn/start', params: {
-      threadId, input: [{ type: 'text', text: prompt, text_elements: [] }], effort: options.effort } });
+    send({
+      id: REQUEST.turn,
+      method: 'turn/start',
+      params: {
+        threadId,
+        input: [{ type: 'text', text: prompt, text_elements: [] }],
+        effort: options.effort,
+      },
+    });
   }
   function onTurn(result: Record<string, unknown>) {
     const id = record(result.turn)?.id;
@@ -290,7 +333,8 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     }
     if (error) {
       const text = typeof error.message === 'string' ? error.message : 'Codex rejected a request.';
-      if (id === REQUEST.thread && options.threadId && /no rollout found|not found/i.test(text)) fail(typed('SESSION_INVALID', 'Codex thread not found.'));
+      if (id === REQUEST.thread && options.threadId && /no rollout found|not found/i.test(text))
+        fail(typed('SESSION_INVALID', 'Codex thread not found.'));
       // A server without these requests (not verified on versions before 0.162) cannot show the turn's tools.
       if (ISOLATION_REQUESTS.includes(id)) fail(isolationFailure(`the server rejected the check (${text.slice(0, 120)}).`));
       const classified = classifyCodexTurnError({ message: text }, 'Codex rejected a request.');
@@ -311,22 +355,34 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     start(opened, input) {
       channel = opened;
       prompt = input;
-      send({ id: REQUEST.initialize, method: 'initialize', params: {
-        clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION },
-        // `excludeTurns` on `thread/resume` is an experimental field.
-        capabilities: { experimentalApi: true, requestAttestation: false } } });
+      send({
+        id: REQUEST.initialize,
+        method: 'initialize',
+        params: {
+          clientInfo: { name: BRAND.PACKAGE_NAME, title: BRAND.NAME, version: BRAND.SERVER_VERSION },
+          // `excludeTurns` on `thread/resume` is an experimental field.
+          capabilities: { experimentalApi: true, requestAttestation: false },
+        },
+      });
     },
     interrupt(opened) {
       interruptRequested = true;
       // Before the turn exists there is nothing to interrupt; EOF ends the server.
-      if (!collector.snapshot().turnId) { opened.close(); return; }
+      if (!collector.snapshot().turnId) {
+        opened.close();
+        return;
+      }
       sendInterrupt();
     },
   };
 
   function line(raw: string) {
     let parsed: unknown;
-    try { parsed = JSON.parse(raw); } catch { fail(typed('PROTOCOL_ERROR', 'Invalid Codex JSON-RPC record.')); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      fail(typed('PROTOCOL_ERROR', 'Invalid Codex JSON-RPC record.'));
+    }
     const message = record(parsed);
     if (!message) fail(typed('PROTOCOL_ERROR', 'Invalid Codex JSON-RPC message.'));
     const msg = message as Record<string, unknown>;
@@ -334,15 +390,24 @@ export function createCodexAppSession(options: CodexAppSessionOptions) {
     if (hasId && typeof msg.method === 'string') {
       if (!warnedRequest) {
         warnedRequest = true;
-        options.onEvent?.({ type: 'warning', message: `Declined a Codex '${msg.method.slice(0, 64)}' request; ${BRAND.NAME} grants no approvals.` });
+        options.onEvent?.({
+          type: 'warning',
+          message: `Declined a Codex '${msg.method.slice(0, 64)}' request; ${BRAND.NAME} grants no approvals.`,
+        });
       }
-      send({ id: msg.id, error: { code: -32601, message: `${BRAND.NAME} runs Codex without approvals and does not answer server requests.` } });
+      send({
+        id: msg.id,
+        error: { code: -32601, message: `${BRAND.NAME} runs Codex without approvals and does not answer server requests.` },
+      });
       return;
     }
     if (hasId) onResponse(msg.id, msg);
     else if (typeof msg.method === 'string') {
-      try { collector.notify(msg.method, msg.params); }
-      finally { if (collector.isTerminal()) channel?.close(); }
+      try {
+        collector.notify(msg.method, msg.params);
+      } finally {
+        if (collector.isTerminal()) channel?.close();
+      }
     } else fail(typed('PROTOCOL_ERROR', 'Invalid Codex JSON-RPC message.'));
   }
 

@@ -35,7 +35,19 @@
 
 import { randomUUID } from 'node:crypto';
 import { loadConfigSnapshot } from '../config.js';
-import { acquireAndResolveSession, releaseSessionTurn, updateSession, pruneExpiredSessions, setExecutionCanceller, assertSessionNotExpired, findCompletedReview, getSession, isProcessAlive, MAX_REVIEW_REASON_CHARS, type CancelOutcome } from '../sessions/session.js';
+import {
+  acquireAndResolveSession,
+  releaseSessionTurn,
+  updateSession,
+  pruneExpiredSessions,
+  setExecutionCanceller,
+  assertSessionNotExpired,
+  findCompletedReview,
+  getSession,
+  isProcessAlive,
+  MAX_REVIEW_REASON_CHARS,
+  type CancelOutcome,
+} from '../sessions/session.js';
 import { createHistoryWriter } from '../sessions/history/index.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { truncateToByteLength, BufferLimitError } from './runtime/stream.js';
@@ -49,7 +61,15 @@ import { createExecutionBudget } from './runtime/budget.js';
 import { parseResetTimestamp } from '../backends/rate-limit.js';
 import { stripAnsi } from './cli-output.js';
 import { evaluateStateEnvelopeGate, type ReviewGateContext, type StateEnvelopeEvaluation } from '../review/index.js';
-import type { TaskExecutionResult, ExecutionMeta, TimingObserver, MonotonicClock, ExecutionTrace, ExecutionBudget, BackendReadContext } from '../contracts/execution.js';
+import type {
+  TaskExecutionResult,
+  ExecutionMeta,
+  TimingObserver,
+  MonotonicClock,
+  ExecutionTrace,
+  ExecutionBudget,
+  BackendReadContext,
+} from '../contracts/execution.js';
 import { createPhaseTracker } from './runtime/timing.js';
 import {
   prepareTask,
@@ -132,7 +152,7 @@ async function cancelSessionExecution(handle: string): Promise<CancelOutcome> {
   const entry = activeSessionAborts.get(handle);
   if (!entry) return 'none';
   entry.abort();
-  return await entry.wait() ? 'settled' : 'timed_out';
+  return (await entry.wait()) ? 'settled' : 'timed_out';
 }
 /** Composes session cancellation explicitly at the server/application lifecycle owner. */
 export function composeExecutionCancellation(): void {
@@ -166,7 +186,7 @@ export async function executeTask(
   cwd: string,
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: TaskOptions = {}
+  options: TaskOptions = {},
 ): Promise<TaskExecutionResult> {
   const task = executeTaskInternal(prompt, publicInput, args, cwd, abortSignal, onProgress, options);
   activeExecutionTasks.add(task);
@@ -184,14 +204,17 @@ async function executeTaskInternal(
   cwd: string,
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: TaskOptions = {}
+  options: TaskOptions = {},
 ): Promise<TaskExecutionResult> {
   const isOwnedBudget = !options.budget && !options.context?.budget;
-  const budget = options.budget ?? options.context?.budget ?? createExecutionBudget({
-    totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
-    parentSignal: abortSignal ?? undefined,
-    clock: options.clock,
-  });
+  const budget =
+    options.budget ??
+    options.context?.budget ??
+    createExecutionBudget({
+      totalBudgetMs: typeof args.timeout_ms === 'number' && Number.isFinite(args.timeout_ms) ? args.timeout_ms : undefined,
+      parentSignal: abortSignal ?? undefined,
+      clock: options.clock,
+    });
 
   const executionContext: BackendReadContext = {
     ...options.context,
@@ -280,11 +303,14 @@ async function executeTaskInternal(
       try {
         previous = findCompletedReview(cwd, prepared.backend.id, reviewIdentity);
       } catch (error) {
-        repeatWarnings.push(`Repeat-review check unavailable, so this review ran: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`);
+        repeatWarnings.push(
+          `Repeat-review check unavailable, so this review ran: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`,
+        );
       }
       if (previous) {
         const trace = emitTrace();
-        const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
+        const totalMs =
+          typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
         let explicitSession: ReturnType<typeof getSession> = null;
         if (prepared.previousSession) {
           try {
@@ -320,7 +346,11 @@ async function executeTaskInternal(
     }
 
     const consentHandle = startControllerPhase('consent');
-    const { priceNote, listPrice, warnings: consentWarnings } = await prepared.confirmConsent({
+    const {
+      priceNote,
+      listPrice,
+      warnings: consentWarnings,
+    } = await prepared.confirmConsent({
       askConsent: options.askConsent,
       abortSignal,
       budget,
@@ -361,10 +391,14 @@ async function executeTaskInternal(
       acqHandle.end();
       throw err;
     }
-    const session = acquired.session, handle = session.sessionHandle, token = session.turnToken!;
+    const session = acquired.session,
+      handle = session.sessionHandle,
+      token = session.turnToken!;
 
     let notifySettled!: () => void;
-    const settled = new Promise<void>(resolve => { notifySettled = resolve; });
+    const settled = new Promise<void>(resolve => {
+      notifySettled = resolve;
+    });
     const cancelController = new AbortController();
     let callerAbortListenerAdded = false;
     const onCallerAbort = () => cancelController.abort();
@@ -393,9 +427,13 @@ async function executeTaskInternal(
           try {
             return await Promise.race([
               settled.then(() => true),
-              new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5000); }),
+              new Promise<boolean>(resolve => {
+                timer = setTimeout(() => resolve(false), 5000);
+              }),
             ]);
-          } finally { clearTimeout(timer); }
+          } finally {
+            clearTimeout(timer);
+          }
         },
       };
       activeSessionAborts.set(handle, abortEntry);
@@ -408,7 +446,10 @@ async function executeTaskInternal(
       const writer = writerFactory(handle, cwd, backend.id, randomUUID(), { context: sessionContext });
       acqHandle.end();
 
-      const started = Date.now(); let toolCount = 0, historyError: Error | undefined, sawPublicMessage = false;
+      const started = Date.now();
+      let toolCount = 0,
+        historyError: Error | undefined,
+        sawPublicMessage = false;
       let lastEvent = Date.now();
       let lastPhase = 'Initialization';
       const adapterWarnings = new Set<string>();
@@ -464,7 +505,11 @@ async function executeTaskInternal(
             report(`Operation in progress (${lastPhase}, ${totalElapsedSec}s elapsed)...`);
           }
         }, 5000);
-        flushTimer = setInterval(() => { void writer.flush().catch(err => { if (!historyError) historyError = err; }); }, 250);
+        flushTimer = setInterval(() => {
+          void writer.flush().catch(err => {
+            if (!historyError) historyError = err;
+          });
+        }, 250);
 
         const remainingExecutionMs = budget.remainingExecutionMs();
         if (remainingExecutionMs <= 0 || budget.isExecutionExpired() || budget.isTimedOut()) {
@@ -475,41 +520,82 @@ async function executeTaskInternal(
         }
 
         onBudgetAbort = () => {
-          cancelController.abort(budget.abortReason() ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`));
+          cancelController.abort(
+            budget.abortReason() ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`),
+          );
         };
         budgetAbortListenerAdded = false;
         if (budget.executionSignal.aborted) {
-          cancelController.abort(budget.abortReason() ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`));
+          cancelController.abort(
+            budget.abortReason() ?? new ToolError('TIMEOUT', `Execution deadline exceeded (${budget.totalBudgetMs} ms).`),
+          );
         } else {
           budget.executionSignal.addEventListener('abort', onBudgetAbort, { once: true });
           budgetAbortListenerAdded = true;
         }
 
-        const executionOptions: ExecutionOptions = { cwd, model, reasoningEffort, nativeSessionId: session.threadId, threadId: session.threadId,
-          timeoutMs: remainingExecutionMs, abortSignal: cancelController.signal, onEvent: receive, profile: options.profile ?? 'read-only' };
+        const executionOptions: ExecutionOptions = {
+          cwd,
+          model,
+          reasoningEffort,
+          nativeSessionId: session.threadId,
+          threadId: session.threadId,
+          timeoutMs: remainingExecutionMs,
+          abortSignal: cancelController.signal,
+          onEvent: receive,
+          profile: options.profile ?? 'read-only',
+        };
         const raw: ExecutionResult = await backend.adapter.execute(prompt, executionOptions);
         // Validate terminal results defensively, including adapters supplied at runtime.
         const validStatus = ['completed', 'failed', 'cancelled', 'timed_out'].includes(raw.status || '');
         const contradictory = raw.status === 'completed' && (raw.isError || !!raw.error);
         const protocolTrusted = validStatus && !contradictory;
-        const error = raw.error || (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error) ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false } : undefined);
+        const error =
+          raw.error ||
+          (!validStatus || contradictory || (raw.status !== 'completed' && !raw.error)
+            ? { code: 'PROTOCOL_ERROR' as const, message: 'Adapter returned a missing or inconsistent terminal result.', retryable: false }
+            : undefined);
         if (Buffer.byteLength(raw.output || '') > 1024 * 1024) throw new BufferLimitError('Public response exceeds 1 MiB.');
-        result = { ...raw, status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed', isError: !!error || raw.status !== 'completed',
-          error, truncated: !!raw.truncated,
+        result = {
+          ...raw,
+          status: error && raw.status !== 'cancelled' && raw.status !== 'timed_out' ? 'failed' : raw.status || 'failed',
+          isError: !!error || raw.status !== 'completed',
+          error,
+          truncated: !!raw.truncated,
           // Only a boolean is evidence of the stop reason; anything else means it was not reported.
           lengthLimited: typeof raw.lengthLimited === 'boolean' ? raw.lengthLimited : undefined,
-          continuationAvailable: protocolTrusted && !!raw.continuationAvailable && !!(raw.nativeSessionId || raw.threadId || session.threadId) && error?.code !== 'SESSION_INVALID' && error?.code !== 'SANDBOX_UNAVAILABLE', output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '' };
+          continuationAvailable:
+            protocolTrusted &&
+            !!raw.continuationAvailable &&
+            !!(raw.nativeSessionId || raw.threadId || session.threadId) &&
+            error?.code !== 'SESSION_INVALID' &&
+            error?.code !== 'SANDBOX_UNAVAILABLE',
+          output: protocolTrusted ? redactCredentialFormats(raw.output || '') : '',
+        };
       } catch (err) {
         const code = errorCodeOf(err);
-        result = { isError: true, status: 'failed', output: '', error: { code, message: redactDiagnostic((err as Error).message), retryable: false }, truncated: code === 'BUFFER_LIMIT', continuationAvailable: false };
+        result = {
+          isError: true,
+          status: 'failed',
+          output: '',
+          error: { code, message: redactDiagnostic((err as Error).message), retryable: false },
+          truncated: code === 'BUFFER_LIMIT',
+          continuationAvailable: false,
+        };
       } finally {
         execHandle.end();
         if (budgetAbortListenerAdded && onBudgetAbort) {
           budget.executionSignal.removeEventListener('abort', onBudgetAbort);
           budgetAbortListenerAdded = false;
         }
-        if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; }
-        if (flushTimer) { clearInterval(flushTimer); flushTimer = undefined; }
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = undefined;
+        }
+        if (flushTimer) {
+          clearInterval(flushTimer);
+          flushTimer = undefined;
+        }
         if (callerAbortListenerAdded && abortSignal) {
           abortSignal.removeEventListener('abort', onCallerAbort);
           callerAbortListenerAdded = false;
@@ -517,7 +603,13 @@ async function executeTaskInternal(
       }
 
       const finHandle = startControllerPhase('finalization');
-      const warnings: string[] = [...(options.warnings || []), ...(backend.warnings || []), ...repeatWarnings, ...consentWarnings, ...adapterWarnings];
+      const warnings: string[] = [
+        ...(options.warnings || []),
+        ...(backend.warnings || []),
+        ...repeatWarnings,
+        ...consentWarnings,
+        ...adapterWarnings,
+      ];
       const rawExecutionError = result.error;
 
       // Post-execution bookkeeping: session metadata (AUD-P1-3)
@@ -526,13 +618,17 @@ async function executeTaskInternal(
         const raw = result as ExecutionResult;
         const protocolTrusted = !result.error || result.error.code !== 'PROTOCOL_ERROR';
         if (protocolTrusted && (raw.nativeSessionId || raw.threadId)) {
-          await doUpdateSession(handle, {
-            threadId: raw.nativeSessionId || raw.threadId || null,
-            model: raw.model || model,
-            reasoningEffort,
-            cliVersion: backend.probe.version,
-            safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-${options.profile ?? 'read-only'}` : undefined,
-          }, token);
+          await doUpdateSession(
+            handle,
+            {
+              threadId: raw.nativeSessionId || raw.threadId || null,
+              model: raw.model || model,
+              reasoningEffort,
+              cliVersion: backend.probe.version,
+              safetyProfile: backend.id === 'agy' ? `agy-${backend.probe.version}-${options.profile ?? 'read-only'}` : undefined,
+            },
+            token,
+          );
         }
         if (result.error?.code === 'SESSION_INVALID') {
           await doUpdateSession(handle, { state: 'invalidated', threadId: null, lastErrorCode: result.error.code }, token);
@@ -586,8 +682,9 @@ async function executeTaskInternal(
 
       // Quota cooldown update: exactly one write per rate-limited or completed turn
       try {
-        const rateErr = (result.error?.code === 'RATE_LIMITED' ? result.error : undefined)
-          ?? (rawExecutionError?.code === 'RATE_LIMITED' ? rawExecutionError : undefined);
+        const rateErr =
+          (result.error?.code === 'RATE_LIMITED' ? result.error : undefined) ??
+          (rawExecutionError?.code === 'RATE_LIMITED' ? rawExecutionError : undefined);
         if (rateErr) {
           const reset = parseResetTimestamp(rateErr.message);
           await recordQuotaCooldown(backend.id, reset?.cooldownMs, rateErr.message.slice(0, 200) || undefined);
@@ -603,7 +700,9 @@ async function executeTaskInternal(
         try {
           await recordTurnSuccess(backend.id, result.model || model || '', executionContext);
         } catch (error) {
-          warnings.push(`Readiness evidence not recorded: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);
+          warnings.push(
+            `Readiness evidence not recorded: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`,
+          );
         }
       }
 
@@ -645,13 +744,10 @@ async function executeTaskInternal(
             reason: result.error?.message || 'Execution error',
           };
         } else {
-          review = evaluateStateEnvelopeGate(
-            stripAnsi(result.output || '').trim(),
-            result.truncated,
-            true,
-            reviewContext,
-            { completed: result.status === 'completed', lengthLimited: result.lengthLimited },
-          );
+          review = evaluateStateEnvelopeGate(stripAnsi(result.output || '').trim(), result.truncated, true, reviewContext, {
+            completed: result.status === 'completed',
+            lengthLimited: result.lengthLimited,
+          });
         }
       }
       // Only a completed turn whose input stayed unchanged identifies a review to refuse repeating.
@@ -660,24 +756,38 @@ async function executeTaskInternal(
       // defaults to incomplete input, recording effectiveCoverage: PARTIAL so retries are permitted.
       const isInputComplete = Boolean(!reviewContext || reviewContext.inputComplete === true);
       const effectiveCoverage = isInputComplete ? review?.coverage : 'PARTIAL';
-      if (reviewIdentity && review?.judged && review.verdict !== 'NOT_APPLICABLE' && !snapshotError && !result.isError && !result.error && result.status === 'completed') {
+      if (
+        reviewIdentity &&
+        review?.judged &&
+        review.verdict !== 'NOT_APPLICABLE' &&
+        !snapshotError &&
+        !result.isError &&
+        !result.error &&
+        result.status === 'completed'
+      ) {
         try {
-          await doUpdateSession(handle, { lastReview: {
-            ...reviewIdentity,
-            verdict: review.verdict,
-            ...(effectiveCoverage ? { coverage: effectiveCoverage } : {}),
-            ...(review.reason ? { reason: review.reason.slice(0, MAX_REVIEW_REASON_CHARS) } : {}),
-            completedAt: new Date().toISOString(),
-          } }, token);
+          await doUpdateSession(
+            handle,
+            {
+              lastReview: {
+                ...reviewIdentity,
+                verdict: review.verdict,
+                ...(effectiveCoverage ? { coverage: effectiveCoverage } : {}),
+                ...(review.reason ? { reason: review.reason.slice(0, MAX_REVIEW_REASON_CHARS) } : {}),
+                completedAt: new Date().toISOString(),
+              },
+            },
+            token,
+          );
         } catch (error) {
-          warnings.push(`Review outcome not recorded, so an unchanged repeat will run again: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`);
+          warnings.push(
+            `Review outcome not recorded, so an unchanged repeat will run again: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 256)}`,
+          );
         }
       }
       finHandle.end();
       const trace = emitTrace();
-      const totalMs = typeof budget.elapsedMs === 'function'
-        ? Math.max(trace.totalDurationMs, budget.elapsedMs())
-        : trace.totalDurationMs;
+      const totalMs = typeof budget.elapsedMs === 'function' ? Math.max(trace.totalDurationMs, budget.elapsedMs()) : trace.totalDurationMs;
       const durationMs = totalMs;
 
       if (observerPromise) {

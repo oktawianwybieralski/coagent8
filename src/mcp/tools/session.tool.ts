@@ -115,7 +115,8 @@ export async function handleCancelSession(args: { session_handle: string; worksp
 }
 
 export async function handleCloseSession(args: ToolArguments, workspace = resolveWorkspacePath(args.workspace_path)) {
-  if (typeof args.session_handle !== 'string' || !args.session_handle) throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "close".');
+  if (typeof args.session_handle !== 'string' || !args.session_handle)
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "close".');
   const closed = await closeSession(args.session_handle, workspace);
   if (args.delete_history) await deleteHistory(args.session_handle, workspace);
   return {
@@ -139,7 +140,10 @@ export async function handleCloseSession(args: ToolArguments, workspace = resolv
  * lifecycle events (such as `turn_started` and `tool_started`), so gaps in
  * `sequence` numbering do not indicate lost events.
  */
-export async function handleSessionHistory(args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number }, workspace = resolveWorkspacePath(args.workspace_path)) {
+export async function handleSessionHistory(
+  args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number },
+  workspace = resolveWorkspacePath(args.workspace_path),
+) {
   const history = await sessionHistory(args.session_handle, workspace, args.cursor, args.limit);
   if (!history.events.length) {
     return { content: [{ type: 'text' as const, text: 'No public events found on this page.' }], structuredContent: history };
@@ -187,4 +191,3 @@ export async function handleSessionHistory(args: { session_handle: string; works
   const text = sections.filter(Boolean).join('\n\n').trim();
   return { content: [{ type: 'text' as const, text: text || 'No public events on this page.' }], structuredContent: history };
 }
-

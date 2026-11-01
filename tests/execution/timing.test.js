@@ -14,17 +14,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  PhaseTracker,
-  createPhaseTracker,
-  computeMergedIntervalsDuration,
-} = require('../../src/execution/runtime/timing.ts');
+const { PhaseTracker, createPhaseTracker, computeMergedIntervalsDuration } = require('../../src/execution/runtime/timing.ts');
 
 function createFakeClock(initialTime = 1000) {
   let current = initialTime;
   return {
     now: () => current,
-    advance: (ms) => {
+    advance: ms => {
       current += ms;
       return current;
     },
@@ -42,7 +38,7 @@ test('computeMergedIntervalsDuration merges intervals correctly', () => {
       { start: 10, end: 50 },
       { start: 20, end: 30 },
     ]),
-    40
+    40,
   );
 
   // Overlapping intervals
@@ -51,7 +47,7 @@ test('computeMergedIntervalsDuration merges intervals correctly', () => {
       { start: 10, end: 50 },
       { start: 30, end: 70 },
     ]),
-    60
+    60,
   );
 
   // Disjoint intervals
@@ -60,7 +56,7 @@ test('computeMergedIntervalsDuration merges intervals correctly', () => {
       { start: 10, end: 30 },
       { start: 50, end: 70 },
     ]),
-    40
+    40,
   );
 
   // Multiple mixed intervals
@@ -71,7 +67,7 @@ test('computeMergedIntervalsDuration merges intervals correctly', () => {
       { start: 70, end: 90 },
       { start: 80, end: 100 },
     ]),
-    70 // (50 - 10) + (100 - 70) = 40 + 30 = 70
+    70, // (50 - 10) + (100 - 70) = 40 + 30 = 70
   );
 });
 
@@ -301,4 +297,3 @@ test('timing primitive: sanitizes non-finite limits to safe defaults', () => {
   const trace = tracker.complete();
   assert.equal(trace.phases.valid_phase, 20);
 });
-

@@ -107,7 +107,7 @@ test('confirmConsent: delayed reply after budget deadline throws TIMEOUT and doe
       assert.equal(err.code, 'TIMEOUT');
       assert.match(err.message, /Execution budget expired during waiting for user consent/);
       return true;
-    }
+    },
   );
 
   // Crucial check: approval must NOT have been saved into configuration
@@ -133,7 +133,7 @@ test('confirmConsent: caller abort signal during consent wait throws ABORTED and
       assert.equal(err.code, 'ABORTED');
       assert.match(err.message, /Request cancelled during waiting for user consent/);
       return true;
-    }
+    },
   );
 
   const currentConfig = loadConfig();
@@ -204,7 +204,7 @@ test('confirmConsent: conflicting response with approved: true and unanswered: t
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /The client closed the approval request for model 'gpt-expensive' without an answer/);
       return true;
-    }
+    },
   );
 
   assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Conflicting unanswered response must not remember approval');
@@ -223,7 +223,7 @@ test('confirmConsent: cancelled form (unanswered) throws POLICY_DENIED with unan
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /The client closed the approval request for model 'gpt-expensive' without an answer/);
       return true;
-    }
+    },
   );
 
   const currentConfig = loadConfig();
@@ -243,7 +243,7 @@ test('confirmConsent: user decline throws POLICY_DENIED with user did not approv
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /The user did not approve model 'gpt-expensive'/);
       return true;
-    }
+    },
   );
 
   const currentConfig = loadConfig();
@@ -264,7 +264,7 @@ test('confirmConsent: response identity mismatch (wrong model or backend) throws
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /Consent response mismatch: expected approval for model 'gpt-expensive' on codex/);
       return true;
-    }
+    },
   );
 
   // Mismatched backend
@@ -277,7 +277,7 @@ test('confirmConsent: response identity mismatch (wrong model or backend) throws
       assert.equal(err.code, 'POLICY_DENIED');
       assert.match(err.message, /Consent response mismatch: expected approval for model 'gpt-expensive' on codex/);
       return true;
-    }
+    },
   );
 
   const currentConfig = loadConfig();
@@ -308,7 +308,7 @@ test('executeTask: delayed consent reply past budget deadline blocks turn execut
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'TIMEOUT');
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when consent reply is delayed past deadline');
@@ -335,7 +335,7 @@ test('executeTask: abort signal during consent blocks turn execution and leaves 
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when consent is aborted');
@@ -374,7 +374,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
       await client.callTool({
         name: 'consult',
         arguments: { proposal: 'q', model: 'gpt-expensive', workspace_path: tempDir },
-      })
+      }),
     );
     assert.equal(cancelRes.error?.code, 'POLICY_DENIED');
     assert.match(cancelRes.error?.message, /without an answer/);
@@ -386,7 +386,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
       await client.callTool({
         name: 'consult',
         arguments: { proposal: 'q', model: 'gpt-expensive', workspace_path: tempDir },
-      })
+      }),
     );
     assert.equal(uncheckRes.error?.code, 'POLICY_DENIED');
     assert.match(uncheckRes.error?.message, /did not approve/);
@@ -398,7 +398,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
       await client.callTool({
         name: 'consult',
         arguments: { proposal: 'q', model: 'gpt-unknown', workspace_path: tempDir },
-      })
+      }),
     );
     assert.equal(approvedRes.answer, 'mcp-approved-answer');
     assert.equal(executedModel, 'gpt-unknown');
@@ -413,7 +413,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
       await client.callTool({
         name: 'consult',
         arguments: { proposal: 'q', model: 'gpt-expensive', workspace_path: tempDir },
-      })
+      }),
     );
     assert.equal(timeoutRes.error?.code, 'TIMEOUT');
     assert.match(timeoutRes.error?.message, /timed out/);
@@ -430,7 +430,7 @@ test('MCP server: binds elicitInput timeout to execution budget and cancels clea
         method: 'tools/call',
         params: { name: 'consult', arguments: { proposal: 'q', model: 'gpt-expensive', workspace_path: tempDir } },
       },
-      { signal: callAbort.signal }
+      { signal: callAbort.signal },
     );
     const abortRes = readResult(abortServerRes);
     assert.equal(abortRes.error?.code, 'ABORTED');
@@ -478,16 +478,22 @@ test('EXEC-001-T10b: price increase during consent wait invalidates approval, bl
     err => {
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'POLICY_DENIED');
-      assert.match(err.message, /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(
+        err.message,
+        /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i,
+      );
       assert.match(err.message, /Its output price increased from 10 USD to 35 USD per million tokens/i);
       assert.match(err.message, /Retry the request to approve under current conditions/i);
       assert.match(err.message, /Tell the user; switch to another model only if the user asks/i);
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when price increased during consent wait');
-  assert.ok(!loadConfig().governance.models.allow.includes('gpt-expensive'), 'Invalidated approval must never be remembered in models.allow');
+  assert.ok(
+    !loadConfig().governance.models.allow.includes('gpt-expensive'),
+    'Invalidated approval must never be remembered in models.allow',
+  );
 });
 
 test('EXEC-001-T10b: price change exceeding output_price_below during consent wait blocks turn with PRICE_LIMIT and does not remember approval', async () => {
@@ -530,7 +536,7 @@ test('EXEC-001-T10b: price change exceeding output_price_below during consent wa
       assert.match(err.message, /not below 20 USD/i);
       assert.match(err.message, /It was not replaced by another model; name one below the limit/i);
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when price exceeded output_price_below limit');
@@ -567,11 +573,14 @@ test('EXEC-001-T10b: adding model to models.ask during consent wait invalidates 
       assert.match(err.message, /'gpt-unknown' was added to governance\.models\.ask \(VS Code: CoAgent8: Manage Model Approvals\)/i);
       assert.match(err.message, /Retry the request to approve under current conditions/i);
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when model added to models.ask during wait');
-  assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'Approval invalidated by models.ask must not be remembered in models.allow');
+  assert.ok(
+    !loadConfig().governance.models.allow.includes('gpt-unknown'),
+    'Approval invalidated by models.ask must not be remembered in models.allow',
+  );
 });
 
 test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invalidates approval and blocks turn', async () => {
@@ -607,11 +616,14 @@ test('EXEC-001-T10b: changing askAbovePrice threshold during consent wait invali
     err => {
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'POLICY_DENIED');
-      assert.match(err.message, /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(
+        err.message,
+        /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i,
+      );
       assert.match(err.message, /governance.askAbovePrice (was lowered|changed) from 20 USD to 10 USD/i);
       assert.match(err.message, /Retry the request to approve under current conditions/i);
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when askAbovePrice changed during consent');
@@ -651,11 +663,14 @@ test('EXEC-001-T10b: changing priceMultiplier threshold during consent wait inva
     err => {
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'POLICY_DENIED');
-      assert.match(err.message, /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i);
+      assert.match(
+        err.message,
+        /The approval for model 'gpt-expensive' was invalidated because conditions changed while awaiting consent/i,
+      );
       assert.match(err.message, /governance.priceMultiplier (was lowered|changed) from 2 to 1.5/i);
       assert.match(err.message, /Retry the request to approve under current conditions/i);
       return true;
-    }
+    },
   );
 
   assert.equal(executionRan, false, 'Turn must never execute when priceMultiplier changed during consent');
@@ -766,44 +781,41 @@ test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing session
   await setupMockConfigAndAdapters();
 
   // Fresh turn guidance
-  await assert.rejects(
-    executeTask('prompt', 'summary', { model: 'gpt-expensive', output_price_below: 10 }, tempDir),
-    err => {
-      assert.ok(err instanceof ToolError);
-      assert.equal(err.code, 'PRICE_LIMIT');
-      assert.match(err.message, /or omit model/);
-      assert.ok(!err.message.includes('or start a new session'));
-      return true;
-    }
-  );
+  await assert.rejects(executeTask('prompt', 'summary', { model: 'gpt-expensive', output_price_below: 10 }, tempDir), err => {
+    assert.ok(err instanceof ToolError);
+    assert.equal(err.code, 'PRICE_LIMIT');
+    assert.match(err.message, /or omit model/);
+    assert.ok(!err.message.includes('or start a new session'));
+    return true;
+  });
 
   // Continuing session guidance during preparation
   const sessionHandle = 'syn_sess_cont_1';
   const sessionFile = path.join(tempDir, 'sessions', `${sessionHandle}.json`);
   fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-  fs.writeFileSync(sessionFile, JSON.stringify({
-    schemaVersion: 2,
-    sessionHandle,
-    backend: 'codex',
-    threadId: 'thread_cont',
-    workspace: tempDir,
-    model: 'gpt-expensive',
-    reasoningEffort: 'low',
-    activePid: null,
-    activeTurnAt: null,
-    createdAt: new Date().toISOString(),
-    lastUsedAt: new Date().toISOString(),
-  }));
-
-  await assert.rejects(
-    prepareTask({ session_handle: sessionHandle, output_price_below: 10 }, tempDir),
-    err => {
-      assert.ok(err instanceof ToolError);
-      assert.equal(err.code, 'PRICE_LIMIT');
-      assert.match(err.message, /or start a new session/);
-      return true;
-    }
+  fs.writeFileSync(
+    sessionFile,
+    JSON.stringify({
+      schemaVersion: 2,
+      sessionHandle,
+      backend: 'codex',
+      threadId: 'thread_cont',
+      workspace: tempDir,
+      model: 'gpt-expensive',
+      reasoningEffort: 'low',
+      activePid: null,
+      activeTurnAt: null,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+    }),
   );
+
+  await assert.rejects(prepareTask({ session_handle: sessionHandle, output_price_below: 10 }, tempDir), err => {
+    assert.ok(err instanceof ToolError);
+    assert.equal(err.code, 'PRICE_LIMIT');
+    assert.match(err.message, /or start a new session/);
+    return true;
+  });
 
   // Continuing session guidance during consent revalidation
   const { recordPrices } = require('../../src/models/store.ts');
@@ -834,7 +846,7 @@ test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing session
       assert.equal(err.code, 'PRICE_LIMIT');
       assert.match(err.message, /or start a new session/);
       return true;
-    }
+    },
   );
 
   // Fresh turn guidance during consent revalidation (when price exceeds limit during wait)
@@ -866,7 +878,7 @@ test('EXEC-001-T10b: PRICE_LIMIT retry guidance distinguishes continuing session
       assert.match(err.message, /or omit model/);
       assert.ok(!err.message.includes('or start a new session'));
       return true;
-    }
+    },
   );
 });
 
@@ -951,14 +963,11 @@ test('EXEC-001-T10c: executeTask preserves valid approval when remember storage 
     fs.promises.rename = originalRename;
 
     // Subsequent independent call without askConsent requires consent again and rejects with POLICY_DENIED
-    await assert.rejects(
-      executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir),
-      err => {
-        assert.ok(err instanceof ToolError);
-        assert.equal(err.code, 'POLICY_DENIED');
-        return true;
-      }
-    );
+    await assert.rejects(executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir), err => {
+      assert.ok(err instanceof ToolError);
+      assert.equal(err.code, 'POLICY_DENIED');
+      return true;
+    });
   } finally {
     fs.promises.rename = originalRename;
   }
@@ -986,7 +995,7 @@ test('EXEC-001-T10c: executeTask cancellation before storage rejects with ABORTE
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'ABORTED');
       return true;
-    }
+    },
   );
 
   assert.equal(executed, false, 'Adapter execution must not run when cancelled');
@@ -1021,7 +1030,7 @@ test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIME
       assert.ok(err instanceof ToolError);
       assert.equal(err.code, 'TIMEOUT');
       return true;
-    }
+    },
   );
 
   assert.equal(executed, false, 'Adapter execution must not run when timed out');
@@ -1031,22 +1040,43 @@ test('EXEC-001-T10c: executeTask budget timeout before storage rejects with TIME
 test('a model the user denies is refused with the reason before any approval request, catalog read or turn (owner decision of 2026-10-11)', async () => {
   await setupMockConfigAndAdapters();
   const current = loadConfig();
-  await saveConfig({ ...current, governance: { ...current.governance, models: { allow: ['gpt-expensive'], ask: ['gpt-expensive'], deny: ['gpt-expensive'] } } });
-  let asked = false, executed = false, catalogReads = 0;
+  await saveConfig({
+    ...current,
+    governance: { ...current.governance, models: { allow: ['gpt-expensive'], ask: ['gpt-expensive'], deny: ['gpt-expensive'] } },
+  });
+  let asked = false,
+    executed = false,
+    catalogReads = 0;
   const listModels = adapterRegistry.codex.listModels;
-  adapterRegistry.codex.listModels = async () => { catalogReads++; return listModels(); };
-  adapterRegistry.codex.execute = async () => { executed = true; throw new Error('must not run'); };
-  const denied = "Model 'gpt-expensive' did not run: the user denied it in governance.models.deny (VS Code: CoAgent8: Manage Model Approvals). Only the user can remove it from that list. Tell the user; switch to another model only if the user asks.";
+  adapterRegistry.codex.listModels = async () => {
+    catalogReads++;
+    return listModels();
+  };
+  adapterRegistry.codex.execute = async () => {
+    executed = true;
+    throw new Error('must not run');
+  };
+  const denied =
+    "Model 'gpt-expensive' did not run: the user denied it in governance.models.deny (VS Code: CoAgent8: Manage Model Approvals). Only the user can remove it from that list. Tell the user; switch to another model only if the user asks.";
   const before = catalogReads;
   await assert.rejects(
-    executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, { askConsent: async () => { asked = true; return { approved: true }; } }),
-    { name: 'ToolError', code: 'POLICY_DENIED', message: denied });
+    executeTask('prompt', 'summary', { model: 'gpt-expensive' }, tempDir, null, null, {
+      askConsent: async () => {
+        asked = true;
+        return { approved: true };
+      },
+    }),
+    { name: 'ToolError', code: 'POLICY_DENIED', message: denied },
+  );
   assert.equal(asked, false, 'deny wins over ask and allow: no form is shown');
   assert.equal(executed, false);
   assert.ok(catalogReads - before <= 1, 'only model selection read the catalog; the explicit-model check after it did not run');
   // A denied default is refused the same way when the call names no model.
   await saveConfig({ ...loadConfig(), governance: { ...loadConfig().governance, models: { allow: [], ask: [], deny: ['gpt-6.1-sol'] } } });
-  await assert.rejects(executeTask('prompt', 'summary', {}, tempDir), { code: 'POLICY_DENIED', message: /^Model 'gpt-6\.1-sol' did not run: the user denied it/ });
+  await assert.rejects(executeTask('prompt', 'summary', {}, tempDir), {
+    code: 'POLICY_DENIED',
+    message: /^Model 'gpt-6\.1-sol' did not run: the user denied it/,
+  });
   assert.equal(executed, false);
 });
 
@@ -1054,48 +1084,89 @@ test('a rule naming an effort variant governs a call passing that effort separat
   await setupMockConfigAndAdapters();
   const runs = [];
   adapterRegistry.agy = {
-    id: 'agy', name: 'fixture', effortReplacesModelSuffix: true,
+    id: 'agy',
+    name: 'fixture',
+    effortReplacesModelSuffix: true,
     probe: async () => ({ installed: true, executionSupported: true, version: '1.0.0', config: { defaultModel: 'gemini-3.8-flash-low' } }),
-    listModels: async () => ({ source: 'agy models', models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true, isDefault: true }] }),
+    listModels: async () => ({
+      source: 'agy models',
+      models: [{ id: 'gemini-3.8-flash', efforts: ['high', 'low'], effortRequired: true, isDefault: true }],
+    }),
     execute: async (_prompt, options) => {
       runs.push(`${options.model}/${options.reasoningEffort}`);
-      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'ok',
+        nativeSessionId: randomUUID(),
+        model: options.model,
+        truncated: false,
+        continuationAvailable: true,
+      };
     },
   };
-  const rules = models => saveConfig({ ...loadConfig(), governance: { ...loadConfig().governance, models: { allow: [], ask: [], deny: [], ...models } } });
+  const rules = models =>
+    saveConfig({ ...loadConfig(), governance: { ...loadConfig().governance, models: { allow: [], ask: [], deny: [], ...models } } });
   const approve = async () => ({ approved: true });
   const call = { backend: 'agy', model: 'gemini-3.8-flash' };
 
   await rules({ deny: ['gemini-3.8-flash-high'] });
   let asked = false;
-  await assert.rejects(executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, { askConsent: async () => { asked = true; return { approved: true }; } }),
-    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run: the user denied it/ });
+  await assert.rejects(
+    executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, {
+      askConsent: async () => {
+        asked = true;
+        return { approved: true };
+      },
+    }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run: the user denied it/ },
+  );
   assert.equal(asked, false);
   // agy replaces a variant's effort with the one passed separately, so this runs the denied variant.
-  await assert.rejects(executeTask('prompt', 'summary', { ...call, model: 'gemini-3.8-flash-low', reasoning_effort: 'high' }, tempDir, null, null, { askConsent: approve }),
-    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ });
+  await assert.rejects(
+    executeTask('prompt', 'summary', { ...call, model: 'gemini-3.8-flash-low', reasoning_effort: 'high' }, tempDir, null, null, {
+      askConsent: approve,
+    }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ },
+  );
   const low = await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'low' }, tempDir, null, null, { askConsent: approve });
   assert.equal(low.isError, false, 'another effort of the model still runs');
 
   await rules({ ask: ['gemini-3.8-flash-high'] });
   let reason = '';
-  await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, { askConsent: async request => { reason = request.reason; return { approved: true }; } });
+  await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, {
+    askConsent: async request => {
+      reason = request.reason;
+      return { approved: true };
+    },
+  });
   assert.match(reason, /on the user's ask list/, 'the ask rule decides, whatever the price');
 
   // A continuation keeps its session's effort, so a rule added since then still applies.
   await rules({});
   const first = await executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, { askConsent: approve });
   await rules({ deny: ['gemini-3.8-flash-high'] });
-  await assert.rejects(executeTask('follow up', 'follow up', { session_handle: readResult(first).sessionHandle }, tempDir, null, null, { askConsent: approve }),
-    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ });
+  await assert.rejects(
+    executeTask('follow up', 'follow up', { session_handle: readResult(first).sessionHandle }, tempDir, null, null, {
+      askConsent: approve,
+    }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ },
+  );
 
   // A variant denied while the approval is pending never runs.
   await rules({ ask: ['gemini-3.8-flash'] });
   const before = runs.length;
   let pending = false;
-  await assert.rejects(executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, {
-    askConsent: async () => { pending = true; await rules({ ask: ['gemini-3.8-flash'], deny: ['gemini-3.8-flash-high'] }); return { approved: true }; },
-  }), { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ });
+  await assert.rejects(
+    executeTask('prompt', 'summary', { ...call, reasoning_effort: 'high' }, tempDir, null, null, {
+      askConsent: async () => {
+        pending = true;
+        await rules({ ask: ['gemini-3.8-flash'], deny: ['gemini-3.8-flash-high'] });
+        return { approved: true };
+      },
+    }),
+    { code: 'POLICY_DENIED', message: /^Model 'gemini-3\.8-flash-high' did not run/ },
+  );
   assert.ok(pending);
   assert.equal(runs.length, before, 'no turn ran after the denial');
 });
@@ -1106,17 +1177,35 @@ test('agy asks for, remembers and runs the variant of a separately passed effort
   fs.rmSync(path.join(tempDir, 'models.json'), { force: true });
   const runs = [];
   adapterRegistry.agy = {
-    id: 'agy', name: 'fixture', effortReplacesModelSuffix: true,
+    id: 'agy',
+    name: 'fixture',
+    effortReplacesModelSuffix: true,
     probe: async () => ({ installed: true, executionSupported: true, version: '1.0.0', config: { defaultModel: 'agy-unpriced-low' } }),
-    listModels: async () => ({ source: 'agy models', models: [{ id: 'agy-unpriced', efforts: ['high', 'low'], effortRequired: true, isDefault: true }] }),
+    listModels: async () => ({
+      source: 'agy models',
+      models: [{ id: 'agy-unpriced', efforts: ['high', 'low'], effortRequired: true, isDefault: true }],
+    }),
     execute: async (_prompt, options) => {
       runs.push(`${options.model}/${options.reasoningEffort}`);
-      return { status: 'completed', isError: false, output: 'ok', nativeSessionId: randomUUID(), model: options.model, truncated: false, continuationAvailable: true };
+      return {
+        status: 'completed',
+        isError: false,
+        output: 'ok',
+        nativeSessionId: randomUUID(),
+        model: options.model,
+        truncated: false,
+        continuationAvailable: true,
+      };
     },
   };
   const asked = [];
-  const call = () => executeTask('prompt', 'summary', { backend: 'agy', model: 'agy-unpriced-low', reasoning_effort: 'high' }, tempDir, null, null,
-    { askConsent: async request => { asked.push(request.model); return { approved: true, remember: true }; } });
+  const call = () =>
+    executeTask('prompt', 'summary', { backend: 'agy', model: 'agy-unpriced-low', reasoning_effort: 'high' }, tempDir, null, null, {
+      askConsent: async request => {
+        asked.push(request.model);
+        return { approved: true, remember: true };
+      },
+    });
   assert.equal((await call()).isError, false);
   assert.deepEqual(asked, ['agy-unpriced-high'], 'the approval names the variant that runs');
   assert.ok(loadConfig().governance.models.allow.includes('agy-unpriced-high'));
@@ -1128,16 +1217,27 @@ test('agy asks for, remembers and runs the variant of a separately passed effort
 test('a model the user denies while the approval is pending never runs and is not remembered', async () => {
   await setupMockConfigAndAdapters();
   let executed = false;
-  adapterRegistry.codex.execute = async () => { executed = true; throw new Error('must not run'); };
+  adapterRegistry.codex.execute = async () => {
+    executed = true;
+    throw new Error('must not run');
+  };
   await assert.rejects(
     executeTask('prompt', 'summary', { model: 'gpt-unknown' }, tempDir, null, null, {
       askConsent: async () => {
         const current = loadConfig();
-        await saveConfig({ ...current, governance: { ...current.governance, models: { ...current.governance.models, deny: ['gpt-unknown'] } } });
+        await saveConfig({
+          ...current,
+          governance: { ...current.governance, models: { ...current.governance.models, deny: ['gpt-unknown'] } },
+        });
         return { approved: true, remember: true };
       },
     }),
-    { name: 'ToolError', code: 'POLICY_DENIED', message: /^Model 'gpt-unknown' did not run: the user denied it in governance\.models\.deny/ });
+    {
+      name: 'ToolError',
+      code: 'POLICY_DENIED',
+      message: /^Model 'gpt-unknown' did not run: the user denied it in governance\.models\.deny/,
+    },
+  );
   assert.equal(executed, false);
   assert.ok(!loadConfig().governance.models.allow.includes('gpt-unknown'), 'a denied model is never remembered as allowed');
 });
@@ -1145,18 +1245,29 @@ test('a model the user denies while the approval is pending never runs and is no
 test('MCP: a denied model sends no approval form and returns the reason to the caller', async () => {
   await setupMockConfigAndAdapters();
   const current = loadConfig();
-  await saveConfig({ ...current, governance: { ...current.governance, models: { ...current.governance.models, deny: ['gpt-expensive'] } } });
+  await saveConfig({
+    ...current,
+    governance: { ...current.governance, models: { ...current.governance.models, deny: ['gpt-expensive'] } },
+  });
   const server = createServer();
   const client = new Client({ name: 'deny-client', version: '1' }, { capabilities: { elicitation: { form: {} } } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   const forms = [];
-  client.setRequestHandler(ElicitRequestSchema, async request => { forms.push(request.params); return { action: 'accept', content: { approve: true } }; });
+  client.setRequestHandler(ElicitRequestSchema, async request => {
+    forms.push(request.params);
+    return { action: 'accept', content: { approve: true } };
+  });
   try {
-    const refused = readResult(await client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, model: 'gpt-expensive' } })).error;
+    const refused = readResult(
+      await client.callTool({ name: 'consult', arguments: { proposal: 'x', workspace_path: tempDir, model: 'gpt-expensive' } }),
+    ).error;
     assert.equal(refused.code, 'POLICY_DENIED');
-    assert.match(refused.message, /^Model 'gpt-expensive' did not run: the user denied it in governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Only the user can remove it from that list\./);
+    assert.match(
+      refused.message,
+      /^Model 'gpt-expensive' did not run: the user denied it in governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Only the user can remove it from that list\./,
+    );
     assert.equal(forms.length, 0, 'a denied model is never offered for approval');
   } finally {
     await client.close();

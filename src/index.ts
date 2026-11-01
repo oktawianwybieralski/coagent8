@@ -31,7 +31,13 @@ export interface CliDependencies {
   serveStdio?: () => Promise<void>;
   runModelsCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
   runDoctorCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
-  runSessionCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal, workspace?: string) => Promise<number>;
+  runSessionCli?: (
+    args: string[],
+    out?: NodeJS.WritableStream,
+    err?: NodeJS.WritableStream,
+    signal?: AbortSignal,
+    workspace?: string,
+  ) => Promise<number>;
   runIssueCli?: (args: string[], out?: NodeJS.WritableStream, err?: NodeJS.WritableStream, signal?: AbortSignal) => Promise<number>;
   loadSetupCli?: () => Promise<{ runSetupCli(args: string[]): Promise<boolean> }>;
 }
@@ -135,7 +141,7 @@ export function formatMcpHelp(): string {
 export async function runCli(
   args: string[] = process.argv.slice(2),
   streams: CliStreams = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
-  deps: CliDependencies = {}
+  deps: CliDependencies = {},
 ): Promise<number> {
   const isTty = Boolean(streams.stdin.isTTY && streams.stdout.isTTY);
 
@@ -205,11 +211,13 @@ export async function runCli(
 
   // 9. Management commands (lazily loaded setup bundle)
   if (['setup', 'repair', 'status', 'cleanup', 'skills'].includes(cmd)) {
-    const loadSetup = deps.loadSetupCli ?? (async () => {
-      // Optional installation code lives in a separate sibling bundle.
-      const setup: typeof import('./integrations/setup-cli.js') = require(path.join(__dirname, 'setup.cjs'));
-      return setup;
-    });
+    const loadSetup =
+      deps.loadSetupCli ??
+      (async () => {
+        // Optional installation code lives in a separate sibling bundle.
+        const setup: typeof import('./integrations/setup-cli.js') = require(path.join(__dirname, 'setup.cjs'));
+        return setup;
+      });
     const setup = await loadSetup();
     await setup.runSetupCli(args);
     return typeof process.exitCode === 'number' ? process.exitCode : 0;
@@ -223,7 +231,7 @@ export async function runCli(
 
   // Non-TTY fallback: warn to stderr and start legacy MCP stdio server
   streams.stderr.write(
-    `Warning: unrecognized arguments [${redactCliArguments(args).join(', ')}] ignored; starting legacy MCP stdio server.\n`
+    `Warning: unrecognized arguments [${redactCliArguments(args).join(', ')}] ignored; starting legacy MCP stdio server.\n`,
   );
   const serve = deps.serveStdio ?? serveStdio;
   await serve();
@@ -252,7 +260,7 @@ async function run(): Promise<void> {
 }
 
 if (isDirectExecution() && process.env.COAGENT8_DISABLE_AUTORUN !== '1') {
-  run().catch((error) => {
+  run().catch(error => {
     process.stderr.write(`Fatal error in main(): ${redactDiagnostic(error?.message)}\n`);
     process.exit(1);
   });

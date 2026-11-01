@@ -9,7 +9,14 @@
  * @packageDocumentation
  */
 
-import { ToolError, errorCodeOf, type ProviderId, type ExecutionBudget, type ExecutionProfile, type ListPrice } from '../contracts/index.js';
+import {
+  ToolError,
+  errorCodeOf,
+  type ProviderId,
+  type ExecutionBudget,
+  type ExecutionProfile,
+  type ListPrice,
+} from '../contracts/index.js';
 import type { BackendReadContext } from '../backends/types.js';
 import { effortVariant } from '../contracts/models.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
@@ -24,7 +31,14 @@ import { readModelCatalog } from '../backends/probe-cache.js';
 import { checkModelSelection } from '../models/catalog.js';
 import { checkPriceLimit, findPrice, priceEvidence, readPrices } from '../models/prices.js';
 import { revalidateConsent } from './consent.js';
-import { consentDeclinedMessage, consentRequiredMessage, consentUnansweredMessage, decideConsent, findModelRule, modelDeniedMessage } from '../models/governance.js';
+import {
+  consentDeclinedMessage,
+  consentRequiredMessage,
+  consentUnansweredMessage,
+  decideConsent,
+  findModelRule,
+  modelDeniedMessage,
+} from '../models/governance.js';
 import { redactDiagnostic } from '../security/redaction.js';
 
 /**
@@ -158,7 +172,7 @@ function asConfigSnapshot(config?: CoAgent8Config | ConfigSnapshot): ConfigSnaps
 export function validateTaskContext(
   args: ExecutionRequest,
   cwd: string,
-  options: { abortSignal?: AbortSignal | null; allowFreshNativeThread?: boolean; profile?: ExecutionProfile } = {}
+  options: { abortSignal?: AbortSignal | null; allowFreshNativeThread?: boolean; profile?: ExecutionProfile } = {},
 ): ValidatedTaskContext {
   // A server started by a backend inside a turn never starts another one (CUR-002).
   assertNotNestedTurn();
@@ -172,20 +186,26 @@ export function validateTaskContext(
   const previous = args.session_handle ? getSession(args.session_handle, { workspace: cwd }) : null;
   if (args.session_handle && !previous) {
     const state = unavailableSessionState(args.session_handle, cwd);
-    throw new ToolError('SESSION_INVALID', state === 'closed'
-      ? 'Session is closed; its history stays readable through the session tool. Omit session_handle to start a new session.'
-      : state
-        ? `Session is ${state}. Omit session_handle to start a new session.`
-        : 'Session is expired, invalidated, closed or belongs to another workspace.');
+    throw new ToolError(
+      'SESSION_INVALID',
+      state === 'closed'
+        ? 'Session is closed; its history stays readable through the session tool. Omit session_handle to start a new session.'
+        : state
+          ? `Session is ${state}. Omit session_handle to start a new session.`
+          : 'Session is expired, invalidated, closed or belongs to another workspace.',
+    );
   }
   if (previous && args.backend && !['auto', 'smart_quota', previous.backend].includes(args.backend)) {
     throw new ToolError('SESSION_INVALID', 'A session cannot switch provider.');
   }
   const profile = options.profile ?? 'read-only';
   if (previous && sessionProfile(previous) !== profile) {
-    throw new ToolError('POLICY_DENIED', profile === 'workspace-write'
-      ? 'This session is read-only; omit session_handle to start a delegate session.'
-      : 'This session belongs to delegate and can change files; continue it with delegate, or omit session_handle.');
+    throw new ToolError(
+      'POLICY_DENIED',
+      profile === 'workspace-write'
+        ? 'This session is read-only; omit session_handle to start a delegate session.'
+        : 'This session belongs to delegate and can change files; continue it with delegate, or omit session_handle.',
+    );
   }
   if (previous && !previous.threadId && !options.allowFreshNativeThread) {
     throw new ToolError('SESSION_INVALID', 'Native continuation is unavailable for this session; history remains accessible.');
@@ -203,12 +223,12 @@ export function validateTaskContext(
  * @param options - Configuration snapshot and abort signal.
  * @returns Fully prepared task ready for consent and session acquisition.
  */
-export async function prepareTask(
-  args: ExecutionRequest,
-  cwd: string,
-  options: PrepareTaskOptions = {}
-): Promise<PreparedTask> {
-  const { previousSession } = validateTaskContext(args, cwd, { abortSignal: options.abortSignal, allowFreshNativeThread: options.allowFreshNativeThread, profile: options.profile });
+export async function prepareTask(args: ExecutionRequest, cwd: string, options: PrepareTaskOptions = {}): Promise<PreparedTask> {
+  const { previousSession } = validateTaskContext(args, cwd, {
+    abortSignal: options.abortSignal,
+    allowFreshNativeThread: options.allowFreshNativeThread,
+    profile: options.profile,
+  });
 
   const configSnapshot = asConfigSnapshot(options.config);
   const abortSignal = options.abortSignal;
@@ -248,13 +268,13 @@ export async function prepareTask(
         budget: effectiveBudget ?? options.context.budget,
         timeoutMs: effectiveBudget ? effectiveBudget.remainingExecutionMs() : options.context.timeoutMs,
       }
-    : ((abortSignal || effectiveBudget)
-    ? {
-        abortSignal: effectiveSignal ?? undefined,
-        budget: effectiveBudget,
-        timeoutMs: effectiveBudget ? effectiveBudget.remainingExecutionMs() : undefined,
-      }
-    : undefined);
+    : abortSignal || effectiveBudget
+      ? {
+          abortSignal: effectiveSignal ?? undefined,
+          budget: effectiveBudget,
+          timeoutMs: effectiveBudget ? effectiveBudget.remainingExecutionMs() : undefined,
+        }
+      : undefined;
 
   const below = args.output_price_below;
   const constraint: PriceConstraint | undefined = below === undefined ? undefined : { below, effort: args.reasoning_effort };
@@ -267,28 +287,28 @@ export async function prepareTask(
     previousSession
       ? resolveBackend(previousSession.backend, { config: configSnapshot, context: readContext })
       : args.model !== undefined
-      ? resolveBackendForModel(args.backend, args.model, { config: configSnapshot, context: readContext })
-      : resolveBackend(args.backend, {
-          config: configSnapshot,
-          context: readContext,
-          ...(choosing
-            ? {
-                eligible: async (id, probe) => {
-                  try {
-                    const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot, context: readContext });
-                    choosingSelections.set(id, sel);
-                    return undefined;
-                  } catch (err) {
-                    if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) {
-                      return err;
+        ? resolveBackendForModel(args.backend, args.model, { config: configSnapshot, context: readContext })
+        : resolveBackend(args.backend, {
+            config: configSnapshot,
+            context: readContext,
+            ...(choosing
+              ? {
+                  eligible: async (id, probe) => {
+                    try {
+                      const sel = await selectModel(id, probe, {}, { constraint: choosing, config: configSnapshot, context: readContext });
+                      choosingSelections.set(id, sel);
+                      return undefined;
+                    } catch (err) {
+                      if (err instanceof ToolError && (err.code === 'PRICE_LIMIT' || err.code === 'MODEL_UNAVAILABLE')) {
+                        return err;
+                      }
+                      throw err;
                     }
-                    throw err;
-                  }
-                },
-              }
-            : {}),
-        }),
-    'backend resolution'
+                  },
+                }
+              : {}),
+          }),
+    'backend resolution',
   );
 
   assertNotCancelledOrExpired('backend resolution');
@@ -301,19 +321,26 @@ export async function prepareTask(
     selection = choosingSelections.get(backend.id)!;
   } else {
     selection = await withTimeoutClassification(
-      selectModel(backend.id, backend.probe, { model: args.model, session: previousSession?.model }, {
-        config: configSnapshot,
-        catalog: backend.catalog,
-        context: readContext,
-        ...(choosing ? { constraint: choosing } : {}),
-      }),
-      'model selection'
+      selectModel(
+        backend.id,
+        backend.probe,
+        { model: args.model, session: previousSession?.model },
+        {
+          config: configSnapshot,
+          catalog: backend.catalog,
+          context: readContext,
+          ...(choosing ? { constraint: choosing } : {}),
+        },
+      ),
+      'model selection',
     );
   }
   assertNotCancelledOrExpired('model selection');
 
   // A continuation keeps its session's selection: the effort follows the model it was chosen for.
-  const reasoningEffort = args.reasoning_effort ?? (args.model === undefined || args.model === previousSession?.model ? previousSession?.reasoningEffort : undefined);
+  const reasoningEffort =
+    args.reasoning_effort ??
+    (args.model === undefined || args.model === previousSession?.model ? previousSession?.reasoningEffort : undefined);
   const run = effortRun(backend.id, reasoningEffort);
   // A CLI that replaces effort suffixes (agy) runs the passed effort's variant: the rules, the
   // approval, a remembered approval, the price and the session name that variant.
@@ -330,7 +357,7 @@ export async function prepareTask(
   if (args.model !== undefined || args.reasoning_effort !== undefined) {
     const catalog = await withTimeoutClassification(
       readModelCatalog(backend.id, { probe: backend.probe, catalog: backend.catalog, context: readContext }),
-      'reading model catalog'
+      'reading model catalog',
     );
     const rejected = checkModelSelection(backend.id, catalog, selection.model, args.reasoning_effort);
     if (rejected) throw new ToolError(rejected.code, rejected.message);
@@ -345,12 +372,17 @@ export async function prepareTask(
   } else {
     try {
       const def = await withTimeoutClassification(
-        selectModel(backend.id, backend.probe, {}, {
-          config: configSnapshot,
-          catalog: backend.catalog,
-          context: readContext,
-        }),
-        'default model selection'
+        selectModel(
+          backend.id,
+          backend.probe,
+          {},
+          {
+            config: configSnapshot,
+            catalog: backend.catalog,
+            context: readContext,
+          },
+        ),
+        'default model selection',
       );
       defaultModel = def.model;
     } catch (err) {
@@ -367,7 +399,7 @@ export async function prepareTask(
     // A limit needs a current price list: a week-old one is read again first.
     const prices = await withTimeoutClassification(
       readPrices({ current: true, models: [model], context: readContext }),
-      'price limit verification'
+      'price limit verification',
     );
     const evidence = priceEvidence(prices, model);
     const rejected = checkPriceLimit(model, evidence, below!);
@@ -378,7 +410,7 @@ export async function prepareTask(
           ? `${rejected} The price list changed after the model was chosen; retry to choose again.`
           : `${rejected} It was not replaced by another model; name one below the limit (doctor lists prices)${
               previousSession ? ' or start a new session' : ' or omit model'
-            }.`
+            }.`,
       );
     }
     return `${Number(evidence.outputUsdPerMTok!.toFixed(4))} USD per million output tokens (${evidence.source} ${evidence.fetchedAt!.slice(0, 10)}, exact), below the limit of ${Number(below!.toFixed(4))} USD`;
@@ -414,18 +446,12 @@ export async function prepareTask(
         context: readContext,
       }),
       'consent confirmation',
-      effectiveBudget
+      effectiveBudget,
     );
     const initialPrice = initialPrices ? findPrice(initialPrices, model) : undefined;
-    const initialDefaultPrice = (defaultModel && initialPrices) ? findPrice(initialPrices, defaultModel) : undefined;
+    const initialDefaultPrice = defaultModel && initialPrices ? findPrice(initialPrices, defaultModel) : undefined;
 
-    const decision = decideConsent(
-      model,
-      defaultModel ?? undefined,
-      initialPrices,
-      configSnapshot.config.governance,
-      run
-    );
+    const decision = decideConsent(model, defaultModel ?? undefined, initialPrices, configSnapshot.config.governance, run);
     const consentWarnings: string[] = [];
 
     assertNotCancelledOrExpired('consent confirmation');
@@ -499,10 +525,7 @@ export async function prepareTask(
       assertNotCancelledOrExpired('waiting for user consent');
 
       // 2. Response must match the requested backend and model if specified
-      if (
-        (answer.backend !== undefined && answer.backend !== backend.id) ||
-        (answer.model !== undefined && answer.model !== model)
-      ) {
+      if ((answer.backend !== undefined && answer.backend !== backend.id) || (answer.model !== undefined && answer.model !== model)) {
         throw new ToolError('POLICY_DENIED', `Consent response mismatch: expected approval for model '${model}' on ${backend.id}.`);
       }
 
@@ -511,7 +534,7 @@ export async function prepareTask(
       if (answer.unanswered || !answer.approved) {
         throw new ToolError(
           'POLICY_DENIED',
-          answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model)
+          answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model),
         );
       }
 
@@ -536,7 +559,7 @@ export async function prepareTask(
         context: readContext,
       }),
       'consent revalidation',
-      effectiveBudget
+      effectiveBudget,
     );
 
     assertNotCancelledOrExpired('recording remembered approval');
@@ -555,7 +578,7 @@ export async function prepareTask(
           throw err;
         }
         consentWarnings.push(
-          `The approval of '${model}' was not remembered: ${redactDiagnostic(err instanceof Error ? err.message : String(err), 256)}`
+          `The approval of '${model}' was not remembered: ${redactDiagnostic(err instanceof Error ? err.message : String(err), 256)}`,
         );
       }
     }
@@ -583,9 +606,6 @@ export async function prepareTask(
  * @param options - Consent callback and abort signal.
  * @returns Consent warnings and optional validated price evidence notice.
  */
-export async function confirmTaskConsent(
-  prepared: PreparedTask,
-  options: ConfirmConsentOptions = {}
-): Promise<ConfirmConsentResult> {
+export async function confirmTaskConsent(prepared: PreparedTask, options: ConfirmConsentOptions = {}): Promise<ConfirmConsentResult> {
   return prepared.confirmConsent(options);
 }

@@ -58,19 +58,21 @@ export async function selectModel(
   id: ProviderId,
   probe: AdapterProbeResult,
   requested: { model?: string; session?: string } = {},
-  options: SelectModelOptions = {}
+  options: SelectModelOptions = {},
 ): Promise<ModelSelection> {
   const observe = { fresh: options.observeAfresh, probe, context: options.context };
   const adapter = adapterRegistry[id];
-  const configObj = options.config
-    ? ('config' in options.config ? options.config.config : options.config)
-    : loadConfig();
+  const configObj = options.config ? ('config' in options.config ? options.config.config : options.config) : loadConfig();
   const configured = configObj.backends[id]?.defaultModel;
-  const chosen: ModelSelection | undefined = requested.model ? { model: requested.model, source: 'request' }
-    : requested.session ? { model: requested.session, source: 'session' }
-    : configured ? { model: configured, source: 'config' }
-    : probe.config?.defaultModel ? { model: probe.config.defaultModel, source: 'cli-config' }
-    : undefined;
+  const chosen: ModelSelection | undefined = requested.model
+    ? { model: requested.model, source: 'request' }
+    : requested.session
+      ? { model: requested.session, source: 'session' }
+      : configured
+        ? { model: configured, source: 'config' }
+        : probe.config?.defaultModel
+          ? { model: probe.config.defaultModel, source: 'cli-config' }
+          : undefined;
 
   let currentCatalog: ModelCatalog | undefined = options.catalog;
   let catalogFetched = false;
@@ -112,7 +114,11 @@ export async function selectModel(
       // An alias can map to any model (Claude Code honors environment overrides), so a name the
       // CLI did not resolve is refused rather than governed by its spelling.
       const observed = await readObservedModel(id, chosen.model, observe);
-      if (!observed) throw new ToolError('MODEL_UNAVAILABLE', `${id} did not report which model '${chosen.model}' runs, so it cannot be governed; check the CLI with doctor.`);
+      if (!observed)
+        throw new ToolError(
+          'MODEL_UNAVAILABLE',
+          `${id} did not report which model '${chosen.model}' runs, so it cannot be governed; check the CLI with doctor.`,
+        );
       return { model: observed, source: chosen.source };
     }
     const catalog = await getCatalog();
@@ -120,21 +126,34 @@ export async function selectModel(
     if (fromCatalog) return fromCatalog;
     const observed = await readObservedModel(id, undefined, observe);
     if (observed) return { model: observed, source: 'observed' };
-    throw new ToolError('MODEL_UNAVAILABLE', `No default model is known for ${id}: its CLI names none it can report without a model turn. Pass model, or set backends.${id}.defaultModel in the CoAgent8 config.json (doctor records one when the CLI reports it).`);
+    throw new ToolError(
+      'MODEL_UNAVAILABLE',
+      `No default model is known for ${id}: its CLI names none it can report without a model turn. Pass model, or set backends.${id}.defaultModel in the CoAgent8 config.json (doctor records one when the CLI reports it).`,
+    );
   }
   if (!options.constraint || chosen?.source === 'request' || chosen?.source === 'session') return resolve();
   // Without a known default the catalog may still offer a model below the limit.
   let fallback: ModelSelection | undefined;
-  try { fallback = await resolve(); }
-  catch (err) { if (errorCodeOf(err) !== 'MODEL_UNAVAILABLE') throw err; }
+  try {
+    fallback = await resolve();
+  } catch (err) {
+    if (errorCodeOf(err) !== 'MODEL_UNAVAILABLE') throw err;
+  }
   const catalog = await getCatalog();
   // A limit needs current prices of every model it may choose from.
   const prices = await readPrices({ current: true, models: [...catalogNames(catalog), ...(fallback ? [fallback.model] : [])] });
-  return choosePricedModel(id, catalog, fallback, options.constraint, prices, configObj.governance.models.deny, adapterRegistry[id]?.effortReplacesModelSuffix === true);
+  return choosePricedModel(
+    id,
+    catalog,
+    fallback,
+    options.constraint,
+    prices,
+    configObj.governance.models.deny,
+    adapterRegistry[id]?.effortReplacesModelSuffix === true,
+  );
 }
 
 /** How a turn on backend `id` applies a separately passed reasoning effort, for the user's model rules. */
 export function effortRun(id: ProviderId, effort: string | undefined): EffortRun {
   return { effort, replacesSuffix: adapterRegistry[id]?.effortReplacesModelSuffix === true };
 }
-

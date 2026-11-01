@@ -9,13 +9,7 @@ const os = require('os');
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-snapshot-test-'));
 const testConfigFile = path.join(tempDir, 'custom-config.json');
 
-const {
-  loadConfigSnapshot,
-  loadConfigSnapshotForDiagnostics,
-  getConfigFileOrigin,
-  loadConfig,
-  saveConfig,
-} = require('../src/config.ts');
+const { loadConfigSnapshot, loadConfigSnapshotForDiagnostics, getConfigFileOrigin, loadConfig, saveConfig } = require('../src/config.ts');
 const { runDoctor, runModelReport } = require('../src/diagnostics/doctor.ts');
 const { EDITOR_SETTINGS_ENV } = require('../src/config-overrides.ts');
 const { executeTask } = require('../src/execution/controller.ts');
@@ -56,7 +50,7 @@ test('EXEC-001-T03: loadConfigSnapshot provides effective settings, disk provena
         routing: { strategy: 'fixed', allowedBackends: ['claude'] },
         governance: { priceMultiplier: 3, askAbovePrice: 15, models: { ask: ['model-a'] } },
       }),
-      'utf8'
+      'utf8',
     );
     process.env.coagent8_CONFIG = testConfigFile;
     assert.equal(getConfigFileOrigin(), 'custom-env');
@@ -101,7 +95,7 @@ test('EXEC-001-T03: malformed configuration fails closed for execution but loads
   // loadConfigSnapshot throws POLICY_DENIED
   assert.throws(
     () => loadConfigSnapshot(malformedPath),
-    err => err.code === 'POLICY_DENIED' && /Malformed JSON/.test(err.message)
+    err => err.code === 'POLICY_DENIED' && /Malformed JSON/.test(err.message),
   );
 
   // loadConfigSnapshotForDiagnostics catches and provides fallback with error
@@ -144,7 +138,7 @@ test('EXEC-001-T03: doctor includes redacted configuration provenance and custom
         defaultBackend: 'claude',
         routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] },
       }),
-      'utf8'
+      'utf8',
     );
 
     const report = await runDoctor({ quota: false });
@@ -161,11 +155,11 @@ test('EXEC-001-T03: doctor includes redacted configuration provenance and custom
     // Recommendation explains active coagent8_CONFIG override
     assert.ok(
       report.recommendations.some(r => r.includes('custom path active from coagent8_CONFIG')),
-      'doctor explains custom config path'
+      'doctor explains custom config path',
     );
     assert.ok(
       report.recommendations.some(r => r.includes('editor setting override(s) active')),
-      'doctor explains active editor overrides'
+      'doctor explains active editor overrides',
     );
 
     // Model report also includes configProvenance
@@ -213,12 +207,7 @@ test('EXEC-001-T03: execution preparation loads configuration snapshot once and 
 
   try {
     snapshotLoadCount = 0;
-    const result = await executeTask(
-      'test prompt',
-      'test input',
-      { backend: 'codex', model: 'gpt-6.1-sol' },
-      tempDir
-    );
+    const result = await executeTask('test prompt', 'test input', { backend: 'codex', model: 'gpt-6.1-sol' }, tempDir);
 
     assert.equal(result.isError, false);
     // Verified: Exactly ONE config snapshot loaded during preparation (not separate reads across routing, selection, and consent)
@@ -249,8 +238,10 @@ test('AX-004a: a configuration path with spaces is reported accurately, and a ma
     await runModelReport({});
     assert.equal(fs.readFileSync(spaced, 'utf8'), malformed, 'neither view rewrote the file');
   } finally {
-    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
-    if (savedEditorEnv !== undefined) process.env[EDITOR_SETTINGS_ENV] = savedEditorEnv; else delete process.env[EDITOR_SETTINGS_ENV];
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv;
+    else delete process.env.coagent8_CONFIG;
+    if (savedEditorEnv !== undefined) process.env[EDITOR_SETTINGS_ENV] = savedEditorEnv;
+    else delete process.env[EDITOR_SETTINGS_ENV];
   }
 });
 
@@ -263,18 +254,40 @@ test('AX-004b: health reads every backend afresh each time; the models view reus
   process.env.coagent8_CONFIG = path.join(tempDir, 'ax-004b-config.json');
   try {
     for (const id of ['codex', 'claude', 'agy']) {
-      adapterRegistry[id] = { ...original[id],
-        probe: async () => { reads.probe++; return { id, installed: true, executionSupported: true, version: 'ax-004b', authStatus: 'authenticated', capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }; },
-        listModels: async () => { reads.catalog++; return { models: [{ id: `${id}-model`, efforts: [] }], source: 'fixture' }; },
-        inspectQuota: async () => { reads.quota++; return undefined; },
-        observeModel: async () => undefined };
+      adapterRegistry[id] = {
+        ...original[id],
+        probe: async () => {
+          reads.probe++;
+          return {
+            id,
+            installed: true,
+            executionSupported: true,
+            version: 'ax-004b',
+            authStatus: 'authenticated',
+            capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
+          };
+        },
+        listModels: async () => {
+          reads.catalog++;
+          return { models: [{ id: `${id}-model`, efforts: [] }], source: 'fixture' };
+        },
+        inspectQuota: async () => {
+          reads.quota++;
+          return undefined;
+        },
+        observeModel: async () => undefined,
+      };
     }
     await saveConfig({ routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
     await runDoctor();
     const firstHealth = { ...reads };
     assert.equal(firstHealth.probe >= 3 && firstHealth.catalog === 3 && firstHealth.quota === 3, true, JSON.stringify(firstHealth));
     await runDoctor();
-    assert.deepEqual({ catalog: reads.catalog - firstHealth.catalog, quota: reads.quota - firstHealth.quota }, { catalog: 3, quota: 3 }, 'health reads catalogs and quotas afresh');
+    assert.deepEqual(
+      { catalog: reads.catalog - firstHealth.catalog, quota: reads.quota - firstHealth.quota },
+      { catalog: 3, quota: 3 },
+      'health reads catalogs and quotas afresh',
+    );
     const beforeModels = { ...reads };
     await runModelReport({});
     await runModelReport({});
@@ -282,7 +295,8 @@ test('AX-004b: health reads every backend afresh each time; the models view reus
     assert.equal(reads.quota - beforeModels.quota, 0, 'the models view reads no quota');
   } finally {
     Object.assign(adapterRegistry, original);
-    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv;
+    else delete process.env.coagent8_CONFIG;
   }
 });
 
@@ -293,16 +307,29 @@ test('AX-004b: a catalog the CLI did not answer is not read a second time for th
   process.env.coagent8_CONFIG = path.join(tempDir, 'ax-004b-unanswered-config.json');
   let catalogReads = 0;
   try {
-    adapterRegistry.agy = { ...original,
-      probe: async () => ({ id: 'agy', installed: true, executionSupported: true, version: 'ax-004b-unanswered', authStatus: 'authenticated',
-        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true } }),
-      listModels: async () => { catalogReads++; return undefined; },
-      inspectQuota: async () => undefined, observeModel: undefined };
+    adapterRegistry.agy = {
+      ...original,
+      probe: async () => ({
+        id: 'agy',
+        installed: true,
+        executionSupported: true,
+        version: 'ax-004b-unanswered',
+        authStatus: 'authenticated',
+        capabilities: { readOnlyVerified: true, resume: true, streaming: true, reasoningEffort: true },
+      }),
+      listModels: async () => {
+        catalogReads++;
+        return undefined;
+      },
+      inspectQuota: async () => undefined,
+      observeModel: undefined,
+    };
     await saveConfig({ routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     await runDoctor({ backend: 'agy' });
     assert.equal(catalogReads, 1);
   } finally {
     adapterRegistry.agy = original;
-    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv; else delete process.env.coagent8_CONFIG;
+    if (savedConfigEnv !== undefined) process.env.coagent8_CONFIG = savedConfigEnv;
+    else delete process.env.coagent8_CONFIG;
   }
 });

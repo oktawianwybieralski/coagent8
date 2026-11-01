@@ -49,13 +49,23 @@ function readWriter(file: string): WriterRecord | null {
     throw unreadable(file);
   }
   const r = raw as Partial<WriterRecord> | null;
-  if (!r || typeof r !== 'object' || typeof r.token !== 'string' || typeof r.startedAt !== 'string'
-    || !Number.isSafeInteger(r.pid) || (r.pid as number) <= 0) throw unreadable(file);
+  if (
+    !r ||
+    typeof r !== 'object' ||
+    typeof r.token !== 'string' ||
+    typeof r.startedAt !== 'string' ||
+    !Number.isSafeInteger(r.pid) ||
+    (r.pid as number) <= 0
+  )
+    throw unreadable(file);
   return r as WriterRecord;
 }
 
 function unreadable(file: string): ToolError {
-  return new ToolError('SESSION_BUSY', `The delegate writer record ${file} cannot be read. If no delegate call is changing files in this work tree, delete the file.`);
+  return new ToolError(
+    'SESSION_BUSY',
+    `The delegate writer record ${file} cannot be read. If no delegate call is changing files in this work tree, delete the file.`,
+  );
 }
 
 /**
@@ -71,7 +81,10 @@ export async function acquireWriterLease(gitDir: string): Promise<WriterLease> {
     const current = readWriter(file);
     // A reused PID can only make the slot look busy, never let two writers in.
     if (current && isProcessAlive(current.pid)) {
-      throw new ToolError('SESSION_BUSY', `Another delegate call has been changing files in this work tree since ${current.startedAt}; wait for it to finish or cancel it.`);
+      throw new ToolError(
+        'SESSION_BUSY',
+        `Another delegate call has been changing files in this work tree since ${current.startedAt}; wait for it to finish or cancel it.`,
+      );
     }
     const record: WriterRecord = { pid: process.pid, token, startedAt: new Date().toISOString() };
     await atomicWrite(file, JSON.stringify(record));

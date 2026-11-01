@@ -16,25 +16,19 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  createExecutionBudget,
-  isValidBudgetDuration,
-} = require('../../src/execution/runtime/budget.ts');
-const {
-  DEFAULT_EXECUTION_TIMEOUT_MS,
-  DEFAULT_TEARDOWN_GRACE_MS,
-} = require('../../src/contracts/execution.ts');
+const { createExecutionBudget, isValidBudgetDuration } = require('../../src/execution/runtime/budget.ts');
+const { DEFAULT_EXECUTION_TIMEOUT_MS, DEFAULT_TEARDOWN_GRACE_MS } = require('../../src/contracts/execution.ts');
 const { ToolError } = require('../../src/contracts/error.ts');
 
 function createFakeClock(initialTime = 1000) {
   let current = initialTime;
   return {
     now: () => current,
-    advance: (ms) => {
+    advance: ms => {
       current += ms;
       return current;
     },
-    set: (t) => {
+    set: t => {
       current = t;
       return current;
     },
@@ -66,10 +60,7 @@ test('createExecutionBudget initializes with default parameters', () => {
     assert.equal(budget.totalBudgetMs, DEFAULT_EXECUTION_TIMEOUT_MS);
     assert.equal(budget.teardownAllowanceMs, DEFAULT_TEARDOWN_GRACE_MS);
     assert.equal(budget.deadlineMs, 5000 + DEFAULT_EXECUTION_TIMEOUT_MS);
-    assert.equal(
-      budget.executionDeadlineMs,
-      5000 + DEFAULT_EXECUTION_TIMEOUT_MS - DEFAULT_TEARDOWN_GRACE_MS
-    );
+    assert.equal(budget.executionDeadlineMs, 5000 + DEFAULT_EXECUTION_TIMEOUT_MS - DEFAULT_TEARDOWN_GRACE_MS);
 
     assert.equal(budget.status(), 'active');
     assert.equal(budget.isExecutionExpired(), false);
@@ -79,10 +70,7 @@ test('createExecutionBudget initializes with default parameters', () => {
     assert.equal(budget.abortReason(), undefined);
 
     assert.equal(budget.remainingTotalMs(), DEFAULT_EXECUTION_TIMEOUT_MS);
-    assert.equal(
-      budget.remainingExecutionMs(),
-      DEFAULT_EXECUTION_TIMEOUT_MS - DEFAULT_TEARDOWN_GRACE_MS
-    );
+    assert.equal(budget.remainingExecutionMs(), DEFAULT_EXECUTION_TIMEOUT_MS - DEFAULT_TEARDOWN_GRACE_MS);
     assert.equal(budget.remainingTeardownMs(), DEFAULT_TEARDOWN_GRACE_MS);
 
     assert.equal(budget.executionSignal.aborted, false);
@@ -240,7 +228,7 @@ test('createExecutionBudget rejects zero, negative, and non-finite durations wit
   for (const invalid of invalidDurations) {
     assert.throws(
       () => createExecutionBudget({ totalBudgetMs: invalid }),
-      (err) => err instanceof ToolError && err.code === 'INPUT_LIMIT' && err.message === 'Invalid deadline or buffer budget.'
+      err => err instanceof ToolError && err.code === 'INPUT_LIMIT' && err.message === 'Invalid deadline or buffer budget.',
     );
   }
 });
@@ -415,7 +403,7 @@ test('automatic teardown timer expiry after immediate execution expiry', async (
     assert.equal(budget.teardownSignal.aborted, false);
 
     // Await total timer expiration
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise(resolve => setTimeout(resolve, 80));
 
     // Teardown signal must now be aborted automatically by total timer
     assert.equal(budget.teardownSignal.aborted, true);

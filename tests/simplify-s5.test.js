@@ -66,12 +66,7 @@ test('S5 layout: tests mirror source structure while preserving distinct purpose
   }
 
   // Preserved distinct test purposes
-  const distinctDirs = [
-    'tests/consumer',
-    'tests/e2e',
-    'tests/fixtures',
-    'tests/helpers',
-  ];
+  const distinctDirs = ['tests/consumer', 'tests/e2e', 'tests/fixtures', 'tests/helpers'];
 
   for (const d of distinctDirs) {
     const full = path.join(root, d);

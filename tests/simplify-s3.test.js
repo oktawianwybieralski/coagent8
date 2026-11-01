@@ -5,12 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const {
-  describeModels,
-  lookupName,
-  findCatalogEntry,
-  checkModelSelection,
-} = require('../src/models/catalog.ts');
+const { describeModels, lookupName, findCatalogEntry, checkModelSelection } = require('../src/models/catalog.ts');
 const { isValidModelIdentifier } = require('../src/models/identifier.ts');
 const {
   parsePriceList,
@@ -30,20 +25,10 @@ const {
   consentUnansweredMessage,
   modelDeniedMessage,
 } = require('../src/models/governance.ts');
-const {
-  catalogDefault,
-  catalogNames,
-  choosePricedModel,
-  listModelCandidates,
-} = require('../src/models/selection.ts');
+const { catalogDefault, catalogNames, choosePricedModel, listModelCandidates } = require('../src/models/selection.ts');
 const { selectModel } = require('../src/execution/selection.ts');
 const { consentFor } = require('../src/execution/consent.ts');
-const {
-  resolveBackend,
-  resolveBackendForModel,
-  providerForClient,
-  setCallerProvider,
-} = require('../src/execution/routing.ts');
+const { resolveBackend, resolveBackendForModel, providerForClient, setCallerProvider } = require('../src/execution/routing.ts');
 
 test('S3 models: catalog and identifier rules', () => {
   assert.equal(isValidModelIdentifier('gpt-4o'), true);
@@ -89,9 +74,7 @@ test('S3 models: prices and governance decisions', () => {
   assert.equal(priceKey('GPT-4O'), 'gpt-4o');
 
   const rawPayload = {
-    data: [
-      { id: 'model-x', pricing: { completion: '0.000005', prompt: '0.000002', input_cache_read: '0.000001' } },
-    ],
+    data: [{ id: 'model-x', pricing: { completion: '0.000005', prompt: '0.000002', input_cache_read: '0.000001' } }],
   };
   const parsed = parsePriceList(rawPayload);
   assert.ok(parsed && parsed.length === 1);
@@ -136,14 +119,20 @@ test('S3 models: prices and governance decisions', () => {
 
   const decisionDenied = decideConsent('model-denied', 'model-x', priceList, settings);
   assert.deepEqual([decisionDenied.deny, decisionDenied.ask, decisionDenied.basis], [true, false, 'deny']);
-  assert.match(modelDeniedMessage('model-denied'), /^Model 'model-denied' did not run: the user denied it in governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Only the user can remove it from that list\. Tell the user; switch to another model only if the user asks\.$/);
+  assert.match(
+    modelDeniedMessage('model-denied'),
+    /^Model 'model-denied' did not run: the user denied it in governance\.models\.deny \(VS Code: CoAgent8: Manage Model Approvals\)\. Only the user can remove it from that list\. Tell the user; switch to another model only if the user asks\.$/,
+  );
 
   assert.match(consentRequiredMessage('m', 'reason'), /needs the user's approval/);
   assert.match(consentDeclinedMessage('m'), /did not approve/);
   assert.match(consentUnansweredMessage('m', 'reason'), /without an answer/);
   // No form reached the user: name the user's own ways out and forbid the agent from taking them.
   for (const message of [consentRequiredMessage('m', 'reason'), consentUnansweredMessage('m', 'reason')]) {
-    assert.match(message, /client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: CoAgent8: Manage Model Approvals\); never change that setting yourself\./);
+    assert.match(
+      message,
+      /client that shows MCP forms, or allow it in governance\.models\.allow \(VS Code: CoAgent8: Manage Model Approvals\); never change that setting yourself\./,
+    );
   }
   assert.doesNotMatch(consentDeclinedMessage('m'), /models\.allow/, 'a refusal by the user is not an invitation to allow the model');
 });
@@ -169,23 +158,35 @@ test('S3 models: pure selection decisions', () => {
     },
   };
 
-  const chosenBelow10 = choosePricedModel(
-    'codex',
-    catalog,
-    { model: 'default-model', source: 'config' },
-    { below: 10 },
-    priceList
-  );
+  const chosenBelow10 = choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList);
   assert.equal(chosenBelow10.model, 'other-model-low');
   assert.equal(chosenBelow10.source, 'price-limit');
   // A denied model is never chosen for a limit, by id or by the variant it would run as.
-  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model']),
-    { code: 'PRICE_LIMIT', message: /and not denied by the user has a verified price below the limit/ });
-  assert.deepEqual(choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low']),
-    { model: 'other-model-high', source: 'price-limit' }, 'another permitted variant is chosen');
-  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low', 'other-model-high']), { code: 'PRICE_LIMIT' });
-  assert.throws(() => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 20 }, priceList, ['default-model', 'other-model']),
-    { code: 'PRICE_LIMIT', message: /Default: 'default-model' is denied by the user\./ });
+  assert.throws(
+    () => choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model']),
+    { code: 'PRICE_LIMIT', message: /and not denied by the user has a verified price below the limit/ },
+  );
+  assert.deepEqual(
+    choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, ['other-model-low']),
+    { model: 'other-model-high', source: 'price-limit' },
+    'another permitted variant is chosen',
+  );
+  assert.throws(
+    () =>
+      choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 10 }, priceList, [
+        'other-model-low',
+        'other-model-high',
+      ]),
+    { code: 'PRICE_LIMIT' },
+  );
+  assert.throws(
+    () =>
+      choosePricedModel('codex', catalog, { model: 'default-model', source: 'config' }, { below: 20 }, priceList, [
+        'default-model',
+        'other-model',
+      ]),
+    { code: 'PRICE_LIMIT', message: /Default: 'default-model' is denied by the user\./ },
+  );
 
   const settings = { models: { allow: [], ask: [], deny: [] }, askAbovePrice: 20, priceMultiplier: 2 };
   const candidates = listModelCandidates('codex', catalog, { model: 'default-model', source: 'config' }, priceList, settings);
@@ -210,7 +211,8 @@ test('S3 execution routing: client mapping and caller preservation', () => {
 test('S3 boundaries: models/ has zero dependencies on backends/ or execution/', () => {
   const root = path.resolve(__dirname, '..');
   const modelsDir = path.join(root, 'src', 'models');
-  const files = fs.readdirSync(modelsDir, { recursive: true })
+  const files = fs
+    .readdirSync(modelsDir, { recursive: true })
     .filter(f => typeof f === 'string' && f.endsWith('.ts'))
     .map(f => path.join(modelsDir, f));
 
@@ -223,14 +225,15 @@ test('S3 boundaries: models/ has zero dependencies on backends/ or execution/', 
       const specifier = match[1];
       assert.ok(
         !specifier.includes('backends') && !specifier.includes('execution') && !specifier.includes('mcp'),
-        `Forbidden dependency in ${path.relative(root, file)}: ${specifier}`
+        `Forbidden dependency in ${path.relative(root, file)}: ${specifier}`,
       );
     }
   }
 
   // Ensure backends has zero imports from application routing or selection orchestration
   const backendsDir = path.join(root, 'src', 'backends');
-  const backendFiles = fs.readdirSync(backendsDir, { recursive: true })
+  const backendFiles = fs
+    .readdirSync(backendsDir, { recursive: true })
     .filter(f => typeof f === 'string' && f.endsWith('.ts'))
     // Exclude compatibility shims which deliberately forward to canonical execution files
     .filter(f => !['routing.ts', 'consent.ts', 'model-selection.ts'].includes(path.basename(f)))
@@ -243,10 +246,10 @@ test('S3 boundaries: models/ has zero dependencies on backends/ or execution/', 
       const specifier = match[1];
       assert.ok(
         !specifier.includes('execution/routing') &&
-        !specifier.includes('execution/selection') &&
-        !specifier.includes('execution/consent') &&
-        !specifier.includes('execution/controller'),
-        `Forbidden execution orchestration import in ${path.relative(root, file)}: ${specifier}`
+          !specifier.includes('execution/selection') &&
+          !specifier.includes('execution/consent') &&
+          !specifier.includes('execution/controller'),
+        `Forbidden execution orchestration import in ${path.relative(root, file)}: ${specifier}`,
       );
     }
   }

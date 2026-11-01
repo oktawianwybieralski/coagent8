@@ -63,7 +63,7 @@ export interface ListedPrice {
 }
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 /**
@@ -102,12 +102,21 @@ export function parsePriceList(payload: unknown): ListedPrice[] | undefined {
   const entries: ListedPrice[] = [];
   for (const item of data.slice(0, MAX_ENTRIES)) {
     const entry = record(item);
-    const id = entry?.id, pricing = record(entry?.pricing);
+    const id = entry?.id,
+      pricing = record(entry?.pricing);
     const output = perMillion(pricing?.completion);
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(id) || output === null) continue;
     const released = parseReleaseDate(entry?.created);
-    entries.push({ id, output, input: perMillion(pricing?.prompt), cachedInput: perMillion(pricing?.input_cache_read),
-      cacheWrite: perMillion(pricing?.input_cache_write), cacheWriteLong: perMillion(pricing?.input_cache_write_1h), tieredFrom: tierStart(pricing?.overrides), released });
+    entries.push({
+      id,
+      output,
+      input: perMillion(pricing?.prompt),
+      cachedInput: perMillion(pricing?.input_cache_read),
+      cacheWrite: perMillion(pricing?.input_cache_write),
+      cacheWriteLong: perMillion(pricing?.input_cache_write_1h),
+      tieredFrom: tierStart(pricing?.overrides),
+      released,
+    });
   }
   return entries.length ? entries : undefined;
 }
@@ -121,7 +130,9 @@ function tierStart(raw: unknown): number | null {
   if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0)) return null;
   if (!Array.isArray(raw)) return 0;
   const starts = raw.map(item => record(item)?.min_prompt_tokens);
-  return starts.every(start => typeof start === 'number' && Number.isSafeInteger(start) && start >= 0) ? Math.min(...starts as number[]) : 0;
+  return starts.every(start => typeof start === 'number' && Number.isSafeInteger(start) && start >= 0)
+    ? Math.min(...(starts as number[]))
+    : 0;
 }
 
 function normalize(name: string): string {
@@ -147,9 +158,18 @@ export function matchPrices(entries: readonly ListedPrice[], models: Iterable<st
     named.set(key, [...(named.get(key) ?? []), entry]);
   }
   const highest = (found: ListedPrice[], exact: boolean): PriceRecord => {
-    const top = found.reduce((best, entry) => entry.output > best.output ? entry : best);
-    return { output: top.output, input: top.input, cachedInput: top.cachedInput, cacheWrite: top.cacheWrite, cacheWriteLong: top.cacheWriteLong,
-      tieredFrom: top.tieredFrom, matched: top.id, exact, released: top.released };
+    const top = found.reduce((best, entry) => (entry.output > best.output ? entry : best));
+    return {
+      output: top.output,
+      input: top.input,
+      cachedInput: top.cachedInput,
+      cacheWrite: top.cacheWrite,
+      cacheWriteLong: top.cacheWriteLong,
+      tieredFrom: top.tieredFrom,
+      matched: top.id,
+      exact,
+      released: top.released,
+    };
   };
   const match = (model: string): PriceRecord | null => {
     const variant = /\[[^\]]*\]$/.test(model);
@@ -266,7 +286,8 @@ function isCurrentPriceInflight(entry: PriceInflightEntry, readContext?: Backend
   return activeInflight === entry && activeInflight.abortController.signal === readContext.abortSignal;
 }
 
-const covers = (list: PriceList | undefined, models: readonly string[]) => list !== undefined && models.every(model => priceKey(model) in list.models);
+const covers = (list: PriceList | undefined, models: readonly string[]) =>
+  list !== undefined && models.every(model => priceKey(model) in list.models);
 
 /** Wait before an unreachable price source is tried again. */
 const RETRY_MS = 5 * 60 * 1000;
@@ -275,11 +296,7 @@ const RETRY_MS = 5 * 60 * 1000;
  * Reads the list once at a time: concurrent callers join a read in progress (`EXEC-001-T08f`).
  * Enforces per-waiter cancellation/timeout isolation, last-waiter abort, and late settlement safety.
  */
-async function sharedRefresh(
-  models: readonly string[],
-  context?: BackendReadContext,
-  fresh = false
-): Promise<PriceList | undefined> {
+async function sharedRefresh(models: readonly string[], context?: BackendReadContext, fresh = false): Promise<PriceList | undefined> {
   const preAbort = getPreAbortError(context);
   if (preAbort) {
     return Promise.reject(preAbort);
@@ -355,7 +372,7 @@ async function sharedRefresh(
           const isAbortOrTimeout = Boolean(
             sharedContext.abortSignal?.aborted ||
             (fetchError instanceof ToolError && (fetchError.code === 'ABORTED' || fetchError.code === 'TIMEOUT')) ||
-            (fetchError instanceof Error && fetchError.name === 'AbortError')
+            (fetchError instanceof Error && fetchError.name === 'AbortError'),
           );
           if (!isAbortOrTimeout && (newEntry.id === latestInflightId || activeInflight === newEntry)) {
             failedAt = Date.now();
@@ -363,7 +380,11 @@ async function sharedRefresh(
           for (const waiter of newEntry.waiters) {
             if (waiter.active) {
               waiter.active = false;
-              try { waiter.cleanup(); } catch { /* ignore */ }
+              try {
+                waiter.cleanup();
+              } catch {
+                /* ignore */
+              }
               waiter.reject(fetchError);
             }
           }
@@ -375,7 +396,11 @@ async function sharedRefresh(
           for (const waiter of newEntry.waiters) {
             if (waiter.active) {
               waiter.active = false;
-              try { waiter.cleanup(); } catch { /* ignore */ }
+              try {
+                waiter.cleanup();
+              } catch {
+                /* ignore */
+              }
               waiter.resolve(list);
             }
           }
@@ -388,9 +413,11 @@ async function sharedRefresh(
     })();
 
     runningPromises.add(executionPromise);
-    executionPromise.finally(() => {
-      runningPromises.delete(executionPromise);
-    }).catch(() => {});
+    executionPromise
+      .finally(() => {
+        runningPromises.delete(executionPromise);
+      })
+      .catch(() => {});
   }
 
   const targetEntry = entry;
@@ -414,7 +441,11 @@ async function sharedRefresh(
     function detachWaiter(error: unknown): void {
       if (!waiter.active) return;
       waiter.active = false;
-      try { waiter.cleanup(); } catch { /* ignore */ }
+      try {
+        waiter.cleanup();
+      } catch {
+        /* ignore */
+      }
       targetEntry.waiters.delete(waiter);
       waiter.reject(error);
 
@@ -432,11 +463,12 @@ async function sharedRefresh(
     };
     const onBudgetAbort = () => {
       const budgetReason = context?.budget?.abortReason();
-      const reason = budgetReason instanceof ToolError
-        ? budgetReason
-        : (context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired())
-          ? new ToolError('TIMEOUT', 'Execution budget expired.')
-          : toAbortError(budgetReason);
+      const reason =
+        budgetReason instanceof ToolError
+          ? budgetReason
+          : context?.budget?.isTimedOut() || context?.budget?.isExecutionExpired()
+            ? new ToolError('TIMEOUT', 'Execution budget expired.')
+            : toAbortError(budgetReason);
       detachWaiter(reason);
     };
 
@@ -554,7 +586,11 @@ export async function readPrices(options: ReadPricesOptions = {}): Promise<Price
   const models = options.models ?? [];
   const stored = readStoredPrices();
   const age = stored ? Date.now() - stored.fetchedAt : Infinity;
-  const wait = Boolean(options.fresh) || !covers(stored, models) || (options.current && age >= PRICE_STALE_MS) || (options.refresh && age >= PRICE_REFRESH_MS);
+  const wait =
+    Boolean(options.fresh) ||
+    !covers(stored, models) ||
+    (options.current && age >= PRICE_STALE_MS) ||
+    (options.refresh && age >= PRICE_REFRESH_MS);
   if (wait) {
     const list = await sharedRefresh(models, context, Boolean(options.fresh));
     return list ?? stored;
@@ -609,7 +645,21 @@ export interface PriceEvidence {
  * @param now - Milliseconds since the epoch, for staleness.
  */
 export function priceEvidence(list: PriceList | undefined, model: string, now = Date.now()): PriceEvidence {
-  if (!list) return { outputUsdPerMTok: null, inputUsdPerMTok: null, cachedInputUsdPerMTok: null, cacheWriteUsdPerMTok: null, cacheWriteLongUsdPerMTok: null, tieredFromInputTokens: 0, matched: null, match: 'unknown', source: null, fetchedAt: null, stale: false, released: null };
+  if (!list)
+    return {
+      outputUsdPerMTok: null,
+      inputUsdPerMTok: null,
+      cachedInputUsdPerMTok: null,
+      cacheWriteUsdPerMTok: null,
+      cacheWriteLongUsdPerMTok: null,
+      tieredFromInputTokens: 0,
+      matched: null,
+      match: 'unknown',
+      source: null,
+      fetchedAt: null,
+      stale: false,
+      released: null,
+    };
   const price = findPrice(list, model);
   return {
     outputUsdPerMTok: price?.output ?? null,
@@ -642,10 +692,12 @@ export function checkPriceLimit(model: string, evidence: PriceEvidence, below: n
   const limit = `below ${usd(below)} per million output tokens`;
   if (!evidence.source) return `No price list is available, so '${model}' cannot be shown to cost ${limit}.`;
   const list = `${evidence.source} list of ${evidence.fetchedAt!.slice(0, 10)}`;
-  if (evidence.stale) return `The ${list} is older than seven days and could not be read again, so '${model}' cannot be shown to cost ${limit}.`;
+  if (evidence.stale)
+    return `The ${list} is older than seven days and could not be read again, so '${model}' cannot be shown to cost ${limit}.`;
   if (evidence.match === 'unknown') return `The ${list} has no price for '${model}', so it cannot be shown to cost ${limit}.`;
-  if (evidence.match === 'approximate') return `The ${list} prices '${model}' only approximately, as ${evidence.matched} at ${usd(evidence.outputUsdPerMTok!)}, so it cannot be shown to cost ${limit}.`;
-  if (evidence.outputUsdPerMTok! >= below) return `'${model}' costs ${usd(evidence.outputUsdPerMTok!)} per million output tokens (${list}), not ${limit}.`;
+  if (evidence.match === 'approximate')
+    return `The ${list} prices '${model}' only approximately, as ${evidence.matched} at ${usd(evidence.outputUsdPerMTok!)}, so it cannot be shown to cost ${limit}.`;
+  if (evidence.outputUsdPerMTok! >= below)
+    return `'${model}' costs ${usd(evidence.outputUsdPerMTok!)} per million output tokens (${list}), not ${limit}.`;
   return undefined;
 }
-

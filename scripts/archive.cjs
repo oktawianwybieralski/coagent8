@@ -42,7 +42,8 @@ function parseOctal(field, label, file) {
 function readTarball(file, { maxBytes = MAX_ARCHIVE_BYTES } = {}) {
   const data = inflateBounded(zlib.gunzipSync, readBoundedArchive(file, maxBytes), maxBytes, file);
   const entries = new Map();
-  let offset = 0, paxPath = null;
+  let offset = 0,
+    paxPath = null;
   const text = (start, length) => data.toString('utf8', start, start + length).replace(/\0.*$/s, '');
   while (offset + 512 <= data.length) {
     const header = data.subarray(offset, offset + 512);
@@ -96,9 +97,12 @@ function readZipEntry(file, name, { maxBytes = MAX_ARCHIVE_BYTES } = {}) {
   const buf = readBoundedArchive(file, maxBytes);
   if (buf.length < 22) throw new Error(`Invalid ZIP archive ${file}: too short.`);
   const eocd = findEndOfCentralDirectory(buf, file);
-  const disk = buf.readUInt16LE(eocd + 4), cdDisk = buf.readUInt16LE(eocd + 6);
-  const diskEntries = buf.readUInt16LE(eocd + 8), count = buf.readUInt16LE(eocd + 10);
-  const cdSize = buf.readUInt32LE(eocd + 12), cdOffset = buf.readUInt32LE(eocd + 16);
+  const disk = buf.readUInt16LE(eocd + 4),
+    cdDisk = buf.readUInt16LE(eocd + 6);
+  const diskEntries = buf.readUInt16LE(eocd + 8),
+    count = buf.readUInt16LE(eocd + 10);
+  const cdSize = buf.readUInt32LE(eocd + 12),
+    cdOffset = buf.readUInt32LE(eocd + 16);
   if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) throw new Error(`ZIP64 archive ${file} is not supported.`);
   if (disk !== 0 || cdDisk !== 0 || diskEntries !== count) throw new Error(`Multi-disk ZIP archive ${file} is not supported.`);
   if (cdOffset + cdSize > eocd) throw new Error(`Invalid ZIP archive ${file}: central directory out of bounds.`);

@@ -111,7 +111,10 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
   }
 
   process.env.coagent8_FIXTURE_MODE = 'wrong-session';
-  assert.equal((await execute('request', { model: MODEL, cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' })).error.code, 'SESSION_INVALID');
+  assert.equal(
+    (await execute('request', { model: MODEL, cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' })).error.code,
+    'SESSION_INVALID',
+  );
 
   process.env.coagent8_FIXTURE_MODE = 'rate-before-init';
   const resumedRate = await execute('request', { model: MODEL, cwd: tempDir, nativeSessionId: '11111111-aaaa-bbbb-cccc-123456789012' });
@@ -127,7 +130,13 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
 
   process.env.coagent8_FIXTURE_MODE = 'sandbox-denied';
   const warnings = [];
-  const deniedRes = await execute('request', { model: MODEL, cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+  const deniedRes = await execute('request', {
+    model: MODEL,
+    cwd: tempDir,
+    onEvent: e => {
+      if (e.type === 'warning') warnings.push(e.message);
+    },
+  });
   assert.equal(deniedRes.status, 'completed', 'a denial shows the sandbox works; the answer stays');
   assert.equal(deniedRes.output, 'Answer from the files agy could read.');
   assert.equal(deniedRes.continuationAvailable, true);
@@ -143,17 +152,33 @@ test('Gemini protocol errors are authoritative at exit zero and failures have ty
 
 test('#92: a workspace-write turn names the denied action and recovers once inside the workspace (fixture)', async () => {
   const capture = path.join(tempDir, 'write-denial-capture.json');
-  Object.assign(process.env, { coagent8_FIXTURE_MODE: 'sandbox-denied-recover', coagent8_FIXTURE_DENIED_ACTION: 'read_file', coagent8_FIXTURE_CAPTURE: capture });
+  Object.assign(process.env, {
+    coagent8_FIXTURE_MODE: 'sandbox-denied-recover',
+    coagent8_FIXTURE_DENIED_ACTION: 'read_file',
+    coagent8_FIXTURE_CAPTURE: capture,
+  });
   try {
     const warnings = [];
-    const recovered = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write', onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+    const recovered = await execute('Change it', {
+      model: MODEL,
+      cwd: tempDir,
+      profile: 'workspace-write',
+      onEvent: e => {
+        if (e.type === 'warning') warnings.push(e.message);
+      },
+    });
     assert.equal(recovered.status, 'completed', JSON.stringify(recovered.error));
     assert.equal(recovered.output, 'Recovered answer from read_file without shell commands.');
     const retry = JSON.parse(fs.readFileSync(capture, 'utf8'));
-    assert.ok(retry.args.includes('--conversation') && !retry.args.includes('--sandbox'), 'the writer retries in its conversation without the sandbox');
+    assert.ok(
+      retry.args.includes('--conversation') && !retry.args.includes('--sandbox'),
+      'the writer retries in its conversation without the sandbox',
+    );
     assert.match(retry.prompt, /^Headless mode denied action read_file and your previous turn ended without an answer\./);
     assert.ok(retry.prompt.includes(`inside ${tempDir}, never another checkout`), 'the recovery prompt names the workspace');
-    assert.deepEqual(warnings, ['agy headless mode denied action read_file (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.']);
+    assert.deepEqual(warnings, [
+      'agy headless mode denied action read_file (a workspace-write turn runs no commands and uses files inside the workspace only); the answer may be incomplete.',
+    ]);
 
     process.env.coagent8_FIXTURE_MODE = 'sandbox-denied-empty';
     const empty = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
@@ -161,19 +186,34 @@ test('#92: a workspace-write turn names the denied action and recovers once insi
     assert.equal(empty.error.code, 'POLICY_DENIED');
     assert.match(empty.error.message, /after headless mode denied action read_file, including on automatic retry inside the workspace: /);
 
-    Object.assign(process.env, { coagent8_FIXTURE_DENIED_ACTION: 'a1,a2,a3,a4,a5', coagent8_FIXTURE_RETRY_DENIED_ACTION: 'b1,b2,b3,b4,b5' });
+    Object.assign(process.env, {
+      coagent8_FIXTURE_DENIED_ACTION: 'a1,a2,a3,a4,a5',
+      coagent8_FIXTURE_RETRY_DENIED_ACTION: 'b1,b2,b3,b4,b5',
+    });
     const many = await execute('Change it', { model: MODEL, cwd: tempDir, profile: 'workspace-write' });
     assert.match(many.error.message, /denied actions a1, a2, a3, a4, a5, including/, 'both turns together still name five actions at most');
   } finally {
-    for (const key of ['coagent8_FIXTURE_MODE', 'coagent8_FIXTURE_DENIED_ACTION', 'coagent8_FIXTURE_RETRY_DENIED_ACTION', 'coagent8_FIXTURE_CAPTURE']) delete process.env[key];
+    for (const key of [
+      'coagent8_FIXTURE_MODE',
+      'coagent8_FIXTURE_DENIED_ACTION',
+      'coagent8_FIXTURE_RETRY_DENIED_ACTION',
+      'coagent8_FIXTURE_CAPTURE',
+    ])
+      delete process.env[key];
   }
 });
 
-test('#89: an answer cut off at agy\'s output token limit is a completed, length-limited result (fixture)', async () => {
+test("#89: an answer cut off at agy's output token limit is a completed, length-limited result (fixture)", async () => {
   try {
     process.env.coagent8_FIXTURE_MODE = 'output-limit';
     const warnings = [];
-    const partial = await execute('Answer D1-D6', { model: MODEL, cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+    const partial = await execute('Answer D1-D6', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: e => {
+        if (e.type === 'warning') warnings.push(e.message);
+      },
+    });
     assert.equal(partial.status, 'completed', JSON.stringify(partial.error));
     assert.equal(partial.error, undefined);
     assert.equal(partial.lengthLimited, true);
@@ -209,15 +249,36 @@ test('#89: an answer cut off at agy\'s output token limit is a completed, length
 
 test('#92: denied action names come from agy reports and stderr, bounded and without operands', () => {
   const collector = createGeminiCollector();
-  collector.denySandbox('jetski: no output produced - a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.');
+  collector.denySandbox(
+    'jetski: no output produced - a tool required the "read_file" permission that headless mode cannot prompt for, so it was auto-denied.',
+  );
   collector.denySandbox('jetski: RunCommand auto-denied by sandbox policy');
-  collector.line(JSON.stringify({ event: 'result', result: { conversation_id: '11111111-aaaa-bbbb-cccc-123456789012', status: 'SUCCESS', response: '', denied_actions: [
-    { action: 'read_file' }, { action: 'command' }, { action: 'C:\\Users\\name\\secret.txt' }, { action: 'rm -rf /' }, {}, null,
-    ...['a1', 'a2', 'a3', 'a4'].map(action => ({ action })),
-  ] } }));
+  collector.line(
+    JSON.stringify({
+      event: 'result',
+      result: {
+        conversation_id: '11111111-aaaa-bbbb-cccc-123456789012',
+        status: 'SUCCESS',
+        response: '',
+        denied_actions: [
+          { action: 'read_file' },
+          { action: 'command' },
+          { action: 'C:\\Users\\name\\secret.txt' },
+          { action: 'rm -rf /' },
+          {},
+          null,
+          ...['a1', 'a2', 'a3', 'a4'].map(action => ({ action })),
+        ],
+      },
+    }),
+  );
   const snapshot = collector.snapshot();
   assert.equal(snapshot.sandboxDenied, true);
-  assert.deepEqual(snapshot.deniedActions, ['read_file', 'command', 'a1', 'a2', 'a3'], 'identifiers only, five at most, no paths or command text');
+  assert.deepEqual(
+    snapshot.deniedActions,
+    ['read_file', 'command', 'a1', 'a2', 'a3'],
+    'identifiers only, five at most, no paths or command text',
+  );
 });
 
 test('Gemini deadline preserves a partial public answer (fixture)', async () => {
@@ -238,13 +299,14 @@ test('cancelled Gemini partial quoted credentials are redacted in both the publi
   const controller = new AbortController();
   adapterRegistry.agy = {
     ...original,
-    execute: (prompt, options) => execute(prompt, {
-      ...options,
-      onEvent: event => {
-        options.onEvent?.(event);
-        if (event.type === 'assistant_delta') controller.abort();
-      },
-    }),
+    execute: (prompt, options) =>
+      execute(prompt, {
+        ...options,
+        onEvent: event => {
+          options.onEvent?.(event);
+          if (event.type === 'assistant_delta') controller.abort();
+        },
+      }),
   };
   process.env.coagent8_FIXTURE_MODE = 'secret-hang';
   try {
@@ -272,7 +334,9 @@ test('Gemini collector rejects malformed roles/content, duplicate terminal and t
   const c = createGeminiCollector();
   assert.throws(() => c.line(JSON.stringify({ type: 'message', role: 'assistant', content: 'private', thought: 'true' })), /metadata/);
   assert.throws(() => c.line(JSON.stringify({ type: 'message', role: 'assistant', content: 4 })), /Invalid/);
-  assert.throws(() => c.line(JSON.stringify({ type: 'message', role: 'assistant', content: 'x'.repeat(1024 * 1024 + 1) })), { code: 'BUFFER_LIMIT' });
+  assert.throws(() => c.line(JSON.stringify({ type: 'message', role: 'assistant', content: 'x'.repeat(1024 * 1024 + 1) })), {
+    code: 'BUFFER_LIMIT',
+  });
   const terminal = createGeminiCollector();
   terminal.line(JSON.stringify({ type: 'result', status: 'success' }));
   assert.throws(() => terminal.line(JSON.stringify({ type: 'result', status: 'success' })), /duplicate/);
@@ -289,8 +353,15 @@ test('Gemini collector ignores an unknown event type with one warning and keeps 
   assert.equal(snapshot.terminal, true);
   assert.equal(snapshot.terminalError, undefined);
   assert.equal(snapshot.output, 'answer');
-  assert.deepEqual(events.filter(event => event.type === 'warning').map(event => event.message), ['Ignored unknown Gemini event type: progress_heartbeat']);
-  assert.throws(() => c.line(JSON.stringify({ type: 'brand_new', event_id: 'bad\nid' })), /metadata/, 'metadata of an unknown event is still validated');
+  assert.deepEqual(
+    events.filter(event => event.type === 'warning').map(event => event.message),
+    ['Ignored unknown Gemini event type: progress_heartbeat'],
+  );
+  assert.throws(
+    () => c.line(JSON.stringify({ type: 'brand_new', event_id: 'bad\nid' })),
+    /metadata/,
+    'metadata of an unknown event is still validated',
+  );
 });
 
 test('Gemini production adapter reports a denial independently of terminal order and rejects real duplicates', async () => {
@@ -298,7 +369,13 @@ test('Gemini production adapter reports a denial independently of terminal order
     for (const mode of ['sandbox-denied-stderr-first', 'sandbox-denied-stdout-first']) {
       process.env.coagent8_FIXTURE_MODE = mode;
       const warnings = [];
-      const result = await execute('synthetic denial request', { model: MODEL, cwd: tempDir, onEvent: e => { if (e.type === 'warning') warnings.push(e.message); } });
+      const result = await execute('synthetic denial request', {
+        model: MODEL,
+        cwd: tempDir,
+        onEvent: e => {
+          if (e.type === 'warning') warnings.push(e.message);
+        },
+      });
       assert.equal(result.status, 'completed', mode);
       assert.equal(result.output, 'Answer from the files agy could read.', mode);
       assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, mode);
@@ -309,17 +386,30 @@ test('Gemini production adapter reports a denial independently of terminal order
     const duplicate = await execute('synthetic duplicate request', { model: MODEL, cwd: tempDir });
     assert.equal(duplicate.error.code, 'PROTOCOL_ERROR');
     assert.equal(duplicate.continuationAvailable, false);
-  } finally { delete process.env.coagent8_FIXTURE_MODE; }
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
 });
 
 test('Gemini (agy) gets a 2 s SIGTERM grace on POSIX to shut down its own commands', async t => {
-  if (process.platform === 'win32') { t.skip('POSIX process-group signals only'); return; }
+  if (process.platform === 'win32') {
+    t.skip('POSIX process-group signals only');
+    return;
+  }
   const marker = path.join(tempDir, 'agy-clean-shutdown');
   process.env.coagent8_FIXTURE_MODE = 'sigterm-cleanup';
   process.env.coagent8_FIXTURE_MARKER = marker;
   try {
     const controller = new AbortController();
-    const result = await execute('request', { model: MODEL, cwd: tempDir, timeoutMs: 15000, abortSignal: controller.signal, onEvent: event => { if (event.type === 'assistant_delta' || event.type === 'assistant_message') controller.abort(); } });
+    const result = await execute('request', {
+      model: MODEL,
+      cwd: tempDir,
+      timeoutMs: 15000,
+      abortSignal: controller.signal,
+      onEvent: event => {
+        if (event.type === 'assistant_delta' || event.type === 'assistant_message') controller.abort();
+      },
+    });
     assert.equal(result.status, 'cancelled');
     // Exit code, signal and the handler marker tell a signal before the handler (SIGTERM, no
     // marker) from a cleanup that outlasted the grace (SIGKILL).
@@ -465,7 +555,7 @@ test('messages exceeding maxMessages set isTruncated and throw in Gemini adapter
   }
   assert.throws(
     () => collector.line(JSON.stringify({ type: 'message', role: 'assistant', content: 'Message 51', message_id: 'msg-51' })),
-    /Too many public messages/
+    /Too many public messages/,
   );
 });
 
@@ -569,9 +659,14 @@ test('agy /usage runs only from quota inspection, sandboxed; probe and execute l
 });
 
 test('gemini-adapter: a window without remaining_fraction is unmeasured, not full headroom (AUD-P2-2)', () => {
-  const payload = (buckets) => ({ status: 'SUCCESS', command: { name: 'usage', data: { groups: [{ name: 'Gemini', buckets }] } } });
+  const payload = buckets => ({ status: 'SUCCESS', command: { name: 'usage', data: { groups: [{ name: 'Gemini', buckets }] } } });
   assert.equal(parseGeminiUsage(payload([{ id: 'weekly', window: 'weekly' }])), undefined, 'no measured window, no quota');
-  const partial = parseGeminiUsage(payload([{ id: 'five-hour', window: '5h' }, { id: 'weekly', window: 'weekly', remaining_fraction: 0.3 }]));
+  const partial = parseGeminiUsage(
+    payload([
+      { id: 'five-hour', window: '5h' },
+      { id: 'weekly', window: 'weekly', remaining_fraction: 0.3 },
+    ]),
+  );
   assert.equal(partial.headroomPercent, 30);
   assert.equal(partial.buckets.length, 1, 'the unmeasured window is not reported');
   assert.equal(parseGeminiUsage('not a payload'), undefined);
@@ -590,7 +685,11 @@ test('every agy launch disables its auto-updater, whose console window takes the
     assert.ok(await listModels());
     const result = await executeGemini('question', { model: MODEL, cwd: tempDir, onEvent: () => {} });
     assert.equal(result.status, 'completed', JSON.stringify(result.error));
-    const launches = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const launches = fs
+      .readFileSync(log, 'utf8')
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line));
     assert.equal(launches.length, 4, 'probe, quota read, catalog and turn');
     for (const launch of launches) assert.equal(launch.autoUpdate, 'true', JSON.stringify(launch.args));
     assert.equal(process.env.AGY_CLI_DISABLE_AUTO_UPDATE, '1', 'the server environment is not changed');
@@ -605,21 +704,35 @@ test('every agy launch disables its auto-updater, whose console window takes the
 test('agy inherited tools: enabled MCP servers from `agy mcp list` and enabled discovered plugins (CUR-002)', async () => {
   const { parseAgyMcpList, listAgyPlugins, inheritedTools } = require('../../../src/backends/agy/adapter.ts');
   // Recorded from agy 1.3.1 (2026-10-07), plus a disabled row.
-  assert.deepEqual(parseAgyMcpList('NAME      TYPE   STATUS    COMMAND/URL\ncontext7  stdio  enabled   npx.cmd -y @upstash/context7-mcp\nold       http   disabled  http://127.0.0.1:9/mcp\n'), ['context7']);
+  assert.deepEqual(
+    parseAgyMcpList(
+      'NAME      TYPE   STATUS    COMMAND/URL\ncontext7  stdio  enabled   npx.cmd -y @upstash/context7-mcp\nold       http   disabled  http://127.0.0.1:9/mcp\n',
+    ),
+    ['context7'],
+  );
   assert.deepEqual(parseAgyMcpList('No MCP servers configured.\n'), []);
 
   const config = path.join(tempDir, 'agy-config');
-  const plugin = (dir, manifest) => { fs.mkdirSync(path.join(config, 'plugins', dir), { recursive: true }); if (manifest) fs.writeFileSync(path.join(config, 'plugins', dir, 'plugin.json'), JSON.stringify(manifest)); };
+  const plugin = (dir, manifest) => {
+    fs.mkdirSync(path.join(config, 'plugins', dir), { recursive: true });
+    if (manifest) fs.writeFileSync(path.join(config, 'plugins', dir, 'plugin.json'), JSON.stringify(manifest));
+  };
   assert.deepEqual(listAgyPlugins(config), [], 'no plugins directory');
   plugin('kit', { name: 'kit' });
   plugin('shipped-off', { disabled: true });
   plugin('turned-on', { disabled: true });
   plugin('turned-off', {});
   plugin('not-a-plugin', null);
-  fs.writeFileSync(path.join(config, 'config.json'), JSON.stringify({ plugins: { 'turned-on': { enabled: true }, 'turned-off': { enabled: false } } }));
+  fs.writeFileSync(
+    path.join(config, 'config.json'),
+    JSON.stringify({ plugins: { 'turned-on': { enabled: true }, 'turned-off': { enabled: false } } }),
+  );
   assert.deepEqual(listAgyPlugins(config).sort(), ['kit', 'turned-on']);
 
-  process.env.coagent8_FIXTURE_AGY_MCP = JSON.stringify([['coagent8', 'enabled'], ['context7', 'disabled']]);
+  process.env.coagent8_FIXTURE_AGY_MCP = JSON.stringify([
+    ['coagent8', 'enabled'],
+    ['context7', 'disabled'],
+  ]);
   try {
     assert.deepEqual(await inheritedTools(), { mcpServers: ['coagent8'], plugins: [] });
   } finally {
@@ -643,48 +756,27 @@ test('EXEC-001-T08e: bound agy reads reject pre-aborted signal before launch wit
   const normalProbe = await probeAgy();
   const preController = new AbortController();
   preController.abort();
-  await assert.rejects(
-    probeAgy({ abortSignal: preController.signal }),
-    err => err instanceof ToolError && err.code === 'ABORTED'
-  );
+  await assert.rejects(probeAgy({ abortSignal: preController.signal }), err => err instanceof ToolError && err.code === 'ABORTED');
   await assert.rejects(
     inspectAgyQuota(normalProbe, { abortSignal: preController.signal }),
-    err => err instanceof ToolError && err.code === 'ABORTED'
+    err => err instanceof ToolError && err.code === 'ABORTED',
   );
   await assert.rejects(
     listAgyModels(normalProbe, { abortSignal: preController.signal }),
-    err => err instanceof ToolError && err.code === 'ABORTED'
+    err => err instanceof ToolError && err.code === 'ABORTED',
   );
-  await assert.rejects(
-    inheritedAgyTools({ abortSignal: preController.signal }),
-    err => err instanceof ToolError && err.code === 'ABORTED'
-  );
-  await assert.rejects(
-    agyAdapter.probe({ abortSignal: preController.signal }),
-    err => err instanceof ToolError && err.code === 'ABORTED'
-  );
+  await assert.rejects(inheritedAgyTools({ abortSignal: preController.signal }), err => err instanceof ToolError && err.code === 'ABORTED');
+  await assert.rejects(agyAdapter.probe({ abortSignal: preController.signal }), err => err instanceof ToolError && err.code === 'ABORTED');
   assert.equal(activeProcesses.size, 0, 'no process launched for pre-aborted reads');
 });
 
 test('EXEC-001-T08e: bound agy reads reject pre-expired budget before launch with 0 spawned processes', async () => {
   const normalProbe = await probeAgy();
   const expiredBudget = { isExecutionExpired: () => true, isTimedOut: () => true, executionSignal: new AbortController().signal };
-  await assert.rejects(
-    probeAgy({ budget: expiredBudget }),
-    err => err instanceof ToolError && err.code === 'TIMEOUT'
-  );
-  await assert.rejects(
-    inspectAgyQuota(normalProbe, { budget: expiredBudget }),
-    err => err instanceof ToolError && err.code === 'TIMEOUT'
-  );
-  await assert.rejects(
-    listAgyModels(normalProbe, { budget: expiredBudget }),
-    err => err instanceof ToolError && err.code === 'TIMEOUT'
-  );
-  await assert.rejects(
-    inheritedAgyTools({ budget: expiredBudget }),
-    err => err instanceof ToolError && err.code === 'TIMEOUT'
-  );
+  await assert.rejects(probeAgy({ budget: expiredBudget }), err => err instanceof ToolError && err.code === 'TIMEOUT');
+  await assert.rejects(inspectAgyQuota(normalProbe, { budget: expiredBudget }), err => err instanceof ToolError && err.code === 'TIMEOUT');
+  await assert.rejects(listAgyModels(normalProbe, { budget: expiredBudget }), err => err instanceof ToolError && err.code === 'TIMEOUT');
+  await assert.rejects(inheritedAgyTools({ budget: expiredBudget }), err => err instanceof ToolError && err.code === 'TIMEOUT');
   assert.equal(activeProcesses.size, 0, 'no process launched for expired budgets');
 });
 
@@ -914,7 +1006,11 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
     assert.equal(direct.nativeSessionId, '11111111-aaaa-bbbb-cccc-123456789012');
     assert.equal(direct.continuationAvailable, true);
     assert.deepEqual(direct.usage, { source: 'provider', inputTokens: 25, outputTokens: 25, totalTokens: 50 });
-    assert.equal(warnings.filter(w => /sandbox denied/.test(w)).length, 1, 'sandbox warning emitted exactly once across initial and recovery turns');
+    assert.equal(
+      warnings.filter(w => /sandbox denied/.test(w)).length,
+      1,
+      'sandbox warning emitted exactly once across initial and recovery turns',
+    );
 
     await saveConfig({ defaultBackend: 'agy', routing: { strategy: 'fixed', allowedBackends: ['agy'] } });
     const response = await executeTask('Analyze architecture', 'Analyze architecture', { backend: 'agy' }, tempDir);
@@ -935,7 +1031,7 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
         { messageId: 'msg-2', text: '   ' },
         { messageId: 'retry-msg-2', text: 'Recovered answer from read_file without shell commands.' },
       ],
-      'recovered assistant answer must be recorded in durable history without colliding with initial step_index'
+      'recovered assistant answer must be recorded in durable history without colliding with initial step_index',
     );
     assert.equal(page.events.at(-1).type, 'turn_finished');
     assert.equal(page.events.at(-1).status, 'completed');
@@ -966,7 +1062,7 @@ test('Issue #20: agy automatically resumes once when sandbox denies a command wi
     assert.equal(Buffer.byteLength(multibyte256Bytes, 'utf8'), 256);
     const mappedMultibyte = mapRetryId(multibyte256Bytes);
     assert.ok(validEventIdentifier(mappedMultibyte), `mapped multibyte ID must be valid: ${mappedMultibyte}`);
-    assert.equal( mapRetryId(multibyte256Bytes), mappedMultibyte);
+    assert.equal(mapRetryId(multibyte256Bytes), mappedMultibyte);
 
     const longAsciiA = `${'a'.repeat(255)}1`;
     const longAsciiB = `${'a'.repeat(255)}2`;

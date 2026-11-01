@@ -15,4 +15,3 @@ export const BRAND = {
   GITHUB_OWNER: 'oktawianwybieralski',
   GITHUB_REPO: 'coagent8',
 } as const;
-

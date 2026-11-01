@@ -33,13 +33,18 @@ const LEASE_MAX_AGE_MS = 30000;
 /** An unreadable lease (from a crash in an older release) is stale after this age. */
 const UNREADABLE_LEASE_GRACE_MS = 2000;
 
-interface LeaseOwner { token?: string; pid?: number; createdAt?: number }
+interface LeaseOwner {
+  token?: string;
+  pid?: number;
+  createdAt?: number;
+}
 
 /** Reads a lease's owner and modification time; `owner` is null when the content is not a lease. */
 async function inspectLease(file: string): Promise<{ owner: LeaseOwner | null; mtimeMs: number } | null> {
   let mtimeMs: number;
-  try { mtimeMs = (await fs.stat(file)).mtimeMs; }
-  catch (err) {
+  try {
+    mtimeMs = (await fs.stat(file)).mtimeMs;
+  } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT' || (process.platform === 'win32' && (code === 'EPERM' || code === 'EBUSY'))) return null;
     throw err;
@@ -94,22 +99,24 @@ export async function atomicWrite(file: string, text: string): Promise<void> {
         await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
         await fs.writeFile(temp, text, { flag: 'wx', mode: 0o600 });
         break;
-      }
-      catch (err) {
+      } catch (err) {
         if (attempt >= 100 || (err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
         await delay(1);
       }
     }
     for (let attempt = 0; ; attempt++) {
-      try { await fs.rename(temp, file); break; }
-      catch (err) {
+      try {
+        await fs.rename(temp, file);
+        break;
+      } catch (err) {
         if (attempt >= 100 || !['EPERM', 'EBUSY', 'EACCES'].includes((err as NodeJS.ErrnoException).code || '')) throw err;
         const wait = Math.min(50, 5 + Math.floor(attempt * 2) + Math.floor(Math.random() * 5));
         await delay(wait);
       }
     }
+  } finally {
+    await fs.rm(temp, { force: true });
   }
-  finally { await fs.rm(temp, { force: true }); }
 }
 
 /** The lease of a resource stayed held by another owner for the whole timeout. */
@@ -145,9 +152,7 @@ export function isAbortSignal(val: unknown): val is AbortSignal {
   );
 }
 
-export function combineSignals(
-  ...signals: Array<AbortSignal | null | undefined>
-): AbortSignal | null {
+export function combineSignals(...signals: Array<AbortSignal | null | undefined>): AbortSignal | null {
   const activeSignals = signals.filter((s): s is AbortSignal => !!s);
   if (activeSignals.length === 0) return null;
   if (activeSignals.length === 1) return activeSignals[0];
@@ -181,9 +186,7 @@ function toAbortError(reason: unknown, budget?: ExecutionBudget): ToolError {
   return new ToolError('ABORTED', 'Lock acquisition was aborted.');
 }
 
-function parseFileLockOptions(
-  options?: number | AbortSignal | FileLockOptions | BackendReadContext
-): {
+function parseFileLockOptions(options?: number | AbortSignal | FileLockOptions | BackendReadContext): {
   timeoutMs: number;
   abortSignal?: AbortSignal;
   budget?: ExecutionBudget;
@@ -204,9 +207,10 @@ function parseFileLockOptions(
     const raw = options as FileLockOptions & BackendReadContext;
     const context = raw.context;
     const budget = raw.budget ?? context?.budget;
-    const callerSignal = raw.abortSignal !== context?.abortSignal
-      ? combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined
-      : raw.abortSignal ?? context?.abortSignal;
+    const callerSignal =
+      raw.abortSignal !== context?.abortSignal
+        ? (combineSignals(raw.abortSignal, context?.abortSignal) ?? undefined)
+        : (raw.abortSignal ?? context?.abortSignal);
     let timeoutMs = raw.timeoutMs ?? context?.timeoutMs ?? 5000;
     let budgetBound = false;
     if (budget) {
@@ -247,8 +251,9 @@ async function publishLease(leaseFile: string, payload: string): Promise<boolean
  */
 async function reclaimStaleLease(leaseFile: string, judged: { owner: LeaseOwner | null; mtimeMs: number }): Promise<boolean> {
   const reclaimFile = `${leaseFile}.reclaim.${randomUUID()}`;
-  try { await fs.rename(leaseFile, reclaimFile); }
-  catch (err) {
+  try {
+    await fs.rename(leaseFile, reclaimFile);
+  } catch (err) {
     // Another process reclaimed or released it first, or Windows is still deleting it.
     if (['ENOENT', 'EPERM', 'EBUSY'].includes((err as NodeJS.ErrnoException).code || '')) return false;
     throw err;
@@ -258,7 +263,9 @@ async function reclaimStaleLease(leaseFile: string, judged: { owner: LeaseOwner 
     const same = moved !== null && moved.mtimeMs === judged.mtimeMs && moved.owner?.token === judged.owner?.token;
     if (moved && !same) {
       // A live owner's lease was caught in a race; put it back unless a newer lease exists.
-      await fs.link(reclaimFile, leaseFile).catch((err: NodeJS.ErrnoException) => { if (err.code !== 'EEXIST') throw err; });
+      await fs.link(reclaimFile, leaseFile).catch((err: NodeJS.ErrnoException) => {
+        if (err.code !== 'EEXIST') throw err;
+      });
       return false;
     }
     return true;
@@ -285,15 +292,20 @@ async function reclaimStaleLease(leaseFile: string, judged: { owner: LeaseOwner 
 export async function withFileLock<T>(
   resource: string,
   fn: () => Promise<T>,
-  timeoutMsOrOptions: number | AbortSignal | FileLockOptions | BackendReadContext = 5000
+  timeoutMsOrOptions: number | AbortSignal | FileLockOptions | BackendReadContext = 5000,
 ): Promise<T> {
-  const { timeoutMs: effectiveTimeoutMs, abortSignal: callerSignal, budget, context, budgetBound } = parseFileLockOptions(timeoutMsOrOptions);
+  const {
+    timeoutMs: effectiveTimeoutMs,
+    abortSignal: callerSignal,
+    budget,
+    context,
+    budgetBound,
+  } = parseFileLockOptions(timeoutMsOrOptions);
   // A wait the budget bounds ends at the budget's deadline. The wait is timed by the wall clock and
   // the budget by a monotonic one, so the budget can still report a fraction of a millisecond left:
   // the expiry is reported as the budget's, not as a lock timeout.
-  const waitExpired = () => budgetBound
-    ? new ToolError('TIMEOUT', 'Execution budget expired while waiting for storage lock.')
-    : new LockTimeoutError();
+  const waitExpired = () =>
+    budgetBound ? new ToolError('TIMEOUT', 'Execution budget expired while waiting for storage lock.') : new LockTimeoutError();
   const effectiveSignal = combineSignals(callerSignal, budget?.executionSignal);
 
   // Pre-flight check: if already cancelled or budget expired, reject immediately without entering queue or touching disk
@@ -310,8 +322,13 @@ export async function withFileLock<T>(
   // In-process serialization to prevent internal async contention within the same Node process
   let prev = inProcessLocks.get(canonical) || Promise.resolve();
   let releaseInProcess!: () => void;
-  const currentGate = new Promise<void>(resolve => { releaseInProcess = resolve; });
-  const chainedLock = prev.then(() => currentGate, () => currentGate);
+  const currentGate = new Promise<void>(resolve => {
+    releaseInProcess = resolve;
+  });
+  const chainedLock = prev.then(
+    () => currentGate,
+    () => currentGate,
+  );
   inProcessLocks.set(canonical, chainedLock);
 
   // Clean up queue tail when this turn and all preceding turns finish
@@ -375,7 +392,7 @@ export async function withFileLock<T>(
 
       if (await publishLease(leaseFile, leasePayload)) break;
       const lease = await inspectLease(leaseFile);
-      if (lease && isStale(lease) && await reclaimStaleLease(leaseFile, lease)) continue;
+      if (lease && isStale(lease) && (await reclaimStaleLease(leaseFile, lease))) continue;
 
       const elapsed = Date.now() - started;
       if (elapsed >= effectiveTimeoutMs) {
@@ -413,7 +430,9 @@ export async function withFileLock<T>(
 
     renewal = setInterval(() => {
       const now = new Date();
-      fs.utimes(leaseFile, now, now).catch(() => { /* A lease removed or replaced meanwhile is not renewed. */ });
+      fs.utimes(leaseFile, now, now).catch(() => {
+        /* A lease removed or replaced meanwhile is not renewed. */
+      });
     }, LEASE_RENEW_MS);
     renewal.unref();
 
@@ -435,4 +454,3 @@ export async function withFileLock<T>(
     }
   }
 }
-

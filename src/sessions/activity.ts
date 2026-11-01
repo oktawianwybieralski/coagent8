@@ -21,7 +21,11 @@ export type { SessionActivityChecker };
  */
 export function getSessionsDir(): string {
   const explicit = process.env.coagent8_SESSIONS_DIR || process.env.coagent8_SESSIONS;
-  return explicit ? (explicit.endsWith('.json') ? path.join(path.dirname(explicit), 'sessions') : explicit) : path.join(getDataDir(), 'sessions');
+  return explicit
+    ? explicit.endsWith('.json')
+      ? path.join(path.dirname(explicit), 'sessions')
+      : explicit
+    : path.join(getDataDir(), 'sessions');
 }
 
 /**
@@ -71,4 +75,3 @@ export function isSessionActive(handle: string): boolean {
     return false;
   }
 }
-

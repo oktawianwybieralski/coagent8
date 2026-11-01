@@ -16,17 +16,8 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { runCommand } = require('../../src/execution/process.ts');
 const { redactDiagnostic } = require('../../src/security/redaction.ts');
-const {
-  createIsolatedAcceptanceEnvironment,
-  cleanupIsolatedEnvironment,
-  searchPathOf,
-} = require('./environment.cjs');
-const {
-  sha256File,
-  readTarballPackageJson,
-  readVsixPackageJson,
-  createSyntheticArtifacts,
-} = require('./artifacts.cjs');
+const { createIsolatedAcceptanceEnvironment, cleanupIsolatedEnvironment, searchPathOf } = require('./environment.cjs');
+const { sha256File, readTarballPackageJson, readVsixPackageJson, createSyntheticArtifacts } = require('./artifacts.cjs');
 const { BACKENDS, resolveBackendCommands, scenarioBackendEnv } = require('./backends.cjs');
 const { runScenarios, NotRun } = require('./scenarios.cjs');
 
@@ -139,8 +130,11 @@ function findOnSearchPath(env, names) {
  * @throws When no VS Code CLI is found or a Windows shim cannot be resolved.
  */
 function resolveCodeCli(customCodePath, env = process.env) {
-  const candidate = customCodePath || env.ACCEPTANCE_CODE_CLI || env.CODE_PATH
-    || findOnSearchPath(env, process.platform === 'win32' ? ['code.cmd', 'code.exe'] : ['code']);
+  const candidate =
+    customCodePath ||
+    env.ACCEPTANCE_CODE_CLI ||
+    env.CODE_PATH ||
+    findOnSearchPath(env, process.platform === 'win32' ? ['code.cmd', 'code.exe'] : ['code']);
 
   if (!candidate) {
     throw new Error('VS Code CLI not found on PATH; pass --code-path.');
@@ -161,9 +155,12 @@ function resolveCodeCli(customCodePath, env = process.env) {
     const match = /"%~dp0([^"]*cli\.js)"/i.exec(cmdContent);
     const cliJs = match ? path.resolve(binDir, match[1]) : null;
 
-    if (/^\s*set\s+ELECTRON_RUN_AS_NODE=1\s*$/im.test(cmdContent)
-        && fs.statSync(path.resolve(codeExe), { throwIfNoEntry: false })?.isFile()
-        && cliJs && fs.statSync(cliJs, { throwIfNoEntry: false })?.isFile()) {
+    if (
+      /^\s*set\s+ELECTRON_RUN_AS_NODE=1\s*$/im.test(cmdContent) &&
+      fs.statSync(path.resolve(codeExe), { throwIfNoEntry: false })?.isFile() &&
+      cliJs &&
+      fs.statSync(cliJs, { throwIfNoEntry: false })?.isFile()
+    ) {
       return {
         command: path.resolve(codeExe),
         prefixArgs: [cliJs],
@@ -272,7 +269,9 @@ function verifyHomePreservation(snapshot, allowBackendCacheKeys) {
           backendWrites.push(`${path.basename(watchedPath)} (${keys.join(', ')})`);
           continue;
         }
-        throw new Error(`Home preservation violation: ${watchedPath} was modified during acceptance run${keys ? ` (top-level keys changed: ${keys.join(', ') || 'none; formatting only'})` : ''}!`);
+        throw new Error(
+          `Home preservation violation: ${watchedPath} was modified during acceptance run${keys ? ` (top-level keys changed: ${keys.join(', ') || 'none; formatting only'})` : ''}!`,
+        );
       }
     }
   }
@@ -342,7 +341,12 @@ async function runAcceptance(options = {}) {
     const step = { id, name, ...(backend ? { backend } : {}), package: 'npm' };
     try {
       const res = await fn();
-      steps.push({ ...step, status: 'PASS', durationMs: Date.now() - stepStart, details: res && typeof res.details === 'string' ? res.details : undefined });
+      steps.push({
+        ...step,
+        status: 'PASS',
+        durationMs: Date.now() - stepStart,
+        details: res && typeof res.details === 'string' ? res.details : undefined,
+      });
     } catch (err) {
       if (err instanceof NotRun) steps.push({ ...step, status: 'NOT_RUN', durationMs: Date.now() - stepStart, details: err.message });
       else steps.push({ ...step, status: 'FAIL', durationMs: Date.now() - stepStart, error: persistedError(err) });
@@ -400,11 +404,19 @@ async function runAcceptance(options = {}) {
         const rootArtifacts = path.join(repoRoot, '.artifacts');
 
         if (!tarballPath && fs.existsSync(pkgArtifacts)) {
-          const files = fs.readdirSync(pkgArtifacts).filter(f => f.endsWith('.tgz')).sort().reverse();
+          const files = fs
+            .readdirSync(pkgArtifacts)
+            .filter(f => f.endsWith('.tgz'))
+            .sort()
+            .reverse();
           if (files.length) tarballPath = path.join(pkgArtifacts, files[0]);
         }
         if (!vsixPath && fs.existsSync(rootArtifacts)) {
-          const files = fs.readdirSync(rootArtifacts).filter(f => f.endsWith('.vsix')).sort().reverse();
+          const files = fs
+            .readdirSync(rootArtifacts)
+            .filter(f => f.endsWith('.vsix'))
+            .sort()
+            .reverse();
           if (files.length) vsixPath = path.join(rootArtifacts, files[0]);
         }
       }
@@ -431,15 +443,14 @@ async function runAcceptance(options = {}) {
         return { details: 'VS Code version not probed in dry run' };
       }
       const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
-      const codeProbe = await run(codeCli.command, [
-        ...codeCli.prefixArgs,
-        '--user-data-dir', isolated.vscodeUserData,
-        '--extensions-dir', isolated.vscodeExtensions,
-        '--version',
-      ], {
-        env: { ...isolated.childEnv, ...codeCli.extraEnv },
-        timeoutMs: 10_000,
-      });
+      const codeProbe = await run(
+        codeCli.command,
+        [...codeCli.prefixArgs, '--user-data-dir', isolated.vscodeUserData, '--extensions-dir', isolated.vscodeExtensions, '--version'],
+        {
+          env: { ...isolated.childEnv, ...codeCli.extraEnv },
+          timeoutMs: 10_000,
+        },
+      );
       if (!codeProbe.ok) {
         throw new Error(describeFailure('VS Code version probe', codeProbe));
       }
@@ -462,14 +473,7 @@ async function runAcceptance(options = {}) {
         throw new Error(describeFailure('npm init in isolated prefix', initRes));
       }
 
-      const installRes = await run(process.execPath, [
-        npm,
-        'install',
-        '--no-audit',
-        '--no-fund',
-        '--offline',
-        tarballPath,
-      ], {
+      const installRes = await run(process.execPath, [npm, 'install', '--no-audit', '--no-fund', '--offline', tarballPath], {
         cwd: installCwd,
         env: isolated.childEnv,
         timeoutMs: 60_000,
@@ -495,15 +499,22 @@ async function runAcceptance(options = {}) {
 
       // Native mode: install extension using explicit directories
       const codeCli = resolveCodeCli(options.codePath, isolated.childEnv);
-      const installRes = await run(codeCli.command, [
-        ...codeCli.prefixArgs,
-        '--user-data-dir', isolated.vscodeUserData,
-        '--extensions-dir', isolated.vscodeExtensions,
-        '--install-extension', vsixPath,
-      ], {
-        env: { ...isolated.childEnv, ...codeCli.extraEnv },
-        timeoutMs: 60_000,
-      });
+      const installRes = await run(
+        codeCli.command,
+        [
+          ...codeCli.prefixArgs,
+          '--user-data-dir',
+          isolated.vscodeUserData,
+          '--extensions-dir',
+          isolated.vscodeExtensions,
+          '--install-extension',
+          vsixPath,
+        ],
+        {
+          env: { ...isolated.childEnv, ...codeCli.extraEnv },
+          timeoutMs: 60_000,
+        },
+      );
       if (!installRes.ok) {
         throw new Error(describeFailure('VS Code extension installation', installRes));
       }
@@ -518,13 +529,7 @@ async function runAcceptance(options = {}) {
       }
 
       runtimeData.bundleSha256 = sha256File(installedEntry);
-      const doctorRes = await run(process.execPath, [
-        installedEntry,
-        'doctor',
-        '--json',
-        '--scope',
-        'health',
-      ], {
+      const doctorRes = await run(process.execPath, [installedEntry, 'doctor', '--json', '--scope', 'health'], {
         cwd: isolated.home,
         env: isolated.childEnv,
         timeoutMs: 15_000,
@@ -541,24 +546,26 @@ async function runAcceptance(options = {}) {
         throw new Error(`Malformed doctor JSON output: ${redactDiagnostic(doctorRes.stdout, 200)}`);
       }
 
-      runtimeData.serverStatus = typeof parsedDoctor.status === 'string'
-        ? parsedDoctor.status
-        : (parsedDoctor.configError ? 'degraded_config_error' : (parsedDoctor.operational ? 'operational' : 'unknown'));
+      runtimeData.serverStatus =
+        typeof parsedDoctor.status === 'string'
+          ? parsedDoctor.status
+          : parsedDoctor.configError
+            ? 'degraded_config_error'
+            : parsedDoctor.operational
+              ? 'operational'
+              : 'unknown';
       const startedVersion = parsedDoctor.server_version || null;
       runtimeData.startedVersion = startedVersion;
       if (!startedVersion) {
         throw new Error('doctor output missing server_version.');
       }
 
-      const versionsMatch = (
-        startedVersion === artifacts.tarball.version &&
-        startedVersion === artifacts.vsix.version
-      );
+      const versionsMatch = startedVersion === artifacts.tarball.version && startedVersion === artifacts.vsix.version;
 
       runtimeData.versionAgreement = versionsMatch;
       if (!versionsMatch) {
         throw new Error(
-          `Version mismatch: started=${startedVersion}, tarball=${artifacts.tarball.version}, vsix=${artifacts.vsix.version}`
+          `Version mismatch: started=${startedVersion}, tarball=${artifacts.tarball.version}, vsix=${artifacts.vsix.version}`,
         );
       }
 
@@ -567,15 +574,29 @@ async function runAcceptance(options = {}) {
 
     // 7. Scenarios N2-N4 through the installed runtime and the real backend CLIs
     if (isDryRun) {
-      steps.push({ id: 'step_scenarios', name: 'Execute live scenarios N2-N4 through real CLIs', status: 'NOT_RUN', durationMs: 0, details: 'A dry run starts no backend.' });
+      steps.push({
+        id: 'step_scenarios',
+        name: 'Execute live scenarios N2-N4 through real CLIs',
+        status: 'NOT_RUN',
+        durationMs: 0,
+        details: 'A dry run starts no backend.',
+      });
     } else if (!options.withBackendAuth) {
-      steps.push({ id: 'step_scenarios', name: 'Execute live scenarios N2-N4 through real CLIs', status: 'NOT_RUN', durationMs: 0, details: 'The real backends need their sign-in: pass --with-backend-auth.' });
+      steps.push({
+        id: 'step_scenarios',
+        name: 'Execute live scenarios N2-N4 through real CLIs',
+        status: 'NOT_RUN',
+        durationMs: 0,
+        details: 'The real backends need their sign-in: pass --with-backend-auth.',
+      });
     } else {
       const parentEnv = options.parentEnv || process.env;
       let commands = null;
       await runStep('step_backend_cli', 'Resolve backend CLIs in the parent context', () => {
         commands = resolveBackendCommands(parentEnv, realHome);
-        return { details: (options.backends || BACKENDS).map(id => `${id}: ${commands[id].command ? 'found' : commands[id].reason}`).join('; ') };
+        return {
+          details: (options.backends || BACKENDS).map(id => `${id}: ${commands[id].command ? 'found' : commands[id].reason}`).join('; '),
+        };
       });
       await runScenarios({
         entry: path.join(isolated.npmPrefix, 'node_modules', 'coagent8', 'dist', 'index.cjs'),
@@ -606,7 +627,7 @@ async function runAcceptance(options = {}) {
 
   const hasFailures = steps.some(s => s.status === 'FAIL');
   const hasNotRun = steps.some(s => s.status === 'NOT_RUN');
-  const status = failure || hasFailures ? 'FAIL' : (hasNotRun ? 'INCOMPLETE' : 'PASS');
+  const status = failure || hasFailures ? 'FAIL' : hasNotRun ? 'INCOMPLETE' : 'PASS';
 
   const evidence = {
     schemaVersion: SCHEMA_VERSION,

@@ -9,9 +9,23 @@ function profile(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-readiness-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const log = path.join(home, 'probe.jsonl');
-  const env = { ...process.env, HOME: home, USERPROFILE: home, PATH: '', CODEX_PATH: undefined, CLAUDE_PATH: undefined, AGY_PATH: undefined, AGY_PATH: undefined,
-    CODEX_HOME: path.join(home, '.codex'), CLAUDE_CONFIG_DIR: undefined, CODEX_CONFIG_PATH: undefined, GEMINI_CLI_HOME: undefined,
-    coagent8_EXTENSION_PATHS: '{}', SETUP_FIXTURE_HOME: home, SETUP_FIXTURE_PROBE_LOG: log };
+  const env = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    PATH: '',
+    CODEX_PATH: undefined,
+    CLAUDE_PATH: undefined,
+    AGY_PATH: undefined,
+    AGY_PATH: undefined,
+    CODEX_HOME: path.join(home, '.codex'),
+    CLAUDE_CONFIG_DIR: undefined,
+    CODEX_CONFIG_PATH: undefined,
+    GEMINI_CLI_HOME: undefined,
+    coagent8_EXTENSION_PATHS: '{}',
+    SETUP_FIXTURE_HOME: home,
+    SETUP_FIXTURE_PROBE_LOG: log,
+  };
   const options = { home, cwd: home, env, statusOnly: true, runtimeSource: 'not-used' };
   return { ...options, log };
 }
@@ -38,7 +52,8 @@ test('bad authoritative override does not hide other clients; old/malformed cont
   assert.equal(results[2].action, 'missing');
   for (const extra of [{ SETUP_FIXTURE_VERSION: '2.1.288' }, { SETUP_FIXTURE_HELP: '--output-format' }]) {
     const status = await setupClients({ ...p, env: { ...p.env, CLAUDE_PATH: fixture, ...extra } });
-    assert.equal(status[1].compatibility, 'unsupported'); assert.equal(status[1].ready, false);
+    assert.equal(status[1].compatibility, 'unsupported');
+    assert.equal(status[1].ready, false);
   }
   const signedOut = await setupClients({ ...p, env: { ...p.env, CLAUDE_PATH: fixture, SETUP_FIXTURE_SIGNED_OUT: '1' } });
   assert.equal(signedOut[1].authentication, 'unauthenticated');
@@ -53,10 +68,20 @@ test('Antigravity-only installation checks controls and sign-in silently without
   assert.equal(results[2].authentication, 'authenticated');
   assert.equal(results[2].ready, true);
   assert.doesNotMatch(JSON.stringify(results), /fixture@example/, 'the signed-in account is not reported');
-  assert.deepEqual(fs.readFileSync(p.log, 'utf8').trim().split('\n').map(JSON.parse), [['--version'], ['--help'], []], 'no prompt, -p or login');
+  assert.deepEqual(
+    fs.readFileSync(p.log, 'utf8').trim().split('\n').map(JSON.parse),
+    [['--version'], ['--help'], []],
+    'no prompt, -p or login',
+  );
   const calls = fs.readFileSync(envLog, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.ok(calls.every(call => call.autoUpdate === 'true'), 'every agy probe disables its console-opening updater');
-  assert.deepEqual(calls.map(call => call.auth), [null, null, 'check']);
+  assert.ok(
+    calls.every(call => call.autoUpdate === 'true'),
+    'every agy probe disables its console-opening updater',
+  );
+  assert.deepEqual(
+    calls.map(call => call.auth),
+    [null, null, 'check'],
+  );
   const signedOut = await setupClients({ ...p, env: { ...p.env, AGY_PATH: fixture, SETUP_FIXTURE_SIGNED_OUT: '1' } });
   assert.equal(signedOut[2].authentication, 'unauthenticated');
   assert.equal(signedOut[2].ready, false);
@@ -73,7 +98,10 @@ test('Codex-only readiness initializes app-server without a thread/model turn an
   assert.equal(results[0].ready, true);
   assert.equal(results[0].registered, false);
   const calls = fs.readFileSync(p.log, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(calls.map(args => args[0]), ['--version', '--help', 'app-server', 'login']);
+  assert.deepEqual(
+    calls.map(args => args[0]),
+    ['--version', '--help', 'app-server', 'login'],
+  );
   assert.ok(calls[2].includes('sandbox_mode="read-only"'));
   assert.equal(fs.existsSync(path.join(p.home, 'baseline-config')), false, 'metadata handshake did not start a host thread');
   const signedOut = await setupClients({ ...p, env: { ...p.env, CODEX_PATH: fixture, SETUP_FIXTURE_SIGNED_OUT: '1' } });
@@ -91,9 +119,17 @@ test('registration errors do not erase independently verified CLI presence or si
 test('actual custom extension paths reach shared runtime resolution and update/removal never pins vendor paths', t => {
   const p = profile(t);
   const executable = process.platform === 'win32' ? 'claude.exe' : 'claude';
-  function bundle(root) { const file = path.join(root, 'resources/native-binary', executable); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'synthetic'); fs.chmodSync(file, 0o755); return file; }
-  const oldRoot = path.join(p.home, 'custom root', 'v1'), nextRoot = path.join(p.home, 'another root', 'v2');
-  const first = bundle(oldRoot), second = bundle(nextRoot);
+  function bundle(root) {
+    const file = path.join(root, 'resources/native-binary', executable);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'synthetic');
+    fs.chmodSync(file, 0o755);
+    return file;
+  }
+  const oldRoot = path.join(p.home, 'custom root', 'v1'),
+    nextRoot = path.join(p.home, 'another root', 'v2');
+  const first = bundle(oldRoot),
+    second = bundle(nextRoot);
   const env = root => ({ ...p.env, coagent8_EXTENSION_PATHS: JSON.stringify({ claude: root }) });
   assert.equal(resolveSetupClient('claude', p.home, env(oldRoot)).command, first);
   assert.equal(resolveCliCommand('claude', { env: env(nextRoot) }).command, second);
@@ -110,12 +146,15 @@ test('custom Codex extension paths and cached standalone removal are revalidated
   const executable = process.platform === 'win32' ? 'codex.exe' : 'codex';
   const root = path.join(p.home, 'custom OpenAI extension');
   const file = path.join(root, 'bin', `${family}-${arch}`, executable);
-  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'synthetic'); fs.chmodSync(file, 0o755);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'synthetic');
+  fs.chmodSync(file, 0o755);
   const env = { ...p.env, coagent8_EXTENSION_PATHS: JSON.stringify({ codex: root }) };
   assert.equal(resolveSetupClient('codex', p.home, env).command, file);
   fs.rmSync(file);
   assert.equal(resolveSetupClient('codex', p.home, env), null);
-  const script = path.join(p.home, 'standalone.cjs'); fs.writeFileSync(script, 'synthetic');
+  const script = path.join(p.home, 'standalone.cjs');
+  fs.writeFileSync(script, 'synthetic');
   // A script runs from its canonical path (npm shims are links; macOS /var is /private/var).
   assert.equal(resolveCliCommand(script).argsPrefix[0], fs.realpathSync(script));
   fs.rmSync(script);

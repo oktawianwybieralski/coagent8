@@ -30,4 +30,3 @@ export interface ToolArguments extends ExecutionRequest {
 
 /** Public progress only; private provider output never belongs in this callback. */
 export type ToolProgress = ((info: { message?: string; percent?: number }) => void) | null;
-

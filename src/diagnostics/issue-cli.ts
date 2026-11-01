@@ -31,22 +31,20 @@ export interface OpenBrowserOptions {
  * @param options - Optional overrides for timeout or spawn function.
  * @returns Promise resolving to false if a warning was reported, true otherwise.
  */
-export async function openBrowser(
-  url: string,
-  onWarning?: (warning: string) => void,
-  options?: OpenBrowserOptions
-): Promise<boolean> {
+export async function openBrowser(url: string, onWarning?: (warning: string) => void, options?: OpenBrowserOptions): Promise<boolean> {
   const spawnFn = options?.spawnFn ?? spawn;
   const [command, args] =
-    process.platform === 'win32' ? ['cmd.exe', ['/c', 'start', '', url]]
-    : process.platform === 'darwin' ? ['open', [url]]
-    : ['xdg-open', [url]];
+    process.platform === 'win32'
+      ? ['cmd.exe', ['/c', 'start', '', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]];
   const launchFailed = (error: unknown): void => {
     const message = error instanceof Error ? error.message : String(error);
     onWarning?.(`Warning: failed to launch browser: ${redactDiagnostic(message, 128)}`);
   };
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<boolean>(resolve => {
     let child: ReturnType<typeof spawn>;
     try {
       // Not detached: a detached child gets no CREATE_NO_WINDOW and can show a console window.
@@ -61,12 +59,12 @@ export async function openBrowser(
       child.unref();
       resolve(true);
     }, options?.timeoutMs ?? OBSERVATION_TIMEOUT_MS);
-    child.once('error', (error) => {
+    child.once('error', error => {
       clearTimeout(timer);
       launchFailed(error);
       resolve(false);
     });
-    child.once('exit', (code) => {
+    child.once('exit', code => {
       clearTimeout(timer);
       if (code !== 0 && code !== null) {
         onWarning?.(`Warning: browser opener exited with code ${code}`);
@@ -99,10 +97,9 @@ export async function runIssueCli(
   args: string[],
   out: NodeJS.WritableStream = process.stdout,
   err: NodeJS.WritableStream = process.stderr,
-  optionsOrSignal?: AbortSignal | IssueCliOptions
+  optionsOrSignal?: AbortSignal | IssueCliOptions,
 ): Promise<number> {
-  const options: IssueCliOptions =
-    optionsOrSignal instanceof AbortSignal ? { signal: optionsOrSignal } : (optionsOrSignal ?? {});
+  const options: IssueCliOptions = optionsOrSignal instanceof AbortSignal ? { signal: optionsOrSignal } : (optionsOrSignal ?? {});
 
   let open = false;
   let json = false;
@@ -178,7 +175,7 @@ export async function runIssueCli(
     if (open) {
       const browserOpener = options.openBrowser ?? openBrowser;
       try {
-        await browserOpener(GITHUB_BUG_REPORT_TEMPLATE_URL, (warning) => {
+        await browserOpener(GITHUB_BUG_REPORT_TEMPLATE_URL, warning => {
           err.write(`${warning}\n`);
         });
       } catch (openerError: unknown) {
@@ -190,8 +187,7 @@ export async function runIssueCli(
     return 0;
   } catch (error: unknown) {
     const isAbort =
-      effectiveSignal.aborted ||
-      (error instanceof Error && (error.name === 'AbortError' || ('code' in error && error.code === 'ABORTED')));
+      effectiveSignal.aborted || (error instanceof Error && (error.name === 'AbortError' || ('code' in error && error.code === 'ABORTED')));
     if (isAbort) {
       return 130;
     }

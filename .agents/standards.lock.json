@@ -3,10 +3,7 @@
   "repository": "https://github.com/oktawianwybieralski/agent-standards.git",
   "ref": "v0.1.0",
   "commit": "e69b2d0c4545368340fe01360ddbe368d4db6bd0",
-  "managedDirectories": [
-    ".agents/rules/core",
-    ".agents/standards"
-  ],
+  "managedDirectories": [".agents/rules/core", ".agents/standards"],
   "files": {
     ".agents/rules/core/00-core-invariants.md": "b63d00113f67ffd6da86f1da52c8384f5553e924385d289a94efeb97ed306e88",
     ".agents/rules/core/01-data-and-secrets.md": "390d1c1ac33e112e971ad78bb5980d1a017791f042f0a919b5ac9321f3a4a2d5",

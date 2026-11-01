@@ -49,8 +49,9 @@ function parentValue(env, name) {
  * @returns Per backend an absolute path, or `null` with the reason it was not found.
  */
 function resolveBackendCommands(parentEnv, realHome) {
-  const configFile = parentValue(parentEnv, 'coagent8_CONFIG')
-    || path.join(parentValue(parentEnv, 'coagent8_DIR') || path.join(realHome, '.coagent8'), 'config.json');
+  const configFile =
+    parentValue(parentEnv, 'coagent8_CONFIG') ||
+    path.join(parentValue(parentEnv, 'coagent8_DIR') || path.join(realHome, '.coagent8'), 'config.json');
   const resolved = {};
   for (const id of BACKENDS) {
     try {
@@ -61,17 +62,25 @@ function resolveBackendCommands(parentEnv, realHome) {
       // directory), else PATH; only automatic discovery falls back to the vendor
       // extension's copy (Codex, Claude Code) or the managed agy installation.
       const explicit = Boolean(override || configured);
-      let full = path.isAbsolute(command) ? command
-        : explicit && /[\\/]/.test(command) ? path.resolve(command)
+      let full = path.isAbsolute(command)
+        ? command
+        : explicit && /[\\/]/.test(command)
+          ? path.resolve(command)
           : findExecutable(command, parentEnv);
       if (!full && !explicit) {
-        const vendor = id === 'claude' ? resolveBundledClaude(realHome, parentEnv) : id === 'codex' ? resolveBundledCodex(realHome, parentEnv) : resolveManagedAgy(realHome, parentEnv);
+        const vendor =
+          id === 'claude'
+            ? resolveBundledClaude(realHome, parentEnv)
+            : id === 'codex'
+              ? resolveBundledCodex(realHome, parentEnv)
+              : resolveManagedAgy(realHome, parentEnv);
         // A *_PATH override carries one executable; a launcher with arguments cannot pass.
         if (vendor && !vendor.argsPrefix.length) full = vendor.command;
       }
-      resolved[id] = full && fs.existsSync(full)
-        ? { command: full, reason: null }
-        : { command: null, reason: `${id} CLI not found in its configuration, on the parent PATH or as a vendor copy.` };
+      resolved[id] =
+        full && fs.existsSync(full)
+          ? { command: full, reason: null }
+          : { command: null, reason: `${id} CLI not found in its configuration, on the parent PATH or as a vendor copy.` };
     } catch (error) {
       resolved[id] = { command: null, reason: error.message };
     }

@@ -17,20 +17,35 @@ process.env.coagent8_QUOTA_CACHE = path.join(tempDir, 'quota-cache.json');
 
 test.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-test('auto and smart_quota ignore an installed but unsupported provider; explicit/default choice fails visibly without fallback',async()=>{
-  const original={...adapterRegistry};
+test('auto and smart_quota ignore an installed but unsupported provider; explicit/default choice fails visibly without fallback', async () => {
+  const original = { ...adapterRegistry };
   try {
-    for(const id of ['codex','claude','agy'])adapterRegistry[id]={id,name:id,probe:async()=>({installed:id!=='codex',executionSupported:id==='claude'}),execute:async()=>{throw new Error('Routing test must not generate');}};
-    await saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','agy']}});
-    assert.equal((await resolveBackend('auto')).id,'claude');assert.equal(loadConfig().defaultBackend,null);
-    assert.equal((await resolveBackend('smart_quota')).id,'claude');
-    await assert.rejects(resolveBackend('agy'),{code:'CLI_UNSUPPORTED'});
-    await saveConfig({defaultBackend:'agy'});await assert.rejects(resolveBackend(),{code:'CLI_UNSUPPORTED'});
-    await saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['codex']}});await assert.rejects(resolveBackend(),{code:'CLI_NOT_FOUND'});
-    await saveConfig({defaultBackend:null,routing:{strategy:'fixed',allowedBackends:['claude','agy']}});
-    adapterRegistry.agy.probe=async()=>({installed:true,executionSupported:true});
-    const chosen=await resolveBackend();assert.equal(chosen.id,'agy','without a default, auto chooses like smart_quota in provider order');assert.equal(chosen.isSmartQuota,true);
-  }finally{Object.assign(adapterRegistry,original);}
+    for (const id of ['codex', 'claude', 'agy'])
+      adapterRegistry[id] = {
+        id,
+        name: id,
+        probe: async () => ({ installed: id !== 'codex', executionSupported: id === 'claude' }),
+        execute: async () => {
+          throw new Error('Routing test must not generate');
+        },
+      };
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
+    assert.equal((await resolveBackend('auto')).id, 'claude');
+    assert.equal(loadConfig().defaultBackend, null);
+    assert.equal((await resolveBackend('smart_quota')).id, 'claude');
+    await assert.rejects(resolveBackend('agy'), { code: 'CLI_UNSUPPORTED' });
+    await saveConfig({ defaultBackend: 'agy' });
+    await assert.rejects(resolveBackend(), { code: 'CLI_UNSUPPORTED' });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+    await assert.rejects(resolveBackend(), { code: 'CLI_NOT_FOUND' });
+    await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
+    adapterRegistry.agy.probe = async () => ({ installed: true, executionSupported: true });
+    const chosen = await resolveBackend();
+    assert.equal(chosen.id, 'agy', 'without a default, auto chooses like smart_quota in provider order');
+    assert.equal(chosen.isSmartQuota, true);
+  } finally {
+    Object.assign(adapterRegistry, original);
+  }
 });
 
 test('routing: resolveBackend auto mode is strictly read-only and does not mutate config', async () => {
@@ -41,7 +56,9 @@ test('routing: resolveBackend auto mode is strictly read-only and does not mutat
         id,
         name: id,
         probe: async () => ({ installed: id === 'agy', executionSupported: id === 'agy' }),
-        execute: async () => { throw new Error('Not executed'); },
+        execute: async () => {
+          throw new Error('Not executed');
+        },
       };
     }
 
@@ -66,8 +83,15 @@ test('routing: auto prefers another CLI than the calling client and measured hea
     assert.equal(providerForClient('cursor-vscode'), null);
     assert.equal(providerForClient(undefined), null);
     for (const id of ['codex', 'claude', 'agy']) {
-      adapterRegistry[id] = { id, name: id, inspectQuota: async () => undefined,
-        probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
+      adapterRegistry[id] = {
+        id,
+        name: id,
+        inspectQuota: async () => undefined,
+        probe: async () => ({ installed: true, executionSupported: true }),
+        execute: async () => {
+          throw new Error('Not executed');
+        },
+      };
     }
     await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
     setCallerProvider('agy');
@@ -85,10 +109,26 @@ test('routing: auto prefers another CLI than the calling client and measured hea
       agy: { installed: true, status: 'operational', measured: true, headroomPercent: 80 },
       claude: { installed: true, status: 'operational', measured: false, headroomPercent: 99 },
     };
-    assert.equal(await selectSmartQuotaBackend(['codex', 'agy', 'claude'], { config, quotasOverride, callerProvider: null }), 'agy', 'measured headroom ranks');
-    assert.equal(await selectSmartQuotaBackend(['codex', 'agy', 'claude'], { config, quotasOverride, callerProvider: 'agy' }), 'claude', 'unmeasured counts as 50%, above a measured 10%');
-    const limited = { ...quotasOverride, codex: { ...quotasOverride.codex, status: 'rate_limited' }, claude: { ...quotasOverride.claude, status: 'rate_limited' } };
-    assert.equal(await selectSmartQuotaBackend(['codex', 'agy', 'claude'], { config, quotasOverride: limited, callerProvider: 'agy' }), 'agy', 'caller chosen when the others are rate limited');
+    assert.equal(
+      await selectSmartQuotaBackend(['codex', 'agy', 'claude'], { config, quotasOverride, callerProvider: null }),
+      'agy',
+      'measured headroom ranks',
+    );
+    assert.equal(
+      await selectSmartQuotaBackend(['codex', 'agy', 'claude'], { config, quotasOverride, callerProvider: 'agy' }),
+      'claude',
+      'unmeasured counts as 50%, above a measured 10%',
+    );
+    const limited = {
+      ...quotasOverride,
+      codex: { ...quotasOverride.codex, status: 'rate_limited' },
+      claude: { ...quotasOverride.claude, status: 'rate_limited' },
+    };
+    assert.equal(
+      await selectSmartQuotaBackend(['codex', 'agy', 'claude'], { config, quotasOverride: limited, callerProvider: 'agy' }),
+      'agy',
+      'caller chosen when the others are rate limited',
+    );
   } finally {
     setCallerProvider(null);
     Object.assign(adapterRegistry, original);
@@ -97,8 +137,17 @@ test('routing: auto prefers another CLI than the calling client and measured hea
 
 function fixtureAdapters() {
   for (const id of ['codex', 'claude', 'agy']) {
-    adapterRegistry[id] = { id, name: id, inspectQuota: async () => { throw new Error('Routing reads no native quota'); },
-      probe: async () => ({ installed: true, executionSupported: true }), execute: async () => { throw new Error('Not executed'); } };
+    adapterRegistry[id] = {
+      id,
+      name: id,
+      inspectQuota: async () => {
+        throw new Error('Routing reads no native quota');
+      },
+      probe: async () => ({ installed: true, executionSupported: true }),
+      execute: async () => {
+        throw new Error('Not executed');
+      },
+    };
   }
 }
 
@@ -107,7 +156,10 @@ test('CUR-004: auto routing continues with a bounded warning when the quota cach
   const cacheFile = process.env.coagent8_QUOTA_CACHE;
   const blocker = path.join(tempDir, 'quota-parent-is-a-file');
   fs.writeFileSync(blocker, 'not a directory');
-  t.after(() => { process.env.coagent8_QUOTA_CACHE = cacheFile; Object.assign(adapterRegistry, original); });
+  t.after(() => {
+    process.env.coagent8_QUOTA_CACHE = cacheFile;
+    Object.assign(adapterRegistry, original);
+  });
   fixtureAdapters();
   await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['claude', 'agy'] } });
   process.env.coagent8_QUOTA_CACHE = path.join(blocker, 'quota-cache.json');
@@ -125,8 +177,17 @@ test('CUR-004: a stale or undated measurement ranks like an unmeasured one; a fr
   t.after(() => Object.assign(adapterRegistry, original));
   fixtureAdapters();
   await saveConfig({ defaultBackend: null, routing: { strategy: 'fixed', allowedBackends: ['codex', 'claude', 'agy'] } });
-  const quota = (headroomPercent, measuredAt) => ({ installed: true, status: 'operational', window: '5h', usedPercent: 100 - headroomPercent,
-    headroomPercent, measured: true, resetsAt: null, cooldownUntil: null, ...(measuredAt === undefined ? {} : { measuredAt }) });
+  const quota = (headroomPercent, measuredAt) => ({
+    installed: true,
+    status: 'operational',
+    window: '5h',
+    usedPercent: 100 - headroomPercent,
+    headroomPercent,
+    measured: true,
+    resetsAt: null,
+    cooldownUntil: null,
+    ...(measuredAt === undefined ? {} : { measuredAt }),
+  });
   const stale = new Date(Date.now() - QUOTA_MEASUREMENT_MAX_AGE_MS - 60000).toISOString();
   const fresh = new Date(Date.now() - 60000).toISOString();
   const write = data => fs.writeFileSync(process.env.coagent8_QUOTA_CACHE, JSON.stringify({ timestamp: Date.now(), data }));

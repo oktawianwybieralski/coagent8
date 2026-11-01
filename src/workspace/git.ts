@@ -40,7 +40,6 @@ export interface BinaryChange {
   id: string;
 }
 
-
 export const GIT_DIFF_PATHSPEC_EXCLUSIONS: readonly string[] = [
   ':(exclude)dist/**',
   ':(exclude)*.map',
@@ -70,10 +69,7 @@ function boundedSnapshot(text: string, omissions: string[]): string {
   return truncateToByteLength(text.trim(), SNAPSHOT_BYTES, '\n[Incomplete snapshot: total prompt budget reached.]');
 }
 
-export function combineSignals(
-  signal1?: AbortSignal | null,
-  signal2?: AbortSignal | null
-): AbortSignal | null {
+export function combineSignals(signal1?: AbortSignal | null, signal2?: AbortSignal | null): AbortSignal | null {
   const activeSignals = [signal1, signal2].filter((s): s is AbortSignal => !!s);
   if (activeSignals.length === 0) return null;
   if (activeSignals.length === 1) return activeSignals[0];
@@ -97,9 +93,7 @@ export function boundGitTimeout(context: BackendReadContext | undefined, default
     bounded = Math.min(bounded, context.timeoutMs);
   }
   if (context?.budget) {
-    const remaining = context.phase === 'teardown'
-      ? context.budget.remainingTeardownMs()
-      : context.budget.remainingExecutionMs();
+    const remaining = context.phase === 'teardown' ? context.budget.remainingTeardownMs() : context.budget.remainingExecutionMs();
     bounded = Math.min(bounded, remaining);
   }
   return Math.max(0, bounded);
@@ -107,9 +101,13 @@ export function boundGitTimeout(context: BackendReadContext | undefined, default
 
 export function normalizeSignalAndContext(
   signalOrContext?: AbortSignal | null | BackendReadContext,
-  explicitContext?: BackendReadContext
+  explicitContext?: BackendReadContext,
 ): { abortSignal?: AbortSignal; context?: BackendReadContext } {
-  if (signalOrContext && typeof (signalOrContext as AbortSignal).addEventListener !== 'function' && typeof (signalOrContext as AbortSignal).aborted !== 'boolean') {
+  if (
+    signalOrContext &&
+    typeof (signalOrContext as AbortSignal).addEventListener !== 'function' &&
+    typeof (signalOrContext as AbortSignal).aborted !== 'boolean'
+  ) {
     const ctx = signalOrContext as BackendReadContext;
     return { abortSignal: ctx.abortSignal, context: ctx };
   }
@@ -122,11 +120,16 @@ export function assertNotExpired(
   effectiveSignal?: AbortSignal | null,
   context?: BackendReadContext,
   phase = 'Git operation',
-  isPreLaunch = false
+  isPreLaunch = false,
 ): void {
-  const isExpired = context?.phase === 'teardown'
-    ? Boolean(context.budget?.isTotalExpired() || (context.budget && context.budget.remainingTeardownMs() <= 0))
-    : Boolean(context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut() || (context?.budget && context.budget.remainingExecutionMs() <= 0));
+  const isExpired =
+    context?.phase === 'teardown'
+      ? Boolean(context.budget?.isTotalExpired() || (context.budget && context.budget.remainingTeardownMs() <= 0))
+      : Boolean(
+          context?.budget?.isExecutionExpired() ||
+          context?.budget?.isTimedOut() ||
+          (context?.budget && context.budget.remainingExecutionMs() <= 0),
+        );
 
   if (effectiveSignal?.aborted) {
     if (isExpired) {
@@ -145,12 +148,13 @@ export async function runGit(
   abortSignalOrContext?: AbortSignal | null | BackendReadContext,
   timeoutMs = 15000,
   onTruncated?: () => void,
-  explicitContext?: BackendReadContext
+  explicitContext?: BackendReadContext,
 ): Promise<string> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
-  const contextSignal = context?.phase === 'teardown'
-    ? (context.abortSignal ?? context.budget?.teardownSignal)
-    : (context?.budget?.executionSignal ?? context?.abortSignal);
+  const contextSignal =
+    context?.phase === 'teardown'
+      ? (context.abortSignal ?? context.budget?.teardownSignal)
+      : (context?.budget?.executionSignal ?? context?.abortSignal);
   const effectiveSignal = combineSignals(abortSignal, contextSignal);
   const effectiveTimeout = boundGitTimeout(context, timeoutMs);
 
@@ -168,9 +172,14 @@ export async function runGit(
   });
 
   if (result.status !== 'completed') {
-    const isBudgetExceeded = context?.phase === 'teardown'
-      ? Boolean(context.budget?.isTotalExpired() || (context.budget && context.budget.remainingTeardownMs() <= 0))
-      : Boolean(context?.budget?.isExecutionExpired() || context?.budget?.isTimedOut() || (context?.budget && context.budget.remainingExecutionMs() <= 0));
+    const isBudgetExceeded =
+      context?.phase === 'teardown'
+        ? Boolean(context.budget?.isTotalExpired() || (context.budget && context.budget.remainingTeardownMs() <= 0))
+        : Boolean(
+            context?.budget?.isExecutionExpired() ||
+            context?.budget?.isTimedOut() ||
+            (context?.budget && context.budget.remainingExecutionMs() <= 0),
+          );
     if (isBudgetExceeded) {
       throw new ToolError('TIMEOUT', 'Execution budget expired during Git operation.');
     }
@@ -210,20 +219,33 @@ export async function collectGitScope(
   rawScope?: string | null,
   workspaceCwd = process.cwd(),
   abortSignalOrContext?: AbortSignal | null | BackendReadContext,
-  explicitContext?: BackendReadContext
+  explicitContext?: BackendReadContext,
 ): Promise<GitScopeInfo> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
   const omissions: string[] = [];
   const untrackedBinaries: string[] = [];
-  const git = (args: string[]) => runGit(args, workspaceCwd, abortSignal, 15000,
-    () => { omissions.push('Git command output exceeded its byte budget.'); }, context);
-  const describe = async (info: Omit<GitScopeInfo, 'inputComplete' | 'omissions' | 'changedPaths' | 'binaryFiles'>): Promise<GitScopeInfo> => {
-    if (/^GIT binary patch$|^Submodule |^[+-]Subproject commit |^(?:new|deleted) file mode 160000$/m.test(info.diff)) omissions.push('Submodule contents were omitted.');
+  const git = (args: string[]) =>
+    runGit(
+      args,
+      workspaceCwd,
+      abortSignal,
+      15000,
+      () => {
+        omissions.push('Git command output exceeded its byte budget.');
+      },
+      context,
+    );
+  const describe = async (
+    info: Omit<GitScopeInfo, 'inputComplete' | 'omissions' | 'changedPaths' | 'binaryFiles'>,
+  ): Promise<GitScopeInfo> => {
+    if (/^GIT binary patch$|^Submodule |^[+-]Subproject commit |^(?:new|deleted) file mode 160000$/m.test(info.diff))
+      omissions.push('Submodule contents were omitted.');
     const index = await git(['ls-files', '--stage', '-z', '--', '.']);
     if (/\b160000 [0-9a-f]+ [0-3]\t/.test(index)) omissions.push('Workspace contains submodules whose contents are not collected.');
     if (/(?:^|\0)\d{6} [0-9a-f]+ [123]\t/.test(index)) omissions.push('Unmerged index entries prevent a complete snapshot.');
     const flags = await git(['ls-files', '-v', '-z', '--', '.']);
-    if (flags.split('\0').some(entry => /^[a-zS] /.test(entry))) omissions.push('Index flags hide working-file changes (assume-unchanged or skip-worktree).');
+    if (flags.split('\0').some(entry => /^[a-zS] /.test(entry)))
+      omissions.push('Index flags hide working-file changes (assume-unchanged or skip-worktree).');
     const names = ['--name-only', '-z', '--no-renames', '--no-ext-diff', '--no-textconv'];
     let inventory: string;
     if (info.type === 'uncommitted') {
@@ -257,7 +279,9 @@ export async function collectGitScope(
     const found = new Map<string, { status: BinaryChange['status']; ids: string[]; worktree: boolean; regular: boolean }>();
     for (const comparison of comparisons) {
       const numstat = (await git([...comparison, '--numstat', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
-      const binary = new Set(numstat.map(entry => /^-\t-\t([\s\S]+)$/.exec(entry.replace(/^\n/, ''))?.[1]).filter((file): file is string => Boolean(file)));
+      const binary = new Set(
+        numstat.map(entry => /^-\t-\t([\s\S]+)$/.exec(entry.replace(/^\n/, ''))?.[1]).filter((file): file is string => Boolean(file)),
+      );
       if (!binary.size) continue;
       // `--raw -z`: a `:<modes> <old> <new> <status>` field, then the path.
       const raw = (await git([...comparison, '--raw', '--no-abbrev', ...options, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0');
@@ -294,7 +318,10 @@ export async function collectGitScope(
     for (let start = 0; start < unhashed.length; start += 100) {
       const batch = unhashed.slice(start, start + 100);
       const ids = (await git(['hash-object', '--no-filters', '--', ...batch])).split(/\r?\n/).filter(Boolean);
-      batch.forEach((file, index) => { if (/^[0-9a-f]{40,64}$/.test(ids[index] ?? '')) found.get(file)!.ids.push(`worktree:${ids[index]}`); else found.get(file)!.regular = false; });
+      batch.forEach((file, index) => {
+        if (/^[0-9a-f]{40,64}$/.test(ids[index] ?? '')) found.get(file)!.ids.push(`worktree:${ids[index]}`);
+        else found.get(file)!.regular = false;
+      });
     }
     return [...found].map(([file, change]) => {
       if (!change.regular || (change.worktree && !change.ids.some(id => id.startsWith('worktree:'))) || !change.ids.length) {
@@ -315,7 +342,11 @@ export async function collectGitScope(
     await git(['rev-parse', '--git-dir']);
   } catch (err) {
     if (err instanceof ToolError) throw err;
-    const reason = (err as Error).message.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? 'git rev-parse failed';
+    const reason =
+      (err as Error).message
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .find(Boolean) ?? 'git rev-parse failed';
     throw new ToolError('INPUT_LIMIT', `Review needs a Git repository that Git accepts in this workspace. Git: ${reason}`);
   }
 
@@ -338,30 +369,51 @@ export async function collectGitScope(
 
     let diff = [staged.trim(), unstaged.trim()].filter(Boolean).join('\n\n');
     if (!diff && hasHead) {
-      diff = (await git(['diff', '--unified=1', '--no-ext-diff', '--no-textconv', 'HEAD', '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).trim();
+      diff = (
+        await git(['diff', '--unified=1', '--no-ext-diff', '--no-textconv', 'HEAD', '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])
+      ).trim();
     }
 
-    const untracked = (await git(['ls-files', '-z', '--others', '--exclude-standard', '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS])).split('\0').filter(Boolean);
+    const untracked = (await git(['ls-files', '-z', '--others', '--exclude-standard', '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS]))
+      .split('\0')
+      .filter(Boolean);
     if (untracked.length) {
       diff += '\n\n--- UNTRACKED FILE SNAPSHOT (workspace scope) ---\n';
       const root = await fs.realpath(workspaceCwd);
-      const contextSignal = context?.phase === 'teardown'
-        ? (context.abortSignal ?? context.budget?.teardownSignal)
-        : (context?.budget?.executionSignal ?? context?.abortSignal);
+      const contextSignal =
+        context?.phase === 'teardown'
+          ? (context.abortSignal ?? context.budget?.teardownSignal)
+          : (context?.budget?.executionSignal ?? context?.abortSignal);
       const effectiveSignal = combineSignals(abortSignal, contextSignal);
       for (const filename of untracked) {
         assertNotExpired(effectiveSignal, context, 'Untracked file collection');
         if (isExcludedPath(filename)) continue;
-        if (Buffer.byteLength(diff) >= SNAPSHOT_BYTES) { omissions.push('Additional untracked files omitted.'); diff += '\n[Additional untracked files omitted: prompt budget.]'; break; }
+        if (Buffer.byteLength(diff) >= SNAPSHOT_BYTES) {
+          omissions.push('Additional untracked files omitted.');
+          diff += '\n[Additional untracked files omitted: prompt budget.]';
+          break;
+        }
         try {
-          const file = path.resolve(root, filename), stat = await fs.lstat(file);
-          if (!stat.isFile() || !file.startsWith(root + path.sep)) { omissions.push(`Non-regular file: ${filename}`); diff += `\n[Omitted non-regular file: ${filename}]`; continue; }
+          const file = path.resolve(root, filename),
+            stat = await fs.lstat(file);
+          if (!stat.isFile() || !file.startsWith(root + path.sep)) {
+            omissions.push(`Non-regular file: ${filename}`);
+            diff += `\n[Omitted non-regular file: ${filename}]`;
+            continue;
+          }
           const real = await fs.realpath(file);
-          if (!real.startsWith(root + path.sep)) { omissions.push(`File outside workspace: ${filename}`); diff += `\n[Omitted file outside workspace: ${filename}]`; continue; }
+          if (!real.startsWith(root + path.sep)) {
+            omissions.push(`File outside workspace: ${filename}`);
+            diff += `\n[Omitted file outside workspace: ${filename}]`;
+            continue;
+          }
           const text = await readBoundedFile(file, 256 * 1024);
           if (text.includes('\0')) untrackedBinaries.push(filename);
           diff += text.includes('\0') ? `\n[Binary file not collected: ${filename}]` : `\n--- ${filename} ---\n${text}\n`;
-        } catch { omissions.push(`Unreadable or oversized file: ${filename}`); diff += `\n[Omitted unreadable or oversized file: ${filename}]`; }
+        } catch {
+          omissions.push(`Unreadable or oversized file: ${filename}`);
+          diff += `\n[Omitted unreadable or oversized file: ${filename}]`;
+        }
       }
     }
 
@@ -375,7 +427,16 @@ export async function collectGitScope(
 
   // 2. Staged index changes only
   if (scope === 'staged' || scope === 'cached' || scope === 'index') {
-    const diff = await git(['diff', '--unified=1', '--no-ext-diff', '--no-textconv', '--cached', '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS]);
+    const diff = await git([
+      'diff',
+      '--unified=1',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--cached',
+      '--',
+      '.',
+      ...GIT_DIFF_PATHSPEC_EXCLUSIONS,
+    ]);
     return describe({
       type: 'staged',
       label: 'Staged index changes',
@@ -397,7 +458,16 @@ export async function collectGitScope(
     for (const p of parts) {
       sanitizeGitRef(p);
     }
-    const diff = await git(['diff', '--unified=1', '--no-ext-diff', '--no-textconv', cleanRange, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS]);
+    const diff = await git([
+      'diff',
+      '--unified=1',
+      '--no-ext-diff',
+      '--no-textconv',
+      cleanRange,
+      '--',
+      '.',
+      ...GIT_DIFF_PATHSPEC_EXCLUSIONS,
+    ]);
     return describe({
       type: 'range',
       label: `Revision range (${cleanRange})`,
@@ -437,7 +507,16 @@ export async function collectGitScope(
   // 5. Branch comparison / PR diff against base (e.g. main, origin/main, feature/auth, base:main)
   const rawBranch = scope.replace(/^(base|branch):/i, '');
   const branchName = sanitizeGitRef(rawBranch);
-  const diff = await git(['diff', '--unified=1', '--no-ext-diff', '--no-textconv', `${branchName}...HEAD`, '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS]);
+  const diff = await git([
+    'diff',
+    '--unified=1',
+    '--no-ext-diff',
+    '--no-textconv',
+    `${branchName}...HEAD`,
+    '--',
+    '.',
+    ...GIT_DIFF_PATHSPEC_EXCLUSIONS,
+  ]);
   return describe({
     type: 'branch',
     label: `Branch comparison against ${branchName} (${branchName}...HEAD)`,
@@ -456,11 +535,12 @@ export async function snapshotId(
   scope: GitScopeInfo,
   workspaceCwd = process.cwd(),
   abortSignalOrContext?: AbortSignal | null | BackendReadContext,
-  explicitContext?: BackendReadContext
+  explicitContext?: BackendReadContext,
 ): Promise<string> {
   const { abortSignal, context } = normalizeSignalAndContext(abortSignalOrContext, explicitContext);
   if (scope.type === 'range') return scope.revision as string;
-  const short = async (rev: string) => (await runGit(['rev-parse', '--short', rev], workspaceCwd, abortSignal, 15000, undefined, context)).trim();
+  const short = async (rev: string) =>
+    (await runGit(['rev-parse', '--short', rev], workspaceCwd, abortSignal, 15000, undefined, context)).trim();
   if (scope.type === 'commit') return short(scope.revision as string);
   let head: string;
   try {
@@ -486,18 +566,38 @@ export async function assertReviewWorkspace(
   scope: GitScopeInfo,
   cwd: string,
   signalOrContext?: AbortSignal | null | BackendReadContext,
-  explicitContext?: BackendReadContext
+  explicitContext?: BackendReadContext,
 ): Promise<void> {
   const { abortSignal, context } = normalizeSignalAndContext(signalOrContext, explicitContext);
   const flags = await runGit(['ls-files', '-v', '-z', '--', '.'], cwd, abortSignal, 15000, undefined, context);
-  if (flags.split('\0').some(entry => /^[a-zS] /.test(entry))) throw new ToolError('POLICY_DENIED',
-    'Index flags hide working-file changes (assume-unchanged or skip-worktree). Review cannot verify these files. No model turn started.');
+  if (flags.split('\0').some(entry => /^[a-zS] /.test(entry)))
+    throw new ToolError(
+      'POLICY_DENIED',
+      'Index flags hide working-file changes (assume-unchanged or skip-worktree). Review cannot verify these files. No model turn started.',
+    );
   if (scope.type === 'uncommitted') return;
-  const target = scope.type === 'commit' ? scope.revision! : scope.type === 'range' ? scope.revision!.split(/\.\.\.?/)[1] || 'HEAD' : 'HEAD';
+  const target =
+    scope.type === 'commit' ? scope.revision! : scope.type === 'range' ? scope.revision!.split(/\.\.\.?/)[1] || 'HEAD' : 'HEAD';
   const args = scope.type === 'staged' ? [] : [sanitizeGitRef(target)];
-  const changed = await runGit(['diff', '--name-only', '--no-ext-diff', '--no-textconv', ...args, '--', '.'], cwd, abortSignal, 15000, undefined, context);
-  const untracked = await runGit(['ls-files', '-z', '--others', '--exclude-standard', '--', '.'], cwd, abortSignal, 15000, undefined, context);
-  if (changed.trim() || untracked) throw new ToolError('POLICY_DENIED',
-    'Review target does not match the files in the current workspace. Review uncommitted changes instead. No model turn started.');
+  const changed = await runGit(
+    ['diff', '--name-only', '--no-ext-diff', '--no-textconv', ...args, '--', '.'],
+    cwd,
+    abortSignal,
+    15000,
+    undefined,
+    context,
+  );
+  const untracked = await runGit(
+    ['ls-files', '-z', '--others', '--exclude-standard', '--', '.'],
+    cwd,
+    abortSignal,
+    15000,
+    undefined,
+    context,
+  );
+  if (changed.trim() || untracked)
+    throw new ToolError(
+      'POLICY_DENIED',
+      'Review target does not match the files in the current workspace. Review uncommitted changes instead. No model turn started.',
+    );
 }
-

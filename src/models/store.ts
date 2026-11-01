@@ -92,14 +92,17 @@ export interface StoredPrices {
 }
 
 type Store = Partial<Record<ProviderId, ObservedModels>>;
-interface StoreFile { backends: Store; prices?: StoredPrices }
+interface StoreFile {
+  backends: Store;
+  prices?: StoredPrices;
+}
 
 function getModelStoreFile(): string {
   return path.join(getDataDir(), 'models.json');
 }
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 /** A positive time a `Date` can represent, so formatting it never throws. */
@@ -107,11 +110,22 @@ const isTime = (value: unknown): value is number => typeof value === 'number' &&
 
 function parseCatalogModel(value: unknown): CatalogModel | null {
   const entry = record(value);
-  if (!entry || !isValidModelIdentifier(entry.id) || !Array.isArray(entry.efforts) || !entry.efforts.every(effort => typeof effort === 'string' && effort.length <= 32)) return null;
+  if (
+    !entry ||
+    !isValidModelIdentifier(entry.id) ||
+    !Array.isArray(entry.efforts) ||
+    !entry.efforts.every(effort => typeof effort === 'string' && effort.length <= 32)
+  )
+    return null;
   const aliases = entry.aliases;
   if (aliases !== undefined && !(Array.isArray(aliases) && aliases.every(isValidModelIdentifier))) return null;
-  return { id: entry.id, efforts: entry.efforts as string[], ...(entry.effortRequired === true ? { effortRequired: true } : {}), ...(entry.isDefault === true ? { isDefault: true } : {}),
-    ...(aliases?.length ? { aliases: aliases as string[] } : {}) };
+  return {
+    id: entry.id,
+    efforts: entry.efforts as string[],
+    ...(entry.effortRequired === true ? { effortRequired: true } : {}),
+    ...(entry.isDefault === true ? { isDefault: true } : {}),
+    ...(aliases?.length ? { aliases: aliases as string[] } : {}),
+  };
 }
 
 function parseEntry(value: unknown): ObservedModels | null {
@@ -122,14 +136,20 @@ function parseEntry(value: unknown): ObservedModels | null {
   if (catalog) {
     const models = Array.isArray(catalog.models) ? catalog.models.map(parseCatalogModel) : [];
     if (!models.length || models.includes(null) || typeof catalog.source !== 'string' || !isTime(catalog.observedAt)) return null;
-    parsed.catalog = { models: models as CatalogModel[], source: catalog.source.slice(0, 128), observedAt: catalog.observedAt, ...(catalog.acceptsUnlisted === true ? { acceptsUnlisted: true } : {}) };
+    parsed.catalog = {
+      models: models as CatalogModel[],
+      source: catalog.source.slice(0, 128),
+      observedAt: catalog.observedAt,
+      ...(catalog.acceptsUnlisted === true ? { acceptsUnlisted: true } : {}),
+    };
   }
   const resolved = record(entry.resolved);
   if (resolved) {
     parsed.resolved = {};
     for (const [name, observed] of Object.entries(resolved)) {
       const item = record(observed);
-      if ((name !== '' && !isValidModelIdentifier(name)) || !item || !isValidModelIdentifier(item.model) || !isTime(item.observedAt)) return null;
+      if ((name !== '' && !isValidModelIdentifier(name)) || !item || !isValidModelIdentifier(item.model) || !isTime(item.observedAt))
+        return null;
       parsed.resolved[name] = { model: item.model, observedAt: item.observedAt };
     }
   }
@@ -154,19 +174,37 @@ function isValidReleaseDate(raw: unknown): raw is string {
 function parsePriceRecord(value: unknown): PriceRecord | null | undefined {
   if (value === null) return null;
   const price = record(value);
-  if (!price || !isPrice(price.output) || !(price.input === null || isPrice(price.input)) || !(price.cachedInput === null || isPrice(price.cachedInput))
-    || typeof price.matched !== 'string' || price.matched.length > 128 || typeof price.exact !== 'boolean') return undefined;
+  if (
+    !price ||
+    !isPrice(price.output) ||
+    !(price.input === null || isPrice(price.input)) ||
+    !(price.cachedInput === null || isPrice(price.cachedInput)) ||
+    typeof price.matched !== 'string' ||
+    price.matched.length > 128 ||
+    typeof price.exact !== 'boolean'
+  )
+    return undefined;
   const released = price.released;
   if (released !== undefined && released !== null && !isValidReleaseDate(released)) return undefined;
   const optional = (value: unknown) => value === undefined || value === null || isPrice(value);
   const tier = price.tieredFrom;
-  if (!optional(price.cacheWrite) || !optional(price.cacheWriteLong)
-    || !(tier === undefined || tier === null || (typeof tier === 'number' && Number.isSafeInteger(tier) && tier >= 0))) return undefined;
-  return { output: price.output, input: price.input, cachedInput: price.cachedInput,
+  if (
+    !optional(price.cacheWrite) ||
+    !optional(price.cacheWriteLong) ||
+    !(tier === undefined || tier === null || (typeof tier === 'number' && Number.isSafeInteger(tier) && tier >= 0))
+  )
+    return undefined;
+  return {
+    output: price.output,
+    input: price.input,
+    cachedInput: price.cachedInput,
     ...(price.cacheWrite !== undefined ? { cacheWrite: price.cacheWrite as number | null } : {}),
     ...(price.cacheWriteLong !== undefined ? { cacheWriteLong: price.cacheWriteLong as number | null } : {}),
     ...(tier !== undefined ? { tieredFrom: tier as number | null } : {}),
-    matched: price.matched, exact: price.exact, released: released ?? null };
+    matched: price.matched,
+    exact: price.exact,
+    released: released ?? null,
+  };
 }
 
 /** Validates stored prices; any invalid model entry discards them all, so a damaged file is read again. */
@@ -187,14 +225,19 @@ function parsePrices(value: unknown): StoredPrices | undefined {
 function readStore(): StoreFile {
   const file = getModelStoreFile();
   let raw: string;
-  try { raw = readBoundedFileSync(file, STORE_MAX_BYTES); }
-  catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') process.stderr.write(`Warning: model store not read: ${redactDiagnostic((err as Error).message, 256)}\n`);
+  try {
+    raw = readBoundedFileSync(file, STORE_MAX_BYTES);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT')
+      process.stderr.write(`Warning: model store not read: ${redactDiagnostic((err as Error).message, 256)}\n`);
     return { backends: {} };
   }
   let parsed: Record<string, unknown> | null;
-  try { parsed = record(JSON.parse(raw)); }
-  catch { parsed = null; }
+  try {
+    parsed = record(JSON.parse(raw));
+  } catch {
+    parsed = null;
+  }
   // An older version is replaced quietly: it holds only observations the CLIs repeat.
   if (typeof parsed?.schemaVersion === 'number' && parsed.schemaVersion < STORE_VERSION) return { backends: {} };
   const backends = parsed?.schemaVersion === STORE_VERSION ? record(parsed.backends) : null;
@@ -241,7 +284,11 @@ export function readObservedModels(id: ProviderId, key: string): ObservedModels 
  * model replaces the last success.
  * @remarks Best-effort: a lock or write failure is reported on stderr, never thrown.
  */
-export async function recordObservedModels(id: ProviderId, key: string, observation: { catalog?: ModelCatalog; resolved?: Record<string, string>; success?: string }): Promise<void> {
+export async function recordObservedModels(
+  id: ProviderId,
+  key: string,
+  observation: { catalog?: ModelCatalog; resolved?: Record<string, string>; success?: string },
+): Promise<void> {
   await updateStore(({ backends }) => {
     const previous = backends[id]?.key === key ? backends[id] : undefined;
     const now = Date.now();
@@ -286,4 +333,3 @@ export function readObservedModelNames(): string[] {
   }
   return [...names];
 }
-

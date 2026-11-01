@@ -27,7 +27,7 @@ export async function collectReviewInput(
   cwd: string,
   signalOrContext?: AbortSignal | null | BackendReadContext,
   tracerOrContext?: TimingTracer | BackendReadContext,
-  optionsContext?: BackendReadContext
+  optionsContext?: BackendReadContext,
 ) {
   let signal: AbortSignal | null = null;
   let tracer: TimingTracer | undefined = undefined;
@@ -62,17 +62,21 @@ export async function collectReviewInput(
     const working = info.type === 'uncommitted' ? info : await collectGitScope('uncommitted', cwd, signal, context);
     const identity = await snapshotId(info, cwd, signal, context);
     const workingIdentity = await snapshotId(working, cwd, signal, context);
-    const digest = createHash('sha256').update(JSON.stringify({
-      identity,
-      workingIdentity,
-      diff: info.diff,
-      workspace: working.diff,
-      changedPaths: info.changedPaths,
-      omissions: [...info.omissions, ...working.omissions],
-      // Binary contents are not in the diff text; their identities bind the snapshot to them.
-      binaryFiles: info.binaryFiles,
-      workingBinaryFiles: working.binaryFiles,
-    })).digest('hex');
+    const digest = createHash('sha256')
+      .update(
+        JSON.stringify({
+          identity,
+          workingIdentity,
+          diff: info.diff,
+          workspace: working.diff,
+          changedPaths: info.changedPaths,
+          omissions: [...info.omissions, ...working.omissions],
+          // Binary contents are not in the diff text; their identities bind the snapshot to them.
+          binaryFiles: info.binaryFiles,
+          workingBinaryFiles: working.binaryFiles,
+        }),
+      )
+      .digest('hex');
     const reviewGateContext: ReviewGateContext = {
       expectedSnapshot: `${identity}#${digest}`,
       inputComplete: info.inputComplete && working.inputComplete,
@@ -90,4 +94,3 @@ export async function collectReviewInput(
 export function proseOnly(info: GitScopeInfo): boolean {
   return info.changedPaths.every(file => /\.md$/i.test(file));
 }
-
