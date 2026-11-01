@@ -16,6 +16,7 @@
  *
  * @packageDocumentation
  */
+import crypto from 'node:crypto';
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/index.js';
 import { acquireWriterLease } from '../sessions/writer.js';
@@ -106,10 +107,13 @@ export async function executeDelegation(
 /** Operations of asynchronous delegations in this server, awaited at shutdown. */
 const activeDelegations = new Map<Promise<unknown>, AbortController>();
 
-/** Stops every asynchronous delegation of this server and awaits its evidence and release. */
-export async function stopActiveDelegations(): Promise<void> {
+/**
+ * Stops every asynchronous delegation of this server, at once also one still waiting for consent.
+ * @returns Settles when each has stored its evidence and released its writer.
+ */
+export function stopActiveDelegations(): Promise<unknown> {
   for (const controller of activeDelegations.values()) controller.abort();
-  await Promise.allSettled([...activeDelegations.keys()]);
+  return Promise.allSettled([...activeDelegations.keys()]);
 }
 
 /** A request for one asynchronous delegation. */
@@ -128,6 +132,12 @@ export interface DelegationStart {
   options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
 }
 
+/** Identifies what a request id stands for, so a reused id cannot silently return another task. */
+function requestFingerprint(start: DelegationStart): string {
+  const { args, prompt, scope } = start;
+  return crypto.createHash('sha256').update(JSON.stringify({ prompt, scope, args })).digest('hex');
+}
+
 /** Terminal task state of an outcome. */
 function finalState(outcome: TaskExecutionResult): DelegationTask['state'] {
   const status = outcome.result.status;
@@ -143,9 +153,21 @@ function finalState(outcome: TaskExecutionResult): DelegationTask['state'] {
 export async function startDelegation(start: DelegationStart): Promise<{ task: DelegationTask } | { outcome: TaskExecutionResult }> {
   const key = start.requestId ? `${start.cwd}\n${start.requestId}` : undefined;
   const taskHandle = createTaskHandle(key);
+  const fingerprint = key ? requestFingerprint(start) : undefined;
   const existing = key ? readTask(taskHandle) : null;
-  if (existing) return { task: existing };
-  pruneTasks();
+  if (existing) {
+    if (existing.requestFingerprint !== fingerprint) {
+      throw new ToolError('INPUT_LIMIT', `request_id '${start.requestId?.slice(0, 80)}' was already used for a different delegation.`);
+    }
+    return { task: existing };
+  }
+  try {
+    pruneTasks();
+  } catch (err) {
+    // Old records are housekeeping; a new delegation does not depend on removing them.
+    process.stderr.write(`CoAgent8: old tasks were not removed: ${redactDiagnostic((err as Error).message, 512)}
+`);
+  }
 
   const controller = new AbortController();
   const abortStart = () => controller.abort();
@@ -157,14 +179,22 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   const running = new Promise<void>(resolve => {
     announce = resolve;
   });
-  const finish = async (result: DelegationTask['result'], state: DelegationTask['state']) => {
-    if (task) await writeTask({ ...task, state, result, finishedAt: new Date().toISOString() });
+  /** A waiter must learn the end even when the full result cannot be stored; this never rejects. */
+  const record = async (update: Partial<DelegationTask>) => {
+    if (!task) return;
+    task = { ...task, ...update };
+    try {
+      await writeTask(task);
+    } catch (err) {
+      const message = redactDiagnostic((err as Error).message, 512);
+      process.stderr.write(`CoAgent8: task ${task.taskHandle} could not be recorded: ${message}\n`);
+    }
   };
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
     onTurnStart: async turn => {
       const callerSession = process.env.CLAUDE_CODE_SESSION_ID;
-      task = {
+      const initial: DelegationTask = {
         schemaVersion: 1,
         taskHandle,
         state: 'running',
@@ -175,27 +205,35 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
         serverPid: process.pid,
         startedAt: new Date().toISOString(),
         ...(callerSession ? { callerSession } : {}),
+        ...(fingerprint ? { requestFingerprint: fingerprint } : {}),
       };
-      await writeTask(task);
+      // A record that cannot be written fails the turn before it starts: nothing could be waited for.
+      await writeTask(initial);
+      task = initial;
       start.requestSignal?.removeEventListener('abort', abortStart);
       announce();
     },
-    beforeRelease: async outcome => {
-      if (task) await finish(start.format(outcome), finalState(outcome));
-    },
+    // The evidence is stored while the writer is held; the state turns final after the release, so
+    // a woken caller can start the next delegation at once.
+    beforeRelease: outcome => record({ result: start.format(outcome) }),
   });
-  // After the turn started nobody awaits the operation but the shutdown: it records its own failure.
-  const settled = operation.then(
-    outcome => ({ outcome }),
+  const settled: Promise<{ outcome: TaskExecutionResult } | { error: unknown }> = operation.then(
+    async outcome => {
+      await record({ state: finalState(outcome), finishedAt: new Date().toISOString() });
+      return { outcome };
+    },
     async (err: unknown) => {
-      if (!task) return { error: err };
       const message = redactDiagnostic((err as Error).message, 1024);
-      await finish({ text: `The delegation failed: ${message}`, isError: true }, 'failed');
+      await record({
+        state: 'failed',
+        finishedAt: new Date().toISOString(),
+        result: { text: `The delegation failed: ${message}`, isError: true },
+      });
       return { error: err };
     },
   );
   activeDelegations.set(settled, controller);
-  void settled.finally(() => activeDelegations.delete(settled));
+  void settled.then(() => activeDelegations.delete(settled));
 
   await Promise.race([running, settled]);
   start.requestSignal?.removeEventListener('abort', abortStart);

@@ -33,6 +33,8 @@ export interface DelegationTask {
   finishedAt?: string;
   /** The calling agent's own session, when its client exposes one; a label, never an authority. */
   callerSession?: string;
+  /** Hash of the request behind a caller's request id. */
+  requestFingerprint?: string;
   /** The complete result as the delegate tool formats it, written before the state turns terminal. */
   result?: { text: string; isError: boolean };
 }

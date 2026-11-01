@@ -1372,7 +1372,9 @@ checked against `src/mcp/server.ts`, `src/execution/delegation.ts` and
 before `adapter.execute` (`onTurnStart`), and `startDelegation` returns then. So consent still
 uses the open request, the session handle is known, and a refusal is still the call's error;
 there is no `queued` state on disk, because a task is recorded only when its turn starts. The
-task record (`<data>/delegations/`) is written before the writer is released. Three things
+task record (`<data>/delegations/`) stores the result before the writer is released and turns
+final after the release, so a woken caller can delegate again at once. A `request_id` reused for
+another request is refused. Three things
 differ from the draft below: completed, notified and fetched are not separate states, because
 the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
 released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat

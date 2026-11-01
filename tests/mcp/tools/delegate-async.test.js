@@ -160,6 +160,39 @@ test('a repeated start with the same request id returns the existing task', asyn
   assert.match(third.content[0].text, /already finished/);
 });
 
+test('a request id reused for another delegation is refused', async () => {
+  const repo = fixtureRepo();
+  const first = await handleDelegate({ ...REQUEST, request_id: 'r2' }, repo, null, null, approve);
+  await finished(first.structuredContent.taskHandle);
+  await assert.rejects(handleDelegate({ ...REQUEST, task: 'Something else', request_id: 'r2' }, repo, null, null, approve), /already used/);
+});
+
+test('a final state appears only after the writer is free, so a woken caller can delegate again', async () => {
+  const repo = fixtureRepo();
+  const first = await handleDelegate(REQUEST, repo, null, null, approve);
+  await finished(first.structuredContent.taskHandle);
+  assert.equal(fs.existsSync(writerRecord(repo)), false);
+  const second = await handleDelegate(REQUEST, repo, null, null, approve);
+  await finished(second.structuredContent.taskHandle);
+});
+
+test('a task that cannot be recorded does not start, and the writer is released', async () => {
+  const repo = fixtureRepo();
+  const store = path.join(process.env.coagent8_DIR, 'delegations');
+  const kept = `${store}.kept`;
+  fs.renameSync(store, kept);
+  fs.writeFileSync(store, 'not a directory');
+  try {
+    const result = await handleDelegate(REQUEST, repo, null, null, approve);
+    assert.equal(result.structuredContent?.taskHandle, undefined);
+    assert.equal(result.isError, true);
+    assert.equal(fs.existsSync(writerRecord(repo)), false);
+  } finally {
+    fs.rmSync(store, { force: true });
+    fs.renameSync(kept, store);
+  }
+});
+
 test('server shutdown stops a running delegation and awaits its result and release', async () => {
   const repo = fixtureRepo();
   process.env.CODEX_FIXTURE_MODE = 'interruptible';

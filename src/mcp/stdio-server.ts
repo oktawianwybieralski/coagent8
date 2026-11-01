@@ -41,9 +41,10 @@ export async function serveStdio(options: StdioServerOptions = {}): Promise<void
     shuttingDown = true;
     // backgroundMaintenance reports its own failure and never rejects.
     await backgroundMaintenance;
+    const delegationsStopped = stopActiveDelegations();
     await shutdownProcessRunner();
     await waitForActiveExecutionTasks();
-    await stopActiveDelegations();
+    await delegationsStopped;
     // A background price read stores its result before the process ends.
     await settlePriceReads();
     try {
