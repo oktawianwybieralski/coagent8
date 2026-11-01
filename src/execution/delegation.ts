@@ -14,6 +14,7 @@
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/index.js';
 import { acquireWriterLease } from '../sessions/writer.js';
+import { jobHelperPath } from './job-helper.js';
 import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
 
@@ -34,6 +35,13 @@ export async function executeDelegation(
   onProgress?: ((info: { message?: string }) => void) | null,
   options: Omit<TaskOptions, 'profile'> = {},
 ): Promise<TaskExecutionResult> {
+  // A writer's descendants must end with its run; without the helper they could keep writing.
+  if (process.platform === 'win32' && !jobHelperPath()) {
+    throw new ToolError(
+      'SANDBOX_UNAVAILABLE',
+      'delegate needs the Windows job helper, which is missing or failed its digest check. Reinstall CoAgent8; in a source checkout run cargo build --release in native/coagent8-job.',
+    );
+  }
   const repo = await readWorkspaceRepository(cwd, options.context).catch(err => {
     if (err instanceof ToolError && ['ABORTED', 'TIMEOUT'].includes(err.code)) throw err;
     throw new ToolError('INPUT_LIMIT', 'delegate needs a Git work tree, so the server can report what changed; run it in a repository.');

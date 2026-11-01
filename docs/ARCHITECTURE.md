@@ -1271,8 +1271,8 @@ inside its sandbox (`spawn EPERM`, verified natively 2026-10-21), so test runner
 that spawn processes fail there.
 
 **Known limitations.** Claude's `Bash` and agy write wherever the user's account
-can. On Windows a cancelled or timed-out worker's descendants can outlive it
-until `WINDOWS-001b-e` (`CUR-011`), so they may still change files. Checks are
+can. On Windows, `delegate` requires the job helper, so a cancelled or timed-out
+worker's descendants end with it. Checks are
 reported by the worker, not observed by the server (`COAGENT-004b`).
 
 ## Windows per-call containment (WINDOWS-001)
@@ -1322,10 +1322,21 @@ Cargo output of a source checkout, identified by this project's `package.json` n
 the helper's `Cargo.toml`. Nothing outside the package is searched: from an installed
 bundle the parent of the package is `node_modules`, where anyone's executable could lie.
 
-**Missing helper.** Today every run without a helper keeps the direct spawn and its
-documented limitation. `WINDOWS-001d` ships and verifies the helper; from then on, write
-and command profiles refuse to run on Windows without it, and read-only runs keep the
-direct spawn.
+**Package.** CI builds the helper for `x64` and `arm64` with a pinned compiler and without a
+link timestamp, twice, and fails unless both builds match byte for byte. The npm tarball
+and the VSIX carry them in `dist/win32-<arch>/`. The bundle embeds their SHA-256 digests
+and checks the helper once per process before launching it, so a changed binary is refused.
+Setup copies the machine's helper beside every runtime copy of the bundle, because clients
+start those copies. A helper in use is locked, so removing an old runtime copy may leave it
+for a later removal.
+The check does not stop someone who can also change the bundle. The binaries are not
+code-signed (owner decision 2026-10-13: no paid certificate; SignPath Foundation is the
+first choice). Files extracted by npm or VS Code normally carry no Mark-of-the-Web.
+
+**Missing or refused helper.** `delegate` fails with `SANDBOX_UNAVAILABLE` on Windows, and
+`doctor` reports it (`windowsJobHelper`) with the way out.
+Read-only runs keep the direct spawn with the documented limitation, because they do not
+write.
 
 **Known limit.** A job does not contain work a descendant hands to a process outside it,
 such as a running service or an existing browser instance. A program that needs to leave

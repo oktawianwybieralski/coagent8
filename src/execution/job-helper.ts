@@ -4,6 +4,7 @@
  * @packageDocumentation
  */
 
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ExecutionError } from '../contracts/index.js';
@@ -12,6 +13,10 @@ import type { ExecutionError } from '../contracts/index.js';
 const PACKAGE_NAME = 'coagent8';
 /** Win32 errors that mean the program does not exist. */
 const NOT_FOUND_ERRORS = new Set(['2', '3']);
+/** SHA-256 digests per architecture of the helpers in this package; set by `scripts/build.cjs`. */
+declare const __COAGENT8_JOB_HELPER_DIGESTS__: Readonly<Record<string, string>> | undefined;
+const PACKAGED_DIGESTS: Readonly<Record<string, string>> =
+  typeof __COAGENT8_JOB_HELPER_DIGESTS__ === 'undefined' ? {} : __COAGENT8_JOB_HELPER_DIGESTS__;
 let located: { path: string | undefined } | undefined;
 
 /** Whether a directory is a source checkout of this project, which alone holds Cargo output. */
@@ -26,18 +31,27 @@ function isSourceCheckout(root: string): boolean {
 
 /**
  * Finds the helper for a module directory.
- * @remarks Looks beside the bundle (`dist/win32-<arch>/`), then in the Cargo output of a source
- * checkout. The package root follows from where this code runs, `dist` or `src/execution`, so
+ * @remarks Looks beside the bundle (`dist/win32-<arch>/`), where a helper counts only when its
+ * SHA-256 digest matches the one embedded in the bundle, then in the Cargo output of a source
+ * checkout, which is built from the same checkout. The package root follows from where this code runs, `dist` or `src/execution`, so
  * nothing outside the package is searched: its parent can be `node_modules`, where anyone's
  * executable could lie.
  * @param moduleDir - Directory of the running bundle or source module.
  * @param arch - Processor architecture.
+ * @param digests - Expected digests of the packaged helpers per architecture.
  * @returns The helper's path, or `undefined` when this installation has none.
  */
-export function locateJobHelper(moduleDir: string, arch: string = process.arch): string | undefined {
+export function locateJobHelper(
+  moduleDir: string,
+  arch: string = process.arch,
+  digests: Readonly<Record<string, string>> = PACKAGED_DIGESTS,
+): string | undefined {
   const isFile = (file: string) => fs.statSync(file, { throwIfNoEntry: false })?.isFile() ?? false;
   const packaged = path.join(moduleDir, `win32-${arch}`, 'coagent8-job.exe');
-  if (isFile(packaged)) return packaged;
+  if (isFile(packaged)) {
+    const digest = createHash('sha256').update(fs.readFileSync(packaged)).digest('hex');
+    return digest === digests[arch] ? packaged : undefined;
+  }
   const parent = path.dirname(moduleDir);
   const root =
     path.basename(moduleDir) === 'dist'

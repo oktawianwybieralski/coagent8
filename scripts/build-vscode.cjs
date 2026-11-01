@@ -38,6 +38,10 @@ async function buildExtension(serverRoot) {
   for (const name of ['index.cjs', 'setup.cjs', 'THIRD_PARTY_NOTICES.txt']) {
     fs.copyFileSync(path.join(serverRoot, 'dist', name), path.join(output, 'dist', name));
   }
+  // WINDOWS-001d: the Windows job helpers the package carries.
+  for (const name of fs.readdirSync(path.join(serverRoot, 'dist')).filter(entry => entry.startsWith('win32-'))) {
+    fs.cpSync(path.join(serverRoot, 'dist', name), path.join(output, 'dist', name), { recursive: true });
+  }
   fs.copyFileSync(path.join(serverRoot, 'assets/logo.png'), path.join(output, 'assets/logo.png'));
   fs.copyFileSync(path.join(serverRoot, 'LICENSE'), path.join(output, 'LICENSE'));
   fs.copyFileSync(path.join(root, 'extensions/vscode/README.md'), path.join(output, 'README.md'));

@@ -1,3 +1,4 @@
-# The helper runs on machines without the Visual C++ runtime.
+# The helper runs on machines without the Visual C++ runtime. /Brepro removes the link
+# timestamp, so the same source builds to the same bytes (WINDOWS-001d).
 [target.'cfg(target_env = "msvc")']
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/Brepro"]

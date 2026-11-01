@@ -1,3 +1,4 @@
+const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { isBuiltin } = require('node:module');
@@ -42,12 +43,35 @@ function writeNotices(packageDirs) {
   );
 }
 
+/**
+ * Takes the helpers built by scripts/build-job-helper.cjs into dist/ and returns their SHA-256
+ * digests per architecture, which the bundle embeds and checks before it launches one.
+ */
+function stageJobHelpers() {
+  const staged = path.join(root, '.artifacts', 'job-helper');
+  const digests = {};
+  for (const directory of fs.existsSync(staged) ? fs.readdirSync(staged).sort() : []) {
+    const arch = /^win32-(x64|arm64)$/.exec(directory)?.[1];
+    const source = path.join(staged, directory, 'coagent8-job.exe');
+    if (!arch || !fs.existsSync(source)) continue;
+    const bytes = fs.readFileSync(source);
+    digests[arch] = createHash('sha256').update(bytes).digest('hex');
+    fs.mkdirSync(path.join(dist, directory), { recursive: true });
+    fs.writeFileSync(path.join(dist, directory, 'coagent8-job.exe'), bytes);
+  }
+  if (process.platform === 'win32' && !digests[process.arch]) {
+    console.error('No job helper staged for this machine: on Windows, delegate refuses to run from this package. See CONTRIBUTING.md.');
+  }
+  return digests;
+}
+
 async function buildBundles({ write = true } = {}) {
   const start = performance.now();
   if (write) {
     prepareBranding();
     fs.rmSync(dist, { recursive: true, force: true });
   }
+  const jobHelperDigests = write ? stageJobHelpers() : {};
   const externalPackages = [];
   const bundledPackages = new Set();
   const modules = {};
@@ -77,6 +101,7 @@ async function buildBundles({ write = true } = {}) {
       entry,
       outDir: dist,
       clean: false,
+      define: { __COAGENT8_JOB_HELPER_DIGESTS__: JSON.stringify(jobHelperDigests) },
       write,
       format: 'cjs',
       platform: 'node',
@@ -107,6 +132,10 @@ async function buildBundles({ write = true } = {}) {
   }
   if (write) {
     writeNotices(bundledPackages);
+    if (Object.keys(jobHelperDigests).length) {
+      const notices = fs.readFileSync(path.join(root, 'native', 'coagent8-job', 'THIRD_PARTY_NOTICES.txt'), 'utf8').replace(/\r\n/g, '\n');
+      fs.appendFileSync(path.join(dist, 'THIRD_PARTY_NOTICES.txt'), `\n${'='.repeat(80)}\n${notices}`);
+    }
     fs.chmodSync(path.join(dist, 'index.cjs'), 0o755);
     console.error(`Build complete in ${Math.round(performance.now() - start)} ms (minified bundle includes SDK dependencies).`);
   }

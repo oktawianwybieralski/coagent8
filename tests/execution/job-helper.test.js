@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -51,10 +52,16 @@ test('the helper is found in the package or a source checkout, never outside the
   fs.mkdirSync(installed, { recursive: true });
   assert.equal(locateJobHelper(installed, 'x64'), undefined);
 
-  // The packaged helper is the one an installation uses, for its own architecture.
-  const packaged = write(path.join('node_modules', 'coagent8', 'dist', 'win32-x64', 'coagent8-job.exe'));
-  assert.equal(locateJobHelper(installed, 'x64'), packaged);
-  assert.equal(locateJobHelper(installed, 'arm64'), undefined);
+  // The packaged helper is the one an installation uses, for its own architecture, and only
+  // when its digest matches the bundle's.
+  const packaged = write(path.join('node_modules', 'coagent8', 'dist', 'win32-x64', 'coagent8-job.exe'), 'helper');
+  const digest = createHash('sha256').update('helper').digest('hex');
+  assert.equal(locateJobHelper(installed, 'x64', { x64: digest }), packaged);
+  assert.equal(locateJobHelper(installed, 'arm64', { x64: digest }), undefined);
+  assert.equal(locateJobHelper(installed, 'x64', {}), undefined, 'a helper the bundle does not know is refused');
+  fs.writeFileSync(packaged, 'tampered');
+  assert.equal(locateJobHelper(installed, 'x64', { x64: digest }), undefined, 'a changed helper is refused');
+  fs.rmSync(path.dirname(packaged), { recursive: true });
 
   // A source checkout finds its Cargo output, from the bundle and from the source modules.
   const checkout = path.join('checkout');

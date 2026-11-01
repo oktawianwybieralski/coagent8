@@ -6,6 +6,7 @@
  * @packageDocumentation
  */
 import fs from 'node:fs';
+import { removeRuntimeDirectory } from './runtime-files.js';
 import os from 'node:os';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -140,7 +141,7 @@ export function pruneUnreferencedRuntimes(root: string, home: string, env: NodeJ
   }
   if (fs.existsSync(runtimes)) {
     for (const name of fs.readdirSync(runtimes)) {
-      if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) fs.rmSync(path.join(runtimes, name), { recursive: true, force: true });
+      if (/^[a-f0-9]{64}$/.test(name) && !referenced.has(name)) removeRuntimeDirectory(path.join(runtimes, name));
     }
     if (!fs.readdirSync(runtimes).length) fs.rmdirSync(runtimes);
   }

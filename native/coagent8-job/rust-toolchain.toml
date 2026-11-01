@@ -1,0 +1,5 @@
+# The compiler version is part of a reproducible helper build (WINDOWS-001d).
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]

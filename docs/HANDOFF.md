@@ -10,15 +10,15 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
-- **Windows per-call containment (`WINDOWS-001b`, `c`, owner decisions 2026-11-01):**
-  branch `feat/windows-job-helper`. `delegate` becomes asynchronous by default in
-  0.8.0, and asynchronous writes on Windows wait for `WINDOWS-001b-e`. The helper in
-  `native/coagent8-job` ends a cancelled run's whole tree; `survivedCancel` of
-  `WINDOWS-001a` is now false for the descendant outside any job. It is not packaged
-  yet, so an installed CoAgent8 keeps the limitation until `001d`. Next: `001d`, `001e`.
-  Record: [WINDOWS-001 in 0.8.0](delivered/0.8.0/WINDOWS-001.md).
+- **Windows per-call containment (`WINDOWS-001b-d`, owner decisions 2026-11-01):**
+  `001b` and `c` merged in #102 (`6161449`); `001d` on branch
+  `feat/windows-job-helper-package`. `delegate` becomes asynchronous by default in 0.8.0,
+  and asynchronous writes on Windows wait for `WINDOWS-001b-e`. The package carries the helper
+  unsigned, with its digest checked before launch, and `delegate` refuses to run on Windows
+  without it. Next: `001e`, then `DELEGATE-001`. Record:
+  [WINDOWS-001 in 0.8.0](delivered/0.8.0/WINDOWS-001.md).
 
-- **CodeQL alerts and CI timing (2026-11-01):** branch `fix/codeql-alerts`.
+- **CodeQL alerts and CI timing (2026-11-01):** merged in #101 (`696f6b1`).
   Alert 1: `ci.yml` limits the token to `contents: read`. Alert 2: the Windows
   shim check in `src/execution/cli-resolver.ts` consumes the redirections after
   `%*` with a sticky tokenizer instead of removing them with `replace`; the

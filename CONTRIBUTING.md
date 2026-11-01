@@ -78,3 +78,9 @@ gate; releases retain the full package and supported CI matrix gates.
 Report checks as PASS, FAIL or NOT_RUN, with reasons for omissions. Do not weaken
 tests to obtain a pass or treat a planned capability as implemented. Update the
 owning documentation when behavior or contracts change.
+
+## Windows job helper
+
+On Windows, `delegate` and its tests need the job helper. Install Rust, then run
+`cargo build --release --examples --bins` in `native/coagent8-job`. A package built on your
+machine carries a helper only after `node scripts/build-job-helper.cjs`.

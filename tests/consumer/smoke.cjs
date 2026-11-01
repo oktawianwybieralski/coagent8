@@ -30,6 +30,12 @@ function npmRun(args, cwd = root) {
     .digest('hex');
   if (existing) assert.equal(hash, pack.sha256, 'Existing artifact hash');
   else await fsp.writeFile(tarball + '.manifest.json', JSON.stringify({ ...pack, sha256: hash }, null, 2));
+  // WINDOWS-001d: what scripts/build-job-helper.cjs staged is packed; a release requires both.
+  const stagedHelpers = path.join(root, '.artifacts', 'job-helper');
+  const jobHelpers = (fs.existsSync(stagedHelpers) ? fs.readdirSync(stagedHelpers) : []).map(dir => `dist/${dir}/coagent8-job.exe`);
+  if (process.env.coagent8_REQUIRE_JOB_HELPERS) {
+    assert.deepEqual(jobHelpers.sort(), ['dist/win32-arm64/coagent8-job.exe', 'dist/win32-x64/coagent8-job.exe']);
+  }
   for (const name of [
     'dist/index.cjs',
     'dist/setup.cjs',
@@ -54,8 +60,8 @@ function npmRun(args, cwd = root) {
       .filter(f => f.path.startsWith('dist/'))
       .map(f => f.path)
       .sort(),
-    ['dist/THIRD_PARTY_NOTICES.txt', 'dist/index.cjs', 'dist/setup.cjs'],
-    'Packed dist/ must contain only the bundles and third-party notices',
+    ['dist/THIRD_PARTY_NOTICES.txt', 'dist/index.cjs', 'dist/setup.cjs', ...jobHelpers].sort(),
+    'Packed dist/ must contain only the bundles, third-party notices and staged job helpers',
   );
   assert.ok(!pack.files.some(f => f.path.endsWith('.map')), 'Source maps must not ship in runtime package');
   for (const name of ['logo-light.svg', 'logo-light.png', 'logo32-light.png', 'logo64-light.png', 'logo256-light.png'])
@@ -189,6 +195,20 @@ function npmRun(args, cwd = root) {
     const doctorJson = dispatch(['doctor', '--json']);
     assert.equal(doctorJson.status, 0, doctorJson.stderr);
     assert.equal(JSON.parse(doctorJson.stdout).scope, 'models');
+    // WINDOWS-001d: the installed bundle accepts its packaged helper and refuses a changed one.
+    const packagedHelper = path.join(pkg, 'dist', `win32-${process.arch}`, 'coagent8-job.exe');
+    if (process.platform === 'win32' && fs.existsSync(packagedHelper)) {
+      const helperState = () => {
+        const health = dispatch(['doctor', '--scope', 'health', '--json']);
+        assert.equal(health.status, 0, health.stderr);
+        return JSON.parse(health.stdout).windowsJobHelper;
+      };
+      assert.equal(helperState(), 'ready');
+      const original = fs.readFileSync(packagedHelper);
+      fs.writeFileSync(packagedHelper, Buffer.concat([original, Buffer.from([0])]));
+      assert.equal(helperState(), 'unavailable', 'a changed helper is refused');
+      fs.writeFileSync(packagedHelper, original);
+    }
     const sessionListOut = dispatch(['session', 'list']);
     assert.equal(sessionListOut.status, 0, sessionListOut.stderr);
     assert.match(sessionListOut.stdout, /> CoAgent8: No active sessions found\./);

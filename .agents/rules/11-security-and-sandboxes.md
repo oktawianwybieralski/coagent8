@@ -54,8 +54,9 @@ MCP servers stay disabled and verified as above, and the nested-turn refusal sta
 One writer per Git work tree, recorded in its Git directory so every client's
 server process sees it; the server
 reports the Git changes it observed before and after the turn and never commits,
-resets or cleans up. On Windows a cancelled worker's descendants can outlive it
-until `WINDOWS-001b-e` (`CUR-011`).
+resets or cleans up. On Windows `delegate` refuses to run without the job helper,
+which ends a cancelled worker's descendants with it
+([contract](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001)).
 
 ---
 
