@@ -22,3 +22,4 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 | PR | Change |
 | --- | --- |
 | [#95](https://github.com/oktawianwybieralski/coagent8/pull/95) | `delegate` and the agy denial and output-limit fixes (#92, #89); its `DELEGATE-001` record is still to be written |
+| [#99](https://github.com/oktawianwybieralski/coagent8/pull/99) | PEM key redaction stays linear on repeated markers (CodeQL alert 4), `a778caa`, 2026-11-01 |
