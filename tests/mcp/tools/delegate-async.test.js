@@ -156,8 +156,9 @@ test('the deadline of the call bounds a delegation from its first Git read', asy
 
 test('timeout_ms also ends a running delegation', async () => {
   const repo = fixtureRepo();
+  // Long enough that Git under a full test run does not spend the budget before the turn.
   process.env.CODEX_FIXTURE_MODE = 'interruptible';
-  const started = await handleDelegate({ ...REQUEST, timeout_ms: 1500 }, repo, null, null, approve);
+  const started = await handleDelegate({ ...REQUEST, timeout_ms: 5000 }, repo, null, null, approve);
   const task = await finished(started.structuredContent.taskHandle);
   assert.equal(task.state, 'timed_out');
   assert.match(task.result.text, /Observed by CoAgent8/);
