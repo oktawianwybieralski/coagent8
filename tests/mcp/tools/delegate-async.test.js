@@ -19,6 +19,7 @@ const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/s
 const { saveConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
+const { ownProcessStartTime } = require('../../../src/sessions/activity.ts');
 const { readTask, writeFinalTask, writeTask, createTaskHandle, pruneTasks } = require('../../../src/sessions/tasks.ts');
 const { runWaitCli } = require('../../../src/sessions/wait-cli.ts');
 const { WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
@@ -307,7 +308,7 @@ test('a final record survives failed writes: first retried, then as a short note
   assert.match(noted.written[0].result.text, /could not be stored/);
 
   assert.equal(await writeFinalTask(task, failing(4).write), true, 'the end note outside the data directory');
-  fs.rmSync(path.join(os.tmpdir(), `coagent8-${task.taskHandle}.json`));
+  fs.rmSync(endNote(task.taskHandle));
 });
 
 test('the task action shows a stored result only with a final state', async () => {
@@ -364,6 +365,41 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
   assert.equal(readTask(live.taskHandle).state, 'running', 'a running task stays');
 });
 
+const endNote = handle => path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`, `${handle}.json`);
+
+test('a linked notes directory is not trusted', { skip: process.platform === 'win32' ? 'POSIX links' : false }, async () => {
+  const uid = process.getuid();
+  const dir = path.join(os.tmpdir(), `coagent8-notes-${uid}`);
+  const saved = `${dir}.saved-${process.pid}`;
+  if (fs.existsSync(dir)) fs.renameSync(dir, saved);
+  const target = fs.mkdtempSync(path.join(tempDir, 'elsewhere-'));
+  fs.symlinkSync(target, dir);
+  try {
+    const taskHandle = createTaskHandle();
+    const task = {
+      schemaVersion: 1,
+      taskHandle,
+      state: 'completed',
+      workspace: tempDir,
+      sessionHandle: 's',
+      backend: 'codex',
+      model: 'm',
+      serverPid: process.pid,
+      startedAt: new Date().toISOString(),
+    };
+    assert.equal(
+      await writeFinalTask(task, async () => {
+        throw new Error('disk full');
+      }),
+      false,
+    );
+    assert.deepEqual(fs.readdirSync(target), [], 'nothing was written through the link');
+  } finally {
+    fs.rmSync(dir);
+    if (fs.existsSync(saved)) fs.renameSync(saved, dir);
+  }
+});
+
 test('a final state that cannot be stored in the data directory still reaches a reader', async () => {
   const taskHandle = createTaskHandle();
   const task = {
@@ -385,13 +421,15 @@ test('a final state that cannot be stored in the data directory still reaches a 
   const read = readTask(taskHandle);
   assert.equal(read.state, 'failed');
   assert.match(read.result.text, /could not be stored/);
-  fs.rmSync(path.join(os.tmpdir(), `coagent8-${taskHandle}.json`));
+  await writeTask({ ...task, state: 'running', startedAt: '2030-01-01T00:00:00.000Z' });
+  assert.equal(readTask(taskHandle).state, 'running', 'a note of an earlier task with this handle does not count');
+  fs.rmSync(endNote(taskHandle));
   assert.equal(readTask(taskHandle).state, 'running', 'without a note the record stands');
 });
 
 test('a running task whose PID now names a later process reads as interrupted', async () => {
   const taskHandle = createTaskHandle();
-  const longAgo = Date.now() - 3600 * 1000;
+  const longAgo = (ownProcessStartTime() ?? Date.now()) - 3600 * 1000;
   await writeTask({
     schemaVersion: 1,
     taskHandle,

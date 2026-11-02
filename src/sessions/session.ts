@@ -18,7 +18,7 @@ import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.j
 import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from './identity.js';
 import { redactDiagnostic } from '../security/index.js';
-import { getSessionsDir, isProcessAlive, isRecordedProcessAlive, PROCESS_STARTED_AT, getSessionFilePath } from './activity.js';
+import { getSessionsDir, isProcessAlive, isRecordedProcessAlive, ownProcessStartTime, getSessionFilePath } from './activity.js';
 
 export { getSessionsDir, isProcessAlive, isRecordedProcessAlive, getSessionFilePath };
 
@@ -292,7 +292,7 @@ export async function acquireSessionTurn(
       const token = crypto.randomUUID();
       s.turnToken = token;
       s.activePid = process.pid;
-      s.activePidStartedAt = PROCESS_STARTED_AT;
+      s.activePidStartedAt = ownProcessStartTime() ?? null;
       s.activeTurnAt = Date.now();
       s.state = 'running';
       s.turnCount = (s.turnCount || 0) + 1;

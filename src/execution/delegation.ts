@@ -19,7 +19,7 @@
 import crypto from 'node:crypto';
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/index.js';
-import { PROCESS_STARTED_AT } from '../sessions/activity.js';
+import { ownProcessStartTime } from '../sessions/activity.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { jobHelperPath } from './job-helper.js';
@@ -221,7 +221,7 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
         backend: turn.backend,
         model: turn.model,
         serverPid: process.pid,
-        serverStartedAt: PROCESS_STARTED_AT,
+        serverStartedAt: ownProcessStartTime(),
         startedAt: new Date().toISOString(),
         ...(callerSession ? { callerSession } : {}),
         ...(fingerprint ? { requestFingerprint: fingerprint } : {}),

@@ -18,7 +18,7 @@ import crypto from 'node:crypto';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { ToolError } from '../contracts/index.js';
-import { isProcessGroupAlive, isRecordedProcessAlive, PROCESS_STARTED_AT } from './activity.js';
+import { isProcessGroupAlive, isRecordedProcessAlive, ownProcessStartTime } from './activity.js';
 
 /** File name of the writer record inside a Git directory. */
 export const WRITER_RECORD_FILE = 'coagent8-writer.json';
@@ -118,7 +118,7 @@ export async function acquireWriterLease(
         `A CoAgent8 server ended while it started a worker in this work tree, so a worker may still be changing files. If none runs, delete ${file}.`,
       );
     }
-    const record: WriterRecord = { pid: process.pid, pidStartedAt: PROCESS_STARTED_AT, token, startedAt: new Date().toISOString() };
+    const record: WriterRecord = { pid: process.pid, pidStartedAt: ownProcessStartTime(), token, startedAt: new Date().toISOString() };
     await atomicWrite(file, JSON.stringify(record));
   });
   let released = false;
@@ -134,7 +134,7 @@ export async function acquireWriterLease(
       if (current?.token !== token) return;
       const record: WriterRecord = {
         pid: current.pid,
-        pidStartedAt: PROCESS_STARTED_AT,
+        pidStartedAt: ownProcessStartTime(),
         token,
         startedAt: current.startedAt,
         workerGroups,

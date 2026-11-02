@@ -45,10 +45,7 @@ export function isProcessAlive(pid?: number | null): boolean {
   }
 }
 
-/** When this process started, stored beside its PID so a reused PID can be told apart. */
-export const PROCESS_STARTED_AT = Math.round(Date.now() - process.uptime() * 1000);
-
-/** Start times of one process, as stored and as read, differ by less than this. */
+/** Two reads of one process's start time differ by less than this. */
 const START_TOLERANCE_MS = 5000;
 /** How long a read start time is used again: a waiter asks about the same process twice a second. */
 const START_CACHE_MS = 30 * 1000;
@@ -63,13 +60,14 @@ function readStart(pid: number): number | null {
           ['-NoProfile', '-NonInteractive', '-Command', `([DateTimeOffset](Get-Process -Id ${pid}).StartTime).ToUnixTimeMilliseconds()`],
           { encoding: 'utf8', windowsHide: true, timeout: 5000 },
         )
-      : spawnSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
+      : // In UTC: a change of the time zone must not move a stored time.
+        spawnSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
           encoding: 'utf8',
           timeout: 5000,
-          env: { ...process.env, LC_ALL: 'C' },
+          env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' },
         });
   const text = ran.status === 0 ? ran.stdout.trim() : '';
-  const value = process.platform === 'win32' ? Number(text) : Date.parse(text);
+  const value = process.platform === 'win32' ? Number(text) : Date.parse(`${text} UTC`);
   return text && Number.isFinite(value) ? value : null;
 }
 
@@ -80,17 +78,30 @@ function readStart(pid: number): number | null {
  */
 export function processStartTime(pid: number): number | null {
   const cached = startCache.get(pid);
-  if (cached && Date.now() - cached.at < START_CACHE_MS) return cached.startedAt;
+  // Monotonic: a clock set back must not keep an old answer.
+  if (cached && performance.now() - cached.at < START_CACHE_MS) return cached.startedAt;
   const startedAt = readStart(pid);
-  startCache.set(pid, { at: Date.now(), startedAt });
+  startCache.set(pid, { at: performance.now(), startedAt });
   return startedAt;
+}
+
+let ownStart: number | null | undefined;
+
+/**
+ * This process's start time as the system reports it, the same source later readers compare with.
+ * @returns Epoch milliseconds, or undefined when the system does not say: a record then holds the
+ * PID alone. Read once per server.
+ */
+export function ownProcessStartTime(): number | undefined {
+  if (ownStart === undefined) ownStart = readStart(process.pid);
+  return ownStart ?? undefined;
 }
 
 /**
  * Tests whether the process a record names still runs, also when its PID may have been reused.
  *
  * @param pid - The stored process ID.
- * @param startedAt - Its stored start time; records older than this field have none.
+ * @param startedAt - Its stored start time; a record without one is judged by the PID.
  * @param readStartTime - Reads a process's start time; replaceable by tests.
  * @returns False when the PID is free or now names a later process. When the start time cannot
  * be told, the answer is the PID alone: a record may then look busy, never free by mistake.
@@ -102,7 +113,7 @@ export function isRecordedProcessAlive(
 ): boolean {
   if (!isProcessAlive(pid)) return false;
   if (typeof startedAt !== 'number') return true;
-  const actual = pid === process.pid ? PROCESS_STARTED_AT : readStartTime(pid!);
+  const actual = pid === process.pid ? (ownProcessStartTime() ?? null) : readStartTime(pid!);
   return actual === null || Math.abs(actual - startedAt) < START_TOLERANCE_MS;
 }
 

@@ -120,8 +120,20 @@ export async function writeFinalTask(task: DelegationTask, write: (task: Delegat
   }
 }
 
-function endNoteFile(handle: string): string {
-  return path.join(os.tmpdir(), `coagent8-${handle}.json`);
+/**
+ * The directory of end notes: outside the data directory, this user's alone.
+ * @returns Its path, or null when it cannot be trusted, such as a link or another user's directory.
+ */
+function endNotesDir(create: boolean): string | null {
+  const dir = path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`);
+  try {
+    if (create) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(dir);
+    if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) return null;
+    return dir;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -129,22 +141,45 @@ function endNoteFile(handle: string): string {
  * @returns Whether a reader can now learn the end.
  */
 function writeEndNote(note: DelegationTask): boolean {
+  const dir = endNotesDir(true);
+  if (!dir) return false;
+  const file = path.join(dir, `${note.taskHandle}.json`);
+  const temporary = `${file}.${process.pid}.tmp`;
   try {
-    fs.writeFileSync(endNoteFile(note.taskHandle), JSON.stringify(note), { mode: 0o600 });
+    fs.writeFileSync(temporary, JSON.stringify(note), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, file);
     return true;
   } catch {
+    fs.rmSync(temporary, { force: true });
     return false;
   }
 }
 
-/** The end note of a task. Only this user's counts: the temporary directory can be shared. */
-function readEndNote(handle: string): DelegationTask | null {
+/**
+ * The end note of a task.
+ * @param handle - The task handle.
+ * @param startedAt - The start of the task the reader has a record of: a note of an earlier task
+ * with the same handle does not count.
+ */
+function readEndNote(handle: string, startedAt?: string): DelegationTask | null {
+  const dir = endNotesDir(false);
+  if (!dir || !TASK_HANDLE.test(handle)) return null;
   try {
-    const file = endNoteFile(handle);
-    if (process.getuid && fs.statSync(file).uid !== process.getuid()) return null;
-    return JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
+    const note = JSON.parse(readBoundedFileSync(path.join(dir, `${handle}.json`), MAX_TASK_BYTES)) as DelegationTask;
+    return startedAt === undefined || note.startedAt === startedAt ? note : null;
   } catch {
     return null;
+  }
+}
+
+/** Removes end notes past the retention of task records. */
+function pruneEndNotes(now: number): void {
+  const dir = endNotesDir(false);
+  if (!dir) return;
+  for (const name of fs.readdirSync(dir)) {
+    const file = path.join(dir, name);
+    const modified = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+    if (modified !== undefined && now - modified >= TASK_RETENTION_MS) fs.rmSync(file, { force: true });
   }
 }
 
@@ -160,13 +195,15 @@ export function readTask(handle: string): DelegationTask | null {
   try {
     task = JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
   } catch (err) {
-    // The directory itself may be what failed: ENOTDIR as well as ENOENT mean no record here.
+    // The data directory itself may be what failed, so a note can answer for its record.
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENOTDIR') return readEndNote(handle);
+    const note = readEndNote(handle);
+    if (note) return note;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null;
     throw new ToolError('PROTOCOL_ERROR', `The task record ${handle} cannot be read.`);
   }
   if (task.state !== 'running') return task;
-  const ended = readEndNote(handle);
+  const ended = readEndNote(handle, task.startedAt);
   if (ended) return ended;
   return isRecordedProcessAlive(task.serverPid, task.serverStartedAt) ? task : { ...task, state: 'interrupted' };
 }
@@ -189,6 +226,7 @@ export function finishedTaskText(task: DelegationTask): string {
  * @param now - Reference time in epoch milliseconds.
  */
 export function pruneTasks(now = Date.now()): void {
+  pruneEndNotes(now);
   let names: string[];
   try {
     names = fs.readdirSync(tasksDir());
