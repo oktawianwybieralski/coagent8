@@ -17,6 +17,7 @@ import { createCodexStreamCollector } from './collector.js';
 import { codexAppServerArgs, codexLaunchEnvironment, createCodexAppSession } from './app-server.js';
 import { listCodexModels, readCodexRateLimits } from './models.js';
 import { classifyCodexError } from './errors.js';
+import { unreachableWriteFolder } from './windows-acl.js';
 import { parse as parseToml } from 'smol-toml';
 import { readBoundedFileSync } from '../../storage/read.js';
 import { turnEnvironment } from '../../execution/nested-turn.js';
@@ -224,6 +225,15 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
       'INPUT_LIMIT',
       `The prompt is too large for Codex (${promptChars} > ${CODEX_MAX_INPUT_CHARS} characters). No model turn started. Send less; for a review, choose a smaller scope.`,
     );
+  }
+  if (profile === 'workspace-write' && options.cwd) {
+    const closed = await unreachableWriteFolder(path.resolve(options.cwd), options.writeScope ?? []);
+    if (closed) {
+      return rejected(
+        'SANDBOX_UNAVAILABLE',
+        `Codex cannot write in '${closed}': this folder does not inherit the permissions of the workspace, so the sandbox's write access does not reach it. No model turn started. To restore it, run: icacls "${closed}" /inheritance:e`,
+      );
+    }
   }
   // The app-server session requests the profile's sandbox of CODEX_SANDBOX per thread and
   // verifies the server's answer; the config overrides pin the same policy for the server's

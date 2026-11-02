@@ -144,6 +144,8 @@ export interface TaskOptions {
    * absent. It binds the session at creation and reaches the adapter (`DELEGATE-001w`).
    */
   profile?: ExecutionProfile;
+  /** Paths a `workspace-write` turn may change, for a check before the turn. */
+  writeScope?: readonly string[];
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -571,6 +573,7 @@ async function executeTaskInternal(
           abortSignal: cancelController.signal,
           onEvent: receive,
           profile: options.profile ?? 'read-only',
+          ...(options.writeScope ? { writeScope: options.writeScope } : {}),
         };
         await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });
         const raw: ExecutionResult = await backend.adapter.execute(

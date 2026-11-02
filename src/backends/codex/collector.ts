@@ -127,7 +127,10 @@ export function createCodexStreamCollector(options: CodexStreamCollectorOptions 
     else if (/odmowa\s+dost[eę]pu|access\s+is\s+denied|permission\s+denied/i.test(text)) reason = 'Permission denied';
 
     let operation = 'command';
-    if (/Get-Content|cat\s|type\s|head\s|tail\s/i.test(command)) operation = 'read';
+    // Writing first: a write command often reads its result back in the same line (#127).
+    if (/Set-Content|Add-Content|Out-File|New-Item|WriteAll|mkdir\s|md\s|Copy-Item|Move-Item|Remove-Item|>/i.test(command))
+      operation = 'write';
+    else if (/Get-Content|cat\s|type\s|head\s|tail\s/i.test(command)) operation = 'read';
     else if (/git\s/i.test(command)) operation = 'git';
 
     let path: string | undefined;

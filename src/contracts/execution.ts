@@ -230,6 +230,8 @@ export interface ExecutionOptions {
   onEvent?: (event: AdapterEvent) => void;
   /** Execution profile of the turn; read-only when absent. */
   profile?: ExecutionProfile;
+  /** Paths a `workspace-write` turn may change, relative to the workspace; empty means all. */
+  writeScope?: readonly string[];
 }
 
 /**
