@@ -69,4 +69,6 @@ result and review it once. Create worktrees only where the user agrees to them.
 Codex writes only inside the workspace; Claude's `Edit` and `Write` do too, but
 its `Bash` and every Antigravity command can reach any file the user can. Check
 `git status` after a cancel or timeout: partial changes stay. If the server ended
-meanwhile, the task reads `interrupted`.
+meanwhile, the task reads `interrupted`. A delegation through Codex marks the work
+tree as trusted in the user's `~/.codex/config.toml`; Codex does this itself, and
+the entry stays.
