@@ -1375,7 +1375,8 @@ there is no `queued` state on disk, because a task is recorded only when its tur
 task record (`<data>/delegations/`) stores the result before the writer is released and turns
 final after the release, so a woken caller can delegate again at once. A `request_id` reused for
 another request is refused. A task of a dead server reads `interrupted` with a warning, because
-on POSIX its process group can outlive the server (`CUR-011`). A waiter learns the end only from
+on POSIX its process group can outlive the server (`CUR-011`); the writer record stores those groups
+and is not taken over while one lives, so a second delegation cannot overlap that worker (#108). A waiter learns the end only from
 its timeout or the server's end when the data directory stays unwritable (#121), and liveness rests
 on the stored PID, so a reused PID makes a dead server look alive (#122); both are deferred by owner
 decision 2026-11-02. Codex itself adds a trust entry for the directory to the user's

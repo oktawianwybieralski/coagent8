@@ -384,3 +384,91 @@ test('an unreadable writer record is never overwritten, and a credential at the 
   });
   assert.ok(!out.includes(token.slice(4, 20)), 'no part of the token survives the length limit');
 });
+
+function gitDirFixture() {
+  const gitDir = fs.mkdtempSync(path.join(tempDir, 'git-dir-'));
+  return { gitDir, record: path.join(gitDir, WRITER_RECORD_FILE) };
+}
+
+function endedPid() {
+  return spawnSync(process.execPath, ['-e', ''], { windowsHide: true }).pid;
+}
+
+test('the writer slot of an ended server stays taken while a worker group lives, and is free after it', async () => {
+  const { gitDir, record } = gitDirFixture();
+  fs.writeFileSync(record, JSON.stringify({ pid: endedPid(), token: 'old', startedAt: '2026-11-02T00:00:00.000Z', workerGroups: [4242] }));
+  await assert.rejects(
+    acquireWriterLease(gitDir, () => true),
+    err => {
+      assert.equal(err.code, 'SESSION_BUSY');
+      assert.match(err.message, /process group 4242/);
+      assert.match(err.message, /kill -- -4242/);
+      return true;
+    },
+  );
+  assert.equal(JSON.parse(fs.readFileSync(record, 'utf8')).token, 'old', 'a refusal leaves the record');
+  const lease = await acquireWriterLease(gitDir, () => false);
+  await lease.release();
+  assert.equal(fs.existsSync(record), false);
+});
+
+test('a lease records worker groups, drops ended ones and writes none after its release', async () => {
+  const { gitDir, record } = gitDirFixture();
+  const alive = new Set([11]);
+  const lease = await acquireWriterLease(gitDir, group => alive.has(group));
+  lease.addWorkerGroup(11);
+  lease.addWorkerGroup(12);
+  lease.addWorkerGroup(13);
+  const released = lease.release();
+  lease.addWorkerGroup(14);
+  await released;
+  assert.equal(fs.existsSync(record), false);
+
+  const second = await acquireWriterLease(gitDir, group => alive.has(group));
+  second.addWorkerGroup(11);
+  second.addWorkerGroup(12);
+  second.addWorkerGroup(13);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.deepEqual(JSON.parse(fs.readFileSync(record, 'utf8')).workerGroups, [11, 13]);
+  await second.release();
+});
+
+test('a malformed list of worker groups is never overwritten', async () => {
+  const { gitDir, record } = gitDirFixture();
+  fs.writeFileSync(record, JSON.stringify({ pid: endedPid(), token: 'old', startedAt: 'x', workerGroups: ['1'] }));
+  await assert.rejects(acquireWriterLease(gitDir), err => err.code === 'SESSION_BUSY' && /cannot be read/.test(err.message));
+});
+
+test(
+  'a real process group of a dead server keeps the slot until it ends',
+  { skip: process.platform === 'win32' ? 'POSIX groups' : false },
+  async () => {
+    const { gitDir, record } = gitDirFixture();
+    const worker = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { detached: true, stdio: 'ignore' });
+    try {
+      fs.writeFileSync(record, JSON.stringify({ pid: endedPid(), token: 'old', startedAt: 'x', workerGroups: [worker.pid] }));
+      await assert.rejects(acquireWriterLease(gitDir), err => err.code === 'SESSION_BUSY');
+    } finally {
+      process.kill(-worker.pid, 'SIGKILL');
+    }
+    await new Promise(resolve => worker.once('exit', resolve));
+    const lease = await acquireWriterLease(gitDir);
+    await lease.release();
+  },
+);
+
+test('a delegation records the process group of its worker', { skip: process.platform === 'win32' ? 'POSIX groups' : false }, async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_MODE = 'interruptible';
+  const record = path.join(repo, '.git', WRITER_RECORD_FILE);
+  const running = handleDelegate({ task: 'Change it', backend: 'codex', model: MODEL, timeout_ms: 2000 }, repo, null, null, approve);
+  let groups;
+  for (let i = 0; i < 100 && !groups?.length; i++) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    groups = fs.existsSync(record) ? JSON.parse(fs.readFileSync(record, 'utf8')).workerGroups : undefined;
+  }
+  await running.catch(() => {});
+  delete process.env.CODEX_FIXTURE_MODE;
+  assert.ok(groups?.length, 'the running delegation recorded a group');
+  assert.equal(fs.existsSync(record), false, 'and released the slot');
+});

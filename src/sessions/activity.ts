@@ -45,6 +45,22 @@ export function isProcessAlive(pid?: number | null): boolean {
 }
 
 /**
+ * Tests whether a POSIX process group still has members.
+ *
+ * @param groupId - Process group ID to check.
+ * @returns True if a member exists; always false on Windows, which has no such groups.
+ */
+export function isProcessGroupAlive(groupId: number): boolean {
+  if (process.platform === 'win32' || !Number.isSafeInteger(groupId) || groupId <= 0) return false;
+  try {
+    process.kill(-groupId, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
  * Computes the file path of a session's disk record if the handle is valid.
  *
  * @param handle - Session handle to inspect.
