@@ -1,40 +1,29 @@
 name: Bug report
-description: Report a reproducible CoAgent8 problem, including beta feedback.
+description: Report a CoAgent8 problem, including beta feedback.
 title: '[Bug]: '
 body:
   - type: markdown
     attributes:
-      value: 'Include sanitized diagnostics. Review pasted output and remove any remaining credentials or private project content.'
+      value: 'Only the first field is required. Remove credentials and private project content from anything you paste.'
   - type: textarea
-    id: reproduction
+    id: what-happened
     attributes:
-      label: Steps to reproduce
-      description: Include the host, tool arguments, expected behavior and actual behavior.
+      label: What happened
+      description: What you did, what you expected and what happened instead. The tool arguments and the error help most.
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
-      label: Environment and versions
-      description: OS and architecture, Node.js version, CoAgent8 version, chat host/version, and Codex/Claude Code/agy CLI versions. Note which backend failed.
-    validations:
-      required: true
+      label: Environment
+      description: OS, CoAgent8 version, the client (VS Code, Claude Code...) and the backend that failed, if you know them.
   - type: textarea
     id: issue
     attributes:
-      label: CoAgent8 issue output
-      description: Paste the sanitized report prepared by the issue tool. If unavailable, explain why and include the error code.
-    validations:
-      required: true
-  - type: textarea
-    id: doctor
-    attributes:
-      label: CoAgent8 doctor output
-      description: Paste doctor output for the affected workspace. If unavailable, explain why. Diagnostics do not prove a successful model turn.
-    validations:
-      required: true
+      label: CoAgent8 issue or doctor output
+      description: Optional. The issue tool prepares a sanitized report, and doctor shows backend health.
   - type: textarea
     id: additional
     attributes:
-      label: Additional evidence
-      description: Include relevant sanitized output, session state, and whether restarting the MCP server changes the result.
+      label: Anything else
+      description: Optional. Logs, screenshots, or whether restarting the MCP server changes the result.

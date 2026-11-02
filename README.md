@@ -493,7 +493,7 @@ default; no readiness or quota) and a link that opens a new GitHub issue with
 it. Add the steps and what you expected, and check the text for private data
 before you submit it. You can also use the
 [bug-report form](https://github.com/oktawianwybieralski/coagent8/issues/new?template=bug_report.yml)
-directly.
+directly: only "What happened" is required.
 
 ## Building and contributing
 

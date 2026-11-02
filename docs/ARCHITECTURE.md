@@ -1384,7 +1384,9 @@ temporary directory, which readers check, so a waiter learns the end (#121). Rec
 time elsewhere), so a reused PID does not look like the server; when the system does not tell it, the
 PID alone decides, which can only make a record look busy (#122). Codex itself adds a trust entry for the directory to the user's
 `~/.codex/config.toml` on every `workspace-write` thread, also an ephemeral one; no thread
-parameter prevents it, and read-only threads add none (#124). Three things
+parameter prevents it, and read-only threads add none (#124). Accepted by owner decision 2026-11-02:
+CoAgent8 leaves the entry, because removing it would edit another tool's configuration while it may
+be in use; the `coagent8-delegate` skill tells the caller. Three things
 differ from the draft below: completed, notified and fetched are not separate states, because
 the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
 released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat
