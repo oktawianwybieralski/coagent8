@@ -299,7 +299,13 @@ export async function recordQuotaCooldown(
     await store(current);
   });
 }
-export async function resetQuotaCooldown(id: string): Promise<void> {
+/**
+ * Clears a provider's cooldown after a completed turn.
+ * @param turnStartedAt - When that turn started, in epoch milliseconds. A turn that started after
+ * the limit was recorded proves the quota, also before the recorded reset: a plan can change
+ * (#129). An earlier one says nothing, as it may have run beside the turn that hit the limit.
+ */
+export async function resetQuotaCooldown(id: string, turnStartedAt?: number): Promise<void> {
   if (!PROVIDERS.includes(id as (typeof PROVIDERS)[number])) return;
   await withFileLock(getQuotaCacheFile(), async () => {
     const current = readQuotaCacheForUpdate();
@@ -307,7 +313,9 @@ export async function resetQuotaCooldown(id: string): Promise<void> {
     const entry = current[id];
     if (entry.status === 'rate_limited') {
       const cooldownTime = entry.cooldownUntil ? Date.parse(entry.cooldownUntil) : 0;
-      if (Number.isFinite(cooldownTime) && cooldownTime > Date.now()) {
+      const recordedAt = entry.lastCooldownAt ? Date.parse(entry.lastCooldownAt) : Number.NaN;
+      const proven = turnStartedAt !== undefined && Number.isFinite(recordedAt) && turnStartedAt > recordedAt;
+      if (!proven && Number.isFinite(cooldownTime) && cooldownTime > Date.now()) {
         return;
       }
     }

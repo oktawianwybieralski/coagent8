@@ -723,7 +723,7 @@ async function executeTaskInternal(
           const reset = parseResetTimestamp(rateErr.message);
           await recordQuotaCooldown(backend.id, reset?.cooldownMs, rateErr.message.slice(0, 200) || undefined);
         } else if (!result.isError && result.status === 'completed') {
-          await resetQuotaCooldown(backend.id);
+          await resetQuotaCooldown(backend.id, started);
         }
       } catch (error) {
         warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);

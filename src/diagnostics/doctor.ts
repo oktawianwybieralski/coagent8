@@ -301,7 +301,7 @@ export async function runDoctor(options: DoctorOptions = {}): Promise<DoctorRepo
       if (q?.status === 'rate_limited' || (q?.headroomPercent !== null && q?.headroomPercent === 0)) {
         const resetTime = q.cooldownUntil || q.resetsAt;
         return [
-          `${id}: usage limit reached or rate limited${resetTime ? ` (resets at ${resetTime})` : ''}; request will be routed to other providers.`,
+          `${id}: usage limit reached or rate limited${resetTime ? ` (resets at ${resetTime})` : ''}; auto routes to other providers, and an explicit backend is still tried.`,
         ];
       }
       if (!ready.includes(id)) {
@@ -558,10 +558,17 @@ function formatCandidates(rows: ModelCandidate[], limit: number): string {
   return `  models, USD per million output tokens, date added to the price list: ${shown.join(', ')}${more}${shared ? `; reasoning_effort ${efforts}` : ''}`;
 }
 
+/** What a read-only turn can reach beyond the workspace, as the profiles of rule 11 set it (#130). */
+const TURN_REACH: Record<ProviderId, string> = {
+  codex: 'no network, web or MCP servers in a turn',
+  claude: 'no network, web or MCP servers in a turn',
+  agy: 'its own web search and MCP servers in a turn',
+};
+
 function formatQuota(quota: DoctorQuota | undefined): string {
   if (!quota) return 'quota unknown';
   if (quota.status === 'rate_limited')
-    return `rate limited${quota.cooldownUntil || quota.resetsAt ? ` until ${quota.cooldownUntil || quota.resetsAt}` : ''}`;
+    return `rate limited${quota.cooldownUntil || quota.resetsAt ? ` until ${quota.cooldownUntil || quota.resetsAt}` : ''}${quota.lastCooldownAt ? ` (recorded ${quota.lastCooldownAt}; an explicit backend is still tried, and a completed turn clears this)` : ''}`;
   if (!quota.measured || quota.headroomPercent === null) return 'quota not measured';
   return `${quota.window} ${quota.headroomPercent}% left${quota.resetsAt ? `, resets ${quota.resetsAt}` : ''}`;
 }
@@ -643,7 +650,7 @@ export function formatDoctorSummary(report: DoctorReport): string {
         ? ` - last turn ${readiness.lastSuccess.at.slice(0, 16).replace('T', ' ')} UTC on ${readiness.lastSuccess.model}`
         : '';
       lines.push(
-        `${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn}`,
+        `${id}: ${state} - ${probe.version || 'unknown version'}${formatDefault(report.defaultModels?.[id])} - ${formatQuota(report.quotas[id])}${lastTurn} - ${TURN_REACH[id]}`,
       );
       if (rows(id).length) lines.push(formatCandidates(rows(id), limits[id]!));
       const unlisted = formatUnlisted({

@@ -1,5 +1,5 @@
 import { createGeminiCollector, MAX_DENIED_ACTIONS } from './collector.js';
-import { classifyGeminiError, isOutputLimitError } from './errors.js';
+import { classifyGeminiError, isNetworkFailure, isOutputLimitError } from './errors.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -526,6 +526,14 @@ export async function execute(
         'agy stopped at its output token limit; the answer is incomplete. ' +
         'A follow-up in the same session can stop the same way: ask for the rest in a shorter form or in a new session.',
     });
+  // The agent wrote its answer and ran nothing after it; only a later request failed (#128).
+  if (error?.code === 'PROCESS_ERROR' && isNetworkFailure(error.message) && s.answeredLast && s.output.trim()) {
+    options.onEvent?.({
+      type: 'warning',
+      message: `agy's next request failed after it wrote this answer, so the turn did not end by itself: ${error.message}`,
+    });
+    error = undefined;
+  }
   if (!error && (!s.terminal || (!s.nativeSessionId && !expectedSessionId))) {
     error = { code: 'PROTOCOL_ERROR', message: 'Gemini omitted its terminal result or init metadata.', retryable: false };
   }

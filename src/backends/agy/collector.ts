@@ -36,6 +36,8 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
   let sandboxDenied = false;
   const deniedActions: string[] = [];
   let lengthLimited = false;
+  // The turn's last step was the agent's text, with no tool started after it.
+  let answeredLast = false;
   const reducer = new StreamReducer({ maxTotalBytes: 512 * 1024, maxMessageBytes: 256 * 1024, maxTools: 50, maxMessages: 50 });
   const seen = new Set<string>();
   const ignoredTypes = new Set<string>();
@@ -144,6 +146,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
         // Reported by agy's own consultation, not yet seen natively (#89).
         if (typeof u.finish_reason === 'string' && /^MAX_TOKENS$/i.test(u.finish_reason)) lengthLimited = true;
         if (typeof u.text_delta === 'string') {
+          answeredLast = true;
           const key = `msg-${u.step_index ?? messageNumber}`;
           if (reducer.getTotalBytes() + Buffer.byteLength(u.text_delta) > reducer.maxTotalBytes) {
             throw new BufferLimitError('Public answer exceeds budget.');
@@ -163,6 +166,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
       }
 
       if (u.step_type === 'tool') {
+        answeredLast = false;
         const toolId = `tool-${u.step_index ?? reducer.getActiveTools().size + 1}`;
         const toolName = String(u.tool_name || (u.tool_info as Record<string, unknown>)?.name || 'tool');
         if (!validEventIdentifier(toolId) || !validEventIdentifier(toolName)) throw new Error('Invalid Gemini tool metadata.');
@@ -295,6 +299,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
       sandboxDenied,
       deniedActions: [...deniedActions],
       lengthLimited,
+      answeredLast,
       usage,
       truncated: reducer.isTruncated(),
     };

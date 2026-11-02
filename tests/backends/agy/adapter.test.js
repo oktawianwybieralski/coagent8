@@ -203,6 +203,32 @@ test('#92: a workspace-write turn names the denied action and recovers once insi
   }
 });
 
+test('#128: an answer before a network failure stands, with a warning; work in progress stays a failure', async () => {
+  try {
+    process.env.coagent8_FIXTURE_MODE = 'answer-then-network';
+    const warnings = [];
+    const stood = await execute('Answer', {
+      model: MODEL,
+      cwd: tempDir,
+      onEvent: event => {
+        if (event.type === 'warning') warnings.push(event.message);
+      },
+    });
+    assert.equal(stood.status, 'completed');
+    assert.equal(stood.error, undefined);
+    assert.match(stood.output, /The whole answer/);
+    assert.match(warnings.join(' '), /next request failed/);
+
+    process.env.coagent8_FIXTURE_MODE = 'tool-then-network';
+    const stopped = await execute('Answer', { model: MODEL, cwd: tempDir });
+    assert.equal(stopped.status, 'failed', 'a tool ran after the text, so the turn was not done');
+    assert.match(stopped.error.message, /no such host/);
+    assert.match(stopped.output, /The whole answer/);
+  } finally {
+    delete process.env.coagent8_FIXTURE_MODE;
+  }
+});
+
 test("#89: an answer cut off at agy's output token limit is a completed, length-limited result (fixture)", async () => {
   try {
     process.env.coagent8_FIXTURE_MODE = 'output-limit';

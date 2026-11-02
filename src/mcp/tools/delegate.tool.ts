@@ -42,9 +42,9 @@ export function getCanonicalDelegateToolDefinition() {
       properties: {
         // An empty task is refused by the handler; `minLength` would cost bytes on every Codex request.
         task: { type: 'string', description: 'Change and acceptance criteria; name files, do not paste.' },
-        scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may change.' },
+        scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may edit.' },
         checks: { type: 'array', items: { type: 'string' }, description: 'Commands, e.g. npm test.' },
-        loop: { type: 'boolean', description: 'Server checks, reviews.' },
+        loop: { type: 'boolean', description: 'Server checks, review.' },
         mode: { type: 'string', enum: ['async', 'sync'] },
         request_id: { type: 'string' },
         ...EXECUTION_PARAMETERS,

@@ -92,6 +92,8 @@ function readResult(result) {
     else if ((match = /^Report this issue: (https:\/\/\S+) \(the issue tool prepares the sanitized report to paste\)$/.exec(line)))
       parsed.issueUrl = match[1];
     else if ((match = /^Workspace: (.+) \(server directory\)$/.exec(line))) parsed.workspace = match[1];
+    else if ((match = /^The answer as far as it was written: session tool, action messages, session_handle=(\S+)\.$/.exec(line)))
+      parsed.messagesHandle = match[1];
     else if ((match = /^Denied \(observed from tool events\): (.*)$/.exec(line))) parsed.denials.push(match[1]);
     else throw new Error(`unexpected footer line: ${line}`);
   }

@@ -30,6 +30,13 @@ export function isOutputLimitError(text: string): boolean {
   return /exceeded the output token limit|\bMAX_TOKENS\b/i.test(text);
 }
 
+/** A request that never reached the provider or lost its connection, not a refusal by it (#128). */
+export function isNetworkFailure(text: string): boolean {
+  return /\b(?:dial tcp|no such host|connection (?:reset|refused)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|TLS handshake timeout|i\/o timeout)\b/i.test(
+    text,
+  );
+}
+
 const GEMINI_ERRORS: ErrorDialect = {
   name: 'Gemini',
   httpFields: ['status_code', 'statusCode', 'http_status', 'httpCode', 'code'],

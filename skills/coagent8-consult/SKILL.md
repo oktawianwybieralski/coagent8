@@ -36,6 +36,10 @@ the conversation.
    question. If the form closes without an answer, relay the refusal's ways out
    to the user. On a price-limit refusal, report the reason.
 
+A turn on Codex or Claude Code has no network, web search or MCP servers; agy has its
+own. Paste what the other agent cannot reach, or name a backend that can: `coagent8-doctor`
+says this per backend, and a URL in an answer may not have been opened.
+
 The answer is another model's opinion. Verify its claims against the code
 before acting, and tell the user where you disagree and why. The consulted agent
 runs read-only: it cannot edit files or run commands for you.
