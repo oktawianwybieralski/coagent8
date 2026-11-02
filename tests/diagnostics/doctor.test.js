@@ -852,7 +852,10 @@ test('AX-005b: a completed agy turn turns an unverified sign-in into ready, with
     assert.deepEqual(after.ready_backends, ['agy']);
     assert.equal(after.readiness.agy.lastSuccess.model, 'gemini-3.8-flash');
     const summary = formatDoctorSummary(after);
-    assert.match(summary, /^agy: ready - agy-ready-fixture .* - last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash$/m);
+    assert.match(
+      summary,
+      /^agy: ready - agy-ready-fixture .* - last turn \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC on gemini-3\.8-flash - its own web search and MCP servers in a turn$/m,
+    );
     // An invalid model name is not recorded as evidence.
     await recordTurnSuccess('agy', '');
     assert.equal((await runDoctor({ backend: 'agy' })).readiness.agy.lastSuccess.model, 'gemini-3.8-flash');

@@ -133,7 +133,7 @@ test('CONSULT-001: consult returns plain advice and NOT_APPLICABLE verdict witho
   assert.equal(
     captured.prompt,
     withAnswerLanguage(
-      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?',
+      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nIf something you need is out of reach, say so: the server sets what this turn can reach.\nHow should we handle [P1] critical bugs and [P2] latency bottlenecks in our service?',
     ),
   );
   assert.ok(!captured.prompt.includes('FORMAT REQUIREMENTS:'), 'Prompt must not contain State Envelope FORMAT REQUIREMENTS');
