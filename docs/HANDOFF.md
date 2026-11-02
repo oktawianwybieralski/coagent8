@@ -21,7 +21,8 @@ Do not append another session transcript or treat old test counts as fresh evide
   [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c).
 
 - **Acceptance in a real client (2026-11-02):** on the CI-built VSIX, Claude Code delegated to Codex
-  and Claude Code and was woken with the results; cancel left nothing running. Open: agy (#109).
+  and Claude Code and was woken with the results; cancel left nothing running. agy passed the same
+  checks from that package, with its MCP servers at cancel and at the deadline (#109, #110).
   Records: [DELEGATE-001](delivered/0.8.0/DELEGATE-001.md), [WINDOWS-001](delivered/0.8.0/WINDOWS-001.md).
 
 - **Asynchronous delegate (`DELEGATE-001c`, `e`, owner decisions 2026-11-01):** merged in #105

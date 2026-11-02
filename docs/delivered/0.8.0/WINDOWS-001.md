@@ -140,4 +140,17 @@ through its shell, and a process snapshot saw `PING.EXE` in the tree before the 
 | Codex | `cancelled` | no survivor, gone in 1.2 s | `timed_out` | no survivor |
 | Claude Code | `cancelled` | no survivor, gone in 3.1 s | `timed_out` | no survivor |
 
-Open in #109 and #110: agy, whose quota had run out, with an MCP server of its turn and its cold updater.
+agy (`gemini-3.8-flash-high`), from the same installed CI-built package once its quota returned, with the
+observer running and logging no console window:
+
+| Check | Result |
+| --- | --- |
+| `delegate` asynchronous | returned in 3.6 s, `wait_argv` exit 0 after 25.7 s, file and observed change |
+| `delegate` synchronous | wrote the file in 21.9 s |
+| Cancel of a running delegation | `cancelled` in 0.7 s, writer free |
+| Cancelled consult | tree gone in 2.0 s, no survivor |
+| Cancel with agy's MCP servers (`node`, `cmd`) running | `cancelled`, tree gone in 1.6 s, no survivor |
+| Deadline of 40 s with them running | `timed_out` after 38 s, no survivor |
+
+The cold updater was not forced: agy runs with `AGY_CLI_DISABLE_AUTO_UPDATE`, and no console window
+appeared in any run of the day.

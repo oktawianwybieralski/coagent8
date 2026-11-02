@@ -15,6 +15,7 @@ Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegati
 | [#123](https://github.com/oktawianwybieralski/coagent8/pull/123) | `f372179` | 2026-11-02 | fix(delegate): bound the first Git read and refuse oversized Codex prompts |
 | [#125](https://github.com/oktawianwybieralski/coagent8/pull/125) | `9ef042a` | 2026-11-02 | fix(delegate): recognize a dead server, its worker and a reused PID |
 | [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | `02e3b5f` | 2026-11-02 | feat(delegate): run checks, review and fix rounds in one call |
+| [#131](https://github.com/oktawianwybieralski/coagent8/pull/131) | `6048643` | 2026-11-02 | fix(diagnostics): report backend state and answers as they are |
 
 ## Scope
 
@@ -75,6 +76,7 @@ and was woken with the result, without user input:
 | --- | --- | --- | --- |
 | Codex | `gpt-6.1-terra` | 14.5 s | `completed`, the file and the observed change |
 | Claude Code | `claude-haiku-5-5` | 9.9 s | `completed`, the file and the observed change, while the agent was cancelling another task |
+| agy | `gemini-3.8-flash-high` | 68.0 s | `completed`, the file and the observed change (the same evening, after its quota returned) |
 
 The skill's instruction was not separately exercised: the agent already knew the contract.
 
