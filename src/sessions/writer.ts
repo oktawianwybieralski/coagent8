@@ -38,7 +38,10 @@ interface WriterRecord {
 /** Ownership of a work tree's writer slot; `release` is idempotent. */
 export interface WriterLease {
   readonly token: string;
-  /** Call synchronously before a worker starts, so a crash from here on leaves the slot taken. */
+  /**
+   * Call synchronously before a worker starts, so a crash from here on leaves the slot taken.
+   * @throws When that cannot be recorded: the worker must then not start.
+   */
   workerStarting(): void;
   /** Call synchronously after that start, with the worker's process group if it started. */
   workerStarted(groupId?: number): void;
@@ -126,38 +129,45 @@ export async function acquireWriterLease(
   let workerGroups: number[] = [];
   // Written whole from this state, so a later write also carries what a failed one lost.
   // Synchronous and without the lock: only this holder writes a record whose process lives, and a
-  // reader under the lock sees the old or the new file. A failure is logged and the run goes on.
+  // reader under the lock sees the old or the new file.
   const writeState = () => {
-    if (released) return;
-    try {
-      const current = readWriter(file);
-      if (current?.token !== token) return;
-      const record: WriterRecord = {
-        pid: current.pid,
-        pidIdentity: ownProcessIdentity(),
-        token,
-        startedAt: current.startedAt,
-        workerGroups,
-        ...(starting > 0 ? { starting: true } : {}),
-      };
-      const temporary = `${file}.${process.pid}.tmp`;
-      fs.writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
-      fs.renameSync(temporary, file);
-    } catch (err) {
-      process.stderr.write(`Warning: the writer record was not updated: ${(err as Error).message}\n`);
-    }
+    const current = readWriter(file);
+    if (current?.token !== token) throw new Error('This call no longer holds the writer record.');
+    const record: WriterRecord = {
+      pid: current.pid,
+      pidIdentity: ownProcessIdentity(),
+      token,
+      startedAt: current.startedAt,
+      workerGroups,
+      ...(starting > 0 ? { starting: true } : {}),
+    };
+    const temporary = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
+    fs.renameSync(temporary, file);
   };
   return {
     token,
     workerStarting() {
+      if (released) throw new Error('This call released the writer record.');
       starting++;
-      writeState();
+      try {
+        writeState();
+      } catch (err) {
+        starting--;
+        throw err;
+      }
     },
     workerStarted(groupId) {
       starting--;
       // Ended groups are dropped, so a call with many short commands keeps a small record.
       workerGroups = [...workerGroups.filter(groupAlive), ...(groupId ? [groupId] : [])];
-      writeState();
+      if (released) return;
+      try {
+        writeState();
+      } catch (err) {
+        // The worker runs, so the run goes on; the mark written before its start stays, and refuses takeover.
+        process.stderr.write(`Warning: the writer record was not updated: ${(err as Error).message}\n`);
+      }
     },
     async release() {
       if (released) return;

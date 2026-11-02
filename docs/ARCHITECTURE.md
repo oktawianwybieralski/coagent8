@@ -1376,8 +1376,9 @@ task record (`<data>/delegations/`) stores the result before the writer is relea
 final after the release, so a woken caller can delegate again at once. A `request_id` reused for
 another request is refused. A task of a dead server reads `interrupted` with a warning, because
 on POSIX its process group can outlive the server (`CUR-011`); the writer record stores those groups
-and is not taken over while one lives, so a second delegation cannot overlap that worker. A crash
-while a worker starts leaves a mark that refuses takeover until the user deletes the record (#108). A final state the data directory refuses is left as a short note in a directory of the user's under the
+and is not taken over while one lives, so a second delegation cannot overlap that worker. A worker
+starts only after that mark is stored, and a crash or a failed later write leaves it, which refuses
+takeover until the user deletes the record (#108). A final state the data directory refuses is left as a short note in a directory of the user's under the
 temporary directory, which readers check, so a waiter learns the end (#121). Records store the process's identity beside the PID (boot id and start ticks on Linux, the system's start
 time elsewhere), so a reused PID does not look like the server; when the system does not tell it, the
 PID alone decides, which can only make a record look busy (#122). Codex itself adds a trust entry for the directory to the user's

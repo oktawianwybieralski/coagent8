@@ -349,7 +349,11 @@ export function runCommand(command: string, args: string[], options: RunCommandO
     );
   }
   const startObserver = process.platform === 'win32' ? undefined : workerStartObserver.getStore();
-  startObserver?.workerStarting();
+  try {
+    startObserver?.workerStarting();
+  } catch (err) {
+    return Promise.resolve(failure('PROCESS_ERROR', `The worker was not started: ${(err as Error).message}`));
+  }
   let child: ChildProcess;
   try {
     const resolved = resolveCliCommand(command, { env: options.env, cwd: options.cwd });

@@ -429,7 +429,7 @@ test('a lease records worker groups, drops ended ones and writes none after its 
   lease.workerStarted();
   assert.deepEqual(read().workerGroups, [11], 'a failed start adds none');
   await lease.release();
-  lease.workerStarting();
+  assert.throws(() => lease.workerStarting(), /released/);
   assert.equal(fs.existsSync(record), false, 'and a release is final');
 });
 
@@ -445,25 +445,35 @@ test('a crash while a worker starts leaves the slot taken, with the way out', as
   await (await acquireWriterLease(gitDir)).release();
 });
 
-test('a record update that fails leaves the call running, and the next one carries what it lost', async () => {
+test('a start mark that cannot be stored stops the worker, and a later failure leaves the mark', async () => {
   const { gitDir, record } = gitDirFixture();
   const lease = await acquireWriterLease(gitDir, () => true);
   const blocker = `${record}.${process.pid}.tmp`;
+  const read = () => JSON.parse(fs.readFileSync(record, 'utf8'));
+
+  fs.mkdirSync(blocker);
+  assert.throws(() => lease.workerStarting());
+  assert.equal(read().starting, undefined, 'nothing started, so nothing is marked');
+  fs.rmdirSync(blocker);
+
+  lease.workerStarting();
   fs.mkdirSync(blocker);
   const write = process.stderr.write;
   const warnings = [];
   process.stderr.write = text => warnings.push(String(text)) > 0;
   try {
-    lease.workerStarting();
     lease.workerStarted(21);
   } finally {
     process.stderr.write = write;
   }
   assert.match(warnings.join(''), /writer record was not updated/);
+  assert.equal(read().starting, true, 'the mark still refuses takeover');
   fs.rmdirSync(blocker);
+
   lease.workerStarting();
   lease.workerStarted(22);
-  assert.deepEqual(JSON.parse(fs.readFileSync(record, 'utf8')).workerGroups, [21, 22]);
+  assert.deepEqual(read().workerGroups, [21, 22], 'the next write carries what the failed one lost');
+  assert.equal(read().starting, undefined);
   await lease.release();
   assert.equal(fs.existsSync(record), false);
 });
