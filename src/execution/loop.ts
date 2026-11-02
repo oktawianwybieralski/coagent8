@@ -49,7 +49,8 @@ export async function reviewOnAnotherBackend(
     try {
       backend = await pick(excluded);
     } catch (err) {
-      if (limited) return limited;
+      const stopped = err instanceof ToolError && (err.code === 'ABORTED' || err.code === 'TIMEOUT');
+      if (limited && !stopped) return limited;
       throw err;
     }
     const reviewed = await run(backend);

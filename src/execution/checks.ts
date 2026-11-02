@@ -19,6 +19,8 @@ const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
 /** Output kept from the end of a check, which is where a failure usually shows. */
 const CHECK_TAIL_CHARS = 8 * 1024;
 
+/** The whole of a line is redacted, so the end of a long one survives the cut to the tail. */
+const CHECK_LINE_CHARS = 1024 * 1024;
 const PRIVATE_KEY_BEGIN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY/;
 const PRIVATE_KEY_END = /-----END [A-Z0-9 ]*PRIVATE KEY/;
 
@@ -94,7 +96,7 @@ export async function runCheck(command: string, cwd: string, signal: AbortSignal
   // would otherwise survive when only its end stays. A key spans lines, so it is followed here.
   const collect = (line: string) => {
     if (PRIVATE_KEY_BEGIN.test(line)) inPrivateKey = true;
-    const clean = inPrivateKey ? '[REDACTED PRIVATE KEY]' : redactDiagnostic(line, CHECK_TAIL_CHARS);
+    const clean = inPrivateKey ? '[REDACTED PRIVATE KEY]' : redactDiagnostic(line, CHECK_LINE_CHARS);
     if (PRIVATE_KEY_END.test(line)) inPrivateKey = false;
     output = `${output}${clean}\n`.slice(-CHECK_TAIL_CHARS);
   };

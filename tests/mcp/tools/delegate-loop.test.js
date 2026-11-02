@@ -128,6 +128,13 @@ test('the output of a check is redacted before it is cut', async () => {
   assert.match(leaky.tail, /after the key/);
 });
 
+test('the end of a very long output line stays', async () => {
+  const file = path.join(tempDir, 'long-line.js');
+  fs.writeFileSync(file, "console.log('x'.repeat(20000) + ' the real failure');process.exit(1);");
+  const long = await runCheck(`${node} ${JSON.stringify(file)}`, tempDir, null, 60000);
+  assert.match(long.tail, /the real failure/);
+});
+
 test('a spent budget is a timeout before the check starts', async () => {
   const spent = await runCheck(PASS, tempDir, null, 0);
   assert.equal(spent.status, 'timed_out');
@@ -291,6 +298,22 @@ test('a review moves on from a backend out of quota, never to the writer', async
       async () => limited,
     ),
     /no other CLI/,
+  );
+});
+
+test('cancellation while choosing the next reviewer is not reported as a quota failure', async () => {
+  const limited = { ...reviewResult('BLOCKED'), result: { status: 'failed', error: { code: 'RATE_LIMITED' } } };
+  let picks = 0;
+  await assert.rejects(
+    reviewOnAnotherBackend(
+      'codex',
+      async () => {
+        if (++picks > 1) throw new ToolError('ABORTED', 'stopped');
+        return 'agy';
+      },
+      async () => limited,
+    ),
+    err => err.code === 'ABORTED',
   );
 });
 
