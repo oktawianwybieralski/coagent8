@@ -112,6 +112,6 @@ The first run found that Codex wrote nothing on Windows, with and without the he
 runs PowerShell in ConstrainedLanguage mode, and the worker took the resulting error for a denial.
 A Windows writer now gets a note about it.
 
-Open, on the [ROADMAP card](../../ROADMAP.md#windows-001-per-call-process-containment): a CI-built
-helper in an installed VSIX in a real client, a real CLI's own descendants at cancel (none ran in
-these turns), expiry, the cold agy updater, `arm64`, and SmartScreen on a file with Mark-of-the-Web.
+Open: a CI-built helper in an installed VSIX in a real client (#109), a real CLI's own descendants
+at cancel, none of which ran in these turns, expiry and the cold agy updater (#110), `arm64` and
+SmartScreen on a file with Mark-of-the-Web (#111).

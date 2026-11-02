@@ -24,9 +24,9 @@ The merge data of #105 and its final reviews are filled in by the next PR ([rule
 Owner decisions 2026-11-01: `async` is the default; asynchronous writes on Windows wait for
 `WINDOWS-001b-e`, whose containment parts are delivered; the private Claude pipe stays rejected.
 
-Open in the ROADMAP: `001a` (an open Codex window, agy, the remaining cases), `001b` (the caller
-label is recorded from `CLAUDE_CODE_SESSION_ID` and filters nothing yet), `001d` (adapters beyond
-Claude Code's background command) and `001f`.
+Open: `001a` (an open Codex window and agy, #113; a real client end to end, #115), `001b` (the
+caller label is recorded from `CLAUDE_CODE_SESSION_ID` and filters nothing yet, #116), `001d`
+(adapters beyond Claude Code's background command, #114) and `001f` (#107, #117).
 
 ## Delivered
 

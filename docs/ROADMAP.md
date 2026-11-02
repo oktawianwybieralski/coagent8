@@ -562,7 +562,7 @@ asynchronous lifecycle for the existing write delegation. Owner decisions
      client updates, resembles malware to security tools and conflicts with
      the no-hacks invariant, so it never ships without a separate decision.
 
-  First results 2026-11-01: Claude Code wakes on a background command's exit (observed throughout this work). `codex queue` on a thread no client has open accepts the message and starts no turn within 40 s. An open Codex window and agy need the owner's session.
+  First results 2026-11-01: Claude Code wakes on a background command's exit (observed throughout this work). `codex queue` on a thread no client has open accepts the message and starts no turn within 40 s. Open: [#113](https://github.com/oktawianwybieralski/coagent8/issues/113), [#115](https://github.com/oktawianwybieralski/coagent8/issues/115).
 
   Also record which MCP protocol revision CoAgent8 negotiates, and for each
   mechanism what happens when the task is cancelled: whether a waiter that
@@ -641,8 +641,8 @@ core rules, copied into `.agents/rules/core/` and pinned in
   hand-written layout. The next PR adds the reformat's squash commit to
   `.git-blame-ignore-revs`. Check: R, CI. Delivered:
   [record](delivered/0.8.0/FORMAT-001.md).
-- [ ] **STANDARDS-001b - issue labels.** The owner creates the labels of
-  `project.md` "Findings labels" that do not exist yet. Check: O.
+- [x] **STANDARDS-001b - issue labels.** Created 2026-11-02 at the owner's request, with the
+  backlog in GitHub Issues ([`project.md`](../.agents/project.md#backlog)).
 
 ## Remaining foundation work
 
@@ -671,8 +671,8 @@ libuv places non-detached server children into one server-wide `KILL_ON_JOB_CLOS
 - [x] **WINDOWS-001b - launcher contract.** Check: P. [ARCHITECTURE](ARCHITECTURE.md#windows-per-call-containment-windows-001) replaces this card's first draft after Codex and agy consultations and native tests: verbatim command line instead of a JSON specification, atomic job assignment instead of `CREATE_SUSPENDED`, a status line instead of a reserved exit code, and a helper that exits only when its job is empty. Delivered: [record](delivered/0.8.0/WINDOWS-001.md).
 - [x] **WINDOWS-001c - implement the helper.** After `001b`. Static Rust (`windows-sys`) helper in `native/coagent8-job`, used by `process.ts` when present. First-launch overhead about 25 ms. Acceptance: fixture trees, breakaway requests, root exit and helper teardown match the contract. Check: R, PROCESS/LIFE plus helper tests. Delivered: [record](delivered/0.8.0/WINDOWS-001.md).
 - [x] **WINDOWS-001d - package and verify the helper.** After `001c`. Build reproducible `x64` and `arm64` binaries in CI, ship them in the npm tarball and VSIX, and verify SHA-256 digests before launch. Owner decision 2026-10-13: no paid code-signing certificate. Apply to SignPath Foundation's free signing for open-source projects first; if it is not available, ship unsigned binaries verified by SHA-256 and measure whether SmartScreen or Defender react (files extracted by npm or VS Code normally carry no Mark-of-the-Web). An intermediate signed `node.exe` cannot replace the helper: libuv's job allows silent breakaway, so grandchildren escape (`WINDOWS-001a`). Acceptance: package inspection and consumer smoke verify the helper and refuse tampered binaries. Delivered unsigned: [record](delivered/0.8.0/WINDOWS-001.md).
-- [ ] **WINDOWS-001d1 - signing.** The owner applies to SignPath Foundation (owner decision 2026-10-13). Check: O.
-- [ ] **WINDOWS-001e - native acceptance.** After `001d`. Verify per backend on Windows that cancel/expiry leaves no surviving descendants, preserves quiet desktop operation and keeps the cold agy updater disabled. Also: browsers and Git credential helpers inside the job, an `arm64` machine, and whether SmartScreen or Defender react to the unsigned helper. First pass 2026-11-01 on a locally built helper: [record](delivered/0.8.0/WINDOWS-001.md). Open: a CI-built helper in an installed VSIX in a real client, a real CLI's own descendants at cancel, expiry as well as cancel, the cold agy updater, an `arm64` machine and SmartScreen on a file with Mark-of-the-Web.
+- [ ] **WINDOWS-001d1 - signing.** The owner applies to SignPath Foundation (owner decision 2026-10-13): [#112](https://github.com/oktawianwybieralski/coagent8/issues/112). Check: O.
+- [ ] **WINDOWS-001e - native acceptance.** After `001d`. Verify per backend on Windows that cancel/expiry leaves no surviving descendants, preserves quiet desktop operation and keeps the cold agy updater disabled. Also: browsers and Git credential helpers inside the job, an `arm64` machine, and whether SmartScreen or Defender react to the unsigned helper. First pass 2026-11-01 on a locally built helper: [record](delivered/0.8.0/WINDOWS-001.md). Open: [#109](https://github.com/oktawianwybieralski/coagent8/issues/109), [#110](https://github.com/oktawianwybieralski/coagent8/issues/110), [#111](https://github.com/oktawianwybieralski/coagent8/issues/111).
 
 ## AUDIT-001: corrected analysis follow-up
 

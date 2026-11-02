@@ -10,6 +10,9 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
+- **Backlog (owner request 2026-11-02):** GitHub Issues hold it, in the format of
+  [`project.md`](../.agents/project.md#backlog); labels created, first items #106-#120.
+
 - **Asynchronous delegate (`DELEGATE-001c`, `e`, owner decisions 2026-11-01):** on the branch of
   #105, which grows with this group (owner feedback 2026-11-01: no small PRs). `delegate` is
   asynchronous by default, `coagent8 wait` and `session` action `task` read the result. Claude
