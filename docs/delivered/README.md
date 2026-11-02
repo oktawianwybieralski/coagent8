@@ -45,7 +45,7 @@ still decide what to do next.
 
 | Version | Status | Records |
 | --- | --- | --- |
-| 0.7.0 | Candidate (release PR #85) | [0.7.0/README.md](0.7.0/README.md) |
+| 0.7.0 | Released 2026-10-20 (release PR #85) | [0.7.0/README.md](0.7.0/README.md) |
 | 0.8.0 | Candidate | [0.8.0/README.md](0.8.0/README.md) |
 
 Versions up to 0.6.1 predate these records; their changes are in
