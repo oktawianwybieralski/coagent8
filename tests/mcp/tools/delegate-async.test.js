@@ -11,6 +11,8 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-delegate-async-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
+// Never the user's own notes.
+process.env.coagent8_END_NOTES_DIR = path.join(tempDir, 'notes');
 process.env.CODEX_PATH = path.resolve(__dirname, '../../fixtures/codex-cli/codex.cjs');
 process.env.CODEX_FIXTURE_CAPTURE = path.join(tempDir, 'capture.json');
 process.env.CODEX_CONFIG_PATH = path.join(tempDir, 'config.toml');
@@ -365,7 +367,7 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
   assert.equal(readTask(live.taskHandle).state, 'running', 'a running task stays');
 });
 
-const endNotesDir = () => path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`);
+const endNotesDir = () => process.env.coagent8_END_NOTES_DIR;
 const endNote = handle => {
   const name = fs.readdirSync(endNotesDir()).find(entry => entry.startsWith(`${handle}-`));
   return name ? path.join(endNotesDir(), name) : path.join(endNotesDir(), 'none');
@@ -375,9 +377,9 @@ test(
   'a notes directory that is linked or open to others is not trusted',
   { skip: process.platform === 'win32' ? 'POSIX modes and links' : false },
   async () => {
-    const previous = process.env.TMPDIR;
-    process.env.TMPDIR = fs.mkdtempSync(path.join(tempDir, 'tmp-'));
-    const dir = endNotesDir();
+    const previous = process.env.coagent8_END_NOTES_DIR;
+    const dir = path.join(tempDir, 'notes-under-test');
+    process.env.coagent8_END_NOTES_DIR = dir;
     const task = {
       schemaVersion: 1,
       taskHandle: createTaskHandle(),
@@ -404,8 +406,7 @@ test(
       fs.rmSync(dir, { recursive: true });
       assert.equal(await writeFinalTask(task, refused), true, 'a private one of its own');
     } finally {
-      if (previous === undefined) delete process.env.TMPDIR;
-      else process.env.TMPDIR = previous;
+      process.env.coagent8_END_NOTES_DIR = previous;
     }
   },
 );
@@ -471,20 +472,14 @@ test('a waiter reads the end note from the directory the server named', async ()
     throw new Error('disk full');
   });
   const named = endNotesDir();
-  const previous = process.env.TMPDIR;
-  const previousTmp = process.env.TEMP;
-  process.env.TMPDIR = process.env.TEMP = fs.mkdtempSync(path.join(tempDir, 'waiter-tmp-'));
+  process.env.coagent8_END_NOTES_DIR = path.join(tempDir, 'the-shell-of-the-client-points-elsewhere');
   let text = '';
   const out = { write: chunk => (text += chunk) };
   try {
     assert.equal(await runWaitCli([taskHandle, '--notes-dir', named, '--timeout-ms', '0'], out, out), 1);
     assert.match(text, /could not be stored/);
   } finally {
-    delete process.env.coagent8_END_NOTES_DIR;
-    if (previous === undefined) delete process.env.TMPDIR;
-    else process.env.TMPDIR = previous;
-    if (previousTmp === undefined) delete process.env.TEMP;
-    else process.env.TEMP = previousTmp;
+    process.env.coagent8_END_NOTES_DIR = named;
   }
   fs.rmSync(endNote(taskHandle));
 });
