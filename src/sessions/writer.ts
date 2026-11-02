@@ -121,15 +121,19 @@ export async function acquireWriterLease(
   });
   let released = false;
   let starting = 0;
+  let workerGroups: number[] = [];
+  // Written whole from this state, so a later write also carries what a failed one lost.
   // Synchronous and without the lock: only this holder writes a record whose process lives, and a
   // reader under the lock sees the old or the new file. A failure is logged and the run goes on.
-  const update = (change: (record: WriterRecord) => WriterRecord) => {
+  const writeState = () => {
     if (released) return;
     try {
       const current = readWriter(file);
       if (current?.token !== token) return;
+      const { pid, startedAt } = current;
+      const record: WriterRecord = { pid, token, startedAt, workerGroups, ...(starting > 0 ? { starting: true } : {}) };
       const temporary = `${file}.${process.pid}.tmp`;
-      fs.writeFileSync(temporary, JSON.stringify(change(current)), { mode: 0o600 });
+      fs.writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
       fs.renameSync(temporary, file);
     } catch (err) {
       process.stderr.write(`Warning: the writer record was not updated: ${(err as Error).message}\n`);
@@ -139,16 +143,13 @@ export async function acquireWriterLease(
     token,
     workerStarting() {
       starting++;
-      update(record => ({ ...record, starting: true }));
+      writeState();
     },
     workerStarted(groupId) {
       starting--;
-      update(({ starting: _starting, ...record }) => ({
-        ...record,
-        ...(starting > 0 ? { starting: true } : {}),
-        // Ended groups are dropped, so a call with many short commands keeps a small record.
-        workerGroups: [...(record.workerGroups ?? []).filter(groupAlive), ...(groupId ? [groupId] : [])],
-      }));
+      // Ended groups are dropped, so a call with many short commands keeps a small record.
+      workerGroups = [...workerGroups.filter(groupAlive), ...(groupId ? [groupId] : [])];
+      writeState();
     },
     async release() {
       if (released) return;

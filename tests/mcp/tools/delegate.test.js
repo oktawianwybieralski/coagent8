@@ -444,19 +444,25 @@ test('a crash while a worker starts leaves the slot taken, with the way out', as
   await (await acquireWriterLease(gitDir)).release();
 });
 
-test('a record update that fails leaves the call running', async () => {
+test('a record update that fails leaves the call running, and the next one carries what it lost', async () => {
   const { gitDir, record } = gitDirFixture();
-  const lease = await acquireWriterLease(gitDir);
-  fs.mkdirSync(`${record}.${process.pid}.tmp`);
+  const lease = await acquireWriterLease(gitDir, () => true);
+  const blocker = `${record}.${process.pid}.tmp`;
+  fs.mkdirSync(blocker);
   const write = process.stderr.write;
   const warnings = [];
   process.stderr.write = text => warnings.push(String(text)) > 0;
   try {
     lease.workerStarting();
+    lease.workerStarted(21);
   } finally {
     process.stderr.write = write;
   }
   assert.match(warnings.join(''), /writer record was not updated/);
+  fs.rmdirSync(blocker);
+  lease.workerStarting();
+  lease.workerStarted(22);
+  assert.deepEqual(JSON.parse(fs.readFileSync(record, 'utf8')).workerGroups, [21, 22]);
   await lease.release();
   assert.equal(fs.existsSync(record), false);
 });
