@@ -73,10 +73,13 @@ Native, a fresh server from the bundle, the check in `allowedChecks` of an isola
 | Writer | Task | Loop | Review | Own run of the check |
 | --- | --- | --- | --- | --- |
 | Codex `gpt-6.1-terra` | fix a real bug in `add.js` | `passed`, no fix round | READY by Claude Code `claude-opus-5-5` | exit 0 |
-| Claude Code `claude-haiku-5-5` | a task that conflicts with the check | `checks_failed` after 2 fix rounds | ran in round 2 and blocked on the conflict | exit 1 |
+| Claude Code `claude-haiku-5-5` | add a comment, while the check needs a bug fixed that the task does not name | `review_blocked` after 2 fix rounds | BLOCKED by Codex `gpt-6.1-terra` | exit 0 |
 
-The second run shows that the rounds are bounded and the failure is reported: the review ran only
-because a fix turn had made the check pass, and the worker then undid that fix on the review's finding.
+The second run shows both ends of the rounds: the check failed on the first turn and a fix round made it
+pass, and the review then blocked because the change went beyond the task, so the bound ended the loop
+with the failure reported. The same task on an earlier build ended `checks_failed`: the worker undid its
+fix on the review's finding, so a model may land on either side of this conflict.
+
 An earlier run ended `review_failed` on agy's quota, so the review now moves on from a backend out of
 quota.
 
