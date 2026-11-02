@@ -137,6 +137,12 @@ test('the end of a very long output line stays', async () => {
   assert.match(long.tail, /the real failure/);
 });
 
+test('a check that dies from a signal failed; it did start', { skip: process.platform === 'win32' ? 'POSIX signals' : false }, async () => {
+  const killed = await runCheck(`${node} -e "process.kill(process.pid, 'SIGKILL')"`, tempDir, null, 60000);
+  assert.equal(killed.status, 'failed');
+  assert.match(killed.tail, /SIGKILL/);
+});
+
 test('a spent budget is a timeout before the check starts', async () => {
   const spent = await runCheck(PASS, tempDir, null, 0);
   assert.equal(spent.status, 'timed_out');
