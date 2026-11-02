@@ -16,6 +16,7 @@ const { parseCheckCommand, approveChecks, runCheck } = require('../../../src/exe
 const { superviseChange, reviewOnAnotherBackend, LOOP_FIX_ROUNDS } = require('../../../src/execution/loop.ts');
 const { handleDelegate, getCanonicalDelegateToolDefinition } = require('../../../src/mcp/tools/delegate.tool.ts');
 const { executeDelegation } = require('../../../src/execution/delegation.ts');
+const { createExecutionBudget } = require('../../../src/execution/runtime/budget.ts');
 const { ToolError } = require('../../../src/contracts/error.ts');
 
 const node = JSON.stringify(process.execPath);
@@ -415,19 +416,37 @@ test('a later turn has its own time limit, also without a limit on the task', as
   assert.equal(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), false);
 });
 
-test('a spent task budget is a timeout of the next turn', async () => {
+test('a task budget spent before a fix turn ends the task as timed out', async () => {
   const repo = fixtureRepo();
-  let refusal;
-  await executeDelegation('Change it', 'Change it', { backend: 'codex', model: MODEL }, repo, [], null, null, {
-    ...approve,
-    requireEnvelope: false,
-    loopTurnMs: 0,
-    supervise: async (first, turn) => {
-      refusal = await turn.fix('More').catch(err => err);
-      return first;
-    },
-  });
-  assert.equal(refusal.code, 'TIMEOUT');
+  const budget = createExecutionBudget({ totalBudgetMs: 120000 });
+  const context = { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() };
+  try {
+    const result = await executeDelegation('Change it', 'Change it', { backend: 'codex', model: MODEL }, repo, [], null, null, {
+      ...approve,
+      requireEnvelope: false,
+      budget,
+      context,
+      supervise: (first, turn) => {
+        // What the worker's first turn left: nothing.
+        budget.remainingExecutionMs = () => 0;
+        return superviseChange(first, {
+          checks: [FAIL],
+          cwd: repo,
+          signal: turn.signal,
+          remainingMs: () => 60000,
+          fix: turn.fix,
+          review: async () => reviewResult('READY'),
+        });
+      },
+    });
+    assert.equal(result.loop.outcome, 'timed_out');
+    assert.equal(result.result.status, 'timed_out');
+    assert.equal(result.isError, true);
+    assert.equal(result.loop.fixRounds, 0);
+  } finally {
+    budget.dispose();
+  }
+  assert.equal(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), false);
 });
 
 test('the tool definition offers the loop', () => {
