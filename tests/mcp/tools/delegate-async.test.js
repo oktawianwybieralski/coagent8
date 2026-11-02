@@ -488,3 +488,19 @@ test('a waiter reads the end note from the directory the server named', async ()
   }
   fs.rmSync(endNote(taskHandle));
 });
+
+test('pruning end notes removes old notes and nothing else in that directory', () => {
+  const dir = endNotesDir();
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const old = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const note = path.join(dir, `task_${'a'.repeat(32)}-${'b'.repeat(16)}.json`);
+  const other = path.join(dir, 'a-file-of-the-user.txt');
+  for (const file of [note, other]) {
+    fs.writeFileSync(file, '{}');
+    fs.utimesSync(file, old, old);
+  }
+  pruneTasks();
+  assert.equal(fs.existsSync(note), false);
+  assert.equal(fs.existsSync(other), true);
+  fs.rmSync(other);
+});

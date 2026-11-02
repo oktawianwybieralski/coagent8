@@ -122,6 +122,8 @@ export async function writeFinalTask(task: DelegationTask, write: (task: Delegat
   }
 }
 
+const END_NOTE_FILE = /^task_[a-f0-9]{32}-[a-f0-9]{16}\.json(\.\d+\.tmp)?$/;
+
 /** One data directory's note: another's task can have the same handle. */
 function endNoteName(handle: string): string {
   const store = crypto.createHash('sha256').update(getDataDir()).digest('hex').slice(0, 16);
@@ -207,6 +209,8 @@ function pruneEndNotes(now: number): void {
   const dir = endNotesDir(false);
   if (!dir) return;
   for (const name of fs.readdirSync(dir)) {
+    // A waiter can name any directory: only what this code wrote there is ever removed.
+    if (!END_NOTE_FILE.test(name)) continue;
     const file = path.join(dir, name);
     const modified = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
     if (modified !== undefined && now - modified >= TASK_RETENTION_MS) fs.rmSync(file, { force: true });
