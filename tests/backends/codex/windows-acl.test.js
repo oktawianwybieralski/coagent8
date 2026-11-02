@@ -56,10 +56,12 @@ test(
       assert.deepEqual(parseAcl('Unrecognized output', 'x'), [], 'read by the caller as inconclusive');
       assert.deepEqual(parseAcl('x HOST\\A:(OI)(M)\n  HOST\\B:(I)(???)', 'x'), [], 'a line it cannot read makes the whole answer unclear');
       assert.equal(parseAcl('x HOST\\A:(I)(Rc,S,X,RA)', 'x')[0].inherited, true, 'mixed-case special rights');
+      const sandboxGroup = /CodexSandbox/i.test(spawnSync('icacls', [cwd], { encoding: 'latin1', windowsHide: true }).stdout || '');
       const user = process.env.USERNAME;
       const ran = spawnSync('icacls', [closed, '/inheritance:r', '/grant', `${user}:(OI)(CI)F`], { windowsHide: true });
       assert.equal(ran.status, 0);
-      assert.equal(await unreachableWriteFolder(cwd, ['open/closed/deep']), closed);
+      // Only where Codex's sandbox group has grants: elsewhere, as on CI, the check cannot judge.
+      assert.equal(await unreachableWriteFolder(cwd, ['open/closed/deep']), sandboxGroup ? closed : undefined);
       spawnSync('icacls', [closed, '/inheritance:e'], { windowsHide: true });
       assert.equal(await unreachableWriteFolder(cwd, ['open/closed/deep']), undefined, 'the command the refusal names restores it');
     } finally {

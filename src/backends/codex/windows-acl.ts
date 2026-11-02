@@ -83,7 +83,8 @@ export async function unreachableWriteFolder(
 ): Promise<string | undefined> {
   if (process.platform !== 'win32' || !scope.length) return undefined;
   const workspace = await readAcl(cwd, context);
-  if (!workspace) return undefined;
+  // Without the sandbox's group on the workspace, its grants are not known here: no refusal.
+  if (!workspace?.some(entry => /^CodexSandbox/i.test(entry.name))) return undefined;
   const seen = new Set<string>();
   for (const entry of scope) {
     let current = cwd;
