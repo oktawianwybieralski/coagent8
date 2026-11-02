@@ -68,7 +68,11 @@ export async function executeDelegation(
   try {
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
-      executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, { ...turnOptions, profile: 'workspace-write' });
+      executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, {
+        ...turnOptions,
+        profile: 'workspace-write',
+        writeScope: scope,
+      });
     const runSupervised = async () => {
       const first = await turn(prompt, args, taskOptions);
       if (!supervise) return first;
@@ -122,6 +126,16 @@ export async function executeDelegation(
       };
     }
     outcome = { ...outcome, changes };
+    // A worker that was denied and changed nothing may still report a normal end (#127).
+    if (outcome.result.denials?.length && !changes.changed.length && !changes.unavailable) {
+      outcome = {
+        ...outcome,
+        warnings: [
+          ...(outcome.warnings ?? []),
+          'The worker was denied access and changed no file. On Windows, a folder that does not inherit the permissions of the workspace stays closed to a Codex worker: check the denied path.',
+        ],
+      };
+    }
     if (treeUnconfirmed) {
       outcome = {
         ...outcome,

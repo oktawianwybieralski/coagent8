@@ -220,7 +220,9 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
   await handleConsult('consult', { proposal: 'Plain question' }, tempDir);
   assert.equal(
     receivedPrompts[0],
-    withAnswerLanguage('Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nPlain question'),
+    withAnswerLanguage(
+      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nIf something you need is out of reach, say so: the server sets what this turn can reach.\nPlain question',
+    ),
     'plain consult without task_type or context_files stays byte-for-byte neutral, apart from the answer language',
   );
   assert.ok(!receivedPrompts[0].includes(READ_ONLY_FILE_TOOL_GUIDANCE));

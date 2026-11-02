@@ -131,6 +131,8 @@ export async function handleConsult(
     focus?.header,
     // The answer is read in the caller's context and saved to a file by agy above about 4 KB.
     'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.',
+    // A sandbox's limit otherwise reads as the caller's wish (#130).
+    'If something you need is out of reach, say so: the server sets what this turn can reach.',
     focus || files.length > 0 ? READ_ONLY_FILE_TOOL_GUIDANCE : '',
     focus ? 'PROPOSAL / SPECIFICATION:' : '',
     args.proposal,

@@ -13,8 +13,11 @@ Do not append another session transcript or treat old test counts as fresh evide
 - **Backlog (owner request 2026-11-02):** GitHub Issues hold it, in the format of
   [`project.md`](../.agents/project.md#backlog); labels created, first items #106-#120.
 
-- **Server-owned loop (`DELEGATE-001f2`, owner decision 2026-11-02):** `delegate` with `loop: true`
-  runs checks, an independent review and bounded fix rounds with the writer held. Contract:
+- **Merge policy (owner 2026-11-02):** a clean PR is merged when its gate, CI and available reviews pass;
+  bugs another agent reports are fixed as they come (#127-#130).
+
+- **Server-owned loop (`DELEGATE-001f2`, owner decision 2026-11-02):** merged in #126 (`02e3b5f`).
+  `delegate` with `loop: true` runs checks, an independent review and bounded fix rounds with the writer held. Contract:
   [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c).
 
 - **Acceptance in a real client (2026-11-02):** on the CI-built VSIX, Claude Code delegated to Codex

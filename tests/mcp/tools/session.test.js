@@ -556,3 +556,27 @@ test('session list can show only the sessions of the calling agent', async () =>
     else process.env.CLAUDE_CODE_SESSION_ID = previous;
   }
 });
+
+test('session history can show messages only, across pages of other events', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-messages-'));
+  const handle = createSession('codex', workspace).sessionHandle;
+  const writer = createHistoryWriter(handle, workspace, 'codex', randomUUID());
+  writer.accept({ type: 'turn_started' });
+  writer.accept({ type: 'user_message', text: 'the question' });
+  for (let i = 0; i < 6; i++) writer.accept({ type: 'tool_finished', toolId: `t${i}`, name: 'read', success: true });
+  writer.accept({ type: 'assistant_message', messageId: 'm', text: 'the answer' });
+  writer.accept({ type: 'turn_finished', status: 'completed' });
+  await writer.flush();
+  const read = async args => (await handleSession({ action: 'history', ...args, session_handle: handle }, workspace)).content[0].text;
+  const everything = await read({});
+  assert.match(everything, /Tool `read` finished/);
+  const messages = await read({ action: 'messages' });
+  assert.match(messages, /the question/);
+  assert.match(messages, /the answer/);
+  assert.doesNotMatch(messages, /finished/);
+  const page = await read({ action: 'messages', limit: 1 });
+  assert.match(page, /the question/);
+  assert.doesNotMatch(page, /the answer/);
+  const next = /Pass cursor:\* `([^`]+)`/.exec(page);
+  assert.match(await read({ action: 'messages', limit: 1, cursor: next[1] }), /the answer/, 'past pages of tool events alone');
+});

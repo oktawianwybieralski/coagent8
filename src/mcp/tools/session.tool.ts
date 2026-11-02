@@ -11,17 +11,17 @@ import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
   name: CANONICAL_TOOL_NAMES.SESSION,
-  description: 'List, page history or close sessions; read a delegate task.',
+  description: 'List, page history, close sessions; read a delegate task.',
   inputSchema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['list', 'history', 'close', 'task'] },
+      action: { type: 'string', enum: ['list', 'history', 'messages', 'close', 'task'] },
       task_handle: { type: 'string' },
       mine: { type: 'boolean' },
       session_handle: { type: 'string', description: 'history/close.' },
       cursor: { type: 'string', description: 'history.' },
       limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history.' },
-      delete_history: { type: 'boolean', description: 'close: drop history.' },
+      delete_history: { type: 'boolean', description: 'close: drop it.' },
       ...WORKSPACE_PARAMETER,
     },
     required: ['action'],
@@ -56,8 +56,8 @@ export function publicSessionRecord(record: SessionRecord): SessionRecord {
  */
 export async function handleSession(args: ToolArguments, workspace = resolveWorkspacePath(args?.workspace_path)) {
   const action = args?.action;
-  if (!action || !['list', 'history', 'close', 'task'].includes(action)) {
-    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "close", "task".');
+  if (!action || !['list', 'history', 'messages', 'close', 'task'].includes(action)) {
+    throw new ToolError('INPUT_LIMIT', 'Validation Error: action must be one of "list", "history", "messages", "close", "task".');
   }
   if (action === 'task') {
     const handle = (args as { task_handle?: unknown }).task_handle;
@@ -99,11 +99,11 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
       structuredContent: { schemaVersion: 1, sessions },
     };
   }
-  if (action === 'history') {
+  if (action === 'history' || action === 'messages') {
     if (!args.session_handle || typeof args.session_handle !== 'string') {
       throw new ToolError('INPUT_LIMIT', 'Validation Error: session_handle is required for action "history".');
     }
-    return await handleSessionHistory({ ...args, session_handle: args.session_handle }, workspace);
+    return await handleSessionHistory({ ...args, session_handle: args.session_handle, messages_only: action === 'messages' }, workspace);
   }
   if (action === 'close') {
     if (!args.session_handle || typeof args.session_handle !== 'string') {
@@ -167,10 +167,20 @@ export async function handleCloseSession(args: ToolArguments, workspace = resolv
  * `sequence` numbering do not indicate lost events.
  */
 export async function handleSessionHistory(
-  args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number },
+  args: { session_handle: string; workspace_path?: string; cursor?: string; limit?: number; messages_only?: boolean },
   workspace = resolveWorkspacePath(args.workspace_path),
 ) {
-  const history = await sessionHistory(args.session_handle, workspace, args.cursor, args.limit);
+  let history = await sessionHistory(args.session_handle, workspace, args.cursor, args.limit);
+  if (args.messages_only === true) {
+    // Filtered page by page, so that a page of tool events alone does not read as the end.
+    const isMessage = (event: { type: string }) => event.type === 'user_message' || event.type === 'assistant_message';
+    let events = history.events.filter(isMessage);
+    while (!events.length && history.nextCursor) {
+      history = await sessionHistory(args.session_handle, workspace, history.nextCursor, args.limit);
+      events = history.events.filter(isMessage);
+    }
+    history = { ...history, events };
+  }
   if (!history.events.length) {
     return { content: [{ type: 'text' as const, text: 'No public events found on this page.' }], structuredContent: history };
   }

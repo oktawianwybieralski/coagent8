@@ -90,4 +90,14 @@ test('Adaptive cooldown backoff escalates on retry failure and resets on success
   cache = readQuotaCache();
   assert.equal(cache.data.codex.status, 'rate_limited');
   assert.ok(cache.data.codex.cooldownUntil);
+
+  // Nor by a turn that started before the limit was recorded
+  await resetQuotaCooldown('codex', Date.parse(cache.data.codex.lastCooldownAt) - 1000);
+  assert.equal(readQuotaCache().data.codex.status, 'rate_limited');
+
+  // A turn started after it proves the quota, before the recorded reset (#129)
+  await resetQuotaCooldown('codex', Date.now() + 1000);
+  cache = readQuotaCache();
+  assert.equal(cache.data.codex.status, 'operational');
+  assert.equal(cache.data.codex.cooldownUntil, null);
 });

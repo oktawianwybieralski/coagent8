@@ -144,6 +144,8 @@ export interface TaskOptions {
    * absent. It binds the session at creation and reaches the adapter (`DELEGATE-001w`).
    */
   profile?: ExecutionProfile;
+  /** Paths a `workspace-write` turn may change, for a check before the turn. */
+  writeScope?: readonly string[];
 }
 
 const activeExecutionTasks = new Set<Promise<unknown>>();
@@ -571,6 +573,8 @@ async function executeTaskInternal(
           abortSignal: cancelController.signal,
           onEvent: receive,
           profile: options.profile ?? 'read-only',
+          ...(options.writeScope ? { writeScope: options.writeScope } : {}),
+          ...(options.requireEnvelope ? { requireCompleteTurn: true } : {}),
         };
         await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });
         const raw: ExecutionResult = await backend.adapter.execute(
@@ -720,7 +724,7 @@ async function executeTaskInternal(
           const reset = parseResetTimestamp(rateErr.message);
           await recordQuotaCooldown(backend.id, reset?.cooldownMs, rateErr.message.slice(0, 200) || undefined);
         } else if (!result.isError && result.status === 'completed') {
-          await resetQuotaCooldown(backend.id);
+          await resetQuotaCooldown(backend.id, started);
         }
       } catch (error) {
         warnings.push(`Cooldown cache update failed: ${redactDiagnostic(error instanceof Error ? error.message : 'Unknown error.', 512)}`);

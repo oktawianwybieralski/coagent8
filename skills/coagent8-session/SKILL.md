@@ -6,7 +6,8 @@ description: List CoAgent8 sessions, read a session's history, close a session o
 # CoAgent8 sessions
 
 - List: call `session` with `action: list`.
-- History: call `session` with `action: history` and the `session_handle`; page
+- History: call `session` with `action: history` and the `session_handle`, or
+  `action: messages` to skip tool events; page
   with `cursor` and `limit`. Event `sequence` is the stored log position; public
   history combines or filters events, so sequence gaps do not mean lost events.
 - Continue: call consult or review again with the same `session_handle`. That
