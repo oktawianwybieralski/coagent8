@@ -74,7 +74,7 @@ test('delegate returns the task while the worker runs, then the result carries t
   assert.match(taskHandle, /^task_[a-f0-9]{32}$/);
   assert.match(sessionHandle, /^syn_sess_/);
   assert.equal(wakeup, 'background_wait');
-  assert.deepEqual(waitArgv.slice(-4), ['wait', '--data-dir', process.env.coagent8_DIR, taskHandle]);
+  assert.deepEqual(waitArgv.slice(-6), ['wait', '--data-dir', process.env.coagent8_DIR, '--notes-dir', endNotesDir(), taskHandle]);
   assert.match(started.content[0].text, /Start wait_argv now as a background command/);
 
   const task = await finished(taskHandle);
@@ -451,4 +451,40 @@ test('a running task whose PID now names a later process reads as interrupted', 
     startedAt: new Date().toISOString(),
   });
   assert.equal(readTask(taskHandle).state, 'interrupted');
+});
+
+test('a waiter reads the end note from the directory the server named', async () => {
+  const taskHandle = createTaskHandle();
+  const task = {
+    schemaVersion: 1,
+    taskHandle,
+    state: 'completed',
+    workspace: tempDir,
+    sessionHandle: 's',
+    backend: 'codex',
+    model: 'm',
+    serverPid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
+  await writeTask({ ...task, state: 'running' });
+  await writeFinalTask(task, async () => {
+    throw new Error('disk full');
+  });
+  const named = endNotesDir();
+  const previous = process.env.TMPDIR;
+  const previousTmp = process.env.TEMP;
+  process.env.TMPDIR = process.env.TEMP = fs.mkdtempSync(path.join(tempDir, 'waiter-tmp-'));
+  let text = '';
+  const out = { write: chunk => (text += chunk) };
+  try {
+    assert.equal(await runWaitCli([taskHandle, '--notes-dir', named, '--timeout-ms', '0'], out, out), 1);
+    assert.match(text, /could not be stored/);
+  } finally {
+    delete process.env.coagent8_END_NOTES_DIR;
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+    if (previousTmp === undefined) delete process.env.TEMP;
+    else process.env.TEMP = previousTmp;
+  }
+  fs.rmSync(endNote(taskHandle));
 });

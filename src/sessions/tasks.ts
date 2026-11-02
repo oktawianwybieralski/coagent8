@@ -129,11 +129,19 @@ function endNoteName(handle: string): string {
 }
 
 /**
+ * Where end notes go. A waiter is told the server's, as its temporary directory can differ.
+ * @param waiterDirectory - The directory a waiter was given; it is checked like any other.
+ */
+export function endNotesPath(waiterDirectory = process.env.coagent8_END_NOTES_DIR): string {
+  return waiterDirectory || path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`);
+}
+
+/**
  * The directory of end notes: outside the data directory, this user's alone.
  * @returns Its path, or null when it cannot be trusted, such as a link or another user's directory.
  */
 function endNotesDir(create: boolean): string | null {
-  const dir = path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`);
+  const dir = endNotesPath();
   try {
     if (create) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stat = fs.lstatSync(dir);

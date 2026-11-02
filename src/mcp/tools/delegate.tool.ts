@@ -10,7 +10,7 @@ import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
 import { executeDelegation, startDelegation } from '../../execution/delegation.js';
 import { getDataDir, getRuntimePath } from '../../paths.js';
-import { isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
+import { endNotesPath, isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { normalizeScopeEntry } from '../../workspace/changes.js';
 import { ToolError } from '../../contracts/error.js';
@@ -83,7 +83,7 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
 /** The command that blocks until a task finishes, built from this server's own process. */
 export function waitCommand(taskHandle: string): { argv: string[]; env: Record<string, string> } {
   return {
-    argv: [process.execPath, getRuntimePath(), 'wait', '--data-dir', getDataDir(), taskHandle],
+    argv: [process.execPath, getRuntimePath(), 'wait', '--data-dir', getDataDir(), '--notes-dir', endNotesPath(), taskHandle],
     // VS Code's Electron runs a script only with this set.
     env: process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {},
   };
