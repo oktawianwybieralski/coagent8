@@ -2,6 +2,10 @@
  * Represents a persistent multi-turn agent conversation session.
  */
 export interface SessionRecord {
+  /** The calling agent's session in a client that exposes one. A label: it filters, never authorizes. */
+  callerSession?: string;
+  /** Identity of `activePid`, so a reused PID is not taken for the running server. */
+  activePidIdentity?: string | null;
   schemaVersion?: 2;
   state?: 'idle' | 'running' | 'invalidated' | 'closed';
   turnToken?: string | null;

@@ -15,7 +15,7 @@ import { resolveBackend } from '../../execution/routing.js';
 import { loadConfig } from '../../config.js';
 import { executeReview } from './review.tool.js';
 import { getDataDir, getRuntimePath } from '../../paths.js';
-import { isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
+import { endNotesPath, isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { normalizeScopeEntry } from '../../workspace/changes.js';
 import { ToolError } from '../../contracts/error.js';
@@ -37,12 +37,12 @@ export function getCanonicalDelegateToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.DELEGATE,
     description:
-      'Another agent edits code here, without commits; returns a task handle while it runs, then its report and files seen changing. Review it.',
+      'Another agent edits code here, no commits; returns a task handle, then its report and files seen changing. Review it.',
     inputSchema: {
       type: 'object',
       properties: {
         // An empty task is refused by the handler; `minLength` would cost bytes on every Codex request.
-        task: { type: 'string', description: 'Change and acceptance criteria; name files, do not paste them.' },
+        task: { type: 'string', description: 'Change and acceptance criteria; name files, do not paste.' },
         scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may change.' },
         checks: { type: 'array', items: { type: 'string' }, description: 'Commands, e.g. npm test.' },
         loop: { type: 'boolean', description: 'Server checks, reviews.' },
@@ -140,7 +140,7 @@ function loopSupervisor(task: string, checks: readonly string[], workspaceCwd: s
 /** The command that blocks until a task finishes, built from this server's own process. */
 export function waitCommand(taskHandle: string): { argv: string[]; env: Record<string, string> } {
   return {
-    argv: [process.execPath, getRuntimePath(), 'wait', '--data-dir', getDataDir(), taskHandle],
+    argv: [process.execPath, getRuntimePath(), 'wait', '--data-dir', getDataDir(), '--notes-dir', endNotesPath(), taskHandle],
     // VS Code's Electron runs a script only with this set.
     env: process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {},
   };

@@ -12,6 +12,9 @@ Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegati
 | --- | --- | --- | --- |
 | [#95](https://github.com/oktawianwybieralski/coagent8/pull/95) | `5f770c6` | 2026-10-31 | feat(delegate): delegate code changes to another agent |
 | [#105](https://github.com/oktawianwybieralski/coagent8/pull/105) | `3ae31da` | 2026-11-02 | feat(delegate): run delegate asynchronously and wake the caller |
+| [#123](https://github.com/oktawianwybieralski/coagent8/pull/123) | `f372179` | 2026-11-02 | fix(delegate): bound the first Git read and refuse oversized Codex prompts |
+| [#125](https://github.com/oktawianwybieralski/coagent8/pull/125) | `9ef042a` | 2026-11-02 | fix(delegate): recognize a dead server, its worker and a reused PID |
+| [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | pending | pending | feat(delegate): run checks, review and fix rounds in one call |
 
 ## Scope
 
@@ -61,6 +64,26 @@ next PR.
 
 Not observed end to end: an installed package in a real client starting `wait_argv` by itself. The
 client's half, a background command waking Claude Code when it exits, was observed separately.
+
+## Caller wake-up in a real client (2026-11-02)
+
+Claude Code 2.1.314 in VS Code, on the VSIX of the CI run of `f372179`, Windows, Node 24, registered by that package's `setup` and
+running from its runtime copy. The agent started the returned `wait_argv` as a background command
+and was woken with the result, without user input:
+
+| Backend | Model | Turn | Woken with |
+| --- | --- | --- | --- |
+| Codex | `gpt-6.1-terra` | 14.5 s | `completed`, the file and the observed change |
+| Claude Code | `claude-haiku-5-5` | 9.9 s | `completed`, the file and the observed change, while the agent was cancelling another task |
+
+The skill's instruction was not separately exercised: the agent already knew the contract.
+
+A delegation through Codex makes Codex add a trust entry for that directory to the user's
+`~/.codex/config.toml` (#124).
+
+Note 2026-11-02: the deferrals of #121 and #122 above are withdrawn; both are solved in #125.
+`session` action `list` takes `mine: true` for the sessions of the calling agent, in a client that exposes
+an id; of the clients tried, Claude Code does (`CLAUDE_CODE_SESSION_ID`). The label filters only (#116).
 
 ## Server-owned loop, first slice (2026-11-02)
 

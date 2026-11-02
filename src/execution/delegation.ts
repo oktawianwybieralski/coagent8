@@ -19,10 +19,11 @@
 import crypto from 'node:crypto';
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/index.js';
+import { ownProcessIdentity } from '../sessions/activity.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { jobHelperPath } from './job-helper.js';
-import { withRequiredJobHelper } from './process.js';
+import { withRequiredJobHelper, withWorkerGroups } from './process.js';
 import { createTaskHandle, pruneTasks, readTask, writeFinalTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
 import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
@@ -68,7 +69,7 @@ export async function executeDelegation(
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
       executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, { ...turnOptions, profile: 'workspace-write' });
-    const runTask = async () => {
+    const runSupervised = async () => {
       const first = await turn(prompt, args, taskOptions);
       if (!supervise) return first;
       // Each later turn has its own bound within what is left of the task's budget.
@@ -102,6 +103,7 @@ export async function executeDelegation(
           ),
       });
     };
+    const runTask = () => withWorkerGroups(runSupervised, lease);
     outcome = await (process.platform === 'win32'
       ? withRequiredJobHelper(runTask, () => {
           treeUnconfirmed = true;
@@ -279,6 +281,7 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
         backend: turn.backend,
         model: turn.model,
         serverPid: process.pid,
+        serverIdentity: ownProcessIdentity(),
         startedAt: new Date().toISOString(),
         ...(callerSession ? { callerSession } : {}),
         ...(fingerprint ? { requestFingerprint: fingerprint } : {}),

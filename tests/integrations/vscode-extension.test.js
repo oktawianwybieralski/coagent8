@@ -7,6 +7,18 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 /** A configuration change event with VS Code's semantics: a section matches itself and its parents. */
+// Windows can refuse a directory read for a moment while another test process holds it (#119).
+async function buildRetryingLock(options) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await esbuild.build(options);
+    } catch (err) {
+      if (attempt === 3 || !/Cannot read directory/.test(err.message)) throw err;
+      await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+    }
+  }
+}
+
 function affects(...changed) {
   return {
     affectsConfiguration(section) {
@@ -436,7 +448,7 @@ async function runExtension({
       },
     },
   };
-  const output = await esbuild.build({
+  const output = await buildRetryingLock({
     entryPoints: [path.resolve(__dirname, '../..', 'extensions/vscode/src/extension.ts')],
     bundle: true,
     write: false,

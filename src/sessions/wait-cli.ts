@@ -10,7 +10,7 @@
 import { redactDiagnostic } from '../security/redaction.js';
 import { finishedTaskText, isTaskFinished, readTask } from './tasks.js';
 
-const USAGE = 'Usage: coagent8 wait <task_handle> [--data-dir <dir>] [--timeout-ms <ms>]';
+const USAGE = 'Usage: coagent8 wait <task_handle> [--data-dir <dir>] [--notes-dir <dir>] [--timeout-ms <ms>]';
 const POLL_MS = 500;
 /** A client's background task should end by itself: a day is longer than any delegation. */
 const DEFAULT_TIMEOUT_MS = 24 * 3600 * 1000;
@@ -34,13 +34,15 @@ export async function runWaitCli(
   let timeoutMs = DEFAULT_TIMEOUT_MS;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if ((arg === '--data-dir' || arg === '--timeout-ms') && args[i + 1] === undefined) {
+    if ((arg === '--data-dir' || arg === '--notes-dir' || arg === '--timeout-ms') && args[i + 1] === undefined) {
       err.write(`${USAGE}\n`);
       return 2;
     }
     if (arg === '--data-dir') {
       // The waiter reads the server's store, whatever environment the client's shell passes.
       process.env.coagent8_DIR = args[++i];
+    } else if (arg === '--notes-dir') {
+      process.env.coagent8_END_NOTES_DIR = args[++i];
     } else if (arg === '--timeout-ms') {
       timeoutMs = Number(args[++i]);
       if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
