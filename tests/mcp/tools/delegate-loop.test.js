@@ -19,7 +19,7 @@ const { ToolError } = require('../../../src/contracts/error.ts');
 
 const node = JSON.stringify(process.execPath);
 const PASS = `${node} -e "process.exit(0)"`;
-const FAIL = `${node} -e "console.error('it broke');process.exit(3)"`;
+const FAIL = `${node} -e "console.error('it broke');process.exitCode=3"`;
 
 const workerResult = (status = 'completed') => ({
   isError: status !== 'completed',
@@ -118,7 +118,7 @@ test('the output of a check is redacted before it is cut', async () => {
     "for (let i = 0; i < 3000; i++) console.log('c2VjcmV0'.repeat(9));",
     "console.log('-----END RSA PRIVATE KEY-----');",
     "console.log('after the key');",
-    'process.exit(1);',
+    'process.exitCode = 1;',
   ].join('');
   const file = path.join(tempDir, 'leaky.js');
   fs.writeFileSync(file, script);
@@ -130,7 +130,7 @@ test('the output of a check is redacted before it is cut', async () => {
 
 test('the end of a very long output line stays', async () => {
   const file = path.join(tempDir, 'long-line.js');
-  fs.writeFileSync(file, "console.log('x'.repeat(20000) + ' the real failure');process.exit(1);");
+  fs.writeFileSync(file, "console.log('x'.repeat(20000) + ' the real failure');process.exitCode = 1;");
   const long = await runCheck(`${node} ${JSON.stringify(file)}`, tempDir, null, 60000);
   assert.match(long.tail, /the real failure/);
 });
