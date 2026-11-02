@@ -148,6 +148,21 @@ test('a request cancelled before the turn starts stops the start', async () => {
   assert.equal(fs.existsSync(writerRecord(repo)), false);
 });
 
+test('the deadline of the call bounds a delegation from its first Git read', async () => {
+  const repo = fixtureRepo();
+  await assert.rejects(handleDelegate({ ...REQUEST, timeout_ms: 1 }, repo, null, null, approve), /budget expired/);
+  assert.equal(fs.existsSync(writerRecord(repo)), false);
+});
+
+test('timeout_ms also ends a running delegation', async () => {
+  const repo = fixtureRepo();
+  process.env.CODEX_FIXTURE_MODE = 'interruptible';
+  const started = await handleDelegate({ ...REQUEST, timeout_ms: 1500 }, repo, null, null, approve);
+  const task = await finished(started.structuredContent.taskHandle);
+  assert.equal(task.state, 'timed_out');
+  assert.match(task.result.text, /Observed by CoAgent8/);
+});
+
 test('a repeated start with the same request id returns the existing task', async () => {
   const repo = fixtureRepo();
   process.env.CODEX_FIXTURE_MODE = 'interruptible';
