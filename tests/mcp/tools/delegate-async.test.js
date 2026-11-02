@@ -365,7 +365,11 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
   assert.equal(readTask(live.taskHandle).state, 'running', 'a running task stays');
 });
 
-const endNote = handle => path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`, `${handle}.json`);
+const endNotesDir = () => path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`);
+const endNote = handle => {
+  const name = fs.readdirSync(endNotesDir()).find(entry => entry.startsWith(`${handle}-`));
+  return name ? path.join(endNotesDir(), name) : path.join(endNotesDir(), 'none');
+};
 
 test(
   'a notes directory that is linked or open to others is not trusted',
@@ -373,7 +377,7 @@ test(
   async () => {
     const previous = process.env.TMPDIR;
     process.env.TMPDIR = fs.mkdtempSync(path.join(tempDir, 'tmp-'));
-    const dir = endNote('x').slice(0, -'/x.json'.length);
+    const dir = endNotesDir();
     const task = {
       schemaVersion: 1,
       taskHandle: createTaskHandle(),
@@ -400,7 +404,8 @@ test(
       fs.rmSync(dir, { recursive: true });
       assert.equal(await writeFinalTask(task, refused), true, 'a private one of its own');
     } finally {
-      process.env.TMPDIR = previous;
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
     }
   },
 );

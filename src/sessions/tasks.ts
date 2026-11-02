@@ -122,6 +122,12 @@ export async function writeFinalTask(task: DelegationTask, write: (task: Delegat
   }
 }
 
+/** One data directory's note: another's task can have the same handle. */
+function endNoteName(handle: string): string {
+  const store = crypto.createHash('sha256').update(getDataDir()).digest('hex').slice(0, 16);
+  return `${handle}-${store}.json`;
+}
+
 /**
  * The directory of end notes: outside the data directory, this user's alone.
  * @returns Its path, or null when it cannot be trusted, such as a link or another user's directory.
@@ -147,7 +153,7 @@ function endNotesDir(create: boolean): string | null {
 function writeEndNote(note: DelegationTask): boolean {
   const dir = endNotesDir(true);
   if (!dir) return false;
-  const file = path.join(dir, `${note.taskHandle}.json`);
+  const file = path.join(dir, endNoteName(note.taskHandle));
   const temporary = `${file}.${process.pid}.tmp`;
   try {
     fs.writeFileSync(temporary, JSON.stringify(note), { mode: 0o600, flag: 'wx' });
@@ -173,7 +179,7 @@ function readEndNote(handle: string, startedAt?: string): DelegationTask | null 
   const dir = endNotesDir(false);
   if (!dir || !TASK_HANDLE.test(handle)) return null;
   try {
-    const file = path.join(dir, `${handle}.json`);
+    const file = path.join(dir, endNoteName(handle));
     if (Date.now() - fs.statSync(file).mtimeMs >= TASK_RETENTION_MS) return null;
     const note = JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
     return startedAt === undefined || note.startedAt === startedAt ? note : null;
@@ -182,14 +188,10 @@ function readEndNote(handle: string, startedAt?: string): DelegationTask | null 
   }
 }
 
+/** @throws When the note stays: the new task must not start with it in place. */
 function removeEndNote(handle: string): void {
   const dir = endNotesDir(false);
-  if (!dir) return;
-  try {
-    fs.rmSync(path.join(dir, `${handle}.json`), { force: true });
-  } catch {
-    // Its startedAt still ties it to the earlier task.
-  }
+  if (dir) fs.rmSync(path.join(dir, endNoteName(handle)), { force: true });
 }
 
 /** Removes end notes past the retention of task records. */
