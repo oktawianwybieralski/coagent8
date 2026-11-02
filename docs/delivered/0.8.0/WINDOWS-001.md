@@ -88,3 +88,30 @@ all fixed.
 | --- | --- | --- | --- |
 | codex | `0badd7e` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_b4a6951f2f5efbd5216efcf0` |
 | agy | `0badd7e` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_9cb026053054451322f0c748` |
+
+## WINDOWS-001e, first pass (2026-11-01)
+
+Windows 11, Node 24.21.0, a fresh server from the built bundle with a helper built by the GNU
+toolchain, in scratch repositories. A `SetWinEventHook` observer logged new top-level windows; an
+off-screen control window proved that it records them.
+
+| Backend | Model | `delegate` wrote the file | Tree after a cancelled consult | Console windows |
+| --- | --- | --- | --- | --- |
+| Codex 0.164 | `gpt-6.1-terra` | yes, after the fix below | no survivor | none |
+| Claude Code | `claude-haiku-5-5` | yes | no survivor | none |
+| agy | `gemini-3.8-flash-high` | yes | no survivor | none |
+
+The tree was observed by a read-only process snapshot and was gone within about two seconds, a
+figure that includes the half-second polling. MCP sends no response to a cancelled request, so no
+return time was measured.
+
+Inside the job, also without any window: Chrome `--headless=new`, `git ls-remote` over HTTPS and
+Git Credential Manager `--version`. Defender: real-time protection on, no detection of the helper.
+
+The first run found that Codex wrote nothing on Windows, with and without the helper: its sandbox
+runs PowerShell in ConstrainedLanguage mode, and the worker took the resulting error for a denial.
+A Windows writer now gets a note about it.
+
+Open: a CI-built helper in an installed VSIX in a real client (#109), a real CLI's own descendants
+at cancel, none of which ran in these turns, expiry and the cold agy updater (#110), `arm64` and
+SmartScreen on a file with Mark-of-the-Web (#111).

@@ -91,3 +91,5 @@ Final independent review of #97, base `55b0785`, scope `origin/develop...HEAD`:
 | --- | --- | --- | --- |
 | codex | `8078cad` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_52e66de45a2cef9f2941d5bd` |
 | agy | `8078cad` | READY, coverage COMPLETE, no unresolved P1/P2 | `syn_sess_3f81acd00311bb97a750d4c4` |
+
+Note 2026-11-02: `STANDARDS-001b` is done. The labels exist, and GitHub Issues hold the backlog.

@@ -10,7 +10,19 @@ Do not append another session transcript or treat old test counts as fresh evide
 
 ## Current state
 
-- **Answer language (owner decision 2026-11-01):** branch `feat/backend-answer-language`.
+- **Backlog (owner request 2026-11-02):** GitHub Issues hold it, in the format of
+  [`project.md`](../.agents/project.md#backlog); labels created, first items #106-#120.
+
+- **Asynchronous delegate (`DELEGATE-001c`, `e`, owner decisions 2026-11-01):** on the branch of
+  #105, which grows with this group (owner feedback 2026-11-01: no small PRs). `delegate` is
+  asynchronous by default, `coagent8 wait` and `session` action `task` read the result. Claude
+  Code gets `background_wait`; Codex and agy get `none` until `001a` proves their wake-up.
+
+- **Windows native acceptance (`WINDOWS-001e`, first pass 2026-11-01):** same branch. All three backends wrote through the helper, left no
+  survivor after a cancel and showed no console window. The open items are on the card. Next:
+  `DELEGATE-001a`. Record: [WINDOWS-001 in 0.8.0](delivered/0.8.0/WINDOWS-001.md).
+
+- **Answer language (owner decision 2026-11-01):** merged in #104 (`c50def0`).
   Backends followed the workspace's rule to answer the owner in Polish, inconsistently. The
   server now asks for English before every backend prompt (`answerLanguage`), and the calling
   agent relays. CI also builds the `arm64` helper with `--verify`, which only a tag did before.
@@ -147,7 +159,7 @@ Do not append another session transcript or treat old test counts as fresh evide
   `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID` and a private
   `CLAUDE_CODE_MESSAGING_SOCKET`; the MCP server process was not checked.
   Draft contract in
-  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented);
+  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c);
   re-scoped cards and four open owner decisions in the
   [DELEGATE-001 card](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
   Not reviewed yet.

@@ -35,3 +35,10 @@ test('rate-limit: relative resets read milliseconds before minutes and decimal v
   assert.equal(parseResetTimestamp('try again in 5 minutes and 3 seconds').cooldownMs, 303000);
   assert.equal(parseResetTimestamp('Try again in 3 days.').cooldownMs, 3 * 24 * 3600 * 1000);
 });
+
+test('rate-limit: the quota message of agy counts as a limit', () => {
+  assert.equal(
+    isRateLimitError('Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 19h30m48s.'),
+    true,
+  );
+});

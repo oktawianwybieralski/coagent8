@@ -96,7 +96,16 @@ export type {
 };
 
 /** Per-call options of {@link executeTask} set by the server and tool handlers, never by tool arguments. */
+/** What is known when a backend turn is about to start. */
+export interface TurnStart {
+  sessionHandle: string;
+  backend: string;
+  model: string | null;
+}
+
 export interface TaskOptions {
+  /** Called once when consent and session acquisition passed and the backend turn starts. */
+  onTurnStart?: (start: TurnStart) => Promise<void> | void;
   /** Gate review results on the State Envelope. */
   requireEnvelope?: boolean;
   /** Notices added to the result, such as a deprecated tool name. */
@@ -561,6 +570,7 @@ async function executeTaskInternal(
           onEvent: receive,
           profile: options.profile ?? 'read-only',
         };
+        await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });
         const raw: ExecutionResult = await backend.adapter.execute(
           withAnswerLanguage(prompt, configSnapshot.config.answerLanguage),
           executionOptions,

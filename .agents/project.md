@@ -61,7 +61,15 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 - Priority: `priority: high`, `priority: medium`, `priority: low`
 - Provenance: `found-in:vX.Y.Z` (the version where it was observed)
 
-Labels not yet created in the repository are created by the owner.
+## Backlog
+
+GitHub Issues hold the backlog (owner request 2026-11-02): defects, findings and concrete open
+work, each small enough to close. `docs/ROADMAP.md` keeps the direction and the cards; a card links
+its issues instead of repeating them. An issue has a title that states the problem, then what is
+wrong or missing, `Evidence:` saying how it was verified and what was not, `Expected:` when it is
+not obvious, and `Done when` with a condition that can be checked. It carries one kind label and,
+except for questions, one priority label. Whatever a change finds and does not fix becomes an
+issue, not a note in a PR.
 
 ## Commands
 

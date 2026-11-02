@@ -11,6 +11,7 @@ import { shutdownProcessRunner } from '../execution/process.js';
 import { redactDiagnostic } from '../security/redaction.js';
 import { pruneExpiredSessions } from '../sessions/session.js';
 import { waitForActiveExecutionTasks } from '../execution/controller.js';
+import { stopActiveDelegations } from '../execution/delegation.js';
 import { settlePriceReads } from '../models/prices.js';
 
 export interface StdioServerOptions {
@@ -40,8 +41,10 @@ export async function serveStdio(options: StdioServerOptions = {}): Promise<void
     shuttingDown = true;
     // backgroundMaintenance reports its own failure and never rejects.
     await backgroundMaintenance;
+    const delegationsStopped = stopActiveDelegations();
     await shutdownProcessRunner();
     await waitForActiveExecutionTasks();
+    await delegationsStopped;
     // A background price read stores its result before the process ends.
     await settlePriceReads();
     try {

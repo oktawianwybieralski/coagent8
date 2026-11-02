@@ -248,7 +248,7 @@ supports stdio MCP in Agent mode through the same definition, following
 | --- | --- |
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives |
-| `delegate` | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
+| `delegate` | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session |
 | `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
@@ -272,7 +272,7 @@ rereads everything. `review` adds its verdict.
 The deprecated `analyze`, `debug` and `implement` aliases and the `run` gateway
 still work but are not listed. Every client receives the same seven tools.
 
-`delegate` needs a Git work tree. Codex writes only inside the workspace
+`delegate` needs a Git work tree and, on Windows, the job helper the package carries. Codex writes only inside the workspace
 (its sandbox, without network access); Claude Code's `Edit` and `Write` are
 limited to the workspace but its `Bash` is not; Antigravity runs without its
 sandbox and without a path limit, and only edits files (it runs no commands).

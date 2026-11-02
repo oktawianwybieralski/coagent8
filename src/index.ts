@@ -17,6 +17,7 @@ import { serveStdio } from './mcp/stdio-server.js';
 import { runModelsCli } from './diagnostics/models-cli.js';
 import { runDoctorCli } from './diagnostics/doctor-cli.js';
 import { runSessionCli } from './sessions/session-cli.js';
+import { runWaitCli } from './sessions/wait-cli.js';
 import { runIssueCli } from './diagnostics/issue-cli.js';
 
 /** Standard stream interfaces for CLI execution. */
@@ -96,6 +97,7 @@ export function formatRootHelp(): string {
     '  session list [--json]            List active sessions in current workspace',
     '  session history <handle> [--cursor <cursor>] [--limit <limit>] [--json]',
     '                                   Inspect paginated session turn history',
+    '  wait <task_handle> [--data-dir <dir>] [--timeout-ms <ms>]  Wait for a delegation and print its result',
     '  issue [--open] [--json]          Generate a sanitized bug report to paste into GitHub',
     '  setup [--clients=...]            Register CoAgent8 with native CLI hosts',
     '  repair [--clients=...]           Restore missing or corrupted host registrations',
@@ -201,6 +203,11 @@ export async function runCli(
   if (cmd === 'session') {
     const runSession = deps.runSessionCli ?? runSessionCli;
     return await runSession(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
+  }
+
+  // Blocks until a delegation finishes; a client runs it as a background command.
+  if (cmd === 'wait') {
+    return await runWaitCli(rest, streams.stdout as unknown as NodeJS.WritableStream, streams.stderr as unknown as NodeJS.WritableStream);
   }
 
   // 8. Issue command

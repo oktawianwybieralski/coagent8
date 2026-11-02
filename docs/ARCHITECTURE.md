@@ -1214,7 +1214,7 @@ Owner request 2026-10-21: a coordinating agent hands a coding task to another
 backend, which changes files in the workspace, and gets the observed changes
 back. This is the synchronous first step of [DELEGATE-001](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up);
 asynchronous start, `wait` and caller wake-up (`001c-e`) keep this contract and
-add an immediate handle ([asynchronous delegation](#asynchronous-delegation-and-caller-wake-up-delegate-001c-not-implemented)).
+add an immediate handle ([asynchronous delegation](#asynchronous-delegation-and-caller-wake-up-delegate-001c)).
 `consult` and `review` stay read-only, so a reviewer never edits what it judges.
 
 **Tool `delegate`.** `task` (required): objective and acceptance criteria,
@@ -1274,6 +1274,11 @@ changes cover both turns.
 Codex 0.162 on Windows cannot start a process from Node
 inside its sandbox (`spawn EPERM`, verified natively 2026-10-21), so test runners
 that spawn processes fail there.
+
+**Codex on Windows.** The unelevated sandbox runs PowerShell in ConstrainedLanguage mode, so
+.NET calls fail while cmdlets work (codex-cli 0.164, 2026-11-01). A worker told only to report
+denials took that error for one and stopped without changing anything, so a Windows writer now
+gets a note about it.
 
 **Known limitations.** Claude's `Bash` and agy write wherever the user's account
 can. On Windows, `delegate` requires the job helper, so a cancelled or timed-out
@@ -1352,7 +1357,7 @@ such as a running service or an existing browser instance. A program that needs 
 the job gets `ERROR_ACCESS_DENIED`; `WINDOWS-001e` tests browsers and Git credential
 helpers natively.
 
-## Asynchronous delegation and caller wake-up (DELEGATE-001c, not implemented)
+## Asynchronous delegation and caller wake-up (DELEGATE-001c)
 
 Owner request 2026-10-21: `delegate` delegates. The call returns as soon as the
 worker runs, and the caller is woken when the worker finishes, so a calling
@@ -1360,8 +1365,23 @@ agent no longer wraps the blocking call in a subagent of its own vendor that
 only waits. Planned with a Codex consultation (`gpt-6.1-sol`, session
 `syn_sess_973e692be03b734e8b5fdbaa`); its claims about the current code were
 checked against `src/mcp/server.ts`, `src/execution/delegation.ts` and
-`src/sessions/writer.ts`. Open owner decisions are listed in the
+`src/sessions/writer.ts`. Owner decisions are on the
 [DELEGATE-001 card](ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
+
+**As built (`DELEGATE-001e`, 2026-11-01).** `executeTaskInternal` announces the turn just
+before `adapter.execute` (`onTurnStart`), and `startDelegation` returns then. So consent still
+uses the open request, the session handle is known, and a refusal is still the call's error;
+there is no `queued` state on disk, because a task is recorded only when its turn starts. The
+task record (`<data>/delegations/`) stores the result before the writer is released and turns
+final after the release, so a woken caller can delegate again at once. A `request_id` reused for
+another request is refused. A task of a dead server reads `interrupted` with a warning, because
+on POSIX its process group can outlive the server (`CUR-011`). Three things
+differ from the draft below: completed, notified and fetched are not separate states, because
+the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
+released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat
+of `request_id` is recognized only once its turn has started. Only clients whose wake-up was
+observed get `wakeup: background_wait`; today that is Claude Code. Others get `none` and
+the same `wait_argv`.
 
 **Mode.** `mode: "async" | "sync"`. `async` is the target default; `sync` keeps
 the DELEGATE-001w contract. There is no `auto`: the same request runs the same
@@ -1446,7 +1466,7 @@ elicitation and MCP tasks do not. Each client therefore needs its own mechanism:
 | --- | --- | --- |
 | Claude Code | The agent runs the returned wait command as a background task; its exit starts a new turn | Observed 2026-10-13 in the VS Code extension |
 | Claude Code | Channels: the server declares `experimental['claude/channel']` and emits `notifications/claude/channel`; the event arrives in the open session, queued while it is busy | Research preview (documentation read 2026-10-21): registers only with `--channels` for an allowlisted plugin (the default list is `claude-plugins-official`) or with `--dangerously-load-development-channels`, which works only interactively and is ignored with `-p` and the Agent SDK; needs claude.ai or Console sign-in and `channelsEnabled` on Team and Enterprise; a server that negotiates MCP revision 2026-07-28 is not registered by the v2 MCP client. Untested in the VS Code extension; usable only after an official listing |
-| Codex | `codex queue --thread <id>` | Present in codex-cli 0.162; idle, busy and unloaded threads untested |
+| Codex | `codex queue --thread <id>` | codex-cli 0.164, 2026-11-01: for a thread no client has open it accepts the message and starts no turn within 40 s; an open window is untested |
 | agy | Background `run_command` re-invocation | Claimed; untested |
 | Any | `session` or a bounded `wait` | Fallback; the caller has to ask |
 

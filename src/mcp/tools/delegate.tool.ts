@@ -8,13 +8,21 @@ import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
-import { executeDelegation } from '../../execution/delegation.js';
+import { executeDelegation, startDelegation } from '../../execution/delegation.js';
+import { getDataDir, getRuntimePath } from '../../paths.js';
+import { isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
 import type { TaskOptions } from '../../execution/controller.js';
 import { normalizeScopeEntry } from '../../workspace/changes.js';
 import { ToolError } from '../../contracts/error.js';
 
 /** Arguments of `delegate`; its `scope` is a path list, unlike the review range of `review`. */
-export type DelegateArguments = Omit<ToolArguments, 'scope'> & { task?: string; scope?: string[]; checks?: string[] };
+export type DelegateArguments = Omit<ToolArguments, 'scope'> & {
+  task?: string;
+  scope?: string[];
+  checks?: string[];
+  mode?: 'async' | 'sync';
+  request_id?: string;
+};
 
 /** Scope entries and checks accepted at most. */
 const MAX_LIST_ENTRIES = 50;
@@ -22,7 +30,8 @@ const MAX_LIST_ENTRIES = 50;
 export function getCanonicalDelegateToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.DELEGATE,
-    description: 'Another agent changes code here, without commits; returns its report and the files seen changing. Review it.',
+    description:
+      'Another agent changes code here, without commits; returns a task handle while it runs, then its report and the files seen changing. Review it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -30,7 +39,12 @@ export function getCanonicalDelegateToolDefinition() {
         task: { type: 'string', description: 'Change and acceptance criteria; name files, do not paste them.' },
         scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may change; default all.' },
         checks: { type: 'array', items: { type: 'string' }, description: 'Commands it runs, e.g. npm test.' },
+        mode: { type: 'string', enum: ['async', 'sync'] },
+        request_id: { type: 'string' },
         ...EXECUTION_PARAMETERS,
+        // Said in full on consult; the budget of the tool definitions counts every copy.
+        backend: { ...EXECUTION_PARAMETERS.backend, description: 'As in consult.' },
+        reasoning_effort: { ...EXECUTION_PARAMETERS.reasoning_effort, description: 'As in consult.' },
       },
       required: ['task'],
     },
@@ -54,6 +68,7 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
       ? 'Run the checks below and fix failures your change causes.'
       : "Run the project's relevant tests or checks if there are any, and fix failures your change causes.",
     // agy writers may not run commands, and a sandbox can deny one (DELEGATE-001w).
+    'A command that fails for another reason is no denial: try another way to make the change.',
     'If a command is denied or cannot start, do not work around the restriction: report that check as NOT_RUN; the calling agent runs it.',
     'End with a short report: the files you changed and why, each check with PASS, FAIL or NOT_RUN, and anything left undone.',
     'TASK:',
@@ -65,6 +80,51 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
     .join('\n');
 }
 
+/** The command that blocks until a task finishes, built from this server's own process. */
+export function waitCommand(taskHandle: string): { argv: string[]; env: Record<string, string> } {
+  return {
+    argv: [process.execPath, getRuntimePath(), 'wait', '--data-dir', getDataDir(), taskHandle],
+    // VS Code's Electron runs a script only with this set.
+    env: process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {},
+  };
+}
+
+/** Clients observed to start a new agent turn when a background command exits (`DELEGATE-001a`). */
+const BACKGROUND_WAKE_CLIENTS = /^claude-code/i;
+
+function delegationStarted(task: DelegationTask, clientName?: string) {
+  const { argv, env } = waitCommand(task.taskHandle);
+  const wakeup = BACKGROUND_WAKE_CLIENTS.test(clientName ?? '') ? 'background_wait' : 'none';
+  const finished = isTaskFinished(task.state);
+  const lines = [
+    finished ? 'Delegation already finished.' : 'Delegation started.',
+    `task_handle: ${task.taskHandle}`,
+    `session_handle: ${task.sessionHandle}`,
+    `state: ${task.state}`,
+    `wakeup: ${wakeup}`,
+    `wait_argv: ${JSON.stringify(argv)}`,
+    ...(Object.keys(env).length ? [`wait_env: ${JSON.stringify(env)}`] : []),
+    '',
+    finished
+      ? 'Read the result with the session tool, action task.'
+      : wakeup === 'background_wait'
+        ? 'Start wait_argv now as a background command: you are woken when it exits. Do not edit this work tree while the worker runs.'
+        : 'Read the result later with the session tool, action task, or run wait_argv. Do not edit this work tree while the worker runs.',
+  ];
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+    structuredContent: {
+      schemaVersion: 1,
+      taskHandle: task.taskHandle,
+      sessionHandle: task.sessionHandle,
+      state: task.state,
+      wakeup,
+      waitArgv: argv,
+      waitEnv: env,
+    },
+  };
+}
+
 /**
  * Runs a delegated change.
  * @throws `INPUT_LIMIT` for a scope entry that is absolute or leaves the workspace, or too many entries.
@@ -74,7 +134,7 @@ export async function handleDelegate(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent' | 'budget' | 'context' | 'clock' | 'warnings'> = {},
+  options: Pick<TaskOptions, 'askConsent' | 'budget' | 'context' | 'clock' | 'warnings'> & { clientName?: string } = {},
 ) {
   const task = typeof args.task === 'string' ? args.task.trim() : '';
   if (!task) throw new ToolError('INPUT_LIMIT', 'task is required.');
@@ -95,7 +155,26 @@ export async function handleDelegate(
   ]
     .filter(Boolean)
     .join('\n');
-  const { scope: _scope, checks: _checks, task: _task, ...request } = args;
+  const { scope: _scope, checks: _checks, task: _task, mode, request_id: requestId, ...request } = args;
+  if (mode !== undefined && mode !== 'async' && mode !== 'sync') throw new ToolError('INPUT_LIMIT', 'mode must be async or sync.');
+  if (mode !== 'sync') {
+    const started = await startDelegation({
+      prompt: delegatePrompt(task, effectiveScope, checks),
+      publicInput,
+      args: request,
+      cwd: workspaceCwd,
+      scope: effectiveScope,
+      requestId: typeof requestId === 'string' && requestId ? requestId : undefined,
+      requestSignal: abortSignal,
+      format: outcome => {
+        const formatted = formatExecutionResult(outcome);
+        return { text: formatted.content.map(part => part.text).join('\n'), isError: Boolean(formatted.isError) };
+      },
+      options: { requireEnvelope: false, askConsent: options.askConsent, warnings: options.warnings, clock: options.clock },
+    });
+    if ('outcome' in started) return formatExecutionResult(started.outcome);
+    return delegationStarted(started.task, options.clientName);
+  }
   const outcome = await executeDelegation(
     delegatePrompt(task, effectiveScope, checks),
     publicInput,

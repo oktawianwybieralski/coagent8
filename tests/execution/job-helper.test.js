@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 const { jobHelperPath, jobTreeEnded, locateJobHelper, parseJobStatus } = require('../../src/execution/job-helper.ts');
-const { runCommand, withRequiredJobHelper } = require('../../src/execution/process.ts');
+const { activeProcesses, runCommand, withRequiredJobHelper } = require('../../src/execution/process.ts');
 
 // WINDOWS-001: the helper is built by CI on Windows and by `cargo build --release` locally.
 // The helper starts children with CREATE_NO_WINDOW and is started hidden, so no window can open.
@@ -88,6 +88,7 @@ test('a launch inside a writer that finds no helper fails instead of starting un
   const marker = path.join(dir, 'started');
   const result = await withRequiredJobHelper(
     () => runCommand(process.execPath, ['-e', 'require("fs").writeFileSync(process.argv[1],"1")', marker], { cwd: dir, timeoutMs: 10000 }),
+    () => {},
     () => undefined,
   );
   assert.equal(result.status, 'failed');
@@ -268,6 +269,29 @@ test('runCommand maps a program the system cannot start to a typed failure', { s
   assert.equal(result.status, 'failed');
   assert.equal(result.error.code, 'PROCESS_ERROR');
   assert.match(result.error.message, /job helper could not start the CLI at process-create/);
+});
+
+test('a writer learns when the end of the tree stays unconfirmed, and not otherwise', { skip }, async t => {
+  const { dir, rootWithDescendant } = fixture(t);
+  const confirmed = [];
+  await withRequiredJobHelper(
+    () => runCommand(process.execPath, ['-e', 'process.exit(0)'], { cwd: dir, timeoutMs: 15000 }),
+    () => confirmed.push('unconfirmed'),
+  );
+  assert.deepEqual(confirmed, [], 'a helper that reports the end of the tree');
+
+  const marker = path.join(dir, 'unconfirmed');
+  const unconfirmed = [];
+  const run = withRequiredJobHelper(
+    () => runCommand(process.execPath, rootWithDescendant(marker), { cwd: dir, timeoutMs: 15000 }),
+    () => unconfirmed.push('unconfirmed'),
+  );
+  await waitForBeat(marker);
+  // A helper killed from outside can report nothing.
+  for (const proc of activeProcesses) proc.kill();
+  const result = await run;
+  assert.equal(result.treeEnded, false);
+  assert.deepEqual(unconfirmed, ['unconfirmed']);
 });
 
 test('a forced stop returns only after the descendant ended', { skip }, async t => {
