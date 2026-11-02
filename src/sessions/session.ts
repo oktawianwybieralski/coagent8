@@ -18,9 +18,9 @@ import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.j
 import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from './identity.js';
 import { redactDiagnostic } from '../security/index.js';
-import { getSessionsDir, isProcessAlive, getSessionFilePath } from './activity.js';
+import { getSessionsDir, isProcessAlive, isRecordedProcessAlive, ownProcessIdentity, getSessionFilePath } from './activity.js';
 
-export { getSessionsDir, isProcessAlive, getSessionFilePath };
+export { getSessionsDir, isProcessAlive, isRecordedProcessAlive, getSessionFilePath };
 
 const DEFAULT_SESSION_TTL_MS = 2 * 3600 * 1000;
 /** Longest stored review reason; the reference to it stays bounded. */
@@ -74,11 +74,12 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
     return null;
   if (s.activePid != null && (!Number.isSafeInteger(s.activePid) || s.activePid <= 0)) return null;
   if (s.activeTurnAt != null && (!Number.isFinite(s.activeTurnAt) || s.activeTurnAt < 0)) return null;
+  if (s.activePidIdentity != null && (typeof s.activePidIdentity !== 'string' || s.activePidIdentity.length > 256)) return null;
   if (s.state && !['idle', 'running', 'invalidated', 'closed'].includes(s.state)) return null;
   if (s.schemaVersion != null && s.schemaVersion !== 2) return null;
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
   if (s.turnCount != null && (!Number.isSafeInteger(s.turnCount) || s.turnCount < 0)) return null;
-  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode])
+  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode, s.callerSession])
     if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   if (s.profile != null && s.profile !== 'workspace-write') return null;
   const { lastReview: rawReview, ...rest } = s;
@@ -103,7 +104,7 @@ function readRecord(file: string, handle: string): SessionRecord | null {
   }
 }
 function active(s: SessionRecord): boolean {
-  return isProcessAlive(s.activePid);
+  return isRecordedProcessAlive(s.activePid, s.activePidIdentity);
 }
 export function getSession(handle: string, options: GetSessionOptions = {}): SessionRecord | null {
   const file = getSessionFilePath(handle);
@@ -250,6 +251,7 @@ export function createSession(
     createdAt: now,
     lastUsedAt: now,
     ...(profile === 'workspace-write' ? { profile } : {}),
+    ...(process.env.CLAUDE_CODE_SESSION_ID ? { callerSession: process.env.CLAUDE_CODE_SESSION_ID } : {}),
   };
   saveSessionFile(getSessionFilePath(handle)!, s);
   return s;
@@ -290,6 +292,7 @@ export async function acquireSessionTurn(
       const token = crypto.randomUUID();
       s.turnToken = token;
       s.activePid = process.pid;
+      s.activePidIdentity = ownProcessIdentity() ?? null;
       s.activeTurnAt = Date.now();
       s.state = 'running';
       s.turnCount = (s.turnCount || 0) + 1;
@@ -560,7 +563,7 @@ export async function cancelSession(handle: string, workspace?: string): Promise
     const s = readRecord(f, sanitized);
     if (!s) return;
 
-    if (s.activePid && s.activePid !== process.pid && isProcessAlive(s.activePid)) {
+    if (s.activePid && s.activePid !== process.pid && isRecordedProcessAlive(s.activePid, s.activePidIdentity)) {
       throw new Error(`Cannot cancel session '${sanitized}': actively running in another CoAgent8 server process (PID ${s.activePid}).`);
     }
 

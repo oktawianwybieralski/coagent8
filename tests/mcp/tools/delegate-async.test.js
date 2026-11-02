@@ -11,6 +11,8 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-delegate-async-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
+// Never the user's own notes.
+process.env.coagent8_END_NOTES_DIR = path.join(tempDir, 'notes');
 process.env.CODEX_PATH = path.resolve(__dirname, '../../fixtures/codex-cli/codex.cjs');
 process.env.CODEX_FIXTURE_CAPTURE = path.join(tempDir, 'capture.json');
 process.env.CODEX_CONFIG_PATH = path.join(tempDir, 'config.toml');
@@ -19,6 +21,7 @@ const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/s
 const { saveConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
+const { ownProcessIdentity } = require('../../../src/sessions/activity.ts');
 const { readTask, writeFinalTask, writeTask, createTaskHandle, pruneTasks } = require('../../../src/sessions/tasks.ts');
 const { runWaitCli } = require('../../../src/sessions/wait-cli.ts');
 const { WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
@@ -73,7 +76,7 @@ test('delegate returns the task while the worker runs, then the result carries t
   assert.match(taskHandle, /^task_[a-f0-9]{32}$/);
   assert.match(sessionHandle, /^syn_sess_/);
   assert.equal(wakeup, 'background_wait');
-  assert.deepEqual(waitArgv.slice(-4), ['wait', '--data-dir', process.env.coagent8_DIR, taskHandle]);
+  assert.deepEqual(waitArgv.slice(-6), ['wait', '--data-dir', process.env.coagent8_DIR, '--notes-dir', endNotesDir(), taskHandle]);
   assert.match(started.content[0].text, /Start wait_argv now as a background command/);
 
   const task = await finished(taskHandle);
@@ -156,8 +159,9 @@ test('the deadline of the call bounds a delegation from its first Git read', asy
 
 test('timeout_ms also ends a running delegation', async () => {
   const repo = fixtureRepo();
+  // Long enough that Git under a full test run does not spend the budget before the turn.
   process.env.CODEX_FIXTURE_MODE = 'interruptible';
-  const started = await handleDelegate({ ...REQUEST, timeout_ms: 1500 }, repo, null, null, approve);
+  const started = await handleDelegate({ ...REQUEST, timeout_ms: 5000 }, repo, null, null, approve);
   const task = await finished(started.structuredContent.taskHandle);
   assert.equal(task.state, 'timed_out');
   assert.match(task.result.text, /Observed by CoAgent8/);
@@ -305,7 +309,8 @@ test('a final record survives failed writes: first retried, then as a short note
   assert.equal(noted.written[0].state, 'failed');
   assert.match(noted.written[0].result.text, /could not be stored/);
 
-  assert.equal(await writeFinalTask(task, failing(4).write), false, 'it reports and never rejects');
+  assert.equal(await writeFinalTask(task, failing(4).write), true, 'the end note outside the data directory');
+  fs.rmSync(endNote(task.taskHandle));
 });
 
 test('the task action shows a stored result only with a final state', async () => {
@@ -360,4 +365,137 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
   pruneTasks(Date.now() + 8 * 24 * 3600 * 1000);
   assert.equal(readTask(old.taskHandle), null);
   assert.equal(readTask(live.taskHandle).state, 'running', 'a running task stays');
+});
+
+const endNotesDir = () => process.env.coagent8_END_NOTES_DIR;
+const endNote = handle => {
+  const name = fs.readdirSync(endNotesDir()).find(entry => entry.startsWith(`${handle}-`));
+  return name ? path.join(endNotesDir(), name) : path.join(endNotesDir(), 'none');
+};
+
+test(
+  'a notes directory that is linked or open to others is not trusted',
+  { skip: process.platform === 'win32' ? 'POSIX modes and links' : false },
+  async () => {
+    const previous = process.env.coagent8_END_NOTES_DIR;
+    const dir = path.join(tempDir, 'notes-under-test');
+    process.env.coagent8_END_NOTES_DIR = dir;
+    const task = {
+      schemaVersion: 1,
+      taskHandle: createTaskHandle(),
+      state: 'completed',
+      workspace: tempDir,
+      sessionHandle: 's',
+      backend: 'codex',
+      model: 'm',
+      serverPid: process.pid,
+      startedAt: new Date().toISOString(),
+    };
+    const refused = async () => {
+      throw new Error('disk full');
+    };
+    try {
+      const target = fs.mkdtempSync(path.join(tempDir, 'elsewhere-'));
+      fs.symlinkSync(target, dir);
+      assert.equal(await writeFinalTask(task, refused), false);
+      assert.deepEqual(fs.readdirSync(target), [], 'nothing was written through the link');
+      fs.rmSync(dir);
+      fs.mkdirSync(dir, { mode: 0o755 });
+      fs.chmodSync(dir, 0o755);
+      assert.equal(await writeFinalTask(task, refused), false, 'open to other users');
+      fs.rmSync(dir, { recursive: true });
+      assert.equal(await writeFinalTask(task, refused), true, 'a private one of its own');
+    } finally {
+      process.env.coagent8_END_NOTES_DIR = previous;
+    }
+  },
+);
+
+test('a final state that cannot be stored in the data directory still reaches a reader', async () => {
+  const taskHandle = createTaskHandle();
+  const task = {
+    schemaVersion: 1,
+    taskHandle,
+    state: 'completed',
+    workspace: tempDir,
+    sessionHandle: 's',
+    backend: 'codex',
+    model: 'm',
+    serverPid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
+  await writeTask({ ...task, state: 'running' });
+  const refused = async () => {
+    throw new Error('disk full');
+  };
+  assert.equal(await writeFinalTask(task, refused), true);
+  const read = readTask(taskHandle);
+  assert.equal(read.state, 'failed');
+  assert.match(read.result.text, /could not be stored/);
+  await writeTask({ ...task, state: 'running', startedAt: '2030-01-01T00:00:00.000Z' });
+  assert.equal(readTask(taskHandle).state, 'running', 'a note of an earlier task with this handle does not count');
+  assert.equal(fs.existsSync(endNote(taskHandle)), false, 'and starting that task removed it');
+});
+
+test('a running task whose PID now names a later process reads as interrupted', async () => {
+  const taskHandle = createTaskHandle();
+  await writeTask({
+    schemaVersion: 1,
+    taskHandle,
+    state: 'running',
+    workspace: tempDir,
+    sessionHandle: 's',
+    backend: 'codex',
+    model: 'm',
+    serverPid: process.pid,
+    serverIdentity: `${ownProcessIdentity()}-earlier`,
+    startedAt: new Date().toISOString(),
+  });
+  assert.equal(readTask(taskHandle).state, 'interrupted');
+});
+
+test('a waiter reads the end note from the directory the server named', async () => {
+  const taskHandle = createTaskHandle();
+  const task = {
+    schemaVersion: 1,
+    taskHandle,
+    state: 'completed',
+    workspace: tempDir,
+    sessionHandle: 's',
+    backend: 'codex',
+    model: 'm',
+    serverPid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
+  await writeTask({ ...task, state: 'running' });
+  await writeFinalTask(task, async () => {
+    throw new Error('disk full');
+  });
+  const named = endNotesDir();
+  process.env.coagent8_END_NOTES_DIR = path.join(tempDir, 'the-shell-of-the-client-points-elsewhere');
+  let text = '';
+  const out = { write: chunk => (text += chunk) };
+  try {
+    assert.equal(await runWaitCli([taskHandle, '--notes-dir', named, '--timeout-ms', '0'], out, out), 1);
+    assert.match(text, /could not be stored/);
+  } finally {
+    process.env.coagent8_END_NOTES_DIR = named;
+  }
+  fs.rmSync(endNote(taskHandle));
+});
+
+test('pruning end notes removes old notes and nothing else in that directory', () => {
+  const dir = endNotesDir();
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const old = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+  const note = path.join(dir, `task_${'a'.repeat(32)}-${'b'.repeat(16)}.json`);
+  const other = path.join(dir, 'a-file-of-the-user.txt');
+  for (const file of [note, other]) {
+    fs.writeFileSync(file, '{}');
+    fs.utimesSync(file, old, old);
+  }
+  pruneTasks();
+  assert.equal(fs.existsSync(note), false);
+  assert.equal(fs.existsSync(other), true);
+  fs.rmSync(other);
 });

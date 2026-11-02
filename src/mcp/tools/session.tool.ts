@@ -17,6 +17,7 @@ export const sessionToolDefinition = {
     properties: {
       action: { type: 'string', enum: ['list', 'history', 'close', 'task'] },
       task_handle: { type: 'string' },
+      mine: { type: 'boolean' },
       session_handle: { type: 'string', description: 'history/close.' },
       cursor: { type: 'string', description: 'history.' },
       limit: { type: 'integer', minimum: 1, maximum: 100, description: 'history.' },
@@ -75,7 +76,14 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
     };
   }
   if (action === 'list') {
-    const sessions = listSessions(workspace).map(publicSessionRecord);
+    const caller = process.env.CLAUDE_CODE_SESSION_ID;
+    const onlyMine = (args as { mine?: unknown }).mine === true;
+    if (onlyMine && !caller) {
+      throw new ToolError('INPUT_LIMIT', 'This client exposes no session id to filter by; list without mine.');
+    }
+    const sessions = listSessions(workspace)
+      .filter(session => !onlyMine || session.callerSession === caller)
+      .map(publicSessionRecord);
     if (!sessions.length) {
       return {
         content: [{ type: 'text' as const, text: '> CoAgent8: No active sessions found.' }],

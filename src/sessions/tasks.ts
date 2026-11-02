@@ -10,12 +10,13 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { ToolError } from '../contracts/index.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
-import { isProcessAlive } from './activity.js';
+import { isRecordedProcessAlive } from './activity.js';
 
 export type TaskState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out' | 'interrupted';
 
@@ -29,6 +30,8 @@ export interface DelegationTask {
   model: string | null;
   /** The server process that owns the worker. */
   serverPid: number;
+  /** Identity of `serverPid`, so a reused PID is not taken for the running server. */
+  serverIdentity?: string;
   startedAt: string;
   finishedAt?: string;
   /** The calling agent's own session, when its client exposes one; a label, never an authority. */
@@ -77,6 +80,8 @@ export function isTaskFinished(state: TaskState): boolean {
  * @param task - The record.
  */
 export async function writeTask(task: DelegationTask): Promise<void> {
+  // A new task of a reused handle: a note of the earlier one must not answer for it.
+  if (task.state === 'running') removeEndNote(task.taskHandle);
   fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
   await atomicWrite(taskFile(task.taskHandle), JSON.stringify(task));
 }
@@ -101,18 +106,114 @@ export async function writeFinalTask(task: DelegationTask, write: (task: Delegat
       await new Promise(resolve => setTimeout(resolve, FINAL_WRITE_RETRY_MS));
     }
   }
+  const note: DelegationTask = {
+    ...task,
+    state: 'failed',
+    result: {
+      text: 'The worker ended, but its result could not be stored. Inspect the work tree with git status and git diff.',
+      isError: true,
+    },
+  };
   try {
-    await write({
-      ...task,
-      state: 'failed',
-      result: {
-        text: 'The worker ended, but its result could not be stored. Inspect the work tree with git status and git diff.',
-        isError: true,
-      },
-    });
+    await write(note);
     return true;
   } catch {
+    return writeEndNote(note);
+  }
+}
+
+const END_NOTE_FILE = /^task_[a-f0-9]{32}-[a-f0-9]{16}\.json(\.\d+\.tmp)?$/;
+
+/** One data directory's note: another's task can have the same handle. */
+function endNoteName(handle: string): string {
+  const store = crypto.createHash('sha256').update(getDataDir()).digest('hex').slice(0, 16);
+  return `${handle}-${store}.json`;
+}
+
+/**
+ * Where end notes go. A waiter is told the server's, as its temporary directory can differ.
+ * @param waiterDirectory - The directory a waiter was given; it is checked like any other.
+ */
+export function endNotesPath(waiterDirectory = process.env.coagent8_END_NOTES_DIR): string {
+  return waiterDirectory || path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`);
+}
+
+/**
+ * The directory of end notes: outside the data directory, this user's alone.
+ * @returns Its path, or null when it cannot be trusted, such as a link or another user's directory.
+ */
+function endNotesDir(create: boolean): string | null {
+  const dir = endNotesPath();
+  try {
+    if (create) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const stat = fs.lstatSync(dir);
+    if (!stat.isDirectory()) return null;
+    // On Windows the temporary directory is private to the user's profile.
+    if (process.getuid && (stat.uid !== process.getuid() || (stat.mode & 0o077) !== 0)) return null;
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stores the end of a task outside the data directory, which has just refused it (#121).
+ * @returns Whether a reader can now learn the end.
+ */
+function writeEndNote(note: DelegationTask): boolean {
+  const dir = endNotesDir(true);
+  if (!dir) return false;
+  const file = path.join(dir, endNoteName(note.taskHandle));
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(note), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, file);
+    return true;
+  } catch {
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch {
+      // Removed with the directory's old notes.
+    }
     return false;
+  }
+}
+
+/**
+ * The end note of a task.
+ * @param handle - The task handle.
+ * @param startedAt - The start of the task the reader has a record of: a note of an earlier task
+ * with the same handle does not count.
+ */
+function readEndNote(handle: string, startedAt?: string): DelegationTask | null {
+  const dir = endNotesDir(false);
+  if (!dir || !TASK_HANDLE.test(handle)) return null;
+  try {
+    const file = path.join(dir, endNoteName(handle));
+    if (Date.now() - fs.statSync(file).mtimeMs >= TASK_RETENTION_MS) return null;
+    const note = JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
+    return startedAt === undefined || note.startedAt === startedAt ? note : null;
+  } catch {
+    return null;
+  }
+}
+
+/** @throws When the note stays: the new task must not start with it in place. */
+function removeEndNote(handle: string): void {
+  const dir = endNotesDir(false);
+  if (dir) fs.rmSync(path.join(dir, endNoteName(handle)), { force: true });
+}
+
+/** Removes end notes past the retention of task records. */
+function pruneEndNotes(now: number): void {
+  const dir = endNotesDir(false);
+  if (!dir) return;
+  for (const name of fs.readdirSync(dir)) {
+    // A waiter can name any directory: only what this code wrote there is ever removed.
+    if (!END_NOTE_FILE.test(name)) continue;
+    const file = path.join(dir, name);
+    const modified = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+    if (modified !== undefined && now - modified >= TASK_RETENTION_MS) fs.rmSync(file, { force: true });
   }
 }
 
@@ -128,10 +229,17 @@ export function readTask(handle: string): DelegationTask | null {
   try {
     task = JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    // The data directory itself may be what failed, so a note can answer for its record.
+    const code = (err as NodeJS.ErrnoException).code;
+    const note = readEndNote(handle);
+    if (note) return note;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null;
     throw new ToolError('PROTOCOL_ERROR', `The task record ${handle} cannot be read.`);
   }
-  return task.state === 'running' && !isProcessAlive(task.serverPid) ? { ...task, state: 'interrupted' } : task;
+  if (task.state !== 'running') return task;
+  const ended = readEndNote(handle, task.startedAt);
+  if (ended) return ended;
+  return isRecordedProcessAlive(task.serverPid, task.serverIdentity) ? task : { ...task, state: 'interrupted' };
 }
 
 /**
@@ -152,6 +260,7 @@ export function finishedTaskText(task: DelegationTask): string {
  * @param now - Reference time in epoch milliseconds.
  */
 export function pruneTasks(now = Date.now()): void {
+  pruneEndNotes(now);
   let names: string[];
   try {
     names = fs.readdirSync(tasksDir());

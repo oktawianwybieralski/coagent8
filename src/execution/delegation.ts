@@ -19,10 +19,11 @@
 import crypto from 'node:crypto';
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/index.js';
+import { ownProcessIdentity } from '../sessions/activity.js';
 import { acquireWriterLease } from '../sessions/writer.js';
 import { createExecutionBudget } from './runtime/budget.js';
 import { jobHelperPath } from './job-helper.js';
-import { withRequiredJobHelper } from './process.js';
+import { withRequiredJobHelper, withWorkerGroups } from './process.js';
 import { createTaskHandle, pruneTasks, readTask, writeFinalTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
 import { captureWorkspace, compareWorkspace, readWorkspaceRepository, type WorkspaceSnapshot } from '../workspace/changes.js';
 import { executeTask, type ExecutionRequest, type TaskOptions } from './controller.js';
@@ -62,7 +63,10 @@ export async function executeDelegation(
   try {
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const runTask = () =>
-      executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...taskOptions, profile: 'workspace-write' });
+      withWorkerGroups(
+        () => executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...taskOptions, profile: 'workspace-write' }),
+        lease,
+      );
     outcome = await (process.platform === 'win32'
       ? withRequiredJobHelper(runTask, () => {
           treeUnconfirmed = true;
@@ -217,6 +221,7 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
         backend: turn.backend,
         model: turn.model,
         serverPid: process.pid,
+        serverIdentity: ownProcessIdentity(),
         startedAt: new Date().toISOString(),
         ...(callerSession ? { callerSession } : {}),
         ...(fingerprint ? { requestFingerprint: fingerprint } : {}),
