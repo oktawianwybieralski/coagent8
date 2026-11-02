@@ -73,8 +73,10 @@ export async function executeDelegation(
       if (!supervise) return first;
       // Each later turn has its own bound within what is left of the task's budget.
       const inRound: Supervision['inRound'] = async run => {
+        const remainingMs = Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY);
+        if (remainingMs <= 0) throw new ToolError('TIMEOUT', 'The task budget ended before the next turn.');
         const budget = createExecutionBudget({
-          totalBudgetMs: Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY),
+          totalBudgetMs: remainingMs,
           parentSignal: abortSignal ?? undefined,
           clock: options.clock,
         });

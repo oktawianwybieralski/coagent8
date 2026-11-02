@@ -415,6 +415,21 @@ test('a later turn has its own time limit, also without a limit on the task', as
   assert.equal(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), false);
 });
 
+test('a spent task budget is a timeout of the next turn', async () => {
+  const repo = fixtureRepo();
+  let refusal;
+  await executeDelegation('Change it', 'Change it', { backend: 'codex', model: MODEL }, repo, [], null, null, {
+    ...approve,
+    requireEnvelope: false,
+    loopTurnMs: 0,
+    supervise: async (first, turn) => {
+      refusal = await turn.fix('More').catch(err => err);
+      return first;
+    },
+  });
+  assert.equal(refusal.code, 'TIMEOUT');
+});
+
 test('the tool definition offers the loop', () => {
   assert.equal(getCanonicalDelegateToolDefinition().inputSchema.properties.loop.type, 'boolean');
 });
