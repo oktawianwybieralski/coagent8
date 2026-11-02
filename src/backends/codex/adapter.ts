@@ -50,21 +50,21 @@ export function codexTurnPrompt(prompt: string, profile: string, platform: NodeJ
   return profile === 'workspace-write' && platform === 'win32' ? `${prompt}\n\n${CODEX_WINDOWS_WRITE_NOTE}` : prompt;
 }
 
-/** Upper bound for a Codex prompt payload (4 MiB). */
-export const CODEX_MAX_PROMPT_BYTES = 4 * 1024 * 1024;
+/**
+ * Longest prompt Codex accepts, in Unicode characters. Codex itself refuses a longer one, after
+ * the process started, with `Input exceeds the maximum length of 1048576 characters`.
+ */
+export const CODEX_MAX_INPUT_CHARS = 1024 * 1024;
+
+/** Bytes of the longest prompt, at 4 bytes per character, for the runner's input bound (4 MiB). */
+export const CODEX_MAX_PROMPT_BYTES = CODEX_MAX_INPUT_CHARS * 4;
 
 /**
  * Upper bound for a single Codex app-server JSON-RPC line (16 MiB).
- * Accommodates prompts up to 4 MiB even with heavy escaping (e.g. 2x for newlines
- * or quotes plus framing headroom), while capping serialized JSON lines (FEEDBACK-061g).
+ * Accommodates the longest prompt even with heavy escaping (6x for control characters
+ * plus framing headroom), while capping serialized JSON lines (FEEDBACK-061g).
  */
 export const CODEX_MAX_LINE_BYTES = 16 * 1024 * 1024;
-
-/** RPC framing headroom reserved within a single line (64 KiB). */
-export const CODEX_LINE_FRAMING_BYTES = 64 * 1024;
-
-/** Maximum allowable serialized JSON string bytes for the prompt. */
-export const CODEX_MAX_SERIALIZED_PROMPT_BYTES = CODEX_MAX_LINE_BYTES - CODEX_LINE_FRAMING_BYTES;
 
 export const VALID_REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -217,15 +217,12 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     return rejected('SESSION_INVALID', 'Invalid native Codex session ID.');
   const profile = options.profile ?? 'read-only';
   const turnPrompt = codexTurnPrompt(prompt, profile);
-  const promptBytes = Buffer.byteLength(turnPrompt, 'utf8');
-  if (promptBytes > CODEX_MAX_PROMPT_BYTES) {
-    return rejected('INPUT_LIMIT', `Prompt exceeds the UTF-8 byte limit (${promptBytes} > ${CODEX_MAX_PROMPT_BYTES} bytes).`);
-  }
-  const serializedPromptBytes = Buffer.byteLength(JSON.stringify(turnPrompt), 'utf8');
-  if (serializedPromptBytes > CODEX_MAX_SERIALIZED_PROMPT_BYTES) {
+  // UTF-16 length first: it is never below the character count, so a usual prompt skips the count.
+  const promptChars = turnPrompt.length > CODEX_MAX_INPUT_CHARS ? [...turnPrompt].length : 0;
+  if (promptChars > CODEX_MAX_INPUT_CHARS) {
     return rejected(
       'INPUT_LIMIT',
-      `Serialized prompt exceeds the line record limit (${serializedPromptBytes} > ${CODEX_MAX_SERIALIZED_PROMPT_BYTES} bytes).`,
+      `The prompt is too large for Codex (${promptChars} > ${CODEX_MAX_INPUT_CHARS} characters). No model turn started. Send less; for a review, choose a smaller scope.`,
     );
   }
   // The app-server session requests the profile's sandbox of CODEX_SANDBOX per thread and

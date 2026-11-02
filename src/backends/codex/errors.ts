@@ -20,7 +20,9 @@ export function classifyCodexError(message: string): ExecutionError {
           ? 'SANDBOX_UNAVAILABLE'
           : /(?:session|thread).*(?:not found|invalid|does not exist)/i.test(message)
             ? 'SESSION_INVALID'
-            : 'PROCESS_ERROR';
+            : /input exceeds the maximum length/i.test(message)
+              ? 'INPUT_LIMIT'
+              : 'PROCESS_ERROR';
   return { code, message: redactDiagnostic(message), retryable: code === 'RATE_LIMITED' };
 }
 

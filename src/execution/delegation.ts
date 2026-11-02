@@ -20,6 +20,7 @@ import crypto from 'node:crypto';
 import { ToolError, type TaskExecutionResult, type WorkspaceChanges } from '../contracts/index.js';
 import { redactDiagnostic } from '../security/index.js';
 import { acquireWriterLease } from '../sessions/writer.js';
+import { createExecutionBudget } from './runtime/budget.js';
 import { jobHelperPath } from './job-helper.js';
 import { withRequiredJobHelper } from './process.js';
 import { createTaskHandle, pruneTasks, readTask, writeFinalTask, writeTask, type DelegationTask } from '../sessions/tasks.js';
@@ -174,6 +175,15 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   start.requestSignal?.addEventListener('abort', abortStart, { once: true });
   if (start.requestSignal?.aborted) controller.abort();
 
+  // Owned by the task from the first Git read on, so cancellation and timeout_ms bound all of it.
+  const timeoutMs = start.args.timeout_ms;
+  const budget = createExecutionBudget({
+    totalBudgetMs: typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+    parentSignal: controller.signal,
+    clock: start.options.clock,
+  });
+  const context = { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() };
+
   let task: DelegationTask | undefined;
   let announce!: () => void;
   const running = new Promise<void>(resolve => {
@@ -194,6 +204,8 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   };
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
+    budget,
+    context,
     onTurnStart: async turn => {
       const callerSession = process.env.CLAUDE_CODE_SESSION_ID;
       const initial: DelegationTask = {
@@ -232,7 +244,10 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     },
   );
   activeDelegations.set(settled, controller);
-  void settled.then(() => activeDelegations.delete(settled));
+  void settled.then(() => {
+    activeDelegations.delete(settled);
+    budget.dispose();
+  });
 
   await Promise.race([running, settled]);
   start.requestSignal?.removeEventListener('abort', abortStart);

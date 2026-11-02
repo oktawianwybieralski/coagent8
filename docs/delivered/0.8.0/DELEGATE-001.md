@@ -5,14 +5,13 @@ title: DELEGATE-001 in 0.8.0
 # DELEGATE-001 in 0.8.0: delegation and caller wake-up
 
 Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
-The merge data of #105 and its final reviews are filled in by the next PR ([rules](../README.md#rules)).
 
 ## Merges
 
 | PR | Squash | Merged | Title |
 | --- | --- | --- | --- |
 | [#95](https://github.com/oktawianwybieralski/coagent8/pull/95) | `5f770c6` | 2026-10-31 | feat(delegate): delegate code changes to another agent |
-| [#105](https://github.com/oktawianwybieralski/coagent8/pull/105) | pending | pending | feat(delegate): run delegate asynchronously and wake the caller |
+| [#105](https://github.com/oktawianwybieralski/coagent8/pull/105) | `3ae31da` | 2026-11-02 | feat(delegate): run delegate asynchronously and wake the caller |
 
 ## Scope
 
@@ -27,6 +26,10 @@ Owner decisions 2026-11-01: `async` is the default; asynchronous writes on Windo
 Open: `001a` (an open Codex window and agy, #113; a real client end to end, #115), `001b` (the
 caller label is recorded from `CLAUDE_CODE_SESSION_ID` and filters nothing yet, #116), `001d`
 (adapters beyond Claude Code's background command, #114) and `001f` (#107, #117).
+
+Owner decision 2026-11-02: the P2 finding that a waiter cannot learn the end of a delegation when
+the data directory stays unwritable is deferred to #121, and the P2 finding that a reused PID makes
+the record of a dead server look alive is deferred to #122.
 
 ## Delivered
 
@@ -50,6 +53,11 @@ toolchain, in scratch repositories, with a window observer running (0 console wi
 | Codex | `gpt-6.1-terra` | 1.5 s, file not yet there | exit 0, file and observed changes | `cancelled` in 1.0 s, writer free |
 | Claude Code | `claude-haiku-5-5` | 3.0 s, file not yet there | exit 0, file and observed changes | `cancelled` in 1.1 s, writer free |
 | agy | `gemini-3.8-flash-high` | 2.5 s, file not yet there | exit 0, file and observed changes | `cancelled` in 0.4 s, writer free |
+
+Independent review of #105 at its merged head `b421129`: Codex BLOCKED, one P2 (#121); agy not run on
+that head because of its quota, READY at `a608929`. The owner merged in that state. The P2 found after
+the merge, that the first Git read of an asynchronous delegation escaped its budget, is fixed in the
+next PR.
 
 Not observed end to end: an installed package in a real client starting `wait_argv` by itself. The
 client's half, a background command waking Claude Code when it exits, was observed separately.

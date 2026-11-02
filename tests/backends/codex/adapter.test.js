@@ -15,9 +15,8 @@ const {
   readCodexConfig,
   normalizeReasoningEffort,
   codexAdapter,
-  CODEX_MAX_PROMPT_BYTES,
+  CODEX_MAX_INPUT_CHARS,
   CODEX_MAX_LINE_BYTES,
-  CODEX_MAX_SERIALIZED_PROMPT_BYTES,
 } = require('../../../src/backends/codex/adapter.ts');
 const { executeTask } = require('../../../src/execution/controller.ts');
 const { sessionHistory } = require('../../../src/sessions/history/index.ts');
@@ -174,31 +173,23 @@ test('Codex executes turns with escaped newline prompts expanding beyond 512 KB 
   assert.equal(result1.isError, false);
   assert.equal(result1.truncated, false);
 
-  // 4 MiB of newlines expands to >8 MiB line, accommodated within the 16 MiB ceiling
-  const fullNewlinePrompt = '\n'.repeat(CODEX_MAX_PROMPT_BYTES);
+  // The longest prompt of control characters expands 6x, accommodated within the 16 MiB ceiling
+  const fullNewlinePrompt = '\u0001'.repeat(CODEX_MAX_INPUT_CHARS);
   const result2 = await execute(fullNewlinePrompt, options);
   assert.equal(result2.status, 'completed');
   assert.equal(result2.isError, false);
   assert.equal(result2.truncated, false);
 });
 
-test('Codex rejects prompts exceeding CODEX_MAX_PROMPT_BYTES with INPUT_LIMIT', async () => {
-  const oversizedPrompt = 'a'.repeat(CODEX_MAX_PROMPT_BYTES + 1);
-  const result = await execute(oversizedPrompt, options);
-  assert.equal(result.status, 'failed');
-  assert.equal(result.isError, true);
-  assert.equal(result.error.code, 'INPUT_LIMIT');
-  assert.match(result.error.message, /Prompt exceeds the UTF-8 byte limit/);
-});
+test('Codex refuses a prompt over its input limit without a turn, and counts characters', async () => {
+  const oversized = await execute('a'.repeat(CODEX_MAX_INPUT_CHARS + 1), options);
+  assert.equal(oversized.status, 'failed');
+  assert.equal(oversized.error.code, 'INPUT_LIMIT');
+  assert.match(oversized.error.message, /1048577 > 1048576 characters/);
+  assert.match(oversized.error.message, /No model turn started/);
 
-test('Codex rejects prompts whose serialized JSON expands beyond CODEX_MAX_SERIALIZED_PROMPT_BYTES with INPUT_LIMIT', async () => {
-  // 3 MiB of \u0001 is within raw 4 MiB, but expands 6x in JSON to ~18 MiB (>15.93 MiB limit)
-  const expandingPrompt = '\u0001'.repeat(3 * 1024 * 1024);
-  const result = await execute(expandingPrompt, options);
-  assert.equal(result.status, 'failed');
-  assert.equal(result.isError, true);
-  assert.equal(result.error.code, 'INPUT_LIMIT');
-  assert.match(result.error.message, /Serialized prompt exceeds the line record limit/);
+  const astral = await execute('\u{1F600}'.repeat(CODEX_MAX_INPUT_CHARS), options);
+  assert.equal(astral.status, 'completed', 'four bytes and two UTF-16 units are still one character');
 });
 
 test('Codex declines server requests, ignores sub-agent threads, sums turn usage and reports retries as warnings', async () => {
@@ -619,8 +610,8 @@ test('a Windows writer learns that its PowerShell runs in ConstrainedLanguage mo
 });
 
 test('the size limit covers the Windows writer note', { skip: process.platform === 'win32' ? false : 'Windows writers only' }, async () => {
-  const atLimit = 'a'.repeat(CODEX_MAX_PROMPT_BYTES);
+  const atLimit = 'a'.repeat(CODEX_MAX_INPUT_CHARS);
   const result = await execute(atLimit, { model: 'gpt-6.1-sol', profile: 'workspace-write' });
   assert.equal(result.error.code, 'INPUT_LIMIT');
-  assert.match(result.error.message, /Prompt exceeds the UTF-8 byte limit/);
+  assert.match(result.error.message, /too large for Codex/);
 });

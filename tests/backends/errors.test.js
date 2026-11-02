@@ -109,6 +109,7 @@ test('codex-errors: classifies usage limit and spend cap as RATE_LIMITED', () =>
   assert.equal(err1.code, 'RATE_LIMITED');
   assert.equal(err1.retryable, true);
 
+  assert.equal(classifyCodexError('Input exceeds the maximum length of 1048576 characters').code, 'INPUT_LIMIT');
   const err2 = classifyCodexError('Account spend cap reached.');
   assert.equal(err2.code, 'RATE_LIMITED');
   assert.equal(err2.retryable, true);
