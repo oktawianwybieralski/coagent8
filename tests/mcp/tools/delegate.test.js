@@ -550,6 +550,7 @@ test(
     const { repo } = fixtureRepo();
     const gitDir = path.join(repo, '.git');
     const marker = path.join(tempDir, `worker-${Date.now()}.log`);
+    const workerScript = `setInterval(() => require('fs').appendFileSync(${JSON.stringify(marker)}, 'x'), 50)`;
     const server = spawn(
       process.execPath,
       [
@@ -558,7 +559,7 @@ test(
         const { spawn } = require('node:child_process');
         require(${JSON.stringify(path.resolve(__dirname, '../../../src/sessions/writer.ts'))}).acquireWriterLease(${JSON.stringify(gitDir)}).then(lease => {
           lease.workerStarting();
-          const worker = spawn(process.execPath, ['-e', "setInterval(() => require('fs').appendFileSync(${JSON.stringify(marker)}, 'x'), 50)"], { detached: true, stdio: 'ignore' });
+          const worker = spawn(process.execPath, ['-e', ${JSON.stringify(workerScript)}], { detached: true, stdio: 'ignore' });
           lease.workerStarted(worker.pid);
           console.log('started ' + worker.pid);
         });
