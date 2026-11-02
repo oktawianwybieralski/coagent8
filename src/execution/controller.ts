@@ -44,7 +44,7 @@ import {
   assertSessionNotExpired,
   findCompletedReview,
   getSession,
-  isProcessAlive,
+  isRecordedProcessAlive,
   MAX_REVIEW_REASON_CHARS,
   type CancelOutcome,
 } from '../sessions/session.js';
@@ -349,7 +349,9 @@ async function executeTaskInternal(
         }
         const retainedHandle = explicitSession?.sessionHandle ?? previous.sessionHandle;
         const continuationAvailable = explicitSession
-          ? !isProcessAlive(explicitSession.activePid) && explicitSession.state === 'idle' && Boolean(explicitSession.threadId)
+          ? !isRecordedProcessAlive(explicitSession.activePid, explicitSession.activePidStartedAt) &&
+            explicitSession.state === 'idle' &&
+            Boolean(explicitSession.threadId)
           : previous.continuationAvailable;
         return {
           isError: false,

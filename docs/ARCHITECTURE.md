@@ -1377,10 +1377,10 @@ final after the release, so a woken caller can delegate again at once. A `reques
 another request is refused. A task of a dead server reads `interrupted` with a warning, because
 on POSIX its process group can outlive the server (`CUR-011`); the writer record stores those groups
 and is not taken over while one lives, so a second delegation cannot overlap that worker. A crash
-while a worker starts leaves a mark that refuses takeover until the user deletes the record (#108). A waiter learns the end only from
-its timeout or the server's end when the data directory stays unwritable (#121), and liveness rests
-on the stored PID, so a reused PID makes a dead server look alive (#122); both are deferred by owner
-decision 2026-11-02. Codex itself adds a trust entry for the directory to the user's
+while a worker starts leaves a mark that refuses takeover until the user deletes the record (#108). A final state the data directory refuses is left as a short note in the temporary directory, which
+readers check, so a waiter learns the end (#121). Records store the start time beside the PID, so a
+reused PID does not look like the server; when the system does not tell a start time, the PID alone
+decides, which can only make a record look busy (#122). Codex itself adds a trust entry for the directory to the user's
 `~/.codex/config.toml` on every `workspace-write` thread, also an ephemeral one; no thread
 parameter prevents it, and read-only threads add none (#124). Three things
 differ from the draft below: completed, notified and fetched are not separate states, because

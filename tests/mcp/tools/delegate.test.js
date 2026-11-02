@@ -19,6 +19,7 @@ const handleDelegate = (args, ...rest) => startDelegate({ mode: 'sync', ...args 
 const { handleConsult } = require('../../../src/mcp/tools/consult.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { acquireWriterLease, WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
+const { isRecordedProcessAlive, processStartTime } = require('../../../src/sessions/activity.ts');
 const {
   normalizeScopeEntry,
   inScope,
@@ -505,4 +506,33 @@ test('a delegation records the process group of its worker', { skip: process.pla
   delete process.env.CODEX_FIXTURE_MODE;
   assert.ok(groups?.length, 'the running delegation recorded a group');
   assert.equal(fs.existsSync(record), false, 'and released the slot');
+});
+
+test('a reused PID does not hold the writer slot, but a running one does', async () => {
+  const { gitDir, record } = gitDirFixture();
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore', windowsHide: true });
+  try {
+    const real = processStartTime(other.pid);
+    assert.ok(Number.isFinite(real), 'the system tells a start time');
+    assert.ok(Math.abs(real - Date.now()) < 120000, 'and it is the real one');
+    fs.writeFileSync(record, JSON.stringify({ pid: other.pid, pidStartedAt: real, token: 'old', startedAt: 'x' }));
+    await assert.rejects(acquireWriterLease(gitDir), err => err.code === 'SESSION_BUSY');
+    fs.writeFileSync(record, JSON.stringify({ pid: other.pid, pidStartedAt: real - 3600 * 1000, token: 'old', startedAt: 'x' }));
+    await (await acquireWriterLease(gitDir)).release();
+    assert.equal(fs.existsSync(record), false);
+  } finally {
+    other.kill();
+  }
+});
+
+test('an unknown start time keeps the record alive', () => {
+  assert.equal(
+    isRecordedProcessAlive(process.ppid, Date.now() - 3600 * 1000, () => null),
+    true,
+  );
+  assert.equal(isRecordedProcessAlive(process.ppid, undefined), true, 'a record of an earlier version');
+  assert.equal(
+    isRecordedProcessAlive(process.ppid, Date.now() - 3600 * 1000, () => Date.now()),
+    false,
+  );
 });

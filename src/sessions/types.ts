@@ -2,6 +2,8 @@
  * Represents a persistent multi-turn agent conversation session.
  */
 export interface SessionRecord {
+  /** Start time of `activePid`, so a reused PID is not taken for the running server. */
+  activePidStartedAt?: number | null;
   schemaVersion?: 2;
   state?: 'idle' | 'running' | 'invalidated' | 'closed';
   turnToken?: string | null;

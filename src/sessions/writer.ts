@@ -18,13 +18,15 @@ import crypto from 'node:crypto';
 import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { ToolError } from '../contracts/index.js';
-import { isProcessAlive, isProcessGroupAlive } from './activity.js';
+import { isProcessGroupAlive, isRecordedProcessAlive, PROCESS_STARTED_AT } from './activity.js';
 
 /** File name of the writer record inside a Git directory. */
 export const WRITER_RECORD_FILE = 'coagent8-writer.json';
 
 interface WriterRecord {
   pid: number;
+  /** Start time of `pid`; absent in records of earlier versions. */
+  pidStartedAt?: number;
   token: string;
   startedAt: string;
   /** POSIX process groups of the processes this call started; absent until the first one. */
@@ -65,6 +67,7 @@ function readWriter(file: string): WriterRecord | null {
     typeof r.startedAt !== 'string' ||
     !Number.isSafeInteger(r.pid) ||
     (r.pid as number) <= 0 ||
+    (r.pidStartedAt !== undefined && !Number.isFinite(r.pidStartedAt)) ||
     (r.starting !== undefined && typeof r.starting !== 'boolean') ||
     (r.workerGroups !== undefined &&
       !(Array.isArray(r.workerGroups) && r.workerGroups.every(group => Number.isSafeInteger(group) && group > 0)))
@@ -96,8 +99,7 @@ export async function acquireWriterLease(
   const token = crypto.randomUUID();
   await withFileLock(file, async () => {
     const current = readWriter(file);
-    // A reused PID can only make the slot look busy, never let two writers in.
-    if (current && isProcessAlive(current.pid)) {
+    if (current && isRecordedProcessAlive(current.pid, current.pidStartedAt)) {
       throw new ToolError(
         'SESSION_BUSY',
         `Another delegate call has been changing files in this work tree since ${current.startedAt}; wait for it to finish or cancel it.`,
@@ -116,7 +118,7 @@ export async function acquireWriterLease(
         `A CoAgent8 server ended while it started a worker in this work tree, so a worker may still be changing files. If none runs, delete ${file}.`,
       );
     }
-    const record: WriterRecord = { pid: process.pid, token, startedAt: new Date().toISOString() };
+    const record: WriterRecord = { pid: process.pid, pidStartedAt: PROCESS_STARTED_AT, token, startedAt: new Date().toISOString() };
     await atomicWrite(file, JSON.stringify(record));
   });
   let released = false;
@@ -130,8 +132,14 @@ export async function acquireWriterLease(
     try {
       const current = readWriter(file);
       if (current?.token !== token) return;
-      const { pid, startedAt } = current;
-      const record: WriterRecord = { pid, token, startedAt, workerGroups, ...(starting > 0 ? { starting: true } : {}) };
+      const record: WriterRecord = {
+        pid: current.pid,
+        pidStartedAt: PROCESS_STARTED_AT,
+        token,
+        startedAt: current.startedAt,
+        workerGroups,
+        ...(starting > 0 ? { starting: true } : {}),
+      };
       const temporary = `${file}.${process.pid}.tmp`;
       fs.writeFileSync(temporary, JSON.stringify(record), { mode: 0o600 });
       fs.renameSync(temporary, file);

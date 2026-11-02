@@ -78,3 +78,5 @@ The skill's instruction was not separately exercised: the agent already knew the
 
 A delegation through Codex makes Codex add a trust entry for that directory to the user's
 `~/.codex/config.toml` (#124).
+
+Note 2026-11-02: the deferrals of #121 and #122 above are withdrawn; both are solved in this PR.

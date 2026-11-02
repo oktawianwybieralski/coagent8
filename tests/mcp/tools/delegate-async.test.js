@@ -306,7 +306,8 @@ test('a final record survives failed writes: first retried, then as a short note
   assert.equal(noted.written[0].state, 'failed');
   assert.match(noted.written[0].result.text, /could not be stored/);
 
-  assert.equal(await writeFinalTask(task, failing(4).write), false, 'it reports and never rejects');
+  assert.equal(await writeFinalTask(task, failing(4).write), true, 'the end note outside the data directory');
+  fs.rmSync(path.join(os.tmpdir(), `coagent8-${task.taskHandle}.json`));
 });
 
 test('the task action shows a stored result only with a final state', async () => {
@@ -361,4 +362,47 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
   pruneTasks(Date.now() + 8 * 24 * 3600 * 1000);
   assert.equal(readTask(old.taskHandle), null);
   assert.equal(readTask(live.taskHandle).state, 'running', 'a running task stays');
+});
+
+test('a final state that cannot be stored in the data directory still reaches a reader', async () => {
+  const taskHandle = createTaskHandle();
+  const task = {
+    schemaVersion: 1,
+    taskHandle,
+    state: 'completed',
+    workspace: tempDir,
+    sessionHandle: 's',
+    backend: 'codex',
+    model: 'm',
+    serverPid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
+  await writeTask({ ...task, state: 'running' });
+  const refused = async () => {
+    throw new Error('disk full');
+  };
+  assert.equal(await writeFinalTask(task, refused), true);
+  const read = readTask(taskHandle);
+  assert.equal(read.state, 'failed');
+  assert.match(read.result.text, /could not be stored/);
+  fs.rmSync(path.join(os.tmpdir(), `coagent8-${taskHandle}.json`));
+  assert.equal(readTask(taskHandle).state, 'running', 'without a note the record stands');
+});
+
+test('a running task whose PID now names a later process reads as interrupted', async () => {
+  const taskHandle = createTaskHandle();
+  const longAgo = Date.now() - 3600 * 1000;
+  await writeTask({
+    schemaVersion: 1,
+    taskHandle,
+    state: 'running',
+    workspace: tempDir,
+    sessionHandle: 's',
+    backend: 'codex',
+    model: 'm',
+    serverPid: process.pid,
+    serverStartedAt: longAgo,
+    startedAt: new Date().toISOString(),
+  });
+  assert.equal(readTask(taskHandle).state, 'interrupted');
 });

@@ -10,12 +10,13 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { ToolError } from '../contracts/index.js';
 import { getDataDir } from '../paths.js';
 import { atomicWrite } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
-import { isProcessAlive } from './activity.js';
+import { isRecordedProcessAlive } from './activity.js';
 
 export type TaskState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out' | 'interrupted';
 
@@ -29,6 +30,8 @@ export interface DelegationTask {
   model: string | null;
   /** The server process that owns the worker. */
   serverPid: number;
+  /** Start time of `serverPid`, so a reused PID is not taken for the running server. */
+  serverStartedAt?: number;
   startedAt: string;
   finishedAt?: string;
   /** The calling agent's own session, when its client exposes one; a label, never an authority. */
@@ -101,18 +104,47 @@ export async function writeFinalTask(task: DelegationTask, write: (task: Delegat
       await new Promise(resolve => setTimeout(resolve, FINAL_WRITE_RETRY_MS));
     }
   }
+  const note: DelegationTask = {
+    ...task,
+    state: 'failed',
+    result: {
+      text: 'The worker ended, but its result could not be stored. Inspect the work tree with git status and git diff.',
+      isError: true,
+    },
+  };
   try {
-    await write({
-      ...task,
-      state: 'failed',
-      result: {
-        text: 'The worker ended, but its result could not be stored. Inspect the work tree with git status and git diff.',
-        isError: true,
-      },
-    });
+    await write(note);
+    return true;
+  } catch {
+    return writeEndNote(note);
+  }
+}
+
+function endNoteFile(handle: string): string {
+  return path.join(os.tmpdir(), `coagent8-${handle}.json`);
+}
+
+/**
+ * Stores the end of a task outside the data directory, which has just refused it (#121).
+ * @returns Whether a reader can now learn the end.
+ */
+function writeEndNote(note: DelegationTask): boolean {
+  try {
+    fs.writeFileSync(endNoteFile(note.taskHandle), JSON.stringify(note), { mode: 0o600 });
     return true;
   } catch {
     return false;
+  }
+}
+
+/** The end note of a task. Only this user's counts: the temporary directory can be shared. */
+function readEndNote(handle: string): DelegationTask | null {
+  try {
+    const file = endNoteFile(handle);
+    if (process.getuid && fs.statSync(file).uid !== process.getuid()) return null;
+    return JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
+  } catch {
+    return null;
   }
 }
 
@@ -128,10 +160,15 @@ export function readTask(handle: string): DelegationTask | null {
   try {
     task = JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    // The directory itself may be what failed: ENOTDIR as well as ENOENT mean no record here.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return readEndNote(handle);
     throw new ToolError('PROTOCOL_ERROR', `The task record ${handle} cannot be read.`);
   }
-  return task.state === 'running' && !isProcessAlive(task.serverPid) ? { ...task, state: 'interrupted' } : task;
+  if (task.state !== 'running') return task;
+  const ended = readEndNote(handle);
+  if (ended) return ended;
+  return isRecordedProcessAlive(task.serverPid, task.serverStartedAt) ? task : { ...task, state: 'interrupted' };
 }
 
 /**
