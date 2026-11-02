@@ -1375,7 +1375,9 @@ there is no `queued` state on disk, because a task is recorded only when its tur
 task record (`<data>/delegations/`) stores the result before the writer is released and turns
 final after the release, so a woken caller can delegate again at once. A `request_id` reused for
 another request is refused. A task of a dead server reads `interrupted` with a warning, because
-on POSIX its process group can outlive the server (`CUR-011`). Three things
+on POSIX its process group can outlive the server (`CUR-011`). A waiter learns the end only from
+its timeout or the server's end when the data directory stays unwritable (#121, deferred by owner
+decision 2026-11-02). Three things
 differ from the draft below: completed, notified and fetched are not separate states, because
 the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
 released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat
