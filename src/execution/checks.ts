@@ -121,6 +121,8 @@ export async function runCheck(command: string, cwd: string, signal: AbortSignal
     status,
     exitCode: ran.exitCode ?? null,
     durationMs: Date.now() - started,
-    tail: output || redactDiagnostic(ran.signal ? `Ended by ${ran.signal}.` : (ran.error?.message ?? ''), CHECK_TAIL_CHARS),
+    tail: ran.signal
+      ? `${output}Ended by ${ran.signal}.`.slice(-CHECK_TAIL_CHARS)
+      : output || redactDiagnostic(ran.error?.message ?? '', CHECK_TAIL_CHARS),
   };
 }

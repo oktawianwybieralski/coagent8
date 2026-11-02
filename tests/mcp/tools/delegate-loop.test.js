@@ -141,6 +141,11 @@ test('a check that dies from a signal failed; it did start', { skip: process.pla
   const killed = await runCheck(`${node} -e "process.kill(process.pid, 'SIGKILL')"`, tempDir, null, 60000);
   assert.equal(killed.status, 'failed');
   assert.match(killed.tail, /SIGKILL/);
+  const file = path.join(tempDir, 'prints-then-dies.js');
+  fs.writeFileSync(file, "require('fs').writeSync(1, 'before the end\\n');process.kill(process.pid, 'SIGKILL');");
+  const printed = await runCheck(`${node} ${JSON.stringify(file)}`, tempDir, null, 60000);
+  assert.match(printed.tail, /before the end/);
+  assert.match(printed.tail, /SIGKILL/);
 });
 
 test('a spent budget is a timeout before the check starts', async () => {
