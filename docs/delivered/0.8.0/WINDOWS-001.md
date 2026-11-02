@@ -132,4 +132,12 @@ Then in a real client, Claude Code from the runtime copy that `setup` made: Code
 wrote their files, and a cancelled Codex task ended `cancelled` with no helper process left. The
 observer did not run during this part.
 
-Open in #109: agy, whose quota had run out.
+A real CLI's own child, from the same package and server (#110). Each worker ran `ping -n 300 127.0.0.1`
+through its shell, and a process snapshot saw `PING.EXE` in the tree before the end of the turn:
+
+| Backend | Cancel | Tree after the cancel | Deadline of 45 s | Tree after the deadline |
+| --- | --- | --- | --- | --- |
+| Codex | `cancelled` | no survivor, gone in 1.2 s | `timed_out` | no survivor |
+| Claude Code | `cancelled` | no survivor, gone in 3.1 s | `timed_out` | no survivor |
+
+Open in #109 and #110: agy, whose quota had run out, with an MCP server of its turn and its cold updater.
