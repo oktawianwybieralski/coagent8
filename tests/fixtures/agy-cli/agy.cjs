@@ -222,6 +222,19 @@ function run() {
     return;
   }
 
+  if (mode === 'answer-then-legacy-tool-network') {
+    send({
+      event: 'step_update',
+      step_update: { conversation_id: sid, step_index: 1, step_type: 'agent_response', state: 'DONE', text_delta: 'An answer.' },
+    });
+    send({ type: 'tool_use', tool_id: 't1', tool_name: 'read', parameters: {} });
+    send({
+      event: 'result',
+      result: { conversation_id: sid, status: 'ERROR', error: 'request failed: dial tcp: lookup example.invalid: no such host' },
+    });
+    return;
+  }
+
   if (mode === 'answer-then-network' || mode === 'tool-then-network') {
     send({
       event: 'step_update',

@@ -24,14 +24,19 @@ export interface AclEntry {
  * Reads the `name:(flags)(rights)` entries of `icacls` output.
  * @param output - The output, whose first line starts with the folder as given.
  * @param folder - The folder as given: names and paths can both hold spaces.
+ * @returns The entries, or none when a line looks like an entry and cannot be read: the caller
+ * then treats the check as inconclusive.
  */
 export function parseAcl(output: string, folder: string): AclEntry[] {
   const entries: AclEntry[] = [];
   for (const raw of output.split(/\r?\n/)) {
     const line = raw.startsWith(folder) ? raw.slice(folder.length) : raw;
-    const match = /^\s*(.+?):((?:\([A-Z,]+\))+)\s*$/.exec(line);
-    if (!match) continue;
-    const rights = match[2]!.match(/\(([A-Z,]+)\)/g)!.map(part => part.slice(1, -1));
+    const match = /^\s*(.+?):((?:\([A-Za-z,]+\))+)\s*$/.exec(line);
+    if (!match) {
+      if (line.includes(':(')) return [];
+      continue;
+    }
+    const rights = match[2]!.match(/\(([A-Za-z,]+)\)/g)!.map(part => part.slice(1, -1));
     entries.push({
       // Without its domain: the sandbox's group is the same name in every locale.
       name: match[1]!.split('\\').pop()!,
@@ -64,6 +69,8 @@ export function aclReachesFolder(workspace: readonly AclEntry[], folder: readonl
 
 /**
  * Finds the first existing folder on the way to a scope entry that a Codex writer cannot reach.
+ * Folders below a scope entry are not walked, which could take long: a denial there gets the
+ * warning after the turn.
  * @param cwd - The workspace.
  * @param scope - Scope entries relative to it.
  * @returns The folder, or undefined when none is found or the system does not tell: a check that

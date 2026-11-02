@@ -209,6 +209,7 @@ export function createGeminiCollector(onEvent?: (event: AdapterEvent) => void) {
 
     // 5. Tool events (legacy protocol)
     if (eventType === 'tool_use') {
+      answeredLast = false;
       if (typeof e.tool_id !== 'string' || typeof e.tool_name !== 'string') throw new Error('Invalid Gemini tool event.');
       const activeTools = reducer.getActiveTools();
       if (activeTools.has(e.tool_id)) {

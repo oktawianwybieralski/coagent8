@@ -54,6 +54,8 @@ test(
       assert.equal(await unreachableWriteFolder(cwd, ['open/closed/deep']), undefined, 'all inherited');
       assert.equal(await unreachableWriteFolder(cwd, ['missing/folder']), undefined);
       assert.deepEqual(parseAcl('Unrecognized output', 'x'), [], 'read by the caller as inconclusive');
+      assert.deepEqual(parseAcl('x HOST\\A:(OI)(M)\n  HOST\\B:(I)(???)', 'x'), [], 'a line it cannot read makes the whole answer unclear');
+      assert.equal(parseAcl('x HOST\\A:(I)(Rc,S,X,RA)', 'x')[0].inherited, true, 'mixed-case special rights');
       const user = process.env.USERNAME;
       const ran = spawnSync('icacls', [closed, '/inheritance:r', '/grant', `${user}:(OI)(CI)F`], { windowsHide: true });
       assert.equal(ran.status, 0);

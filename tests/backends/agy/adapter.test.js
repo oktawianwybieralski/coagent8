@@ -225,6 +225,10 @@ test('#128: an answer before a network failure stands, with a warning; work in p
     assert.match(stopped.error.message, /no such host/);
     assert.match(stopped.output, /The whole answer/);
 
+    process.env.coagent8_FIXTURE_MODE = 'answer-then-legacy-tool-network';
+    const legacy = await execute('Answer', { model: MODEL, cwd: tempDir });
+    assert.equal(legacy.status, 'failed', 'a legacy tool event also means the turn went on');
+
     process.env.coagent8_FIXTURE_MODE = 'streaming-then-network';
     const cut = await execute('Answer', { model: MODEL, cwd: tempDir });
     assert.equal(cut.status, 'failed', 'text still streaming is no finished answer');
