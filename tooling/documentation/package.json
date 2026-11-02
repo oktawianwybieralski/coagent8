@@ -14,5 +14,11 @@
     "eslint-plugin-tsdoc": "0.5.4",
     "typedoc": "0.28.20",
     "typescript": "6.0.3"
+  },
+  "overrides": {
+    "minimatch": "^11.0.4",
+    "typedoc": {
+      "minimatch": "^10.2.5"
+    }
   }
 }
