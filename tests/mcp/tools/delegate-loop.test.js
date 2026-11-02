@@ -15,6 +15,7 @@ process.env.CODEX_CONFIG_PATH = path.join(tempDir, 'config.toml');
 const { parseCheckCommand, approveChecks, runCheck } = require('../../../src/execution/checks.ts');
 const { superviseChange, reviewOnAnotherBackend, LOOP_FIX_ROUNDS } = require('../../../src/execution/loop.ts');
 const { handleDelegate, getCanonicalDelegateToolDefinition } = require('../../../src/mcp/tools/delegate.tool.ts');
+const { executeDelegation } = require('../../../src/execution/delegation.ts');
 const { ToolError } = require('../../../src/contracts/error.ts');
 
 const node = JSON.stringify(process.execPath);
@@ -389,6 +390,29 @@ test('the tool reports the loop apart from the worker, and a failed check is not
   assert.match(text, /Review: not run\./);
   assert.match(text, /Observed by CoAgent8/);
   assert.equal(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), false, 'the writer is released at the end');
+});
+
+test('a later turn has its own time limit, also without a limit on the task', async () => {
+  const repo = fixtureRepo();
+  let stopped;
+  const started = Date.now();
+  try {
+    await executeDelegation('Change it', 'Change it', { backend: 'codex', model: MODEL }, repo, [], null, null, {
+      ...approve,
+      requireEnvelope: false,
+      loopTurnMs: 1500,
+      supervise: async (first, turn) => {
+        process.env.CODEX_FIXTURE_MODE = 'interruptible';
+        stopped = await turn.fix('Now hang');
+        return stopped;
+      },
+    });
+  } finally {
+    delete process.env.CODEX_FIXTURE_MODE;
+  }
+  assert.equal(stopped.result.status, 'timed_out');
+  assert.ok(Date.now() - started < 30000);
+  assert.equal(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), false);
 });
 
 test('the tool definition offers the loop', () => {

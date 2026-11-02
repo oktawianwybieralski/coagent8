@@ -45,9 +45,11 @@ export async function executeDelegation(
   options: Omit<TaskOptions, 'profile'> & {
     beforeRelease?: (outcome: TaskExecutionResult) => Promise<void>;
     supervise?: Supervise;
+    /** Longest turn of a later round; replaceable by tests. */
+    loopTurnMs?: number;
   } = {},
 ): Promise<TaskExecutionResult> {
-  const { beforeRelease, supervise, ...taskOptions } = options;
+  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, ...taskOptions } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
   if (process.platform === 'win32' && !jobHelperPath()) {
     throw new ToolError(
@@ -69,16 +71,32 @@ export async function executeDelegation(
     const runTask = async () => {
       const first = await turn(prompt, args, taskOptions);
       if (!supervise) return first;
+      // Each later turn has its own bound within what is left of the task's budget.
+      const inRound: Supervision['inRound'] = async run => {
+        const budget = createExecutionBudget({
+          totalBudgetMs: Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY),
+          parentSignal: abortSignal ?? undefined,
+          clock: options.clock,
+        });
+        try {
+          return await run({ budget, context: { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() } });
+        } finally {
+          budget.dispose();
+        }
+      };
       return supervise(first, {
         signal: abortSignal ?? null,
         budget: options.budget,
         context: options.context,
+        inRound,
         // The call that could show a form has ended: a model that needs approval is refused.
         fix: text =>
-          turn(
-            text,
-            { ...args, session_handle: first.sessionHandle ?? undefined },
-            { ...taskOptions, askConsent: undefined, onTurnStart: undefined },
+          inRound(round =>
+            turn(
+              text,
+              { ...args, session_handle: first.sessionHandle ?? undefined },
+              { ...taskOptions, ...round, askConsent: undefined, onTurnStart: undefined },
+            ),
           ),
       });
     };
@@ -136,16 +154,23 @@ export function stopActiveDelegations(): Promise<unknown> {
   return Promise.allSettled([...activeDelegations.keys()]);
 }
 
+/** Longest turn of a later round of the loop, fix or review. */
+const LOOP_TURN_MS = 30 * 60 * 1000;
+
+/** What a supervisor gets to work with. */
+export interface Supervision {
+  signal: AbortSignal | null;
+  budget?: TaskOptions['budget'];
+  context?: TaskOptions['context'];
+  /** Runs one turn under its own bound. */
+  inRound: <T>(
+    run: (round: { budget: NonNullable<TaskOptions['budget']>; context: NonNullable<TaskOptions['context']> }) => Promise<T>,
+  ) => Promise<T>;
+  fix: (prompt: string) => Promise<TaskExecutionResult>;
+}
+
 /** Supervises a change after the worker's first turn, with the writer held; returns the last result. */
-export type Supervise = (
-  first: TaskExecutionResult,
-  turn: {
-    signal: AbortSignal | null;
-    budget?: TaskOptions['budget'];
-    context?: TaskOptions['context'];
-    fix: (prompt: string) => Promise<TaskExecutionResult>;
-  },
-) => Promise<TaskExecutionResult>;
+export type Supervise = (first: TaskExecutionResult, turn: Supervision) => Promise<TaskExecutionResult>;
 
 /** A request for one asynchronous delegation. */
 export interface DelegationStart {

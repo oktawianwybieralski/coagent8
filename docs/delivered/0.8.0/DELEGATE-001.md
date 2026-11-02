@@ -84,3 +84,6 @@ An earlier run ended `review_failed` on agy's quota, so the review now moves on 
 quota.
 
 Not run: the form in a real client, agy as a writer in the loop, POSIX natively.
+
+Each later turn of the loop has its own limit (30 minutes) within the task's budget. `needs_input` ends
+the task instead of pausing it, and the caller continues with the session handle.

@@ -114,17 +114,19 @@ function loopSupervisor(task: string, checks: readonly string[], workspaceCwd: s
                   })
                 ).id,
           backend =>
-            executeReview(
-              {
-                backend,
-                scope: 'uncommitted',
-                instructions: `A change delegated with this task: ${task}`,
-                ...(backend === reviewBackend && reviewSession ? { session_handle: reviewSession } : {}),
-              },
-              workspaceCwd,
-              turn.signal,
-              null,
-              { budget: turn.budget, context: turn.context, clock },
+            turn.inRound(round =>
+              executeReview(
+                {
+                  backend,
+                  scope: 'uncommitted',
+                  instructions: `A change delegated with this task: ${task}`,
+                  ...(backend === reviewBackend && reviewSession ? { session_handle: reviewSession } : {}),
+                },
+                workspaceCwd,
+                turn.signal,
+                null,
+                { ...round, clock },
+              ),
             ),
         );
         reviewBackend = reviewed.provider ?? reviewBackend;

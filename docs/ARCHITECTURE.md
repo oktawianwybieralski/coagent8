@@ -1505,7 +1505,9 @@ turns get no form, since the call that could ask has ended: a model that needs a
 with `needs_input`. `Loop by CoAgent8` in the result reports `passed`, `checks_failed`,
 `review_blocked`, `review_failed`, `worker_failed`, `needs_input`, `cancelled` or `timed_out`, with
 the checks of the last round. The task state stays that of the worker's turn, unless the loop was
-cancelled or timed out. Not built yet: a budget per round and a pause that waits for the user.
+cancelled or timed out. Each later turn has its own limit of 30 minutes within what is left of the task's
+budget, and a check has 15 minutes. A pause that waits for the user is not built: `needs_input` ends the
+task, and the caller continues with the session handle.
 
 ## Owner decisions
 
