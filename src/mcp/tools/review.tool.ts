@@ -43,13 +43,27 @@ export async function handleReview(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent'> & {
-    onTiming?: TimingObserver;
-    tracker?: PhaseTracker;
-    clock?: MonotonicClock;
-    budget?: ExecutionBudget;
-    context?: BackendReadContext;
-  } = {},
+  options: ReviewOptions = {},
+) {
+  return formatExecutionResult(await executeReview(args, workspaceCwd, abortSignal, onProgress, options));
+}
+
+/** Per-call options of a review. */
+export type ReviewOptions = Pick<TaskOptions, 'askConsent'> & {
+  onTiming?: TimingObserver;
+  tracker?: PhaseTracker;
+  clock?: MonotonicClock;
+  budget?: ExecutionBudget;
+  context?: BackendReadContext;
+};
+
+/** Runs a review, as {@link handleReview} describes, and returns its outcome unformatted. */
+export async function executeReview(
+  args: ToolArguments,
+  workspaceCwd: string,
+  abortSignal: AbortSignal | null = null,
+  onProgress: ToolProgress = null,
+  options: ReviewOptions = {},
 ) {
   const isOwnedTracker = !options.tracker;
   const tracker = options.tracker ?? createPhaseTracker({ clock: options.clock });
@@ -222,7 +236,7 @@ export async function handleReview(
         },
       },
     );
-    return formatExecutionResult(outcome);
+    return outcome;
   } finally {
     if (isOwnedBudget) {
       budget.dispose();

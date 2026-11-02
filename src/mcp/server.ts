@@ -38,6 +38,7 @@ import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from '../sessions/identity.js';
 import { getHistory } from '../sessions/history/index.js';
 import { composeExecutionCancellation, type ConsentPrompt } from '../execution/controller.js';
+import type { CheckApprovalPrompt } from '../execution/checks.js';
 import { providerForClient, setCallerProvider } from '../execution/routing.js';
 import { isValidModelIdentifier } from '../models/identifier.js';
 import type { ToolArguments } from './arguments.js';
@@ -292,6 +293,25 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
     };
   }
 
+  /** The form for checks the server would run (`DELEGATE-001f2`); only a checked box approves. */
+  function checkApprovalPrompt(budget?: ExecutionBudget): CheckApprovalPrompt | undefined {
+    if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
+    return async (checks, signal) => {
+      const answer = await server.elicitInput(
+        {
+          message: `${BRAND.NAME}: after the worker, run these commands with your account's rights, outside any sandbox? They execute code the worker may have changed.\n${checks.map(check => `- ${check}`).join('\n')}`,
+          requestedSchema: {
+            type: 'object',
+            required: ['approve'],
+            properties: { approve: { type: 'boolean', title: 'Run these commands', default: false } },
+          },
+        },
+        { signal: signal ?? undefined, timeout: budget?.remainingExecutionMs() ?? CONSENT_TIMEOUT_MS },
+      );
+      return answer.action === 'accept' && answer.content?.approve === true;
+    };
+  }
+
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: createToolDefinitions() }));
 
   // Resources show only the sessions of the connection's workspace (client root or server
@@ -432,6 +452,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
             await handleDelegate(args as unknown as DelegateArguments, cwd, extra.signal, progress, {
               ...execOptions,
               clientName: server.getClientVersion()?.name,
+              askChecks: checkApprovalPrompt(budget),
             }),
             workspace,
           );
