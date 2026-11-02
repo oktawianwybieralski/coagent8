@@ -29,7 +29,8 @@ caller label is recorded from `CLAUDE_CODE_SESSION_ID` and filters nothing yet, 
 (adapters beyond Claude Code's background command, #114) and `001f` (#107, #117).
 
 Owner decision 2026-11-02: the P2 finding that a waiter cannot learn the end of a delegation when
-the data directory stays unwritable is deferred to #121.
+the data directory stays unwritable is deferred to #121, and the P2 finding that a reused PID makes
+the record of a dead server look alive is deferred to #122.
 
 ## Delivered
 
