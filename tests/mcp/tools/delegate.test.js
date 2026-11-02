@@ -560,22 +560,31 @@ test(
     const { repo } = fixtureRepo();
     const gitDir = path.join(repo, '.git');
     const marker = path.join(tempDir, `worker-${Date.now()}.log`);
-    const workerScript = `setInterval(() => require('fs').appendFileSync(${JSON.stringify(marker)}, 'x'), 50)`;
+    // Fixed scripts: the paths reach them through the environment.
     const server = spawn(
       process.execPath,
       [
         '-e',
         `require('tsx/cjs');
         const { spawn } = require('node:child_process');
-        require(${JSON.stringify(path.resolve(__dirname, '../../../src/sessions/writer.ts'))}).acquireWriterLease(${JSON.stringify(gitDir)}).then(lease => {
+        require(process.env.WRITER_MODULE).acquireWriterLease(process.env.WRITER_GIT_DIR).then(lease => {
           lease.workerStarting();
-          const worker = spawn(process.execPath, ['-e', ${JSON.stringify(workerScript)}], { detached: true, stdio: 'ignore' });
+          const worker = spawn(process.execPath, ['-e', "setInterval(() => require('fs').appendFileSync(process.env.WORKER_MARKER, 'x'), 50)"], { detached: true, stdio: 'ignore' });
           lease.workerStarted(worker.pid);
           console.log('started ' + worker.pid);
         });
         setInterval(() => {}, 1000);`,
       ],
-      { cwd: path.resolve(__dirname, '../../..'), stdio: ['ignore', 'pipe', 'inherit'] },
+      {
+        cwd: path.resolve(__dirname, '../../..'),
+        env: {
+          ...process.env,
+          WRITER_MODULE: path.resolve(__dirname, '../../../src/sessions/writer.ts'),
+          WRITER_GIT_DIR: gitDir,
+          WORKER_MARKER: marker,
+        },
+        stdio: ['ignore', 'pipe', 'inherit'],
+      },
     );
     const group = await new Promise((resolve, reject) => {
       server.stdout.on('data', chunk => {
