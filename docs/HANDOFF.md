@@ -13,6 +13,10 @@ Do not append another session transcript or treat old test counts as fresh evide
 - **Backlog (owner request 2026-11-02):** GitHub Issues hold it, in the format of
   [`project.md`](../.agents/project.md#backlog); labels created, first items #106-#120.
 
+- **Server-owned loop (`DELEGATE-001f2`, owner decision 2026-11-02):** `delegate` with `loop: true`
+  runs checks, an independent review and bounded fix rounds with the writer held. Contract:
+  [ARCHITECTURE](ARCHITECTURE.md#asynchronous-delegation-and-caller-wake-up-delegate-001c).
+
 - **Asynchronous delegate (`DELEGATE-001c`, `e`, owner decisions 2026-11-01):** merged in #105
   (`3ae31da`) at `b421129`; the commits pushed after that merge continue in the next PR. `delegate` is
   asynchronous by default, `coagent8 wait` and `session` action `task` read the result. Claude

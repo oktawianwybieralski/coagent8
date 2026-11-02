@@ -61,3 +61,23 @@ next PR.
 
 Not observed end to end: an installed package in a real client starting `wait_argv` by itself. The
 client's half, a background command waking Claude Code when it exits, was observed separately.
+
+## Server-owned loop, first slice (2026-11-02)
+
+`DELEGATE-001f2`, ahead of `COAGENT-002` to `004` by owner decision 2026-11-02: `delegate` with
+`loop: true` runs user-approved `checks` outside any sandbox, then a read-only review on another
+backend, and returns failures to the worker for at most two fix rounds, with the writer held.
+
+Native, a fresh server from the bundle, the check in `allowedChecks` of an isolated configuration:
+
+| Writer | Task | Loop | Review | Own run of the check |
+| --- | --- | --- | --- | --- |
+| Codex `gpt-6.1-terra` | fix a real bug in `add.js` | `passed`, no fix round | READY by Claude Code `claude-opus-5-5` | exit 0 |
+| Claude Code `claude-haiku-5-5` | a task that conflicts with the check | `checks_failed` after 2 fix rounds | ran in round 2 and blocked on the conflict | exit 1 |
+
+The second run shows that the rounds are bounded and the failure is reported: the review ran only
+because a fix turn had made the check pass, and the worker then undid that fix on the review's finding.
+An earlier run ended `review_failed` on agy's quota, so the review now moves on from a backend out of
+quota.
+
+Not run: the form in a real client, agy as a writer in the loop, POSIX natively.

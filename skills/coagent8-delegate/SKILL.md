@@ -49,6 +49,17 @@ the user's authority; the delegated agent never does.
    backend, with the acceptance criteria and your check results in
    `instructions`. The author of a change never approves it.
 
+**Server loop.** With `loop: true` the server itself runs `checks`, then a read-only
+review on another backend, returns failures to the agent for up to two fix rounds,
+and reports all of it once, in the block "Loop by CoAgent8". Use it when you would
+otherwise supervise those rounds. Each check is one command with arguments, without
+a shell, and runs with the user's rights, outside any sandbox, on code the agent may
+have changed: tell the user, because the server asks them on a form unless the exact
+command is in `allowedChecks` of their configuration. You cannot approve it. Steps 8
+to 10 then shrink to reading the diff: only `passed` means the checks and the review
+went through, and the review is still another model's opinion. `needs_input` means
+a turn needed the user's approval: the change stays for you.
+
 One writer per Git work tree: a second delegate in the same work tree is
 refused while one runs, also from another client. For parallel work, give each agent its own Git worktree on its
 own branch (`git worktree add ../repo-a -b task-a`), call delegate for each with
