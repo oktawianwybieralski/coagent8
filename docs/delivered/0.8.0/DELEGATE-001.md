@@ -76,6 +76,7 @@ and was woken with the result, without user input:
 | --- | --- | --- | --- |
 | Codex | `gpt-6.1-terra` | 14.5 s | `completed`, the file and the observed change |
 | Claude Code | `claude-haiku-5-5` | 9.9 s | `completed`, the file and the observed change, while the agent was cancelling another task |
+| agy | `gemini-3.8-flash-high` | 68.0 s | `completed`, the file and the observed change (the same evening, after its quota returned) |
 
 The skill's instruction was not separately exercised: the agent already knew the contract.
 
