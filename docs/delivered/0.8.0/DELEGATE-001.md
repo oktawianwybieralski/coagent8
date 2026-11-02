@@ -14,7 +14,7 @@ Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegati
 | [#105](https://github.com/oktawianwybieralski/coagent8/pull/105) | `3ae31da` | 2026-11-02 | feat(delegate): run delegate asynchronously and wake the caller |
 | [#123](https://github.com/oktawianwybieralski/coagent8/pull/123) | `f372179` | 2026-11-02 | fix(delegate): bound the first Git read and refuse oversized Codex prompts |
 | [#125](https://github.com/oktawianwybieralski/coagent8/pull/125) | `9ef042a` | 2026-11-02 | fix(delegate): recognize a dead server, its worker and a reused PID |
-| [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | pending | pending | feat(delegate): run checks, review and fix rounds in one call |
+| [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | `02e3b5f` | 2026-11-02 | feat(delegate): run checks, review and fix rounds in one call |
 
 ## Scope
 
@@ -110,3 +110,21 @@ Not run: the form in a real client, agy as a writer in the loop, POSIX natively.
 
 Each later turn of the loop has its own limit (30 minutes) within the task's budget. `needs_input` ends
 the task instead of pausing it, and the caller continues with the session handle.
+
+Independent review of #125 and #126: Codex READY at their merged heads `6acd030` and `280b92d`; agy READY on `f372179...02e3b5f` after the merge, when its quota returned.
+
+## Reports from use (2026-11-02)
+
+- A Codex writer on Windows cannot write in a folder that does not inherit the permissions of the
+  workspace: Codex's grant on the workspace stops above it (#127). A scope reaching such a folder is
+  refused before the turn, with the command that restores it. Without a scope, a worker that was denied
+  and changed nothing gets a warning. Native: a folder with inheritance removed was refused, and the
+  workspace root stayed writable; gitignored and dot folders with normal inheritance wrote fine.
+- An agy answer followed only by a network failure of its next request stands, with a warning (#128). A
+  tool started after the text keeps it a failure. An error with partial text names `session` action
+  `messages`, which skips tool events. Not reproduced natively: the failure was a transient DNS error.
+- A turn that started after a rate limit was recorded clears it before its recorded reset, and `doctor`
+  says when the limit was recorded and that an explicit backend is still tried (#129).
+- `doctor` states what a turn can reach per backend, and a consult is told that the server sets this,
+  so a sandbox's limit does not read as the caller's wish (#130). Network access for a read-only consult
+  is not added.
