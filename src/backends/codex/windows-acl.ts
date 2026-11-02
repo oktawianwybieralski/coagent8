@@ -13,7 +13,8 @@ import path from 'node:path';
 import { runCommand } from '../../execution/process.js';
 import type { BackendReadContext } from '../../contracts/execution.js';
 
-interface AclEntry {
+/** One entry of a folder's permissions. */
+export interface AclEntry {
   name: string;
   inherited: boolean;
   writes: boolean;
