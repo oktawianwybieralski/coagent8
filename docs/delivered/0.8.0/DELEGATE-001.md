@@ -15,6 +15,7 @@ Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegati
 | [#123](https://github.com/oktawianwybieralski/coagent8/pull/123) | `f372179` | 2026-11-02 | fix(delegate): bound the first Git read and refuse oversized Codex prompts |
 | [#125](https://github.com/oktawianwybieralski/coagent8/pull/125) | `9ef042a` | 2026-11-02 | fix(delegate): recognize a dead server, its worker and a reused PID |
 | [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | `02e3b5f` | 2026-11-02 | feat(delegate): run checks, review and fix rounds in one call |
+| [#131](https://github.com/oktawianwybieralski/coagent8/pull/131) | `6048643` | 2026-11-02 | fix(diagnostics): report backend state and answers as they are |
 
 ## Scope
 

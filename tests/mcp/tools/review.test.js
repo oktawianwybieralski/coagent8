@@ -507,7 +507,8 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
     name: 'fixture',
     probe: async () => ({ installed: true, executionSupported: true, config: { defaultModel: 'fixture-model' } }),
     execute: async prompt => {
-      now = 9500;
+      // 500 ms before the deadline on the test's clock.
+      now = 60500;
       const snapshot = prompt.match(/^SNAPSHOT: (.+)$/m)?.[1] ?? 'snapshot';
       return {
         status: 'completed',
@@ -521,7 +522,8 @@ test('handleReview verifyReviewSnapshot succeeds during teardown allowance when 
     },
   };
 
-  const budget = createExecutionBudget({ totalBudgetMs: 10000, teardownAllowanceMs: 2000, clock });
+  // Long in real time too: its own timer must not fire under load (#132).
+  const budget = createExecutionBudget({ totalBudgetMs: 60000, teardownAllowanceMs: 2000, clock });
 
   try {
     await saveConfig({
