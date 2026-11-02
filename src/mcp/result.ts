@@ -12,7 +12,14 @@
  * @packageDocumentation
  */
 
-import type { TaskExecutionResult, ExecutionMeta, TerminalExecutionResult, ListPrice, WorkspaceChanges } from '../contracts/execution.js';
+import type {
+  TaskExecutionResult,
+  ExecutionMeta,
+  TerminalExecutionResult,
+  ListPrice,
+  LoopReport,
+  WorkspaceChanges,
+} from '../contracts/execution.js';
 import type { TokenUsage } from '../contracts/conversation.js';
 import { redactDiagnostic, redactCredentialFormats } from '../security/redaction.js';
 import { GITHUB_BUG_REPORT_TEMPLATE_URL } from '../diagnostics/issue.js';
@@ -74,6 +81,26 @@ function present(text: string): string {
 /** One footer line: line breaks inside a field would split it into other footer lines. */
 function footerLine(text: string): string {
   return text.replace(/\s*\r?\n\s*/g, ' ');
+}
+
+/** What the server-owned loop observed (`DELEGATE-001f2`), apart from the worker's report. */
+export function formatLoopReport(loop: LoopReport): string {
+  const lines = [`Loop by CoAgent8: ${loop.outcome}, ${loop.fixRounds} fix round(s).`];
+  if (loop.detail) lines.push(redactCredentialFormats(loop.detail));
+  for (const check of loop.checks) {
+    lines.push(`Check ${check.status}: ${check.command} (exit ${check.exitCode ?? 'none'}, ${check.durationMs} ms)`);
+    if (check.status !== 'passed' && check.tail) lines.push(redactCredentialFormats(check.tail));
+  }
+  const review = loop.review;
+  if (review) {
+    lines.push(
+      `Review: ${review.verdict} by ${review.backend ?? 'CLI'} ${review.model ?? ''}${review.sessionHandle ? `, session_handle=${review.sessionHandle}` : ''}`,
+    );
+    if (review.reason) lines.push(redactCredentialFormats(review.reason));
+  } else {
+    lines.push('Review: not run.');
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -218,6 +245,7 @@ export function formatExecutionResult(
   let listPrice: ListPrice | undefined;
   let preEvaluatedReview: StateEnvelopeEvaluation | undefined;
   let observedChanges: WorkspaceChanges | undefined;
+  let loopReport: LoopReport | undefined;
   let fallbackText = '';
   let formatOpts = options;
 
@@ -232,6 +260,7 @@ export function formatExecutionResult(
     listPrice = outcome.listPrice;
     preEvaluatedReview = outcome.review;
     observedChanges = outcome.changes;
+    loopReport = outcome.loop;
     fallbackText = typeof resOrDefaultText === 'string' ? resOrDefaultText : '';
   } else {
     provider = outcomeOrProvider as string | null;
@@ -287,6 +316,7 @@ export function formatExecutionResult(
   }
   // A failed or cancelled worker may still have changed files, so the block follows every outcome.
   if (observedChanges) parts.push(present(formatObservedChanges(observedChanges)));
+  if (loopReport) parts.push(present(formatLoopReport(loopReport)));
 
   const durationMs = Math.max(
     0,

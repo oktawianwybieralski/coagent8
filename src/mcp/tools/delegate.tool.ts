@@ -8,7 +8,12 @@ import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { EXECUTION_PARAMETERS } from '../schema.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { formatExecutionResult } from '../result.js';
-import { executeDelegation, startDelegation } from '../../execution/delegation.js';
+import { executeDelegation, startDelegation, type Supervise } from '../../execution/delegation.js';
+import { approveChecks, parseCheckCommand, type CheckApprovalPrompt } from '../../execution/checks.js';
+import { reviewOnAnotherBackend, superviseChange } from '../../execution/loop.js';
+import { resolveBackend } from '../../execution/routing.js';
+import { loadConfig } from '../../config.js';
+import { executeReview } from './review.tool.js';
 import { getDataDir, getRuntimePath } from '../../paths.js';
 import { endNotesPath, isTaskFinished, type DelegationTask } from '../../sessions/tasks.js';
 import type { TaskOptions } from '../../execution/controller.js';
@@ -20,6 +25,7 @@ export type DelegateArguments = Omit<ToolArguments, 'scope'> & {
   task?: string;
   scope?: string[];
   checks?: string[];
+  loop?: boolean;
   mode?: 'async' | 'sync';
   request_id?: string;
 };
@@ -30,15 +36,15 @@ const MAX_LIST_ENTRIES = 50;
 export function getCanonicalDelegateToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.DELEGATE,
-    description:
-      'Another agent changes code here, without commits; returns a task handle while it runs, then its report and the files seen changing. Review it.',
+    description: 'Another agent edits code here, no commits; returns a task handle, then its report and files seen changing. Review it.',
     inputSchema: {
       type: 'object',
       properties: {
         // An empty task is refused by the handler; `minLength` would cost bytes on every Codex request.
-        task: { type: 'string', description: 'Change and acceptance criteria; name files, do not paste them.' },
-        scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may change; default all.' },
-        checks: { type: 'array', items: { type: 'string' }, description: 'Commands it runs, e.g. npm test.' },
+        task: { type: 'string', description: 'Change and acceptance criteria; name files, do not paste.' },
+        scope: { type: 'array', items: { type: 'string' }, description: 'Paths it may change.' },
+        checks: { type: 'array', items: { type: 'string' }, description: 'Commands, e.g. npm test.' },
+        loop: { type: 'boolean', description: 'Server checks, reviews.' },
         mode: { type: 'string', enum: ['async', 'sync'] },
         request_id: { type: 'string' },
         ...EXECUTION_PARAMETERS,
@@ -58,12 +64,13 @@ function list(values: unknown, name: string): string[] {
 }
 
 /** Builds the worker's prompt: the task, its scope and checks, and the rules of a delegated change. */
-export function delegatePrompt(task: string, scope: readonly string[], checks: readonly string[]): string {
+export function delegatePrompt(task: string, scope: readonly string[], checks: readonly string[], loop = false): string {
   return [
     '[TASK: DELEGATED CODE CHANGE]',
     'Another agent delegates this change to you. Make it by editing files in this workspace, then report.',
     `Change only: ${scope.length ? scope.join(', ') : 'files in this workspace'}.`,
     'Do not commit, push, reset, stash, check out or switch branches, and do not change Git configuration or files outside the workspace; leave your changes in the working tree.',
+    ...(loop ? ['The server runs the checks below and an independent review after you finish, and returns failures to you.'] : []),
     checks.length
       ? 'Run the checks below and fix failures your change causes.'
       : "Run the project's relevant tests or checks if there are any, and fix failures your change causes.",
@@ -78,6 +85,55 @@ export function delegatePrompt(task: string, scope: readonly string[], checks: r
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/** The loop of one delegation: the review runs on another backend, in one session across rounds. */
+function loopSupervisor(task: string, checks: readonly string[], workspaceCwd: string, clock: TaskOptions['clock']): Supervise {
+  return (first, turn) => {
+    let reviewSession: string | undefined;
+    let reviewBackend: string | undefined;
+    return superviseChange(first, {
+      checks,
+      cwd: workspaceCwd,
+      signal: turn.signal,
+      remainingMs: () => turn.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY,
+      fix: turn.fix,
+      review: async () => {
+        // The backend and its session stay across rounds, so a later round compares with the earlier one.
+        const reviewed = await reviewOnAnotherBackend(
+          first.provider,
+          async excluded =>
+            reviewBackend && !excluded.has(reviewBackend)
+              ? reviewBackend
+              : (
+                  await resolveBackend('auto', {
+                    context: turn.context,
+                    eligible: async id =>
+                      excluded.has(id) ? new ToolError('CLI_NOT_FOUND', `${id} wrote this change or is out of quota.`) : undefined,
+                  })
+                ).id,
+          backend =>
+            turn.inRound(round =>
+              executeReview(
+                {
+                  backend,
+                  scope: 'uncommitted',
+                  instructions: `A change delegated with this task: ${task}`,
+                  ...(backend === reviewBackend && reviewSession ? { session_handle: reviewSession } : {}),
+                },
+                workspaceCwd,
+                turn.signal,
+                null,
+                { ...round, clock },
+              ),
+            ),
+        );
+        reviewBackend = reviewed.provider ?? reviewBackend;
+        reviewSession = reviewed.sessionHandle ?? reviewSession;
+        return reviewed;
+      },
+    });
+  };
 }
 
 /** The command that blocks until a task finishes, built from this server's own process. */
@@ -134,7 +190,10 @@ export async function handleDelegate(
   workspaceCwd: string,
   abortSignal: AbortSignal | null = null,
   onProgress: ToolProgress = null,
-  options: Pick<TaskOptions, 'askConsent' | 'budget' | 'context' | 'clock' | 'warnings'> & { clientName?: string } = {},
+  options: Pick<TaskOptions, 'askConsent' | 'budget' | 'context' | 'clock' | 'warnings'> & {
+    clientName?: string;
+    askChecks?: CheckApprovalPrompt;
+  } = {},
 ) {
   const task = typeof args.task === 'string' ? args.task.trim() : '';
   if (!task) throw new ToolError('INPUT_LIMIT', 'task is required.');
@@ -155,12 +214,22 @@ export async function handleDelegate(
   ]
     .filter(Boolean)
     .join('\n');
-  const { scope: _scope, checks: _checks, task: _task, mode, request_id: requestId, ...request } = args;
+  const { scope: _scope, checks: _checks, task: _task, loop: loopArgument, mode, request_id: requestId, ...request } = args;
+  const loop = loopArgument === true;
+  // A check that cannot run is refused now, not after the worker's turn.
+  if (loop) checks.forEach(parseCheckCommand);
+  const approve = async () => {
+    if (loop) await approveChecks(checks, loadConfig().allowedChecks ?? [], options.askChecks, abortSignal);
+  };
+  const supervise = loop ? loopSupervisor(task, checks, workspaceCwd, options.clock) : undefined;
+  const prompt = delegatePrompt(task, effectiveScope, checks, loop);
   if (mode !== undefined && mode !== 'async' && mode !== 'sync') throw new ToolError('INPUT_LIMIT', 'mode must be async or sync.');
   if (mode !== 'sync') {
     const started = await startDelegation({
-      prompt: delegatePrompt(task, effectiveScope, checks),
+      prompt,
       publicInput,
+      approve,
+      supervise,
       args: request,
       cwd: workspaceCwd,
       scope: effectiveScope,
@@ -175,15 +244,12 @@ export async function handleDelegate(
     if ('outcome' in started) return formatExecutionResult(started.outcome);
     return delegationStarted(started.task, options.clientName);
   }
-  const outcome = await executeDelegation(
-    delegatePrompt(task, effectiveScope, checks),
-    publicInput,
-    request,
-    workspaceCwd,
-    effectiveScope,
-    abortSignal,
-    onProgress,
-    { requireEnvelope: false, ...options },
-  );
+  await approve();
+  const { askChecks: _askChecks, clientName: _clientName, ...taskOptions } = options;
+  const outcome = await executeDelegation(prompt, publicInput, request, workspaceCwd, effectiveScope, abortSignal, onProgress, {
+    requireEnvelope: false,
+    ...taskOptions,
+    supervise,
+  });
   return formatExecutionResult(outcome);
 }

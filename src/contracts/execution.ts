@@ -108,6 +108,28 @@ export interface TaskExecutionResult {
   };
   /** What the server observed in the workspace around a `workspace-write` turn (`DELEGATE-001w`). */
   changes?: WorkspaceChanges;
+  /** What the server-owned loop observed (`DELEGATE-001f2`). */
+  loop?: LoopReport;
+}
+
+/** What the server observed of one check. */
+export interface CheckResult {
+  command: string;
+  status: 'passed' | 'failed' | 'not_started' | 'timed_out' | 'cancelled';
+  exitCode: number | null;
+  durationMs: number;
+  /** The redacted end of its output. */
+  tail: string;
+}
+
+/** The last round of the server-owned loop of a delegated change. */
+export interface LoopReport {
+  outcome: 'passed' | 'checks_failed' | 'review_blocked' | 'review_failed' | 'worker_failed' | 'needs_input' | 'cancelled' | 'timed_out';
+  fixRounds: number;
+  /** The checks of the last round, up to the first that did not pass. */
+  checks: CheckResult[];
+  review?: { verdict: string; reason?: string; backend: ProviderId | null; model: string | null; sessionHandle: string | null };
+  detail?: string;
 }
 
 /**

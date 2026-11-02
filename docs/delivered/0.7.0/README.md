@@ -53,3 +53,12 @@ Planning, rules and test-stability changes that belong to no delivered card:
 WSL acceptance (`ACCEPT-001c`, including the POSIX recovery checks of 2.12d)
 and Open VSX (`PROPOSALS-001b`), owner decision 2026-10-19. Delegation
 (`DELEGATE-001`) is built by the owner on a separate branch.
+
+## Release (note 2026-11-02)
+
+The status at the top of this page is out of date: 0.7.0 is released. Release PR
+[#85](https://github.com/oktawianwybieralski/coagent8/pull/85) was merged as `250eea1` on 2026-10-20, tag
+`v0.7.0` exists, the [GitHub Release](https://github.com/oktawianwybieralski/coagent8/releases/tag/v0.7.0)
+carries the npm tarball, the VSIX and `SHA256SUMS`, and npm serves 0.7.0 as `latest`. Tester notes:
+[v0.7.0](../../releases/v0.7.0.md). The native acceptance of the candidate and the release review are not
+recorded here, because this note was written from the public release alone.

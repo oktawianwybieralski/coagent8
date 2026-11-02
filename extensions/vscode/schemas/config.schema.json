@@ -25,6 +25,11 @@
       "default": "English",
       "description": "Language the backends answer the calling agent in; the calling agent relays the answer in your language. null adds no instruction, so a backend follows the workspace."
     },
+    "allowedChecks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Commands the server may run after a delegated change without asking, each exactly as written in the call. They run with your account's rights, outside any sandbox, and execute code the worker may have changed."
+    },
     "routing": {
       "type": "object",
       "additionalProperties": false,

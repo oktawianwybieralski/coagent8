@@ -1498,6 +1498,22 @@ publication stay outside the loop. It depends on `COAGENT-002` to `004` and
 `WINDOWS-001b-e`; containment alone does not authorize the server to run
 arbitrary `checks` strings.
 
+**As built, first slice (`loop: true`, owner decision 2026-11-02).** The server runs `checks` after
+the worker, with the user's account and outside any sandbox, ahead of `COAGENT-002`'s bounded command
+profile. They execute code the worker may have changed, so an argument list without a shell limits
+their syntax only. A check runs only if it is an exact entry of `allowedChecks` in the user's
+configuration, or the user approves it on a form before the task starts; a calling agent cannot approve
+one. Each round runs the checks in order up to the first failure, then, only if they pass, a read-only
+review on another backend in one review session, moving on from a backend out of quota. Failures and P1 or P2 findings return to the worker's
+session for at most `LOOP_FIX_ROUNDS` turns, and each round repeats the checks and the review. Later
+turns get no form, since the call that could ask has ended: a model that needs approval ends the loop
+with `needs_input`. `Loop by CoAgent8` in the result reports `passed`, `checks_failed`,
+`review_blocked`, `review_failed`, `worker_failed`, `needs_input`, `cancelled` or `timed_out`, with
+the checks of the last round. The task state stays that of the worker's turn, unless the loop was
+cancelled or timed out. Each later turn has its own limit of 30 minutes within what is left of the task's
+budget, and a check has 15 minutes. A pause that waits for the user is not built: `needs_input` ends the
+task, and the caller continues with the session handle.
+
 ## Owner decisions
 
 These decisions explain behavior that could otherwise look accidental. Change them

@@ -43,9 +43,14 @@ export async function executeDelegation(
   scope: readonly string[],
   abortSignal?: AbortSignal | null,
   onProgress?: ((info: { message?: string }) => void) | null,
-  options: Omit<TaskOptions, 'profile'> & { beforeRelease?: (outcome: TaskExecutionResult) => Promise<void> } = {},
+  options: Omit<TaskOptions, 'profile'> & {
+    beforeRelease?: (outcome: TaskExecutionResult) => Promise<void>;
+    supervise?: Supervise;
+    /** Longest turn of a later round; replaceable by tests. */
+    loopTurnMs?: number;
+  } = {},
 ): Promise<TaskExecutionResult> {
-  const { beforeRelease, ...taskOptions } = options;
+  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, ...taskOptions } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
   if (process.platform === 'win32' && !jobHelperPath()) {
     throw new ToolError(
@@ -62,11 +67,43 @@ export async function executeDelegation(
   let treeUnconfirmed = false;
   try {
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
-    const runTask = () =>
-      withWorkerGroups(
-        () => executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...taskOptions, profile: 'workspace-write' }),
-        lease,
-      );
+    const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
+      executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, { ...turnOptions, profile: 'workspace-write' });
+    const runSupervised = async () => {
+      const first = await turn(prompt, args, taskOptions);
+      if (!supervise) return first;
+      // Each later turn has its own bound within what is left of the task's budget.
+      const inRound: Supervision['inRound'] = async run => {
+        const remainingMs = Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY);
+        if (remainingMs <= 0) throw new ToolError('TIMEOUT', 'The task budget ended before the next turn.');
+        const budget = createExecutionBudget({
+          totalBudgetMs: remainingMs,
+          parentSignal: abortSignal ?? undefined,
+          clock: options.clock,
+        });
+        try {
+          return await run({ budget, context: { abortSignal: budget.executionSignal, budget, timeoutMs: budget.remainingExecutionMs() } });
+        } finally {
+          budget.dispose();
+        }
+      };
+      return supervise(first, {
+        signal: abortSignal ?? null,
+        budget: options.budget,
+        context: options.context,
+        inRound,
+        // The call that could show a form has ended: a model that needs approval is refused.
+        fix: text =>
+          inRound(round =>
+            turn(
+              text,
+              { ...args, session_handle: first.sessionHandle ?? undefined },
+              { ...taskOptions, ...round, askConsent: undefined, onTurnStart: undefined },
+            ),
+          ),
+      });
+    };
+    const runTask = () => withWorkerGroups(runSupervised, lease);
     outcome = await (process.platform === 'win32'
       ? withRequiredJobHelper(runTask, () => {
           treeUnconfirmed = true;
@@ -121,6 +158,24 @@ export function stopActiveDelegations(): Promise<unknown> {
   return Promise.allSettled([...activeDelegations.keys()]);
 }
 
+/** Longest turn of a later round of the loop, fix or review. */
+const LOOP_TURN_MS = 30 * 60 * 1000;
+
+/** What a supervisor gets to work with. */
+export interface Supervision {
+  signal: AbortSignal | null;
+  budget?: TaskOptions['budget'];
+  context?: TaskOptions['context'];
+  /** Runs one turn under its own bound. */
+  inRound: <T>(
+    run: (round: { budget: NonNullable<TaskOptions['budget']>; context: NonNullable<TaskOptions['context']> }) => Promise<T>,
+  ) => Promise<T>;
+  fix: (prompt: string) => Promise<TaskExecutionResult>;
+}
+
+/** Supervises a change after the worker's first turn, with the writer held; returns the last result. */
+export type Supervise = (first: TaskExecutionResult, turn: Supervision) => Promise<TaskExecutionResult>;
+
 /** A request for one asynchronous delegation. */
 export interface DelegationStart {
   prompt: string;
@@ -132,6 +187,9 @@ export interface DelegationStart {
   requestId?: string;
   /** Aborts the start until the turn runs; afterwards the request no longer owns the worker. */
   requestSignal?: AbortSignal | null;
+  /** Asks what must be settled before a new task starts, after a repeated request id was ruled out. */
+  approve?: () => Promise<void>;
+  supervise?: Supervise;
   /** Formats the outcome the way the tool returns it. */
   format: (outcome: TaskExecutionResult) => { text: string; isError: boolean };
   options: Pick<TaskOptions, 'askConsent' | 'requireEnvelope' | 'warnings' | 'clock'>;
@@ -166,6 +224,7 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     }
     return { task: existing };
   }
+  await start.approve?.();
   try {
     pruneTasks();
   } catch (err) {
@@ -208,6 +267,7 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   };
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
+    supervise: start.supervise,
     budget,
     context,
     onTurnStart: async turn => {

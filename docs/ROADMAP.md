@@ -617,6 +617,8 @@ asynchronous lifecycle for the existing write delegation. Owner decisions
   independent read-only review in a separate session, one final wake-up),
   after `COAGENT-002` to `004` and `WINDOWS-001b-e`; multi-file skill
   packaging (`COAGENT-005`) is not a prerequisite. Check: R, native.
+  Owner decision 2026-11-02: its first slice ships ahead of those cards, with
+  checks the user approves running outside any sandbox (#117).
 
 ## STANDARDS-001: shared agent standards
 

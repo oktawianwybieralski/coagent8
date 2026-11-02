@@ -13,6 +13,8 @@ Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegati
 | [#95](https://github.com/oktawianwybieralski/coagent8/pull/95) | `5f770c6` | 2026-10-31 | feat(delegate): delegate code changes to another agent |
 | [#105](https://github.com/oktawianwybieralski/coagent8/pull/105) | `3ae31da` | 2026-11-02 | feat(delegate): run delegate asynchronously and wake the caller |
 | [#123](https://github.com/oktawianwybieralski/coagent8/pull/123) | `f372179` | 2026-11-02 | fix(delegate): bound the first Git read and refuse oversized Codex prompts |
+| [#125](https://github.com/oktawianwybieralski/coagent8/pull/125) | `9ef042a` | 2026-11-02 | fix(delegate): recognize a dead server, its worker and a reused PID |
+| [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | pending | pending | feat(delegate): run checks, review and fix rounds in one call |
 
 ## Scope
 
@@ -79,6 +81,32 @@ The skill's instruction was not separately exercised: the agent already knew the
 A delegation through Codex makes Codex add a trust entry for that directory to the user's
 `~/.codex/config.toml` (#124).
 
-Note 2026-11-02: the deferrals of #121 and #122 above are withdrawn; both are solved in this PR.
+Note 2026-11-02: the deferrals of #121 and #122 above are withdrawn; both are solved in #125.
 `session` action `list` takes `mine: true` for the sessions of the calling agent, in a client that exposes
 an id; of the clients tried, Claude Code does (`CLAUDE_CODE_SESSION_ID`). The label filters only (#116).
+
+## Server-owned loop, first slice (2026-11-02)
+
+`DELEGATE-001f2`, ahead of `COAGENT-002` to `004` by owner decision 2026-11-02: `delegate` with
+`loop: true` runs user-approved `checks` outside any sandbox, then a read-only review on another
+backend, and returns failures to the worker for at most two fix rounds, with the writer held.
+
+Native, a fresh server from the bundle, the check in `allowedChecks` of an isolated configuration:
+
+| Writer | Task | Loop | Review | Own run of the check |
+| --- | --- | --- | --- | --- |
+| Codex `gpt-6.1-terra` | fix a real bug in `add.js` | `passed`, no fix round | READY by Claude Code `claude-opus-5-5` | exit 0 |
+| Claude Code `claude-haiku-5-5` | add a comment, while the check needs a bug fixed that the task does not name | `review_blocked` after 2 fix rounds | BLOCKED by Codex `gpt-6.1-terra` | exit 0 |
+
+The second run shows both ends of the rounds: the check failed on the first turn and a fix round made it
+pass, and the review then blocked because the change went beyond the task, so the bound ended the loop
+with the failure reported. The same task on an earlier build ended `checks_failed`: the worker undid its
+fix on the review's finding, so a model may land on either side of this conflict.
+
+An earlier run ended `review_failed` on agy's quota, so the review now moves on from a backend out of
+quota.
+
+Not run: the form in a real client, agy as a writer in the loop, POSIX natively.
+
+Each later turn of the loop has its own limit (30 minutes) within the task's budget. `needs_input` ends
+the task instead of pausing it, and the caller continues with the session handle.

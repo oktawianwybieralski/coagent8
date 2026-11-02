@@ -45,6 +45,8 @@ export interface CoAgent8Config {
    * {@link DEFAULT_ANSWER_LANGUAGE}.
    */
   answerLanguage?: string | null;
+  /** Commands the server may run after a delegated change without asking, each exactly as written. */
+  allowedChecks?: string[];
   routing: RoutingConfig;
   /** Per-backend settings; doctor records a default model here when it finds none. */
   backends: Partial<Record<ProviderId, BackendSettings>>;
@@ -182,6 +184,11 @@ export function validateConfig(value: unknown): CoAgent8Config {
     throw new Error('Configuration Error: Invalid answerLanguage: expected a language name of at most 40 letters, or null.');
   }
 
+  const allowedChecks = config.allowedChecks;
+  if (allowedChecks !== undefined && !(Array.isArray(allowedChecks) && allowedChecks.every(check => typeof check === 'string'))) {
+    throw new Error('Configuration Error: Invalid allowedChecks: expected a list of commands.');
+  }
+
   const routing = config.routing;
   let strategy = DEFAULT_CONFIG.routing.strategy;
   let allowedBackends = [...DEFAULT_CONFIG.routing.allowedBackends];
@@ -307,6 +314,7 @@ export function validateConfig(value: unknown): CoAgent8Config {
     schemaVersion,
     defaultBackend: defaultBackend as BackendId | null,
     ...(answerLanguage === undefined ? {} : { answerLanguage }),
+    ...(allowedChecks === undefined ? {} : { allowedChecks: allowedChecks as string[] }),
     routing: {
       strategy,
       allowedBackends,
@@ -421,6 +429,7 @@ function computeChangeIdentity(config: CoAgent8Config, provenance: ConfigProvena
     schemaVersion: config.schemaVersion,
     defaultBackend: config.defaultBackend,
     answerLanguage: config.answerLanguage,
+    allowedChecks: config.allowedChecks,
     routing: config.routing,
     backends: config.backends,
     governance: config.governance,

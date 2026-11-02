@@ -15,7 +15,7 @@ cooperating agents ([ROADMAP](../../ROADMAP.md)).
 | Card | Delivered in 0.8.0 | PRs |
 | --- | --- | --- |
 | [STANDARDS-001](STANDARDS-001.md) | Shared agent standards v0.1.0 and keyboard characters in CoAgent8 output | #96, #97 |
-| [DELEGATE-001](DELEGATE-001.md) | Write delegation, asynchronous by default, with a wait command | #95, #105 |
+| [DELEGATE-001](DELEGATE-001.md) | Write delegation, asynchronous by default, with a wait command and a server-owned loop | #95, #105 |
 | [FORMAT-001](FORMAT-001.md) | One formatter (Prettier) checked in CI | #98 |
 | [WINDOWS-001](WINDOWS-001.md) | Per-call Windows containment: launcher contract, helper and unsigned package | #102, #103 |
 
