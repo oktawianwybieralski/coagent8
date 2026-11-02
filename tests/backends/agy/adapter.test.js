@@ -224,6 +224,14 @@ test('#128: an answer before a network failure stands, with a warning; work in p
     assert.equal(stopped.status, 'failed', 'a tool ran after the text, so the turn was not done');
     assert.match(stopped.error.message, /no such host/);
     assert.match(stopped.output, /The whole answer/);
+
+    process.env.coagent8_FIXTURE_MODE = 'streaming-then-network';
+    const cut = await execute('Answer', { model: MODEL, cwd: tempDir });
+    assert.equal(cut.status, 'failed', 'text still streaming is no finished answer');
+
+    process.env.coagent8_FIXTURE_MODE = 'answer-then-network';
+    const review = await execute('Answer', { model: MODEL, cwd: tempDir, requireCompleteTurn: true });
+    assert.equal(review.status, 'failed', 'a review needs a turn that ended by itself');
   } finally {
     delete process.env.coagent8_FIXTURE_MODE;
   }

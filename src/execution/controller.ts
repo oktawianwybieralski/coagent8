@@ -574,6 +574,7 @@ async function executeTaskInternal(
           onEvent: receive,
           profile: options.profile ?? 'read-only',
           ...(options.writeScope ? { writeScope: options.writeScope } : {}),
+          ...(options.requireEnvelope ? { requireCompleteTurn: true } : {}),
         };
         await options.onTurnStart?.({ sessionHandle: session.sessionHandle, backend: backend.id, model: model ?? null });
         const raw: ExecutionResult = await backend.adapter.execute(

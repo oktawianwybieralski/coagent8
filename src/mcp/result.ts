@@ -349,7 +349,7 @@ export function formatExecutionResult(
       footerLines.push(`Denied (observed from tool events): ${op}${target}${why}`.trim());
     }
   }
-  if (error && output && activeHandle) {
+  if (error && output && activeHandle && executionMeta.historyAvailable) {
     footerLines.push(`The answer as far as it was written: session tool, action messages, session_handle=${activeHandle}.`);
   }
   if (priceNote) footerLines.push(`Price: ${priceNote}`);

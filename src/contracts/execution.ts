@@ -230,6 +230,8 @@ export interface ExecutionOptions {
   onEvent?: (event: AdapterEvent) => void;
   /** Execution profile of the turn; read-only when absent. */
   profile?: ExecutionProfile;
+  /** A result counts only from a turn that ended by itself, as a review needs. */
+  requireCompleteTurn?: boolean;
   /** Paths a `workspace-write` turn may change, relative to the workspace; empty means all. */
   writeScope?: readonly string[];
 }

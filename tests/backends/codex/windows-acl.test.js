@@ -53,6 +53,7 @@ test(
       assert.equal(await unreachableWriteFolder(cwd, []), undefined, 'no scope, nothing to walk');
       assert.equal(await unreachableWriteFolder(cwd, ['open/closed/deep']), undefined, 'all inherited');
       assert.equal(await unreachableWriteFolder(cwd, ['missing/folder']), undefined);
+      assert.deepEqual(parseAcl('Unrecognized output', 'x'), [], 'read by the caller as inconclusive');
       const user = process.env.USERNAME;
       const ran = spawnSync('icacls', [closed, '/inheritance:r', '/grant', `${user}:(OI)(CI)F`], { windowsHide: true });
       assert.equal(ran.status, 0);

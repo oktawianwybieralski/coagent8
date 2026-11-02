@@ -526,8 +526,16 @@ export async function execute(
         'agy stopped at its output token limit; the answer is incomplete. ' +
         'A follow-up in the same session can stop the same way: ask for the rest in a shorter form or in a new session.',
     });
-  // The agent wrote its answer and ran nothing after it; only a later request failed (#128).
-  if (error?.code === 'PROCESS_ERROR' && isNetworkFailure(error.message) && s.answeredLast && s.output.trim()) {
+  // The agent finished its answer and ran nothing after it; only a later request failed (#128).
+  // A review and a change need a whole turn: there the failure stands.
+  if (
+    error?.code === 'PROCESS_ERROR' &&
+    isNetworkFailure(error.message) &&
+    s.answeredLast &&
+    s.output.trim() &&
+    !writes &&
+    !options.requireCompleteTurn
+  ) {
     options.onEvent?.({
       type: 'warning',
       message: `agy's next request failed after it wrote this answer, so the turn did not end by itself: ${error.message}`,

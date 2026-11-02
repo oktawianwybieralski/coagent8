@@ -44,12 +44,15 @@ export function parseAcl(output: string, folder: string): AclEntry[] {
 async function readAcl(directory: string, context?: BackendReadContext): Promise<AclEntry[] | null> {
   const icacls = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'icacls.exe');
   const ran = await runCommand(icacls, [directory], { abortSignal: context?.abortSignal, timeoutMs: 10000, maxBufferBytes: 256 * 1024 });
-  return ran.status === 'completed' && ran.exitCode === 0 ? parseAcl(ran.stdout ?? '', directory) : null;
+  if (ran.status !== 'completed' || ran.exitCode !== 0) return null;
+  const entries = parseAcl(ran.stdout ?? '', directory);
+  return entries.length ? entries : null;
 }
 
 /**
  * Whether the grant on a workspace reaches a folder: by inheritance, or by its own entry for one
- * of the names that may write in the workspace.
+ * of the names that may write in the workspace. Any inherited entry shows that inheritance is on;
+ * the walk from the workspace down checks each folder above this one the same way.
  */
 export function aclReachesFolder(workspace: readonly AclEntry[], folder: readonly AclEntry[]): boolean {
   if (folder.some(entry => entry.inherited)) return true;
@@ -78,8 +81,13 @@ export async function unreachableWriteFolder(
     let current = cwd;
     for (const part of entry.split(/[\\/]/).filter(Boolean)) {
       current = path.join(current, part);
-      const stat = fs.statSync(current, { throwIfNoEntry: false });
-      if (!stat?.isDirectory()) break;
+      let isDirectory = false;
+      try {
+        isDirectory = fs.statSync(current, { throwIfNoEntry: false })?.isDirectory() ?? false;
+      } catch {
+        // Inconclusive, like a failed read of the permissions.
+      }
+      if (!isDirectory) break;
       if (seen.has(current)) continue;
       seen.add(current);
       const folder = await readAcl(current, context);

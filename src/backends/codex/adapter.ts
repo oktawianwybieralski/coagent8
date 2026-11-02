@@ -227,7 +227,9 @@ export async function execute(prompt: string, options: ExecutionOptions = {}): P
     );
   }
   if (profile === 'workspace-write' && options.cwd) {
-    const closed = await unreachableWriteFolder(path.resolve(options.cwd), options.writeScope ?? []);
+    const closed = await unreachableWriteFolder(path.resolve(options.cwd), options.writeScope ?? [], {
+      abortSignal: options.abortSignal ?? undefined,
+    });
     if (closed) {
       return rejected(
         'SANDBOX_UNAVAILABLE',

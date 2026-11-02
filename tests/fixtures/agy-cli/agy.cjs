@@ -210,6 +210,18 @@ function run() {
     });
     return;
   }
+  if (mode === 'streaming-then-network') {
+    send({
+      event: 'step_update',
+      step_update: { conversation_id: sid, step_index: 1, step_type: 'agent_response', state: 'ACTIVE', text_delta: 'Half an ans' },
+    });
+    send({
+      event: 'result',
+      result: { conversation_id: sid, status: 'ERROR', error: 'request failed: dial tcp: lookup example.invalid: no such host' },
+    });
+    return;
+  }
+
   if (mode === 'answer-then-network' || mode === 'tool-then-network') {
     send({
       event: 'step_update',

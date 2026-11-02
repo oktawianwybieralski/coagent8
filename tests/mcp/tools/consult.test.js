@@ -221,7 +221,7 @@ test('Issue #20: handleConsult includes read-only file tool guidance when task_t
   assert.equal(
     receivedPrompts[0],
     withAnswerLanguage(
-      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nIf something you need is out of reach, say so: the server sets what this turn can reach, the caller did not forbid it.\nPlain question',
+      'Answer what is asked, conclusion first, concisely, without preamble or sections nobody asked for.\nIf something you need is out of reach, say so: the server sets what this turn can reach.\nPlain question',
     ),
     'plain consult without task_type or context_files stays byte-for-byte neutral, apart from the answer language',
   );
