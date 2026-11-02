@@ -416,21 +416,49 @@ test('a lease records worker groups, drops ended ones and writes none after its 
   const { gitDir, record } = gitDirFixture();
   const alive = new Set([11]);
   const lease = await acquireWriterLease(gitDir, group => alive.has(group));
-  lease.addWorkerGroup(11);
-  lease.addWorkerGroup(12);
-  lease.addWorkerGroup(13);
-  const released = lease.release();
-  lease.addWorkerGroup(14);
-  await released;
-  assert.equal(fs.existsSync(record), false);
+  const read = () => JSON.parse(fs.readFileSync(record, 'utf8'));
+  for (const group of [11, 12, 13]) {
+    lease.workerStarting();
+    assert.equal(read().starting, true, 'the record says so before the process starts');
+    lease.workerStarted(group);
+    assert.equal(read().starting, undefined);
+  }
+  assert.deepEqual(read().workerGroups, [11, 13]);
+  lease.workerStarting();
+  lease.workerStarted();
+  assert.deepEqual(read().workerGroups, [11], 'a failed start adds none');
+  await lease.release();
+  lease.workerStarting();
+  assert.equal(fs.existsSync(record), false, 'and a release is final');
+});
 
-  const second = await acquireWriterLease(gitDir, group => alive.has(group));
-  second.addWorkerGroup(11);
-  second.addWorkerGroup(12);
-  second.addWorkerGroup(13);
-  await new Promise(resolve => setTimeout(resolve, 200));
-  assert.deepEqual(JSON.parse(fs.readFileSync(record, 'utf8')).workerGroups, [11, 13]);
-  await second.release();
+test('a crash while a worker starts leaves the slot taken, with the way out', async () => {
+  const { gitDir, record } = gitDirFixture();
+  fs.writeFileSync(record, JSON.stringify({ pid: endedPid(), token: 'old', startedAt: 'x', starting: true }));
+  await assert.rejects(acquireWriterLease(gitDir), err => {
+    assert.equal(err.code, 'SESSION_BUSY');
+    assert.ok(err.message.includes(record), 'it names the file to delete');
+    return true;
+  });
+  fs.rmSync(record);
+  await (await acquireWriterLease(gitDir)).release();
+});
+
+test('a record update that fails leaves the call running', async () => {
+  const { gitDir, record } = gitDirFixture();
+  const lease = await acquireWriterLease(gitDir);
+  fs.mkdirSync(`${record}.${process.pid}.tmp`);
+  const write = process.stderr.write;
+  const warnings = [];
+  process.stderr.write = text => warnings.push(String(text)) > 0;
+  try {
+    lease.workerStarting();
+  } finally {
+    process.stderr.write = write;
+  }
+  assert.match(warnings.join(''), /writer record was not updated/);
+  await lease.release();
+  assert.equal(fs.existsSync(record), false);
 });
 
 test('a malformed list of worker groups is never overwritten', async () => {
@@ -458,7 +486,7 @@ test(
 );
 
 test('a delegation records the process group of its worker', { skip: process.platform === 'win32' ? 'POSIX groups' : false }, async () => {
-  const repo = fixtureRepo();
+  const { repo } = fixtureRepo();
   process.env.CODEX_FIXTURE_MODE = 'interruptible';
   const record = path.join(repo, '.git', WRITER_RECORD_FILE);
   const running = handleDelegate({ task: 'Change it', backend: 'codex', model: MODEL, timeout_ms: 2000 }, repo, null, null, approve);

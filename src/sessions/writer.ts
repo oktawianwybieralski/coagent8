@@ -29,13 +29,17 @@ interface WriterRecord {
   startedAt: string;
   /** POSIX process groups of the processes this call started; absent until the first one. */
   workerGroups?: number[];
+  /** A process is being started and its group is not recorded yet. */
+  starting?: boolean;
 }
 
 /** Ownership of a work tree's writer slot; `release` is idempotent. */
 export interface WriterLease {
   readonly token: string;
-  /** Records a worker's process group; a failure is logged, because the worker already runs. */
-  addWorkerGroup(groupId: number): void;
+  /** Call synchronously before a worker starts, so a crash from here on leaves the slot taken. */
+  workerStarting(): void;
+  /** Call synchronously after that start, with the worker's process group if it started. */
+  workerStarted(groupId?: number): void;
   release(): Promise<void>;
 }
 
@@ -61,6 +65,7 @@ function readWriter(file: string): WriterRecord | null {
     typeof r.startedAt !== 'string' ||
     !Number.isSafeInteger(r.pid) ||
     (r.pid as number) <= 0 ||
+    (r.starting !== undefined && typeof r.starting !== 'boolean') ||
     (r.workerGroups !== undefined &&
       !(Array.isArray(r.workerGroups) && r.workerGroups.every(group => Number.isSafeInteger(group) && group > 0)))
   )
@@ -105,32 +110,49 @@ export async function acquireWriterLease(
         `A worker of an ended CoAgent8 server may still be changing files in this work tree (process group ${living.join(', ')}). Wait for it to finish, or stop it with: kill -- -${living[0]}`,
       );
     }
+    if (current?.starting) {
+      throw new ToolError(
+        'SESSION_BUSY',
+        `A CoAgent8 server ended while it started a worker in this work tree, so a worker may still be changing files. If none runs, delete ${file}.`,
+      );
+    }
     const record: WriterRecord = { pid: process.pid, token, startedAt: new Date().toISOString() };
     await atomicWrite(file, JSON.stringify(record));
   });
   let released = false;
-  let updates: Promise<void> = Promise.resolve();
+  let starting = 0;
+  // Synchronous and without the lock: only this holder writes a record whose process lives, and a
+  // reader under the lock sees the old or the new file. A failure is logged and the run goes on.
+  const update = (change: (record: WriterRecord) => WriterRecord) => {
+    if (released) return;
+    try {
+      const current = readWriter(file);
+      if (current?.token !== token) return;
+      const temporary = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify(change(current)), { mode: 0o600 });
+      fs.renameSync(temporary, file);
+    } catch (err) {
+      process.stderr.write(`Warning: the writer record was not updated: ${(err as Error).message}\n`);
+    }
+  };
   return {
     token,
-    addWorkerGroup(groupId) {
-      updates = updates
-        .then(() =>
-          withFileLock(file, async () => {
-            const current = readWriter(file);
-            if (current?.token !== token) return;
-            // Ended groups are dropped, so a call with many short commands keeps a small record.
-            const workerGroups = [...(current.workerGroups ?? []).filter(groupAlive), groupId];
-            await atomicWrite(file, JSON.stringify({ ...current, workerGroups }));
-          }),
-        )
-        .catch((err: Error) => {
-          process.stderr.write(`Warning: the worker process group ${groupId} was not recorded: ${err.message}\n`);
-        });
+    workerStarting() {
+      starting++;
+      update(record => ({ ...record, starting: true }));
+    },
+    workerStarted(groupId) {
+      starting--;
+      update(({ starting: _starting, ...record }) => ({
+        ...record,
+        ...(starting > 0 ? { starting: true } : {}),
+        // Ended groups are dropped, so a call with many short commands keeps a small record.
+        workerGroups: [...(record.workerGroups ?? []).filter(groupAlive), ...(groupId ? [groupId] : [])],
+      }));
     },
     async release() {
       if (released) return;
       released = true;
-      await updates;
       await withFileLock(file, async () => {
         // An unreadable record is left for the user: it may not be this call's.
         if (readWriter(file)?.token === token) fs.rmSync(file, { force: true });

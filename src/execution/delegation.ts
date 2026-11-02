@@ -64,7 +64,7 @@ export async function executeDelegation(
     const runTask = () =>
       withWorkerGroups(
         () => executeTask(prompt, publicInput, args, cwd, abortSignal, onProgress, { ...taskOptions, profile: 'workspace-write' }),
-        group => lease.addWorkerGroup(group),
+        lease,
       );
     outcome = await (process.platform === 'win32'
       ? withRequiredJobHelper(runTask, () => {

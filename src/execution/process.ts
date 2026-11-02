@@ -97,14 +97,20 @@ export function withRequiredJobHelper<T>(
   return requiredJobHelper.run({ locate, onTreeUnconfirmed }, run);
 }
 
-const workerGroupObserver = new AsyncLocalStorage<(groupId: number) => void>();
+/** Told synchronously around the start of each process. */
+export interface WorkerStartObserver {
+  workerStarting(): void;
+  workerStarted(groupId?: number): void;
+}
+
+const workerStartObserver = new AsyncLocalStorage<WorkerStartObserver>();
 
 /**
  * Runs `run` and reports the POSIX process group of each process it starts.
  * @remarks Windows has no such groups: the job helper ends a tree with its server.
  */
-export function withWorkerGroups<T>(run: () => Promise<T>, onGroup: (groupId: number) => void): Promise<T> {
-  return workerGroupObserver.run(onGroup, run);
+export function withWorkerGroups<T>(run: () => Promise<T>, observer: WorkerStartObserver): Promise<T> {
+  return workerStartObserver.run(observer, run);
 }
 
 function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, helper: string | undefined) {
@@ -342,12 +348,15 @@ export function runCommand(command: string, args: string[], options: RunCommandO
       failure('SANDBOX_UNAVAILABLE', 'The Windows job helper is missing or failed its digest check; the writer was not started.'),
     );
   }
+  const startObserver = process.platform === 'win32' ? undefined : workerStartObserver.getStore();
+  startObserver?.workerStarting();
   let child: ChildProcess;
   try {
     const resolved = resolveCliCommand(command, { env: options.env, cwd: options.cwd });
     child = launch(resolved.command, [...resolved.argsPrefix, ...args], options.cwd || process.cwd(), options.env || process.env, helper);
-    if (process.platform !== 'win32' && child.pid) workerGroupObserver.getStore()?.(child.pid);
+    startObserver?.workerStarted(child.pid);
   } catch (err) {
+    startObserver?.workerStarted();
     const error = err as Error & { code?: string };
     return Promise.resolve(
       failure(
