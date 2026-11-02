@@ -30,8 +30,8 @@ export interface DelegationTask {
   model: string | null;
   /** The server process that owns the worker. */
   serverPid: number;
-  /** Start time of `serverPid`, so a reused PID is not taken for the running server. */
-  serverStartedAt?: number;
+  /** Identity of `serverPid`, so a reused PID is not taken for the running server. */
+  serverIdentity?: string;
   startedAt: string;
   finishedAt?: string;
   /** The calling agent's own session, when its client exposes one; a label, never an authority. */
@@ -80,6 +80,8 @@ export function isTaskFinished(state: TaskState): boolean {
  * @param task - The record.
  */
 export async function writeTask(task: DelegationTask): Promise<void> {
+  // A new task of a reused handle: a note of the earlier one must not answer for it.
+  if (task.state === 'running') removeEndNote(task.taskHandle);
   fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
   await atomicWrite(taskFile(task.taskHandle), JSON.stringify(task));
 }
@@ -129,7 +131,9 @@ function endNotesDir(create: boolean): string | null {
   try {
     if (create) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stat = fs.lstatSync(dir);
-    if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) return null;
+    if (!stat.isDirectory()) return null;
+    // On Windows the temporary directory is private to the user's profile.
+    if (process.getuid && (stat.uid !== process.getuid() || (stat.mode & 0o077) !== 0)) return null;
     return dir;
   } catch {
     return null;
@@ -150,7 +154,11 @@ function writeEndNote(note: DelegationTask): boolean {
     fs.renameSync(temporary, file);
     return true;
   } catch {
-    fs.rmSync(temporary, { force: true });
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch {
+      // Removed with the directory's old notes.
+    }
     return false;
   }
 }
@@ -165,10 +173,22 @@ function readEndNote(handle: string, startedAt?: string): DelegationTask | null 
   const dir = endNotesDir(false);
   if (!dir || !TASK_HANDLE.test(handle)) return null;
   try {
-    const note = JSON.parse(readBoundedFileSync(path.join(dir, `${handle}.json`), MAX_TASK_BYTES)) as DelegationTask;
+    const file = path.join(dir, `${handle}.json`);
+    if (Date.now() - fs.statSync(file).mtimeMs >= TASK_RETENTION_MS) return null;
+    const note = JSON.parse(readBoundedFileSync(file, MAX_TASK_BYTES)) as DelegationTask;
     return startedAt === undefined || note.startedAt === startedAt ? note : null;
   } catch {
     return null;
+  }
+}
+
+function removeEndNote(handle: string): void {
+  const dir = endNotesDir(false);
+  if (!dir) return;
+  try {
+    fs.rmSync(path.join(dir, `${handle}.json`), { force: true });
+  } catch {
+    // Its startedAt still ties it to the earlier task.
   }
 }
 
@@ -205,7 +225,7 @@ export function readTask(handle: string): DelegationTask | null {
   if (task.state !== 'running') return task;
   const ended = readEndNote(handle, task.startedAt);
   if (ended) return ended;
-  return isRecordedProcessAlive(task.serverPid, task.serverStartedAt) ? task : { ...task, state: 'interrupted' };
+  return isRecordedProcessAlive(task.serverPid, task.serverIdentity) ? task : { ...task, state: 'interrupted' };
 }
 
 /**

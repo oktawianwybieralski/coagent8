@@ -19,7 +19,7 @@ const handleDelegate = (args, ...rest) => startDelegate({ mode: 'sync', ...args 
 const { handleConsult } = require('../../../src/mcp/tools/consult.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { acquireWriterLease, WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
-const { isProcessGroupAlive, isRecordedProcessAlive, processStartTime } = require('../../../src/sessions/activity.ts');
+const { isProcessGroupAlive, isRecordedProcessAlive, processIdentity } = require('../../../src/sessions/activity.ts');
 const {
   normalizeScopeEntry,
   inScope,
@@ -512,12 +512,11 @@ test('a reused PID does not hold the writer slot, but a running one does', async
   const { gitDir, record } = gitDirFixture();
   const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore', windowsHide: true });
   try {
-    const real = processStartTime(other.pid);
-    assert.ok(Number.isFinite(real), 'the system tells a start time');
-    assert.ok(Math.abs(real - Date.now()) < 120000, 'and it is the real one');
-    fs.writeFileSync(record, JSON.stringify({ pid: other.pid, pidStartedAt: real, token: 'old', startedAt: 'x' }));
+    const real = processIdentity(other.pid);
+    assert.ok(real, 'the system tells an identity');
+    fs.writeFileSync(record, JSON.stringify({ pid: other.pid, pidIdentity: real, token: 'old', startedAt: 'x' }));
     await assert.rejects(acquireWriterLease(gitDir), err => err.code === 'SESSION_BUSY');
-    fs.writeFileSync(record, JSON.stringify({ pid: other.pid, pidStartedAt: real - 3600 * 1000, token: 'old', startedAt: 'x' }));
+    fs.writeFileSync(record, JSON.stringify({ pid: other.pid, pidIdentity: `${real}-earlier`, token: 'old', startedAt: 'x' }));
     await (await acquireWriterLease(gitDir)).release();
     assert.equal(fs.existsSync(record), false);
   } finally {
@@ -525,16 +524,23 @@ test('a reused PID does not hold the writer slot, but a running one does', async
   }
 });
 
-test('an unknown start time keeps the record alive', () => {
+test('an unknown identity keeps the record alive, and only a fresh read decides that a process is gone', () => {
   assert.equal(
-    isRecordedProcessAlive(process.ppid, Date.now() - 3600 * 1000, () => null),
+    isRecordedProcessAlive(process.ppid, 'stored', () => null),
     true,
   );
-  assert.equal(isRecordedProcessAlive(process.ppid, undefined), true, 'a record of an earlier version');
+  assert.equal(isRecordedProcessAlive(process.ppid, undefined), true, 'a record without one');
   assert.equal(
-    isRecordedProcessAlive(process.ppid, Date.now() - 3600 * 1000, () => Date.now()),
+    isRecordedProcessAlive(process.ppid, 'stored', () => 'another'),
     false,
   );
+  const reads = [];
+  const stale = (pid, fresh) => {
+    reads.push(Boolean(fresh));
+    return fresh ? 'stored' : 'the previous process';
+  };
+  assert.equal(isRecordedProcessAlive(process.ppid, 'stored', stale), true, 'a cached answer of the previous process');
+  assert.deepEqual(reads, [false, true]);
 });
 
 test(

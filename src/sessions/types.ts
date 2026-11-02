@@ -4,8 +4,8 @@
 export interface SessionRecord {
   /** The calling agent's session in a client that exposes one. A label: it filters, never authorizes. */
   callerSession?: string;
-  /** Start time of `activePid`, so a reused PID is not taken for the running server. */
-  activePidStartedAt?: number | null;
+  /** Identity of `activePid`, so a reused PID is not taken for the running server. */
+  activePidIdentity?: string | null;
   schemaVersion?: 2;
   state?: 'idle' | 'running' | 'invalidated' | 'closed';
   turnToken?: string | null;

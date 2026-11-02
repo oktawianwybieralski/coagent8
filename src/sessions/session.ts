@@ -18,7 +18,7 @@ import { pruneHistoryDirectory, invalidateHistoryCache } from './history/index.j
 import { canonicalPath } from '../workspace/identity.js';
 import { sanitizeHandle } from './identity.js';
 import { redactDiagnostic } from '../security/index.js';
-import { getSessionsDir, isProcessAlive, isRecordedProcessAlive, ownProcessStartTime, getSessionFilePath } from './activity.js';
+import { getSessionsDir, isProcessAlive, isRecordedProcessAlive, ownProcessIdentity, getSessionFilePath } from './activity.js';
 
 export { getSessionsDir, isProcessAlive, isRecordedProcessAlive, getSessionFilePath };
 
@@ -74,7 +74,7 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
     return null;
   if (s.activePid != null && (!Number.isSafeInteger(s.activePid) || s.activePid <= 0)) return null;
   if (s.activeTurnAt != null && (!Number.isFinite(s.activeTurnAt) || s.activeTurnAt < 0)) return null;
-  if (s.activePidStartedAt != null && !Number.isFinite(s.activePidStartedAt)) return null;
+  if (s.activePidIdentity != null && (typeof s.activePidIdentity !== 'string' || s.activePidIdentity.length > 256)) return null;
   if (s.state && !['idle', 'running', 'invalidated', 'closed'].includes(s.state)) return null;
   if (s.schemaVersion != null && s.schemaVersion !== 2) return null;
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
@@ -104,7 +104,7 @@ function readRecord(file: string, handle: string): SessionRecord | null {
   }
 }
 function active(s: SessionRecord): boolean {
-  return isRecordedProcessAlive(s.activePid, s.activePidStartedAt);
+  return isRecordedProcessAlive(s.activePid, s.activePidIdentity);
 }
 export function getSession(handle: string, options: GetSessionOptions = {}): SessionRecord | null {
   const file = getSessionFilePath(handle);
@@ -292,7 +292,7 @@ export async function acquireSessionTurn(
       const token = crypto.randomUUID();
       s.turnToken = token;
       s.activePid = process.pid;
-      s.activePidStartedAt = ownProcessStartTime() ?? null;
+      s.activePidIdentity = ownProcessIdentity() ?? null;
       s.activeTurnAt = Date.now();
       s.state = 'running';
       s.turnCount = (s.turnCount || 0) + 1;
@@ -563,7 +563,7 @@ export async function cancelSession(handle: string, workspace?: string): Promise
     const s = readRecord(f, sanitized);
     if (!s) return;
 
-    if (s.activePid && s.activePid !== process.pid && isRecordedProcessAlive(s.activePid, s.activePidStartedAt)) {
+    if (s.activePid && s.activePid !== process.pid && isRecordedProcessAlive(s.activePid, s.activePidIdentity)) {
       throw new Error(`Cannot cancel session '${sanitized}': actively running in another CoAgent8 server process (PID ${s.activePid}).`);
     }
 

@@ -349,7 +349,7 @@ async function executeTaskInternal(
         }
         const retainedHandle = explicitSession?.sessionHandle ?? previous.sessionHandle;
         const continuationAvailable = explicitSession
-          ? !isRecordedProcessAlive(explicitSession.activePid, explicitSession.activePidStartedAt) &&
+          ? !isRecordedProcessAlive(explicitSession.activePid, explicitSession.activePidIdentity) &&
             explicitSession.state === 'idle' &&
             Boolean(explicitSession.threadId)
           : previous.continuationAvailable;

@@ -19,7 +19,7 @@ const { handleSession, handleCancelSession } = require('../../../src/mcp/tools/s
 const { saveConfig } = require('../../../src/config.ts');
 const { stopActiveDelegations } = require('../../../src/execution/delegation.ts');
 require('../../../src/execution/controller.ts').composeExecutionCancellation();
-const { ownProcessStartTime } = require('../../../src/sessions/activity.ts');
+const { ownProcessIdentity } = require('../../../src/sessions/activity.ts');
 const { readTask, writeFinalTask, writeTask, createTaskHandle, pruneTasks } = require('../../../src/sessions/tasks.ts');
 const { runWaitCli } = require('../../../src/sessions/wait-cli.ts');
 const { WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
@@ -367,18 +367,16 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
 
 const endNote = handle => path.join(os.tmpdir(), `coagent8-notes-${process.getuid?.() ?? 'user'}`, `${handle}.json`);
 
-test('a linked notes directory is not trusted', { skip: process.platform === 'win32' ? 'POSIX links' : false }, async () => {
-  const uid = process.getuid();
-  const dir = path.join(os.tmpdir(), `coagent8-notes-${uid}`);
-  const saved = `${dir}.saved-${process.pid}`;
-  if (fs.existsSync(dir)) fs.renameSync(dir, saved);
-  const target = fs.mkdtempSync(path.join(tempDir, 'elsewhere-'));
-  fs.symlinkSync(target, dir);
-  try {
-    const taskHandle = createTaskHandle();
+test(
+  'a notes directory that is linked or open to others is not trusted',
+  { skip: process.platform === 'win32' ? 'POSIX modes and links' : false },
+  async () => {
+    const previous = process.env.TMPDIR;
+    process.env.TMPDIR = fs.mkdtempSync(path.join(tempDir, 'tmp-'));
+    const dir = endNote('x').slice(0, -'/x.json'.length);
     const task = {
       schemaVersion: 1,
-      taskHandle,
+      taskHandle: createTaskHandle(),
       state: 'completed',
       workspace: tempDir,
       sessionHandle: 's',
@@ -387,18 +385,25 @@ test('a linked notes directory is not trusted', { skip: process.platform === 'wi
       serverPid: process.pid,
       startedAt: new Date().toISOString(),
     };
-    assert.equal(
-      await writeFinalTask(task, async () => {
-        throw new Error('disk full');
-      }),
-      false,
-    );
-    assert.deepEqual(fs.readdirSync(target), [], 'nothing was written through the link');
-  } finally {
-    fs.rmSync(dir);
-    if (fs.existsSync(saved)) fs.renameSync(saved, dir);
-  }
-});
+    const refused = async () => {
+      throw new Error('disk full');
+    };
+    try {
+      const target = fs.mkdtempSync(path.join(tempDir, 'elsewhere-'));
+      fs.symlinkSync(target, dir);
+      assert.equal(await writeFinalTask(task, refused), false);
+      assert.deepEqual(fs.readdirSync(target), [], 'nothing was written through the link');
+      fs.rmSync(dir);
+      fs.mkdirSync(dir, { mode: 0o755 });
+      fs.chmodSync(dir, 0o755);
+      assert.equal(await writeFinalTask(task, refused), false, 'open to other users');
+      fs.rmSync(dir, { recursive: true });
+      assert.equal(await writeFinalTask(task, refused), true, 'a private one of its own');
+    } finally {
+      process.env.TMPDIR = previous;
+    }
+  },
+);
 
 test('a final state that cannot be stored in the data directory still reaches a reader', async () => {
   const taskHandle = createTaskHandle();
@@ -423,13 +428,11 @@ test('a final state that cannot be stored in the data directory still reaches a 
   assert.match(read.result.text, /could not be stored/);
   await writeTask({ ...task, state: 'running', startedAt: '2030-01-01T00:00:00.000Z' });
   assert.equal(readTask(taskHandle).state, 'running', 'a note of an earlier task with this handle does not count');
-  fs.rmSync(endNote(taskHandle));
-  assert.equal(readTask(taskHandle).state, 'running', 'without a note the record stands');
+  assert.equal(fs.existsSync(endNote(taskHandle)), false, 'and starting that task removed it');
 });
 
 test('a running task whose PID now names a later process reads as interrupted', async () => {
   const taskHandle = createTaskHandle();
-  const longAgo = (ownProcessStartTime() ?? Date.now()) - 3600 * 1000;
   await writeTask({
     schemaVersion: 1,
     taskHandle,
@@ -439,7 +442,7 @@ test('a running task whose PID now names a later process reads as interrupted', 
     backend: 'codex',
     model: 'm',
     serverPid: process.pid,
-    serverStartedAt: longAgo,
+    serverIdentity: `${ownProcessIdentity()}-earlier`,
     startedAt: new Date().toISOString(),
   });
   assert.equal(readTask(taskHandle).state, 'interrupted');
