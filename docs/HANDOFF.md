@@ -13,6 +13,10 @@ Do not append another session transcript or treat old test counts as fresh evide
 - **Backlog (owner request 2026-11-02):** GitHub Issues hold it, in the format of
   [`project.md`](../.agents/project.md#backlog); labels created, first items #106-#120.
 
+- **Acceptance in a real client (2026-11-02):** on the CI-built VSIX, Claude Code delegated to Codex
+  and Claude Code and was woken with the results; cancel left nothing running. Open: agy (#109).
+  Records: [DELEGATE-001](delivered/0.8.0/DELEGATE-001.md), [WINDOWS-001](delivered/0.8.0/WINDOWS-001.md).
+
 - **Asynchronous delegate (`DELEGATE-001c`, `e`, owner decisions 2026-11-01):** merged in #105
   (`3ae31da`) at `b421129`; the commits pushed after that merge continue in the next PR. `delegate` is
   asynchronous by default, `coagent8 wait` and `session` action `task` read the result. Claude

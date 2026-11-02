@@ -1378,7 +1378,9 @@ another request is refused. A task of a dead server reads `interrupted` with a w
 on POSIX its process group can outlive the server (`CUR-011`). A waiter learns the end only from
 its timeout or the server's end when the data directory stays unwritable (#121), and liveness rests
 on the stored PID, so a reused PID makes a dead server look alive (#122); both are deferred by owner
-decision 2026-11-02. Three things
+decision 2026-11-02. Codex itself adds a trust entry for the directory to the user's
+`~/.codex/config.toml` on every `workspace-write` thread, also an ephemeral one; no thread
+parameter prevents it, and read-only threads add none (#124). Three things
 differ from the draft below: completed, notified and fetched are not separate states, because
 the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
 released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat

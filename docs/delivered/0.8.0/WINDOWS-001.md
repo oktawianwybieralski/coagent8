@@ -115,3 +115,21 @@ A Windows writer now gets a note about it.
 Open: a CI-built helper in an installed VSIX in a real client (#109), a real CLI's own descendants
 at cancel, none of which ran in these turns, expiry and the cold agy updater (#110), `arm64` and
 SmartScreen on a file with Mark-of-the-Web (#111).
+
+## WINDOWS-001e, second pass (2026-11-02)
+
+The VSIX of the CI run of `f372179`, Windows, Node 24, with its CI-built helper, installed in VS Code. The bundle in `dist/` of the
+installed extension ran as a fresh server started by a script, with the same observer running; it
+logged nothing. Its control window was not run again, because that would show a window on the
+owner's desktop.
+
+| Backend | Model | `delegate` wrote the file | Cancelled task | Tree after a cancel |
+| --- | --- | --- | --- | --- |
+| Codex 0.164 | `gpt-6.1-terra` | yes | `cancelled` in 0.6 s, writer free | no survivor, gone in 1.5 s |
+| Claude Code | `claude-haiku-5-5` | yes | `cancelled` in 1.1 s, writer free | no survivor, gone in 1.5 s |
+
+Then in a real client, Claude Code from the runtime copy that `setup` made: Codex and Claude Code
+wrote their files, and a cancelled Codex task ended `cancelled` with no helper process left. The
+observer did not run during this part.
+
+Open in #109: agy, whose quota had run out.
