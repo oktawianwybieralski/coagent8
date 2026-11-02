@@ -97,11 +97,10 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
   let last = first;
   const report: LoopReport = { outcome: 'passed', fixRounds: 0, checks: [] };
   for (let round = 0; ; round++) {
-    if (last.isError || last.result.status !== 'completed') return ended(last, report, 'worker_failed');
+    const status = last.result.status;
+    if (status === 'cancelled' || status === 'timed_out') return ended(last, report, status);
+    if (last.isError || status !== 'completed') return ended(last, report, 'worker_failed');
 
-    // A later change invalidates earlier evidence, so the report holds only the last round's.
-    report.checks = [];
-    delete report.review;
     for (const command of steps.checks) {
       const check = await runCheck(command, steps.cwd, steps.signal, steps.remainingMs());
       report.checks.push(check);
@@ -142,8 +141,12 @@ export async function superviseChange(first: TaskExecutionResult, steps: LoopSte
     }
 
     if (round >= LOOP_FIX_ROUNDS) return ended(last, report, failed.length ? 'checks_failed' : 'review_blocked');
+    const prompt = fixPrompt(round + 1, failed, findings);
+    // A later change invalidates earlier evidence, also when the turn making it fails.
+    report.checks = [];
+    delete report.review;
     try {
-      last = await steps.fix(fixPrompt(round + 1, failed, findings));
+      last = await steps.fix(prompt);
       report.fixRounds = round + 1;
     } catch (err) {
       const code = err instanceof ToolError ? err.code : undefined;

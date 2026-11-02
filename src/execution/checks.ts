@@ -19,6 +19,9 @@ const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
 /** Output kept from the end of a check, which is where a failure usually shows. */
 const CHECK_TAIL_CHARS = 8 * 1024;
 
+const PRIVATE_KEY_BEGIN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY/;
+const PRIVATE_KEY_END = /-----END [A-Z0-9 ]*PRIVATE KEY/;
+
 /** The user's answer about checks that are not allowed yet; absent when the client has no form. */
 export type CheckApprovalPrompt = (checks: readonly string[], signal: AbortSignal | null) => Promise<boolean>;
 
@@ -83,10 +86,17 @@ export async function approveChecks(
 export async function runCheck(command: string, cwd: string, signal: AbortSignal | null, remainingMs: number): Promise<CheckResult> {
   const started = Date.now();
   const [program, ...args] = parseCheckCommand(command);
+  if (remainingMs <= 0)
+    return { command, status: 'timed_out', exitCode: null, durationMs: 0, tail: 'The task budget ended before this check.' };
   let output = '';
+  let inPrivateKey = false;
+  // Each line is redacted before the window can cut it off: a secret recognized by its beginning
+  // would otherwise survive when only its end stays. A key spans lines, so it is followed here.
   const collect = (line: string) => {
-    // Twice the tail, so one long line does not leave a cut result at every step.
-    output = `${output}${line}\n`.slice(-2 * CHECK_TAIL_CHARS);
+    if (PRIVATE_KEY_BEGIN.test(line)) inPrivateKey = true;
+    const clean = inPrivateKey ? '[REDACTED PRIVATE KEY]' : redactDiagnostic(line, CHECK_TAIL_CHARS);
+    if (PRIVATE_KEY_END.test(line)) inPrivateKey = false;
+    output = `${output}${clean}\n`.slice(-CHECK_TAIL_CHARS);
   };
   const ran = await runCommand(program!, args, {
     cwd,
@@ -99,18 +109,16 @@ export async function runCheck(command: string, cwd: string, signal: AbortSignal
   const status: CheckResult['status'] =
     ran.status === 'cancelled' || ran.status === 'timed_out'
       ? ran.status
-      : ran.exitCode === 0
+      : ran.status === 'completed' && ran.exitCode === 0
         ? 'passed'
         : ran.exitCode === null || ran.exitCode === undefined
           ? 'not_started'
           : 'failed';
-  const text = output || ran.error?.message || '';
   return {
     command,
     status,
     exitCode: ran.exitCode ?? null,
     durationMs: Date.now() - started,
-    // Redacted first: a cut can split a secret that the redaction would have recognized.
-    tail: redactDiagnostic(text, 4 * CHECK_TAIL_CHARS).slice(-CHECK_TAIL_CHARS),
+    tail: output || redactDiagnostic(ran.error?.message ?? '', CHECK_TAIL_CHARS),
   };
 }

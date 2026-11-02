@@ -112,6 +112,28 @@ test('a check reports its exit, the end of its output, and a start that failed',
   assert.notEqual(missing.status, 'passed');
 });
 
+test('the output of a check is redacted before it is cut', async () => {
+  const script = [
+    "console.log('-----BEGIN RSA PRIVATE KEY-----');",
+    "for (let i = 0; i < 3000; i++) console.log('c2VjcmV0'.repeat(9));",
+    "console.log('-----END RSA PRIVATE KEY-----');",
+    "console.log('after the key');",
+    'process.exit(1);',
+  ].join('');
+  const file = path.join(tempDir, 'leaky.js');
+  fs.writeFileSync(file, script);
+  const leaky = await runCheck(`${node} ${JSON.stringify(file)}`, tempDir, null, 60000);
+  assert.equal(leaky.status, 'failed');
+  assert.doesNotMatch(leaky.tail, /c2VjcmV0/);
+  assert.match(leaky.tail, /after the key/);
+});
+
+test('a spent budget is a timeout before the check starts', async () => {
+  const spent = await runCheck(PASS, tempDir, null, 0);
+  assert.equal(spent.status, 'timed_out');
+  assert.equal(spent.durationMs, 0);
+});
+
 test('a check that outlives its budget is timed out', async () => {
   const slow = await runCheck(`${node} -e "setTimeout(()=>{},30000)"`, tempDir, null, 300);
   assert.equal(slow.status, 'timed_out');
@@ -210,6 +232,20 @@ test('a model that needs approval ends the loop as needs_input and keeps the las
   result = await superviseChange(workerResult(), steps({ checks: [FAIL], fix: denied }).steps);
   assert.equal(result.loop.outcome, 'needs_input');
   assert.match(result.loop.detail, /needs approval/);
+});
+
+test('a stopped worker turn ends the loop the same way, and a failed fix turn leaves no old evidence', async () => {
+  for (const status of ['cancelled', 'timed_out']) {
+    const result = await superviseChange(workerResult(status), steps().steps);
+    assert.equal(result.loop.outcome, status);
+  }
+  const { steps: s } = steps({
+    checks: [FAIL],
+    fix: async () => workerResult('failed'),
+  });
+  const result = await superviseChange(workerResult(), s);
+  assert.equal(result.loop.outcome, 'worker_failed');
+  assert.deepEqual(result.loop.checks, [], 'that check saw a change the failed turn may have altered');
 });
 
 test('a failed worker turn stops the loop, and so does a broken review', async () => {
