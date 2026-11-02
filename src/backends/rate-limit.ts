@@ -31,7 +31,8 @@ export function isRateLimitError(text?: string | null): boolean {
     ) {
       return true;
     }
-    if (/\b(?:exceeded\s*your\s*(?:current\s*)?quota|insufficient_quota)\b/i.test(trimmed)) {
+    // agy 1.4: "Individual quota reached. Please upgrade your subscription ... Resets in 19h30m48s."
+    if (/\b(?:exceeded\s*your\s*(?:current\s*)?quota|insufficient_quota|individual\s*quota\s*reached)\b/i.test(trimmed)) {
       return true;
     }
     if (/\b(?:credit\s*balance\s*is\s*too\s*low|organization\s*has\s*run\s*out\s*of\s*credits)\b/i.test(trimmed)) {

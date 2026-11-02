@@ -6,7 +6,7 @@ import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/hi
 import { resolveWorkspacePath } from '../../workspace/workspace.js';
 import { ToolError } from '../../contracts/index.js';
 import { redactDiagnostic } from '../../security/redaction.js';
-import { readTask } from '../../sessions/tasks.js';
+import { finishedTaskText, readTask } from '../../sessions/tasks.js';
 import type { SessionRecord } from '../../sessions/types.js';
 
 export const sessionToolDefinition = {
@@ -67,14 +67,11 @@ export async function handleSession(args: ToolArguments, workspace = resolveWork
     const header = `task_handle: ${task.taskHandle}\nsession_handle: ${task.sessionHandle}\nstate: ${task.state}`;
     // A stored result is final only with the state: until then the writer is still held.
     const running = task.state === 'running';
-    const body = running
-      ? 'The worker is still running.'
-      : (task.result?.text ??
-        'The server ended before the worker finished. Partial changes may be in the work tree: inspect them before a retry.');
+    const body = running ? 'The worker is still running.' : finishedTaskText(task);
     return {
       content: [{ type: 'text' as const, text: `${header}\n\n${body}` }],
       structuredContent: { ...task, ...(running ? { result: undefined } : {}), workspace: redactDiagnostic(task.workspace, 1024) },
-      ...(!running && task.result?.isError ? { isError: true } : {}),
+      ...(task.state === 'interrupted' || (!running && task.result?.isError) ? { isError: true } : {}),
     };
   }
   if (action === 'list') {

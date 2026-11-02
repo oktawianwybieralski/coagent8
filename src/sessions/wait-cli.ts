@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 import { redactDiagnostic } from '../security/redaction.js';
-import { isTaskFinished, readTask } from './tasks.js';
+import { finishedTaskText, isTaskFinished, readTask } from './tasks.js';
 
 const USAGE = 'Usage: coagent8 wait <task_handle> [--data-dir <dir>] [--timeout-ms <ms>]';
 const POLL_MS = 500;
@@ -68,9 +68,7 @@ export async function runWaitCli(
       }
       if (isTaskFinished(task.state)) {
         out.write(`task_handle: ${task.taskHandle}\nsession_handle: ${task.sessionHandle}\nstate: ${task.state}\n\n`);
-        out.write(
-          `${task.result?.text ?? 'The server ended before the worker finished. Partial changes may be in the work tree: inspect them before a retry.'}\n`,
-        );
+        out.write(`${finishedTaskText(task)}\n`);
         return task.state === 'completed' && !task.result?.isError ? 0 : 1;
       }
       if (signal?.aborted || Date.now() >= deadline) {

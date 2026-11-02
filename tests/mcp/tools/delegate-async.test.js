@@ -329,7 +329,14 @@ test('a running task of a dead server reads as interrupted; old finished tasks a
   assert.equal(readTask(dead.taskHandle).state, 'interrupted');
   const out = stream();
   assert.equal(await runWaitCli([dead.taskHandle], out, stream()), 1);
-  assert.match(out.text(), /Partial changes/);
+  assert.match(out.text(), /may still be running/);
+
+  // A result stored before the server died is not presented as final.
+  const stored = { ...dead, taskHandle: createTaskHandle(), result: { text: 'STORED', isError: false } };
+  await writeTask(stored);
+  const interrupted = await handleSession({ action: 'task', task_handle: stored.taskHandle }, tempDir);
+  assert.equal(interrupted.isError, true);
+  assert.match(interrupted.content[0].text, /state: interrupted[\s\S]*may still be running[\s\S]*not final[\s\S]*STORED/);
 
   const old = { ...base, taskHandle: createTaskHandle(), state: 'completed', serverPid: process.pid };
   const live = { ...base, taskHandle: createTaskHandle(), state: 'running', serverPid: process.pid };

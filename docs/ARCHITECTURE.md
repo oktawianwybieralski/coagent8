@@ -1374,7 +1374,8 @@ uses the open request, the session handle is known, and a refusal is still the c
 there is no `queued` state on disk, because a task is recorded only when its turn starts. The
 task record (`<data>/delegations/`) stores the result before the writer is released and turns
 final after the release, so a woken caller can delegate again at once. A `request_id` reused for
-another request is refused. Three things
+another request is refused. A task of a dead server reads `interrupted` with a warning, because
+on POSIX its process group can outlive the server (`CUR-011`). Three things
 differ from the draft below: completed, notified and fetched are not separate states, because
 the waiter only reads the record and needs no delivery bookkeeping; the writer record is not
 released on an unconfirmed end of the tree, so it stays until the server restarts; and a repeat

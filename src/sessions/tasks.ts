@@ -135,6 +135,19 @@ export function readTask(handle: string): DelegationTask | null {
 }
 
 /**
+ * What a reader is told about a finished task.
+ * @param task - The record.
+ * @returns The result. An interrupted task gets a warning instead of a final answer: its stored
+ * result is not final, and on POSIX its processes can outlive a server that died (`CUR-011`).
+ */
+export function finishedTaskText(task: DelegationTask): string {
+  if (task.state !== 'interrupted') return task.result?.text ?? 'The worker ended without a result.';
+  const warning =
+    'The server ended before this delegation finished. Its processes may still be running on Linux and macOS: check them, then inspect the work tree with git status before you edit or retry.';
+  return task.result ? `${warning}\n\nStored before the server ended, not final:\n\n${task.result.text}` : warning;
+}
+
+/**
  * Removes finished task records past their retention.
  * @param now - Reference time in epoch milliseconds.
  */
