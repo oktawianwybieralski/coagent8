@@ -80,3 +80,5 @@ A delegation through Codex makes Codex add a trust entry for that directory to t
 `~/.codex/config.toml` (#124).
 
 Note 2026-11-02: the deferrals of #121 and #122 above are withdrawn; both are solved in this PR.
+`session` action `list` takes `mine: true` for the sessions of the calling agent, in a client that exposes
+an id; of the clients tried, Claude Code does (`CLAUDE_CODE_SESSION_ID`). The label filters only (#116).

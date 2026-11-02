@@ -19,7 +19,7 @@ const handleDelegate = (args, ...rest) => startDelegate({ mode: 'sync', ...args 
 const { handleConsult } = require('../../../src/mcp/tools/consult.tool.ts');
 const { saveConfig } = require('../../../src/config.ts');
 const { acquireWriterLease, WRITER_RECORD_FILE } = require('../../../src/sessions/writer.ts');
-const { isRecordedProcessAlive, processStartTime } = require('../../../src/sessions/activity.ts');
+const { isProcessGroupAlive, isRecordedProcessAlive, processStartTime } = require('../../../src/sessions/activity.ts');
 const {
   normalizeScopeEntry,
   inScope,
@@ -536,3 +536,55 @@ test('an unknown start time keeps the record alive', () => {
     false,
   );
 });
+
+test(
+  'a server killed during a delegation: no second writer overlaps its worker',
+  { skip: process.platform === 'win32' ? 'POSIX groups; on Windows the job helper ends the tree' : false },
+  async () => {
+    const { repo } = fixtureRepo();
+    const gitDir = path.join(repo, '.git');
+    const marker = path.join(tempDir, `worker-${Date.now()}.log`);
+    const server = spawn(
+      process.execPath,
+      [
+        '-e',
+        `require('tsx/cjs');
+        const { spawn } = require('node:child_process');
+        require(${JSON.stringify(path.resolve(__dirname, '../../../src/sessions/writer.ts'))}).acquireWriterLease(${JSON.stringify(gitDir)}).then(lease => {
+          lease.workerStarting();
+          const worker = spawn(process.execPath, ['-e', "setInterval(() => require('fs').appendFileSync(${JSON.stringify(marker)}, 'x'), 50)"], { detached: true, stdio: 'ignore' });
+          lease.workerStarted(worker.pid);
+          console.log('started ' + worker.pid);
+        });
+        setInterval(() => {}, 1000);`,
+      ],
+      { cwd: path.resolve(__dirname, '../../..'), stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    const group = await new Promise((resolve, reject) => {
+      server.stdout.on('data', chunk => {
+        const match = /started (\d+)/.exec(String(chunk));
+        if (match) resolve(Number(match[1]));
+      });
+      server.once('exit', reject);
+    });
+    try {
+      server.removeAllListeners('exit');
+      const gone = new Promise(resolve => server.once('exit', resolve));
+      server.kill('SIGKILL');
+      await gone;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const before = fs.statSync(marker).size;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      assert.ok(fs.statSync(marker).size > before, 'the worker outlived its server and still writes');
+      await assert.rejects(acquireWriterLease(gitDir), err => err.code === 'SESSION_BUSY' && err.message.includes(String(group)));
+      await assert.rejects(
+        handleDelegate({ task: 'Change it', backend: 'codex', model: MODEL }, repo, null, null, approve),
+        /process group/,
+      );
+    } finally {
+      process.kill(-group, 'SIGKILL');
+    }
+    for (let i = 0; i < 100 && isProcessGroupAlive(group); i++) await new Promise(resolve => setTimeout(resolve, 50));
+    await (await acquireWriterLease(gitDir)).release();
+  },
+);

@@ -535,3 +535,24 @@ test('second client cancels a confirmed running Claude turn, releases lease and 
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test('session list can show only the sessions of the calling agent', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-mine-'));
+  const previous = process.env.CLAUDE_CODE_SESSION_ID;
+  try {
+    process.env.CLAUDE_CODE_SESSION_ID = 'caller-a';
+    const mine = createSession('codex', workspace);
+    process.env.CLAUDE_CODE_SESSION_ID = 'caller-b';
+    const theirs = createSession('codex', workspace);
+    process.env.CLAUDE_CODE_SESSION_ID = 'caller-a';
+    const handles = async args =>
+      (await handleSession({ action: 'list', ...args }, workspace)).structuredContent.sessions.map(s => s.sessionHandle).sort();
+    assert.deepEqual(await handles({ mine: true }), [mine.sessionHandle]);
+    assert.deepEqual(await handles({}), [mine.sessionHandle, theirs.sessionHandle].sort(), 'the label only filters');
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+    await assert.rejects(handleSession({ action: 'list', mine: true }, workspace), /no session id/);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = previous;
+  }
+});

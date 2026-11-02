@@ -79,7 +79,7 @@ function parseSession(raw: unknown, handle: string): SessionRecord | null {
   if (s.schemaVersion != null && s.schemaVersion !== 2) return null;
   if (s.turnToken != null && (typeof s.turnToken !== 'string' || !/^[a-f0-9-]{36}$/.test(s.turnToken))) return null;
   if (s.turnCount != null && (!Number.isSafeInteger(s.turnCount) || s.turnCount < 0)) return null;
-  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode])
+  for (const value of [s.model, s.reasoningEffort, s.cliVersion, s.safetyProfile, s.lastErrorCode, s.callerSession])
     if (value != null && (typeof value !== 'string' || value.length > 256)) return null;
   if (s.profile != null && s.profile !== 'workspace-write') return null;
   const { lastReview: rawReview, ...rest } = s;
@@ -251,6 +251,7 @@ export function createSession(
     createdAt: now,
     lastUsedAt: now,
     ...(profile === 'workspace-write' ? { profile } : {}),
+    ...(process.env.CLAUDE_CODE_SESSION_ID ? { callerSession: process.env.CLAUDE_CODE_SESSION_ID } : {}),
   };
   saveSessionFile(getSessionFilePath(handle)!, s);
   return s;
