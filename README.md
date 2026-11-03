@@ -61,7 +61,8 @@ optional loop in which CoAgent8 runs your checks and an independent review and
 returns failures to the agent; reviews of large changes in parts; and checks
 CoAgent8 runs before a review. This README describes `develop`, so features
 marked 0.8.0 are not in the published packages. Not yet available:
-coordinating several agents in parallel. That is the next step in the
+coordinating several agents in parallel under one budget; separate Git worktrees
+can each run a delegated agent at once. That is the next step in the
 [roadmap](docs/ROADMAP.md#full-coagent-direction).
 
 ## Quick start

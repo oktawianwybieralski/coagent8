@@ -9,8 +9,10 @@ client-independent MCP system for orchestrating complete agent tasks. Roles,
 models and providers are independent. Read-only consultation is one execution
 profile, not the product boundary. `consult` and `review` run read-only;
 `delegate` runs one workspace-write worker per work tree in the background,
-optionally in a server-owned loop of checks, review and fix rounds. Parallel
-workers and delegated coordination are not implemented yet.
+optionally in a server-owned loop of checks, review and fix rounds. Separate
+linked worktrees can each run a writer at once; parallel workers under one
+root budget, disjoint scopes in one work tree and delegated coordination are
+not implemented yet.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) owns current contracts and target design;
 [HANDOFF.md](HANDOFF.md) owns current work and evidence;
@@ -30,7 +32,7 @@ tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
-| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop | Parallel workers, root limits, delegated coordination |
+| Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, one writer per linked worktree | Parallel workers under one root budget, disjoint scopes, delegated coordination |
 | Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup; `arm64` and SmartScreen (#111); signing (#112) |
 | Review | Completeness, snapshot gate, post-turn recheck, reviews in parts, checks the server runs before the turn | Other-tree review; release hashes bound to the review |
 | Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, caller label (Claude Code) | Ephemeral calls and early handles for consult and review, end-to-end deadlines |
@@ -105,8 +107,9 @@ requests 2026-10-21 and decisions 2026-11-01 and 2026-11-02).
 **Remaining, in order.** Groups 1-3 are the orchestra; 4 needs the owner in the
 clients; 5 is the release-candidate gate.
 
-1. **Parallel workers.** Several `delegate` tasks at once, in separate work
-   trees or in disjoint `scope`s of one, under one root budget. Cards:
+1. **Parallel workers.** Separate linked worktrees can already each run a
+   writer, independently. This group adds several `delegate` tasks under one
+   root budget, in separate worktrees or in disjoint `scope`s of one work tree. Cards:
    [`COAGENT-001a/b`](#coagent-contract-cards) reconciled with the task records
    as built, `COAGENT-002b` (writer ownership beyond one writer per work tree),
    `COAGENT-003b` (root reservations: calls, concurrency, time, depth) and
@@ -2092,7 +2095,7 @@ agent (owner assigns).
 | 3.0 | [x] Confirm `PROPOSALS-001k` to `n` (#68) | O | - | Owner accepts or rejects each; the proposal cards record it. |
 | 3.1 | [x] (#105) `DELEGATE-001e1` start in the background | R S | 2.22, 2.30 | `delegate` (the existing write delegation) returns a handle at once after approval, writer and baseline; the task-owned operation runs under owned supervision independent of the request; tests. |
 | 3.2 | [x] (#105) `DELEGATE-001e2` shutdown and cancel | R | 3.1 | `cancel` and server shutdown await the whole operation (evidence and writer release included) and stop delegated turns without survivors; tests. |
-| 3.3 | [x] (#105) `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `wait --data-dir <dir> <handle>` in the CLI; the response carries the server-built argv; a stopped waiter never cancels the worker; tests. |
+| 3.3 | [x] (#105; delivered as `wait` in the CLI and `session` action `task` in MCP, no MCP wait) `DELEGATE-001e3` `wait` | R | 3.1 | Bounded `wait` in MCP and `wait --data-dir <dir> <handle>` in the CLI; the response carries the server-built argv; a stopped waiter never cancels the worker; tests. |
 | 3.4 | [x] (#105) `DELEGATE-001e4` result before wake-up | R | 3.3 | Result with Git evidence persisted before any notification; `session` task status and result; completion, notified and fetched states; no new wake-up after cancel; 3.1-3.4 enable `async` together; tests. |
 | 3.5 | `DELEGATE-001e5` review through `delegate` | R | 3.4 | Deferred (2026-10-21): review keeps its existing operation and gates; revisit after 3.8. |
 | 3.6 | [x] (#105) `DELEGATE-001d1` Claude Code adapter | R | 3.4, 1.14 | The skill tells the agent to run the returned wait command verbatim as a background task; `wakeup: background_wait`; native check without a caller subagent. |

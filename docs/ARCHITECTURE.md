@@ -19,9 +19,9 @@ the server enforces capabilities, limits and task state.
 
 Today the server is a stdio MCP bridge to Codex, Claude Code and Antigravity
 (`agy`). Consultation and review run read-only with the profiles below; `delegate`
-runs one workspace-write worker per work tree in the background, and with
+runs one workspace-write worker per work tree (each linked worktree its own) in the background, and with
 `loop: true` the server runs the approved checks and an independent review and
-returns failures to the worker. Parallel workers, delegated coordinators and
+returns failures to the worker. Parallel workers under one root budget, delegated coordinators and
 task-scoped command profiles are planned (0.8.0).
 
 ## Request path and ownership
