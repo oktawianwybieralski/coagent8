@@ -369,7 +369,20 @@ is sign-in evidence for the model it ran; doctor reports it as the last turn.
 
 Review collects bounded Git input and supplies a snapshot identifier incorporating
 SHA-256 of diff/workspace input/omissions. The requested envelope ends with `CHECKS`;
-the server owns the terminator (owner decision 2026-10-18, `ENVELOPE-001`):
+the server owns the terminator (owner decision 2026-10-18, `ENVELOPE-001`).
+
+**Large changes (`REVIEW-002`, 2026-11-03).** The diff stays in the prompt, because a Claude
+reviewer has no shell to read it and an agy sandbox can refuse a file read. A diff above
+`REVIEW_PART_CHARS` (200,000 characters) is split into parts at file, hunk and line boundaries,
+each piece under its file header, every line in exactly one part. Each part is reviewed in a
+session of its own, bound to `<snapshot>/part-<n>-of-<total>`; then one synthesis turn, which
+the caller may continue, gets the list of parts and their findings, no diff, and gives the
+verdict bound to the whole snapshot. The verdict stays BLOCKED unless every part ended READY;
+the server knows each part was delivered, not that it was read. Above `MAX_REVIEW_PARTS` (15)
+the review is refused before any turn. This was chosen over letting the reviewer fetch the diff
+itself after consulting Codex and agy and comparing published review tools.
+
+The envelope of every turn:
 
 ~~~text
 REVIEW: <turn>
