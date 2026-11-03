@@ -445,7 +445,10 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
             ? await handleRun(args, cwd, extra.signal, progress)
             : withWorkspace(await handleRun(args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.REVIEW:
-          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress, execOptions), workspace);
+          return withWorkspace(
+            await handleReview(name, args, cwd, extra.signal, progress, { ...execOptions, askChecks: checkApprovalPrompt(budget) }),
+            workspace,
+          );
         case CANONICAL_TOOL_NAMES.CONSULT:
           return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.DELEGATE:
