@@ -16,6 +16,9 @@ Card: [ROADMAP DELEGATE-001](../../ROADMAP.md#delegate-001-asynchronous-delegati
 | [#125](https://github.com/oktawianwybieralski/coagent8/pull/125) | `9ef042a` | 2026-11-02 | fix(delegate): recognize a dead server, its worker and a reused PID |
 | [#126](https://github.com/oktawianwybieralski/coagent8/pull/126) | `02e3b5f` | 2026-11-02 | feat(delegate): run checks, review and fix rounds in one call |
 | [#131](https://github.com/oktawianwybieralski/coagent8/pull/131) | `6048643` | 2026-11-02 | fix(diagnostics): report backend state and answers as they are |
+| [#141](https://github.com/oktawianwybieralski/coagent8/pull/141) | `8fe0752` | 2026-11-03 | fix(delegate): report a check form the client did not show as the client's answer |
+| [#143](https://github.com/oktawianwybieralski/coagent8/pull/143) | `b14c9c1` | 2026-11-03 | fix(delegate): review on another CLI than the client's |
+| [#144](https://github.com/oktawianwybieralski/coagent8/pull/144) | `63f504c` | 2026-11-03 | fix(governance): report what the client answered, and let cancel return a final task |
 
 ## Scope
 

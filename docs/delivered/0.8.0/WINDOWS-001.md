@@ -11,6 +11,8 @@ Card at closure of `001b` and `c`: [ROADMAP WINDOWS-001 at `6161449`](https://gi
 | PR | Squash | Merged | Title |
 | --- | --- | --- | --- |
 | [#102](https://github.com/oktawianwybieralski/coagent8/pull/102) | `6161449` | 2026-11-01 | feat(windows): end a cancelled run's whole process tree |
+| [#103](https://github.com/oktawianwybieralski/coagent8/pull/103) | `68d7d56` | 2026-11-01 | feat(windows): ship the job helper and refuse delegate without it |
+| [#133](https://github.com/oktawianwybieralski/coagent8/pull/133) | `2508b9b` | 2026-11-02 | docs(windows): record agy's acceptance from the installed package |
 
 ## Scope at closure
 
