@@ -382,6 +382,16 @@ the server knows each part was delivered, not that it was read. Above `MAX_REVIE
 the review is refused before any turn. This was chosen over letting the reviewer fetch the diff
 itself after consulting Codex and agy and comparing published review tools.
 
+**Checks in review (`REVIEW-003`, owner decision 2026-11-03).** The reviewer stays read-only, so
+its own CHECKS line could only report NOT_RUN. `review` takes `checks`, approved like those of the
+`delegate` loop (an exact entry of `allowedChecks` or the user's form). The server runs them in
+the work tree, which `assertReviewWorkspace` has made the reviewed state, before the turn; a check
+that changes the collected input is refused before any turn. Their results go into the prompt,
+fenced as data, and in the gate a check that did not pass blocks whatever the reviewer reports.
+The reviewer maps them to typecheck and tests; a kind none of them covers stays NOT_RUN. A review
+with checks is never answered from an earlier verdict, and the work tree is checked again after
+them, also for staged and revision scopes.
+
 The envelope of every turn:
 
 ~~~text

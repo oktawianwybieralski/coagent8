@@ -75,6 +75,12 @@ export interface ReviewGateContext {
   inputComplete?: boolean;
   requiredChecks?: readonly ('typecheck' | 'tests')[];
   /**
+   * Checks the server ran on the reviewed state before the turn (`REVIEW-003`). When present they
+   * decide whether a check failed, not the reviewer's CHECKS line; the reviewer maps them to
+   * typecheck and tests, and one it cannot map stays NOT_RUN.
+   */
+  serverChecks?: readonly { command: string; status: string }[];
+  /**
    * Binary files the scope changes, named but not reviewable as text: a READY says so,
    * as it does for checks that did not run (`FEEDBACK-070d`).
    */
@@ -256,7 +262,9 @@ export function evaluateStateEnvelopeGate(
 
     const checks = /^typecheck=(PASS|FAIL|NOT_RUN);\s*tests=(PASS|FAIL|NOT_RUN)$/i.exec(checksVal);
     const checkValues = checks ? { typecheck: checks[1].toUpperCase(), tests: checks[2].toUpperCase() } : undefined;
-    const failedChecks = checkValues && Object.values(checkValues).includes('FAIL');
+    const serverChecks = context?.serverChecks;
+    const serverFailed = (serverChecks ?? []).filter(check => check.status !== 'passed');
+    const failedChecks = serverChecks ? serverFailed.length > 0 : checkValues && Object.values(checkValues).includes('FAIL');
     // Unrun required checks are named on READY; the author and CI run them.
     const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
@@ -305,7 +313,12 @@ export function evaluateStateEnvelopeGate(
       if (incompleteInput) reasons.push('Review input is incomplete');
       if (isEnveloped && wrongSnapshot) reasons.push('Review snapshot does not match the collected input');
       if (isEnveloped && !checks) reasons.push('Invalid CHECKS outcomes');
-      if (failedChecks) reasons.push(`A reported check failed (${checkList((_, value) => value === 'FAIL')})`);
+      if (failedChecks)
+        reasons.push(
+          serverChecks
+            ? `A check the server ran did not pass (${serverFailed.map(check => `${check.command}: ${check.status}`).join(', ')})`
+            : `A reported check failed (${checkList((_, value) => value === 'FAIL')})`,
+        );
       if (verdictVal === 'BLOCKED' && !hasBlockers) {
         reasons.push(
           blockedVal
@@ -326,6 +339,7 @@ export function evaluateStateEnvelopeGate(
     const binaries = context?.unreviewedBinaryFiles ?? 0;
     const caveats = [
       ...(notRunChecks.length ? [`${notRunChecks.join(' and ')} not run`] : []),
+      ...(serverChecks?.length ? [`${serverChecks.length} ${serverChecks.length === 1 ? 'check' : 'checks'} passed on the server`] : []),
       ...(binaries ? [`${binaries} binary ${binaries === 1 ? 'file' : 'files'} not reviewed`] : []),
     ];
     return {

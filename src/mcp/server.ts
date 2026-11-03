@@ -295,12 +295,12 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
   }
 
   /** The form for checks the server would run (`DELEGATE-001f2`); only a checked box approves. */
-  function checkApprovalPrompt(budget?: ExecutionBudget): CheckApprovalPrompt | undefined {
+  function checkApprovalPrompt(budget?: ExecutionBudget, purpose: 'delegate' | 'review' = 'delegate'): CheckApprovalPrompt | undefined {
     if (!server.getClientCapabilities()?.elicitation?.form) return undefined;
     return async (checks, signal) => {
       const answer = await server.elicitInput(
         {
-          message: `${BRAND.NAME}: after the worker, run these commands with your account's rights, outside any sandbox? They execute code the worker may have changed.\n${checks.map(check => `- ${check}`).join('\n')}`,
+          message: `${BRAND.NAME}: ${purpose === 'review' ? "before the review, run these commands with your account's rights, outside any sandbox? They execute the code under review." : "after the worker, run these commands with your account's rights, outside any sandbox? They execute code the worker may have changed."}\n${checks.map(check => `- ${check}`).join('\n')}`,
           requestedSchema: {
             type: 'object',
             required: ['approve'],
@@ -445,7 +445,13 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
             ? await handleRun(args, cwd, extra.signal, progress)
             : withWorkspace(await handleRun(args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.REVIEW:
-          return withWorkspace(await handleReview(name, args, cwd, extra.signal, progress, execOptions), workspace);
+          return withWorkspace(
+            await handleReview(name, args, cwd, extra.signal, progress, {
+              ...execOptions,
+              askChecks: checkApprovalPrompt(budget, 'review'),
+            }),
+            workspace,
+          );
         case CANONICAL_TOOL_NAMES.CONSULT:
           return withWorkspace(await handleConsult(name, args, cwd, extra.signal, progress, execOptions), workspace);
         case CANONICAL_TOOL_NAMES.DELEGATE:
