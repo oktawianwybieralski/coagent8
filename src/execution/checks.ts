@@ -24,8 +24,29 @@ const CHECK_LINE_CHARS = 1024 * 1024;
 const PRIVATE_KEY_BEGIN = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY/;
 const PRIVATE_KEY_END = /-----END [A-Z0-9 ]*PRIVATE KEY/;
 
-/** The user's answer about checks that are not allowed yet; absent when the client has no form. */
-export type CheckApprovalPrompt = (checks: readonly string[], signal: AbortSignal | null) => Promise<boolean>;
+/**
+ * How the client answered the form for checks that are not allowed yet.
+ * @remarks Only `approved` and `unchecked` are the user's answer. `declined` and `unanswered` are
+ * what the client returned, and clients return them without showing the form: Claude Code 2.1.317
+ * in VS Code declines and Codex 0.164.0-alpha.11.1 cancels (both measured 2026-11-03, #135).
+ */
+export type CheckApproval = 'approved' | 'unchecked' | 'declined' | 'unanswered';
+
+/** Asks the user about checks that are not allowed yet; absent when the client has no form. */
+export type CheckApprovalPrompt = (checks: readonly string[], signal: AbortSignal | null) => Promise<CheckApproval>;
+
+/** How the user can allow a check without a form, and who may not. */
+const CHECK_APPROVAL_REMEDY =
+  'Tell the user: they can list the exact commands in allowedChecks of the CoAgent8 configuration, or approve them in a client that shows MCP forms. You cannot approve them.';
+
+/** The refusal for each answer that is not an approval. */
+const REFUSALS: Record<Exclude<CheckApproval, 'approved'>, (list: string) => string> = {
+  unchecked: list => `The user left 'Run these commands' unchecked for these checks: ${list}. No worker started.`,
+  declined: list =>
+    `The client declined the approval form for these checks: ${list}. A client may decline without showing it, so do not report this as the user's refusal unless the user says so. ${CHECK_APPROVAL_REMEDY} No worker started.`,
+  unanswered: list =>
+    `The client closed the approval form for these checks without an answer, possibly without showing it to the user: ${list}. ${CHECK_APPROVAL_REMEDY} No worker started.`,
+};
 
 /**
  * Splits a check into its arguments; single or double quotes keep spaces together.
@@ -63,7 +84,7 @@ export function parseCheckCommand(command: string): string[] {
  * @param checks - The checks as written.
  * @param allowed - The exact entries of `allowedChecks`.
  * @param ask - The form; absent when the client has none.
- * @throws `POLICY_DENIED` when a check is neither allowed nor approved.
+ * @throws `POLICY_DENIED` when a check is neither allowed nor approved, worded by the client's answer.
  */
 export async function approveChecks(
   checks: readonly string[],
@@ -79,9 +100,8 @@ export async function approveChecks(
       `This client cannot ask the user to approve these checks: ${missing.join('; ')}. The user can list them in allowedChecks of the CoAgent8 configuration. No worker started.`,
     );
   }
-  if (!(await ask(missing, signal))) {
-    throw new ToolError('POLICY_DENIED', `The user did not approve these checks: ${missing.join('; ')}. No worker started.`);
-  }
+  const answer = await ask(missing, signal);
+  if (answer !== 'approved') throw new ToolError('POLICY_DENIED', REFUSALS[answer](missing.join('; ')));
 }
 
 /** Runs one check in the work tree. Never rejects: a check that cannot start is its own result. */

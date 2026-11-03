@@ -83,8 +83,8 @@ test('only the user allows a check: the exact configured entry or the form', asy
     return true;
   });
   await assert.rejects(
-    approveChecks(['npm test'], [], async () => false, null),
-    err => err.code === 'POLICY_DENIED' && /did not approve/.test(err.message),
+    approveChecks(['npm test'], [], async () => 'unchecked', null),
+    err => err.code === 'POLICY_DENIED' && /The user left 'Run these commands' unchecked/.test(err.message),
   );
   const asked = [];
   await approveChecks(
@@ -92,7 +92,7 @@ test('only the user allows a check: the exact configured entry or the form', asy
     ['a'],
     async checks => {
       asked.push(...checks);
-      return true;
+      return 'approved';
     },
     null,
   );
@@ -372,7 +372,7 @@ test('the tool refuses a check before any turn when the user cannot approve it',
   await assert.rejects(
     handleDelegate({ task: 'Change it', backend: 'codex', model: MODEL, loop: true, checks: ['a && b'], mode: 'sync' }, repo, null, null, {
       ...approve,
-      askChecks: async () => true,
+      askChecks: async () => 'approved',
     }),
     err => err.code === 'INPUT_LIMIT',
   );
@@ -391,7 +391,7 @@ test('the tool reports the loop apart from the worker, and a failed check is not
       ...approve,
       askChecks: async checks => {
         asked.push(...checks);
-        return true;
+        return 'approved';
       },
     },
   );

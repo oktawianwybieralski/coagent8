@@ -624,3 +624,68 @@ test('EXEC-001-T11c: cancelled or timed-out consent wait reflects actual elapsed
     await server.close();
   }
 });
+
+test('a check approval the client did not answer is not reported as the user refusing it (#135)', async () => {
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { ElicitRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+  const { saveConfig } = require('../../src/config.ts');
+  const { execFileSync } = require('node:child_process');
+
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-check-approval-'));
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  const server = createServer();
+  const client = new Client({ name: 'check-approval-client', version: '1' }, { capabilities: { elicitation: {} } });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  let answer;
+  const asked = [];
+  client.setRequestHandler(ElicitRequestSchema, async request => {
+    asked.push(request.params.message);
+    return answer;
+  });
+  const refusal = async reply => {
+    answer = reply;
+    const res = await client.callTool({
+      name: 'delegate',
+      arguments: { task: 'Change it', backend: 'codex', loop: true, checks: ['node test.js'], mode: 'sync', workspace_path: repo },
+    });
+    assert.equal(res.isError, true, JSON.stringify(reply));
+    return readResult(res).error;
+  };
+  try {
+    await saveConfig({ defaultBackend: 'codex', routing: { strategy: 'fixed', allowedBackends: ['codex'] } });
+
+    // Codex answers `cancel` without showing the form (0.164.0-alpha.11.1, measured 2026-11-03).
+    const cancelled = await refusal({ action: 'cancel' });
+    assert.equal(cancelled.code, 'POLICY_DENIED');
+    assert.doesNotMatch(cancelled.message, /user did not approve/i);
+    assert.match(
+      cancelled.message,
+      /closed the approval form for these checks without an answer, possibly without showing it to the user: node test\.js\./,
+    );
+    assert.match(cancelled.message, /allowedChecks/);
+    assert.match(cancelled.message, /No worker started\.$/);
+
+    // Claude Code 2.1.317 in VS Code answers `decline` without showing the form (measured 2026-11-03).
+    const declined = await refusal({ action: 'decline' });
+    assert.equal(declined.code, 'POLICY_DENIED');
+    assert.doesNotMatch(declined.message, /user did not approve/i);
+    assert.match(declined.message, /The client declined the approval form for these checks: node test\.js\./);
+    assert.match(declined.message, /may decline without showing it/);
+    assert.match(declined.message, /allowedChecks/);
+
+    // An accepted form with the box unchecked is the user's own answer. The SDK rejects an accepted
+    // form without the required field before the server sees it, so that case is not tested here.
+    const unchecked = await refusal({ action: 'accept', content: { approve: false } });
+    assert.equal(unchecked.code, 'POLICY_DENIED');
+    assert.match(unchecked.message, /^The user left 'Run these commands' unchecked for these checks: node test\.js\. No worker started\.$/);
+    assert.equal(asked.length, 3, 'every call asked once');
+    assert.equal(fs.existsSync(path.join(repo, '.git', 'coagent8-writer.json')), false, 'no worker started');
+  } finally {
+    await client.close();
+    await server.close();
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});

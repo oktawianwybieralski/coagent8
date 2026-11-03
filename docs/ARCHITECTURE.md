@@ -1506,7 +1506,10 @@ the worker, with the user's account and outside any sandbox, ahead of `COAGENT-0
 profile. They execute code the worker may have changed, so an argument list without a shell limits
 their syntax only. A check runs only if it is an exact entry of `allowedChecks` in the user's
 configuration, or the user approves it on a form before the task starts; a calling agent cannot approve
-one. Each round runs the checks in order up to the first failure, then, only if they pass, a read-only
+one. Only an accepted form, checked or left unchecked, is reported as the user's answer. A declined or
+cancelled form is reported as the client's answer with `allowedChecks` as the remedy, because Claude
+Code 2.1.317 in VS Code declines and Codex 0.164.0-alpha.11.1 cancels without showing the form
+(measured 2026-11-03, #135). Each round runs the checks in order up to the first failure, then, only if they pass, a read-only
 review on another backend in one review session, moving on from a backend out of quota. Failures and P1 or P2 findings return to the worker's
 session for at most `LOOP_FIX_ROUNDS` turns, and each round repeats the checks and the review. Later
 turns get no form, since the call that could ask has ended: a model that needs approval ends the loop

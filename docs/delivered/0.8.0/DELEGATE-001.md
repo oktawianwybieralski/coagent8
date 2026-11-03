@@ -108,7 +108,14 @@ fix on the review's finding, so a model may land on either side of this conflict
 An earlier run ended `review_failed` on agy's quota, so the review now moves on from a backend out of
 quota.
 
-Not run: the form in a real client, agy as a writer in the loop, POSIX natively.
+Not run: agy as a writer in the loop, POSIX natively.
+
+The form in real clients (2026-11-03, #135): Claude Code 2.1.317 in VS Code answered `decline` and
+Codex 0.164.0-alpha.11.1 answered `cancel`, both within a second and without showing it; the owner
+saw nothing on screen in Claude Code. Claude Code's MCP log records the request ("Elicitation request
+received in print mode"), and its extension host answers `decline` when it has no form handler. The
+refusal now names the client's answer and `allowedChecks`, so in these clients the loop needs its
+checks listed there.
 
 Each later turn of the loop has its own limit (30 minutes) within the task's budget. `needs_input` ends
 the task instead of pausing it, and the caller continues with the session handle.

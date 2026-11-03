@@ -468,7 +468,10 @@ error.
   runs the backend's default model (still subject to your approval thresholds);
   pass `output_price_below` or a model to bound the price.
 - **Approval forms.** Clients that cannot show MCP forms cannot approve an
-  expensive model (see [approving expensive models](#approving-expensive-models)).
+  expensive model (see [approving expensive models](#approving-expensive-models))
+  or the checks of `delegate` with `loop: true`. Claude Code 2.1.317 in VS Code
+  and Codex 0.164 did not show the check form when measured, so list the exact
+  commands in `allowedChecks` of the CoAgent8 configuration instead.
 - **Host deadlines.** A host can stop a tool call before CoAgent8's own deadline;
   a headless agy client stopped calls after 180 seconds.
 - **Sessions on disk.** Every call keeps a session record, even with archives
