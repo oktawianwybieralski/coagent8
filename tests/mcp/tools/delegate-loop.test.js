@@ -314,6 +314,52 @@ test('a review moves on from a backend out of quota, never to the writer', async
   );
 });
 
+test("a review avoids the client's own CLI, and moves on from a sandbox refusal (#142)", async () => {
+  const denied = { ...reviewResult('BLOCKED'), result: { status: 'failed', error: { code: 'POLICY_DENIED' } } };
+  const pick = order => async excluded => {
+    const next = order.find(id => !excluded.has(id));
+    if (!next) throw new ToolError('CLI_NOT_FOUND', 'none left');
+    return next;
+  };
+  const seen = [];
+  const reviewed = await reviewOnAnotherBackend(
+    'codex',
+    pick(['agy', 'claude']),
+    async backend => {
+      seen.push(backend);
+      return reviewResult('READY');
+    },
+    'agy',
+  );
+  assert.deepEqual(seen, ['claude'], 'the client runs on agy, so claude reviews');
+  assert.equal(reviewed.review.verdict, 'READY');
+
+  seen.length = 0;
+  await reviewOnAnotherBackend(
+    'codex',
+    pick(['agy', 'claude']),
+    async backend => {
+      seen.push(backend);
+      return backend === 'claude' ? denied : reviewResult('READY');
+    },
+    'agy',
+  );
+  assert.deepEqual(seen, ['claude', 'agy'], "after a refusal the client's CLI is the last resort");
+
+  seen.length = 0;
+  const only = await reviewOnAnotherBackend(
+    'codex',
+    pick(['agy']),
+    async backend => {
+      seen.push(backend);
+      return reviewResult('READY');
+    },
+    'agy',
+  );
+  assert.deepEqual(seen, ['agy'], "with no other backend, the client's CLI reviews");
+  assert.equal(only.review.verdict, 'READY');
+});
+
 test('cancellation while choosing the next reviewer is not reported as a quota failure', async () => {
   const limited = { ...reviewResult('BLOCKED'), result: { status: 'failed', error: { code: 'RATE_LIMITED' } } };
   let picks = 0;

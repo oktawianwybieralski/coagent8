@@ -11,7 +11,7 @@ import { formatExecutionResult } from '../result.js';
 import { executeDelegation, startDelegation, type Supervise } from '../../execution/delegation.js';
 import { approveChecks, parseCheckCommand, type CheckApprovalPrompt } from '../../execution/checks.js';
 import { reviewOnAnotherBackend, superviseChange } from '../../execution/loop.js';
-import { resolveBackend } from '../../execution/routing.js';
+import { getCallerProvider, resolveBackend } from '../../execution/routing.js';
 import { loadConfig } from '../../config.js';
 import { executeReview } from './review.tool.js';
 import { getDataDir, getRuntimePath } from '../../paths.js';
@@ -109,7 +109,9 @@ function loopSupervisor(task: string, checks: readonly string[], workspaceCwd: s
                   await resolveBackend('auto', {
                     context: turn.context,
                     eligible: async id =>
-                      excluded.has(id) ? new ToolError('CLI_NOT_FOUND', `${id} wrote this change or is out of quota.`) : undefined,
+                      excluded.has(id)
+                        ? new ToolError('CLI_NOT_FOUND', `${id} wrote this change, runs this client or could not review it.`)
+                        : undefined,
                   })
                 ).id,
           backend =>
@@ -127,6 +129,7 @@ function loopSupervisor(task: string, checks: readonly string[], workspaceCwd: s
                 { ...round, clock },
               ),
             ),
+          getCallerProvider(),
         );
         reviewBackend = reviewed.provider ?? reviewBackend;
         reviewSession = reviewed.sessionHandle ?? reviewSession;

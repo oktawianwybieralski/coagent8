@@ -47,6 +47,11 @@ export function providerForClient(clientName: string | undefined): ProviderId | 
   return null;
 }
 
+/** The connected client's own CLI, when its name tells it. */
+export function getCallerProvider(): ProviderId | null {
+  return callerProvider;
+}
+
 /** Records the connected client's own CLI so `auto` prefers a different one. */
 export function setCallerProvider(provider: ProviderId | null): void {
   callerProvider = provider;
