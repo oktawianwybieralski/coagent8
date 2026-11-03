@@ -17,8 +17,9 @@ test counts as fresh evidence.
   ([record](delivered/0.8.0/README.md), [plan](ROADMAP.md#080-plan)).
 - **Working rules (owner 2026-11-02):** the backlog is in GitHub Issues
   ([`project.md`](../.agents/project.md#backlog)); an issue is closed by solving
-  it. A clean PR is merged when its gate, CI and available reviews pass, and bugs
-  another agent reports are fixed as they come. Tags, publication and repository
+  it. A PR is merged when its gate and CI pass and every required reviewer is READY
+  on its head ([standing go-ahead](../.agents/project.md#standing-go-aheads));
+  bugs another agent reports are fixed as they come. Tags, publication and repository
   settings need the owner.
 - **Delivered for 0.8.0:** asynchronous `delegate` with task records, `wait`,
   Claude Code wake-up and the server-owned loop

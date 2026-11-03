@@ -24,8 +24,9 @@ the VS Code Marketplace, uploaded by hand
 ([record](delivered/0.7.0/README.md)). `develop` holds the `0.8.0` candidate
 ([plan](#080-plan), [record](delivered/0.8.0/README.md)). The backlog is in
 GitHub Issues ([`project.md`](../.agents/project.md#backlog)). Agents merge a
-clean PR when its gate, CI and available reviews pass (owner 2026-11-02); tags,
-publication and repository settings stay the owner's.
+PR when its gate and CI pass and every required reviewer is READY on its head
+([standing go-ahead](../.agents/project.md#standing-go-aheads) of 2026-11-02);
+tags, publication and repository settings stay the owner's.
 
 | Area | Present on `develop` | Remaining for `0.8.0` |
 | --- | --- | --- |
