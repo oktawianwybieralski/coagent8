@@ -51,7 +51,23 @@ function toFile(path: string, text: string, git: boolean): FileDiff {
 }
 
 /**
- * Reads the files of a diff. A Git file starts at `diff --git a/`, which cannot begin a line of
+ * The path of a `diff --git` header line, also when Git quoted it for special characters.
+ */
+function gitPath(line: string): string {
+  const quoted = /^diff --git "a\/((?:[^"\\]|\\.)*)"/.exec(line);
+  if (quoted) {
+    try {
+      // Git quotes with C escapes, which JSON reads, apart from octal bytes kept as written.
+      return JSON.parse(`"${quoted[1]!.replace(/\\([0-7]{3})/g, '\\\\$1')}"`) as string;
+    } catch {
+      return quoted[1]!;
+    }
+  }
+  return /^diff --git a\/(.+?) b\//.exec(line)?.[1] ?? '(diff)';
+}
+
+/**
+ * Reads the files of a diff. A Git file starts at `diff --git `, which cannot begin a line of
  * hunk content, since those lines start with +, - or a space. Untracked files start where the
  * collector recorded them.
  */
@@ -60,9 +76,9 @@ function filesOf(diff: string, untracked: GitScopeInfo['untracked']): FileDiff[]
   const gitEnd = untracked ? untracked.section : diff.length;
   let current: { path: string; text: string } | null = null;
   for (const line of diff.slice(0, gitEnd).split(/(?<=\n)/)) {
-    if (line.startsWith('diff --git a/')) {
+    if (line.startsWith('diff --git ')) {
       if (current) files.push(toFile(current.path, current.text, true));
-      current = { path: /^diff --git a\/(.+?) b\//.exec(line)?.[1] ?? '(diff)', text: line };
+      current = { path: gitPath(line), text: line };
     } else if (current) current.text += line;
     else current = { path: '(diff preamble)', text: line };
   }

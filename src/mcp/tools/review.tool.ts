@@ -319,7 +319,22 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   const { parts, snapshot } = review;
   const manifest = parts.map((part, index) => `Part ${index + 1}: ${part.paths.join(', ')}`).join('\n');
   const results: { index: number; outcome: TaskExecutionResult }[] = [];
-  const followed = typeof review.args.session_handle === 'string' ? getSession(review.args.session_handle) : null;
+  // A follow-up is checked before any part runs, as its synthesis turn would check it.
+  const handle = typeof review.args.session_handle === 'string' ? review.args.session_handle : undefined;
+  const followed = handle ? getSession(handle, { workspace: review.workspaceCwd }) : null;
+  if (handle && !followed) {
+    throw new ToolError(
+      'SESSION_INVALID',
+      `Session '${handle.slice(0, 80)}' cannot be continued in this workspace. No model turn started.`,
+    );
+  }
+  const requested = review.args.backend;
+  if (followed && requested && requested !== 'auto' && requested !== 'smart_quota' && requested !== followed.backend) {
+    throw new ToolError(
+      'INPUT_LIMIT',
+      `Session '${handle!.slice(0, 80)}' runs on ${followed.backend}, not ${requested}. No model turn started.`,
+    );
+  }
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
     const prompt = review.promptFor(part.text, partSnapshot, [
@@ -329,7 +344,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
     const { session_handle: _session, ...partArgs } = review.args;
     // A follow-up's parts run in fresh sessions on the reviewer of the session it continues.
     if (followed) {
-      if (!partArgs.backend || partArgs.backend === 'auto') partArgs.backend = followed.backend;
+      partArgs.backend = followed.backend;
       if (!partArgs.model && followed.model) partArgs.model = followed.model;
     }
     const outcome = await executeTask(

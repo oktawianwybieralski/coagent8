@@ -76,6 +76,16 @@ test('every part stays within the budget, nothing is lost or repeated, and conte
   assert.match(parts.find(part => part.paths.includes('other.ts')).text, /real other/);
 });
 
+test('a file whose header Git quoted is a file of its own', () => {
+  const quoted =
+    'diff --git "a/caf\\303\\251 \\"x\\".ts" "b/caf\\303\\251 \\"x\\".ts"\n--- a\n+++ b\n@@ -1 +1 @@\n+' + 'y'.repeat(200) + '\n';
+  const diff = fileDiff('a.ts', [['x'.repeat(200)]]) + quoted;
+  const parts = splitReviewDiff(diff, undefined, 300);
+  assert.equal(parts.length, 2);
+  assert.deepEqual(parts[0].paths, ['a.ts']);
+  assert.match(parts[1].paths[0], /^caf.* "x"\.ts$/);
+});
+
 test('every line of a diff lands in exactly one part, in order, with its file header', () => {
   const diff = [
     fileDiff('a.ts', [Array.from({ length: 30 }, (_, i) => `a${i}`)]),
@@ -162,6 +172,22 @@ test('a large change is reviewed in parts, each in its own session, then in one 
     assert.match(prompts[2], /Part 1 \(READY\):/);
     assert.equal(result.verdict, 'READY');
     assert.match(result.answer, /Reviewed in 2 parts:/);
+  } finally {
+    adapterRegistry.agy = original;
+  }
+});
+
+test('a follow-up of a session that cannot continue here starts no part', async () => {
+  const original = adapterRegistry.agy;
+  try {
+    await setup();
+    const repo = bigRepo();
+    const prompts = stubReviewer(() => 'VERDICT: READY\nReviewed: the part.');
+    await assert.rejects(
+      handleReview('review', { session_handle: 'syn_sess_000000000000000000000000' }, repo, null, null),
+      err => err.code === 'SESSION_INVALID',
+    );
+    assert.equal(prompts.length, 0);
   } finally {
     adapterRegistry.agy = original;
   }
