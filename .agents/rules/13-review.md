@@ -45,8 +45,10 @@ The reviewer ends with `CHECKS`; CoAgent8 appends `END_REVIEW` after it has
 verified that the turn completed (`ENVELOPE-001`). The runtime gate blocks
 incomplete input, a wrong snapshot, a changed workspace and failed CHECKS
 (`CUR-001`). It validates reported outcomes but does not prove a model's PASS
-claim or bind a release artifact. A read-only reviewer cannot run checks: its
-NOT_RUN does not block, the server verdict names them (`READY (typecheck and
+claim or bind a release artifact. A read-only reviewer cannot run checks itself;
+the server runs the approved `checks` of a `review` call before the turn, and one
+that does not pass blocks (`REVIEW-003`, [rule 11](11-security-and-sandboxes.md)).
+Without them the reviewer's NOT_RUN does not block, the server verdict names them (`READY (typecheck and
 tests not run)`), and the author runs them locally and CI runs them on the PR
 (owner decision 2026-10-11). Ordinary documentation edits do not need a backend
 AI call or runtime tests merely to fill an envelope.

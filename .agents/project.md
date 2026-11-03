@@ -53,6 +53,10 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
   PR into `develop`, pushes review fixes to it and updates its description
   without asking again. Merging, tags, releases, publication, force pushes and
   repository settings stay with the owner.
+- 2026-11-02: the agent squash-merges a topic PR into `develop` without asking
+  once its gate, CI and the available independent reviews are clean, and fixes
+  the bugs another agent reports as they come. Tags, releases, publication,
+  force pushes and repository settings stay with the owner.
 
 ## Findings labels
 

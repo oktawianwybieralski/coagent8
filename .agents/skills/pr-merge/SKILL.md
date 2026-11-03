@@ -9,7 +9,9 @@ Merging is an owner action ([rule 12](../../rules/12-release-workflow.md)): run 
 only when the owner lists the PR numbers in the request, and merge only those,
 one at a time, in the order given (ascending if no order was given). Never touch
 any other PR. The owner's list also authorizes rebasing and force-pushing the
-listed PRs' branches; it covers nothing else.
+listed PRs' branches; it covers nothing else. The standing go-ahead of
+2026-11-02 in [`project.md`](../../project.md#standing-go-aheads) counts as such a
+list for the agent's own clean topic PRs; it does not cover force-pushing.
 
 ## How to run commands
 
