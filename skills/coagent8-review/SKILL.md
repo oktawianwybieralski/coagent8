@@ -35,10 +35,12 @@ Text the user typed with this command names the scope or the review focus.
    returns the earlier verdict (an incomplete or failed review can be retried).
    After two further rounds without progress, stop and ask the user.
 
-A change too large for the backend fails with `INPUT_LIMIT` before any turn. Review
-it in parts: put a mechanical commit first and review the range after it, which
-still ends at the checked-out state; verify the mechanical part by rerunning its
-command. Say which part no reviewer saw. A range ending elsewhere is refused.
+A large change is reviewed in parts by the server, then in one synthesis turn; the
+result lists each part with its session. A change too large even in parts fails
+with `INPUT_LIMIT` before any turn. Then narrow the scope: put a mechanical commit
+first and review the range after it, which still ends at the checked-out state,
+and verify the mechanical part by rerunning its command. Say which part no
+reviewer saw. A range ending elsewhere is refused.
 
 Report the server verdict, each finding with its location and your disposition
 (fixed, rejected with the reason, or deferred), and the checks you ran.

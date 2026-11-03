@@ -30,6 +30,11 @@ export interface GitScopeInfo {
    * collected, since a model cannot review them as text (`FEEDBACK-070d`).
    */
   binaryFiles: BinaryChange[];
+  /**
+   * Where the untracked section and each untracked file start in `diff`, recorded as they are
+   * written: a file's own content can look like a file heading, so its boundaries are not guessed.
+   */
+  untracked?: { section: number; files: { path: string; offset: number }[] };
 }
 
 /** One binary file a review scope changes. */
@@ -258,7 +263,21 @@ export async function collectGitScope(
     const changedPaths = [...new Set(inventory.split('\0').filter(Boolean))].filter(file => !isExcludedPath(file));
     const diff = boundedSnapshot(info.diff, omissions);
     const binaryFiles = await identifyBinaries(info);
-    return { ...info, diff, changedPaths, binaryFiles, inputComplete: omissions.length === 0, omissions };
+    // The snapshot is trimmed and may be cut: its offsets move with the trim and end at the cut.
+    const shift = info.diff.length - info.diff.trimStart().length;
+    const untracked = info.untracked && {
+      section: info.untracked.section - shift,
+      files: info.untracked.files.map(file => ({ ...file, offset: file.offset - shift })).filter(file => file.offset < diff.length),
+    };
+    return {
+      ...info,
+      diff,
+      changedPaths,
+      binaryFiles,
+      inputComplete: omissions.length === 0,
+      omissions,
+      ...(untracked && untracked.section < diff.length ? { untracked } : {}),
+    };
   };
   /**
    * Finds the scope's binary changes from Git's machine-readable output, never from diff text a
@@ -377,7 +396,9 @@ export async function collectGitScope(
     const untracked = (await git(['ls-files', '-z', '--others', '--exclude-standard', '--', '.', ...GIT_DIFF_PATHSPEC_EXCLUSIONS]))
       .split('\0')
       .filter(Boolean);
+    let untrackedLayout: GitScopeInfo['untracked'];
     if (untracked.length) {
+      untrackedLayout = { section: diff.length + 2, files: [] };
       diff += '\n\n--- UNTRACKED FILE SNAPSHOT (workspace scope) ---\n';
       const root = await fs.realpath(workspaceCwd);
       const contextSignal =
@@ -409,6 +430,7 @@ export async function collectGitScope(
           }
           const text = await readBoundedFile(file, 256 * 1024);
           if (text.includes('\0')) untrackedBinaries.push(filename);
+          if (!text.includes('\0')) untrackedLayout!.files.push({ path: filename, offset: diff.length + 1 });
           diff += text.includes('\0') ? `\n[Binary file not collected: ${filename}]` : `\n--- ${filename} ---\n${text}\n`;
         } catch {
           omissions.push(`Unreadable or oversized file: ${filename}`);
@@ -422,6 +444,7 @@ export async function collectGitScope(
       label: 'Uncommitted working changes (staged, unstaged, untracked)',
       diff,
       nativeArgs: ['--uncommitted'],
+      ...(untrackedLayout ? { untracked: untrackedLayout } : {}),
     });
   }
 
