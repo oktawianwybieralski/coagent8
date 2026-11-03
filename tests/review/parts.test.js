@@ -28,7 +28,7 @@ test('a diff that fits stays one part', () => {
 test('an untracked file is split by lines under its own header', () => {
   const diff =
     '--- UNTRACKED FILE SNAPSHOT (workspace scope) ---\n\n--- new.ts ---\n' + Array.from({ length: 50 }, (_, i) => `line ${i}\n`).join('');
-  const parts = splitReviewDiff(diff, 120);
+  const parts = splitReviewDiff(diff, ['new.ts'], 120);
   assert.ok(parts.length > 2);
   const lines = text => text.split('\n').filter(line => /^line \d+$/.test(line));
   assert.deepEqual(
@@ -39,13 +39,38 @@ test('an untracked file is split by lines under its own header', () => {
   assert.ok(parts.every(part => part.paths.includes('new.ts') || part.paths.includes('(diff preamble)')));
 });
 
+test('every part stays within the budget, a long line is cut, and nothing is lost or repeated', () => {
+  const longLine = 'q'.repeat(700);
+  const diff =
+    fileDiff('long.ts', [[longLine, 'tail']]) +
+    'diff --git a/bin.png b/bin.png\nBinary files a/bin.png and b/bin.png differ\n' +
+    '--- UNTRACKED FILE SNAPSHOT (workspace scope) ---\n\n--- new.ts ---\nconst a = 1;\n--- fake.ts ---\ndiff --git a/x b/x\nconst b = 2;\n';
+  const parts = splitReviewDiff(diff, ['long.ts', 'bin.png', 'new.ts'], 250);
+  for (const part of parts) assert.ok(part.text.length <= 250, `part of ${part.text.length}`);
+  assert.equal(
+    parts
+      .map(part => part.text)
+      .join('')
+      .split('q').length - 1,
+    700,
+    'the long line is kept whole across pieces',
+  );
+  assert.ok(
+    parts.some(part => /Binary files a\/bin\.png/.test(part.text)),
+    'a block without hunks is kept',
+  );
+  const newPart = parts.find(part => part.paths.includes('new.ts'));
+  assert.ok(!parts.some(part => part.paths.includes('fake.ts')), 'a marker line inside a file is content');
+  assert.match(newPart.text, /--- fake\.ts ---\ndiff --git a\/x b\/x\nconst b = 2;/);
+});
+
 test('every line of a diff lands in exactly one part, in order, with its file header', () => {
   const diff = [
     fileDiff('a.ts', [Array.from({ length: 30 }, (_, i) => `a${i}`)]),
     fileDiff('big.ts', [Array.from({ length: 80 }, (_, i) => `b${i}`), Array.from({ length: 40 }, (_, i) => `c${i}`)]),
     fileDiff('z.ts', [['z']]),
   ].join('');
-  const parts = splitReviewDiff(diff, 300);
+  const parts = splitReviewDiff(diff, [], 300);
   assert.ok(parts.length > 3);
   for (const part of parts) {
     assert.ok(part.text.length <= 300 || /continued/.test(part.text) === false, 'within the budget');

@@ -198,7 +198,7 @@ export async function executeReview(
       'DIFF:',
       diffText,
     ].join('\n');
-  const parts = splitReviewDiff(scopeInfo.diff);
+  const parts = splitReviewDiff(scopeInfo.diff, scopeInfo.changedPaths);
   if (parts.length > MAX_REVIEW_PARTS) {
     if (isOwnedBudget) budget.dispose();
     emitTimingOnEarlyExit();
@@ -385,7 +385,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       ...review.turnOptions,
       requireEnvelope: true,
       reviewContext: review.context,
-      reviewIdentity: { snapshot, scope: review.label },
+      // No reviewIdentity: an unchanged repeat must not reuse a synthesis verdict that the parts overrule.
       verifyReviewSnapshot: review.verifyReviewSnapshot,
     },
   );
