@@ -32,6 +32,7 @@ import { checkModelSelection } from '../models/catalog.js';
 import { checkPriceLimit, findPrice, priceEvidence, readPrices } from '../models/prices.js';
 import { revalidateConsent } from './consent.js';
 import {
+  consentClientDeclinedMessage,
   consentDeclinedMessage,
   consentRequiredMessage,
   consentUnansweredMessage,
@@ -60,7 +61,8 @@ export interface ExecutionRequest {
 
 /**
  * Asks the user, not the calling agent, to approve a model; `approved` is true only on the
- * user's approval, `unanswered` when the client cancelled the request without a decision, and
+ * user's approval, `unanswered` when the client cancelled the request without a decision,
+ * `declined` when the client answered decline, which is not known to be the user's, and
  * `remember` only when the request offered it and the user chose it.
  * The server implements it with MCP elicitation when the client supports it (AUD-P1-7).
  */
@@ -74,6 +76,8 @@ export type ConsentPrompt = (request: {
 }) => Promise<{
   approved: boolean;
   unanswered?: boolean;
+  /** The client answered `decline`, which it may do without showing the form (#140). */
+  declined?: boolean;
   remember?: boolean;
   backend?: string;
   model?: string;
@@ -534,7 +538,11 @@ export async function prepareTask(args: ExecutionRequest, cwd: string, options: 
       if (answer.unanswered || !answer.approved) {
         throw new ToolError(
           'POLICY_DENIED',
-          answer.unanswered ? consentUnansweredMessage(model, decision.reason) : consentDeclinedMessage(model),
+          answer.unanswered
+            ? consentUnansweredMessage(model, decision.reason)
+            : answer.declined
+              ? consentClientDeclinedMessage(model, decision.reason)
+              : consentDeclinedMessage(model),
         );
       }
 

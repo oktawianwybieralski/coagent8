@@ -246,6 +246,19 @@ test('confirmConsent: user decline throws POLICY_DENIED with user did not approv
     },
   );
 
+  await assert.rejects(
+    prepared.confirmConsent({
+      askConsent: async () => ({ approved: false, unanswered: false, declined: true }),
+    }),
+    err => {
+      assert.equal(err.code, 'POLICY_DENIED');
+      assert.match(err.message, /The client declined the approval request for model 'gpt-expensive'/);
+      assert.doesNotMatch(err.message, /The user did not approve/, "a client decline is not the user's refusal (#140)");
+      assert.match(err.message, /governance\.models\.allow/);
+      return true;
+    },
+  );
+
   const currentConfig = loadConfig();
   assert.ok(!currentConfig.governance.models.allow.includes('gpt-expensive'), 'Declined approval must not be remembered');
 });

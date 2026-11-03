@@ -166,9 +166,18 @@ export function consentRequiredMessage(model: string, reason: string): string {
   return `Model '${model}' needs the user's approval, which this client cannot ask for (no MCP elicitation). ${reason} ${NO_SUBSTITUTE} ${APPROVAL_REMEDY}`;
 }
 
-/** One-line refusal when the user declined the approval request or left the box unchecked. */
+/** One-line refusal when the user left the box unchecked in a form the client showed. */
 export function consentDeclinedMessage(model: string): string {
   return `The user did not approve model '${model}'. Ask the user before using another model.`;
+}
+
+/**
+ * One-line refusal when the client declined the approval request.
+ * @remarks A decline is the client's answer: Claude Code 2.1.317 in VS Code declines every request
+ * without showing it (measured 2026-11-03, #140), as it does for the check form (#135).
+ */
+export function consentClientDeclinedMessage(model: string, reason: string): string {
+  return `The client declined the approval request for model '${model}', possibly without showing it to the user, so do not report this as the user's refusal unless the user says so. ${reason} ${NO_SUBSTITUTE} ${APPROVAL_REMEDY}`;
 }
 
 /**
