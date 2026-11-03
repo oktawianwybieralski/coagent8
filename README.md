@@ -46,16 +46,19 @@ your own installed and signed-in CLI.
 
 ## Status
 
-`0.6.0` is the first release for testers. Every version below 1.0.0 is a
+`0.7.0` is the current release; `0.6.0` was the first for testers, and `0.8.0`
+will be the first release candidate. Every version below 1.0.0 is a
 **preview**, with the same version number on GitHub, npm and VS Code. On npm
 each release appears first as `coagent8@next`; `latest` follows once the
 version has proved stable.
 
 What works today: consultations and reviews by another agent in a read-only
-profile, model selection by price with your approval for expensive models,
-continuable sessions with history, diagnostics, skills and the VS Code
-extension. Not yet available: letting the other agent write changes, run
-checks or coordinate several agents. These are the next steps in the
+profile, delegating a code change to another agent, which runs in the background
+and wakes Claude Code when it ends, with an optional loop in which CoAgent8 runs
+your checks and an independent review and returns failures to the agent; model
+selection by price with your approval for expensive models, continuable sessions
+with history, diagnostics, skills and the VS Code extension. Not yet available:
+coordinating several agents in parallel. That is the next step in the
 [roadmap](docs/ROADMAP.md#full-coagent-direction).
 
 ## Quick start
@@ -199,7 +202,13 @@ supports stdio MCP in Agent mode through the same definition, following
 
 - Scopes: uncommitted (default), staged, a commit, a branch or a range, with
   optional review instructions. Git context is bounded (4 MiB per Git command,
-  3 MiB snapshot).
+  3 MiB snapshot). A diff above 200,000 characters is reviewed in parts, each in
+  its own session, then in one turn over all their findings; above 15 parts the
+  review is refused and you narrow the scope.
+- `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
+  before the turn, and a check that does not pass blocks the verdict. The
+  reviewing agent itself stays read-only. A check runs only with your approval:
+  list it in `allowedChecks` of the configuration, or approve it on the form.
 - The reviewing agent answers in a fixed format: snapshot, coverage, verdict,
   findings as `[P1|P2|P3] file:line`, and the checks it ran.
 - CoAgent8 derives the verdict: an incomplete answer, partial coverage,
@@ -247,10 +256,10 @@ supports stdio MCP in Agent mode through the same definition, following
 | Tool | Purpose |
 | --- | --- |
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
-| `review` | An independent review of Git changes with a verdict CoAgent8 derives |
-| `delegate` | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
+| `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first |
+| `delegate` | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
-| `session` | List the workspace's sessions, page a session's history (`cursor` and `limit`) or close a session |
+| `session` | List the workspace's sessions (`mine: true` for your own), page a session's history (`cursor` and `limit`) or its messages only, read a delegation's task, or close a session |
 | `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
 | `issue` | Prepare a sanitized bug report (attaching detected CLI versions when `include_doctor` is `true`, the default) and a GitHub bug report form link to paste it into |
 
@@ -280,16 +289,22 @@ Antigravity can end its turn when it reads a file in another checkout, such as
 the main checkout of a Git worktree (observed with agy 1.4.12). CoAgent8 then
 retries once inside the workspace, and if that also fails, names the denied
 action.
-The agent reports each check as PASS, FAIL or NOT_RUN; run the checks yourself
-before accepting the change. Codex on Windows cannot run test runners that start
-processes from Node, such as `node --test`, Jest or Vitest. On Windows a cancelled agent's child
-processes can outlive it, so check `git status` after a cancel or timeout.
+The agent reports each check as PASS, FAIL or NOT_RUN. Codex on Windows cannot
+run test runners that start processes from Node, such as `node --test`, Jest or
+Vitest. With `loop: true` CoAgent8 runs the checks itself after the agent, with
+your account and outside any sandbox, then gets an independent review on another
+backend and returns failures to the agent for up to two fix rounds; the checks
+need your approval as in reviews. Without the loop, run the checks yourself
+before accepting the change. On Windows a cancelled agent's child processes end
+with it; partial changes stay, so check `git status` after a cancel or timeout.
 
 ### Approving expensive models
 
 The approval is a form CoAgent8 sends through MCP elicitation; your client must
-show it to you. Clients that cannot show MCP forms cancel it: headless clients,
-Codex 0.160.1 and the Antigravity chat did so when measured. CoAgent8 never
+show it to you. Clients that cannot show MCP forms close or decline it without
+showing it: headless clients, Codex (0.160.1 and 0.164), the Antigravity chat and
+Claude Code 2.1.317 in VS Code did so when measured. CoAgent8 then says the
+client answered, not you. CoAgent8 never
 accepts an approval relayed by the calling agent, so there the turn fails with
 `POLICY_DENIED`. To use such a model anyway, allow it with **CoAgent8: Manage
 Model Approvals** in VS Code or in `governance.models.allow`, or call it from a
