@@ -130,6 +130,20 @@ test('the worker holds the writer: a second start is refused, and cancel ends th
   assert.match(task.result.text, /Observed by CoAgent8/);
 });
 
+test('a task read right after cancel returns is never running (#136)', async () => {
+  for (let i = 0; i < 3; i++) {
+    const repo = fixtureRepo();
+    process.env.CODEX_FIXTURE_MODE = 'interruptible';
+    const started = await handleDelegate(REQUEST, repo, null, null, approve);
+    const { taskHandle, sessionHandle } = started.structuredContent;
+    const cancelled = await handleCancelSession({ session_handle: sessionHandle, workspace_path: repo });
+    assert.equal(cancelled.structuredContent.cancelled, true);
+    const read = await handleSession({ action: 'task', task_handle: taskHandle }, repo);
+    assert.equal(read.structuredContent.state, 'cancelled', `round ${i}`);
+    assert.doesNotMatch(read.content[0].text, /still running/);
+  }
+});
+
 test('the request ending after the start does not stop the worker', async () => {
   const repo = fixtureRepo();
   process.env.CODEX_FIXTURE_MODE = 'interruptible';

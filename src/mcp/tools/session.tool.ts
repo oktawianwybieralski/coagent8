@@ -1,5 +1,6 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { closeSession, cancelSession, listSessions } from '../../sessions/session.js';
+import { delegationSettled } from '../../execution/delegation.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history/index.js';
@@ -124,6 +125,10 @@ export async function handleCancelSession(args: { session_handle: string; worksp
   }
   const workspace = args.workspace_path ? resolveWorkspacePath(args.workspace_path) : undefined;
   const result = await cancelSession(args.session_handle, workspace);
+  // A delegation's task turns final after its evidence and release: wait, so a read that follows
+  // does not report the worker as running (#136).
+  const settled = result.cancelled ? await delegationSettled(args.session_handle) : true;
+  if (!settled) result.message += ' The delegation has not stored its final state yet; read its task again shortly.';
   return {
     content: [
       {

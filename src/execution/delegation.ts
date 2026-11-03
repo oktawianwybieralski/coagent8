@@ -167,6 +167,30 @@ const activeDelegations = new Map<Promise<unknown>, AbortController>();
  * Stops every asynchronous delegation of this server, at once also one still waiting for consent.
  * @returns Settles when each has stored its evidence and released its writer.
  */
+/** The running delegation of each worker session, so a cancel can wait for its final state (#136). */
+const delegationBySession = new Map<string, Promise<unknown>>();
+
+/** How long a cancel waits for the delegation to store its final state. */
+const CANCEL_SETTLE_MS = 15 * 1000;
+
+/**
+ * Waits until the delegation of a session has stored its final state, after a cancel.
+ * @returns Whether it settled in time; true when no delegation of this server runs in that session.
+ */
+export async function delegationSettled(sessionHandle: string, waitMs = CANCEL_SETTLE_MS): Promise<boolean> {
+  const settled = delegationBySession.get(sessionHandle);
+  if (!settled) return true;
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<false>(resolve => {
+    timer = setTimeout(() => resolve(false), waitMs);
+  });
+  try {
+    return await Promise.race([settled.then(() => true), timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function stopActiveDelegations(): Promise<unknown> {
   for (const controller of activeDelegations.values()) controller.abort();
   return Promise.allSettled([...activeDelegations.keys()]);
@@ -323,8 +347,12 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     },
   );
   activeDelegations.set(settled, controller);
+  void running.then(() => {
+    if (task) delegationBySession.set(task.sessionHandle, settled);
+  });
   void settled.then(() => {
     activeDelegations.delete(settled);
+    if (task && delegationBySession.get(task.sessionHandle) === settled) delegationBySession.delete(task.sessionHandle);
     budget.dispose();
   });
 
