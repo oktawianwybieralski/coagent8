@@ -150,6 +150,6 @@ The owner ran the same loop test from a chat in each client, on the CI-built pac
 
 None of the three showed the approval form for a check outside `allowedChecks`: Claude Code answered
 `decline` and Codex `cancel` (#135). A model approval form gets the same answers, now reported as the
-client's (#140). A task read right after `cancel` reported a running worker (#136); `cancel` now returns
-once the task is final. The agy CLI called a CoAgent8 tool headless, so the stop in #138 is specific to
+client's (#140). A task read right after `cancel` reported a running worker (#136); `cancel` now waits up to
+15 s for the final task state and says so when it is still pending. The agy CLI called a CoAgent8 tool headless, so the stop in #138 is specific to
 the hub. The loop's review avoids the client's own CLI (#142).
