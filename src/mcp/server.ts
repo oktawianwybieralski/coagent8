@@ -286,6 +286,7 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
       return {
         approved,
         unanswered: answer.action === 'cancel',
+        declined: answer.action === 'decline',
         remember: approved && offerRemember && answer.content?.remember === true,
         backend,
         model,

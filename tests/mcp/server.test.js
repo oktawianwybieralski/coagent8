@@ -356,9 +356,13 @@ test('a top-tier model runs only after the user approves it through MCP elicitat
       requests.push(request.params);
       return answer;
     });
+    // Claude Code 2.1.317 in VS Code answers `decline` without showing a form (measured
+    // 2026-11-03), so a decline is the client's answer, not the user's (#140).
     const declined = readResult(await call(asking.client, 'claude-opus-4-6-thinking')).error;
     assert.equal(declined.code, 'POLICY_DENIED');
-    assert.match(declined.message, /did not approve/);
+    assert.doesNotMatch(declined.message, /user did not approve/i);
+    assert.match(declined.message, /^The client declined the approval request for model 'claude-opus-4-6-thinking'/);
+    assert.match(declined.message, /governance\.models\.allow/);
     // Codex 0.160.1 declares form elicitation but answers `cancel` in 3 ms without showing a
     // form (measured 2026-10-07), so a cancel must not be reported as the user's decision.
     answer = { action: 'cancel' };

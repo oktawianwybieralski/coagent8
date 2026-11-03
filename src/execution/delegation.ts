@@ -167,6 +167,39 @@ const activeDelegations = new Map<Promise<unknown>, AbortController>();
  * Stops every asynchronous delegation of this server, at once also one still waiting for consent.
  * @returns Settles when each has stored its evidence and released its writer.
  */
+/**
+ * The running delegation of each worker session, so a cancel can wait for its final state (#136).
+ * Settles with whether that state was stored.
+ */
+const delegationBySession = new Map<string, Promise<boolean>>();
+
+/** How long a cancel waits for the delegation to store its final state. */
+const CANCEL_SETTLE_MS = 15 * 1000;
+
+/** How a cancelled delegation ended, as `awaitDelegation` reports it. */
+export type DelegationSettlement = 'stored' | 'unstored' | 'pending' | 'none';
+
+/**
+ * Finds the delegation of a session, to wait for after a cancel. Call it before cancelling: one
+ * that ends during the cancel still reports its outcome.
+ * @returns A wait that starts its bound when called, so a slow cancel does not shorten it.
+ */
+export function captureDelegation(sessionHandle: string): (waitMs?: number) => Promise<DelegationSettlement> {
+  const settled = delegationBySession.get(sessionHandle);
+  return async (waitMs = CANCEL_SETTLE_MS) => {
+    if (!settled) return 'none';
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<'pending'>(resolve => {
+      timer = setTimeout(() => resolve('pending'), waitMs);
+    });
+    try {
+      return await Promise.race([settled.then(stored => (stored ? ('stored' as const) : ('unstored' as const))), timedOut]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
 export function stopActiveDelegations(): Promise<unknown> {
   for (const controller of activeDelegations.values()) controller.abort();
   return Promise.allSettled([...activeDelegations.keys()]);
@@ -274,10 +307,13 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     await writeTask(task).catch(logUnstored);
   };
   /** Never rejects: a waiter must learn the end, and nobody awaits this but the shutdown. */
+  /** Whether the final state was stored; a reader cannot learn the end when it was not. */
+  let finalStored = false;
   const finish = async (update: Pick<DelegationTask, 'state' | 'result'>) => {
     if (!task) return;
     task = { ...task, ...update, finishedAt: new Date().toISOString() };
-    if (!(await writeFinalTask(task))) logUnstored();
+    finalStored = await writeFinalTask(task);
+    if (!finalStored) logUnstored();
   };
   const operation = executeDelegation(start.prompt, start.publicInput, start.args, start.cwd, start.scope, controller.signal, null, {
     ...start.options,
@@ -323,8 +359,14 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     },
   );
   activeDelegations.set(settled, controller);
+  const outcomeStored = settled.then(() => finalStored);
+  void running.then(() => {
+    if (task) delegationBySession.set(task.sessionHandle, outcomeStored);
+  });
   void settled.then(() => {
     activeDelegations.delete(settled);
+    // Only its own entry: a newer delegation in the same session may have registered meanwhile.
+    if (task && delegationBySession.get(task.sessionHandle) === outcomeStored) delegationBySession.delete(task.sessionHandle);
     budget.dispose();
   });
 

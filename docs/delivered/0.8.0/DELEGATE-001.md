@@ -137,3 +137,19 @@ Independent review of #125 and #126: Codex READY at their merged heads `6acd030`
 - `doctor` states what a turn can reach per backend, and a consult is told that the server sets this,
   so a sandbox's limit does not read as the caller's wish (#130). Network access for a read-only consult
   is not added.
+
+## Clients as callers (owner's acceptance, 2026-11-03)
+
+The owner ran the same loop test from a chat in each client, on the CI-built package of `a175892`:
+
+| Client | `wakeup` | How it got the result |
+| --- | --- | --- |
+| Claude Code | `background_wait` | started `wait_argv` as a background command and was woken with the result |
+| Codex | `none` | started `wait_argv` in the background, then polled it and read the task: no new turn started by itself |
+| agy hub | `none` | ran `wait_argv` within its turn; in two other conversations it stopped after reading the tool schemas (#138) |
+
+None of the three showed the approval form for a check outside `allowedChecks`: Claude Code answered
+`decline` and Codex `cancel` (#135). A model approval form gets the same answers, now reported as the
+client's (#140). A task read right after `cancel` reported a running worker (#136); `cancel` now waits up to
+15 s for the final task state and says so when it is still pending. The agy CLI called a CoAgent8 tool headless, so the stop in #138 is specific to
+the hub. The loop's review avoids the client's own CLI (#142).
