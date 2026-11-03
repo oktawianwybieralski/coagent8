@@ -32,7 +32,8 @@ export interface LoopSteps {
 }
 
 /**
- * Runs a review on a backend that did not write the change, moving on from one out of quota.
+ * Runs a review on a backend that did not write the change, moving on from one that is out of
+ * quota or whose sandbox refused to read it.
  * @param pick - The next backend outside `excluded`; throws when none remains.
  * @param run - One review on that backend.
  * @returns The first result that is no rate limit, or the last rate limit when no backend remains.
@@ -41,8 +42,12 @@ export async function reviewOnAnotherBackend(
   writer: string | null,
   pick: (excluded: ReadonlySet<string>) => Promise<string>,
   run: (backend: string) => Promise<TaskExecutionResult>,
+  /** Also avoided, unless no other backend remains: the client's own CLI, whose sandbox may conflict (#142). */
+  caller: string | null = null,
 ): Promise<TaskExecutionResult> {
   const excluded = new Set(writer ? [writer] : []);
+  let pickCaller = !caller || caller === writer;
+  if (!pickCaller) excluded.add(caller!);
   let limited: TaskExecutionResult | undefined;
   for (;;) {
     let backend: string;
@@ -50,11 +55,17 @@ export async function reviewOnAnotherBackend(
       backend = await pick(excluded);
     } catch (err) {
       const stopped = err instanceof ToolError && (err.code === 'ABORTED' || err.code === 'TIMEOUT');
+      if (!stopped && !pickCaller) {
+        pickCaller = true;
+        excluded.delete(caller!);
+        continue;
+      }
       if (limited && !stopped) return limited;
       throw err;
     }
     const reviewed = await run(backend);
-    if (reviewed.result.error?.code !== 'RATE_LIMITED') return reviewed;
+    const code = reviewed.result.error?.code;
+    if (code !== 'RATE_LIMITED' && code !== 'POLICY_DENIED' && code !== 'SANDBOX_UNAVAILABLE') return reviewed;
     limited = reviewed;
     excluded.add(backend);
   }
