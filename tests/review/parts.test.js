@@ -85,6 +85,15 @@ test('a file whose header Git quoted is a file of its own', () => {
   assert.deepEqual(parts[0].paths, ['a.ts']);
   assert.equal(parts[1].paths[0], 'café "x".ts', 'octal escapes are UTF-8 bytes');
   assert.equal(unquoteGitPath(String.raw`a\tb\\c`), 'a\tb\\c');
+  assert.equal(unquoteGitPath(String.raw`😀 \"q\".ts`), '😀 "q".ts', 'a literal emoji stays one character');
+});
+
+test('a long line is never cut between the halves of a surrogate pair', () => {
+  const text = splitReviewDiff(fileDiff('e.ts', [['😀'.repeat(200)]]), undefined, 151)
+    .map(part => part.text)
+    .join('');
+  assert.equal(text.match(/😀/gu).length, 200);
+  assert.doesNotMatch(text, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
 });
 
 test('every line of a diff lands in exactly one part, in order, with its file header', () => {

@@ -63,21 +63,11 @@ const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 1
 /** Decodes Git's C quoting: escaped characters, and octal escapes as the bytes of UTF-8 text. */
 export function unquoteGitPath(quoted: string): string {
   const bytes: number[] = [];
-  for (let i = 0; i < quoted.length; i++) {
-    const char = quoted[i]!;
-    if (char !== '\\') {
-      bytes.push(...Buffer.from(char, 'utf8'));
-      continue;
-    }
-    const octal = /^[0-7]{3}/.exec(quoted.slice(i + 1));
-    if (octal) {
-      bytes.push(parseInt(octal[0], 8));
-      i += 3;
-    } else {
-      const next = quoted[i + 1] ?? '';
-      bytes.push(C_ESCAPES[next] ?? next.charCodeAt(0));
-      i += 1;
-    }
+  // Literal text is taken whole up to the next escape, so a character outside the BMP stays one.
+  for (const [, literal, octal, escaped] of quoted.matchAll(/([^\\]+)|\\([0-7]{3})|\\(.?)/gs)) {
+    if (literal !== undefined) bytes.push(...Buffer.from(literal, 'utf8'));
+    else if (octal !== undefined) bytes.push(parseInt(octal, 8));
+    else bytes.push(...Buffer.from(String.fromCharCode(C_ESCAPES[escaped!] ?? escaped!.codePointAt(0) ?? 92), 'utf8'));
   }
   return Buffer.from(bytes).toString('utf8');
 }
@@ -144,8 +134,16 @@ function piecesOf(file: FileDiff, budget: number): string[] {
           piece = marker;
           continue;
         }
-        piece += rest.slice(0, space);
-        rest = rest.slice(space);
+        // Never between the two halves of a surrogate pair: then the pair starts the next piece.
+        const high = rest.charCodeAt(space - 1);
+        const cut = high >= 0xd800 && high <= 0xdbff ? space - 1 : space;
+        if (cut <= 0) {
+          pieces.push(file.header + piece);
+          piece = marker;
+          continue;
+        }
+        piece += rest.slice(0, cut);
+        rest = rest.slice(cut);
       }
     }
     if (started() || (piece === head && head)) pieces.push(file.header + piece);
