@@ -18,10 +18,11 @@ model and reasoning effort are independent choices. Skills teach workflows;
 the server enforces capabilities, limits and task state.
 
 Today the server is a stdio MCP bridge to Codex, Claude Code and Antigravity
-(`agy`). Consultation and review run with the profiles below. Writing,
-command execution profiles, delegated coordinators and skill installation are
-planned. Read-only remains useful for advice and independent review but cannot
-complete implementation/check/fix workflows by itself.
+(`agy`). Consultation and review run read-only with the profiles below; `delegate`
+runs one workspace-write worker per work tree in the background, and with
+`loop: true` the server runs the approved checks and an independent review and
+returns failures to the worker. Parallel workers, delegated coordinators and
+task-scoped command profiles are planned (0.8.0).
 
 ## Request path and ownership
 
@@ -110,16 +111,16 @@ The retired src/constants.ts forwarding module has no compatibility exemption.
 | Tool | Contract |
 | --- | --- |
 | consult | Plain second opinion; proposal required, optional architecture/debug/implementation analysis |
-| review | Bounded Git review, State Envelope and server-derived READY/BLOCKED |
-| delegate | Workspace-write turn with task, scope and checks; one writer per workspace; observed Git changes reported apart from the answer ([DELEGATE-001w](#synchronous-write-delegation-delegate-001w)) |
+| review | Bounded Git review, State Envelope and server-derived READY/BLOCKED; large diffs in parts (REVIEW-002); approved `checks` run by the server first (REVIEW-003) |
+| delegate | Workspace-write turn with task, scope and checks; one writer per workspace; observed Git changes reported apart from the answer ([DELEGATE-001w](#write-delegation-delegate-001w)); returns a task handle at once, `wait` and caller wake-up, optional server-owned `loop` ([DELEGATE-001c](#asynchronous-delegation-and-caller-wake-up-delegate-001c)) |
 | doctor | Default model view (cached): per backend its models, efforts, output prices, default and approval need; scope health: installation/auth/profile evidence, server version, runtime path, defaults, quotas |
-| session | Workspace-scoped list/history/close; continuation uses session_handle |
+| session | Workspace-scoped list (`mine`), history or messages only, a delegation's task record, close; continuation uses session_handle |
 | cancel | Stops a known active/abandoned session turn; idle returns false |
 | issue | Sanitized report to paste and a GitHub bug report form link; does not submit it |
 
 Deprecated analyze/debug/implement and legacy run remain callable, unadvertised.
 Implement still means read-only advice. Unknown arguments are rejected; there is
-no task API, per-call history or session_mode argument today. Execution tools
+no per-call history or session_mode argument today; delegation task records are read through `session`. Execution tools
 accept output_price_below ([price limit](#price-limit)).
 Client-independent discovery requires no installer or recognized client name.
 
@@ -273,8 +274,9 @@ A misspelt models list fails configuration validation.
 
 Only accepted MCP elicitation with explicit boolean approve: true grants consent.
 Missing capability/content, unchecked box, decline, cancel or timeout fails closed.
-The calling agent cannot approve. Cancel is reported as unanswered, not a user's
-refusal. Consent is request/model-bound and precedes session acquisition/model
+The calling agent cannot approve. A decline or cancel the client returns without
+showing the form (Claude Code 2.1.317 declines, Codex 0.164 cancels; #135, #140)
+is reported as the client's answer, not a user's refusal. Consent is request/model-bound and precedes session acquisition/model
 execution; metadata probes may precede it. The form wait is bounded to five minutes
 and follows cancellation. Real UI display still needs client-specific acceptance.
 A refusal tells the caller to inform the user and to switch models only if the
@@ -432,8 +434,9 @@ turn, asks no consent and answers with a bounded reference to that session and
 its verdict. The record exists with history off; an unreadable sessions
 directory adds a warning and the review runs (AX-007c).
 The workspace is collected again after the turn; changes or failure block readiness.
-The gate does not run checks or prove the model's PASS claim, comprehensive scope
-or release artifact hashes. Independent evidence is still required.
+The gate itself does not prove the model's PASS claim, comprehensive scope or
+release artifact hashes; only `checks` the server ran before the turn (REVIEW-003,
+above) are server-observed evidence. Independent evidence is still required.
 
 Git stdout: 4 MiB per command; composed snapshot: 3 MiB; each untracked file:
 256 KiB. Omissions/truncation block READY. Dist/maps/lockfiles are deliberately
@@ -1231,7 +1234,7 @@ atomic update/rollback and scoped client installation. No bundled script executi
 Detect real client loaders and remote/local path boundaries; verify actual discovery
 and use. Plain MCP remains usable without a skill or repository knowledge.
 
-## Synchronous write delegation (DELEGATE-001w)
+## Write delegation (DELEGATE-001w)
 
 Owner request 2026-10-21: a coordinating agent hands a coding task to another
 backend, which changes files in the workspace, and gets the observed changes
@@ -1275,9 +1278,10 @@ a changed branch. The worker is told not to commit, push, reset, stash or
 switch branches; the server never does any of them and never cleans up.
 
 **Checks.** The worker runs `checks` where it can and reports each as PASS, FAIL
-or NOT_RUN; a denied command is reported, not worked around. The calling agent
-runs the checks itself before accepting the change (owner decision 2026-10-21).
-agy runs no command.
+or NOT_RUN; a denied command is reported, not worked around. agy runs no command.
+Without `loop`, the calling agent runs the checks itself before accepting the
+change (owner decision 2026-10-21); with `loop: true` the server runs them and
+their results decide ([server-owned loop](#asynchronous-delegation-and-caller-wake-up-delegate-001c)).
 
 **agy denials (#92).** Headless agy ends its turn without an answer at the first
 denied action. That can be a command, or a file tool that headless mode does not
@@ -1590,6 +1594,10 @@ only with a new owner decision; details and evidence remain in Git history.
 | 2026-10-21 | DELEGATE-001w: a synchronous `delegate` tool lets a coordinating agent hand a coding task to another backend, ahead of the asynchronous DELEGATE-001c-f; `consult` and `review` stay read-only. The model-visible tool-definition budget rises to 7,700 B for it. Claude workers get `Bash` although it is not path-limited, agy workers run without `--sandbox` and without any enforced path limit, and on Windows a cancelled worker's descendants can outlive it until WINDOWS-001b-e; each is a documented limitation, and the server reports observed changes outside `scope`. WINDOWS-001b-e stays a condition of the 0.8.0 release candidate. |
 | 2026-10-21 | Codex on Windows uses the unelevated sandbox instead of the elevated one (CUR-014): the elevated backend runs commands as a separate `CodexSandbox*` account, which loses read access wherever ACL inheritance is cut and made Git report unreadable tracked files as deleted; the unelevated restricted token of the user's own account reads the whole tree and still denies writes (verified natively). Codex picks the first `pwsh.exe` on `PATH` and has no shell setting, so the server's `PATH` omits the app execution alias directory, and commands run without the user's PowerShell profile. Replaces the 2026-10-15 `icacls` remedy; the read-only sandbox stays on every platform. |
 | 2026-10-15 | Release split: `0.7.0` (beta.3) is a stability release (public CLI, FEEDBACK-061, acceptance runner and WSL lane, publication automation); `0.8.0` is rc.1, the first release candidate on `1.0.x`, and carries asynchronous delegation, host-led coagent profiles and delegated coordination. Until `0.7.0` the owner runs the working-tree build as the local MCP server; it is never distributed. |
+| 2026-11-02 | `delegate` with `loop: true` runs a server-owned loop: after the worker the server runs the approved `checks` itself (an exact `allowedChecks` entry or the user's MCP form, parsed without a shell, outside any sandbox), then an independent review on another backend, and returns failures to the worker for up to two fix rounds (DELEGATE-001f2). Without `loop` the 2026-10-21 rule stands: the caller runs the checks. |
+| 2026-11-02 | A form the client declines or closes without showing it (Claude Code 2.1.317, Codex 0.164) is reported as the client's answer with the user's ways to approve, never as the user's refusal (#135, #140). |
+| 2026-11-03 | A diff above 200,000 characters is reviewed in parts, each in its own session, then in one synthesis turn over their findings; more than 15 parts refuse the review (REVIEW-002). |
+| 2026-11-03 | The reviewer stays read-only; `review.checks` are run by the server before the turn under the same approval as the loop's checks, a check that does not pass blocks, and a check that changed the reviewed state refuses the review (REVIEW-003). |
 
 ## Known limitations
 
@@ -1601,7 +1609,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | CUR-009 | Auth/profile/UI evidence incomplete | DIAGNOSTICS-001, AX-003/005 |
 | CUR-011 | POSIX unexpected-parent-death cleanup absent | WINDOWS-001 |
 | CUR-013 | Other-tree review refused, not implemented | COAGENT-004, SURFACE-001 |
-| CUR-014 | Codex Windows sandbox: the unelevated backend is verified only with the user's own `CODEX_HOME`; an isolated `CODEX_HOME` once failed closed by policy (HANDOFF 2.12d lane 4) | COAGENT-002 |
+| CUR-014 | Codex Windows sandbox: the unelevated backend is verified only with the user's own `CODEX_HOME`; an isolated `CODEX_HOME` once failed closed by policy ([0.7.0 handoff notes](delivered/0.7.0/handoff-notes.md), row 2.12d lane 4) | COAGENT-002 |
 | AX-001, AX-003 through 006 | Request estimates, config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
 
 CUR-001/003/004/005/006/007/010/012 have local fixes for review identity/completeness,
