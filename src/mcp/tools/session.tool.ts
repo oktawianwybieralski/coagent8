@@ -127,8 +127,11 @@ export async function handleCancelSession(args: { session_handle: string; worksp
   const result = await cancelSession(args.session_handle, workspace);
   // A delegation's task turns final after its evidence and release: wait, so a read that follows
   // does not report the worker as running (#136).
-  const settled = result.cancelled ? await delegationSettled(args.session_handle) : true;
-  if (!settled) result.message += ' The delegation has not stored its final state yet; read its task again shortly.';
+  // Also when no turn was running any more: the delegation may still be storing its final state.
+  const settled = await delegationSettled(args.session_handle);
+  if (settled === 'pending') result.message += ' The delegation has not stored its final state yet; read its task again shortly.';
+  if (settled === 'unstored')
+    result.message += ' The delegation ended, but its final state could not be stored: check the work tree with git status.';
   return {
     content: [
       {
