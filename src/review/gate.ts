@@ -76,8 +76,8 @@ export interface ReviewGateContext {
   requiredChecks?: readonly ('typecheck' | 'tests')[];
   /**
    * Checks the server ran on the reviewed state before the turn (`REVIEW-003`). When present they
-   * decide, not the reviewer's CHECKS line: a failure blocks, and passing ones replace the
-   * typecheck and tests the reviewer could not run.
+   * decide whether a check failed, not the reviewer's CHECKS line; the reviewer maps them to
+   * typecheck and tests, and one it cannot map stays NOT_RUN.
    */
   serverChecks?: readonly { command: string; status: string }[];
   /**
@@ -266,8 +266,7 @@ export function evaluateStateEnvelopeGate(
     const serverFailed = (serverChecks ?? []).filter(check => check.status !== 'passed');
     const failedChecks = serverChecks ? serverFailed.length > 0 : checkValues && Object.values(checkValues).includes('FAIL');
     // Unrun required checks are named on READY; the author and CI run them.
-    const notRunChecks =
-      checkValues && !serverChecks?.length ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
+    const notRunChecks = checkValues ? (context?.requiredChecks ?? []).filter(check => checkValues[check] === 'NOT_RUN') : [];
     const wrongSnapshot = Boolean(context?.expectedSnapshot && snapshotVal !== context.expectedSnapshot);
     const incompleteInput = Boolean(context && context.inputComplete === false);
     const judged = Boolean(isCompleteEnvelope && checks && !truncated && !lengthLimited && !wrongSnapshot && !deniedRequiredScope);

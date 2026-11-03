@@ -65,7 +65,7 @@ async function setup(allowedChecks) {
   });
 }
 
-test('passing server checks replace the typecheck and tests the reviewer could not run', async () => {
+test('passing server checks are reported, and a kind they do not cover stays not run', async () => {
   const original = adapterRegistry.agy;
   try {
     await setup([PASS]);
@@ -74,7 +74,7 @@ test('passing server checks replace the typecheck and tests the reviewer could n
     assert.match(prompts[0], /The server ran these checks on exactly this change/);
     assert.equal(result.verdict, 'READY');
     assert.match(result.reason ?? '', /1 check passed on the server/);
-    assert.doesNotMatch(result.reason ?? '', /not run/);
+    assert.match(result.reason ?? '', /typecheck and tests not run/, 'a check of unknown kind proves neither');
   } finally {
     adapterRegistry.agy = original;
   }
