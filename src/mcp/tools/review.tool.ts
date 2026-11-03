@@ -22,7 +22,7 @@ export function getCanonicalReviewToolDefinition() {
   return {
     name: CANONICAL_TOOL_NAMES.REVIEW,
     description:
-      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only: runs no checks; an unchanged complete repeat cannot help.',
+      'Independent review of Git changes: findings, then "Verdict: READY" or "Verdict: BLOCKED (reason)". Read-only reviewer; checks run on the server; an unchanged complete repeat cannot help.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -169,31 +169,40 @@ export async function executeReview(
     .filter((check): check is string => typeof check === 'string' && check.trim().length > 0)
     .map(check => check.trim());
   let serverChecks: CheckResult[] | undefined;
-  if (checkCommands.length) {
-    // The work tree is the reviewed state: assertReviewWorkspace refused any scope where it is not.
-    checkCommands.forEach(parseCheckCommand);
-    await approveChecks(checkCommands, loadConfig().allowedChecks ?? [], options.askChecks, abortSignal);
-    serverChecks = [];
-    for (const command of checkCommands) {
-      const ran = await runCheck(command, workspaceCwd, budget.executionSignal, budget.remainingExecutionMs());
-      serverChecks.push(ran);
-      if (ran.status === 'cancelled' || ran.status === 'timed_out') break;
-    }
+  /** Whether the work tree is still the reviewed state, also for scopes whose diff would not show it. */
+  const unchanged = async () => {
     const after = await collectReviewInput(effectiveScope, workspaceCwd, abortSignal, tracker, reviewReadContext);
-    // Also for staged and revision scopes, whose diff does not show a change to another file.
-    const treeChanged = await assertReviewWorkspace(after.info, workspaceCwd, abortSignal, reviewReadContext).then(
-      () => false,
+    if (after.context.expectedSnapshot !== context.expectedSnapshot) return false;
+    return assertReviewWorkspace(after.info, workspaceCwd, abortSignal, reviewReadContext).then(
+      () => true,
       (err: unknown) => {
-        if (err instanceof ToolError && err.code === 'POLICY_DENIED') return true;
+        if (err instanceof ToolError && err.code === 'POLICY_DENIED') return false;
         throw err;
       },
     );
-    if (treeChanged || after.context.expectedSnapshot !== context.expectedSnapshot) {
+  };
+  if (checkCommands.length) {
+    try {
+      // The work tree is the reviewed state: assertReviewWorkspace refused any scope where it is not.
+      checkCommands.forEach(parseCheckCommand);
+      await approveChecks(checkCommands, loadConfig().allowedChecks ?? [], options.askChecks, abortSignal);
+      serverChecks = [];
+      for (const command of checkCommands) {
+        const ran = await runCheck(command, workspaceCwd, budget.executionSignal, budget.remainingExecutionMs());
+        serverChecks.push(ran);
+        if (ran.status === 'cancelled' || ran.status === 'timed_out') break;
+        // After every check: a later one must not run on, or restore, a state the first one changed.
+        if (!(await unchanged())) {
+          throw new ToolError(
+            'POLICY_DENIED',
+            `The check '${command.slice(0, 120)}' changed the reviewed files, so its result is not about this change. No model turn started.`,
+          );
+        }
+      }
+    } catch (err) {
       if (isOwnedBudget) budget.dispose();
-      throw new ToolError(
-        'POLICY_DENIED',
-        'A check changed the reviewed files, so its result is not about this change. No model turn started.',
-      );
+      emitTimingOnEarlyExit();
+      throw err;
     }
     context.serverChecks = serverChecks.map(({ command, status }) => ({ command, status }));
   }
