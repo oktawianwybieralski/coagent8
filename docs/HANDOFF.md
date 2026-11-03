@@ -23,7 +23,8 @@ Do not append another session transcript or treat old test counts as fresh evide
 - **Check approval in real clients (2026-11-03, #135):** neither Claude Code 2.1.317 in VS Code
   (`decline`) nor Codex 0.164.0-alpha.11.1 (`cancel`) shows the form for `loop` checks, so the loop
   runs in those clients only with its checks in `allowedChecks`. The refusal now says that the
-  client answered, not the user. The same applies to model approval forms (#140).
+  client answered, not the user. A declined model approval form is still reported as the user's
+  refusal; that is tracked in #140.
 
 - **Acceptance in a real client (2026-11-02):** on the CI-built VSIX, Claude Code delegated to Codex
   and Claude Code and was woken with the results; cancel left nothing running. agy passed the same
