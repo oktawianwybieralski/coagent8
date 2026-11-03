@@ -11,6 +11,7 @@ import { createExecutionBudget } from '../../execution/runtime/budget.js';
 import { combineSignals } from '../../storage/lock.js';
 import { ToolError } from '../../contracts/error.js';
 import { MAX_REVIEW_PARTS, splitReviewDiff, type ReviewPart } from '../../review/parts.js';
+import { getSession } from '../../sessions/session.js';
 import type { TaskExecutionResult } from '../../contracts/execution.js';
 import type { ReviewGateContext } from '../../review/gate.js';
 
@@ -198,7 +199,7 @@ export async function executeReview(
       'DIFF:',
       diffText,
     ].join('\n');
-  const parts = splitReviewDiff(scopeInfo.diff, scopeInfo.changedPaths);
+  const parts = splitReviewDiff(scopeInfo.diff, scopeInfo.untracked);
   if (parts.length > MAX_REVIEW_PARTS) {
     if (isOwnedBudget) budget.dispose();
     emitTimingOnEarlyExit();
@@ -300,13 +301,12 @@ interface PartsReview {
   verifyReviewSnapshot: () => Promise<string | undefined>;
 }
 
-/** The finding lines of a review answer, from its first finding to CHECKS. */
+/** A part's answer without its envelope fields: findings in any form the gate accepts, and Blocked lines. */
 function findingLines(output: string): string {
-  const lines = output.split('\n');
-  const start = lines.findIndex(line => /^\[P[123]\]/.test(line) || /^Blocked:/.test(line));
-  if (start < 0) return '';
-  const end = lines.findIndex((line, index) => index > start && /^CHECKS:/.test(line));
-  return lines.slice(start, end < 0 ? undefined : end).join('\n');
+  return output
+    .split('\n')
+    .filter(line => line.trim() && !/^(?:REVIEW|SNAPSHOT|COVERAGE|VERDICT|Reviewed|CHECKS|END_REVIEW):?/.test(line.trim()))
+    .join('\n');
 }
 
 /**
@@ -319,6 +319,7 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
   const { parts, snapshot } = review;
   const manifest = parts.map((part, index) => `Part ${index + 1}: ${part.paths.join(', ')}`).join('\n');
   const results: { index: number; outcome: TaskExecutionResult }[] = [];
+  const followed = typeof review.args.session_handle === 'string' ? getSession(review.args.session_handle) : null;
   for (const [index, part] of parts.entries()) {
     const partSnapshot = `${snapshot}/part-${index + 1}-of-${parts.length}`;
     const prompt = review.promptFor(part.text, partSnapshot, [
@@ -326,6 +327,11 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       manifest,
     ]);
     const { session_handle: _session, ...partArgs } = review.args;
+    // A follow-up's parts run in fresh sessions on the reviewer of the session it continues.
+    if (followed) {
+      if (!partArgs.backend || partArgs.backend === 'auto') partArgs.backend = followed.backend;
+      if (!partArgs.model && followed.model) partArgs.model = followed.model;
+    }
     const outcome = await executeTask(
       prompt,
       `Review ${review.label}, part ${index + 1} of ${parts.length}\n${review.instructions}`,

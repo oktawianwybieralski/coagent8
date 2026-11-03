@@ -2,14 +2,16 @@
  * Splits a large review diff into parts, each reviewed in its own turn (`REVIEW-002`).
  *
  * @remarks
- * Every character of the diff lands in exactly one part, in order. Whole files are kept together
- * when they fit; a larger file is split at hunk boundaries, a larger hunk at line boundaries and a
- * longer line at the budget, each piece repeating its file header so the reviewer knows where it
- * is. The parts are cut from the diff text the server collected, so the snapshot of the whole diff
- * still binds them.
+ * Every character of the diff lands in exactly one part, in order, and no part exceeds the
+ * budget. Whole files are kept together when they fit; a larger file is split at hunk boundaries,
+ * a larger hunk at line boundaries and a longer line at the budget, each piece repeating its file
+ * header so the reviewer knows where it is. Untracked files are cut where the collector recorded
+ * them, never where their content looks like a heading. The parts are cut from the diff text the
+ * server collected, so the snapshot of the whole diff still binds them.
  *
  * @packageDocumentation
  */
+import type { GitScopeInfo } from '../workspace/git.js';
 
 /** Diff characters of one part; with the prompt around it, it stays far below any backend's input limit. */
 export const REVIEW_PART_CHARS = 200_000;
@@ -28,56 +30,14 @@ interface FileDiff {
   path: string;
   /** What starts every piece of the file. */
   header: string;
-  /** Git hunks, or one block of an untracked file's content, split by lines when too large. */
+  /** Git hunks, or one block of plain content (an untracked file, a block without hunks). */
   hunks: string[];
 }
 
-/** The heading the server writes before the content of untracked files. */
-const UNTRACKED_SECTION = '--- UNTRACKED FILE SNAPSHOT';
-
-/**
- * Reads the files of a diff. A Git file starts at `diff --git a/`, which cannot begin a line of
- * hunk content, since those lines start with +, - or a space. In the untracked section a file
- * starts only at `--- <path> ---` for a path the scope changes: a file's own content may hold such
- * a line, and it then stays content.
- */
-function filesOf(diff: string, changedPaths: ReadonlySet<string>): FileDiff[] {
-  const files: FileDiff[] = [];
-  let current: { path: string; lines: string[] } | null = null;
-  let untracked = false;
-  const close = () => {
-    if (current) files.push(toFile(current.path, current.lines));
-    current = null;
-  };
-  for (const line of diff.split(/(?<=\n)/)) {
-    const bare = line.replace(/\r?\n$/, '');
-    if (!untracked && bare.startsWith('diff --git a/')) {
-      close();
-      current = { path: /^diff --git a\/(.+?) b\//.exec(bare)?.[1] ?? '(diff)', lines: [line] };
-      continue;
-    }
-    if (!untracked && bare.startsWith(UNTRACKED_SECTION)) {
-      close();
-      untracked = true;
-      current = { path: '(diff preamble)', lines: [line] };
-      continue;
-    }
-    const named = untracked ? /^--- (.+) ---$/.exec(bare)?.[1] : undefined;
-    if (named !== undefined && changedPaths.has(named)) {
-      close();
-      current = { path: named, lines: [line] };
-      continue;
-    }
-    if (!current) current = { path: '(diff preamble)', lines: [] };
-    current.lines.push(line);
-  }
-  close();
-  return files;
-}
-
-function toFile(path: string, lines: string[]): FileDiff {
-  const firstHunk = lines.findIndex(line => line.startsWith('@@ '));
-  // Without hunks (a binary marker, a mode change, an untracked file) the first line heads the rest.
+/** The text of one file, header apart: Git hunks are kept as hunks, anything else as plain content. */
+function toFile(path: string, text: string, git: boolean): FileDiff {
+  const lines = text.split(/(?<=\n)/);
+  const firstHunk = git ? lines.findIndex(line => line.startsWith('@@ ')) : -1;
   const headerEnd = firstHunk < 0 ? Math.min(1, lines.length) : firstHunk;
   const header = lines.slice(0, headerEnd).join('');
   const body = lines.slice(headerEnd);
@@ -90,13 +50,39 @@ function toFile(path: string, lines: string[]): FileDiff {
   return { path, header, hunks };
 }
 
+/**
+ * Reads the files of a diff. A Git file starts at `diff --git a/`, which cannot begin a line of
+ * hunk content, since those lines start with +, - or a space. Untracked files start where the
+ * collector recorded them.
+ */
+function filesOf(diff: string, untracked: GitScopeInfo['untracked']): FileDiff[] {
+  const files: FileDiff[] = [];
+  const gitEnd = untracked ? untracked.section : diff.length;
+  let current: { path: string; text: string } | null = null;
+  for (const line of diff.slice(0, gitEnd).split(/(?<=\n)/)) {
+    if (line.startsWith('diff --git a/')) {
+      if (current) files.push(toFile(current.path, current.text, true));
+      current = { path: /^diff --git a\/(.+?) b\//.exec(line)?.[1] ?? '(diff)', text: line };
+    } else if (current) current.text += line;
+    else current = { path: '(diff preamble)', text: line };
+  }
+  if (current) files.push(toFile(current.path, current.text, true));
+  if (!untracked) return files;
+  const starts = [{ path: '(untracked files)', offset: untracked.section }, ...untracked.files];
+  for (const [index, start] of starts.entries()) {
+    const text = diff.slice(start.offset, starts[index + 1]?.offset ?? diff.length);
+    if (text) files.push(toFile(start.path, text, false));
+  }
+  return files;
+}
+
 /** Pieces of one file, each at most `budget` characters with its header, in order. */
 function piecesOf(file: FileDiff, budget: number): string[] {
   const whole = file.header + file.hunks.join('');
   if (whole.length <= budget) return [whole];
   const pieces: string[] = [];
-  let current = '';
   const room = budget - file.header.length;
+  let current = '';
   const flush = () => {
     if (current) pieces.push(file.header + current);
     current = '';
@@ -108,27 +94,29 @@ function piecesOf(file: FileDiff, budget: number): string[] {
       continue;
     }
     flush();
-    // A hunk larger than a part: its lines in order, every later piece marked as a continuation
-    // of the same hunk, and a line longer than a piece cut at the budget.
-    const gitHunk = hunk.startsWith('@@ ');
+    // A hunk larger than a piece: its lines in order, every later piece marked as a continuation,
+    // and a line longer than a piece cut at the budget. A hunk header too long to repeat is content.
     const lines = hunk.split(/(?<=\n)/);
-    const head = gitHunk ? lines.shift()! : '';
-    const marker = gitHunk ? `${head.replace(/\r?\n$/, '')} (continued)\n` : '(continued)\n';
+    const repeat = hunk.startsWith('@@ ') && lines[0]!.length * 4 <= room;
+    const head = repeat ? lines.shift()! : '';
+    const marker = repeat ? `${head.replace(/\r?\n$/, '')} (continued)\n` : '(continued)\n';
     let piece = head;
-    const space = () => room - piece.length;
+    const started = () => piece !== head && piece !== marker;
     for (const line of lines) {
       let rest = line;
       while (rest) {
-        if (rest.length > space() && piece && piece !== head) {
+        const space = room - piece.length;
+        // A whole line goes to a fresh piece rather than being cut, when one can hold it.
+        if (space <= 0 || (rest.length > space && started() && rest.length <= room - marker.length)) {
           pieces.push(file.header + piece);
           piece = marker;
+          continue;
         }
-        const take = rest.length <= space() ? rest.length : Math.max(1, space());
-        piece += rest.slice(0, take);
-        rest = rest.slice(take);
+        piece += rest.slice(0, space);
+        rest = rest.slice(space);
       }
     }
-    if (piece) pieces.push(file.header + piece);
+    if (started() || (piece === head && head)) pieces.push(file.header + piece);
   }
   flush();
   return pieces;
@@ -137,12 +125,12 @@ function piecesOf(file: FileDiff, budget: number): string[] {
 /**
  * Splits a diff into parts of at most `budget` characters, keeping its order.
  * @param diff - The diff the server collected.
- * @param changedPaths - The paths the scope changes, which name its untracked files.
- * @param budget - Characters of one part; it must leave room for a file header and a continuation line.
+ * @param untracked - Where the collector wrote untracked files into it.
+ * @param budget - Characters of one part.
  * @returns One part when the diff fits.
  */
-export function splitReviewDiff(diff: string, changedPaths: readonly string[] = [], budget = REVIEW_PART_CHARS): ReviewPart[] {
-  const files = filesOf(diff, new Set(changedPaths));
+export function splitReviewDiff(diff: string, untracked?: GitScopeInfo['untracked'], budget = REVIEW_PART_CHARS): ReviewPart[] {
+  const files = filesOf(diff, untracked);
   if (diff.length <= budget) return [{ paths: [...new Set(files.map(file => file.path))], text: diff }];
   const parts: ReviewPart[] = [];
   let current: ReviewPart = { paths: [], text: '' };
@@ -151,8 +139,8 @@ export function splitReviewDiff(diff: string, changedPaths: readonly string[] = 
     current = { paths: [], text: '' };
   };
   for (const file of files) {
-    // A header that leaves no room for content is cut like content: the file still lands somewhere.
-    const fitting = file.header.length * 2 > budget ? { ...file, header: '', hunks: [file.header + file.hunks.join('')] } : file;
+    // A header too large to repeat on every piece is cut like content: the file still lands somewhere.
+    const fitting = file.header.length * 4 > budget ? { ...file, header: '', hunks: [file.header + file.hunks.join('')] } : file;
     for (const piece of piecesOf(fitting, budget)) {
       if (current.text.length + piece.length > budget) flush();
       current.text += piece;
