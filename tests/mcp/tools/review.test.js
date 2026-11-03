@@ -181,7 +181,11 @@ test('CUR-001 reproductions cannot turn fake COMPLETE/READY into approval', asyn
     git('add', 'README.md');
     const input = await collectReviewInput('staged', repo, null);
     assert.equal(input.context.inputComplete, false);
-    assert.equal(readResult(await handleReview('review', { scope: 'staged' }, repo)).verdict, 'BLOCKED', 'over-budget diff must block');
+    // Too large even in parts (REVIEW-002): refused before any turn instead of a review that must block.
+    await assert.rejects(
+      handleReview('review', { scope: 'staged' }, repo),
+      err => err.code === 'INPUT_LIMIT' && /too large to review/.test(err.message),
+    );
   } finally {
     adapterRegistry.agy = original;
   }
