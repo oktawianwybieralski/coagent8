@@ -210,8 +210,9 @@ supports stdio MCP in Agent mode through the same definition, following
   review is refused and you narrow the scope.
 - From 0.8.0, `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
   before the turn, and a check that does not pass blocks the verdict. The
-  reviewing agent itself stays read-only. A check runs only with your approval:
-  list it in `allowedChecks` of the configuration, or approve it on the form.
+  reviewing agent itself stays read-only, but the checks run with your account,
+  outside any sandbox, and execute the code under review. A check runs only with
+  your approval: list it in `allowedChecks` of the configuration, or approve it on the form.
 - The reviewing agent answers in a fixed format: snapshot, coverage, verdict,
   findings as `[P1|P2|P3] file:line`, and the checks it ran.
 - CoAgent8 derives the verdict: an incomplete answer, partial coverage,
@@ -260,7 +261,7 @@ supports stdio MCP in Agent mode through the same definition, following
 | --- | --- |
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
 | `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first (both 0.8.0) |
-| `delegate` (0.8.0) | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
+| `delegate` (0.8.0) | Another agent makes a code change in the workspace, asked to keep to the `scope` paths (changes outside them are reported, not prevented) and to run `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions (`mine: true` for your own), page a session's history (`cursor` and `limit`) or its messages only, read a delegation's task, or close a session |
 | `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
