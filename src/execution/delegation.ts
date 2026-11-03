@@ -176,29 +176,28 @@ const delegationBySession = new Map<string, Promise<boolean>>();
 /** How long a cancel waits for the delegation to store its final state. */
 const CANCEL_SETTLE_MS = 15 * 1000;
 
+/** How a cancelled delegation ended, as `awaitDelegation` reports it. */
+export type DelegationSettlement = 'stored' | 'unstored' | 'pending' | 'none';
+
 /**
- * Waits until the delegation of a session has stored its final state, after a cancel.
- * The delegation is looked up when this is called, so call it before cancelling: one that ends
- * during the cancel still reports its outcome.
- * @returns `stored` once the final state is stored, `unstored` when the delegation ended without
- * storing it, `pending` when the wait ran out, and `none` when no delegation of this server runs
- * in that session.
+ * Finds the delegation of a session, to wait for after a cancel. Call it before cancelling: one
+ * that ends during the cancel still reports its outcome.
+ * @returns A wait that starts its bound when called, so a slow cancel does not shorten it.
  */
-export async function delegationSettled(
-  sessionHandle: string,
-  waitMs = CANCEL_SETTLE_MS,
-): Promise<'stored' | 'unstored' | 'pending' | 'none'> {
+export function captureDelegation(sessionHandle: string): (waitMs?: number) => Promise<DelegationSettlement> {
   const settled = delegationBySession.get(sessionHandle);
-  if (!settled) return 'none';
-  let timer: NodeJS.Timeout | undefined;
-  const timedOut = new Promise<'pending'>(resolve => {
-    timer = setTimeout(() => resolve('pending'), waitMs);
-  });
-  try {
-    return await Promise.race([settled.then(stored => (stored ? ('stored' as const) : ('unstored' as const))), timedOut]);
-  } finally {
-    clearTimeout(timer);
-  }
+  return async (waitMs = CANCEL_SETTLE_MS) => {
+    if (!settled) return 'none';
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<'pending'>(resolve => {
+      timer = setTimeout(() => resolve('pending'), waitMs);
+    });
+    try {
+      return await Promise.race([settled.then(stored => (stored ? ('stored' as const) : ('unstored' as const))), timedOut]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 }
 
 export function stopActiveDelegations(): Promise<unknown> {

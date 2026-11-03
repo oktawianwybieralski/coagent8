@@ -1,6 +1,6 @@
 import type { ToolArguments, ToolProgress } from '../arguments.js';
 import { closeSession, cancelSession, listSessions } from '../../sessions/session.js';
-import { delegationSettled } from '../../execution/delegation.js';
+import { captureDelegation } from '../../execution/delegation.js';
 import { CANONICAL_TOOL_NAMES } from '../constants.js';
 import { WORKSPACE_PARAMETER } from '../schema.js';
 import { deleteHistory, getTurnMapping, sessionHistory } from '../../sessions/history/index.js';
@@ -125,12 +125,12 @@ export async function handleCancelSession(args: { session_handle: string; worksp
   }
   const workspace = args.workspace_path ? resolveWorkspacePath(args.workspace_path) : undefined;
   // Looked up before the cancel, so a delegation that ends during it still reports its outcome.
-  const settling = delegationSettled(args.session_handle);
+  const awaitDelegation = captureDelegation(args.session_handle);
   const result = await cancelSession(args.session_handle, workspace);
   // A delegation's task turns final after its evidence and release: wait, so a read that follows
   // does not report the worker as running (#136).
   // Also when no turn was running any more: the delegation may still be storing its final state.
-  const settled = await settling;
+  const settled = await awaitDelegation();
   if (settled === 'pending') result.message += ' The delegation has not stored its final state yet; read its task again shortly.';
   if (settled === 'unstored')
     result.message += ' The delegation ended, but its final state could not be stored: check the work tree with git status.';
