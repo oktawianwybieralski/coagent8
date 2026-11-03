@@ -52,12 +52,15 @@ will be the first release candidate. Every version below 1.0.0 is a
 each release appears first as `coagent8@next`; `latest` follows once the
 version has proved stable.
 
-What works today: consultations and reviews by another agent in a read-only
-profile, delegating a code change to another agent, which runs in the background
-and wakes Claude Code when it ends, with an optional loop in which CoAgent8 runs
-your checks and an independent review and returns failures to the agent; model
-selection by price with your approval for expensive models, continuable sessions
-with history, diagnostics, skills and the VS Code extension. Not yet available:
+In 0.7.0: consultations and reviews by another agent in a read-only profile,
+model selection by price with your approval for expensive models, continuable
+sessions with history, diagnostics, skills and the VS Code extension. New in
+0.8.0, on `develop` and not released yet: delegating a code change to another
+agent, which runs in the background and wakes Claude Code when it ends, with an
+optional loop in which CoAgent8 runs your checks and an independent review and
+returns failures to the agent; reviews of large changes in parts; and checks
+CoAgent8 runs before a review. This README describes `develop`, so features
+marked 0.8.0 are not in the published packages. Not yet available:
 coordinating several agents in parallel. That is the next step in the
 [roadmap](docs/ROADMAP.md#full-coagent-direction).
 
@@ -202,10 +205,10 @@ supports stdio MCP in Agent mode through the same definition, following
 
 - Scopes: uncommitted (default), staged, a commit, a branch or a range, with
   optional review instructions. Git context is bounded (4 MiB per Git command,
-  3 MiB snapshot). A diff above 200,000 characters is reviewed in parts, each in
+  3 MiB snapshot). From 0.8.0, a diff above 200,000 characters is reviewed in parts, each in
   its own session, then in one turn over all their findings; above 15 parts the
   review is refused and you narrow the scope.
-- `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
+- From 0.8.0, `checks`, such as `npm test`, are run by CoAgent8 on the reviewed change
   before the turn, and a check that does not pass blocks the verdict. The
   reviewing agent itself stays read-only. A check runs only with your approval:
   list it in `allowedChecks` of the configuration, or approve it on the form.
@@ -256,8 +259,8 @@ supports stdio MCP in Agent mode through the same definition, following
 | Tool | Purpose |
 | --- | --- |
 | `consult` | A second opinion on a question, design, plan or bug; optional architecture, debugging or implementation analysis |
-| `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first |
-| `delegate` | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
+| `review` | An independent review of Git changes with a verdict CoAgent8 derives; large changes in parts, and `checks` CoAgent8 runs first (both 0.8.0) |
+| `delegate` (0.8.0) | Another agent makes a code change in the workspace, limited to `scope` paths and running `checks`; with `loop: true` CoAgent8 runs the checks and an independent review and returns failures to the agent. The call returns once the agent runs, with a task handle and a `wait` command; `mode: "sync"` waits instead; the result adds the files CoAgent8 saw change in Git, with warnings for changes outside the scope, to files that already had uncommitted changes, and commits. One delegate per workspace at a time; it never commits |
 | `doctor` | Models, efforts, output prices, defaults and approval per backend; `scope: "health"` checks installation, versions, sign-in and quota; `detail: "full"` returns data |
 | `session` | List the workspace's sessions (`mine: true` for your own), page a session's history (`cursor` and `limit`) or its messages only, read a delegation's task, or close a session |
 | `cancel` | Stop the running turn of a session: interrupt where the CLI supports it, then end the CLI process |
@@ -281,7 +284,7 @@ rereads everything. `review` adds its verdict.
 The deprecated `analyze`, `debug` and `implement` aliases and the `run` gateway
 still work but are not listed. Every client receives the same seven tools.
 
-`delegate` needs a Git work tree and, on Windows, the job helper the package carries. Codex writes only inside the workspace
+From 0.8.0, `delegate` needs a Git work tree and, on Windows, the job helper the package carries. Codex writes only inside the workspace
 (its sandbox, without network access); Claude Code's `Edit` and `Write` are
 limited to the workspace but its `Bash` is not; Antigravity runs without its
 sandbox and without a path limit, and only edits files (it runs no commands).
@@ -370,7 +373,7 @@ where CoAgent8 is registered. Codex lists them in `/skills` and runs them as
 | `coagent8-doctor` | See models, efforts and prices, apply a price limit, check backend health |
 | `coagent8-session` | List, read, continue, cancel or close sessions |
 | `coagent8-issue` | Prepare a sanitized CoAgent8 bug report |
-| `coagent8-delegate` | Hand a defined code change to another agent, then check what it changed |
+| `coagent8-delegate` (0.8.0) | Hand a defined code change to another agent, then check what it changed |
 | `coagent8-loop` | Plan, get the plan reviewed, implement or delegate, run checks and get an independent review |
 
 | Client | Skill directory |

@@ -51,12 +51,15 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
 - 2026-10-12: once the required reviews of a topic branch are READY and its
   local checks pass, the agent pushes the branch (fast-forward only), opens its
   PR into `develop`, pushes review fixes to it and updates its description
-  without asking again. Merging, tags, releases, publication, force pushes and
-  repository settings stay with the owner.
-- 2026-11-02: the agent squash-merges a topic PR into `develop` without asking
-  once its gate, CI and the available independent reviews are clean, and fixes
-  the bugs another agent reports as they come. Tags, releases, publication,
-  force pushes and repository settings stay with the owner.
+  without asking again. Merging follows the next item; tags, releases,
+  publication, force pushes and repository settings stay with the owner.
+- 2026-11-02 (the owner's instruction for every topic PR it covers): the agent
+  squash-merges a topic PR into `develop` without asking again once its gate and
+  CI pass and every required reviewer above is READY on its head. A reviewer that
+  cannot finish (quota, deadline) is waited for, or the owner decides; the
+  others never replace it (core rule 03). Bugs another agent reports are fixed
+  as they come. Tags, releases, publication, force pushes and repository
+  settings stay with the owner.
 
 ## Findings labels
 
