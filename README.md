@@ -295,8 +295,8 @@ action.
 The agent reports each check as PASS, FAIL or NOT_RUN. Codex on Windows cannot
 run test runners that start processes from Node, such as `node --test`, Jest or
 Vitest. With `loop: true` CoAgent8 runs the checks itself after the agent, with
-your account and outside any sandbox, then gets an independent review on another
-backend and returns failures to the agent for up to two fix rounds; the checks
+your account and outside any sandbox, then gets an independent review on a backend
+other than the agent's (and other than your client's CLI while one remains) and returns failures to the agent for up to two fix rounds; the checks
 need your approval as in reviews. Without the loop, run the checks yourself
 before accepting the change. On Windows a cancelled agent's child processes end
 with it; partial changes stay, so check `git status` after a cancel or timeout.

@@ -93,7 +93,8 @@ requests 2026-10-21 and decisions 2026-11-01 and 2026-11-02).
   `wait` and task records (`001c`, `001e`), Claude Code wake-up through a
   background command (`001d1`), the caller label (`001b`, Claude Code only), and
   the first slice of the server-owned loop (`001f2`), whose review runs on
-  another CLI than the client's.
+  a backend other than the writer's, avoiding the client's own CLI while another
+  remains.
 - Windows per-call containment (`WINDOWS-001b-d`), accepted natively on `x64`
   (`001e`).
 - Reviews of large changes in parts (`REVIEW-002`) and checks the server runs
@@ -2078,7 +2079,7 @@ agent (owner assigns).
 | 2.30 | `SESSION-001b` early handle publication | R S | 2.19 | Implemented per 2.19; then `AX-007d` (R). |
 | 2.31 | [x] (#102) `WINDOWS-001b` launcher contract | P S | - | Card done; reviewed READY. |
 | 2.32 | [x] (#102) `WINDOWS-001c` helper | R S | 2.31 | Rust helper and measured overhead per the card. |
-| 2.33 | [x] (owner decision 2026-11-01: unsigned with a checked digest; SignPath #112) `WINDOWS-001d1` signing route | O | 2.32 | Owner applies to SignPath Foundation or accepts unsigned binaries with SHA-256. |
+| 2.33 | (0.8.0 ships the helper unsigned with a checked digest, owner decision 2026-11-01; the SignPath application is open, #112) `WINDOWS-001d1` signing route | O | 2.32 | Owner applies to SignPath Foundation or accepts unsigned binaries with SHA-256. |
 | 2.34 | [x] (#103) `WINDOWS-001d2` package and verify | R | 2.33 | Card done. |
 | 2.35 | `WINDOWS-001e` | N | 2.34 | Native no-survivor evidence per backend. |
 | 2.36 | `SKILLS-001e`, `SKILLS-002c`, `CLIMGMT-001e` | N | 2.17 | Native acceptance as the cards say, through the runner where possible; evidence recorded in HANDOFF, with a PR only for fixes it finds. |
