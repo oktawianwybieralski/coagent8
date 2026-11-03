@@ -55,7 +55,7 @@ guarantees for window suppression.
      with tsdown targeting Node 24. The VS Code extension entry (`extension.cjs`) stays on
      esbuild because it is not on the server start-up path. No polyfill or preload is required.
    - Runtime minimum stays Node 24.0 (`engines`). The build tooling minimum is Node 24.11
-     (`devEngines`), because tsdown 0.23.0 declares `^22.18.0 || ^24.11.0 || >=26.0.0`. CI
+     (`devEngines`), because tsdown 0.23.5 declares `^22.18.0 || ^24.11.0 || >=26.0.0`. CI
      uses the latest 24.x and 26.x, which satisfy both.
    - The bundle carries no comments, including license comments. License notices of the
      bundled packages ship in `dist/THIRD_PARTY_NOTICES.txt`, generated from the modules that
