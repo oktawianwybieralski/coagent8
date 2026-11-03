@@ -544,7 +544,8 @@ core rules, copied into `.agents/rules/core/` and pinned in
   `.agents/project.md`, project rules 10-15, `AGENTS.md`, `CLAUDE.md` and
   `GEMINI.md` entry points and the PR template. Owner decisions 2026-10-31: an
   agent merges a PR only on the owner's explicit instruction for that PR
-  (#94); the standing go-ahead of 2026-10-12 is recorded in `project.md`;
+  (#94; for topic PRs replaced by the standing go-ahead of 2026-11-02 in
+  [`project.md`](../.agents/project.md#standing-go-aheads)); the standing go-ahead of 2026-10-12 is recorded in `project.md`;
   user-visible separators use `-` instead of the middle dot, which core rule
   00 forbids. Check: P, R, the two standards checks. Delivered:
   [record](delivered/0.8.0/STANDARDS-001.md).

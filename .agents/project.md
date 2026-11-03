@@ -59,7 +59,11 @@ tool's configuration, for CoAgent8 `~/.coagent8/config.json`.
   cannot finish (quota, deadline) is waited for, or the owner decides; the
   others never replace it (core rule 03). Bugs another agent reports are fixed
   as they come. Tags, releases, publication, force pushes and repository
-  settings stay with the owner.
+  settings stay with the owner. Owner decision 2026-11-04: this departs on
+  purpose from core rule 02's per-PR merge row; it is the owner's instruction,
+  which the precedence in [AGENTS.md](../AGENTS.md) puts above the core rules,
+  until the core rule accepts it
+  ([agent-standards#5](https://github.com/oktawianwybieralski/agent-standards/issues/5)).
 
 ## Findings labels
 
