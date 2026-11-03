@@ -190,14 +190,16 @@ export async function executeReview(
       for (const command of checkCommands) {
         const ran = await runCheck(command, workspaceCwd, budget.executionSignal, budget.remainingExecutionMs());
         serverChecks.push(ran);
-        if (ran.status === 'cancelled' || ran.status === 'timed_out') break;
-        // After every check: a later one must not run on, or restore, a state the first one changed.
+        // After every check, also one that was stopped: a later one must not run on, or restore,
+        // a state an earlier one changed, and no turn starts on a changed tree.
+        const stopped = ran.status === 'cancelled' || ran.status === 'timed_out';
         if (!(await unchanged())) {
           throw new ToolError(
             'POLICY_DENIED',
             `The check '${command.slice(0, 120)}' changed the reviewed files, so its result is not about this change. No model turn started.`,
           );
         }
+        if (stopped) break;
       }
     } catch (err) {
       if (isOwnedBudget) budget.dispose();
