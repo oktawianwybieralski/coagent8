@@ -178,6 +178,8 @@ const CANCEL_SETTLE_MS = 15 * 1000;
 
 /**
  * Waits until the delegation of a session has stored its final state, after a cancel.
+ * The delegation is looked up when this is called, so call it before cancelling: one that ends
+ * during the cancel still reports its outcome.
  * @returns `stored` once the final state is stored, `unstored` when the delegation ended without
  * storing it, `pending` when the wait ran out, and `none` when no delegation of this server runs
  * in that session.
@@ -358,16 +360,14 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
     },
   );
   activeDelegations.set(settled, controller);
+  const outcomeStored = settled.then(() => finalStored);
   void running.then(() => {
-    if (task)
-      delegationBySession.set(
-        task.sessionHandle,
-        settled.then(() => finalStored),
-      );
+    if (task) delegationBySession.set(task.sessionHandle, outcomeStored);
   });
   void settled.then(() => {
     activeDelegations.delete(settled);
-    if (task) delegationBySession.delete(task.sessionHandle);
+    // Only its own entry: a newer delegation in the same session may have registered meanwhile.
+    if (task && delegationBySession.get(task.sessionHandle) === outcomeStored) delegationBySession.delete(task.sessionHandle);
     budget.dispose();
   });
 
