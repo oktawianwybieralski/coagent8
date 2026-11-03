@@ -308,7 +308,8 @@ export function createServer(options?: { clock?: MonotonicClock }): Server {
         },
         { signal: signal ?? undefined, timeout: budget?.remainingExecutionMs() ?? CONSENT_TIMEOUT_MS },
       );
-      return answer.action === 'accept' && answer.content?.approve === true;
+      if (answer.action === 'accept') return answer.content?.approve === true ? 'approved' : 'unchecked';
+      return answer.action === 'decline' ? 'declined' : 'unanswered';
     };
   }
 

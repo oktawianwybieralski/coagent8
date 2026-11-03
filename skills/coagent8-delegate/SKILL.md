@@ -55,7 +55,10 @@ and reports all of it once, in the block "Loop by CoAgent8". Use it when you wou
 otherwise supervise those rounds. Each check is one command with arguments, without
 a shell, and runs with the user's rights, outside any sandbox, on code the agent may
 have changed: tell the user, because the server asks them on a form unless the exact
-command is in `allowedChecks` of their configuration. You cannot approve it. Steps 8
+command is in `allowedChecks` of their configuration. You cannot approve it. Some
+clients answer the form without showing it, so when the refusal says the client
+declined or closed it, do not say who refused: ask the user whether they saw the
+form, and tell them that listing the command in `allowedChecks` avoids it. Steps 8
 to 10 then shrink to reading the diff: only `passed` means the checks and the review
 went through, and the review is still another model's opinion. `needs_input` means
 a turn needed the user's approval: the change stays for you.
