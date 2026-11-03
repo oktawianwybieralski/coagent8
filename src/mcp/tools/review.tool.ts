@@ -328,6 +328,19 @@ async function reviewInParts(review: PartsReview): Promise<TaskExecutionResult> 
       `Session '${handle.slice(0, 80)}' cannot be continued in this workspace. No model turn started.`,
     );
   }
+  // The checks the synthesis turn would make, made before the parts spend turns.
+  if (followed?.profile === 'workspace-write') {
+    throw new ToolError(
+      'POLICY_DENIED',
+      'This session belongs to delegate and can change files; omit session_handle. No model turn started.',
+    );
+  }
+  if (followed && !followed.threadId) {
+    throw new ToolError(
+      'SESSION_INVALID',
+      'Native continuation is unavailable for this session; history remains accessible. No model turn started.',
+    );
+  }
   const requested = review.args.backend;
   if (followed && requested && requested !== 'auto' && requested !== 'smart_quota' && requested !== followed.backend) {
     throw new ToolError(

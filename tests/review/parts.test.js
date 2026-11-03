@@ -9,7 +9,7 @@ const { execFileSync } = require('node:child_process');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-parts-'));
 process.env.coagent8_DIR = path.join(tempDir, 'data');
-const { splitReviewDiff, REVIEW_PART_CHARS } = require('../../src/review/parts.ts');
+const { splitReviewDiff, unquoteGitPath, REVIEW_PART_CHARS } = require('../../src/review/parts.ts');
 const { adapterRegistry } = require('../../src/backends/registry.ts');
 const { handleReview } = require('../../src/mcp/tools/review.tool.ts');
 const { saveConfig } = require('../../src/config.ts');
@@ -83,7 +83,8 @@ test('a file whose header Git quoted is a file of its own', () => {
   const parts = splitReviewDiff(diff, undefined, 300);
   assert.equal(parts.length, 2);
   assert.deepEqual(parts[0].paths, ['a.ts']);
-  assert.match(parts[1].paths[0], /^caf.* "x"\.ts$/);
+  assert.equal(parts[1].paths[0], 'café "x".ts', 'octal escapes are UTF-8 bytes');
+  assert.equal(unquoteGitPath(String.raw`a\tb\\c`), 'a\tb\\c');
 });
 
 test('every line of a diff lands in exactly one part, in order, with its file header', () => {

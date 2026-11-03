@@ -55,15 +55,31 @@ function toFile(path: string, text: string, git: boolean): FileDiff {
  */
 function gitPath(line: string): string {
   const quoted = /^diff --git "a\/((?:[^"\\]|\\.)*)"/.exec(line);
-  if (quoted) {
-    try {
-      // Git quotes with C escapes, which JSON reads, apart from octal bytes kept as written.
-      return JSON.parse(`"${quoted[1]!.replace(/\\([0-7]{3})/g, '\\\\$1')}"`) as string;
-    } catch {
-      return quoted[1]!;
+  return quoted ? unquoteGitPath(quoted[1]!) : (/^diff --git a\/(.+?) b\//.exec(line)?.[1] ?? '(diff)');
+}
+
+const C_ESCAPES: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 };
+
+/** Decodes Git's C quoting: escaped characters, and octal escapes as the bytes of UTF-8 text. */
+export function unquoteGitPath(quoted: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < quoted.length; i++) {
+    const char = quoted[i]!;
+    if (char !== '\\') {
+      bytes.push(...Buffer.from(char, 'utf8'));
+      continue;
+    }
+    const octal = /^[0-7]{3}/.exec(quoted.slice(i + 1));
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8));
+      i += 3;
+    } else {
+      const next = quoted[i + 1] ?? '';
+      bytes.push(C_ESCAPES[next] ?? next.charCodeAt(0));
+      i += 1;
     }
   }
-  return /^diff --git a\/(.+?) b\//.exec(line)?.[1] ?? '(diff)';
+  return Buffer.from(bytes).toString('utf8');
 }
 
 /**
