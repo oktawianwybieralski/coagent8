@@ -9,7 +9,9 @@ Merging is an owner action ([rule 12](../../rules/12-release-workflow.md)): run 
 only when the owner lists the PR numbers in the request, and merge only those,
 one at a time, in the order given (ascending if no order was given). Never touch
 any other PR. The owner's list also authorizes rebasing and force-pushing the
-listed PRs' branches; it covers nothing else.
+listed PRs' branches; it covers nothing else. The standing go-ahead of
+2026-11-02 in [`project.md`](../../project.md#standing-go-aheads) counts as such a
+list for the agent's own clean topic PRs; it does not cover force-pushing.
 
 ## How to run commands
 
@@ -101,11 +103,13 @@ listed PRs' branches; it covers nothing else.
    supersedes earlier review evidence. Reuse the review recorded in the PR body
    only if it names head `headRefOid`, scope `<base>...<head>` with base equal
    to `git merge-base origin/develop <headRefOid>` (the whole PR, not one
-   commit), coverage `COMPLETE` and 0 unresolved P1/P2. Otherwise:
+   commit), coverage `COMPLETE` and 0 unresolved P1/P2, for every required
+   reviewer in [`project.md`](../../project.md#reviewers) (Codex and agy). Otherwise,
+   for each required reviewer without such a review:
    - `git fetch origin`, `git checkout <branch>`, `git pull --ff-only`;
      `git rev-parse HEAD` must equal `headRefOid`;
    - run the CoAgent8 `review` tool with scope `origin/develop...<branch>`
-     (backend and model as the owner named, else the defaults);
+     and that reviewer's backend (model as the owner named, else the default);
    - require `VERDICT: READY` and `COVERAGE: COMPLETE`; on `BLOCKED`, stop and
      report the findings (do not fix them: that is the Author's work);
    - afterwards `git rev-parse HEAD` and `gh pr view N --json headRefOid`

@@ -496,7 +496,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 
 25. Confirm on the target: CI green and `git diff --exit-code vX.Y.Z --
     CHANGELOG.md` reports no change (read-only; never regenerate the file
-    here). Record the release evidence in HANDOFF, mark the
+    here). Record the release evidence in the version README of
+    [docs/delivered](../../docs/delivered/README.md#rules), mark the
     version done in the roadmap and close the issues it fixed.
 
 Any change to the release branch after step 13 repeats steps 8 to 13 for the new

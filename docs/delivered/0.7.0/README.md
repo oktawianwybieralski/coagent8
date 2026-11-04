@@ -62,3 +62,5 @@ The status at the top of this page is out of date: 0.7.0 is released. Release PR
 carries the npm tarball, the VSIX and `SHA256SUMS`, and npm serves 0.7.0 as `latest`. Tester notes:
 [v0.7.0](../../releases/v0.7.0.md). The native acceptance of the candidate and the release review are not
 recorded here, because this note was written from the public release alone.
+
+The history HANDOFF held while 0.7.0 was built is in [handoff-notes.md](handoff-notes.md).

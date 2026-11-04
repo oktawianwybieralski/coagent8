@@ -39,8 +39,8 @@ the user's authority; the delegated agent never does.
    turn. Trust the block over the report. Treat every warning as a finding:
    changes outside the scope, files that had uncommitted changes before, and a
    moved HEAD (a commit or branch switch the agent was told not to make).
-8. **Verify.** Read the diff, run the checks yourself and record their exit
-   codes. The agent's PASS is its claim, not evidence, and NOT_RUN is common:
+8. **Verify.** Read the diff. Without `loop`, run the checks yourself and record
+   their exit codes. The agent's PASS is its claim, not evidence, and NOT_RUN is common:
    Antigravity runs no commands, and Codex on Windows cannot run test runners
    that start processes from Node.
 9. **Fix rounds.** For corrections pass the result's `session_handle` with a

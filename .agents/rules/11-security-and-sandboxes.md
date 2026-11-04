@@ -58,6 +58,24 @@ resets or cleans up. On Windows `delegate` refuses to run without the job helper
 which ends a cancelled worker's descendants with it
 ([contract](../../docs/ARCHITECTURE.md#windows-per-call-containment-windows-001)).
 
+### Checks the server runs (DELEGATE-001f2, REVIEW-003)
+
+Owner decisions 2026-11-02 and 2026-11-03: the server itself may run `checks`, after a delegated
+worker (`delegate` with `loop: true`) and before a review (`review` with `checks`). They run with
+the user's account, outside any sandbox, and execute code a worker may have changed or that is
+under review. The backends' profiles above stay as they are: the reviewer remains read-only.
+* A check runs only if it is an exact entry of the user's `allowedChecks`, or the user approved it
+  on an MCP form for that call. A calling agent, skill or worker cannot approve one, and a form
+  the client declines or closes is reported as the client's answer, never as the user's.
+* A check is one command with arguments, parsed without a shell; shell operators are refused.
+  This limits its syntax, not what it can do.
+* Its run is bounded in time (15 minutes, and the task's or call's budget) and in output: only the
+  redacted end of its output is kept (8 KiB), each line redacted before the cut, private keys
+  across lines.
+* Its result is evidence the server observed: a check that does not pass blocks the review or the
+  loop whatever a model reports. Before a review, the work tree is checked after every check, and
+  a check that changed the reviewed state refuses the review before any turn.
+
 ---
 
 ## 2. Model Cost Governance
@@ -92,7 +110,10 @@ calling agent cannot grant it. Without an approval the turn fails closed with
 (version, auth, catalog, model resolution, prices) can start CLIs or read the
 price list before consent.
 An accepted form must contain an explicit boolean `approve: true`; an omitted
-field is not consent.
+field is not consent. A form the client declines or closes, which clients do
+without showing it (Claude Code 2.1.317 declines, Codex 0.164 cancels; #135,
+#140), is reported as the client's answer with the user's ways to approve, never
+as the user's refusal. The same applies to the approval of checks (section 1).
 
 ---
 

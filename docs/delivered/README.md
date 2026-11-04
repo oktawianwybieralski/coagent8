@@ -47,6 +47,8 @@ still decide what to do next.
 | --- | --- | --- |
 | 0.7.0 | Released 2026-10-20 (release PR #85) | [0.7.0/README.md](0.7.0/README.md) |
 | 0.8.0 | Candidate | [0.8.0/README.md](0.8.0/README.md) |
+| 0.6.0, 0.6.1 | Released | [0.6.1/README.md](0.6.1/README.md) |
 
 Versions up to 0.6.1 predate these records; their changes are in
-[CHANGELOG.md](../../CHANGELOG.md) and the git history.
+[CHANGELOG.md](../../CHANGELOG.md) and the git history, and the evidence HANDOFF held for
+them is in [0.6.1/README.md](0.6.1/README.md).
