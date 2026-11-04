@@ -563,4 +563,3 @@ Implemented `SKILLS-002a` and `SKILLS-002b` in `0.6.0`:
   `gemini-3.8-flash-high`) reported model `READY` (0 P1/P2) with server gate
   `BLOCKED` (`typecheck` and `tests` `NOT_RUN`). Native `SKILLS-002c` acceptance
   remains `NOT_RUN` (`PATCH-061-N6`).
-

@@ -356,4 +356,3 @@ current state. History, not instructions. The card records in this directory are
   commits/checklist items on one branch. Merged #33-#45 keep their history;
   PR #46 implements result group 2.3-2.4. Required review and
   CI cover each complete result; a task ID or line count is not a PR boundary.
-

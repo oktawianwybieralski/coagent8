@@ -172,4 +172,3 @@ current state. History, not instructions. The card records in this directory are
   re-scoped cards and four open owner decisions in the
   [DELEGATE-001 card](../../ROADMAP.md#delegate-001-asynchronous-delegation-and-caller-wake-up).
   Not reviewed yet.
-
