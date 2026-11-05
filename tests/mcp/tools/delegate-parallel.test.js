@@ -477,18 +477,92 @@ test('two identical starts at once run one worker', async () => {
   await handleCancelSession({ root_handle: rootHandle });
 });
 
-test('a claim on a request id of a dead process is taken over; a live one holds', () => {
+test('a claim on a request id of a dead process is taken over; a live one holds; a release removes only its own', async () => {
   const handle = createTaskHandle('claim');
-  const release = claimTaskRequest(handle);
-  assert.throws(() => claimTaskRequest(handle), code('SESSION_BUSY'));
-  release();
-  release();
+  const release = await claimTaskRequest(handle);
+  await assert.rejects(claimTaskRequest(handle), code('SESSION_BUSY'));
+  await release();
+  await release();
   const file = path.join(process.env.coagent8_DIR, 'delegations', `${handle}.json.starting`);
   assert.equal(fs.existsSync(file), false);
-  fs.writeFileSync(file, JSON.stringify({ pid: spawnSync(process.execPath, ['-e', ''], { windowsHide: true }).pid }));
-  claimTaskRequest(handle)();
+  const dead = spawnSync(process.execPath, ['-e', ''], { windowsHide: true }).pid;
+  fs.writeFileSync(file, JSON.stringify({ pid: dead, token: 'old' }));
+  await (
+    await claimTaskRequest(handle)
+  )();
   fs.writeFileSync(file, '{ damaged');
-  claimTaskRequest(handle)();
+  const taken = await claimTaskRequest(handle);
+  fs.writeFileSync(file, JSON.stringify({ pid: process.pid, token: 'another' }));
+  await taken();
+  assert.ok(fs.existsSync(file), "another call's claim stays");
+  fs.rmSync(file);
+});
+
+test('claims of a request id in other server processes exclude each other', async () => {
+  const handle = createTaskHandle('contended');
+  const script = `require('tsx/cjs');
+    require(${JSON.stringify(path.resolve(__dirname, '../../../src/sessions/tasks.ts'))}).claimTaskRequest(${JSON.stringify(handle)})
+      .then(() => console.log('held'), err => console.log(err.code));
+    process.stdin.resume(); process.stdin.on('end', () => process.exit(0));`;
+  const holders = Array.from({ length: 4 }, () =>
+    spawn(process.execPath, ['-e', script], {
+      cwd: path.resolve(__dirname, '../../..'),
+      stdio: ['pipe', 'pipe', 'inherit'],
+      windowsHide: true,
+    }),
+  );
+  try {
+    const answers = await Promise.all(
+      holders.map(holder => new Promise(resolve => holder.stdout.once('data', chunk => resolve(String(chunk).trim())))),
+    );
+    assert.deepEqual(answers.sort(), ['SESSION_BUSY', 'SESSION_BUSY', 'SESSION_BUSY', 'held']);
+  } finally {
+    await Promise.all(
+      holders.map(holder => {
+        holder.stdin.end();
+        return new Promise(resolve => holder.once('exit', resolve));
+      }),
+    );
+  }
+});
+
+test('an overlapping start is refused before the check form, and a form counts against the task budget', async () => {
+  await saveConfig({ ...loadConfig(), allowedChecks: [] });
+  const repo = fixtureRepo();
+  const worker = await runningWorker(repo, { scope: ['a'] });
+  let asked = 0;
+  await assert.rejects(
+    handleDelegate({ ...REQUEST, loop: true, checks: ['node -v'] }, repo, null, null, {
+      ...approve,
+      askChecks: async () => {
+        asked++;
+        return 'approved';
+      },
+    }),
+    code('SESSION_BUSY'),
+  );
+  assert.equal(asked, 0, 'the user is not asked for a start that cannot run');
+  await handleCancelSession({ root_handle: worker.rootHandle });
+
+  const root = await createRoot();
+  const file = path.join(process.env.coagent8_DIR, 'delegations', 'roots', `${root.rootHandle}.json`);
+  await atomicWrite(file, JSON.stringify({ ...root, deadlineAt: new Date(Date.now() + 1500).toISOString() }));
+  process.env.CODEX_FIXTURE_MODE = 'interruptible';
+  const started = Date.now();
+  await assert.rejects(
+    handleDelegate({ ...REQUEST, root_handle: root.rootHandle, loop: true, checks: ['node -v'] }, repo, null, null, {
+      ...approve,
+      // A form left open past the root's time: nothing may run after the answer.
+      askChecks: async (_checks, signal) =>
+        new Promise((resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('form closed')), { once: true });
+          setTimeout(() => resolve('approved'), 4000);
+        }),
+    }),
+    code('TIMEOUT'),
+  );
+  assert.ok(Date.now() - started < 8000);
+  assert.deepEqual(readRoot(root.rootHandle).tasks, [], 'no turn started');
 });
 
 test('a loop whose root ran out of calls ends for the caller to decide', async () => {

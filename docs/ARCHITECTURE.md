@@ -1333,7 +1333,7 @@ group 3 of the [0.8.0 plan](ROADMAP.md#080-plan). `mode: "sync"` has no task, so
 symbolic links that exist at the start, refused when they leave the repository or enter
 `.git`, compared whole segment by whole segment and without regard to case. Two claims that can
 reach a common file overlap, and the later start gets `SESSION_BUSY` before it asks the user
-anything. No `scope`, a scope covering the repository, and `loop: true` hold the whole tree: the
+anything, on the check form or the model form. No `scope`, a scope covering the repository, and `loop: true` hold the whole tree: the
 loop's checks and review read all of it, and the review gate refuses a tree that changes. A
 claim has its own file in `<gitDir>/coagent8-writers/`, so its holder's synchronous updates around
 a process start need no lock; the whole tree keeps `coagent8-writer.json`. The lock on that file
@@ -1368,16 +1368,19 @@ writer exclusion but not a budget.
 
 **Start, in order.** A repeated `request_id` returns its task. Otherwise the id is claimed with an
 exclusive file while its task has no record, so two identical starts run one worker: the other gets
-`SESSION_BUSY`, or the task once it exists. Then the root is reserved, the checks approved, the writer
-acquired, consent obtained, the root checked and bound to the session once more, and the task record
-written, in that order, just before the turn. A start that this process knows reached no turn is
-refunded. After a crash the charge stays; an entry without a session started no turn, and one
-with a session reads as possibly interrupted, as its record says.
+`SESSION_BUSY`, or the task once it exists. Then the root is reserved, the writer acquired, the checks
+approved, consent obtained, the root checked and bound to the session once more, and the task record
+written, in that order, just before the turn. The time of a form counts against the task's budget, which
+starts at the reservation. A start that this process knows reached no turn is refunded; a later round
+that a refusal stops before its turn keeps its charge, so a limit can only be reached early. After a crash
+the charge stays; an entry without a session started no turn, and one with a session reads as possibly
+interrupted, as its record says.
 
 **Cancel.** `cancel` with `root_handle` marks the root cancelled under the same lock, so no
-reservation or turn starts from then on, aborts this server's tasks at once, and waits up to 15
+reservation succeeds from then on, aborts this server's tasks at once, and waits up to 15
 seconds for each to store its evidence and end. Every running delegation also reads its root once
-a second, which reaches other server processes and also stops the checks and reviews of a loop; five
+a second, which reaches other server processes and also stops the checks and reviews of a loop. So
+another server's turn past its last check can still start, and it stops within that second; five
 failed reads in a row stop the worker too, as a root nobody can read could not cancel it. Nothing
 signals a process by a recorded PID. The answer lists what ended, what is still stopping, and tasks
 whose server died, whose processes can outlive it on POSIX (#186).

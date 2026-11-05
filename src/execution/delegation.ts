@@ -82,9 +82,11 @@ export async function executeDelegation(
     exclusive?: boolean;
     /** Runs before every turn after the first; a refusal ends the round. */
     beforeRound?: () => Promise<void>;
+    /** Asks what the user must settle, with the writer held so that an overlapping start asks nothing. */
+    approveStart?: () => Promise<void>;
   } = {},
 ): Promise<TaskExecutionResult> {
-  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, exclusive = false, beforeRound, ...taskOptions } = options;
+  const { beforeRelease, supervise, loopTurnMs = LOOP_TURN_MS, exclusive = false, beforeRound, approveStart, ...taskOptions } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
   if (process.platform === 'win32' && !jobHelperPath()) {
     throw new ToolError(
@@ -100,6 +102,7 @@ export async function executeDelegation(
   let outcome: TaskExecutionResult | undefined;
   let treeUnconfirmed = false;
   try {
+    await approveStart?.();
     const before: WorkspaceSnapshot = await captureWorkspace(cwd, repo, options.context);
     const turn = (text: string, turnArgs: ExecutionRequest, turnOptions: typeof taskOptions) =>
       executeTask(text, publicInput, turnArgs, cwd, abortSignal, onProgress, {
@@ -112,9 +115,9 @@ export async function executeDelegation(
       if (!supervise) return first;
       // Each later turn has its own bound within what is left of the task's budget.
       const inRound: Supervision['inRound'] = async run => {
-        await beforeRound?.();
         const remainingMs = Math.min(loopTurnMs, options.budget?.remainingExecutionMs() ?? Number.POSITIVE_INFINITY);
         if (remainingMs <= 0) throw new ToolError('TIMEOUT', 'The task budget ended before the next turn.');
+        await beforeRound?.();
         const budget = createExecutionBudget({
           totalBudgetMs: remainingMs,
           parentSignal: abortSignal ?? undefined,
@@ -164,11 +167,14 @@ export async function executeDelegation(
     // A worker that was denied and changed nothing may still report a normal end (#127).
     const ownChanges = changes.changed.filter(change => !changes.possiblyOtherWriter?.includes(change.path));
     if (outcome.result.denials?.length && !ownChanges.length && !changes.unavailable) {
+      const seen = changes.changed.length
+        ? 'The worker was denied access, and the only changes seen are in paths another worker held.'
+        : 'The worker was denied access and changed no file.';
       outcome = {
         ...outcome,
         warnings: [
           ...(outcome.warnings ?? []),
-          'The worker was denied access and changed no file. On Windows, a folder that does not inherit the permissions of the workspace stays closed to a Codex worker: check the denied path.',
+          `${seen} On Windows, a folder that does not inherit the permissions of the workspace stays closed to a Codex worker: check the denied path.`,
         ],
       };
     }
@@ -379,14 +385,14 @@ export async function startDelegation(start: DelegationStart): Promise<{ task: D
   };
   const existing = existingTask();
   if (existing) return { task: existing };
-  const releaseRequest = key ? claimTaskRequest(taskHandle) : () => undefined;
+  const releaseRequest = key ? await claimTaskRequest(taskHandle) : async () => undefined;
   try {
     // The first start may have recorded its task between the look above and this claim.
     const recorded = existingTask();
     if (recorded) return { task: recorded };
     return await launchDelegation(start, taskHandle, fingerprint);
   } finally {
-    releaseRequest();
+    await releaseRequest();
   }
 }
 
@@ -421,12 +427,6 @@ async function launchDelegation(
       process.stderr.write(`CoAgent8: root ${rootHandle} was not updated: ${redactDiagnostic((err as Error).message, 512)}\n`);
     }
   };
-  try {
-    await start.approve?.();
-  } catch (err) {
-    await refund();
-    throw err;
-  }
   try {
     pruneTasks();
     pruneRoots();
@@ -501,6 +501,7 @@ async function launchDelegation(
     ...start.options,
     supervise: start.supervise,
     exclusive: start.exclusive,
+    ...(start.approve ? { approveStart: start.approve } : {}),
     beforeRound: () => reserveRootCall(rootHandle),
     budget,
     context,

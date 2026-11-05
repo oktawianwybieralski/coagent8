@@ -286,13 +286,13 @@ export async function handleDelegate(
   if (typeof request.session_handle === 'string' && findRootOfSession(request.session_handle)) {
     throw new ToolError('INPUT_LIMIT', 'This session belongs to a root; continue it with mode async.');
   }
-  await approve();
   const { askChecks: _askChecks, clientName: _clientName, ...taskOptions } = options;
   const outcome = await executeDelegation(prompt, publicInput, request, workspaceCwd, effectiveScope, abortSignal, onProgress, {
     requireEnvelope: false,
     ...taskOptions,
     supervise,
     exclusive: loop,
+    approveStart: approve,
   });
   return formatExecutionResult(outcome);
 }

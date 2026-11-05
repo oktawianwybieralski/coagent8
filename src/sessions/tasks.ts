@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ToolError } from '../contracts/index.js';
 import { getDataDir } from '../paths.js';
-import { atomicWrite } from '../storage/lock.js';
+import { atomicWrite, withFileLock } from '../storage/lock.js';
 import { readBoundedFileSync } from '../storage/read.js';
 import { isRecordedProcessAlive, ownProcessIdentity } from './activity.js';
 
@@ -97,39 +97,43 @@ export async function writeTask(task: DelegationTask): Promise<void> {
 /**
  * Claims a request id while its task has no record yet, so two identical starts cannot both run.
  * A task's record is written before its turn starts, so a dead owner without one started no turn.
- * @returns Gives the claim up; idempotent.
+ * Every step runs under the claim's lock: a reader never sees half a claim, and a release or a
+ * takeover removes only the claim it read.
+ * @returns Gives the claim up; idempotent, and it never rejects: the claim then ages out.
  * @throws `SESSION_BUSY` while a live server process holds the claim.
  */
-export function claimTaskRequest(handle: string): () => void {
+export async function claimTaskRequest(handle: string): Promise<() => Promise<void>> {
   const file = `${taskFile(handle)}.starting`;
-  fs.mkdirSync(tasksDir(), { recursive: true, mode: 0o700 });
-  const owner = JSON.stringify({ pid: process.pid, identity: ownProcessIdentity() });
-  for (let attempt = 0; ; attempt++) {
+  const token = crypto.randomUUID();
+  const readHolder = (): { pid?: unknown; identity?: unknown; token?: unknown } | null => {
     try {
-      fs.writeFileSync(file, owner, { flag: 'wx', mode: 0o600 });
-      break;
+      return JSON.parse(readBoundedFileSync(file, 1024)) as { pid?: unknown; identity?: unknown; token?: unknown };
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 0) throw err;
-      let holder: { pid?: unknown; identity?: unknown } = {};
-      try {
-        holder = JSON.parse(readBoundedFileSync(file, 1024)) as typeof holder;
-      } catch {
-        // Unreadable: written by a process that died mid-write, as the write is one small call.
-      }
-      if (
-        typeof holder.pid === 'number' &&
-        isRecordedProcessAlive(holder.pid, typeof holder.identity === 'string' ? holder.identity : undefined)
-      ) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      // Written atomically under this lock, so unreadable means damaged, and nobody can own it.
+      return {};
+    }
+  };
+  await withFileLock(file, async () => {
+    const holder = readHolder();
+    if (holder && typeof holder.pid === 'number') {
+      if (isRecordedProcessAlive(holder.pid, typeof holder.identity === 'string' ? holder.identity : undefined)) {
         throw new ToolError('SESSION_BUSY', 'The same request_id is still starting; read its task shortly.');
       }
-      fs.rmSync(file, { force: true });
     }
-  }
+    await atomicWrite(file, JSON.stringify({ pid: process.pid, identity: ownProcessIdentity(), token }));
+  });
   let released = false;
-  return () => {
+  return async () => {
     if (released) return;
     released = true;
-    fs.rmSync(file, { force: true });
+    try {
+      await withFileLock(file, async () => {
+        if (readHolder()?.token === token) fs.rmSync(file, { force: true });
+      });
+    } catch (err) {
+      process.stderr.write(`CoAgent8: the claim on ${handle} was not removed: ${(err as Error).message}\n`);
+    }
   };
 }
 
