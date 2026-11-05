@@ -172,10 +172,8 @@ become the final commit, so they must meet this section.
   separate.
 * Changes to rules, AGENTS.md or the workflow are their own result and travel
   in their own PR, so the history and the changelog show them.
-* The PR that delivers a card's subtasks adds or extends the version's record
-  in [docs/delivered/](../../docs/delivered/README.md) and links it from the
-  issue; the [rules there](../../docs/delivered/README.md#rules) say what
-  a record holds and how merge data and release evidence are filled in later.
+* The evidence of a delivery stays in its PR and the issue it closes or
+  advances; no separate record is written (owner decision 2026-11-05).
 * For a grouped PR, record all included task IDs and acceptance checks. Internal
   dependencies are completed in order on the same branch; external dependencies
   must be satisfied before starting. Review and required CI cover the combined
@@ -496,9 +494,8 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
 
 25. Confirm on the target: CI green and `git diff --exit-code vX.Y.Z --
     CHANGELOG.md` reports no change (read-only; never regenerate the file
-    here). Record the release evidence in the version README of
-    [docs/delivered](../../docs/delivered/README.md#rules), mark the
-    version done in the roadmap and close the issues it fixed.
+    here). Record the release evidence in the release PR, mark the version
+    done in the roadmap, close its milestone and the issues it fixed.
 
 Any change to the release branch after step 13 repeats steps 8 to 13 for the new
 head. A pushed tag is never moved, deleted or reused.

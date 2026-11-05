@@ -7,7 +7,7 @@ title: Architecture
 Updated 2026-10-09; SIMPLIFY-001 ownership and enforcement reflect the local
 follow-up to `f97ffeb`. This document owns current runtime
 contracts and the target orchestration design. [ROADMAP.md](ROADMAP.md) and GitHub Issues own work
-order and acceptance; [HANDOFF.md](HANDOFF.md) owns current evidence. Source
+order and acceptance; issues and PRs hold current evidence. Source
 inspection is not native or release acceptance.
 
 ## Product boundary
@@ -1609,7 +1609,7 @@ only with a new owner decision; details and evidence remain in Git history.
 | CUR-009 | Auth/profile/UI evidence incomplete | DIAGNOSTICS-001, AX-003/005 |
 | CUR-011 | POSIX unexpected-parent-death cleanup absent | WINDOWS-001 |
 | CUR-013 | Other-tree review refused, not implemented | COAGENT-004, SURFACE-001 |
-| CUR-014 | Codex Windows sandbox: the unelevated backend is verified only with the user's own `CODEX_HOME`; an isolated `CODEX_HOME` once failed closed by policy ([0.7.0 handoff notes](delivered/0.7.0/handoff-notes.md), row 2.12d lane 4) | COAGENT-002 |
+| CUR-014 | Codex Windows sandbox: the unelevated backend is verified only with the user's own `CODEX_HOME`; an isolated `CODEX_HOME` once failed closed by policy ([0.7.0 handoff notes](https://github.com/oktawianwybieralski/coagent8/blob/7eec83a/docs/delivered/0.7.0/handoff-notes.md), row 2.12d lane 4) | COAGENT-002 |
 | AX-001, AX-003 through 006 | Request estimates, config/approval/readiness/first-use gaps | Roadmap agent usability acceptance |
 
 CUR-001/003/004/005/006/007/010/012 have local fixes for review identity/completeness,
@@ -1848,7 +1848,7 @@ Exported contract types must appear in the reference; do not suppress warnings.
 npm run lint:docs validates source comments; npm run docs generates
 .artifacts/api-docs using the isolated tooling/documentation dependencies.
 The site's home page is README.md; docs/ARCHITECTURE.md, docs/ROADMAP.md,
-docs/HANDOFF.md, CHANGELOG.md and the Git workflow rule are project documents
+CHANGELOG.md and the Git workflow rule are project documents
 named by their front matter title, and tooling/documentation/mermaid.js renders
 their mermaid blocks (mermaid 11.4.1 from jsDelivr; the source stays readable
 without it). Heading anchors must agree between GitHub and TypeDoc: headings use

@@ -537,7 +537,6 @@ release. Restart a running MCP server after rebuilding.
 | Security support and private reports | [Security policy](https://github.com/oktawianwybieralski/coagent8/security/policy) |
 | Planned work and priorities | [Issues](https://github.com/oktawianwybieralski/coagent8/issues), [Roadmap](docs/ROADMAP.md) |
 | Contracts, limitations and design | [Architecture](docs/ARCHITECTURE.md) |
-| Current work and evidence | [Handoff](docs/HANDOFF.md) |
 | Contributor rules | [AGENTS.md](AGENTS.md) |
 | Branches, pull requests and releases | [Git workflow](.agents/rules/12-release-workflow.md) |
 | Checks by scope | [Quality gate](.agents/rules/14-quality-gate.md) |

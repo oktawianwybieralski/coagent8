@@ -15,10 +15,10 @@ configurable product roles without relaxing independent review gates.
 
 ## Review input in this project
 
-Beyond core rule 03, the requirements in `instructions` include the acceptance
-text of every roadmap card and queue row the change closes and the dated
+Beyond core rule 03, the requirements in `instructions` include the `Done when`
+text of every issue the change closes or advances and the dated
 [ARCHITECTURE](../../docs/ARCHITECTURE.md) decisions it implements. Changed
-documentation to check includes HANDOFF, ROADMAP, README, skills and TSDoc.
+documentation to check includes ROADMAP, README, skills and TSDoc.
 
 ## State envelope
 

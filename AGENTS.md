@@ -25,13 +25,10 @@ conflict and stop the dependent work.
 and a milestone names its release (owner decision 2026-11-05,
 [`project.md`](./.agents/project.md#backlog)). Use
 [docs/ROADMAP.md](./docs/ROADMAP.md) for the direction and the order of the
-milestones, [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contracts and
-design, and [docs/HANDOFF.md](./docs/HANDOFF.md) for current work and evidence.
-These are the three active project documents; optional ignored local notes are
-not instructions.
-[docs/delivered/](./docs/delivered/README.md) is the permanent record of what each
-version delivered, per card or issue, with its evidence (owner decision 2026-10-20): history,
-not instructions. The PR that delivers an issue's steps adds or extends its record.
+milestones, and [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contracts and
+design. These are the two active project documents; optional ignored local notes
+are not instructions. Current work and evidence are in issues and PRs: do not add
+a document that an issue or a PR can hold (owner decision 2026-11-05).
 
 The product is a client-independent system for delegating complete tasks to
 cooperating agents (owner decision, 2026-10-08). Roles and model/provider choices are independent;
