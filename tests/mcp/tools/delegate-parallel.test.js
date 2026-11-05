@@ -448,9 +448,11 @@ test('a loop still refuses a scope that escapes, and a cancelled root closes an 
         formOpen();
       }),
   });
+  // Observed before the cancel, which waits for the task and so sees it rejected first.
+  const refused = assert.rejects(start, code('ABORTED'));
   await opened;
   await handleCancelSession({ root_handle: root.rootHandle });
-  await assert.rejects(start, code('ABORTED'));
+  await refused;
   assert.deepEqual(readRoot(root.rootHandle).tasks, [], 'no turn started, so the charge is back');
   assert.equal(fs.existsSync(path.join(repo, '.git', WRITER_RECORD_FILE)), false, 'and the writer is free');
 });
