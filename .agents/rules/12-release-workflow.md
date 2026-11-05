@@ -117,7 +117,7 @@ squash-merge commit - must follow Conventional Commits 1.0.0:
   change is needed and what behavior changes, not a file list.
 * **footers** (one per line):
   * `Fixes #123` / `Refs #123` - linked GitHub issue;
-  * `Refs: AUD-P0-1` - audit finding or roadmap item;
+  * `Refs: AUD-P0-1` - audit finding;
   * `BREAKING CHANGE: <description and migration>`;
 * No AI attribution ([core rule 02](core/02-git-workflow.md#commits-and-pull-requests))
   also covers changelogs and release notes; the owner is the sole author and
@@ -163,7 +163,7 @@ become the final commit, so they must meet this section.
 * Open as **draft** while work or verification is incomplete.
 * One coherent result per PR. Keep its implementation, regression tests and
   related documentation together; use commits and a checklist for subtasks.
-  Several roadmap rows may share a PR when they implement the same result.
+  Several issues may share a PR when they implement the same result.
 * Split when a part has independent value, risk or rollback, needs a separate
   owner decision, or the combined scope cannot be reviewed effectively. Do not
   split by line count, file, client, task ID or test count, and do not batch
@@ -184,7 +184,7 @@ become the final commit, so they must meet this section.
   section. The template is a writing aid, not another source of requirements.
   1. **Summary** - the concrete problem and resulting behavior, suitable for
      the squash commit body. Keep verification and process notes below.
-  2. **Links** - `Fixes #...` / `Refs #...`, roadmap item and audit finding IDs.
+  2. **Links** - `Fixes #...` / `Refs #...` and audit finding IDs.
      Link referenced documents and headings; write `None` if none apply.
   3. **Changes** - notable behavior, contract or migration effects, and the
      `pending` changelog entry from the title preview (section 6), or explain
@@ -204,7 +204,7 @@ become the final commit, so they must meet this section.
   5. **Risk and rollback** - what could break and how to revert.
      Documentation can establish policy, so assess its accuracy and impact
      rather than assuming prose has no risk.
-  6. **Checklist** - docs, runtime contract and roadmap status updated where
+  6. **Checklist** - docs, runtime contract and issue status updated where
      behavior changed; `CHANGELOG.md` unchanged outside a release PR
      (section 6); the title preview passed;
      no secrets, local paths or personal data in the diff.
@@ -343,12 +343,12 @@ patches. Before the first release candidate the owner creates `X.Y.x` from
    the PR that fixes it may merge next: find the cause and fix it with a test
    that reproduces it. A job is re-run only when its cause is known and its fix
    is in a PR; a green re-run alone is not evidence.
-5. A PR that completes a planned card ticks it in the roadmap.
+5. A PR that meets the `Acceptance criteria` of a planned issue closes it.
 
 ### Phase A - prepare and accept the release candidate (agent may prepare)
 
-6. **Scope.** The roadmap names the cards of the version. Preparation starts
-   when all of them are merged, CI is green on the target's head, no P0/P1 issue
+6. **Scope.** The milestone names the issues of the version. Preparation starts
+   when all of them are closed, CI is green on the target's head, no P0/P1 issue
    is open, and README, extension README and known limitations describe the
    merged behavior.
 7. **Release branch.** `git switch -c release/vX.Y.Z origin/<target>` with one
