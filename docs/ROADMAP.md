@@ -45,7 +45,7 @@ tags, publication and repository settings stay the owner's.
 | Execution | Seven tools, three CLI adapters, plain consult, explicit model/effort, asynchronous `delegate` with task records and `wait`, a server-owned loop, one writer per linked worktree | Parallel workers under one root budget, disjoint scopes, delegated coordination (#159 to #166) |
 | Safety | Owned cleanup, hidden Windows launches, per-call Windows containment, redaction, explicit model and check consent, Codex/Claude inherited-tool controls | POSIX parent-death cleanup (#186); `arm64` and SmartScreen (#111); signing (#112) |
 | Review | Completeness, snapshot gate, post-turn recheck, reviews in parts, checks the server runs before the turn | Release hashes bound to the review (#148); other-tree review (#187, unscheduled) |
-| Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, caller label (Claude Code) | Ephemeral calls and early handles for consult and review (#188) |
+| Storage/routing | Leases, bounded archives, cached catalogs/prices, writer records across server processes, caller label (Claude Code) | Ephemeral calls and early handles for consult and review (#188), end-to-end deadlines (the time reservation of the root budget, #161) |
 | Agent usability | Cached model view with CLI catalogs, per-model prices and release dates, price limit, result footer, client-declined forms reported as the client's answer | Fresh-client acceptance (#156), form-less consent (#154) |
 | Integrations | Shared config, setup, VSIX, owned registration/uninstall, client skills, Claude Code wake-up | Codex and agy wake-up (#113, #114), plugins (#151) |
 
@@ -106,11 +106,14 @@ on release day), the tag and publication.
   marketplaces, setup coexistence and the VS Code entry in rc.1, the native
   acceptance against the published `0.8.0` as a condition of `1.0.0`.
 - Proposed to defer past rc.1, since the orchestra does not depend on them:
-  quota failover (#167), multi-file skills (#163), cost estimates (#152), the
-  remaining public CLI work (#170), session modes (#188), the documentation
-  site (#183) and the connectome research (#182). Until the owner decides they
-  carry the "After 0.8.0" milestone or none. Asynchronous review stays
-  deferred (2026-10-21).
+  the seeded fork and configured failover after quota exhaustion (#167, steps
+  b and c), multi-file skills (#163), cost estimates (#152, steps e, h and i),
+  the MCP adapter over the packaged CLI, the CLI topology measurement and
+  readable terminal output (#170, steps g, i and j), the session modes (#188;
+  its early handles stay in `0.8.0`), the documentation site (#183) and the
+  connectome research (#182). Asynchronous review stays deferred (2026-10-21).
+  Issues the plan does not order carry no milestone; #152, #163 and #183 carry
+  "After 0.8.0" because the proposal covers all their open steps.
 
 ## Full coagent direction
 
