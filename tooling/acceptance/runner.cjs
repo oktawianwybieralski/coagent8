@@ -448,7 +448,7 @@ async function runAcceptance(options = {}) {
         [...codeCli.prefixArgs, '--user-data-dir', isolated.vscodeUserData, '--extensions-dir', isolated.vscodeExtensions, '--version'],
         {
           env: { ...isolated.childEnv, ...codeCli.extraEnv },
-          timeoutMs: 10_000,
+          timeoutMs: 30_000,
         },
       );
       if (!codeProbe.ok) {
@@ -465,19 +465,22 @@ async function runAcceptance(options = {}) {
     // 4. Tarball isolated installation
     await runStep('step_tarball_install', 'Install tarball in clean isolated npm prefix', async () => {
       const installCwd = isolated.npmPrefix;
-      const initRes = await run(process.execPath, [npm, 'init', '--yes'], {
-        cwd: installCwd,
-        env: isolated.childEnv,
-      });
-      if (!initRes.ok) {
-        throw new Error(describeFailure('npm init in isolated prefix', initRes));
-      }
+      // Written here because `npm init` only produces this file and outlasted its 30 s deadline
+      // on a loaded machine (a red Windows job on 2026-11-05, reproduced under parallel load).
+      fs.writeFileSync(
+        path.join(installCwd, 'package.json'),
+        JSON.stringify({ name: 'coagent8-acceptance', version: '0.0.0', private: true }),
+      );
 
-      const installRes = await run(process.execPath, [npm, 'install', '--no-audit', '--no-fund', '--offline', tarballPath], {
-        cwd: installCwd,
-        env: isolated.childEnv,
-        timeoutMs: 60_000,
-      });
+      const installRes = await run(
+        process.execPath,
+        [options.npmCli || npm, 'install', '--no-audit', '--no-fund', '--offline', tarballPath],
+        {
+          cwd: installCwd,
+          env: isolated.childEnv,
+          timeoutMs: 60_000,
+        },
+      );
       if (!installRes.ok) {
         throw new Error(describeFailure(`npm install of ${path.basename(tarballPath)}`, installRes));
       }

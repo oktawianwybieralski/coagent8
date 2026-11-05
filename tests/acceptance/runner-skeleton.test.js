@@ -187,8 +187,9 @@ test('runner executes native mode with mock code CLI and verifies args and home 
     tempParent: tempInstanceRoot,
   });
 
-  assert.equal(result.status, 'INCOMPLETE', 'Status is INCOMPLETE because scenarios N2-N4 are deferred');
   assert.ok(fs.existsSync(evidencePath), 'Evidence JSON must be written');
+  const failedSteps = JSON.parse(fs.readFileSync(evidencePath, 'utf8')).steps.filter(step => step.status === 'FAIL');
+  assert.equal(result.status, 'INCOMPLETE', `Scenarios N2-N4 are deferred; failed steps: ${JSON.stringify(failedSteps)}`);
 
   const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
   assert.equal(evidence.mode, 'native');
@@ -219,6 +220,43 @@ test('runner executes native mode with mock code CLI and verifies args and home 
   const preservationStep = evidence.steps.find(s => s.id === 'step_home_preservation');
   assert.ok(preservationStep);
   assert.equal(preservationStep.status, 'PASS');
+});
+
+test('the tarball installs without `npm init`, which can outlast its deadline on a loaded machine', async t => {
+  const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'coagent8-runner-init-test-'));
+  t.after(() => fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 5 }));
+  const syn = createSyntheticArtifacts(path.join(testRoot, 'synthetic'), '0.6.1');
+  const mockCode = path.join(testRoot, 'mock-code.cjs');
+  fs.writeFileSync(mockCode, "if (process.argv.includes('--version')) console.log('1.90.0');", 'utf8');
+  // Stands in for npm: `init` hangs past any deadline, everything else reaches the real npm.
+  const log = path.join(testRoot, 'npm-calls.log');
+  const realNpm = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const fakeNpm = path.join(testRoot, 'fake-npm.cjs');
+  fs.writeFileSync(
+    fakeNpm,
+    `const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+require('node:fs').appendFileSync(${JSON.stringify(log)}, args[0] + ' ');
+if (args[0] === 'init') setInterval(() => {}, 1000);
+else process.exit(spawnSync(process.execPath, [${JSON.stringify(realNpm)}, ...args], { stdio: 'inherit' }).status);
+`,
+    'utf8',
+  );
+  const evidencePath = path.join(testRoot, 'evidence.json');
+
+  const result = await runAcceptance({
+    dryRun: false,
+    tarball: syn.tarballPath,
+    vsix: syn.vsixPath,
+    codePath: mockCode,
+    npmCli: fakeNpm,
+    evidencePath,
+    tempParent: path.join(testRoot, 'instance'),
+  });
+
+  const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+  assert.equal(result.status, 'INCOMPLETE', JSON.stringify(evidence.steps.filter(step => step.status === 'FAIL')));
+  assert.equal(fs.readFileSync(log, 'utf8').trim(), 'install');
 });
 
 test('runner fails and reports violation when home preservation is broken', async t => {
