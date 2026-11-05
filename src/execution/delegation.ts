@@ -86,6 +86,8 @@ export async function executeDelegation(
     approveStart?: (signal: AbortSignal | null) => Promise<void>;
     /** Told the writer record once it is held. */
     onWriter?: (writer: { file: string; token: string }) => void;
+    /** Told when a worker's process tree may have outlived its run, so what it held stays held. */
+    onTreeUnconfirmed?: () => void;
   } = {},
 ): Promise<TaskExecutionResult> {
   const {
@@ -96,6 +98,7 @@ export async function executeDelegation(
     beforeRound,
     approveStart,
     onWriter,
+    onTreeUnconfirmed,
     ...taskOptions
   } = options;
   // A writer's descendants must end with its run; without the helper they could keep writing.
@@ -174,6 +177,7 @@ export async function executeDelegation(
     outcome = await (process.platform === 'win32'
       ? withRequiredJobHelper(runTask, () => {
           treeUnconfirmed = true;
+          onTreeUnconfirmed?.();
         })
       : runTask());
     let changes: WorkspaceChanges;
@@ -481,6 +485,8 @@ async function launchDelegation(
 
   let task: DelegationTask | undefined;
   let writer: { file: string; token: string } | undefined;
+  /** The worker's tree may still run: like the writer slot, its place in the root stays until this server ends. */
+  let workerMayRun = false;
   let announce!: () => void;
   const running = new Promise<void>(resolve => {
     announce = resolve;
@@ -504,6 +510,7 @@ async function launchDelegation(
   /** Never rejects either: the root's books must not hide how the task ended. */
   const closeInRoot = async () => {
     if (!task) return refund();
+    if (workerMayRun) return;
     try {
       await endRootTask(rootHandle, taskHandle);
     } catch (err) {
@@ -530,6 +537,9 @@ async function launchDelegation(
     ...(start.approve ? { approveStart: start.approve } : {}),
     onWriter: held => {
       writer = held;
+    },
+    onTreeUnconfirmed: () => {
+      workerMayRun = true;
     },
     beforeRound: () => reserveRootCall(rootHandle),
     budget,

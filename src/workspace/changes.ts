@@ -90,7 +90,7 @@ export function claimsOverlap(a: readonly string[], b: readonly string[]): boole
  * Symbolic links are followed as they are now, as an admission check; one replaced later is not seen.
  * @param scope - Normalized workspace-relative entries; empty means the whole work tree, whatever the workspace.
  * @returns The claim; empty when it covers the whole work tree.
- * @throws `INPUT_LIMIT` for an entry that leaves the repository or enters its Git metadata.
+ * @throws `INPUT_LIMIT` for an entry that leaves the repository, enters its Git metadata or goes through a dangling link.
  */
 export function resolveWriteClaim(repo: WorkspaceRepository, scope: readonly string[]): string[] {
   const root = fs.realpathSync.native(repo.root);
@@ -105,6 +105,13 @@ export function resolveWriteClaim(repo: WorkspaceRepository, scope: readonly str
       } catch (err) {
         const parent = path.dirname(existing);
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT' || parent === existing) throw err;
+        // A link to nothing yet: where a write through it lands is not known, so it cannot be compared.
+        if (fs.lstatSync(existing, { throwIfNoEntry: false })?.isSymbolicLink()) {
+          throw new ToolError(
+            'INPUT_LIMIT',
+            `Scope entry '${entry.slice(0, 120)}' goes through a symbolic link whose target does not exist.`,
+          );
+        }
         missing.unshift(path.basename(existing));
         existing = parent;
       }

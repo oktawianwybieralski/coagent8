@@ -254,6 +254,9 @@ test('claim paths: whole segments, any case, repository coordinates, nothing out
     assert.equal(err.code, 'EPERM');
   }
   if (linked) {
+    fs.symlinkSync(path.join(repo, 'not-yet'), path.join(repo, 'dangling'), 'junction');
+    assert.throws(() => resolveWriteClaim(root, ['dangling']), code('INPUT_LIMIT'), 'a link to nothing yet');
+    assert.throws(() => resolveWriteClaim(root, ['dangling/x']), code('INPUT_LIMIT'), 'and a path through it');
     assert.throws(() => resolveWriteClaim(root, ['out/x']), code('INPUT_LIMIT'), 'a link out of the repository');
     assert.deepEqual(resolveWriteClaim(root, ['to-b/new.ts']), ['b/new.ts'], 'a link inside resolves to its target');
   }
@@ -490,6 +493,25 @@ test('a worker that may outlive its dead server still counts as running', async 
   await reserveRootTask(root.rootHandle, { taskHandle: `task_${'a'.repeat(32)}` });
   assert.equal(readRoot(root.rootHandle).calls, 2, "another writer's record says nothing about this task");
 });
+
+test(
+  'a worker whose end is not confirmed keeps its place in the root',
+  { skip: process.platform === 'win32' ? false : 'needs the job helper' },
+  async () => {
+    const { activeProcesses } = require('../../../src/execution/process.ts');
+    const repo = fixtureRepo();
+    // Once it wrote, the process that runs now is the worker, not a probe before it.
+    const worker = await runningWorker(repo, { scope: ['a'] }, { 'a/one.ts': 'x\n' });
+    assert.ok(activeProcesses.size > 0);
+    // A helper killed from outside can report nothing.
+    for (const proc of activeProcesses) proc.kill();
+    await finished(worker.taskHandle);
+    const entry = readRoot(worker.rootHandle).tasks[0];
+    assert.equal(entry.endedAt, undefined);
+    const report = await handleSession({ action: 'root', root_handle: worker.rootHandle }, repo);
+    assert.match(report.content[0].text, /running: 1 of 4/);
+  },
+);
 
 test('a call limit holds across server processes', async () => {
   const root = await createRoot({ maxCalls: 2, maxConcurrent: 64 });

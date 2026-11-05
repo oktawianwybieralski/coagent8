@@ -1375,7 +1375,8 @@ task's cancellation or deadline closes it. A start that this process knows reach
 that a refusal stops before its turn keeps its charge, so a limit can only be reached early. After a crash
 the charge stays; an entry without a session started no turn, and one with a session reads as possibly
 interrupted, as its record says. A task of a dead server stops counting as running only when its writer
-record shows no worker that can have outlived it (#186).
+record shows no worker that can have outlived it (#186). A task whose process tree could not be confirmed
+ended keeps its place in the root until its server ends, like its writer slot, and a cancel reports it as still stopping.
 
 **Cancel.** `cancel` with `root_handle` marks the root cancelled under the same lock, so no
 reservation succeeds from then on, aborts this server's tasks at once, and waits up to 15
